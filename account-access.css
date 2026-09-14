@@ -973,3 +973,195 @@ body.ah-account-page-active>.ah-account-launcher{display:none!important}
   .ah-created-view .ah-account-view-title{font-size:23px}
   .ah-created-emblem{width:100px;height:100px}
 }
+
+/* ===== Auth reference screens (v252) — owner reference design, 2026-09-14 =====
+   Login, verification-method selector, email, telegram-intro and passkey-setup
+   screens rebuilt code-native from the five owner reference images (IMG_4009,
+   IMG_4010, IMG_4012, IMG_4013, IMG_4018). Inline SVG + gradients + CSS only:
+   no raster, no url() backgrounds. All data-view / data-role hooks unchanged. */
+.ah-login-view,.ah-verification-view,.ah-email-intro-view,.ah-telegram-intro-view,.ah-passkey-onboarding{display:flex;flex-direction:column;width:min(100%,430px);margin:0 auto}
+
+/* shared spark + hero language for the five screens */
+.ah-login-hero{position:relative;display:grid;place-items:center;margin:2px 0 12px;min-height:92px}
+.ah-login-orb{position:relative;display:grid;place-items:center;width:76px;height:76px;border-radius:50%;background:linear-gradient(150deg,#16c98f 0%,#0b8f65 58%,#07694c 100%);box-shadow:0 18px 34px -16px rgba(6,110,80,.7),inset 0 1px 0 rgba(255,255,255,.35)}
+.ah-login-orb::before{content:"";position:absolute;inset:-9px;border-radius:50%;background:radial-gradient(circle at 50% 45%,rgba(18,186,135,.16),rgba(18,186,135,0) 68%)}
+.ah-login-orb svg{position:relative;z-index:1;width:34px;height:34px;stroke:#fff;stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round}
+.ah-login-spark{position:absolute;color:#f0b134;font-style:normal;font-weight:900;line-height:1;animation:ahSparkTwinkle 2.8s ease-in-out infinite}
+.ah-login-spark.one{top:6px;right:calc(50% - 62px);font-size:15px}
+.ah-login-spark.two{bottom:8px;left:calc(50% - 66px);font-size:11px;animation-delay:.7s}
+.ah-login-spark.three{top:30px;left:calc(50% - 78px);font-size:9px;color:#12ba87;animation-delay:1.3s}
+
+/* login */
+.ah-login-title{margin:0;display:flex;align-items:center;justify-content:center;gap:8px;color:#0e2c25;font-size:27px;font-weight:900;letter-spacing:-.02em;text-align:center}
+.ah-login-title svg{width:24px;height:24px;flex:0 0 auto;stroke:#e8a33d;stroke-width:2;stroke-linecap:round;fill:none}
+.ah-login-sub{margin:8px 0 18px;color:#7b8f88;font-size:13.5px;font-weight:600;line-height:1.65;text-align:center}
+.ah-login-view .ah-login-field{margin:0 0 12px;padding:10px 14px 12px;border:1.5px solid #dce8e4;border-radius:18px;background:#fff;box-shadow:0 8px 20px -14px rgba(12,62,50,.25);transition:border-color .18s ease,box-shadow .18s ease}
+.ah-login-view .ah-login-field:focus-within{border-color:#12a876;box-shadow:0 0 0 4px rgba(18,168,118,.12)}
+.ah-login-view .ah-login-field .ah-account-label{display:flex;align-items:center;gap:7px;margin:0 0 2px;color:#8a9c95;font-size:10.5px;font-weight:900;letter-spacing:.1em}
+.ah-login-view .ah-login-field .ah-account-label svg{width:15px;height:15px;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.ah-login-view .ah-login-field .ah-account-input{height:44px;padding:0;border:0;border-radius:0;background:transparent;box-shadow:none;color:#12302a;font-size:17px;font-weight:800}
+.ah-login-view .ah-login-field .ah-account-input:focus{box-shadow:none}
+.ah-login-view .ah-login-field .ah-account-input::placeholder{color:#a7b6b1;font-weight:600}
+.ah-login-view .ah-password-wrap .ah-account-input{padding-right:52px}
+.ah-password-toggle{position:absolute;right:4px;top:50%;translate:0 -50%;width:44px;height:44px;display:grid;place-items:center;padding:0;border:0;border-radius:12px;background:#eef6f3;color:#4c7a6d;cursor:pointer}
+.ah-password-toggle:hover{background:#e2f2ea;color:#0f8a63}
+.ah-password-toggle svg{width:22px;height:22px;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.ah-login-row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:2px 0 4px;min-height:44px}
+.ah-login-remember{display:inline-flex;align-items:center;gap:9px;min-height:44px;color:#284e43;font-size:13.5px;font-weight:800;cursor:pointer}
+.ah-login-remember input{position:absolute;width:1px;height:1px;opacity:0}
+.ah-login-remember>span{display:grid;place-items:center;width:23px;height:23px;flex:0 0 auto;border-radius:7px;background:#e4eeea;color:#fff;transition:background .15s ease}
+.ah-login-remember>span svg{width:14px;height:14px;stroke:currentColor;stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round;opacity:0}
+.ah-login-remember input:checked+span{background:#12a876}
+.ah-login-remember input:checked+span svg{opacity:1}
+.ah-login-remember input:focus-visible+span{outline:3px solid rgba(18,168,118,.3);outline-offset:2px}
+.ah-login-remember b{font-weight:800}
+.ah-login-row .ah-forgot-link{margin:0;min-height:44px;display:inline-flex;align-items:center;color:#0f8a63;font-size:13px}
+.ah-login-view .ah-login-submit{display:flex;align-items:center;justify-content:center;gap:12px;min-height:58px;margin-top:10px;border:0;border-radius:18px;background:linear-gradient(135deg,#12ba87 0%,#0b8a61 55%,#076a4d 100%);box-shadow:0 16px 28px -14px rgba(6,110,80,.65),inset 0 1px 0 rgba(255,255,255,.28);font-size:16.5px}
+.ah-login-submit b{font-size:18px;font-weight:800}
+.ah-login-view .ah-account-preferred{margin:16px 0 0}
+.ah-login-view .ah-account-divider{margin:0 0 14px;color:#9aa9a3;font-size:11px;font-weight:900;letter-spacing:.12em}
+.ah-login-view .ah-account-google{min-height:56px;border:1.5px solid #d8e5e0;border-radius:18px;background:#fff;box-shadow:0 8px 20px -14px rgba(12,62,50,.25)}
+.ah-login-view .ah-account-passkey{min-height:56px;margin-top:10px;border:1.5px solid #d8e5e0;border-radius:18px;color:#0f6b52;font-size:15px}
+.ah-passkey-key{display:grid;place-items:center;width:24px;height:24px;color:#0f8a63}
+.ah-passkey-key svg{width:100%;height:100%;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+
+/* code-native help button + tips card (no dialog semantics, no network call) */
+.ah-help{position:relative;display:flex;justify-content:flex-end;margin:14px 0 0}
+.ah-help-fab{position:relative;width:56px;height:56px;display:grid;place-items:center;border:0;border-radius:50%;background:linear-gradient(150deg,#12ba87,#0b8a61 60%,#07644a);color:#fff;cursor:pointer;box-shadow:0 12px 24px -10px rgba(7,110,80,.55),inset 0 1px 0 rgba(255,255,255,.28)}
+.ah-help-fab:active{transform:scale(.95)}
+.ah-help-fab::after{content:"✦";position:absolute;right:-2px;top:-6px;color:#f2b53a;font-size:14px;font-weight:900;line-height:1}
+.ah-help-fab svg{width:30px;height:30px;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.ah-help-fab svg circle{fill:currentColor;stroke:none}
+.ah-help-card{position:absolute;right:0;bottom:64px;z-index:5;width:min(280px,86vw);padding:14px 15px;border:1px solid #d9e9e3;border-radius:18px;background:#fff;box-shadow:0 18px 34px rgba(12,62,50,.14);color:#26504a;text-align:left}
+.ah-help-card[hidden]{display:none!important}
+.ah-help-card strong{display:block;color:#0f2c26;font-size:13.5px;font-weight:900}
+.ah-help-card ul{margin:8px 0 0;padding:0 0 0 17px;display:grid;gap:6px}
+.ah-help-card li{color:#5d7a72;font-size:11.5px;font-weight:650;line-height:1.55}
+.ah-verify-help{flex-wrap:wrap}
+.ah-help-line{width:100%;margin:10px 0 0;text-align:center;color:#7b8f88;font-size:12.5px;font-weight:650}
+.ah-help-line .ah-account-link{min-height:44px;display:inline-flex;align-items:center;font-size:12.5px}
+
+/* verification-method selector */
+.ah-verification-view .ah-account-verify-badge,.ah-verification-view .ah-view-kicker{display:none}
+.ah-verification-view[data-mode="select"]{text-align:left}
+.ah-verification-view[data-mode="select"] .ah-account-view-title{margin:0;font-size:26px;line-height:1.4;text-align:left;letter-spacing:-.01em}
+.ah-verification-view[data-mode="select"] .ah-account-mask{margin:8px 0 16px;color:#7b8f88;font-size:13.5px}
+.ah-verification-view[data-mode="email"] .ah-account-view-title{display:none}
+.ah-verification-view .ah-method-stack{gap:12px}
+.ah-method-card{display:grid;grid-template-columns:52px minmax(0,1fr) auto;gap:12px;min-height:80px;padding:12px 14px;border:1.5px solid #e2ede9;border-radius:20px;background:#fff;box-shadow:0 10px 24px -16px rgba(12,62,50,.25)}
+.ah-method-card:hover{transform:translateY(-2px);border-color:#8acdb8}
+.ah-method-card.recommended{border-color:#bfe6d6;background:linear-gradient(160deg,#f4fcf9,#fff)}
+.ah-method-icon{width:52px;height:52px;border-radius:16px}
+.ah-method-icon svg{width:26px;height:26px;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.ah-method-icon.email{background:#e4f6ee;color:#0f8a63}
+.ah-method-icon.passkey{background:#eef4f2;color:#3d7a6a}
+.ah-method-icon.whatsapp{background:#e6f7ee;color:#12965f}
+.ah-method-icon.telegram{background:#e7f2fc;color:#2f8fd4}
+.ah-method-card>span:nth-child(2) strong{font-size:15.5px}
+.ah-method-card>span:nth-child(2) small{font-size:11px;line-height:1.5}
+.ah-method-status{display:block;margin-top:5px;color:#b0533f!important;font-weight:800}
+.ah-method-card>em{right:12px;top:-11px;padding:4px 10px;background:linear-gradient(135deg,#12ba87,#0b8a61);color:#fff;font-size:9px;box-shadow:0 8px 16px -8px rgba(7,110,80,.6)}
+.ah-method-trail{display:inline-flex;align-items:center;gap:8px}
+.ah-method-trail>b{font-size:24px;font-weight:400;color:#b9c6c1}
+.ah-method-check{display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:#12a876;color:#fff;box-shadow:0 8px 16px -8px rgba(7,110,80,.7)}
+.ah-method-check svg{width:15px;height:15px;stroke:currentColor;stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round}
+.ah-method-lock{display:grid;place-items:center;width:28px;height:28px;color:#8aa39a}
+.ah-method-lock svg{width:22px;height:22px;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.ah-method-card:disabled{cursor:not-allowed;opacity:.75}
+
+/* email screens (intro + waiting panel share the mail language) */
+.ah-mail-hero{position:relative;display:grid;place-items:center;margin:2px 0 12px;min-height:120px}
+.ah-mail-orb{position:relative;display:grid;place-items:center;width:108px;height:96px;border-radius:26px;background:linear-gradient(160deg,#f2fbf7,#e2f5ec);box-shadow:0 18px 34px -20px rgba(12,110,80,.5),inset 0 1px 0 #fff}
+.ah-mail-orb::before{content:"";position:absolute;inset:-14px;border-radius:50%;background:radial-gradient(circle at 50% 45%,rgba(18,186,135,.14),rgba(18,186,135,0) 68%)}
+.ah-mail-orb>svg{position:relative;z-index:1;width:52px;height:52px;stroke:#0f8a63;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.ah-mail-orb>i{position:absolute;z-index:2;right:18px;bottom:16px;display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:#12a876;color:#fff;box-shadow:0 0 0 5px rgba(18,168,118,.14)}
+.ah-mail-orb>i svg{width:16px;height:16px;stroke:currentColor;stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round}
+.ah-mail-shield-float{position:absolute;right:calc(50% - 78px);bottom:6px;display:grid;place-items:center;width:40px;height:40px;border-radius:50%;background:#fff;color:#0f8a63;box-shadow:0 12px 24px -12px rgba(12,62,50,.4)}
+.ah-mail-shield-float svg{width:20px;height:20px;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.ah-mail-chip,.ah-status-card>.ah-mail-chip{display:grid;place-items:center;width:48px;height:48px;flex:0 0 auto;border-radius:15px;background:#e4f6ee;color:#0f8a63}
+.ah-mail-chip svg{width:24px;height:24px;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.ah-mail-shield,.ah-status-card>.ah-mail-shield{display:grid;place-items:center;width:30px;height:30px;flex:0 0 auto;border-radius:0;background:transparent;color:#0f8a63}
+.ah-mail-shield svg{width:100%;height:100%;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.ah-mail-card>div{min-width:0;flex:1}
+.ah-email-address-card{display:flex;align-items:center;gap:12px;padding:12px 14px;border:1.5px solid #dbe9e4;border-radius:18px;background:#fff;box-shadow:0 12px 26px -18px rgba(12,62,50,.35);text-align:left}
+.ah-email-address-card>div{min-width:0;flex:1}
+.ah-email-address-card strong{display:block;color:#12302a;font-size:14.5px;font-weight:850;overflow-wrap:anywhere}
+.ah-email-address-card small{display:block;margin-top:3px;color:#83958e;font-size:11px;font-weight:650}
+.ah-title-mail{width:22px;height:22px;vertical-align:-4px;stroke:#0f8a63;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.ah-title-lock{width:21px;height:21px;vertical-align:-3px;stroke:#0f8a63;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.ah-mail-primary{display:flex;align-items:center;justify-content:center;gap:12px;min-height:58px;border-radius:18px;background:linear-gradient(135deg,#12ba87 0%,#0b8a61 55%,#076a4d 100%);box-shadow:0 16px 28px -14px rgba(6,110,80,.65),inset 0 1px 0 rgba(255,255,255,.28);font-size:16.5px}
+.ah-mail-primary b{font-size:18px;font-weight:800}
+.ah-mail-secondary{min-height:56px;border-radius:18px;font-size:15px}
+.ah-mail-resend{margin-top:14px;border:0;background:transparent;padding:0;text-align:center}
+.ah-mail-resend summary{display:inline-flex;align-items:center;min-height:44px;list-style:none;color:#5d7a72;font-size:13px;font-weight:800;cursor:pointer}
+.ah-mail-resend summary::-webkit-details-marker{display:none}
+.ah-mail-resend summary::before{content:"↻";margin-right:7px;color:#0f8a63;font-size:16px;font-weight:900}
+.ah-mail-resend form{margin-top:6px;padding:14px;border:1px solid #dce8e4;border-radius:16px;background:#fbfdfc;text-align:left}
+.ah-mini-journey{display:flex;align-items:flex-start;justify-content:center;gap:6px;margin:16px 0 2px}
+.ah-mini-journey>span{display:grid;justify-items:center;gap:5px;min-width:64px;color:#8aa39a;font-size:12px;font-weight:900}
+.ah-mini-journey>span.done{color:#0f8a63}
+.ah-mini-journey>span small{color:#7b8f88;font-size:8.5px;font-weight:700;line-height:1.35;text-align:center}
+.ah-mini-journey>i{width:34px;height:2px;margin-top:8px;border-radius:2px;background:#d7e5e0}
+.ah-email-intro-view .ah-calm-back{min-height:44px;margin-top:8px}
+
+/* telegram intro */
+.ah-tg-hero{position:relative;display:grid;place-items:center;margin:6px 0 14px;min-height:150px}
+.ah-tg-orbit{position:absolute;width:132px;height:132px;border:1.5px dashed #a9d8ef;border-radius:50%;animation:ahOrbit 16s linear infinite}
+.ah-tg-orb{position:relative;display:grid;place-items:center;width:88px;height:88px;border-radius:50%;background:linear-gradient(150deg,#45b9eb,#148ccb);box-shadow:0 18px 34px -14px rgba(28,151,207,.55),inset 0 1px 0 rgba(255,255,255,.35)}
+.ah-tg-orb svg{width:42px;height:42px;stroke:#fff;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.ah-tg-badge{position:absolute;display:grid;place-items:center;background:#fff;border-radius:50%;box-shadow:0 10px 22px -10px rgba(12,62,50,.4)}
+.ah-tg-badge.one{left:calc(50% - 78px);top:18px;width:38px;height:38px;color:#0f8a63}
+.ah-tg-badge.two{right:calc(50% - 82px);bottom:14px;width:46px;height:32px;border-radius:16px;color:#0f8a63}
+.ah-tg-badge svg{stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+.ah-tg-badge.one svg{width:18px;height:18px}
+.ah-tg-badge.two svg{width:24px;height:24px}
+.ah-tg-bot-card{display:flex;align-items:center;gap:12px;padding:12px 14px;border:1.5px solid #d5e8f4;border-radius:18px;background:linear-gradient(160deg,#f4faff,#fff);box-shadow:0 12px 26px -18px rgba(28,120,170,.4);text-align:left}
+.ah-tg-bot-chip{display:grid;place-items:center;width:48px;height:48px;flex:0 0 auto;border-radius:15px;background:#e3f1fb;color:#1d86c4}
+.ah-tg-bot-chip svg{width:24px;height:24px;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.ah-tg-bot-card>div{min-width:0;flex:1}
+.ah-tg-bot-card strong{display:block;color:#12302a;font-size:14.5px;font-weight:850}
+.ah-tg-bot-card small{display:block;margin-top:3px;color:#83958e;font-size:11px;font-weight:650}
+.ah-tg-shield{display:grid;place-items:center;width:30px;height:30px;flex:0 0 auto;color:#0f8a63}
+.ah-tg-shield svg{width:100%;height:100%;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.ah-tg-primary{display:flex;align-items:center;justify-content:center;gap:10px;min-height:58px;border-radius:18px;background:linear-gradient(135deg,#2aa9e6,#1683bd);box-shadow:0 16px 28px -14px rgba(27,148,207,.6),inset 0 1px 0 rgba(255,255,255,.28);font-size:16px}
+.ah-tg-btn-plane{display:grid;place-items:center;width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,.22)}
+.ah-tg-btn-plane svg{width:15px;height:15px;stroke:#fff;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.ah-tg-primary b{font-size:18px;font-weight:800}
+.ah-tg-truth{margin:12px 2px 0;color:#7b8f88;font-size:11px;font-weight:650;line-height:1.6;text-align:center}
+.ah-telegram-intro-view .ah-tg-back{min-height:56px;border-radius:18px;color:#0b6d52;font-size:15px}
+
+/* passkey setup */
+.ah-pk-hero{position:relative;display:grid;place-items:center;margin:2px 0 12px;min-height:170px}
+.ah-pk-ring{position:absolute;width:150px;height:150px;border:10px solid rgba(18,186,135,.12);border-radius:50%}
+.ah-pk-phone{position:relative;display:grid;place-items:center;width:88px;height:128px;border-radius:24px;background:linear-gradient(165deg,#ffffff,#eef7f4);box-shadow:0 20px 36px -20px rgba(12,110,80,.5),inset 0 0 0 1.5px #d5e8e1}
+.ah-pk-phone>i{position:absolute;top:9px;width:30px;height:7px;border-radius:4px;background:#12302a}
+.ah-pk-phone svg{width:46px;height:46px;stroke:#0f8a63;stroke-width:1.7;stroke-linecap:round}
+.ah-pk-badge{position:absolute;display:grid;place-items:center;width:46px;height:46px;border-radius:15px;background:#fff;color:#0f8a63;box-shadow:0 14px 26px -14px rgba(12,62,50,.45)}
+.ah-pk-badge svg{width:24px;height:24px;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.ah-pk-badge.one{left:calc(50% - 96px);bottom:22px}
+.ah-pk-badge.two{right:calc(50% - 100px);top:16px}
+.ah-pk-options{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:16px 0 0}
+.ah-pk-option{display:grid;justify-items:center;gap:8px;padding:14px 6px;border:1.5px solid #e2ede9;border-radius:18px;background:#fff;box-shadow:0 10px 22px -16px rgba(12,62,50,.3)}
+.ah-pk-option>span{display:grid;place-items:center;width:46px;height:46px;border-radius:15px;background:#eaf6f1;color:#0f8a63}
+.ah-pk-option svg{width:24px;height:24px;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.ah-pk-option strong{color:#284e43;font-size:12px;font-weight:850}
+.ah-pk-primary{display:flex;align-items:center;justify-content:center;gap:12px;min-height:58px;border-radius:18px;background:linear-gradient(135deg,#12ba87 0%,#0b8a61 55%,#076a4d 100%);box-shadow:0 16px 28px -14px rgba(6,110,80,.65),inset 0 1px 0 rgba(255,255,255,.28);font-size:16.5px}
+.ah-pk-primary b{font-size:18px;font-weight:800}
+.ah-pk-foot{display:flex;align-items:center;justify-content:center;gap:7px;margin:12px 0 0;color:#7b8f88;font-size:11.5px;font-weight:650;text-align:center}
+.ah-pk-foot svg{width:16px;height:16px;flex:0 0 auto;stroke:#7b8f88;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.ah-passkey-onboarding .ah-calm-back{min-height:44px;margin-top:6px;color:#284e43;font-size:14px;text-decoration:none}
+
+.ah-email-intro-view .ah-account-view-title,.ah-telegram-intro-view .ah-account-view-title,.ah-passkey-onboarding .ah-account-view-title{font-size:24px;line-height:1.4}
+
+@media(max-width:360px){
+  .ah-login-title{font-size:24px}
+  .ah-verification-view[data-mode="select"] .ah-account-view-title{font-size:23px}
+  .ah-method-card{grid-template-columns:46px minmax(0,1fr) auto;padding:10px 12px}
+  .ah-method-icon{width:46px;height:46px}
+  .ah-pk-option strong{font-size:10.5px}
+  .ah-tg-badge.one{left:calc(50% - 70px)}
+  .ah-tg-badge.two{right:calc(50% - 74px)}
+}
+@media(prefers-reduced-motion:reduce){
+  .ah-login-spark,.ah-tg-orbit{animation:none}
+}

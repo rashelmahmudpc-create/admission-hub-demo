@@ -137,21 +137,25 @@
           </footer>
         </div>
 
-        <form class="ah-account-view ah-login-view" data-view="login" novalidate>
-          <div class="ah-view-intro"><span class="ah-mini-orb" aria-hidden="true">↗</span><div><h3>আবার দেখা হলো! 👋</h3><p>তোমার account-এ নিরাপদে প্রবেশ করো।</p></div></div>
+        <form class="ah-account-view ah-login-view" data-view="login" data-login-contract="reference-login-v1" novalidate>
+          <div class="ah-login-hero" aria-hidden="true"><span class="ah-login-orb"><svg viewBox="0 0 24 24" fill="none"><path d="m6.5 12.4 4 4L17.6 8.6"/></svg></span><i class="ah-login-spark one">✦</i><i class="ah-login-spark two">✦</i><i class="ah-login-spark three">✦</i></div>
+          <h3 class="ah-login-title">আবার দেখা হলো <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 10.5a11 11 0 0 1 16 0"/><path d="M7 13.8a6.5 6.5 0 0 1 10 0"/><circle cx="12" cy="17.2" r="1.6"/></svg></h3>
+          <p class="ah-login-sub">তোমার preparation যেখানে থেমেছিল, সেখান থেকেই শুরু করো।</p>
+          <div class="ah-account-field ah-login-field"><label class="ah-account-label" for="ah-login-email"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3.2" y="5.6" width="17.6" height="12.8" rx="3.2"/><path d="m4.6 8.2 7.4 5 7.4-5"/></svg><span>EMAIL</span></label><input class="ah-account-input" id="ah-login-email" name="email" type="email" inputmode="email" autocomplete="email" maxlength="254" placeholder="student@gmail.com" required></div>
+          <div class="ah-account-field ah-login-field"><label class="ah-account-label" for="ah-login-password"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="5" y="10" width="14" height="10.5" rx="3.2"/><path d="M8.2 10V7.6a3.8 3.8 0 0 1 7.6 0V10"/></svg><span>PASSWORD</span></label><div class="ah-password-wrap"><input class="ah-account-input" id="ah-login-password" name="password" type="password" autocomplete="current-password" minlength="8" maxlength="128" placeholder="••••••••" required><button class="ah-password-toggle" type="button" data-password-target="ah-login-password" aria-label="Password দেখুন"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3.5 12S6 6.8 12 6.8 20.5 12 20.5 12 18 17.2 12 17.2 3.5 12 3.5 12Z"/><circle cx="12" cy="12" r="2.6"/></svg></button></div></div>
+          <div class="ah-login-row"><label class="ah-login-remember"><input type="checkbox" id="ah-login-remember" checked><span aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="m6.5 12.4 4 4L17.6 8.6"/></svg></span><b>Remember me</b></label><button class="ah-account-link ah-forgot-link" type="button" data-role="show-forgot">Forgot password?</button></div>
+          <button class="ah-account-primary ah-login-submit" type="submit"><span>Log In</span><b aria-hidden="true">→</b></button>
           <div class="ah-account-preferred" data-role="preferred-methods" hidden>
-            <p class="ah-account-preferred-label">দ্রুত প্রবেশ</p>
+            <div class="ah-account-divider"><span>OR</span></div>
             <div class="ah-account-google" data-role="google-button" hidden></div>
-            <button class="ah-account-method ah-account-passkey" type="button" data-role="passkey-login" hidden><span aria-hidden="true">◉</span><span>Use Passkey</span></button>
+            <button class="ah-account-method ah-account-passkey" type="button" data-role="passkey-login" hidden><span class="ah-passkey-key" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><circle cx="9" cy="14.5" r="4.5"/><path d="m12.5 11 8-8"/><path d="M16 6.5h4.5V11"/></svg></span><span>Use Passkey</span></button>
             <p class="ah-account-method-help" data-role="method-help" hidden></p>
-            <div class="ah-account-divider"><span>অথবা email দিয়ে</span></div>
           </div>
-          <div class="ah-account-field"><label class="ah-account-label" for="ah-login-email">Email address</label><input class="ah-account-input" id="ah-login-email" name="email" type="email" inputmode="email" autocomplete="email" maxlength="254" placeholder="you@email.com" required></div>
-          <div class="ah-account-field"><label class="ah-account-label" for="ah-login-password">Password</label><div class="ah-password-wrap"><input class="ah-account-input" id="ah-login-password" name="password" type="password" autocomplete="current-password" minlength="8" maxlength="128" placeholder="Password" required><button class="ah-password-toggle" type="button" data-password-target="ah-login-password" aria-label="Password দেখুন">দেখুন</button></div></div>
-          <button class="ah-account-link ah-forgot-link" type="button" data-role="show-forgot">Password মনে নেই?</button>
-          <button class="ah-account-primary" type="submit">Log In</button>
-          <p class="ah-account-switch">নতুন student? <button class="ah-account-link" type="button" data-role="show-signup">Sign Up</button></p>
-          <p class="ah-account-note">তোমার Password এই পেজে জমা রাখা হয় না।</p>
+          <div class="ah-help ah-login-help">
+            <button class="ah-help-fab" type="button" data-help-toggle="ah-login-help-card" aria-expanded="false" aria-controls="ah-login-help-card" aria-label="Log In নিয়ে সাহায্য"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="4.2" y="8.2" width="15.6" height="11" rx="5"/><path d="M12 8.2V5.6"/><circle cx="12" cy="4.4" r="1.4"/><circle cx="9.4" cy="13.2" r="1.1"/><circle cx="14.6" cy="13.2" r="1.1"/><path d="M9.7 16.4c1.5 1 3.1 1 4.6 0"/></svg></button>
+            <div class="ah-help-card" id="ah-login-help-card" hidden><strong>Log In করতে সমস্যা?</strong><ul><li>Password মনে না থাকলে Forgot password চাপো।</li><li>নতুন হলে নিচে Sign Up করো।</li><li>Passkey থাকলে এক ট্যাপে ঢুকতে পারো।</li></ul></div>
+          </div>
+          <p class="ah-account-switch">Don't have an account? <button class="ah-account-link" type="button" data-role="show-signup">Sign Up</button></p>
         </form>
 
         <form class="ah-account-view ah-forgot-view" data-view="forgot" hidden novalidate>
@@ -271,8 +275,8 @@
           <section class="ah-signup-panel ah-security-panel" data-signup-panel="security" hidden>
             <div class="ah-standalone-heading"><h3>Account নিরাপদ করো</h3><p>Email ও শক্তিশালী Password দিয়ে account তৈরি করো</p></div>
             <div class="ah-account-field"><label class="ah-account-label" for="ah-signup-email">তোমার Email</label><input class="ah-account-input" id="ah-signup-email" name="email" type="email" inputmode="email" autocomplete="email" maxlength="254" placeholder="you@email.com" required><p class="ah-field-feedback">Verification method বাছার আগে কোনো message পাঠানো হবে না।</p></div>
-            <div class="ah-account-field"><label class="ah-account-label" for="ah-signup-password">Password</label><div class="ah-password-wrap"><input class="ah-account-input" id="ah-signup-password" name="password" type="password" autocomplete="new-password" minlength="8" maxlength="128" placeholder="কমপক্ষে ৮ অক্ষর" required><button class="ah-password-toggle" type="button" data-password-target="ah-signup-password" aria-label="Password দেখুন">দেখুন</button></div><div class="ah-password-meter"><i data-role="password-meter"></i></div><p class="ah-field-feedback" data-role="password-strength">Password strength</p></div>
-            <div class="ah-account-field"><label class="ah-account-label" for="ah-signup-confirm">Confirm Password</label><div class="ah-password-wrap"><input class="ah-account-input" id="ah-signup-confirm" name="confirm" type="password" autocomplete="new-password" minlength="8" maxlength="128" placeholder="একই Password আবার লিখো" required><button class="ah-password-toggle" type="button" data-password-target="ah-signup-confirm" aria-label="Password দেখুন">দেখুন</button></div><p class="ah-field-feedback" data-role="password-match"></p></div>
+            <div class="ah-account-field"><label class="ah-account-label" for="ah-signup-password">Password</label><div class="ah-password-wrap"><input class="ah-account-input" id="ah-signup-password" name="password" type="password" autocomplete="new-password" minlength="8" maxlength="128" placeholder="কমপক্ষে ৮ অক্ষর" required><button class="ah-password-toggle" type="button" data-password-target="ah-signup-password" aria-label="Password দেখুন"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3.5 12S6 6.8 12 6.8 20.5 12 20.5 12 18 17.2 12 17.2 3.5 12 3.5 12Z"/><circle cx="12" cy="12" r="2.6"/></svg></button></div><div class="ah-password-meter"><i data-role="password-meter"></i></div><p class="ah-field-feedback" data-role="password-strength">Password strength</p></div>
+            <div class="ah-account-field"><label class="ah-account-label" for="ah-signup-confirm">Confirm Password</label><div class="ah-password-wrap"><input class="ah-account-input" id="ah-signup-confirm" name="confirm" type="password" autocomplete="new-password" minlength="8" maxlength="128" placeholder="একই Password আবার লিখো" required><button class="ah-password-toggle" type="button" data-password-target="ah-signup-confirm" aria-label="Password দেখুন"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3.5 12S6 6.8 12 6.8 20.5 12 20.5 12 18 17.2 12 17.2 3.5 12 3.5 12Z"/><circle cx="12" cy="12" r="2.6"/></svg></button></div><p class="ah-field-feedback" data-role="password-match"></p></div>
             <ul class="ah-password-rules" aria-label="Password requirements"><li data-password-rule="length">কমপক্ষে ৮ অক্ষর</li><li data-password-rule="uppercase">একটি বড় অক্ষর</li><li data-password-rule="number">একটি সংখ্যা</li></ul>
             <div class="ah-panel-actions ah-bottom-actions"><button class="ah-account-secondary" type="button" data-role="signup-back-education">← Back</button><button class="ah-account-primary" type="submit">Create Account →</button></div>
           </section>
@@ -326,41 +330,50 @@
           </section>
         </div>
 
-        <div class="ah-account-view ah-verification-view" data-view="verify" data-mode="select" hidden>
+        <div class="ah-account-view ah-verification-view" data-view="verify" data-mode="select" data-verify-contract="reference-verify-v1" hidden>
           <div class="ah-account-verify-badge" aria-hidden="true" data-role="verification-badge">✓</div>
           <p class="ah-view-kicker">ACCOUNT CREATED</p>
-          <h3 class="ah-account-view-title" data-role="verification-title">একটি ছোট verification বাকি</h3>
+          <h3 class="ah-account-view-title" data-role="verification-title">একটি verification method বেছে নাও</h3>
           <div data-role="verification-selection">
-            <p class="ah-account-mask">Account নিরাপদ রাখতে নিচের বাস্তব method-এর একটি বেছে নাও। পছন্দ করার আগে কোনো message পাঠানো হবে না।</p>
+            <p class="ah-account-mask">তোমার account নিরাপদ রাখতে নিচের যেকোনো একটি পদ্ধতি ব্যবহার করো।</p>
             <div class="ah-method-stack">
-              <button class="ah-method-card recommended" type="button" data-role="email-verification-start"><span class="ah-method-icon email" aria-hidden="true">✉</span><span><strong>Email Verification</strong><small>নিরাপদ link দিয়ে verify — Email OTP নয়</small></span><em>Recommended</em><b>›</b></button>
-              <button class="ah-method-card unavailable" type="button" disabled aria-disabled="true"><span class="ah-method-icon passkey" aria-hidden="true">⌘</span><span><strong>Passkey</strong><small>Verification শেষে optional security</small></span><b>🔒</b></button>
-              <button class="ah-method-card whatsapp unavailable" type="button" data-role="whatsapp-info" aria-describedby="ah-whatsapp-unavailable"><span class="ah-method-icon whatsapp" aria-hidden="true">◉</span><span><strong>WhatsApp</strong><small id="ah-whatsapp-unavailable">এখন verification পাওয়া যাচ্ছে না</small></span><b>i</b></button>
-              <button class="ah-method-card telegram" type="button" data-role="telegram-verification-start"><span class="ah-method-icon telegram" aria-hidden="true">➤</span><span><strong>Telegram</strong><small>Official bot-এর real ৬ সংখ্যার code</small></span><b>›</b></button>
+              <button class="ah-method-card recommended is-selected" type="button" data-role="email-verification-start"><span class="ah-method-icon email" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><rect x="3.2" y="5.6" width="17.6" height="12.8" rx="3.2"/><path d="m4.6 8.2 7.4 5 7.4-5"/></svg></span><span><strong>Email Verification</strong><small>সহজ ও দ্রুত · Email OTP নয়, নিরাপদ link</small></span><em>✦ Recommended</em><span class="ah-method-trail"><span class="ah-method-check" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="m6.5 12.4 4 4L17.6 8.6"/></svg></span><b aria-hidden="true">›</b></span></button>
+              <button class="ah-method-card unavailable" type="button" disabled aria-disabled="true"><span class="ah-method-icon passkey" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><circle cx="9" cy="14.5" r="4.5"/><path d="m12.5 11 8-8"/><path d="M16 6.5h4.5V11"/></svg></span><span><strong>Passkey</strong><small>দ্রুত ও নিরাপদ · Verification শেষে optional</small></span><span class="ah-method-trail"><b class="ah-method-lock" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><rect x="5" y="10" width="14" height="10.5" rx="3.2"/><path d="M8.2 10V7.6a3.8 3.8 0 0 1 7.6 0V10"/></svg></b></span></button>
+              <button class="ah-method-card whatsapp unavailable" type="button" data-role="whatsapp-info" aria-describedby="ah-whatsapp-unavailable"><span class="ah-method-icon whatsapp" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3.8c-4.5 0-8.2 3.6-8.2 8 0 1.5.4 2.9 1.2 4.2L3.8 20l4.1-1.1a8 8 0 0 0 4.1 1.1c4.5 0 8.2-3.6 8.2-8s-3.7-8.2-8.2-8.2Z"/><path d="M9 9.2c.5 2.3 2.5 4.3 4.8 4.8l1-1.2 1.9 1c-.3 1-.9 1.5-1.9 1.4-3.1-.4-5.8-3.1-6.2-6.2-.1-1 .4-1.6 1.4-1.9l1 1.9-1 1.2Z"/></svg></span><span><strong>WhatsApp</strong><small>WhatsApp দিয়ে verify</small><small class="ah-method-status" id="ah-whatsapp-unavailable">এখন verification পাওয়া যাচ্ছে না</small></span><span class="ah-method-trail"><b aria-hidden="true">›</b></span></button>
+              <button class="ah-method-card telegram" type="button" data-role="telegram-verification-start"><span class="ah-method-icon telegram" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M20.4 4.6 3.9 11.1l4.9 1.7 1.6 5.1 2.7-3.4 4.3 2.9 3-12.8Z"/><path d="m8.8 12.8 7.6-5.3-5.4 6.7"/></svg></span><span><strong>Telegram</strong><small>Telegram দিয়ে verify · Official bot-এর real ৬ সংখ্যার code</small></span><span class="ah-method-trail"><b aria-hidden="true">›</b></span></button>
             </div>
             <p class="ah-account-note">শুধু available method-ই কাজ করবে। Telegram Telegram account-এর নিয়ন্ত্রণ নিশ্চিত করে—Email মালিকানা নয়।</p>
+            <div class="ah-help ah-verify-help">
+              <button class="ah-help-fab" type="button" data-help-toggle="ah-verify-help-card" aria-expanded="false" aria-controls="ah-verify-help-card" aria-label="Verification নিয়ে সাহায্য"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="4.2" y="8.2" width="15.6" height="11" rx="5"/><path d="M12 8.2V5.6"/><circle cx="12" cy="4.4" r="1.4"/><circle cx="9.4" cy="13.2" r="1.1"/><circle cx="14.6" cy="13.2" r="1.1"/><path d="M9.7 16.4c1.5 1 3.1 1 4.6 0"/></svg></button>
+              <div class="ah-help-card" id="ah-verify-help-card" hidden><strong>কোনটি বেছে নেবে?</strong><ul><li>Email link সবচেয়ে সহজ — Spam folder-ও দেখো।</li><li>Telegram code শুধু secure box-এ লিখবে।</li><li>Passkey verification-এর পরে যোগ করা যাবে।</li></ul></div>
+              <p class="ah-help-line">অন্য কোনো সমস্যা? <button class="ah-account-link" type="button" data-help-toggle="ah-verify-help-card" aria-expanded="false" aria-controls="ah-verify-help-card">Help নাও</button></p>
+            </div>
           </div>
           <div data-role="verification-email-panel" hidden>
-            <div class="ah-email-hero" aria-hidden="true"><span>✉</span><i>✓</i></div>
+            <div class="ah-mail-hero" aria-hidden="true"><span class="ah-mail-orb"><svg viewBox="0 0 24 24" fill="none"><rect x="3" y="5.5" width="18" height="13" rx="3.5"/><path d="m4.5 8 7.5 5.2 7.5-5.2"/></svg><i><svg viewBox="0 0 24 24" fill="none"><path d="m6.5 12.4 4 4L17.6 8.6"/></svg></i></span><i class="ah-login-spark one">✦</i><i class="ah-login-spark two">✦</i><span class="ah-mail-shield-float"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3 5 6v5c0 4.8 2.5 8 7 10 4.5-2 7-5.2 7-10V6l-7-3Z"/><path d="m9.4 12.1 1.7 1.7 3.7-4"/></svg></span></div>
             <h3 class="ah-account-view-title">আমরা তোমার verification-এর অপেক্ষায় আছি…</h3>
             <p class="ah-account-mask" data-role="verification-email-copy">Verification link পাঠানো হয়েছে <strong data-role="mask">তোমার email-এ</strong>। Email app-এ link-এ tap করে এখানে ফিরে আসো।</p>
-            <div class="ah-status-card ah-waiting-status"><span></span><div><strong data-role="email-status-address">Verification pending…</strong><small>Email link খোলার অপেক্ষায়</small></div></div>
-            <button class="ah-account-primary" type="button" data-role="open-email">Open Email</button>
-            <button class="ah-account-secondary" type="button" data-role="verified-login">✓ আমি Verify করেছি — Check করুন</button>
+            <div class="ah-status-card ah-waiting-status ah-mail-card"><span class="ah-mail-chip" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><rect x="3.2" y="5.6" width="17.6" height="12.8" rx="3.2"/><path d="m4.6 8.2 7.4 5 7.4-5"/></svg></span><div><strong data-role="email-status-address">Verification pending…</strong><small>Email link খোলার অপেক্ষায়</small></div><span class="ah-mail-shield" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3 5 6v5c0 4.8 2.5 8 7 10 4.5-2 7-5.2 7-10V6l-7-3Z"/><path d="m9.4 12.1 1.7 1.7 3.7-4"/></svg></span></div>
+            <button class="ah-account-primary ah-mail-primary" type="button" data-role="open-email"><span>Open Email</span><b aria-hidden="true">→</b></button>
+            <button class="ah-account-secondary ah-mail-secondary" type="button" data-role="verified-login">✓ আমি Verify করেছি — Check করুন</button>
             <button class="ah-account-telegram" type="button" data-role="telegram-alternative" hidden><span class="ah-account-telegram-icon" aria-hidden="true">➤</span><span><strong>Telegram দিয়ে যাচাই</strong><small>অন্য যাচাই পদ্ধতি</small></span></button>
-            <details class="ah-account-resend"><summary>Email পাইনি?</summary><form data-role="resend-form" novalidate><div class="ah-account-field"><label class="ah-account-label" for="ah-resend-email">Email</label><input class="ah-account-input" id="ah-resend-email" type="email" autocomplete="email" maxlength="254" required></div><div class="ah-account-field"><label class="ah-account-label" for="ah-resend-password">Password</label><input class="ah-account-input" id="ah-resend-password" type="password" autocomplete="current-password" minlength="8" maxlength="128" required></div><p class="ah-account-resend-status" data-role="resend-status" aria-live="polite"></p><button class="ah-account-secondary" type="submit" data-role="resend-submit">Verification আবার পাঠান</button></form></details>
+            <details class="ah-account-resend ah-mail-resend"><summary>Verification email আবার পাঠান</summary><form data-role="resend-form" novalidate><div class="ah-account-field"><label class="ah-account-label" for="ah-resend-email">Email</label><input class="ah-account-input" id="ah-resend-email" type="email" autocomplete="email" maxlength="254" required></div><div class="ah-account-field"><label class="ah-account-label" for="ah-resend-password">Password</label><input class="ah-account-input" id="ah-resend-password" type="password" autocomplete="current-password" minlength="8" maxlength="128" required></div><p class="ah-account-resend-status" data-role="resend-status" aria-live="polite"></p><button class="ah-account-secondary" type="submit" data-role="resend-submit">Verification আবার পাঠান</button></form></details>
           </div>
           <p class="ah-account-switch"><button class="ah-account-link" type="button" data-role="verify-back">Log In-এ ফিরুন</button></p>
         </div>
 
-        <div class="ah-account-view ah-email-intro-view" data-view="email-intro" hidden>
-          <div class="ah-dark-email-illustration" aria-hidden="true"><i></i><span>✉</span><b>✓</b></div>
-          <h3 class="ah-account-view-title">তোমার Email-এ একটি ছোট্ট কাজ আছে</h3>
+        <div class="ah-account-view ah-email-intro-view" data-view="email-intro" data-email-contract="reference-email-v1" hidden>
+          <div class="ah-mail-hero" aria-hidden="true"><span class="ah-mail-orb"><svg viewBox="0 0 24 24" fill="none"><rect x="3" y="5.5" width="18" height="13" rx="3.5"/><path d="m4.5 8 7.5 5.2 7.5-5.2"/></svg><i><svg viewBox="0 0 24 24" fill="none"><path d="m6.5 12.4 4 4L17.6 8.6"/></svg></i></span><i class="ah-login-spark one">✦</i><i class="ah-login-spark two">✦</i><span class="ah-mail-shield-float"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3 5 6v5c0 4.8 2.5 8 7 10 4.5-2 7-5.2 7-10V6l-7-3Z"/><path d="m9.4 12.1 1.7 1.7 3.7-4"/></svg></span></div>
+          <h3 class="ah-account-view-title">তোমার Email-এ একটি ছোট্ট কাজ আছে <svg class="ah-title-mail" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3.2" y="5.6" width="17.6" height="12.8" rx="3.2"/><path d="m4.6 8.2 7.4 5 7.4-5"/></svg></h3>
           <p class="ah-account-mask">তোমার <strong>নিজের সিদ্ধান্তে</strong> নিচের button চাপলে একটি verification link পাঠানো হবে। Email-এ গিয়ে link-এ tap করো।</p>
-          <div class="ah-email-address-card"><span aria-hidden="true">✉</span><div><strong data-role="email-intro-address">তোমার Email</strong><small>এখনো নতুন link পাঠানো হয়নি</small></div></div>
+          <div class="ah-email-address-card ah-mail-card"><span class="ah-mail-chip" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><rect x="3.2" y="5.6" width="17.6" height="12.8" rx="3.2"/><path d="m4.6 8.2 7.4 5 7.4-5"/></svg></span><div><strong data-role="email-intro-address">তোমার Email</strong><small>এখনো নতুন link পাঠানো হয়নি</small></div><span class="ah-mail-shield" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3 5 6v5c0 4.8 2.5 8 7 10 4.5-2 7-5.2 7-10V6l-7-3Z"/><path d="m9.4 12.1 1.7 1.7 3.7-4"/></svg></span></div>
           <div class="ah-mini-journey" aria-label="Verification progress"><span class="done">✓<small>Account<br>Created</small></span><i></i><span>2<small>Email<br>Send</small></span><i></i><span>3<small>Enter<br>Admission Hub</small></span></div>
-          <button class="ah-account-primary ah-view-bottom-cta" type="button" data-role="email-intro-continue">Verification link পাঠান →</button>
-          <button class="ah-account-link ah-calm-back" type="button" data-role="email-intro-back">অন্য method বেছে নাও</button>
+          <div class="ah-help ah-email-help">
+            <button class="ah-help-fab" type="button" data-help-toggle="ah-email-help-card" aria-expanded="false" aria-controls="ah-email-help-card" aria-label="Email verification নিয়ে সাহায্য"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="4.2" y="8.2" width="15.6" height="11" rx="5"/><path d="M12 8.2V5.6"/><circle cx="12" cy="4.4" r="1.4"/><circle cx="9.4" cy="13.2" r="1.1"/><circle cx="14.6" cy="13.2" r="1.1"/><path d="M9.7 16.4c1.5 1 3.1 1 4.6 0"/></svg></button>
+            <div class="ah-help-card" id="ah-email-help-card" hidden><strong>Email link নিয়ে টিপস</strong><ul><li>Button চাপার পর Inbox, Spam ও Promotions দেখো।</li><li>Link-এ tap করে এখানে ফিরে এসো।</li><li>ফিরে এসে “আমি Verify করেছি” চাপো।</li></ul></div>
+          </div>
+          <button class="ah-account-primary ah-mail-primary ah-view-bottom-cta" type="button" data-role="email-intro-continue">Verification link পাঠান →</button>
+          <button class="ah-account-link ah-calm-back" type="button" data-role="email-intro-back">অন্য পদ্ধতি ব্যবহার করো</button>
         </div>
 
         <div class="ah-account-view ah-provider-info-view ah-whatsapp-info-view" data-view="whatsapp-info" hidden>
@@ -372,13 +385,18 @@
           <button class="ah-account-link ah-calm-back" type="button" data-role="whatsapp-info-back">অন্য method বেছে নাও</button>
         </div>
 
-        <div class="ah-account-view ah-provider-info-view ah-telegram-intro-view" data-view="telegram-intro" hidden>
-          <div class="ah-provider-phone telegram" aria-hidden="true"><span>➤</span><i>✓</i></div>
+        <div class="ah-account-view ah-provider-info-view ah-telegram-intro-view" data-view="telegram-intro" data-telegram-contract="reference-telegram-v1" hidden>
           <h3 class="ah-account-view-title">Telegram দিয়ে verify করো</h3>
-          <p class="ah-account-mask">Admission Hub-এর official bot খুলে START চাপলে real ৬ সংখ্যার code পাবে। Code শুধু secure OTP box-এ লিখবে—অন্য কোনো chat-এ নয়।</p>
-          <div class="ah-truth-card"><span>✓</span><div><strong>Real Telegram OTP</strong><small>Email ownership নয়; Telegram account control নিশ্চিত করে</small></div></div>
-          <button class="ah-account-primary ah-view-bottom-cta" type="button" data-role="telegram-intro-continue">Continue with Telegram →</button>
-          <button class="ah-account-link ah-calm-back" type="button" data-role="telegram-intro-back">অন্য method বেছে নাও</button>
+          <p class="ah-account-mask">Telegram খুলে verification request সম্পন্ন করো।</p>
+          <div class="ah-tg-hero" aria-hidden="true"><span class="ah-tg-orbit"></span><span class="ah-tg-orb"><svg viewBox="0 0 24 24" fill="none"><path d="M20.4 4.6 3.9 11.1l4.9 1.7 1.6 5.1 2.7-3.4 4.3 2.9 3-12.8Z"/><path d="m8.8 12.8 7.6-5.3-5.4 6.7"/></svg></span><span class="ah-tg-badge one"><svg viewBox="0 0 24 24" fill="none"><path d="m6.5 12.4 4 4L17.6 8.6"/></svg></span><span class="ah-tg-badge two"><svg viewBox="0 0 24 24" fill="none"><path d="m3.5 12.8 3.2 3.2 6.5-7.4"/><path d="m11 16 2.2 2.2 6.3-7.2"/></svg></span><i class="ah-login-spark one">✦</i><i class="ah-login-spark two">✦</i></div>
+          <div class="ah-tg-bot-card"><span class="ah-tg-bot-chip" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M20.4 4.6 3.9 11.1l4.9 1.7 1.6 5.1 2.7-3.4 4.3 2.9 3-12.8Z"/></svg></span><div><strong>Telegram Verification Bot</strong><small>⚡ Secure connection · End-to-end</small></div><span class="ah-tg-shield" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3 5 6v5c0 4.8 2.5 8 7 10 4.5-2 7-5.2 7-10V6l-7-3Z"/><path d="m9.4 12.1 1.7 1.7 3.7-4"/></svg></span></div>
+          <div class="ah-help ah-telegram-help">
+            <button class="ah-help-fab" type="button" data-help-toggle="ah-telegram-help-card" aria-expanded="false" aria-controls="ah-telegram-help-card" aria-label="Telegram verification নিয়ে সাহায্য"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="4.2" y="8.2" width="15.6" height="11" rx="5"/><path d="M12 8.2V5.6"/><circle cx="12" cy="4.4" r="1.4"/><circle cx="9.4" cy="13.2" r="1.1"/><circle cx="14.6" cy="13.2" r="1.1"/><path d="M9.7 16.4c1.5 1 3.1 1 4.6 0"/></svg></button>
+            <div class="ah-help-card" id="ah-telegram-help-card" hidden><strong>Telegram ধাপগুলো</strong><ul><li>Official bot খুলে START চাপো।</li><li>Bot-এর ৬ সংখ্যার code শুধু secure box-এ লিখবে।</li><li>এটি Email মালিকানার প্রমাণ নয়।</li></ul></div>
+          </div>
+          <button class="ah-account-primary ah-tg-primary ah-view-bottom-cta" type="button" data-role="telegram-intro-continue"><span class="ah-tg-btn-plane" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M20.4 4.6 3.9 11.1l4.9 1.7 1.6 5.1 2.7-3.4 4.3 2.9 3-12.8Z"/></svg></span><span>Continue with Telegram</span><b aria-hidden="true">→</b></button>
+          <p class="ah-tg-truth">Official bot-এ START চাপলে real ৬ সংখ্যার code পাবে — Email মালিকানা নয়, Telegram account control নিশ্চিত করে।</p>
+          <button class="ah-account-secondary ah-tg-back" type="button" data-role="telegram-intro-back">অন্য পদ্ধতি ব্যবহার করো</button>
         </div>
 
         <form class="ah-account-view ah-account-telegram-view" data-view="telegram" data-state="connecting" hidden novalidate>
@@ -402,7 +420,20 @@
           <button class="ah-account-primary ah-view-bottom-cta" type="button" data-role="verified-continue">Continue →</button>
         </div>
 
-        <div class="ah-account-view ah-passkey-onboarding" data-view="security-setup" hidden><div class="ah-passkey-hero" aria-hidden="true"><div><i></i><span>◉</span></div><b>✓</b></div><p class="ah-view-kicker">OPTIONAL SECURITY</p><h3 class="ah-account-view-title">এক ট্যাপেই নিরাপদে ঢুকবে 🔐</h3><p class="ah-account-mask">তোমার ফোনের Face ID, fingerprint বা device lock দিয়ে দ্রুত ও নিরাপদে account সুরক্ষিত করো। ফোনের নিজের অনুমতি screen-এ শেষ সিদ্ধান্ত তোমার।</p><button class="ah-account-primary ah-view-bottom-cta" type="button" data-role="setup-passkey">Create Passkey →</button><button class="ah-account-link ah-calm-back" type="button" data-role="setup-skip">আরও পরে করব</button><p class="ah-account-note">Passkey সম্পূর্ণ optional। Skip করলে Email, Password, Google বা Telegram বন্ধ হবে না।</p></div>
+        <div class="ah-account-view ah-passkey-onboarding" data-view="security-setup" data-passkey-contract="reference-passkey-v1" hidden>
+          <div class="ah-pk-hero" aria-hidden="true"><span class="ah-pk-ring"></span><span class="ah-pk-phone"><i></i><svg viewBox="0 0 24 24" fill="none"><path d="M6.5 19a7.5 7.5 0 0 1-.8-3.3 7.5 7.5 0 0 1 12.6-5.4"/><path d="M9 19a5 5 0 0 1-.6-2.3 5 5 0 0 1 8.3-3.7"/><path d="M12 12.5v4"/><path d="M17.5 15.6a7.5 7.5 0 0 1-1.9 3.2"/></svg></span><span class="ah-pk-badge one"><svg viewBox="0 0 24 24" fill="none"><path d="M4 8V6a2 2 0 0 1 2-2h2"/><path d="M16 4h2a2 2 0 0 1 2 2v2"/><path d="M20 16v2a2 2 0 0 1-2 2h-2"/><path d="M8 20H6a2 2 0 0 1-2-2v-2"/><circle cx="9.5" cy="11" r="1"/><circle cx="14.5" cy="11" r="1"/><path d="M9.5 14.5c1.6 1 3.4 1 5 0"/></svg></span><span class="ah-pk-badge two"><svg viewBox="0 0 24 24" fill="none"><circle cx="10.5" cy="10.5" r="5.5"/><path d="m14.8 14.8 4.7 4.7"/><path d="m17.5 17.5 1.8 1.8M19.3 17.5l-1.8 1.8"/></svg></span><i class="ah-login-spark one">✦</i><i class="ah-login-spark two">✦</i></div>
+          <h3 class="ah-account-view-title">এক ট্যাপেই নিরাপদে ঢুকবে <svg class="ah-title-lock" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="5" y="10" width="14" height="10.5" rx="3.2"/><path d="M8.2 10V7.6a3.8 3.8 0 0 1 7.6 0V10"/></svg></h3>
+          <p class="ah-account-mask">Face ID, fingerprint বা device lock ব্যবহার করে account secure করো।</p>
+          <div class="ah-pk-options"><div class="ah-pk-option"><span aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M4 8V6a2 2 0 0 1 2-2h2"/><path d="M16 4h2a2 2 0 0 1 2 2v2"/><path d="M20 16v2a2 2 0 0 1-2 2h-2"/><path d="M8 20H6a2 2 0 0 1-2-2v-2"/><circle cx="9.5" cy="11" r="1"/><circle cx="14.5" cy="11" r="1"/><path d="M9.5 14.5c1.6 1 3.4 1 5 0"/></svg></span><strong>Face ID</strong></div><div class="ah-pk-option"><span aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M6.5 19a7.5 7.5 0 0 1-.8-3.3 7.5 7.5 0 0 1 12.6-5.4"/><path d="M9 19a5 5 0 0 1-.6-2.3 5 5 0 0 1 8.3-3.7"/><path d="M12 12.5v4"/></svg></span><strong>Fingerprint</strong></div><div class="ah-pk-option"><span aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><rect x="5" y="10" width="14" height="10.5" rx="3.2"/><path d="M8.2 10V7.6a3.8 3.8 0 0 1 7.6 0V10"/></svg></span><strong>Device Lock</strong></div></div>
+          <div class="ah-help ah-passkey-help">
+            <button class="ah-help-fab" type="button" data-help-toggle="ah-passkey-help-card" aria-expanded="false" aria-controls="ah-passkey-help-card" aria-label="Passkey নিয়ে সাহায্য"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="4.2" y="8.2" width="15.6" height="11" rx="5"/><path d="M12 8.2V5.6"/><circle cx="12" cy="4.4" r="1.4"/><circle cx="9.4" cy="13.2" r="1.1"/><circle cx="14.6" cy="13.2" r="1.1"/><path d="M9.7 16.4c1.5 1 3.1 1 4.6 0"/></svg></button>
+            <div class="ah-help-card" id="ah-passkey-help-card" hidden><strong>Passkey কী?</strong><ul><li>ফোনের Face ID বা fingerprint-ই তোমার চাবি।</li><li>Password মনে রাখতে হয় না।</li><li>না চাইলে “পরে করব” চাপো।</li></ul></div>
+          </div>
+          <button class="ah-account-primary ah-pk-primary ah-view-bottom-cta" type="button" data-role="setup-passkey"><span>Create Passkey</span><b aria-hidden="true">→</b></button>
+          <p class="ah-pk-foot"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3 5 6v5c0 4.8 2.5 8 7 10 4.5-2 7-5.2 7-10V6l-7-3Z"/><path d="m9.4 12.1 1.7 1.7 3.7-4"/></svg><span>তোমার device-এর built-in security ব্যবহার করা হবে।</span></p>
+          <button class="ah-account-link ah-calm-back" type="button" data-role="setup-skip">পরে করব</button>
+          <p class="ah-account-note">Passkey সম্পূর্ণ optional। Skip করলে Email, Password, Google বা Telegram বন্ধ হবে না। ফোনের নিজের অনুমতি screen-এ শেষ সিদ্ধান্ত তোমার।</p>
+        </div>
 
         <div class="ah-account-view ah-success-view" data-view="success" hidden><div class="ah-success-check" aria-hidden="true"><svg viewBox="0 0 120 120"><circle cx="60" cy="60" r="46"/><path d="m38 61 14 14 31-34"/></svg></div><p class="ah-view-kicker">ALL SET</p><h3 class="ah-account-view-title">সব ঠিক আছে! 🎉</h3><p class="ah-account-mask">তোমার account এখন প্রস্তুত।</p><div class="ah-ready-list"><span data-role="ready-profile">… Profile details দেখা হচ্ছে</span><span>✓ Verification Complete</span><span>✓ Admission Hub Ready</span></div><button class="ah-account-primary" type="button" data-role="enter-app">Admission Hub-এ প্রবেশ করো →</button></div>
 
@@ -878,6 +909,28 @@
     });
   };
 
+  // Reference auth screens (v252): one generic toggle for every code-native help
+  // card on the login / verify / email / telegram / passkey screens. Plain div
+  // show/hide only - no dialog semantics, no network call, no AI routing.
+  const setupHelpToggles = () => {
+    pageHost.querySelectorAll('[data-help-toggle]').forEach(button => button.addEventListener('click', () => {
+      const card = button.getAttribute('aria-controls') ? document.getElementById(button.getAttribute('aria-controls')) : null;
+      if (!card) return;
+      const willOpen = card.hidden;
+      card.hidden = !willOpen;
+      pageHost.querySelectorAll('[data-help-toggle="' + button.dataset.helpToggle + '"]').forEach(peer => peer.setAttribute('aria-expanded', String(willOpen)));
+    }));
+  };
+
+  // "Remember me" keeps the email only in page memory (this tab session).
+  // Browser-persisted credential stores stay forbidden for client code
+  // (see the native-auth-protection guard).
+  let rememberedEmail = '';
+  const prefillRememberedEmail = () => {
+    const input = $('#ah-login-email');
+    if (rememberedEmail && input && !input.value) input.value = rememberedEmail;
+  };
+
   const setupInstitutionSearch = kind => {
     const input = kind === 'school' ? $('#ah-signup-school') : $('#ah-signup-college');
     const results = kind === 'school' ? $('#ah-school-results') : $('#ah-college-results');
@@ -1113,7 +1166,10 @@
     if (!keepMessage) message();
     const body = $('.ah-account-body');
     if (body) body.scrollTop = 0;
-    if (name === 'login') focusWhenUnclaimed(() => $('#ah-login-email'), 30);
+    if (name === 'login') {
+      prefillRememberedEmail();
+      focusWhenUnclaimed(() => $('#ah-login-email'), 30);
+    }
     if (name === 'signup') {
       populateDob();
       setSignupStep(state.signupStep || 'personal');
@@ -1136,7 +1192,7 @@
       if (verificationView) verificationView.dataset.mode = selecting ? 'select' : 'email';
       const currentMask = $('[data-role="mask"]');
       if (currentMask) currentMask.textContent = state.verification?.emailMasked || 'তোমার Email-এ';
-      $('[data-role="verification-title"]').textContent = selecting ? 'কিভাবে verify করতে চাও?' : 'Verification pending…';
+      $('[data-role="verification-title"]').textContent = selecting ? 'একটি verification method বেছে নাও' : 'Verification pending…';
       $('[data-role="verification-badge"]').textContent = selecting ? '✓' : '✉';
       $('[data-role="verification-selection"]').hidden = !selecting;
       $('[data-role="verification-email-panel"]').hidden = selecting;
@@ -1149,6 +1205,8 @@
       if (mask) mask.textContent = state.verification?.emailMasked || 'তোমার Email-এ';
       if (state.verification?.email) $('#ah-resend-email').value = state.verification.email;
       $('[data-role="telegram-alternative"]').hidden = !state.capabilities.telegram.available;
+      const emailStatusAddress = $('[data-role="email-status-address"]');
+      if (emailStatusAddress) emailStatusAddress.textContent = sent ? '\u2713 Verification email sent' : 'Verification pending\u2026';
       updateResendCooldown();
     }
     if (name === 'email-intro') {
@@ -1794,6 +1852,8 @@
     setupInstitutionSearch('school');
     setupInstitutionSearch('college');
     setupEducationAssist();
+    setupHelpToggles();
+    prefillRememberedEmail();
     $('#ah-telegram-code').addEventListener('input', renderTelegramDigits);
     $('#ah-signup-name').addEventListener('input', () => {
       const name = normalizedName();
@@ -1801,12 +1861,14 @@
     });
     $('#ah-signup-password').addEventListener('input', updatePasswordFeedback);
     $('#ah-signup-confirm').addEventListener('input', updatePasswordFeedback);
+    const EYE_OPEN = '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3.5 12S6 6.8 12 6.8 20.5 12 20.5 12 18 17.2 12 17.2 3.5 12 3.5 12Z"/><circle cx="12" cy="12" r="2.6"/></svg>';
+    const EYE_OFF = '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 4.5 20 19.5"/><path d="M9.9 7.1A8.6 8.6 0 0 1 12 6.8c6 0 8.5 5.2 8.5 5.2a17 17 0 0 1-3.3 3.7M6 8.6A16 16 0 0 0 3.5 12S6 17.2 12 17.2c1 0 1.9-.2 2.7-.4"/></svg>';
     pageHost.querySelectorAll('[data-password-target]').forEach(button => button.addEventListener('click', () => {
       const input = document.getElementById(button.dataset.passwordTarget);
       if (!input) return;
       const reveal = input.type === 'password';
       input.type = reveal ? 'text' : 'password';
-      button.textContent = reveal ? 'লুকান' : 'দেখুন';
+      button.innerHTML = reveal ? EYE_OFF : EYE_OPEN;
       button.setAttribute('aria-label', reveal ? 'Password লুকান' : 'Password দেখুন');
     }));
 
@@ -1984,6 +2046,7 @@
       const password = $('#ah-login-password').value;
       if (!email || !$('#ah-login-email').checkValidity()) return message('সঠিক ইমেইল ঠিকানা লিখুন।', 'error');
       if (password.length < 8) return message('পাসওয়ার্ডটি সঠিকভাবে লিখুন।', 'error');
+      rememberedEmail = $('#ah-login-remember')?.checked ? email : '';
       setBusy(true);
       try {
         const result = await api('/login', { method: 'POST', body: { email, password } });
