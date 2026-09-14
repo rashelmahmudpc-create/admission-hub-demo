@@ -1,30 +1,43 @@
-# LATEST — Phase 5 (Session & Recovery) started · Chunk 1 done
+# LATEST — Phase 5 (Session & Recovery) COMPLETE
 
 **Updated:** 2026-09-15 (Asia/Dhaka) · Agent: **Arena Agent Mode**
 
 ## STATUS
 
-- **APPROVED:** Phase 5 started (owner "Next" after gap analysis).
-- **DONE (Chunk 1/4):** server session core —
-  - `POST /api/auth/v1/session/logout-all` (multi-device revoke, audit
-    `logout-all`, other users untouched)
-  - `session-refreshed` telemetry on the explicit `/session` path only
-    (single DO round-trip, no extra network)
-  - 6 tests (session-recovery-api.test.mjs), wired into CI guard
-- **TESTED:** local all green — 62 + 108 + 4 + 239 + 6 new · bundle exact.
-- **DEPLOYED:** pending (Chunk 4 protected publish).
+- **PHASE 5 COMPLETE** — all 4 chunks done, deployed, live-verified.
+- **Commit:** `e61560d` (Chunks 2-4) on top of `9678c4a` (Chunk 1) — main.
+- **Deploy:** protected publish run **34892826370** — ✅ success.
+- **Live marker:** `v255-session-engine-20260915` /
+  `?v=20260915-session-engine-v1` on BOTH hosts:
+  - `admissionhub.pages.dev` ✅
+  - `sheikhrashel47-stack.github.io/admission-hub-demo/` ✅
+- **CI:** all 6 guards green (native-auth guard 34892820174 ✅).
+- **Tests:** local `test:production-auth` all green — 62 + 108 + 4 + 261
+  (test:native-auth now includes 6 session API + 16 chaos tests).
 
-## DETAIL
+## DELIVERED (Phase 5)
 
-- `AGENT_RESUME/2026-09-15-phase5-session-recovery.md`
-- Phase 5 gap baseline: server-side ~60-65% pre-existing (Phases 2-3);
-  client-side engine work is the remaining ~35%.
-- Phase 3 remains COMPLETE + PROTECTED; Phase 4 login/signup already live
-  (v252-v254) — Phase 5 does not replace either.
+- Server: `POST /session/logout-all` (multi-device revoke, audited) +
+  `session-refreshed` telemetry (explicit `/session` only, no tokens).
+- Client: session state machine (`data-session-state`), single-flight
+  refresh coordinator, bounded network retries (network ≠ logout),
+  terminal 401/403 clears session state only, recovery-before-retry
+  (one refresh + one retry, no loops), near-expiry schedule.
+- Multi-tab sync via BroadcastChannel only (zero browser storage);
+  deep-link anchor restore after re-login.
+- Remember-me: explicit `remember:false` → 7-day session
+  (`REMEMBER_OFF_TTL_MS`); default 30-day; refreshes extend full TTL.
+- "সব device থেকে Log Out" button (2-step arm) in the signed view.
+- `session-recovery-chaos.test.mjs` (16 tests) — `npm run test:session`
+  now 22 tests; wired into guard paths + CODEOWNERS.
+- `docs/SESSION-CORE-PROTECTION.md` — 11 frozen invariants.
+- Phase 5 final report: `docs/PHASE5-FINAL-REPORT.md`.
 
 ## STOP
 
-- Next: Chunk 2 — client session state machine + refresh coordinator +
-  recovery UX + error classification.
-- Invariants: server is the only session authority · refresh max-retry
-  (no infinite loop) · network failure ≠ logout · session ≠ identity.
+- **Phase gate:** Phase 6 শুরু করতে মালিকের explicit approval দরকার
+  (10-phase roadmap-এর mandatory gate)।
+- Protected Session Core এখন invariants অনুযায়ী change control-এ আছে
+  (`docs/SESSION-CORE-PROTECTION.md`) — session core বদলাতে হলে change
+  control flow মেনে চলা + owner approval।
+- Phase 3 (identity) + Phase 4 (login/signup) untouched & protected.
