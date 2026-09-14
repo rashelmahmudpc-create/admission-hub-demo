@@ -116,10 +116,12 @@ authentication authority; Supabase binding আর হবে না। Phase 3-�
 **Chunk 4 DONE** — Identity Regression Suite + guard wiring + protection
 contract + deactivation path (see above).
 
-Remaining:
-1. **Protected publish** (dispatch `telegram-auth-canary-activate.yml` with
-   `PUBLISH_TELEGRAM_OTP` on main) + live verify of the new endpoints
-2. **Phase 3 final report** (owner approval gate — STOP after report)
+**All remaining items DONE:**
+1. **Protected publish:** run #42 success (worker + Pages, main `00e4a4b`)
+2. **Live verify:** `/account` 401 no-session · `/identities` 401 no-session
+   · admin routes 403 no-token · `/config` 200 · homepage v254 intact
+3. **Phase 3 final report:** `docs/PHASE3-FINAL-REPORT.md` (all 23 items,
+   evidence-based) → **STOP at owner approval**
 
 ## 🚨 STOP / সতর্কতা
 
