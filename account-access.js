@@ -78,6 +78,9 @@
         <div class="ah-account-view ah-welcome-view" data-view="welcome" hidden data-page-contract="code-native-welcome-v1" data-media-contract="zero-raster-entry-v1">
           <div class="ah-code-ambient" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
 
+          <div class="ah-welcome-fit">
+            <div class="ah-welcome-fit-inner">
+
           <header class="ah-welcome-header">
             <div class="ah-brand-lockup" aria-label="Admission Hub">
               <span class="ah-brand-mark" aria-hidden="true"><svg viewBox="0 0 48 42" fill="none"><path d="M3 13 24 3l21 10-21 10L3 13Z"/><path d="M10 18v12c9 8 19 8 28 0V18"/><path d="M43 14v13"/><circle cx="43" cy="30" r="2.5"/></svg></span>
@@ -119,6 +122,8 @@
             <article><i class="improve" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M4 19h16M7 15l3-4 3 3 5-7M18 7l-5 6-3-3-4 4"/></svg></i><span><strong data-bn="Improve" data-en="Improve">Improve</strong><small data-bn="Track your progress" data-en="Track your progress">Track your progress</small></span></article>
             <article><i class="achieve" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3l2.4 5.2 5.7.6 4.8-4.6 2.1 10.5.6-1 6.9 6.7v-2.4m-.2-6-4.4 4.4 4.4-4.4Z"/></svg></i><span><strong data-bn="Achieve" data-en="Achieve">Achieve</strong><small data-bn="Your dream" data-en="Your dream">Your dream</small></span></article>
           </section>
+            </div>
+          </div>
 
           <div class="ah-entry-actions" aria-label="প্রবেশের পদ্ধতি">
             <button class="ah-account-primary ah-entry-signup" type="button" data-role="welcome-signup"><span class="ah-entry-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><circle cx="9" cy="8" r="3"/><path d="M3.5 19c.7-4 2.5-6 5.5-6s4.8 2 5.5 6M18 7v6m-3-3h6"/></svg></span><span data-bn="Sign Up" data-en="Sign Up">Sign Up</span><b aria-hidden="true">→</b></button>
@@ -365,6 +370,38 @@
       } else node.textContent = value;
     });
     document.documentElement.lang = selected;
+    requestAnimationFrame(() => fitWelcomeView());
+  };
+  // App-style guarantee: the first screen always fits ONE viewport, and nothing
+  // is removed on small devices. Only the upper content scales down; the four
+  // entry buttons keep their real, touchable size (44px+).
+  const fitWelcomeView = () => {
+    const view = $('.ah-welcome-view');
+    const fit = $('.ah-welcome-fit');
+    const inner = $('.ah-welcome-fit-inner');
+    if (!view || !fit || !inner || view.hidden) return;
+    fit.classList.remove('is-scaled');
+    fit.style.removeProperty('height');
+    fit.style.setProperty('--ah-fit', '1');
+    const viewStyle = getComputedStyle(view);
+    const inner2 =
+      parseFloat(viewStyle.paddingTop || 0) + parseFloat(viewStyle.paddingBottom || 0);
+    const innerHeight = view.clientHeight - inner2;
+    const natural = inner.scrollHeight;
+    if (!innerHeight || !natural) return;
+    const siblings = [...view.children].filter(node => node !== fit
+      && !node.hasAttribute('hidden')
+      && getComputedStyle(node).display !== 'none'
+      && !['fixed', 'absolute'].includes(getComputedStyle(node).position));
+    const gap = parseFloat(viewStyle.rowGap) || 0;
+    const fixed = siblings.reduce((sum, node) => sum + node.offsetHeight, 0) + gap * siblings.length;
+    const available = innerHeight - fixed;
+    if (available >= natural || available < 40) return;
+    const scale = Math.max(0.6, Math.round((available / natural) * 1000) / 1000);
+    fit.style.setProperty('--ah-fit', String(scale));
+    // a transform does not shrink the layout box, so reserve the scaled height
+    fit.style.height = `${Math.max(80, Math.floor(natural * scale) - 1)}px`;
+    fit.classList.add('is-scaled');
   };
   const message = (text = '', kind = 'info') => {
     const node = $('[data-role="message"]');
@@ -1624,6 +1661,10 @@
       welcomeLanguage.addEventListener('change', () => setWelcomeLanguage(welcomeLanguage.value));
       setWelcomeLanguage(welcomeLanguage.value);
     }
+    fitWelcomeView();
+    addEventListener('resize', fitWelcomeView);
+    addEventListener('orientationchange', fitWelcomeView);
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitWelcomeView).catch(() => {});
     setupDobDropdowns();
     setupInstitutionSearch('school');
     setupInstitutionSearch('college');
@@ -1643,6 +1684,7 @@
       button.setAttribute('aria-label', reveal ? 'Password লুকান' : 'Password দেখুন');
     }));
 
+    requestAnimationFrame(() => fitWelcomeView());
     $('[data-role="welcome-signup"]').addEventListener('click', () => {
       state.signupJourney = true;
       state.signupStep = 'personal';

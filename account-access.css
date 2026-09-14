@@ -482,97 +482,117 @@ body.ah-account-page-active>.ah-account-launcher{display:none!important}
 }
 @media(prefers-reduced-motion:reduce){
   .ah-ai-bot,.ah-ai-bubble,.ah-ai-spark,.ah-welcome-landscape *{animation:none!important;transition-duration:.01ms!important;translate:none;rotate:none;scale:1}
-}
-/* ===== v246 — single-screen app-style Welcome + premium action stack =====
-   The first-entry screen must never scroll: it fills exactly one viewport on
-   every device and distributes space with flex/grid instead of overflowing.
-   The four entry paths keep their ids, order and 44px+ touch targets. */
+}/* ===== v247 — app-style ONE-SCREEN Welcome (nothing removed, scaled to fit) =====
+   Everything stays on the page: brand header, journey console, the four benefit
+   modules and the four entry paths. The stack is sized with vh/vw-aware clamps
+   and, if a very short device still needs more room, only the upper content
+   scales down just enough (--ah-fit) so the screen never scrolls. The action
+   stack stays unscaled so every button keeps a real 44px+ touch target. */
 .ah-welcome-view{
   height:100dvh;
   max-height:100dvh;
   display:flex;
   flex-direction:column;
-  gap:clamp(6px,1.2vh,14px);
-  padding:calc(10px + env(safe-area-inset-top)) 0 calc(10px + env(safe-area-inset-bottom));
+  align-items:stretch;
+  justify-content:center;
+  gap:clamp(5px,1vh,12px);
+  padding:calc(9px + env(safe-area-inset-top)) 0 calc(9px + env(safe-area-inset-bottom));
   overflow:hidden;
 }
-.ah-welcome-header{flex:0 0 auto;min-height:0}
-.ah-brand-lockup small{margin-top:3px}
-.ah-language-picker select{height:43px}
-.ah-welcome-stage{
-  flex:1 1 auto;
-  min-height:0;
-  margin-top:clamp(6px,1.5vh,26px);
-  gap:clamp(8px,1.5vh,18px);
+.ah-welcome-fit{
+  position:relative;
+  width:100%;
+  flex:0 0 auto;
 }
-.ah-welcome-copy h1{font-size:clamp(23px,6.9vw,32px);line-height:1.15}
-.ah-welcome-eyebrow{margin-bottom:clamp(6px,1vh,12px);padding:5px 11px;font-size:10px}
+.ah-welcome-fit-inner{
+  display:flex;
+  flex-direction:column;
+  gap:clamp(5px,1.05vh,13px);
+}
+.ah-welcome-fit.is-scaled>.ah-welcome-fit-inner{
+  position:absolute;
+  top:0;
+  left:0;
+  width:100%;
+  transform:scale(var(--ah-fit,1));
+  transform-origin:top center;
+}
+.ah-welcome-fit>*{flex:0 0 auto}
+.ah-welcome-header{min-height:0}
+.ah-brand-mark{width:clamp(34px,5vh,44px);height:clamp(34px,5vh,44px);border-radius:clamp(11px,1.6vh,14px)}
+.ah-brand-mark svg{width:clamp(19px,2.8vh,26px);height:clamp(19px,2.8vh,26px)}
+.ah-brand-lockup{gap:clamp(8px,1.1vh,11px)}
+.ah-brand-lockup strong{font-size:clamp(15px,2.15vh,17.5px)}
+.ah-brand-lockup small{margin-top:3px;font-size:clamp(8.5px,1.15vh,10px)}
+.ah-language-picker::after{right:12px;font-size:14px}
+.ah-language-picker select{width:clamp(80px,24vw,96px);height:clamp(36px,5.1vh,46px);padding:0 26px 0 12px;font-family:inherit;font-size:clamp(12px,1.6vh,14px);text-overflow:ellipsis}
+.ah-welcome-stage{margin-top:0;gap:clamp(6px,1.15vh,20px)}
+.ah-welcome-copy h1{font-size:min(6.6vw,4.5vh,32px)}
+.ah-welcome-eyebrow{margin-bottom:clamp(5px,0.85vh,12px);padding:4px 10px;font-size:clamp(9px,1.25vh,10.5px);gap:7px}
+.ah-welcome-eyebrow>span{width:5px;height:5px}
 .ah-journey-console{
-  height:auto;
-  min-height:0;
   display:grid;
   grid-template-rows:auto auto auto auto auto;
   align-content:space-between;
-  gap:clamp(6px,1vh,12px);
-  padding:clamp(11px,1.8vh,18px) clamp(11px,3.4vw,17px);
+  gap:clamp(5px,0.95vh,12px);
+  padding:clamp(10px,1.75vh,17px) clamp(11px,3.4vw,17px);
+  min-height:0;
 }
 .ah-journey-console>.ah-console-head,
 .ah-journey-console>.ah-console-core,
 .ah-journey-console>.ah-route-track,
 .ah-journey-console>.ah-console-modules,
 .ah-journey-console>.ah-console-foot{margin-top:0}
-.ah-route-track{margin:0 9px;height:clamp(16px,2.4vh,22px)}
-.ah-console-core{padding:clamp(9px,1.6vh,12px) 13px}
-.ah-core-mark{width:clamp(44px,7vh,54px);height:clamp(44px,7vh,54px);border-radius:15px}
-.ah-console-modules article{padding:clamp(6px,1vh,9px) 7px}
-.ah-console-foot{padding-top:clamp(7px,1.1vh,10px)}
-.ah-welcome-benefits{display:none;flex:0 0 auto;margin-top:clamp(8px,1.5vh,24px)}
-.ah-welcome-landscape{flex:0 0 auto;height:clamp(0px,6.4vh,74px);margin-top:clamp(2px,0.8vh,8px)}
-/* Premium action stack — one aligned grid, soft depth, no heavy outlines. */
+.ah-console-head,.ah-console-foot{font-size:clamp(8px,1.1vh,9px)}
+.ah-console-head small{padding:4px 7px;font-size:clamp(7px,0.95vh,8px)}
+.ah-console-core{grid-template-columns:auto 1fr;gap:clamp(9px,1.4vh,13px);padding:clamp(8px,1.35vh,12px) clamp(10px,1.5vh,13px);border-radius:16px}
+.ah-core-mark{width:clamp(38px,6.1vh,54px);height:clamp(38px,6.1vh,54px);border-radius:clamp(12px,1.8vh,17px)}
+.ah-core-mark svg{width:clamp(24px,3.8vh,34px);height:clamp(24px,3.8vh,34px)}
+.ah-core-orbit{width:clamp(52px,8.4vh,74px);height:clamp(52px,8.4vh,74px)}
+.ah-console-core small{font-size:clamp(7px,0.95vh,8px)}
+.ah-console-core strong{margin-top:2px;font-size:clamp(12.5px,1.9vh,15px)}
+.ah-console-core>div:last-child>span{margin-top:2px;font-size:clamp(8.5px,1.25vh,10px)}
+.ah-route-track{height:clamp(14px,2.2vh,22px);margin:0 9px}
+.ah-console-modules{gap:clamp(5px,0.8vw,7px)}
+.ah-console-modules article{gap:clamp(5px,0.9vh,7px);padding:clamp(6px,1.05vh,9px) clamp(5px,1.4vw,7px);border-radius:12px}
+.ah-console-modules article>span{width:clamp(23px,3.6vh,29px);height:clamp(23px,3.6vh,29px);border-radius:8px}
+.ah-console-modules svg{width:clamp(14px,2.2vh,18px);height:clamp(14px,2.2vh,18px)}
+.ah-console-modules small{font-size:clamp(6px,0.85vh,6.5px)}
+.ah-console-modules strong{margin-top:1px;font-size:clamp(7.5px,1.1vh,8.5px)}
+.ah-console-foot{padding-top:clamp(6px,0.95vh,10px)}
+.ah-console-foot>b{font-size:clamp(8px,1.1vh,9px)}
+/* the four benefit modules stay on EVERY screen — just smaller */
+.ah-welcome-benefits{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:clamp(6px,1vh,10px);margin-top:0}
+.ah-welcome-benefits article{min-height:0;gap:clamp(7px,1.05vh,11px);padding:clamp(7px,1.1vh,12px);border-radius:clamp(14px,2vh,20px)}
+.ah-welcome-benefits article>i{width:clamp(30px,4.5vh,40px);height:clamp(30px,4.5vh,40px);border-radius:clamp(10px,1.5vh,14px)}
+.ah-welcome-benefits article>i svg{width:clamp(17px,2.5vh,22px);height:clamp(17px,2.5vh,22px)}
+.ah-welcome-benefits strong{font-size:clamp(11px,1.6vh,13.5px)}
+.ah-welcome-benefits small{margin-top:2px;font-size:clamp(9px,1.35vh,11.5px)}
+/* premium action stack — one aligned grid, compact but always 44px+ */
 .ah-entry-actions{
-  position:relative;
-  z-index:3;
   width:min(calc(100% - 32px),460px);
   display:grid;
-  gap:clamp(7px,1.05vh,11px);
-  box-sizing:border-box;
-  margin:clamp(9px,1.6vh,20px) auto 0;
+  gap:clamp(6px,0.95vh,11px);
+  margin:0 auto;
   flex:0 0 auto;
 }
 .ah-entry-actions button{
-  box-sizing:border-box;
-  width:100%;
-  min-height:56px;
+  min-height:clamp(46px,6.3vh,56px);
   display:grid;
   grid-template-columns:26px minmax(0,1fr) 26px;
   align-items:center;
   gap:9px;
-  margin:0;
   padding:0 13px;
-  border-radius:18px;
-  font-family:inherit;
-  font-size:14.5px;
+  border-radius:clamp(15px,2.1vh,18px);
+  font-size:clamp(13.5px,1.85vh,14.5px);
   font-weight:850;
   letter-spacing:.005em;
-  text-decoration:none;
-  cursor:pointer;
   transition:transform .18s cubic-bezier(.23,1,.32,1),box-shadow .18s ease,filter .18s ease;
 }
 .ah-entry-actions button:active{transform:scale(.985)}
-.ah-entry-actions button>span:nth-of-type(2),
 .ah-entry-actions button>span:not(.ah-entry-icon):not(.ah-google-g){justify-self:center;text-align:center}
 .ah-entry-actions button>.ah-entry-icon{justify-self:start}
-.ah-entry-actions button>b{
-  justify-self:end;
-  display:grid;
-  place-items:center;
-  width:26px;
-  height:26px;
-  border-radius:50%;
-  font-size:15px;
-  font-weight:800;
-  line-height:1;
-}
+.ah-entry-actions button>b{justify-self:end;display:grid;place-items:center;width:26px;height:26px;border-radius:50%;font-size:15px;font-weight:800;line-height:1}
 .ah-entry-icon{width:26px;height:26px;border-radius:9px;display:grid;place-items:center}
 .ah-entry-icon svg{width:19px;height:19px}
 .ah-account-shell[data-visual-contract="code-native-page-system-v1"] .ah-entry-signup{
@@ -581,7 +601,7 @@ body.ah-account-page-active>.ah-account-launcher{display:none!important}
   color:#fff;
   box-shadow:0 14px 26px -12px rgba(6,110,80,.62),inset 0 1px 0 rgba(255,255,255,.28);
 }
-.ah-account-shell[data-visual-contract="code-native-page-system-v1"] .ah-entry-signup .ah-entry-icon{background:rgba(255,255,255,.18);color:#fff}
+.ah-account-shell[data-visual-contract="code-native-page-system-v1"] .ah-entry-signup .ah-entry-icon,
 .ah-account-shell[data-visual-contract="code-native-page-system-v1"] .ah-entry-signup>b{background:rgba(255,255,255,.18);color:#fff}
 .ah-account-shell[data-visual-contract="code-native-page-system-v1"] .ah-entry-login{
   border:1px solid rgba(9,120,88,.16);
@@ -589,29 +609,21 @@ body.ah-account-page-active>.ah-account-launcher{display:none!important}
   color:#0d5a43;
   box-shadow:0 10px 22px -14px rgba(12,84,66,.45),inset 0 1px 0 #fff;
 }
-.ah-account-shell[data-visual-contract="code-native-page-system-v1"] .ah-entry-login .ah-entry-icon{background:#eefaf4;color:#0d8c66}
+.ah-account-shell[data-visual-contract="code-native-page-system-v1"] .ah-entry-login .ah-entry-icon,
 .ah-account-shell[data-visual-contract="code-native-page-system-v1"] .ah-entry-login>b{background:#eefaf4;color:#0d8c66}
 .ah-welcome-google{width:100%;min-height:0;display:block;overflow:visible;border:0;border-radius:0;background:transparent;box-shadow:none}
 .ah-welcome-google>div{width:100%!important;max-width:100%!important}
 .ah-welcome-google .ah-account-secondary{
-  min-height:56px;
+  min-height:clamp(46px,6.3vh,56px);
   margin:0;
   border:1px solid rgba(9,120,88,.14);
-  border-radius:18px;
+  border-radius:clamp(15px,2.1vh,18px);
   background:#fff;
   color:#22403a;
   box-shadow:0 10px 22px -14px rgba(12,84,66,.35),inset 0 1px 0 #fff;
 }
 .ah-welcome-google button>b{display:none}
-.ah-google-g{
-  width:26px;
-  height:26px;
-  display:grid;
-  place-items:center;
-  border-radius:50%;
-  background:#fff;
-  box-shadow:inset 0 0 0 1px rgba(17,80,64,.12);
-}
+.ah-google-g{width:26px;height:26px;display:grid;place-items:center;border-radius:50%;background:#fff;box-shadow:inset 0 0 0 1px rgba(17,80,64,.12)}
 .ah-google-g::before{
   content:"G";
   display:grid;
@@ -628,64 +640,41 @@ body.ah-account-page-active>.ah-account-launcher{display:none!important}
 }
 .ah-account-shell[data-visual-contract="code-native-page-system-v1"] .ah-entry-guest{
   min-height:0;
-  height:46px;
+  height:clamp(44px,5.4vh,46px);
   border:0;
   border-radius:16px;
   background:transparent;
   color:#0f6b52;
   box-shadow:none;
-  font-size:14px;
+  font-size:clamp(13px,1.8vh,14px);
 }
-.ah-account-shell[data-visual-contract="code-native-page-system-v1"] .ah-entry-guest .ah-entry-icon{display:none}
+.ah-account-shell[data-visual-contract="code-native-page-system-v1"] .ah-entry-guest .ah-entry-icon,
 .ah-account-shell[data-visual-contract="code-native-page-system-v1"] .ah-entry-guest>b{display:none}
-.ah-account-shell[data-visual-contract="code-native-page-system-v1"] .ah-entry-guest>span{
-  grid-column:1/-1;
-  justify-self:center;
-  text-decoration:underline;
-  text-decoration-color:rgba(15,107,82,.35);
-  text-underline-offset:4px;
-}
+.ah-account-shell[data-visual-contract="code-native-page-system-v1"] .ah-entry-guest>span{grid-column:1/-1;justify-self:center;text-decoration:underline;text-decoration-color:rgba(15,107,82,.35);text-underline-offset:4px}
 .ah-entry-actions button:focus-visible{outline:3px solid rgba(9,132,96,.26);outline-offset:3px}
+.ah-welcome-landscape{height:clamp(0px,5.4vh,74px);margin-top:0;flex:0 0 auto}
 @media(max-width:759px){
   .ah-welcome-stage{grid-template-rows:auto auto;align-content:center}
-  .ah-journey-console{width:100%}
 }
 @media(min-width:760px){
-  .ah-welcome-stage{grid-template-columns:minmax(0,.9fr) minmax(420px,1.1fr);align-items:center;margin-top:clamp(12px,2.2vh,42px)}
-  .ah-welcome-copy h1{font-size:clamp(34px,3.1vw,42px)}
-  .ah-journey-console{min-height:clamp(300px,46vh,430px)}
-  .ah-welcome-benefits{display:grid}
-  .ah-welcome-benefits article{min-height:clamp(62px,8.4vh,78px)}
-  .ah-welcome-landscape{height:clamp(0px,7vh,74px)}
-}
-@media(max-height:700px){
-  .ah-welcome-landscape{display:none}
-  .ah-welcome-copy h1{font-size:clamp(21px,6.2vw,27px)}
-  .ah-welcome-eyebrow{font-size:9.5px;margin-bottom:5px}
-  .ah-journey-console{padding:10px 11px;gap:5px}
-  .ah-console-core{padding:8px 11px}
-  .ah-console-foot{padding-top:6px}
-  .ah-entry-actions{gap:6px;margin-top:8px}
-  .ah-entry-actions button{min-height:48px;border-radius:16px;font-size:14px}
-  .ah-welcome-google .ah-account-secondary{min-height:48px;border-radius:16px}
-  .ah-account-shell[data-visual-contract="code-native-page-system-v1"] .ah-entry-guest{height:40px}
-}
-@media(max-height:600px){
-  .ah-brand-lockup small{display:none}
-  .ah-welcome-eyebrow{display:none}
-  .ah-console-head small{display:none}
-  .ah-entry-actions button{min-height:44px}
-  .ah-welcome-google .ah-account-secondary{min-height:44px}
-}
-
-/* v246.1 — balance the one-screen layout and widen the desktop action row */
-.ah-welcome-stage{flex:0 1 auto;margin-top:auto}
-.ah-entry-actions{margin-bottom:auto}
-@media(min-width:760px){
+  .ah-welcome-stage{grid-template-columns:minmax(0,.9fr) minmax(420px,1.1fr);align-items:center;gap:clamp(20px,2.4vw,34px)}
+  .ah-welcome-copy h1{font-size:clamp(34px,3vw,44px)}
+  .ah-journey-console{min-height:clamp(300px,44vh,430px)}
+  .ah-welcome-benefits{grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+  .ah-welcome-benefits article{min-height:clamp(62px,8.2vh,78px)}
   .ah-entry-actions{width:min(calc(100% - 32px),900px);grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
   .ah-entry-actions>.ah-welcome-google{grid-column:auto}
   .ah-entry-actions>.ah-entry-guest{grid-column:1/-1}
-  .ah-entry-actions button{min-height:58px;font-size:15px}
-  .ah-welcome-google .ah-account-secondary{min-height:58px}
-  .ah-welcome-copy h1{font-size:clamp(34px,3vw,44px)}
+  .ah-entry-actions button,.ah-welcome-google .ah-account-secondary{min-height:clamp(50px,6.4vh,58px)}
+}
+@media(max-height:700px){
+  .ah-welcome-landscape{display:none}
+}
+@media(max-height:660px){
+  .ah-brand-lockup small{display:none}
+  .ah-console-foot>b{display:none}
+}
+@media(max-height:560px){
+  .ah-console-head small{display:none}
+  .ah-console-modules small{display:none}
 }
