@@ -824,3 +824,152 @@ body.ah-account-page-active>.ah-account-launcher{display:none!important}
   .ah-education-panel .ah-edu-assist{margin-top:auto}
   .ah-education-panel .ah-education-actions{margin:14px 0 0}
 }
+
+/* ===== Account Created screen — premium success screen (v251) =====
+   Scoped to .ah-created-view only, so every other screen keeps its approved design.
+   Code-native: inline SVG, gradients and CSS only — no raster, no url() backgrounds. */
+.ah-created-view{
+  display:flex;
+  flex-direction:column;
+  gap:14px;
+  width:min(calc(100% - 40px),430px);
+  margin:0 auto;
+}
+
+/* hero emblem */
+.ah-created-hero{display:grid;justify-items:center;gap:10px;padding:2px 0 0;text-align:center}
+.ah-created-emblem{position:relative;display:grid;place-items:center;width:104px;height:104px}
+.ah-created-emblem svg{
+  position:relative;
+  z-index:2;
+  width:46px;
+  height:46px;
+  stroke:#fff;
+  stroke-width:2.4;
+  stroke-linecap:round;
+  stroke-linejoin:round;
+  filter:drop-shadow(0 2px 6px rgba(0,60,40,.18));
+}
+.ah-created-emblem::before{
+  content:"";
+  position:absolute;
+  inset:14px;
+  border-radius:50%;
+  background:linear-gradient(150deg,#16c98f 0%,#0b8f65 58%,#07694c 100%);
+  box-shadow:0 18px 34px -16px rgba(6,110,80,.7),inset 0 1px 0 rgba(255,255,255,.35);
+}
+.ah-created-emblem::after{
+  content:"";
+  position:absolute;
+  inset:0;
+  border-radius:50%;
+  background:radial-gradient(circle at 50% 45%,rgba(18,186,135,.18),rgba(18,186,135,0) 68%);
+  animation:ahCreatedPulse 3.4s ease-in-out infinite;
+}
+.ah-created-ring{position:absolute;inset:5px;border:1px solid rgba(18,186,135,.34);border-radius:50%}
+.ah-created-spark{position:absolute;color:#f0b134;font-size:15px;font-style:normal;font-weight:900;line-height:1;animation:ahSparkTwinkle 2.8s ease-in-out infinite}
+.ah-created-spark.one{top:2px;right:14px}
+.ah-created-spark.two{bottom:10px;left:6px;font-size:11px;animation-delay:.7s}
+.ah-created-spark.three{top:26px;left:-2px;font-size:9px;color:#12ba87;animation-delay:1.3s}
+@keyframes ahCreatedPulse{0%,100%{transform:scale(1);opacity:.9}50%{transform:scale(1.06);opacity:1}}
+@keyframes ahSparkTwinkle{0%,100%{opacity:.45;transform:scale(.86)}50%{opacity:1;transform:scale(1.08)}}
+@media(prefers-reduced-motion:reduce){
+  .ah-created-emblem::after,.ah-created-spark{animation:none}
+}
+.ah-created-view .ah-account-view-title{margin:0;font-size:24px;letter-spacing:-.01em}
+.ah-created-view .ah-account-mask{max-width:330px;margin:0;color:#6d847d;font-size:13.5px;font-weight:600;line-height:1.65}
+
+/* saved-profile card */
+.ah-created-card{
+  padding:12px 14px 10px;
+  border:1px solid #dbe9e4;
+  border-radius:20px;
+  background:linear-gradient(160deg,#fbfefd,#f1f9f6);
+  box-shadow:0 14px 30px -22px rgba(12,62,50,.35);
+}
+.ah-created-card-head{display:flex;align-items:center;gap:11px}
+.ah-created-card-icon{
+  display:grid;
+  place-items:center;
+  width:40px;
+  height:40px;
+  flex:0 0 auto;
+  border-radius:13px;
+  background:#e4f5ee;
+  color:#0f8a63;
+}
+.ah-created-card-icon svg{width:21px;height:21px;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.ah-created-card-titles{display:grid;gap:2px;min-width:0}
+.ah-created-card-titles strong{color:#0f2c26;font-size:14.5px;font-weight:900;letter-spacing:-.01em}
+.ah-created-card-titles small{color:#7f938c;font-size:11.5px;font-weight:650}
+.ah-created-rows{margin:12px 0 0;padding:0}
+.ah-created-rows>div{
+  display:grid;
+  grid-template-columns:98px minmax(0,1fr);
+  align-items:baseline;
+  gap:9px;
+  padding:7px 0;
+  border-top:1px dashed #dfece7;
+}
+.ah-created-rows>div:first-child{border-top:0}
+.ah-created-rows dt{color:#7c918a;font-size:12px;font-weight:750}
+.ah-created-rows dd{margin:0;color:#12302a;font-size:13.5px;font-weight:800;line-height:1.45;overflow-wrap:anywhere}
+.ah-created-card-foot{margin:10px 0 0;color:#87998f;font-size:10.5px;font-weight:650;line-height:1.5}
+
+/* next-step card */
+.ah-created-next{
+  margin-top:2px;
+  padding:12px 14px 13px;
+  border:1px solid #d7e7e1;
+  border-radius:20px;
+  background:#fff;
+  box-shadow:0 14px 30px -24px rgba(12,62,50,.4);
+}
+.ah-created-next-head{display:grid;gap:4px}
+.ah-created-next-kicker{color:#12a876;font-size:9.5px;font-weight:900;letter-spacing:.14em;text-transform:uppercase}
+.ah-created-next-head strong{color:#0f2c26;font-size:15px;font-weight:900;letter-spacing:-.01em}
+.ah-created-next-copy{margin:7px 0 0;color:#6d847d;font-size:11.5px;font-weight:600;line-height:1.6}
+.ah-created-next-list{margin:11px 0 0;padding:0;display:grid;gap:7px;list-style:none}
+.ah-created-next-list li{display:flex;align-items:center;gap:10px}
+.ah-created-next-icon{
+  display:grid;
+  place-items:center;
+  width:32px;
+  height:32px;
+  flex:0 0 auto;
+  border-radius:10px;
+  background:#eef7f3;
+  color:#0f8a63;
+}
+.ah-created-next-icon.telegram{background:#e9f2fb;color:#2f7dc4}
+.ah-created-next-icon svg{width:17px;height:17px;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.ah-created-next-list strong{display:block;color:#12302a;font-size:12.5px;font-weight:850}
+.ah-created-next-list small{display:block;color:#83958e;font-size:10.5px;font-weight:650}
+
+/* actions */
+.ah-created-actions{display:grid;gap:8px;margin-top:2px}
+.ah-created-view .ah-view-bottom-cta{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:12px;
+  width:100%;
+  min-height:58px;
+  border:0;
+  border-radius:18px;
+  background:linear-gradient(135deg,#12ba87 0%,#0b8a61 55%,#076a4d 100%);
+  color:#fff;
+  font-size:16.5px;
+  font-weight:850;
+  box-shadow:0 16px 28px -14px rgba(6,110,80,.65),inset 0 1px 0 rgba(255,255,255,.28);
+}
+.ah-created-footnote{margin:0;text-align:center;color:#8c9c96;font-size:10.5px;font-weight:650;line-height:1.5}
+
+@media(max-width:760px){
+  .ah-created-view{min-height:calc(100svh - 150px - env(safe-area-inset-top));padding-bottom:calc(12px + env(safe-area-inset-bottom))}
+}
+@media(max-width:360px){
+  .ah-created-rows>div{grid-template-columns:92px minmax(0,1fr)}
+  .ah-created-view .ah-account-view-title{font-size:23px}
+  .ah-created-emblem{width:100px;height:100px}
+}
