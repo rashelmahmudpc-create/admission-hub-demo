@@ -459,7 +459,7 @@ export class SqliteAuthRepository {
     });
   }
 
-  async getExternalSession({ sessionRef, provider, subjectRef, emailRef, now }) {
+  async getExternalSession({ sessionRef, provider, subjectRef, emailRef, now, trackRefresh = false }) {
     return this.#transaction(() => {
       const row = this.#one(
         `SELECT s.expires_at AS expiresAt,s.last_seen_at AS lastSeenAt,
@@ -475,6 +475,7 @@ export class SqliteAuthRepository {
       if (now - Number(row.lastSeenAt) > 6 * 60 * 60 * 1000) {
         this.sql.exec('UPDATE auth_sessions SET last_seen_at=? WHERE session_ref=?', now, sessionRef);
       }
+      if (trackRefresh) this.#event('session-refreshed', subjectRef, row.id, now);
       return {
         expiresAt: Number(row.expiresAt),
         user: { id: row.id, emailMask: row.emailMask, status: row.status, createdAt: Number(row.createdAt) }
@@ -940,6 +941,22 @@ export class SqliteAuthRepository {
       this.sql.exec('UPDATE auth_sessions SET revoked_at=? WHERE session_ref=?', now, sessionRef);
       this.#event('logout', null, null, now);
       return { revoked: true };
+    });
+  }
+
+  // Phase 5 — logout-all: revoke every session for one user. Other users'
+  // sessions are untouched (multi-device isolation, blueprint §10-12).
+  async revokeUserSessions({ userId, now }) {
+    return this.#transaction(() => {
+      const user = this.#one('SELECT user_id AS id FROM auth_users WHERE user_id=?', userId);
+      if (!user) return { error: AUTH_ERROR_CODES.ACCOUNT_NOT_FOUND };
+      const open = this.#one('SELECT COUNT(*) AS count FROM auth_sessions WHERE user_id=? AND revoked_at IS NULL', userId);
+      const count = Number(open?.count || 0);
+      if (count > 0) {
+        this.sql.exec('UPDATE auth_sessions SET revoked_at=? WHERE user_id=? AND revoked_at IS NULL', now, userId);
+      }
+      this.#event('logout-all', null, userId, now);
+      return { revoked: count };
     });
   }
 

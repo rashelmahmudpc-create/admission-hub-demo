@@ -275,6 +275,12 @@ export class AdmissionAuthAuthority {
         const result = await this.engine.revokeSession(body.sessionToken);
         return response(200, { ok: true, result });
       }
+      if (url.pathname === '/internal/session/revoke-all') {
+        const session = await this.engine.getFirebaseSession(body.sessionToken, body.input);
+        const result = await this.repository.revokeUserSessions({ userId: session.user.id, now: Date.now() });
+        if (result.error) throw new NativeAuthError(result.error);
+        return response(200, { ok: true, result });
+      }
       return response(404, { ok: false, error: { code: 'NOT_FOUND' } });
     } catch (cause) {
       const error = asNativeAuthError(cause);

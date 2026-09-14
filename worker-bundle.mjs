@@ -3869,6 +3869,7 @@ var requiredRepositoryMethods = Object.freeze([
   "getExternalSession",
   "getSession",
   "revokeSession",
+  "revokeUserSessions",
   "getAccountState",
   "setAccountState",
   "identitySnapshot",
@@ -4073,7 +4074,8 @@ var CloudflareNativeAuthEngine = class {
       provider: "firebase",
       subjectRef: identity.subjectRef,
       emailRef: identity.refs.emailRef,
-      now: Number(this.now())
+      now: Number(this.now()),
+      trackRefresh: Boolean(input.trackRefresh)
     }));
     return Object.freeze({ expiresAt: result.expiresAt, user: publicUser(result.user) });
   }
@@ -5236,7 +5238,7 @@ var telegramVerificationAvailable = async (env, allowed) => {
     return false;
   }
 };
-var firebaseReadySession = async ({ provider, jar, env, context, allowTelegram = false }) => {
+var firebaseReadySession = async ({ provider, jar, env, context, allowTelegram = false, trackRefresh = false }) => {
   const sessionToken = jar[AUTH_SESSION_COOKIE];
   const refreshToken = jar[AUTH_FIREBASE_COOKIE];
   if (!sessionToken || !refreshToken) throw new NativeAuthError(AUTH_ERROR_CODES.SESSION_INVALID);
@@ -5257,7 +5259,7 @@ var firebaseReadySession = async ({ provider, jar, env, context, allowTelegram =
   if (!user.emailVerified && !telegramVerified) throw new NativeAuthError(AUTH_ERROR_CODES.EMAIL_NOT_VERIFIED);
   const session = await callAuthority(env, "/internal/firebase/session/get", {
     sessionToken,
-    input: { email: user.email, subject: user.subject }
+    input: { email: user.email, subject: user.subject, ...trackRefresh ? { trackRefresh: true } : {} }
   });
   return Object.freeze({ sessionToken, refreshed, user, session, telegramVerified });
 };
@@ -6281,7 +6283,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         return json3(request, 200, { ok: true, ...result });
       }
       if (request.method === "GET" && url.pathname === `${AUTH_API_PREFIX}/session`) {
-        const current = await firebaseReadySession({ provider, jar, env, context, allowTelegram: telegramVerificationRequested(env, url) });
+        const current = await firebaseReadySession({ provider, jar, env, context, allowTelegram: telegramVerificationRequested(env, url), trackRefresh: true });
         const maxAge = Math.max(1, Math.min(SESSION_SECONDS, Math.floor((Number(current.session.expiresAt) - Date.now()) / 1e3)));
         return json3(request, 200, {
           ok: true,
@@ -6298,6 +6300,14 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         const sessionToken = jar[AUTH_SESSION_COOKIE];
         if (sessionToken) await callAuthority(env, "/internal/session/revoke", { sessionToken });
         return json3(request, 200, { ok: true, authenticated: false }, { "Set-Cookie": clearAuthCookies() });
+      }
+      if (request.method === "POST" && url.pathname === `${AUTH_API_PREFIX}/session/logout-all`) {
+        const current = await firebaseReadySession({ provider, jar, env, context, allowTelegram: telegramVerificationRequested(env, url) });
+        const result = await callAuthority(env, "/internal/session/revoke-all", {
+          sessionToken: current.sessionToken,
+          input: { email: current.user.email, subject: current.user.subject }
+        });
+        return json3(request, 200, { ok: true, authenticated: false, revoked: Number(result?.revoked || 0) }, { "Set-Cookie": clearAuthCookies() });
       }
       return json3(request, 404, { ok: false, error: { code: "NOT_FOUND", message: "Endpoint পাওয়া যায়নি।" } });
     } catch (cause) {
@@ -7136,7 +7146,7 @@ var SqliteAuthRepository = class {
       return { established: true, created, user };
     });
   }
-  async getExternalSession({ sessionRef, provider, subjectRef, emailRef, now }) {
+  async getExternalSession({ sessionRef, provider, subjectRef, emailRef, now, trackRefresh = false }) {
     return this.#transaction(() => {
       const row = this.#one(
         `SELECT s.expires_at AS expiresAt,s.last_seen_at AS lastSeenAt,
@@ -7155,6 +7165,7 @@ var SqliteAuthRepository = class {
       if (now - Number(row.lastSeenAt) > 6 * 60 * 60 * 1e3) {
         this.sql.exec("UPDATE auth_sessions SET last_seen_at=? WHERE session_ref=?", now, sessionRef);
       }
+      if (trackRefresh) this.#event("session-refreshed", subjectRef, row.id, now);
       return {
         expiresAt: Number(row.expiresAt),
         user: { id: row.id, emailMask: row.emailMask, status: row.status, createdAt: Number(row.createdAt) }
@@ -7680,6 +7691,21 @@ var SqliteAuthRepository = class {
       this.sql.exec("UPDATE auth_sessions SET revoked_at=? WHERE session_ref=?", now, sessionRef);
       this.#event("logout", null, null, now);
       return { revoked: true };
+    });
+  }
+  // Phase 5 — logout-all: revoke every session for one user. Other users'
+  // sessions are untouched (multi-device isolation, blueprint §10-12).
+  async revokeUserSessions({ userId, now }) {
+    return this.#transaction(() => {
+      const user = this.#one("SELECT user_id AS id FROM auth_users WHERE user_id=?", userId);
+      if (!user) return { error: AUTH_ERROR_CODES.ACCOUNT_NOT_FOUND };
+      const open = this.#one("SELECT COUNT(*) AS count FROM auth_sessions WHERE user_id=? AND revoked_at IS NULL", userId);
+      const count = Number(open?.count || 0);
+      if (count > 0) {
+        this.sql.exec("UPDATE auth_sessions SET revoked_at=? WHERE user_id=? AND revoked_at IS NULL", now, userId);
+      }
+      this.#event("logout-all", null, userId, now);
+      return { revoked: count };
     });
   }
   async ping() {
@@ -9809,6 +9835,12 @@ var AdmissionAuthAuthority = class {
       }
       if (url.pathname === "/internal/session/revoke") {
         const result = await this.engine.revokeSession(body.sessionToken);
+        return response2(200, { ok: true, result });
+      }
+      if (url.pathname === "/internal/session/revoke-all") {
+        const session = await this.engine.getFirebaseSession(body.sessionToken, body.input);
+        const result = await this.repository.revokeUserSessions({ userId: session.user.id, now: Date.now() });
+        if (result.error) throw new NativeAuthError(result.error);
         return response2(200, { ok: true, result });
       }
       return response2(404, { ok: false, error: { code: "NOT_FOUND" } });

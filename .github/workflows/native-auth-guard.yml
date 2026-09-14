@@ -14,6 +14,7 @@ on:
       - 'identity-lifecycle.test.mjs'
       - 'account-state-runtime.test.mjs'
       - 'account-state-api.test.mjs'
+      - 'session-recovery-api.test.mjs'
       - 'account-access.js'
       - 'account-access.css'
       - 'institutions-bd.js'

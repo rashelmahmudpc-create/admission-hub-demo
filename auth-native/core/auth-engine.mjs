@@ -93,7 +93,7 @@ const FIREBASE_OPERATION_LIMITS = Object.freeze({
 
 const requiredRepositoryMethods = Object.freeze([
   'consumeLimits', 'establishExternalSession',
-  'getExternalSession', 'getSession', 'revokeSession',
+  'getExternalSession', 'getSession', 'revokeSession', 'revokeUserSessions',
   'getAccountState', 'setAccountState',
   'identitySnapshot', 'listLinkedIdentities',
   'beginFirebaseAccountVerification', 'getFirebaseAccountVerification',
@@ -300,7 +300,8 @@ export class CloudflareNativeAuthEngine {
       provider: 'firebase',
       subjectRef: identity.subjectRef,
       emailRef: identity.refs.emailRef,
-      now: Number(this.now())
+      now: Number(this.now()),
+      trackRefresh: Boolean(input.trackRefresh)
     }));
     return Object.freeze({ expiresAt: result.expiresAt, user: publicUser(result.user) });
   }

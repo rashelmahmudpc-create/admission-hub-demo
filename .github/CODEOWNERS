@@ -6,6 +6,7 @@
 /identity-lifecycle.test.mjs @sheikhrashel47-stack
 /account-state-runtime.test.mjs @sheikhrashel47-stack
 /account-state-api.test.mjs @sheikhrashel47-stack
+/session-recovery-api.test.mjs @sheikhrashel47-stack
 /native-auth*.test.mjs @sheikhrashel47-stack
 /firebase-auth-ui.test.mjs @sheikhrashel47-stack
 /account-access.js @sheikhrashel47-stack

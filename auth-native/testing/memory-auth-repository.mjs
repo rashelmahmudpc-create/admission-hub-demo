@@ -123,7 +123,7 @@ export class MemoryAuthRepository {
     return { established: true, created, user: copy(user) };
   }
 
-  async getExternalSession({ sessionRef, provider, subjectRef, emailRef, now }) {
+  async getExternalSession({ sessionRef, provider, subjectRef, emailRef, now, trackRefresh = false }) {
     const session = this.sessions.get(sessionRef);
     if (!session || session.revokedAt || session.expiresAt <= now) return { error: AUTH_ERROR_CODES.SESSION_INVALID };
     const user = this.users.get(session.userId);
@@ -131,6 +131,7 @@ export class MemoryAuthRepository {
     if (!user || !identity || identity.userId !== user.id || user.emailRef !== emailRef) return { error: AUTH_ERROR_CODES.SESSION_INVALID };
     if (user.status !== 'active') return { error: AUTH_ERROR_CODES.ACCOUNT_DISABLED };
     if (now - session.lastSeenAt > 6 * 60 * 60 * 1000) session.lastSeenAt = now;
+    if (trackRefresh) this.events.push({ type: 'session-refreshed', subjectRef, userId: user.id, at: now });
     return { expiresAt: session.expiresAt, user: copy(user) };
   }
 
@@ -443,6 +444,19 @@ export class MemoryAuthRepository {
     if (!session || session.revokedAt) return { revoked: false };
     session.revokedAt = now;
     return { revoked: true };
+  }
+
+  async revokeUserSessions({ userId, now }) {
+    if (!this.users.has(userId)) return { error: AUTH_ERROR_CODES.ACCOUNT_NOT_FOUND };
+    let revoked = 0;
+    for (const session of this.sessions.values()) {
+      if (session.userId === userId && !session.revokedAt) {
+        session.revokedAt = now;
+        revoked += 1;
+      }
+    }
+    this.events.push({ type: 'logout-all', userId, at: now });
+    return { revoked };
   }
 
   async identitySnapshot() {

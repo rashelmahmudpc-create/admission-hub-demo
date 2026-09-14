@@ -252,7 +252,7 @@ const telegramVerificationAvailable = async (env, allowed) => {
   } catch { return false; }
 };
 
-const firebaseReadySession = async ({ provider, jar, env, context, allowTelegram = false }) => {
+const firebaseReadySession = async ({ provider, jar, env, context, allowTelegram = false, trackRefresh = false }) => {
   const sessionToken = jar[AUTH_SESSION_COOKIE];
   const refreshToken = jar[AUTH_FIREBASE_COOKIE];
   if (!sessionToken || !refreshToken) throw new NativeAuthError(AUTH_ERROR_CODES.SESSION_INVALID);
@@ -265,7 +265,7 @@ const firebaseReadySession = async ({ provider, jar, env, context, allowTelegram
   if (!user.emailVerified && !telegramVerified) throw new NativeAuthError(AUTH_ERROR_CODES.EMAIL_NOT_VERIFIED);
   const session = await callAuthority(env, '/internal/firebase/session/get', {
     sessionToken,
-    input: { email: user.email, subject: user.subject }
+    input: { email: user.email, subject: user.subject, ...(trackRefresh ? { trackRefresh: true } : {}) }
   });
   return Object.freeze({ sessionToken, refreshed, user, session, telegramVerified });
 };
@@ -1212,7 +1212,9 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
       }
 
       if (request.method === 'GET' && url.pathname === `${AUTH_API_PREFIX}/session`) {
-        const current = await firebaseReadySession({ provider, jar, env, context, allowTelegram: telegramVerificationRequested(env, url) });
+        // Explicit session bootstrap: the single tracked refresh/revalidation
+        // path (telemetry: 'session-refreshed'). No extra DO round-trip.
+        const current = await firebaseReadySession({ provider, jar, env, context, allowTelegram: telegramVerificationRequested(env, url), trackRefresh: true });
         const maxAge = Math.max(1, Math.min(SESSION_SECONDS, Math.floor((Number(current.session.expiresAt) - Date.now()) / 1000)));
         return json(request, 200, {
           ok: true,
@@ -1230,6 +1232,16 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         const sessionToken = jar[AUTH_SESSION_COOKIE];
         if (sessionToken) await callAuthority(env, '/internal/session/revoke', { sessionToken });
         return json(request, 200, { ok: true, authenticated: false }, { 'Set-Cookie': clearAuthCookies() });
+      }
+      if (request.method === 'POST' && url.pathname === `${AUTH_API_PREFIX}/session/logout-all`) {
+        // Phase 5 §12: revoke every session for the current user on every
+        // device. Requires a valid session; other users' sessions untouched.
+        const current = await firebaseReadySession({ provider, jar, env, context, allowTelegram: telegramVerificationRequested(env, url) });
+        const result = await callAuthority(env, '/internal/session/revoke-all', {
+          sessionToken: current.sessionToken,
+          input: { email: current.user.email, subject: current.user.subject }
+        });
+        return json(request, 200, { ok: true, authenticated: false, revoked: Number(result?.revoked || 0) }, { 'Set-Cookie': clearAuthCookies() });
       }
 
       return json(request, 404, { ok: false, error: { code: 'NOT_FOUND', message: 'Endpoint পাওয়া যায়নি।' } });
