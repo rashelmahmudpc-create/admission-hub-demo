@@ -151,8 +151,19 @@ try {
     'Sign Up', 'Log In', 'Continue with Google', 'Continue as Guest'
   ]);
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), true, 'iPhone page has horizontal overflow');
-  assert.equal(await page.evaluate(() => document.documentElement.scrollHeight <= innerHeight + 1), true, 'iPhone Welcome must fit one screen without scrolling');
-  assert.deepEqual(await page.locator('.ah-entry-actions button').evaluateAll(b => b.map(n => Math.round(n.getBoundingClientRect().height) >= 44)), [true, true, true, true], 'every entry path keeps a 44px+ touch target while fitting one screen');
+  // v248 owner rule: the Welcome page may scroll (a normal web page), but nothing
+  // may be hidden and nothing may be scaled/shrunk to fake a fit.
+  assert.equal(await page.evaluate(() => [...document.querySelectorAll('.ah-welcome-benefits article')]
+    .filter(n => getComputedStyle(n).display !== 'none' && getComputedStyle(n).visibility !== 'hidden'
+      && n.getBoundingClientRect().height > 8).length), 4, 'all four benefit cards must stay visible on a phone');
+  assert.equal(await page.evaluate(() => [...document.querySelectorAll('.ah-welcome-view, .ah-welcome-view *')]
+    .filter(n => n.classList.contains('ah-welcome-fit') || n.classList.contains('ah-welcome-fit-inner')
+      || n.classList.contains('is-scaled') || (n.style && n.style.getPropertyValue('--ah-fit'))).length), 0,
+    'Welcome content must not be scaled or wrapped in a fit/shrink layer');
+  assert.equal(await page.evaluate(() => [document.querySelector('.ah-journey-console'), document.querySelector('.ah-welcome-copy h1'), document.querySelector('.ah-welcome-landscape')]
+    .every(n => Boolean(n) && getComputedStyle(n).display !== 'none' && getComputedStyle(n).visibility !== 'hidden')), true,
+    'console, heading and Welcome art must all render on a phone');
+  assert.deepEqual(await page.locator('.ah-entry-actions button').evaluateAll(b => b.map(n => Math.round(n.getBoundingClientRect().height) >= 44)), [true, true, true, true], 'every entry path keeps a natural 44px+ touch target');
   const mobileWelcomeGeometry = await page.locator('.ah-account-shell').evaluate(node => {
     const box = node.getBoundingClientRect();
     return { width: box.width, height: box.height, viewportWidth: innerWidth, viewportHeight: innerHeight };
