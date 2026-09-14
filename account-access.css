@@ -974,7 +974,7 @@ body.ah-account-page-active>.ah-account-launcher{display:none!important}
   .ah-created-emblem{width:100px;height:100px}
 }
 
-/* ===== Auth reference screens (v253) — owner reference design, 2026-09-14 =====
+/* ===== Auth reference screens (v254) — owner reference design, 2026-09-14 =====
    Login, verification-method selector, email, telegram-intro and passkey-setup
    screens rebuilt code-native from the five owner reference images (IMG_4009,
    IMG_4010, IMG_4012, IMG_4013, IMG_4018). Inline SVG + gradients + CSS only:
@@ -997,14 +997,18 @@ body.ah-account-page-active>.ah-account-launcher{display:none!important}
 .ah-login-title{margin:0;display:flex;align-items:center;justify-content:center;gap:8px;color:#0e2c25;font-size:27px;font-weight:900;letter-spacing:-.02em;text-align:center}
 .ah-login-title svg{width:24px;height:24px;flex:0 0 auto;stroke:#e8a33d;stroke-width:2;stroke-linecap:round;fill:none}
 .ah-login-sub{margin:8px 0 18px;color:#7b8f88;font-size:13.5px;font-weight:600;line-height:1.65;text-align:center}
-.ah-login-view .ah-login-field{margin:0 0 12px;padding:10px 14px 12px;border:1.5px solid #dce8e4;border-radius:18px;background:#fff;box-shadow:0 8px 20px -14px rgba(12,62,50,.25);transition:border-color .18s ease,box-shadow .18s ease}
+.ah-login-view .ah-login-field{margin:0 0 10px;padding:8px 14px 9px;border:1.5px solid #dce8e4;border-radius:16px;background:#fff;box-shadow:0 8px 20px -14px rgba(12,62,50,.25);transition:border-color .18s ease,box-shadow .18s ease}
 .ah-login-view .ah-login-field:focus-within{border-color:#12a876;box-shadow:0 0 0 4px rgba(18,168,118,.12)}
-.ah-login-view .ah-login-field .ah-account-label{display:flex;align-items:center;gap:7px;margin:0 0 2px;color:#8a9c95;font-size:10.5px;font-weight:900;letter-spacing:.1em}
-.ah-login-view .ah-login-field .ah-account-label svg{width:15px;height:15px;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
-.ah-login-view .ah-login-field .ah-account-input{height:44px;padding:0;border:0;border-radius:0;background:transparent;box-shadow:none;color:#12302a;font-size:17px;font-weight:800}
-.ah-login-view .ah-login-field .ah-account-input:focus{box-shadow:none}
+.ah-login-view .ah-login-field .ah-account-label{display:flex;align-items:center;gap:7px;margin:0 0 1px;color:#8a9c95;font-size:10px;font-weight:900;letter-spacing:.1em}
+.ah-login-view .ah-login-field .ah-account-label svg{width:14px;height:14px;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.ah-login-view .ah-login-field .ah-account-input{height:38px;padding:0;border:0;border-radius:0;background:transparent;box-shadow:none;color:#12302a;font-size:16px;font-weight:800;-webkit-appearance:none;appearance:none}
+.ah-login-view .ah-login-field .ah-account-input:focus{outline:0;box-shadow:none}
+.ah-login-view .ah-login-field .ah-account-input:focus-visible{outline:0}
+.ah-login-view .ah-login-field .ah-account-input:-webkit-autofill,.ah-login-view .ah-login-field .ah-account-input:-webkit-autofill:hover,.ah-login-view .ah-login-field .ah-account-input:-webkit-autofill:focus,.ah-login-view .ah-login-field .ah-account-input:-webkit-autofill:active{-webkit-box-shadow:0 0 0 1000px #fff inset;box-shadow:0 0 0 1000px #fff inset;-webkit-text-fill-color:#12302a;caret-color:#12302a;border:0;border-radius:0}
+.ah-login-view .ah-login-field .ah-account-input:autofill{box-shadow:0 0 0 1000px #fff inset;border:0}
 .ah-login-view .ah-login-field .ah-account-input::placeholder{color:#a7b6b1;font-weight:600}
 .ah-login-view .ah-password-wrap .ah-account-input{padding-right:52px}
+.ah-login-view .ah-password-wrap .ah-password-toggle{height:36px}
 .ah-password-toggle{position:absolute;right:4px;top:50%;translate:0 -50%;width:44px;height:44px;display:grid;place-items:center;padding:0;border:0;border-radius:12px;background:#eef6f3;color:#4c7a6d;cursor:pointer}
 .ah-password-toggle:hover{background:#e2f2ea;color:#0f8a63}
 .ah-password-toggle svg{width:22px;height:22px;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
