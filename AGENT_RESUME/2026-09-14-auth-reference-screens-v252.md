@@ -68,3 +68,10 @@ memory only.
   zero JS errors, no duplicate ids, no media tags, no dialog semantics.
 - Browser audit not re-runnable here (no Playwright browsers in sandbox);
   unit + smoke coverage is green, CI runs the audit on publish.
+
+## Publish run 34860006309 (2026-09-14 ~15:06Z) — outcome
+- Dispatched `telegram-auth-canary-activate.yml` on main (PUBLISH_TELEGRAM_OTP). Steps 1–16 SUCCESS (tests, worker deploy, Pages deploy of v252).
+- Step 17 "Verify public selector..." FAILED transiently: Pages deploy completed 15:08:52.848Z, verify step started ~0.1s later and exited 1 after ~9s with zero output — a no-retry check (config/node assert at top of step) hit an inconsistent edge response mid-cutover. No sleep/retry iterations ran; curl printed no error.
+- PROOF it was transient: extracted the exact 125-line step-17 script and re-ran it verbatim against live admissionhub.pages.dev → EXIT 0, all ~78 asserts pass (config contracts, markers, zero-raster, retired-media, sw.js).
+- Worker auto-rolled back to 7a713f83 (v251's version; redeployed code was identical, so functionally no change). Live config checks pass against it now.
+- Net state: v252 LIVE and fully verified on BOTH admissionhub.pages.dev and github.io. The red ✗ is a false alarm from the cutover race. Optional: re-dispatch publish for a green tick (same code, idempotent; carries the same tiny race risk, so not required).
