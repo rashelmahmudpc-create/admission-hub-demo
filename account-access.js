@@ -167,14 +167,15 @@
               <span class="ah-signup-brand-mark" aria-hidden="true"><svg viewBox="0 0 44 34" fill="none"><path d="m3 12 19-9 19 9-19 9L3 12Z"/><path d="M10 16v8c7 5 17 5 24 0v-8l-12 6-12-6Z"/><path d="M38 14v9"/><circle cx="38" cy="25" r="2"/></svg></span>
               <span><strong>Admission <em>Hub</em></strong><small>Build your admission profile</small></span>
             </div>
+            <strong class="ah-signup-steplabel">Education</strong>
             <span class="ah-signup-secure"><i aria-hidden="true"></i>Private</span>
           </header>
 
           <nav class="ah-signup-progress" aria-label="Signup progress">
             <ol>
-              <li><button type="button" class="active" data-signup-step-button="personal" aria-current="step"><i>01</i><span>Personal</span><small>Your identity</small></button></li>
-              <li><button type="button" data-signup-step-button="education"><i>02</i><span>Education</span><small>Study details</small></button></li>
-              <li><button type="button" data-signup-step-button="security"><i>03</i><span>Security</span><small>Secure account</small></button></li>
+              <li><button type="button" class="active" data-signup-step-button="personal" aria-current="step"><i>1</i><span>Personal</span><small>Your identity</small></button></li>
+              <li><button type="button" data-signup-step-button="education"><i>2</i><span>Education</span><small>Study details</small></button></li>
+              <li><button type="button" data-signup-step-button="security"><i>3</i><span>Security</span><small>Secure account</small></button></li>
             </ol>
           </nav>
 
@@ -224,16 +225,48 @@
               <button class="ah-account-primary ah-personal-next" type="button" data-role="signup-next-education"><span>Continue</span><b aria-hidden="true">→</b></button>
             </div>
           </section>
-          <section class="ah-signup-panel ah-institution-panel" data-signup-panel="school" hidden>
-            <div class="ah-standalone-heading"><h3>তোমার বিদ্যালয়ের নাম লিখো</h3><p>খুঁজে নাম খুঁজে পেলে সেটি বেছে নাও</p></div>
-            <div class="ah-account-field ah-search-field"><label class="sr-only" for="ah-signup-school">তোমার School কোনটি?</label><div class="ah-search-input-wrap"><span aria-hidden="true">⌕</span><input class="ah-account-input" id="ah-signup-school" autocomplete="off" maxlength="120" placeholder="বিদ্যালয়ের নাম লিখো" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="ah-school-results" required></div><div class="ah-search-results" id="ah-school-results" role="listbox" hidden></div><p class="ah-field-feedback">সর্বোচ্চ ৪টি suggestion দেখাবে; না পেলে নিজের লেখা ব্যবহার করো।</p></div>
-            <div class="ah-campus-strip" aria-hidden="true"><span>♧</span><i>▥</i><b>⌂</b><i>▥</i><span>♧</span></div>
-            <div class="ah-panel-actions ah-bottom-actions"><button class="ah-account-secondary" type="button" data-role="signup-back-personal">← Back</button><button class="ah-account-primary" type="button" data-role="signup-next-college">Next →</button></div>
+          <section class="ah-signup-panel ah-institution-panel ah-education-panel ah-education-school-panel" data-signup-panel="school" data-institution-kind="school" hidden>
+            <div class="ah-standalone-heading ah-education-heading"><h3>তোমার বিদ্যালয়ের নাম লিখো</h3><p>নাম লিখতে শুরু করো—আমরা কাছাকাছি school খুঁজে দেব।</p></div>
+            <div class="ah-campus-strip ah-education-ornament" aria-hidden="true"><span>♧</span><i>▥</i><b>⌂</b><i>▥</i><span>♧</span></div>
+            <div class="ah-account-field ah-search-field">
+              <label class="sr-only" for="ah-signup-school">তোমার School কোনটি?</label>
+              <div class="ah-search-input-wrap"><span class="ah-search-glyph" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="6.4"/><path d="m15.8 15.8 4.4 4.4"/></svg></span><input class="ah-account-input" id="ah-signup-school" autocomplete="off" maxlength="120" placeholder="বিদ্যালয়ের নাম লিখো" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="ah-school-results" required></div>
+              <div class="ah-search-results ah-institution-results" id="ah-school-results" role="listbox" aria-label="প্রতিষ্ঠানের suggestion" hidden></div>
+              <p class="ah-field-feedback">সর্বোচ্চ ৩টি suggestion দেখাবে; নাম না পেলে নিজের লেখা ব্যবহার করো।</p>
+            </div>
+            <div class="ah-edu-assist">
+              <button class="ah-edu-assist-button" type="button" data-role="education-help" aria-expanded="false" aria-controls="ah-school-help" aria-label="নাম খোঁজা নিয়ে সাহায্য">
+                <span class="ah-edu-assist-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><rect x="4.2" y="8.2" width="15.6" height="11" rx="4.2"/><path d="M12 8.2V5.4"/><circle cx="12" cy="4.4" r="1.5"/><path d="M9.2 12.6v1.6"/><path d="M14.8 12.6v1.6"/><path d="M9.6 16.6h4.8"/></svg></span>
+              </button>
+              <div class="ah-edu-assist-card" id="ah-school-help" hidden>
+                <strong>নাম খুঁজে পাচ্ছ না?</strong>
+                <ul><li>নিচে নাম না পেলে নিজের লেখা দিয়েই এগোতে পারবে।</li><li>বিদ্যালয়ের নাম লিখে “নিজের লেখা ব্যবহার করুন” চাপো।</li><li>পরে profile থেকে যেকোনো সময় বদলাতে পারবে।</li></ul>
+              </div>
+            </div>
+            <div class="ah-panel-actions ah-bottom-actions ah-education-actions">
+              <button class="ah-account-primary ah-education-next" type="button" data-role="signup-next-college"><span>Next</span><b aria-hidden="true">→</b></button>
+            </div>
           </section>
-          <section class="ah-signup-panel ah-institution-panel" data-signup-panel="college" hidden>
-            <div class="ah-standalone-heading"><h3>তোমার কলেজ / বিশ্ববিদ্যালয়</h3><p>কলেজ বা বিশ্ববিদ্যালয়ের নাম লিখে বেছে নাও</p></div>
-            <div class="ah-account-field ah-search-field"><label class="sr-only" for="ah-signup-college">তোমার College / University?</label><div class="ah-search-input-wrap"><span aria-hidden="true">⌕</span><input class="ah-account-input" id="ah-signup-college" autocomplete="off" maxlength="120" placeholder="কলেজ বা বিশ্ববিদ্যালয়ের নাম" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="ah-college-results"></div><div class="ah-search-results" id="ah-college-results" role="listbox" hidden></div><p class="ah-field-feedback">এখন পড়ছ না? খালি রেখেও এগোতে পারো।</p></div>
-            <div class="ah-panel-actions ah-bottom-actions"><button class="ah-account-secondary" type="button" data-role="signup-back-school">← Back</button><button class="ah-account-primary" type="button" data-role="signup-next-security">Next →</button></div>
+          <section class="ah-signup-panel ah-institution-panel ah-education-panel ah-education-college-panel" data-signup-panel="college" data-institution-kind="college" hidden>
+            <div class="ah-standalone-heading ah-education-heading"><h3>তুমি কোন কলেজ / বিশ্ববিদ্যালয়ে পড়েছ?</h3><p>শিক্ষা প্রতিষ্ঠানের নাম লিখলে আমরা খুঁজে দেব।</p></div>
+            <div class="ah-account-field ah-search-field">
+              <label class="sr-only" for="ah-signup-college">তোমার College / University?</label>
+              <div class="ah-search-input-wrap"><span class="ah-search-glyph" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="6.4"/><path d="m15.8 15.8 4.4 4.4"/></svg></span><input class="ah-account-input" id="ah-signup-college" autocomplete="off" maxlength="120" placeholder="কলেজ বা বিশ্ববিদ্যালয়ের নাম" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="ah-college-results" ></div>
+              <div class="ah-search-results ah-institution-results" id="ah-college-results" role="listbox" aria-label="প্রতিষ্ঠানের suggestion" hidden></div>
+              <p class="ah-field-feedback">এখন পড়ছ না? কলেজ/বিশ্ববিদ্যালয় না দিয়েও এগোতে পারো।</p>
+            </div>
+            <div class="ah-edu-assist">
+              <button class="ah-edu-assist-button" type="button" data-role="education-help" aria-expanded="false" aria-controls="ah-college-help" aria-label="নাম খোঁজা নিয়ে সাহায্য">
+                <span class="ah-edu-assist-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><rect x="4.2" y="8.2" width="15.6" height="11" rx="4.2"/><path d="M12 8.2V5.4"/><circle cx="12" cy="4.4" r="1.5"/><path d="M9.2 12.6v1.6"/><path d="M14.8 12.6v1.6"/><path d="M9.6 16.6h4.8"/></svg></span>
+              </button>
+              <div class="ah-edu-assist-card" id="ah-college-help" hidden>
+                <strong>কলেজ/বিশ্ববিদ্যালয় খুঁজে পাচ্ছ না?</strong>
+                <ul><li>এখন পড়ছ না? খালি রেখেও Next চাপতে পারো।</li><li>নাম না পেলে নিজের লেখা দিয়েই এগোতে পারবে।</li></ul>
+              </div>
+            </div>
+            <div class="ah-panel-actions ah-bottom-actions ah-education-actions">
+              <button class="ah-account-primary ah-education-next" type="button" data-role="signup-next-security"><span>Next</span><b aria-hidden="true">→</b></button>
+            </div>
           </section>
           <section class="ah-signup-panel ah-security-panel" data-signup-panel="security" hidden>
             <div class="ah-standalone-heading"><h3>Account নিরাপদ করো</h3><p>Email ও শক্তিশালী Password দিয়ে account তৈরি করো</p></div>
@@ -701,6 +734,57 @@
     if (input) input.setAttribute('aria-expanded', 'false');
   };
 
+  // Education step (school / college) — code-native option rows: an icon chip, the
+  // institution name, a "type · district" line and a selection circle on the right.
+  const INSTITUTION_ICONS = Object.freeze({
+    school: '<svg viewBox="0 0 24 24" fill="none"><path d="m4 10.5 8-6 8 6"/><path d="M6 10v10h12V10"/><path d="M12 4.5V6"/><path d="M10 20v-5h4v5"/></svg>',
+    higher: '<svg viewBox="0 0 24 24" fill="none"><path d="m3 9.2 9-4.2 9 4.2-9 4.2-9-4.2Z"/><path d="M7.5 11.4V16c3 2.2 6 2.2 9 0v-4.6"/><path d="M20 10.2v5"/></svg>',
+    manual: '<svg viewBox="0 0 24 24" fill="none"><path d="M12 6.5v11"/><path d="M6.5 12h11"/></svg>'
+  });
+
+  const institutionKindOf = item => {
+    if (!item) return 'manual';
+    if (item.type === 'school') return 'school';
+    return /university|বিশ্ববিদ্যালয়/i.test(item.name) ? 'university' : 'college';
+  };
+
+  // School step keeps the English type word, college step uses the Bengali type word
+  // (matches the two reference screens the owner supplied on 2026-09-14).
+  const institutionTypeLabel = (item, panelKind = 'school') => {
+    const kind = institutionKindOf(item);
+    const bengali = panelKind === 'college';
+    if (kind === 'university') return bengali ? 'বিশ্ববিদ্যালয়' : 'University';
+    if (kind === 'school') return bengali ? 'স্কুল' : 'School';
+    const isCollege = item.type !== 'both' || /college/i.test(item.name);
+    if (bengali) return isCollege ? 'কলেজ' : 'স্কুল ও কলেজ';
+    return isCollege ? 'College' : 'School & College';
+  };
+
+  const buildInstitutionOption = ({ iconKind, name, meta, manual = false, selected = false }) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `ah-institution-option${manual ? ' manual' : ''}${selected ? ' is-selected' : ''}`;
+    button.setAttribute('role', 'option');
+    button.setAttribute('aria-selected', selected ? 'true' : 'false');
+    const chip = document.createElement('span');
+    chip.className = 'ah-institution-chip';
+    chip.setAttribute('aria-hidden', 'true');
+    const icon = { school: INSTITUTION_ICONS.school, college: INSTITUTION_ICONS.higher, university: INSTITUTION_ICONS.higher }[iconKind];
+    chip.innerHTML = icon || INSTITUTION_ICONS.manual;
+    const text = document.createElement('span');
+    text.className = 'ah-institution-text';
+    const strong = document.createElement('strong');
+    strong.textContent = name;
+    const small = document.createElement('small');
+    small.textContent = meta;
+    text.append(strong, small);
+    const check = document.createElement('span');
+    check.className = 'ah-institution-check';
+    check.setAttribute('aria-hidden', 'true');
+    button.append(chip, text, check);
+    return button;
+  };
+
   const renderInstitutionResults = (kind, query) => {
     const input = kind === 'school' ? $('#ah-signup-school') : $('#ah-signup-college');
     const results = kind === 'school' ? $('#ah-school-results') : $('#ah-college-results');
@@ -719,25 +803,40 @@
       input.focus();
     };
     matches.forEach(item => {
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'ah-search-option';
-      button.setAttribute('role', 'option');
-      button.textContent = `${item.name} · ${item.district}`;
-      button.addEventListener('pointerdown', event => event.preventDefault());
-      button.addEventListener('click', () => choose(item));
-      results.append(button);
+      const option = buildInstitutionOption({
+        iconKind: institutionKindOf(item),
+        name: item.name,
+        meta: `${institutionTypeLabel(item, kind)} · ${item.district}`,
+        selected: input.dataset.institutionId === item.id
+      });
+      option.dataset.institutionType = institutionKindOf(item);
+      option.addEventListener('pointerdown', event => event.preventDefault());
+      option.addEventListener('click', () => choose(item));
+      results.append(option);
     });
-    const manual = document.createElement('button');
-    manual.type = 'button';
-    manual.className = 'ah-search-option manual';
-    manual.setAttribute('role', 'option');
-    manual.textContent = `“${trimmed.slice(0, 70)}” নিজের লেখা হিসেবে ব্যবহার করুন`;
+    const manual = buildInstitutionOption({
+      iconKind: 'manual',
+      name: `“${trimmed.slice(0, 70)}”`,
+      meta: 'নিজের লেখা ব্যবহার করুন',
+      manual: true,
+      selected: input.dataset.institutionId === 'manual'
+    });
     manual.addEventListener('pointerdown', event => event.preventDefault());
     manual.addEventListener('click', () => choose(null));
     results.append(manual);
     results.hidden = false;
     input.setAttribute('aria-expanded', 'true');
+  };
+
+  const setupEducationAssist = () => {
+    pageHost.querySelectorAll('[data-role="education-help"]').forEach(button => {
+      const card = button.getAttribute('aria-controls') ? document.getElementById(button.getAttribute('aria-controls')) : null;
+      button.addEventListener('click', () => {
+        const open = button.getAttribute('aria-expanded') === 'true';
+        button.setAttribute('aria-expanded', String(!open));
+        if (card) card.hidden = open;
+      });
+    });
   };
 
   const setupInstitutionSearch = kind => {
@@ -1627,6 +1726,7 @@
     setupDobDropdowns();
     setupInstitutionSearch('school');
     setupInstitutionSearch('college');
+    setupEducationAssist();
     $('#ah-telegram-code').addEventListener('input', renderTelegramDigits);
     $('#ah-signup-name').addEventListener('input', () => {
       const name = normalizedName();
@@ -1662,9 +1762,9 @@
       notify();
     });
     $('[data-role="signup-next-education"]').addEventListener('click', () => setSignupStep('school', { validate: true }));
-    $('[data-role="signup-back-personal"]').addEventListener('click', () => setSignupStep('personal'));
+    $('[data-role="signup-back-personal"]')?.addEventListener('click', () => setSignupStep('personal'));
     $('[data-role="signup-next-college"]').addEventListener('click', () => setSignupStep('college', { validate: true }));
-    $('[data-role="signup-back-school"]').addEventListener('click', () => setSignupStep('school'));
+    $('[data-role="signup-back-school"]')?.addEventListener('click', () => setSignupStep('school'));
     $('[data-role="signup-next-security"]').addEventListener('click', () => setSignupStep('security', { validate: true }));
     $('[data-role="signup-back-education"]').addEventListener('click', () => setSignupStep('college'));
     pageHost.querySelectorAll('[data-signup-step-button]').forEach(button => button.addEventListener('click', () => {

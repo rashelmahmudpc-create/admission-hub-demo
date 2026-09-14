@@ -1,16 +1,27 @@
-# LATEST — ফোনে স্ক্রল করে সব অপশন দেখা যায় (v249)
+# LATEST — Education ধাপের school/college পেজ (v250)
 
 **Updated:** 2026-09-14 (Asia/Dhaka) · Agent: **Arena Agent Mode**
 
 ## STATUS
 
-- **IMPLEMENTED:** v248 restored the owner's natural design (nothing hidden, nothing shrunk, scrolling allowed). The owner then reported that on his phone the page would not scroll, so the lower options stayed out of reach. Root cause: the page only overflowed the viewport by ~10px while a floating browser address bar covered the bottom ~100px of the screen. Fixed with `min-height:100svh` on the Welcome view plus a **96px phone scroll cushion** (`padding-bottom:calc(24px + env(safe-area-inset-bottom) + 96px)` at ≤760px).
-- **UNCHANGED DESIGN:** nothing is hidden, nothing is scaled/shrunk; the cushion only adds empty space below the last option so it can be scrolled clear of the browser bar (scroll room is now ~116px at 430×932 and ~193px at 390×844).
-- **TESTED:** auth 62/62 · email 108/108 + 4/4 · native-auth 203/203 · account-retirement 30/30 · worker bundle exact · browser audit ok (pageErrors 0) · 13/13 viewports (nothing hidden, nothing scaled, no horizontal overflow, 50–56px targets, last option reachable) · 55/55 release file asserts.
-- **HARDENED:** the audit now fails if the last Welcome option cannot be scrolled clear of an 80px browser-bar band; the release workflow asserts `min-height:100svh` and the phone scroll-cushion block are present.
+- **IMPLEMENTED:** the signup **Education** step now matches the owner's two reference screens —
+  school-select (`তোমার বিদ্যালয়ের নাম লিখো`) and college-select (`তুমি কোন কলেজ / বিশ্ববিদ্যালয়ে পড়েছ?`).
+  Code-native only (inline SVG, gradients, no raster): `Education` header with the existing back control,
+  compact `✓ Personal — ② Education — ③ Security` stepper, magnifier search field with green focus ring,
+  result rows with icon chip + bold name + `type · district` line + selection circle (green tick and
+  tinted row for the current choice), one full-width `Next →`, and the round helper button above it that
+  opens a small local tips card.
+- **UNCHANGED:** Welcome, Personal, Security, Log In and everything else stay exactly as approved
+  (v248 design; v249 phone scroll room). Nothing hidden, nothing shrunk, no content dropped; the school
+  suggestion cap (3 matches + 1 manual row) and every id/role used by the tests are unchanged.
+- **TESTED:** auth 62/62 · native-auth 203/203 · email 108/108 + 4/4 · release file asserts 61/61
+  (0 failing) · browser audit `pageErrors 0`, touch targets ≥44px, no dialog semantics ·
+  8 viewports 320→1440 with no horizontal overflow and a reachable Next button.
 - **DEPLOYED:** pending the publish run after merge.
 
 ## DETAIL
 
-- `AGENT_RESUME/2026-09-14-scroll-safe-v249.md`
-- History: v244 (premium rebuild, rejected) → v245 (3D hero removed) → v246/v247 (fit attempts: hidden + scaled, rejected) → v248 (natural sizes, scrolling allowed) → **v249 (phone scroll room so every option is reachable)**.
+- `AGENT_RESUME/2026-09-14-education-reference-pages-v250.md`
+- History: v244 (premium rebuild, rejected) → v245 (3D hero removed) → v246/v247 (fit attempts: hidden +
+  scaled, rejected) → v248 (natural sizes, scrolling allowed) → v249 (phone scroll room) →
+  **v250 (education reference pages)**.

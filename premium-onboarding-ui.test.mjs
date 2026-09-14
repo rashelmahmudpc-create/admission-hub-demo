@@ -234,7 +234,7 @@ test('Signup 01 Personal uses a premium dropdown DOB picker and keeps name toget
   assert.doesNotMatch(personal.textContent, /LIVE PROFILE/);
   assert.doesNotMatch(accountSource, /onboarding-(?:welcome|personal)-hero\.webp/);
   assert.match(accountCss, /Personal — real input-bound profile preview, not an illustration or image/);
-  assert.deepEqual([...app.document.querySelectorAll('[data-signup-step-button]')].map(button => button.querySelector('i').textContent + button.querySelector('span').textContent), ['01Personal', '02Education', '03Security']);
+  assert.deepEqual([...app.document.querySelectorAll('[data-signup-step-button]')].map(button => button.querySelector('i').textContent + button.querySelector('span').textContent), ['1Personal', '2Education', '3Security']);
   for (const id of ['ah-signup-name', 'ah-dob-day', 'ah-dob-month', 'ah-dob-year']) {
     assert.equal(personal.contains(app.document.getElementById(id)), true, id);
   }

@@ -248,7 +248,7 @@ try {
   assert.equal(await page.locator('.ah-dob-wheel').count(), 0, '3D wheels removed in favour of dropdowns');
   assert.match((await page.locator('#ah-personal-title').textContent()), /Set up your profile/);
   assert.equal(await page.locator('[data-signup-panel="personal"] img,[data-signup-panel="personal"] picture,[data-signup-panel="personal"] source,[data-signup-panel="personal"] canvas,[data-signup-panel="personal"] video,[data-signup-panel="personal"] object,[data-signup-panel="personal"] embed').count(), 0, 'Personal must contain zero media elements');
-  assert.deepEqual(await page.locator('[data-signup-step-button]').evaluateAll(buttons => buttons.map(button => `${button.querySelector('i').textContent}${button.querySelector('span').textContent}`)), ['01Personal', '02Education', '03Security']);
+  assert.deepEqual(await page.locator('[data-signup-step-button]').evaluateAll(buttons => buttons.map(button => `${button.querySelector('i').textContent}${button.querySelector('span').textContent}`)), ['1Personal', '2Education', '3Security']);
   await page.waitForTimeout(250);
   const personalGeometry = await page.evaluate(() => {
     const box = selector => {
