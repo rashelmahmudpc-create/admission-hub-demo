@@ -218,6 +218,10 @@ body.ah-account-page-active>.ah-account-launcher{display:none!important}
   isolation:isolate;
   box-sizing:border-box;
   min-height:100dvh;
+  /* The visible area with the browser bar still on screen (svh) — so the bottom
+     options stay reachable by scrolling on iOS/Android browsers whose floating
+     address bar covers the lower part of the page. */
+  min-height:100svh;
   padding:calc(18px + env(safe-area-inset-top)) 0 calc(24px + env(safe-area-inset-bottom));
   overflow:hidden;
   color:var(--ah-ink);
@@ -485,3 +489,10 @@ body.ah-account-page-active>.ah-account-launcher{display:none!important}
 }
 /* Language picker keeps the page font so Bengali text never falls back to a placeholder box. */
 .ah-language-picker select{font-family:inherit}
+
+/* v249 — guaranteed scroll room on phones: the last option can always be
+   scrolled clear of the floating browser address bar. Nothing is hidden or
+   shrunk — this only adds empty space below the last option. */
+@media(max-width:760px){
+  .ah-welcome-view{padding-bottom:calc(24px + env(safe-area-inset-bottom) + 96px)}
+}
