@@ -1,5 +1,6 @@
 import { AUTH_ERROR_CODES } from '../core/errors.mjs';
 import { constantTimeEqual } from '../core/crypto.mjs';
+import { transitionAccount, isSessionUsable } from '../core/account-lifecycle.mjs';
 
 const copy = value => value == null ? value : structuredClone(value);
 
@@ -17,6 +18,7 @@ export class MemoryAuthRepository {
     this.passkeyTickets = new Map();
     this.accountVerificationTickets = new Map();
     this.profiles = new Map();
+    this.accountStates = new Map();
   }
 
   #consume(limits, now) {
@@ -441,6 +443,47 @@ export class MemoryAuthRepository {
     if (!session || session.revokedAt) return { revoked: false };
     session.revokedAt = now;
     return { revoked: true };
+  }
+
+  async getAccountState({ userId, now }) {
+    if (!this.users.has(userId)) return { error: AUTH_ERROR_CODES.ACCOUNT_NOT_FOUND };
+    const row = this.accountStates.get(userId);
+    return Object.freeze({
+      userId,
+      status: row ? row.status : 'active',
+      stateVersion: row ? row.stateVersion : 0,
+      updatedAt: row ? row.updatedAt : 0,
+      now: Number(now)
+    });
+  }
+
+  async setAccountState({ userId, toStatus, now }) {
+    if (!this.users.has(userId)) return { error: AUTH_ERROR_CODES.ACCOUNT_NOT_FOUND };
+    const row = this.accountStates.get(userId);
+    const currentStatus = row ? row.status : 'active';
+    let target;
+    try {
+      target = transitionAccount(currentStatus, toStatus);
+    } catch {
+      return { error: AUTH_ERROR_CODES.ACCOUNT_STATE_INVALID };
+    }
+    if (target === currentStatus) {
+      return Object.freeze({ userId, status: target, stateVersion: row ? row.stateVersion : 0, changed: false, revokedSessions: 0 });
+    }
+    const version = (row ? row.stateVersion : 0) + 1;
+    this.accountStates.set(userId, { status: target, stateVersion: version, createdAt: row ? row.createdAt : now, updatedAt: now });
+    let revoked = 0;
+    if (!isSessionUsable(target)) {
+      for (const session of this.sessions.values()) {
+        if (session.userId === userId && !session.revokedAt) {
+          session.revokedAt = now;
+          revoked += 1;
+        }
+      }
+      this.events.push({ type: 'account-sessions-revoked', userId, at: now });
+    }
+    this.events.push({ type: 'account-state-changed', userId, at: now });
+    return Object.freeze({ userId, status: target, stateVersion: version, changed: true, revokedSessions: revoked });
   }
 
   async ping() {

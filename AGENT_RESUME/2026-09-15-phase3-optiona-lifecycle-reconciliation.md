@@ -35,27 +35,46 @@ authentication authority; Supabase binding আর হবে না। Phase 3-�
 - `auth-native/core/errors.mjs` (additive: `ACCOUNT_STATE_INVALID` code + message)
 - `identity-lifecycle.test.mjs` (নতুন, 17 tests)
 
+## Chunk 2 — DB status extension + transition-validated write path (done)
+
+1. `auth-native/storage/sqlite-auth-repository.mjs`:
+   - নতুন `auth_account_state` table (user_id PK, status, state_version,
+     timestamps) — **existing `auth_users` rows-এ একটোও হাত দেওয়া হয়নি**
+     (migration-safe: stateless user-রা implicit `active`)
+   - schema_version 4 → 5
+   - `getAccountState()` — stateless user-র জন্য default `active`
+   - `setAccountState()` — **একমাত্র write path**: lifecycle transition
+     validate করে; invalid transition = `ACCOUNT_STATE_INVALID` + zero write;
+     non-usable state-এ গেলে user-র সব live session revoke (audit:
+     `account-sessions-revoked` + `account-state-changed`)
+2. `auth-native/testing/memory-auth-repository.mjs` — same contract mirror
+3. `auth-native/core/auth-engine.mjs` — `requiredRepositoryMethods`-এ
+   `getAccountState`/`setAccountState` যোগ (contract enforcement)
+4. `errors.mjs` — additive `ACCOUNT_NOT_FOUND` (404)
+5. `account-state-runtime.test.mjs` — 9 tests (sqlite + memory parity):
+   default state, not-found, valid transition + audit, invalid transition
+   no-write, session revocation on suspend, deactivated→recovery→active
+   path, idempotent no-op, engine contract guard
+
 ## 📌 বর্তমান অবস্থা
 
 - **TESTED:** local — test:production-auth সব green: auth 62/62 ·
-  email 108/108 + 4/4 · native-auth 203/203 · identity-lifecycle 17/17
-- নতুন module-গুলো এখনো **wired নয়** (DO endpoint / public API / DB status
-  migration আসন্ন chunk-এ) — তাই production bundle-এ কোনো পরিবর্তন নেই
-- Phase 3 (Option A) progress: **Chunk 1/4**
+  email 108/108 + 4/4 · native-auth 203/203 · identity-lifecycle 17/17 ·
+  account-state-runtime 9/9
+- Bundle rebuild + commit (exact-bundle guard-এর জন্য)
+- DO endpoint / public API wiring আসছে Chunk 3-এ — state engine এখনো
+  production traffic-এ wired নয় (read-only safe)
+- Phase 3 (Option A) progress: **Chunk 2/4**
 
 ## ⏭️ পরবর্তী কাজ (Phase 3 — Option A)
 
-1. **Chunk 2:** DB status extension — `auth_users.status` CHECK set-এ নতুন
-   ৭ state যোগ (migration-safe: existing 'active'/'disabled'/'suspended'
-   rows বৈধ থেকে যাবে; legacy 'disabled' read-এ 'suspended' হিসেবে normalize)
-   + repository-তে transition-validated status write path
-2. **Chunk 3:** DO-তে internal endpoints — `set-account-status`
+1. **Chunk 3:** DO-তে internal endpoints — `set-account-status`
    (transition-validated, audit event-সহ), `identity/reconcile`,
    `identity/health` + public contract endpoints
    (`/api/auth/v1/account`, `/api/auth/v1/identities`, admin health)
    + audit event coverage (account-created, status-changed, identity-linked,
    verification-completed)
-3. **Chunk 4:** deactivation/deletion architecture + admin diagnostics +
+2. **Chunk 4:** deactivation/deletion architecture + admin diagnostics +
    dedicated Identity Regression Suite + guard wiring + deploy (protected
    publish) + live verify + Phase 3 final report
 

@@ -94,6 +94,7 @@ const FIREBASE_OPERATION_LIMITS = Object.freeze({
 const requiredRepositoryMethods = Object.freeze([
   'consumeLimits', 'establishExternalSession',
   'getExternalSession', 'getSession', 'revokeSession',
+  'getAccountState', 'setAccountState',
   'beginFirebaseAccountVerification', 'getFirebaseAccountVerification',
   'completeFirebaseAccountVerification', 'getFirebaseIdentity',
   'savePendingProfile', 'saveProfile', 'getProfile',

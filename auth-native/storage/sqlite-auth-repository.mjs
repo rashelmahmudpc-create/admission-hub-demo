@@ -1,5 +1,6 @@
 import { AUTH_ERROR_CODES } from '../core/errors.mjs';
 import { constantTimeEqual } from '../core/crypto.mjs';
+import { transitionAccount, isSessionUsable } from '../core/account-lifecycle.mjs';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const EVENT_RETENTION_MS = 90 * DAY_MS;
@@ -158,10 +159,77 @@ export class SqliteAuthRepository {
         user_id TEXT,
         occurred_at INTEGER NOT NULL
       )`,
-      `CREATE INDEX IF NOT EXISTS auth_security_events_time ON auth_security_events(occurred_at DESC)`
+      `CREATE INDEX IF NOT EXISTS auth_security_events_time ON auth_security_events(occurred_at DESC)`,
+      // Phase 3 — lifecycle overlay. Existing auth_users rows stay untouched;
+      // users without a state row implicitly hold the legacy 'active' state.
+      `CREATE TABLE IF NOT EXISTS auth_account_state (
+        user_id TEXT PRIMARY KEY,
+        status TEXT NOT NULL,
+        state_version INTEGER NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        FOREIGN KEY(user_id) REFERENCES auth_users(user_id)
+      )`,
+      `CREATE INDEX IF NOT EXISTS auth_account_state_status ON auth_account_state(status)`
     ];
     for (const statement of statements) this.sql.exec(statement);
-    this.sql.exec("INSERT INTO auth_meta(key,value) VALUES('schema_version','4') ON CONFLICT(key) DO UPDATE SET value=excluded.value");
+    this.sql.exec("INSERT INTO auth_meta(key,value) VALUES('schema_version','5') ON CONFLICT(key) DO UPDATE SET value=excluded.value");
+  }
+
+  async getAccountState({ userId, now }) {
+    const user = this.#one('SELECT user_id AS id FROM auth_users WHERE user_id=?', userId);
+    if (!user) return { error: AUTH_ERROR_CODES.ACCOUNT_NOT_FOUND };
+    const row = this.#one(
+      'SELECT status,state_version AS version,updated_at AS updatedAt FROM auth_account_state WHERE user_id=?',
+      userId
+    );
+    return Object.freeze({
+      userId,
+      status: row ? String(row.status) : 'active',
+      stateVersion: Number(row?.version || 0),
+      updatedAt: Number(row?.updatedAt || 0),
+      now: Number(now)
+    });
+  }
+
+  // Centralized, transition-validated account state change. The only write
+  // path to auth_account_state; every change is audited and non-usable
+  // targets revoke all live sessions for the user (blueprint §10, §32).
+  async setAccountState({ userId, toStatus, now }) {
+    return this.#transaction(() => {
+      const user = this.#one('SELECT user_id AS id FROM auth_users WHERE user_id=?', userId);
+      if (!user) return { error: AUTH_ERROR_CODES.ACCOUNT_NOT_FOUND };
+      const row = this.#one(
+        'SELECT status AS current,state_version AS version FROM auth_account_state WHERE user_id=?',
+        userId
+      );
+      const currentStatus = row ? String(row.current) : 'active';
+      let target;
+      try {
+        target = transitionAccount(currentStatus, toStatus);
+      } catch {
+        return { error: AUTH_ERROR_CODES.ACCOUNT_STATE_INVALID };
+      }
+      if (target === currentStatus) {
+        return Object.freeze({ userId, status: target, stateVersion: Number(row?.version || 0), changed: false, revokedSessions: 0 });
+      }
+      const version = Number(row?.version || 0) + 1;
+      this.sql.exec(
+        `INSERT INTO auth_account_state(user_id,status,state_version,created_at,updated_at)
+         VALUES(?,?,?,?,?)
+         ON CONFLICT(user_id) DO UPDATE SET status=excluded.status,state_version=excluded.state_version,updated_at=excluded.updated_at`,
+        userId, target, version, now, now
+      );
+      let revoked = 0;
+      if (!isSessionUsable(target)) {
+        const open = this.#one('SELECT COUNT(*) AS count FROM auth_sessions WHERE user_id=? AND revoked_at IS NULL', userId);
+        this.sql.exec('UPDATE auth_sessions SET revoked_at=? WHERE user_id=? AND revoked_at IS NULL', now, userId);
+        revoked = Number(open?.count || 0);
+        this.#event('account-sessions-revoked', null, userId, now);
+      }
+      this.#event('account-state-changed', null, userId, now);
+      return Object.freeze({ userId, status: target, stateVersion: version, changed: true, revokedSessions: revoked });
+    });
   }
 
   #rows(statement, ...bindings) {
