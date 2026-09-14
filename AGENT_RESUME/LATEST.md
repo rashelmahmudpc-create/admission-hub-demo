@@ -1,24 +1,24 @@
-# LATEST — Login / Verify / Email / Telegram / Passkey reference screens (v252)
+# LATEST — Login input single-frame + tighter size; unavailable-hint (v253)
 
 **Updated:** 2026-09-14 (Asia/Dhaka) · Agent: **Arena Agent Mode**
 
 ## STATUS
 
-- **IMPLEMENTED:** the five owner reference screens are live as code-native UI
-  (inline SVG + CSS only) — Log In (`আবার দেখা হলো`), verification-method
-  selector (`একটি verification method বেছে নাও`), Email verify, Telegram
-  intro and Passkey setup. All data-view / data-role hooks, truth lines and
-  fail-closed states are unchanged; only the visuals were rebuilt.
-- **UNCHANGED:** Welcome, Personal, Education (v250), Security, Account Created
-  (v251), WhatsApp-info, the Telegram OTP form, Log In logic and the whole
-  verification flow; zero raster, no dialog semantics, no credential storage.
-- **TESTED:** auth 62/62 · native-auth 203/203 · agent-core 37/37 ·
-  retirement 30/30 · marker suites 12/12 · jsdom smoke 3/3 (zero JS errors,
-  no duplicate ids) · release asserts local incl. 6 new v252 checks.
-- **DEPLOYED:** pending the publish run after merge.
+- **FIXED:** login EMAIL/PASSWORD extra inner box on iOS (autofill +
+  focus-visible reset, login-scoped; outer focus ring kept) and slightly
+  tighter login fields (38px inputs, 16px font = no iOS zoom).
+- **FIXED:** "service not ready" banner now tells non-pages.dev visitors that
+  real accounts open only on admissionhub.pages.dev (github.io is
+  static-only and can never create accounts — verified backend works on
+  pages.dev via identical API calls).
+- **TESTED:** auth 62/62 · email 108+4 · jsdom UI 33/33 ·
+  marker suites pass (5 non-gating files lack `jsdom` in sandbox,
+  pre-existing).
+- **DEPLOYED:** pending push + PR + merge + publish run (needs owner PAT).
 
 ## DETAIL
 
-- `AGENT_RESUME/2026-09-14-auth-reference-screens-v252.md`
+- `AGENT_RESUME/2026-09-14-login-input-fix-v253.md`
 - History: v244 → v245 → v246/v247 → v248 → v249 → v250 (education) →
-  v251 (Account Created) → **v252 (auth reference screens)**.
+  v251 (Account Created) → v252 (auth reference screens) →
+  **v253 (login input fix + unavailable-hint)**.
