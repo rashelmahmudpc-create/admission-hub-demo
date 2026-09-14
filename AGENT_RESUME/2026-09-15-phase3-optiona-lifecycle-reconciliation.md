@@ -60,22 +60,46 @@ authentication authority; Supabase binding আর হবে না। Phase 3-�
 
 - **TESTED:** local — test:production-auth সব green: auth 62/62 ·
   email 108/108 + 4/4 · native-auth 203/203 · identity-lifecycle 17/17 ·
-  account-state-runtime 9/9
+  account-state-runtime 9/9 · account-state-api 9/9
 - Bundle rebuild + commit (exact-bundle guard-এর জন্য)
-- DO endpoint / public API wiring আসছে Chunk 3-এ — state engine এখনো
-  production traffic-এ wired নয় (read-only safe)
-- Phase 3 (Option A) progress: **Chunk 2/4**
+- Public/admin endpoints এখন DO-তে wired; production traffic-এ activate হবে
+  Chunk 4-এর protected publish-এ (endpoint-গুলো এখনই live bundle-এ আছে,
+  admin route token ছাড়া 403)
+- Phase 3 (Option A) progress: **Chunk 3/4**
+
+## Chunk 3 — DO internal endpoints + public/admin contract API (done)
+
+1. `auth-native/worker/auth-authority-do.mjs` — নতুন internal route:
+   - `POST /internal/account/state` — session-bound, current lifecycle state
+   - `POST /internal/account/identities` — session-bound, linked identities
+     (provider + verification facts only, no raw subject)
+   - `POST /internal/account/state/set` — transition-validated state change
+     (throws normalized `ACCOUNT_STATE_INVALID`/`ACCOUNT_NOT_FOUND`)
+   - `POST /internal/identity/health` — read-only reconciliation health
+     summary (counts/flags only)
+   - error contract: repository `{error}` → `NativeAuthError` → DO top-level
+     catch → `toPublic()` (same convention as existing routes)
+2. `auth-native/worker/public-auth-handler.mjs` — নতুন public route:
+   - `GET /api/auth/v1/account` — current user's lifecycle state (session)
+   - `GET /api/auth/v1/identities` — linked providers for current user (session)
+   - `GET /api/auth/v1/admin/identity/health` — reconciliation health (admin token)
+   - `POST /api/auth/v1/admin/account/state` — state change `{userId,status}` (admin token)
+   - admin route `X-AH-Admin-Token` (constant-time) guard, same as verification admin
+3. `auth-native/storage/sqlite-auth-repository.mjs` — `identitySnapshot()`
+   (HMAC refs only) + `listLinkedIdentities()` (provider/facts only)
+4. `auth-native/testing/memory-auth-repository.mjs` — same two methods mirror
+5. `auth-native/core/auth-engine.mjs` — `requiredRepositoryMethods` +=
+   `identitySnapshot`, `listLinkedIdentities`
+6. `account-state-api.test.mjs` — 9 tests (session 401, identities no-leak,
+   admin 403/token, health counts-only, suspend→session-revoked 401,
+   invalid transition 409, unknown user 404)
 
 ## ⏭️ পরবর্তী কাজ (Phase 3 — Option A)
 
-1. **Chunk 3:** DO-তে internal endpoints — `set-account-status`
-   (transition-validated, audit event-সহ), `identity/reconcile`,
-   `identity/health` + public contract endpoints
-   (`/api/auth/v1/account`, `/api/auth/v1/identities`, admin health)
-   + audit event coverage (account-created, status-changed, identity-linked,
-   verification-completed)
-2. **Chunk 4:** deactivation/deletion architecture + admin diagnostics +
-   dedicated Identity Regression Suite + guard wiring + deploy (protected
+**Chunk 3 DONE** — internal endpoints + public/admin API wired (see above).
+
+1. **Chunk 4:** deactivation/deletion architecture + admin diagnostics UI
+   + dedicated Identity Regression Suite + guard wiring + deploy (protected
    publish) + live verify + Phase 3 final report
 
 ## 🚨 STOP / সতর্কতা

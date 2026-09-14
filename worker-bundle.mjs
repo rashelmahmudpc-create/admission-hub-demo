@@ -3871,6 +3871,8 @@ var requiredRepositoryMethods = Object.freeze([
   "revokeSession",
   "getAccountState",
   "setAccountState",
+  "identitySnapshot",
+  "listLinkedIdentities",
   "beginFirebaseAccountVerification",
   "getFirebaseAccountVerification",
   "completeFirebaseAccountVerification",
@@ -6062,6 +6064,56 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           "Set-Cookie": sessionCookies(current.session, current.refreshed.refreshToken, context)
         });
       }
+      if (request.method === "GET" && url.pathname === `${AUTH_API_PREFIX}/account`) {
+        if (!provider.configured) throw new NativeAuthError(AUTH_ERROR_CODES.NOT_CONFIGURED);
+        const current = await firebaseReadySession({
+          provider,
+          jar,
+          env,
+          context,
+          allowTelegram: telegramVerificationRequested(env, url)
+        });
+        const result = await callAuthority(env, "/internal/account/state", {
+          sessionToken: current.sessionToken,
+          input: { email: current.user.email, subject: current.user.subject },
+          context
+        });
+        return json3(request, 200, { ok: true, account: result?.account || null }, {
+          "Set-Cookie": sessionCookies(current.session, current.refreshed.refreshToken, context)
+        });
+      }
+      if (request.method === "GET" && url.pathname === `${AUTH_API_PREFIX}/identities`) {
+        if (!provider.configured) throw new NativeAuthError(AUTH_ERROR_CODES.NOT_CONFIGURED);
+        const current = await firebaseReadySession({
+          provider,
+          jar,
+          env,
+          context,
+          allowTelegram: telegramVerificationRequested(env, url)
+        });
+        const result = await callAuthority(env, "/internal/account/identities", {
+          sessionToken: current.sessionToken,
+          input: { email: current.user.email, subject: current.user.subject },
+          context
+        });
+        return json3(request, 200, { ok: true, identities: result?.identities || [] }, {
+          "Set-Cookie": sessionCookies(current.session, current.refreshed.refreshToken, context)
+        });
+      }
+      if (request.method === "GET" && url.pathname === `${AUTH_API_PREFIX}/admin/identity/health`) {
+        if (!adminAuthorized(request, env)) return json3(request, 403, { ok: false, error: { code: "FORBIDDEN", message: "অনুমতি নেই।" } });
+        const result = await callAuthority(env, "/internal/identity/health", {});
+        return json3(request, 200, { ok: true, health: result?.health || null });
+      }
+      if (request.method === "POST" && url.pathname === `${AUTH_API_PREFIX}/admin/account/state`) {
+        if (!adminAuthorized(request, env)) return json3(request, 403, { ok: false, error: { code: "FORBIDDEN", message: "অনুমতি নেই।" } });
+        const body = await readJson(request);
+        const result = await callAuthority(env, "/internal/account/state/set", {
+          userId: String(body?.userId || "").slice(0, 256),
+          status: String(body?.status || "")
+        });
+        return json3(request, 200, { ok: true, account: result?.account || null });
+      }
       if (request.method === "POST" && url.pathname === `${AUTH_API_PREFIX}/passkey/registration/begin`) {
         if (!provider.configured || !passkeyEndpointReady(env)) throw new NativeAuthError(AUTH_ERROR_CODES.PASSKEY_UNAVAILABLE);
         const current = await firebaseReadySession({ provider, jar, env, context, allowTelegram: telegramVerificationRequested(env, url) });
@@ -6517,6 +6569,91 @@ var DEACTIVATION_POLICY = Object.freeze({
   reactivationPath: "recovery"
 });
 
+// auth-native/core/identity-reconciliation.mjs
+var KNOWN_IDENTITY_PROVIDERS = Object.freeze(["firebase"]);
+var ALIAS = Object.freeze({ disabled: "suspended" });
+function reconcileIdentitySnapshot(snapshot = {}, options = {}) {
+  const users = Array.isArray(snapshot.users) ? snapshot.users : [];
+  const identities = Array.isArray(snapshot.externalIdentities) ? snapshot.externalIdentities : [];
+  const knownProviders = options.providers || KNOWN_IDENTITY_PROVIDERS;
+  const findings = [];
+  const userById = /* @__PURE__ */ new Map();
+  for (const user of users) {
+    if (user && user.id) userById.set(String(user.id), user);
+  }
+  for (const user of users) {
+    if (!user || !user.id) {
+      findings.push({ type: "invalid-user", detail: "user row without id" });
+      continue;
+    }
+    const status = String(user.status ?? "").trim().toLowerCase();
+    const canonical = ALIAS[status] || status;
+    if (!ACCOUNT_STATES.includes(canonical)) {
+      findings.push({ type: "invalid-user-status", userId: String(user.id), status });
+    }
+  }
+  const identityByUser = /* @__PURE__ */ new Map();
+  const providerSubjectOwners = /* @__PURE__ */ new Map();
+  for (const identity of identities) {
+    if (!identity || !identity.provider || !identity.subjectRef) {
+      findings.push({ type: "invalid-identity", detail: "identity row without provider/subject" });
+      continue;
+    }
+    const provider = String(identity.provider);
+    const subjectRef = String(identity.subjectRef);
+    const userId = identity.userId != null ? String(identity.userId) : null;
+    if (!knownProviders.includes(provider)) {
+      findings.push({ type: "unknown-provider", provider, userId });
+    }
+    if (!userId || !userById.has(userId)) {
+      findings.push({ type: "orphan-external-identity", provider, subjectRef });
+      continue;
+    }
+    identityByUser.set(userId, (identityByUser.get(userId) || 0) + 1);
+    const key = `${provider}:${subjectRef}`;
+    let owners = providerSubjectOwners.get(key);
+    if (!owners) {
+      owners = /* @__PURE__ */ new Set();
+      providerSubjectOwners.set(key, owners);
+    }
+    if (owners.size > 0 && ![...owners].some((owner) => owner === userId)) {
+      findings.push({ type: "duplicate-provider-identity", provider, subjectRef, userId });
+    }
+    owners.add(userId);
+  }
+  for (const user of users) {
+    if (!user || !user.id) continue;
+    if (!identityByUser.has(String(user.id))) {
+      findings.push({ type: "orphan-user", userId: String(user.id) });
+    }
+  }
+  const counts = /* @__PURE__ */ Object.create(null);
+  for (const finding of findings) counts[finding.type] = (counts[finding.type] || 0) + 1;
+  return Object.freeze({
+    findings: Object.freeze(findings),
+    counts: Object.freeze(counts),
+    totals: Object.freeze({ users: users.length, externalIdentities: identities.length }),
+    health: Object.freeze({
+      ok: findings.length === 0,
+      checks: Object.freeze({
+        "identity.authority": Object.freeze({ ok: users.length > 0 || identities.length === 0 }),
+        "identity.mapping": Object.freeze({ ok: !counts["orphan-external-identity"] && !counts["duplicate-provider-identity"] && !counts["invalid-identity"] }),
+        "identity.account": Object.freeze({ ok: !counts["orphan-user"] && !counts["invalid-user"] && !counts["invalid-user-status"] }),
+        "identity.security": Object.freeze({ ok: !counts["unknown-provider"] })
+      })
+    })
+  });
+}
+function summarizeIdentityHealth(result) {
+  return Object.freeze({
+    ok: result.health.ok,
+    users: result.totals.users,
+    externalIdentities: result.totals.externalIdentities,
+    findings: result.counts,
+    checks: result.health.checks
+  });
+}
+
 // auth-native/storage/sqlite-auth-repository.mjs
 var DAY_MS = 24 * 60 * 60 * 1e3;
 var EVENT_RETENTION_MS = 90 * DAY_MS;
@@ -6688,6 +6825,29 @@ var SqliteAuthRepository = class {
     ];
     for (const statement of statements) this.sql.exec(statement);
     this.sql.exec("INSERT INTO auth_meta(key,value) VALUES('schema_version','5') ON CONFLICT(key) DO UPDATE SET value=excluded.value");
+  }
+  // Read-only reconciliation snapshot (Phase 3). HMAC refs only — never
+  // emails, tokens or raw provider subjects.
+  async identitySnapshot() {
+    const users = this.#rows("SELECT user_id AS id, status FROM auth_users").map((row) => Object.freeze({ id: row.id, status: row.status }));
+    const externalIdentities = this.#rows(
+      "SELECT provider, subject_ref AS subjectRef, user_id AS userId FROM auth_external_identities"
+    ).map((row) => Object.freeze({ provider: row.provider, subjectRef: row.subjectRef, userId: row.userId }));
+    return Object.freeze({ users: Object.freeze(users), externalIdentities: Object.freeze(externalIdentities) });
+  }
+  // Linked identities for a user: provider + verification facts only.
+  async listLinkedIdentities({ userId }) {
+    const rows = this.#rows(
+      "SELECT provider, last_verified_at AS lastVerifiedAt, created_at AS createdAt FROM auth_external_identities WHERE user_id=? ORDER BY provider",
+      userId
+    );
+    return Object.freeze(rows.map((row) => Object.freeze({
+      provider: String(row.provider),
+      linked: true,
+      verified: Boolean(row.lastVerifiedAt),
+      lastVerifiedAt: Number(row.lastVerifiedAt || 0),
+      linkedAt: Number(row.createdAt || 0)
+    })));
   }
   async getAccountState({ userId, now }) {
     const user = this.#one("SELECT user_id AS id FROM auth_users WHERE user_id=?", userId);
@@ -9508,6 +9668,32 @@ var AdmissionAuthAuthority = class {
       if (url.pathname === "/internal/profile/get") {
         const result = await this.engine.getProfile(body.input, body.context);
         return response2(200, { ok: true, result });
+      }
+      if (url.pathname === "/internal/account/state") {
+        const session = await this.engine.getFirebaseSession(body.sessionToken, body.input);
+        const state = await this.repository.getAccountState({ userId: session.user.id, now: Date.now() });
+        if (state.error) throw new NativeAuthError(state.error);
+        return response2(200, { ok: true, account: state });
+      }
+      if (url.pathname === "/internal/account/identities") {
+        const session = await this.engine.getFirebaseSession(body.sessionToken, body.input);
+        const identities = await this.repository.listLinkedIdentities({ userId: session.user.id });
+        return response2(200, { ok: true, identities });
+      }
+      if (url.pathname === "/internal/account/state/set") {
+        const result = await this.repository.setAccountState({
+          userId: String(body?.userId || "").slice(0, 256),
+          toStatus: String(body?.status || ""),
+          now: Date.now()
+        });
+        if (result.error) throw new NativeAuthError(result.error);
+        await this.#scheduleExpiry();
+        return response2(200, { ok: true, account: result });
+      }
+      if (url.pathname === "/internal/identity/health") {
+        const snapshot = await this.repository.identitySnapshot();
+        const health = summarizeIdentityHealth(reconcileIdentitySnapshot(snapshot));
+        return response2(200, { ok: true, health });
       }
       if (url.pathname === "/internal/passkey/registration/begin") {
         const result = await this.engine.beginPasskeyRegistration(body.input, body.context);

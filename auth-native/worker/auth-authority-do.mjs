@@ -1,5 +1,6 @@
 import { CloudflareNativeAuthEngine } from '../core/auth-engine.mjs';
 import { asNativeAuthError, AUTH_ERROR_CODES, NativeAuthError } from '../core/errors.mjs';
+import { reconcileIdentitySnapshot, summarizeIdentityHealth } from '../core/identity-reconciliation.mjs';
 import { SqliteAuthRepository } from '../storage/sqlite-auth-repository.mjs';
 import { VerificationOrchestrator } from '../verification/orchestrator.mjs';
 import { createConfiguredVerificationProviders } from '../verification/providers.mjs';
@@ -131,6 +132,32 @@ export class AdmissionAuthAuthority {
       if (url.pathname === '/internal/profile/get') {
         const result = await this.engine.getProfile(body.input, body.context);
         return response(200, { ok: true, result });
+      }
+      if (url.pathname === '/internal/account/state') {
+        const session = await this.engine.getFirebaseSession(body.sessionToken, body.input);
+        const state = await this.repository.getAccountState({ userId: session.user.id, now: Date.now() });
+        if (state.error) throw new NativeAuthError(state.error);
+        return response(200, { ok: true, account: state });
+      }
+      if (url.pathname === '/internal/account/identities') {
+        const session = await this.engine.getFirebaseSession(body.sessionToken, body.input);
+        const identities = await this.repository.listLinkedIdentities({ userId: session.user.id });
+        return response(200, { ok: true, identities });
+      }
+      if (url.pathname === '/internal/account/state/set') {
+        const result = await this.repository.setAccountState({
+          userId: String(body?.userId || '').slice(0, 256),
+          toStatus: String(body?.status || ''),
+          now: Date.now()
+        });
+        if (result.error) throw new NativeAuthError(result.error);
+        await this.#scheduleExpiry();
+        return response(200, { ok: true, account: result });
+      }
+      if (url.pathname === '/internal/identity/health') {
+        const snapshot = await this.repository.identitySnapshot();
+        const health = summarizeIdentityHealth(reconcileIdentitySnapshot(snapshot));
+        return response(200, { ok: true, health });
       }
       if (url.pathname === '/internal/passkey/registration/begin') {
         const result = await this.engine.beginPasskeyRegistration(body.input, body.context);

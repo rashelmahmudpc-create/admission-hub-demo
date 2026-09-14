@@ -95,6 +95,7 @@ const requiredRepositoryMethods = Object.freeze([
   'consumeLimits', 'establishExternalSession',
   'getExternalSession', 'getSession', 'revokeSession',
   'getAccountState', 'setAccountState',
+  'identitySnapshot', 'listLinkedIdentities',
   'beginFirebaseAccountVerification', 'getFirebaseAccountVerification',
   'completeFirebaseAccountVerification', 'getFirebaseIdentity',
   'savePendingProfile', 'saveProfile', 'getProfile',

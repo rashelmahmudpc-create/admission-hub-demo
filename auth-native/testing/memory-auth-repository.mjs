@@ -445,6 +445,29 @@ export class MemoryAuthRepository {
     return { revoked: true };
   }
 
+  async identitySnapshot() {
+    const users = [...this.users.values()]
+      .filter(user => user && user.id)
+      .map(user => Object.freeze({ id: user.id, status: user.status }));
+    const externalIdentities = [...this.externalIdentities.values()]
+      .filter(row => row && row.provider && row.subjectRef)
+      .map(row => Object.freeze({ provider: row.provider, subjectRef: row.subjectRef, userId: row.userId }));
+    return Object.freeze({ users: Object.freeze(users), externalIdentities: Object.freeze(externalIdentities) });
+  }
+
+  async listLinkedIdentities({ userId }) {
+    const rows = [...this.externalIdentities.values()]
+      .filter(row => row && row.userId === userId)
+      .sort((a, b) => String(a.provider).localeCompare(String(b.provider)));
+    return Object.freeze(rows.map(row => Object.freeze({
+      provider: String(row.provider),
+      linked: true,
+      verified: Boolean(row.lastVerifiedAt),
+      lastVerifiedAt: Number(row.lastVerifiedAt || 0),
+      linkedAt: Number(row.createdAt || 0)
+    })));
+  }
+
   async getAccountState({ userId, now }) {
     if (!this.users.has(userId)) return { error: AUTH_ERROR_CODES.ACCOUNT_NOT_FOUND };
     const row = this.accountStates.get(userId);

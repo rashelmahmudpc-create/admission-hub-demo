@@ -176,6 +176,32 @@ export class SqliteAuthRepository {
     this.sql.exec("INSERT INTO auth_meta(key,value) VALUES('schema_version','5') ON CONFLICT(key) DO UPDATE SET value=excluded.value");
   }
 
+  // Read-only reconciliation snapshot (Phase 3). HMAC refs only — never
+  // emails, tokens or raw provider subjects.
+  async identitySnapshot() {
+    const users = this.#rows('SELECT user_id AS id, status FROM auth_users')
+      .map(row => Object.freeze({ id: row.id, status: row.status }));
+    const externalIdentities = this.#rows(
+      'SELECT provider, subject_ref AS subjectRef, user_id AS userId FROM auth_external_identities'
+    ).map(row => Object.freeze({ provider: row.provider, subjectRef: row.subjectRef, userId: row.userId }));
+    return Object.freeze({ users: Object.freeze(users), externalIdentities: Object.freeze(externalIdentities) });
+  }
+
+  // Linked identities for a user: provider + verification facts only.
+  async listLinkedIdentities({ userId }) {
+    const rows = this.#rows(
+      'SELECT provider, last_verified_at AS lastVerifiedAt, created_at AS createdAt FROM auth_external_identities WHERE user_id=? ORDER BY provider',
+      userId
+    );
+    return Object.freeze(rows.map(row => Object.freeze({
+      provider: String(row.provider),
+      linked: true,
+      verified: Boolean(row.lastVerifiedAt),
+      lastVerifiedAt: Number(row.lastVerifiedAt || 0),
+      linkedAt: Number(row.createdAt || 0)
+    })));
+  }
+
   async getAccountState({ userId, now }) {
     const user = this.#one('SELECT user_id AS id FROM auth_users WHERE user_id=?', userId);
     if (!user) return { error: AUTH_ERROR_CODES.ACCOUNT_NOT_FOUND };

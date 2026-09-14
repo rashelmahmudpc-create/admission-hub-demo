@@ -1000,6 +1000,48 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           'Set-Cookie': sessionCookies(current.session, current.refreshed.refreshToken, context)
         });
       }
+      if (request.method === 'GET' && url.pathname === `${AUTH_API_PREFIX}/account`) {
+        if (!provider.configured) throw new NativeAuthError(AUTH_ERROR_CODES.NOT_CONFIGURED);
+        const current = await firebaseReadySession({
+          provider, jar, env, context, allowTelegram: telegramVerificationRequested(env, url)
+        });
+        const result = await callAuthority(env, '/internal/account/state', {
+          sessionToken: current.sessionToken,
+          input: { email: current.user.email, subject: current.user.subject },
+          context
+        });
+        return json(request, 200, { ok: true, account: result?.account || null }, {
+          'Set-Cookie': sessionCookies(current.session, current.refreshed.refreshToken, context)
+        });
+      }
+      if (request.method === 'GET' && url.pathname === `${AUTH_API_PREFIX}/identities`) {
+        if (!provider.configured) throw new NativeAuthError(AUTH_ERROR_CODES.NOT_CONFIGURED);
+        const current = await firebaseReadySession({
+          provider, jar, env, context, allowTelegram: telegramVerificationRequested(env, url)
+        });
+        const result = await callAuthority(env, '/internal/account/identities', {
+          sessionToken: current.sessionToken,
+          input: { email: current.user.email, subject: current.user.subject },
+          context
+        });
+        return json(request, 200, { ok: true, identities: result?.identities || [] }, {
+          'Set-Cookie': sessionCookies(current.session, current.refreshed.refreshToken, context)
+        });
+      }
+      if (request.method === 'GET' && url.pathname === `${AUTH_API_PREFIX}/admin/identity/health`) {
+        if (!adminAuthorized(request, env)) return json(request, 403, { ok: false, error: { code: 'FORBIDDEN', message: 'অনুমতি নেই।' } });
+        const result = await callAuthority(env, '/internal/identity/health', {});
+        return json(request, 200, { ok: true, health: result?.health || null });
+      }
+      if (request.method === 'POST' && url.pathname === `${AUTH_API_PREFIX}/admin/account/state`) {
+        if (!adminAuthorized(request, env)) return json(request, 403, { ok: false, error: { code: 'FORBIDDEN', message: 'অনুমতি নেই।' } });
+        const body = await readJson(request);
+        const result = await callAuthority(env, '/internal/account/state/set', {
+          userId: String(body?.userId || '').slice(0, 256),
+          status: String(body?.status || '')
+        });
+        return json(request, 200, { ok: true, account: result?.account || null });
+      }
 
       if (request.method === 'POST' && url.pathname === `${AUTH_API_PREFIX}/passkey/registration/begin`) {
         if (!provider.configured || !passkeyEndpointReady(env)) throw new NativeAuthError(AUTH_ERROR_CODES.PASSKEY_UNAVAILABLE);
