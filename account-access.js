@@ -80,58 +80,38 @@
 
           <header class="ah-welcome-header">
             <div class="ah-brand-lockup" aria-label="Admission Hub">
-              <span class="ah-brand-mark" aria-hidden="true"><svg viewBox="0 0 48 42" fill="none"><path d="M3 13 24 3l21 10-21 10L3 13Z"/><path d="M10 18v12c9 8 19 8 28 0V18"/><path d="M43 14v13"/><circle cx="43" cy="30" r="2.5"/></svg></span>
-              <span><strong>Admission <em>Hub</em></strong><small>Learn · Practice · Progress</small></span>
+              <span class="ah-brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M2.6 8.7 12 4.2l9.4 4.5-9.4 4.4L2.6 8.7Z"/><path d="M6.7 11.2v4.5c3.2 2.5 7.4 2.5 10.6 0v-4.5"/><path d="M21.3 9.3v5.6"/><circle cx="21.3" cy="16.6" r="1.3"/></svg></span>
+              <span><strong>Admission <em>Hub</em></strong><small data-bn="তোমার admission companion" data-en="Your admission companion">তোমার admission companion</small></span>
             </div>
             <label class="ah-language-picker"><span class="sr-only">ভাষা বেছে নাও</span><select data-role="welcome-language" aria-label="ভাষা বেছে নাও"><option value="bn">বাংলা</option><option value="en">English</option></select></label>
           </header>
 
           <div class="ah-welcome-stage">
-            <section class="ah-welcome-copy" aria-labelledby="ah-welcome-heading">
-              <p class="ah-welcome-eyebrow"><span aria-hidden="true"></span><b data-bn="আপনার লক্ষ্য, আপনার অধিকার" data-en="Your goal, your control">আপনার লক্ষ্য, আপনার অধিকার</b></p>
-              <h1 id="ah-welcome-heading" data-bn="আপনার লক্ষ্যের পথে,|প্রথম ধাপটা আজ থেকেই।" data-en="On the path to your goal,|take the first step today.">আপনার লক্ষ্যের পথে,<br><em>প্রথম ধাপটা আজ থেকেই।</em></h1>
-            </section>
-
-            <section class="ah-journey-console" data-native-welcome-visual="journey-console-v1" aria-label="Admission প্রস্তুতির interactive journey map">
-              <div class="ah-console-grid" aria-hidden="true"></div>
+            <section class="ah-journey-console" data-native-welcome-visual="journey-console-v1" aria-label="Admission প্রস্তুতির journey map">
               <div class="ah-3d-student-stage" data-3d-student-stage="student-hero-v1" aria-hidden="true">
-                <div class="ah-3d-orbit-ring" aria-hidden="true"></div>
-                <div class="ah-3d-energy-path ah-3d-energy-path-a" aria-hidden="true"></div>
-                <div class="ah-3d-energy-path ah-3d-energy-path-b" aria-hidden="true"></div>
-                <div class="ah-3d-cloud ah-3d-cloud-a" aria-hidden="true"></div>
-                <div class="ah-3d-cloud ah-3d-cloud-b" aria-hidden="true"></div>
-                <div class="ah-3d-campus" aria-hidden="true">
-                  <span class="ah-3d-campus-dome"></span><span class="ah-3d-campus-wing ah-3d-campus-wing-a"></span><span class="ah-3d-campus-wing ah-3d-campus-wing-b"></span><span class="ah-3d-campus-door"></span><span class="ah-3d-campus-win"></span>
+                <span class="ah-hero-halo"></span>
+                <span class="ah-orbit-ring"></span>
+                <span class="ah-orbit-ring is-inner"></span>
+                <span class="ah-sparkle ah-sparkle-a"></span>
+                <span class="ah-sparkle ah-sparkle-b"></span>
+                <span class="ah-sparkle ah-sparkle-c"></span>
+                <div class="ah-console-core">
+                  <span class="ah-core-halo"></span>
+                  <span class="ah-core-mark"><svg viewBox="0 0 48 48" fill="none"><path d="M6.5 18.4 24 10l17.5 8.4L24 26.8 6.5 18.4Z"/><path d="M13 23.4v9.4c6.8 5.2 15.2 5.2 22 0v-9.4"/><path d="M41 20.1v10.2"/><circle cx="41" cy="32.9" r="2.5"/></svg></span>
                 </div>
-                <div class="ah-3d-student" data-3d-student="profile-v1" aria-hidden="true">
-                  <div class="ah-3d-student-body"><span class="ah-3d-s-hair"></span><span class="ah-3d-s-face"></span><span class="ah-3d-s-torso"></span><span class="ah-3d-s-pack"></span><span class="ah-3d-s-arm"></span><span class="ah-3d-s-device"></span></div>
-                  <div class="ah-3d-s-shadow"></div>
+                <div class="ah-console-modules">
+                  <article class="ah-mod ah-mod-compass"><span class="mint" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="8.3"/><path d="m15.5 8.5-2.1 4.9-4.9 2.1 2.1-4.9 4.9-2.1Z"/><circle cx="12" cy="12" r="1.1"/></svg></span></article>
+                  <article class="ah-mod ah-mod-help"><span class="blue" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M9.3 9.2a2.8 2.8 0 1 1 3.9 2.6c-.8.4-1.2 1-1.2 1.8v.4"/><circle cx="12" cy="17.7" r="1.15" fill="currentColor" stroke="none"/></svg></span></article>
+                  <article class="ah-mod ah-mod-verified"><span class="mint" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="m5.2 12.6 4.2 4.2L18.8 7.4"/></svg></span><b data-bn="Verified" data-en="Verified">Verified</b></article>
                 </div>
-                <div class="ah-3d-object ah-3d-openbook" aria-hidden="true"><i></i><i></i><b></b></div>
-                <div class="ah-3d-object ah-3d-checklist" aria-hidden="true"><i></i><i></i><i></i></div>
-                <div class="ah-3d-object ah-3d-chart" aria-hidden="true"><i></i><i></i><i></i></div>
-                <div class="ah-3d-object ah-3d-target" aria-hidden="true"><span></span><i></i></div>
-                <div class="ah-3d-object ah-3d-cap" aria-hidden="true"><span></span><i></i></div>
-                <div class="ah-3d-leaf ah-3d-leaf-a" aria-hidden="true"></div>
-                <div class="ah-3d-leaf ah-3d-leaf-b" aria-hidden="true"></div>
-                <div class="ah-3d-leaf ah-3d-leaf-c" aria-hidden="true"></div>
-              </div>
-              <header class="ah-console-head">
-                <span><i aria-hidden="true"></i><b>STUDY PATH</b></span>
-                <small>EXPLORE</small>
-              </header>
-              <div class="ah-console-core">
-                <div class="ah-core-orbit" aria-hidden="true"><i></i><i></i><i></i></div>
-                <span class="ah-core-mark" aria-hidden="true"><svg viewBox="0 0 48 48" fill="none"><path d="M8 20 24 11l16 9-16 9-16-9Z"/><path d="M13 25v9c7 6 15 6 22 0v-9M39 22v10"/></svg></span>
-                <div><small>YOUR NEXT MOVE</small><strong data-bn="শেখা থেকে অর্জন" data-en="Learn to achieve">শেখা থেকে অর্জন</strong><span data-bn="এক ধাপ করে সামনে" data-en="One clear step at a time">এক ধাপ করে সামনে</span></div>
               </div>
               <div class="ah-route-track" aria-hidden="true"><span class="done"></span><i></i><span></span><i></i><span></span><b></b></div>
-              <div class="ah-console-modules">
-                <article><span class="mint" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M4 5.5c3.5-1.3 6.2-.5 8 1.5v12c-2.3-2-5-2.6-8-1.6V5.5Zm16 0c-3.5-1.3-6.2-.5-8 1.5v12c2.3-2 5-2.6 8-1.6V5.5Z"/></svg></span><div><small>LEARN</small><strong data-bn="পরিষ্কার ধারণা" data-en="Clear concepts">পরিষ্কার ধারণা</strong></div></article>
-                <article><span class="blue" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><rect x="4" y="4" width="16" height="16" rx="5"/><path d="m8 12 2.5 2.5L16.5 8"/></svg></span><div><small>PRACTICE</small><strong data-bn="নিজেকে যাচাই" data-en="Test yourself">নিজেকে যাচাই</strong></div></article>
-                <article><span class="gold" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><path d="m15 9 5-5m0 0v4m0-4h-4"/></svg></span><div><small>PROGRESS</small><strong data-bn="লক্ষ্যের দিকে" data-en="Toward your goal">লক্ষ্যের দিকে</strong></div></article>
-              </div>
-              <footer class="ah-console-foot"><span><i></i>ONE CLEAR PATH</span><b data-bn="আজ থেকেই শুরু" data-en="Start today">আজ থেকেই শুরু</b></footer>
+            </section>
+
+            <section class="ah-welcome-copy" aria-labelledby="ah-welcome-heading">
+              <p class="ah-welcome-eyebrow"><span aria-hidden="true"></span><b data-bn="Admission প্রস্তুতি, সহজ করে" data-en="Admission prep, simplified">Admission প্রস্তুতি, সহজ করে</b></p>
+              <h1 id="ah-welcome-heading" data-bn="তোমার Admission Journey|শুরু হোক!" data-en="Your admission journey|starts here">তোমার Admission Journey<br><em>শুরু হোক!</em></h1>
+              <p class="ah-welcome-lede" data-bn="পড়াশোনা, practice আর preparation — সবকিছু এক জায়গায়।" data-en="Study, practice and preparation — all in one place.">পড়াশোনা, practice আর preparation — সবকিছু এক জায়গায়।</p>
             </section>
           </div>
 
@@ -139,24 +119,20 @@
             <article><i class="learn" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M4 5.5c3.5-1.3 6.2-.5 8 1.5v12c-2.3-2-5-2.6-8-1.6V5.5Zm16 0c-3.5-1.3-6.2-.5-8 1.5v12c2.3-2 5-2.6 8-1.6V5.5Z"/></svg></i><span><strong data-bn="Learn" data-en="Learn">Learn</strong><small data-bn="From expert resources" data-en="From expert resources">From expert resources</small></span></article>
             <article><i class="practice" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><rect x="4" y="4" width="16" height="16" rx="5"/><path d="m8 12 2.5 2.5L16.5 8"/></svg></i><span><strong data-bn="Practice" data-en="Practice">Practice</strong><small data-bn="With smart question bank" data-en="With smart question bank">With smart question bank</small></span></article>
             <article><i class="improve" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M4 19h16M7 15l3-4 3 3 5-7M18 7l-5 6-3-3-4 4"/></svg></i><span><strong data-bn="Improve" data-en="Improve">Improve</strong><small data-bn="Track your progress" data-en="Track your progress">Track your progress</small></span></article>
-            <article><i class="achieve" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3l2.4 5.2 5.7.6 4.8-4.6 2.1 10.5.6-1 6.9 6.7v-2.4m-.2-6-4.4 4.4 4.4-4.4Z"/></svg></i><span><strong data-bn="Achieve" data-en="Achieve">Achieve</strong><small data-bn="Your dream" data-en="Your dream">Your dream</small></span></article>
+            <article><i class="achieve" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3.6l2.2 4.8 5.2.6-3.9 3.4 1.1 5.2L12 15l-4.6 2.6 1.1-5.2-3.9-3.4 5.2-.6L12 3.6Z"/></svg></i><span><strong data-bn="Achieve" data-en="Achieve">Achieve</strong><small data-bn="Your dream" data-en="Your dream">Your dream</small></span></article>
           </section>
 
           <div class="ah-entry-actions" aria-label="প্রবেশের পদ্ধতি">
-            <button class="ah-account-primary ah-entry-signup" type="button" data-role="welcome-signup"><span class="ah-entry-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><circle cx="9" cy="8" r="3"/><path d="M3.5 19c.7-4 2.5-6 5.5-6s4.8 2 5.5 6M18 7v6m-3-3h6"/></svg></span><span data-bn="Sign Up" data-en="Sign Up">Sign Up</span><b aria-hidden="true">→</b></button>
-            <button class="ah-account-secondary ah-entry-login" type="button" data-role="welcome-login"><span class="ah-entry-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><rect x="5" y="10" width="14" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3m-4 4v3"/></svg></span><span data-bn="Log In" data-en="Log In">Log In</span><b aria-hidden="true">→</b></button>
-            <div class="ah-account-google ah-welcome-google" data-role="welcome-google-button"><button class="ah-account-secondary" type="button" disabled aria-label="Google দিয়ে প্রবেশ এখন প্রস্তুত হচ্ছে"><span class="ah-google-g" aria-hidden="true">G</span><span>Continue with Google</span><b aria-hidden="true">→</b></button></div>
-            <button class="ah-account-link ah-entry-guest" type="button" data-role="continue-guest"><span class="ah-entry-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="7" r="3"/><path d="M5.5 20c.8-4.5 2.9-6.7 6.5-6.7s5.7 2.2 6.5 6.7"/></svg></span><span data-bn="Continue as Guest" data-en="Continue as Guest">Continue as Guest</span><b aria-hidden="true">→</b></button>
+            <button class="ah-account-primary ah-entry-signup" type="button" data-role="welcome-signup"><span class="ah-entry-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M11.4 3.8l1.6 3.7 3.7 1.6-3.7 1.6-1.6 3.7-1.6-3.7L6.1 9.1l3.7-1.6 1.6-3.7Z"/><path d="M18 14.6l.9 2 2 .9-2 .9-.9 2-.9-2-2-.9 2-.9.9-2Z"/></svg></span><span data-bn="Sign Up" data-en="Sign Up">Sign Up</span></button>
+            <button class="ah-account-secondary ah-entry-login" type="button" data-role="welcome-login"><span class="ah-entry-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><rect x="5" y="10" width="14" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3m-4 4v3"/></svg></span><span data-bn="Log In" data-en="Log In">Log In</span></button>
+            <div class="ah-account-google ah-welcome-google" data-role="welcome-google-button"><button class="ah-account-secondary" type="button" disabled aria-label="Google দিয়ে প্রবেশ এখন প্রস্তুত হচ্ছে"><span class="ah-google-g" aria-hidden="true">G</span><span>Continue with Google</span></button></div>
+            <button class="ah-account-link ah-entry-guest" type="button" data-role="continue-guest"><span data-bn="Continue as Guest" data-en="Continue as Guest">Continue as Guest</span></button>
           </div>
 
           <div class="ah-welcome-ai-helper" data-ai-helper-contract="welcome-ai-v1" aria-label="Admission Hub AI সহায়ক">
             <div class="ah-ai-bot" aria-hidden="true"><span class="ah-ai-eye"></span><span class="ah-ai-eye"></span><span class="ah-ai-mouth"></span><span class="ah-ai-spark"></span></div>
             <p class="ah-ai-bubble"><b>Need help?</b><span>I'm here!</span></p>
           </div>
-
-          <footer class="ah-welcome-landscape" aria-hidden="true">
-            <svg viewBox="0 0 430 92" preserveAspectRatio="none"><path class="hill-back" d="M0 52c44-26 82-24 124-4s76 16 122-6c42-20 94-18 140 8 16 9 32 13 44 15v27H0V52Z"/><path class="hill-front" d="M0 72c56-22 104-14 150 6 52 22 100 10 148-8 44-16 92-10 132 12v18H0V72Z"/><g class="campus"><path d="M24 76h44v8H24zM32 68h28v8H32zM44 60h6v8h-6zM38 61l6-7 6 7M70 84h8v-6h-8zM86 73h14v11H86zM94 64h4v9h-4z"/></g><g class="trees"><path d="M116 84V61m0 2-6 11h12l-6-11Zm16 23V68m0 1-4 9h8l-4-9Z"/><path d="M322 84V58m0 2-8 13h16l-8-13Zm14 26V66m0 1-5 10h10l-5-10Z"/><path class="leaf" d="M398 88c-4-26 8-52 26-68 8 32 2 50-26 68Z"/><path class="leaf-stroke" d="M399 85c3-24 10-40 20-52"/></g></svg>
-          </footer>
         </div>
 
         <form class="ah-account-view ah-login-view" data-view="login" novalidate>

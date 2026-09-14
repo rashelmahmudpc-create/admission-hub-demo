@@ -206,7 +206,7 @@ try {
   assert.ok(consoleInteraction.moved.x && consoleInteraction.moved.y, JSON.stringify(consoleInteraction));
   assert.deepEqual(consoleInteraction.reset, { x: '', y: '' });
   await page.locator('[data-role="welcome-language"]').selectOption('en');
-  assert.match(await page.locator('#ah-welcome-heading').textContent(), /On the path to your goal/);
+  assert.match(await page.locator('#ah-welcome-heading').textContent(), /Your admission journey/);
   await page.locator('[data-role="welcome-language"]').selectOption('bn');
 
   assert.equal(await page.locator('.ah-account-shell').getAttribute('data-visual-contract'), 'code-native-page-system-v1');
