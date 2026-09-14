@@ -909,7 +909,7 @@
     });
   };
 
-  // Reference auth screens (v253): one generic toggle for every code-native help
+  // Reference auth screens (v254): one generic toggle for every code-native help
   // card on the login / verify / email / telegram / passkey screens. Plain div
   // show/hide only - no dialog semantics, no network call, no AI routing.
   const setupHelpToggles = () => {
@@ -1660,7 +1660,7 @@
     else if (state.verification) showView('verify');
     else if (forceWelcome || !entryMode()) showView('welcome');
     else showView('login');
-    if (state.available === false && state.currentView !== 'welcome') message('Account service এখন প্রস্তুত নয়—Guest হিসেবে Dashboard ব্যবহার করতে পারো।', 'info');
+    if (state.available === false && state.currentView !== 'welcome') message('Account service এখন প্রস্তুত নয়—Guest হিসেবে Dashboard ব্যবহার করতে পারো।' + unavailableHint(), 'info');
   };
   const close = () => {
     setAccountPageActive(false);
