@@ -12,8 +12,8 @@ const HTML = read('index.html');
 const SW = read('sw.js');
 const PAGES_GUARD = read('.github/workflows/cf-pages.yml');
 const RELEASE_WORKFLOW = read('.github/workflows/telegram-auth-canary-activate.yml');
-const UI_VERSION = '20260914-premium-welcome-v1';
-const SHELL_VERSION = 'v244-premium-welcome-20260914';
+const UI_VERSION = '20260914-clean-welcome-v1';
+const SHELL_VERSION = 'v245-clean-welcome-20260914';
 
 const between = (source, start, end) => {
   const from = source.indexOf(start);
@@ -46,13 +46,13 @@ test('Welcome is rebuilt as modular code-native UI with exactly four entry paths
   assert.match(welcome, /class="ah-console-core"/);
   assert.match(welcome, /class="ah-route-track"/);
   assert.match(welcome, /class="ah-console-modules"/);
-  assert.match(welcome, /Admission প্রস্তুতি, সহজ করে/);
-  assert.match(welcome, /তোমার Admission Journey/);
-  assert.match(welcome, /data-3d-student-stage="student-hero-v1"/);
+  assert.match(welcome, /STUDY PATH/);
+  assert.match(welcome, /আপনার লক্ষ্যের পথে/);
+  assert.doesNotMatch(welcome, /data-3d-student-stage|ah-3d-student|ah-3d-object|ah-3d-campus/);
+  assert.doesNotMatch(CSS, /ah-3d-/);
   assert.match(welcome, /data-ai-helper-contract="welcome-ai-v1"/);
   assert.match(welcome, /data-role="welcome-language"/);
-  assert.equal((welcome.match(/<article\b/g) || []).length, 7, 'three console modules plus four benefit modules');
-  assert.equal((welcome.match(/<article class="ah-mod /g) || []).length, 3, 'three floating journey-satellite modules');
+  assert.equal((welcome.match(/<article>/g) || []).length, 7, 'three console modules plus four benefit modules');
   assert.deepEqual([...welcome.matchAll(/data-role="(welcome-signup|welcome-login|continue-guest|welcome-google-button)"/g)].map(match => match[1]).sort(), [
     'continue-guest', 'welcome-google-button', 'welcome-login', 'welcome-signup'
   ]);
