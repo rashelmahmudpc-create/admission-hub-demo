@@ -12,8 +12,8 @@ const HTML = read('index.html');
 const SW = read('sw.js');
 const PAGES_GUARD = read('.github/workflows/cf-pages.yml');
 const RELEASE_WORKFLOW = read('.github/workflows/telegram-auth-canary-activate.yml');
-const UI_VERSION = '20260914-fit-welcome-v1';
-const SHELL_VERSION = 'v246-fit-welcome-20260914';
+const UI_VERSION = '20260914-fit-welcome-v2';
+const SHELL_VERSION = 'v247-fit-welcome-20260914';
 
 const between = (source, start, end) => {
   const from = source.indexOf(start);

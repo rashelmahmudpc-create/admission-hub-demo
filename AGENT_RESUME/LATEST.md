@@ -1,15 +1,16 @@
-# LATEST — App-style one-screen Welcome + premium action stack (v246)
+# LATEST — এক স্ক্রিনে ফিট, কিন্তু কিছুই লুকানো নেই (v247)
 
 **Updated:** 2026-09-14 (Asia/Dhaka) · Agent: **Arena Agent Mode**
 
 ## STATUS
 
-- **IMPLEMENTED:** The first-entry Welcome now fills exactly one viewport on every device — verified at 320×568, 360×640, 375×667, 390×844, 393×852, 412×915, 430×932, 768×1024, 820×1180, 1024×768, 1280×800, 1440×900 and 1920×1080 with zero vertical or horizontal overflow. The four entry paths were rebuilt as one premium stack: uniform 56px pills, gradient Sign Up, soft-shadow Log In, circular colour-mark Google button and a plain underlined Guest link.
-- **TESTED:** auth 62/62 · email 108/108 + 4/4 · native-auth 203/203 · browser audit ok with pageErrors 0 · 13/13 viewports fit · 53/53 release file asserts.
-- **HARDENED:** the protected browser audit now fails the release if the Welcome page scrolls or any entry button drops below the 44px touch target.
+- **IMPLEMENTED:** The Welcome still fills exactly one viewport on every device (320×568 → 1920×1080, zero overflow) — but **nothing is hidden any more**. All four benefit cards (Learn / Practice / Improve / Achieve), the brand header, the journey console and all four entry paths stay visible on every screen; they only get smaller. The four entry buttons never scale down (46–58px, Guest 44px+).
+- **HOW:** the upper content lives in a `.ah-welcome-fit` box that reserves its own scaled height (`fitWelcomeView()` sets `--ah-fit` + an explicit box height and scales only the inner layer from its top), so a scaled layout can never clip or slide under the buttons. Every size is a `vh`/`vw` clamp; only decorative items (landscape art, tagline, console micro-labels) hide on very short screens.
+- **TESTED:** auth 62/62 · email 108/108 + 4/4 · native-auth 203/203 · browser audit pageErrors 0 · 13/13 viewports fit with 4/4 benefit cards visible and every button ≥44px · 53/53 release file asserts.
+- **HARDENED:** `fit-check.mjs` now fails (exit ≠ 0) if any viewport scrolls, any benefit card is hidden, any entry path drops below 44px, or the stack leaves the viewport.
 - **DEPLOYED:** pending the publish run after merge.
 
 ## DETAIL
 
-- `AGENT_RESUME/2026-09-14-fit-welcome-v246.md`
-- History: v244 (premium scene rebuild) was reverted by owner review; v245 removed the 3D hero and kept the original design; v246 makes it a one-screen app view.
+- `AGENT_RESUME/2026-09-14-fit-all-content-v247.md`
+- History: v244 (premium scene rebuild, reverted by owner) → v245 (3D hero removed, original design kept) → v246 (one-screen fit, but benefits hidden on mobile — rejected) → v247 (one-screen fit with zero hidden content).
