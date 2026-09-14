@@ -81,7 +81,7 @@
 .ah-password-wrap{position:relative}.ah-password-wrap .ah-account-input{padding-right:67px}.ah-password-toggle{position:absolute;right:7px;top:7px;height:36px;padding:0 9px;border:0;border-radius:9px;background:#eff7f4;color:#21735e;font:800 11px/1 inherit;cursor:pointer}.ah-forgot-link{display:block;margin:9px 0 0 auto;font-size:11px}
 .ah-signup-heading{text-align:left;margin-bottom:17px}.ah-signup-progress{display:grid;grid-template-columns:auto 1fr auto 1fr auto;align-items:center;margin:0 2px 22px}.ah-signup-progress>b{height:2px;background:#d9e9e4}.ah-signup-progress button{display:grid;justify-items:center;gap:4px;padding:0;border:0;background:transparent;color:#869891;font:800 9px/1.2 inherit;cursor:pointer}.ah-signup-progress button i{display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:#e9f1ef;color:#6d827b;font-style:normal;font-size:11px}.ah-signup-progress button.active{color:#107457}.ah-signup-progress button.active i,.ah-signup-progress button.done i{background:#12916b;color:#fff;box-shadow:0 0 0 4px rgba(18,145,107,.1)}.ah-signup-progress button.done{color:#257c65}.ah-signup-panel[hidden]{display:none!important}.ah-signup-panel{animation:ahPanelIn .28s ease both}.ah-field-feedback{min-height:16px;margin:6px 2px 0;color:#748780;font-size:10px;line-height:1.45}.ah-field-feedback.valid{color:#16805f;font-weight:750}.ah-field-feedback.error{color:#a74838;font-weight:750}
 .ah-dob-card{margin:16px 0 0;padding:14px;border:1px solid #d8e8e3;border-radius:18px;background:linear-gradient(145deg,#f7fcfa,#eef9f5)}.ah-dob-card legend{padding:0 7px;color:#274d43;font-size:13px;font-weight:850}.ah-dob-selectors{display:grid;grid-template-columns:.75fr 1.25fr 1fr;gap:8px}.ah-dob-selectors label{display:grid;gap:5px}.ah-dob-selectors span{color:#768a83;font-size:9px;font-weight:850;text-transform:uppercase;letter-spacing:.08em}.ah-dob-selectors select{width:100%;height:48px;padding:0 7px;border:1px solid #cae0d8;border-radius:13px;background:#fff;color:#164a3c;font:800 14px/1 inherit;text-align:center}.ah-dob-card>p{margin:11px 0 0;text-align:center;color:#16805f;font-size:13px;font-weight:850}
-.ah-search-field{position:relative}.ah-search-results{position:absolute;z-index:8;left:0;right:0;top:76px;display:grid;gap:5px;padding:7px;border:1px solid #cce0d9;border-radius:15px;background:#fff;box-shadow:0 17px 34px rgba(18,68,54,.18)}.ah-search-results[hidden]{display:none!important}.ah-search-option{display:flex;align-items:center;gap:9px;width:100%;min-height:42px;padding:8px 10px;border:0;border-radius:10px;background:#f5faf8;color:#244d42;text-align:left;font:750 12px/1.35 inherit;cursor:pointer}.ah-search-option:hover,.ah-search-option:focus{background:#e5f7f0;outline:0}.ah-search-option::before{content:"⌕";display:grid;place-items:center;width:24px;height:24px;flex:0 0 auto;border-radius:8px;background:#dff3eb;color:#16805f}.ah-search-option.manual{color:#17664f}.ah-search-option.manual::before{content:"+"}.ah-panel-actions{display:grid;grid-template-columns:.72fr 1.28fr;gap:9px;margin-top:15px}.ah-panel-actions .ah-account-primary,.ah-panel-actions .ah-account-secondary{margin-top:0}
+.ah-search-field{position:relative}.ah-search-results{position:absolute;z-index:8;left:0;right:0;top:76px;display:grid;gap:5px;padding:7px;border:1px solid #cce0d9;border-radius:15px;background:#fff;box-shadow:0 17px 34px rgba(18,68,54,.18)}.ah-search-results[hidden]{display:none!important}.ah-panel-actions{display:grid;grid-template-columns:.72fr 1.28fr;gap:9px;margin-top:15px}.ah-panel-actions .ah-account-primary,.ah-panel-actions .ah-account-secondary{margin-top:0}
 .ah-security-illustration{position:relative;width:90px;height:64px;margin:0 auto 17px}.ah-security-illustration>span{position:absolute;left:18px;top:5px;display:grid;place-items:center;width:48px;height:58px;border:3px solid #bfe8da;border-radius:24px 24px 18px 18px;color:#15906a}.ah-security-illustration>i{position:absolute;left:26px;top:16px;width:31px;height:28px;border:2px dashed #34b98e;border-radius:50%}.ah-security-illustration>b{position:absolute;right:4px;bottom:2px;display:grid;place-items:center;width:27px;height:27px;border-radius:50%;background:#14a879;color:#fff}.ah-password-meter{height:5px;margin-top:8px;border-radius:999px;background:#e5eeeb;overflow:hidden}.ah-password-meter i{display:block;width:0;height:100%;border-radius:inherit;background:#e4a620;transition:width .2s ease,background .2s ease}
 .ah-verification-view,.ah-account-telegram-view,.ah-passkey-onboarding,.ah-success-view{text-align:center}.ah-method-stack{display:grid;gap:10px}.ah-method-card{position:relative;display:grid;grid-template-columns:48px 1fr auto;align-items:center;gap:11px;width:100%;min-height:72px;padding:11px 13px;border:1px solid #d4e5df;border-radius:17px;background:#fff;color:#163f34;text-align:left;font-family:inherit;cursor:pointer;box-shadow:0 7px 18px rgba(17,88,67,.06);transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease}.ah-method-card:hover{transform:translateY(-2px);border-color:#8acdb8;box-shadow:0 12px 25px rgba(17,88,67,.12)}.ah-method-card>span:nth-child(2) strong,.ah-method-card>span:nth-child(2) small{display:block}.ah-method-card strong{font-size:14px}.ah-method-card small{margin-top:4px;color:#6c8079;font-size:10px}.ah-method-card>b{font-size:22px;color:#68a995}.ah-method-card>em{position:absolute;right:12px;top:7px;padding:3px 7px;border-radius:999px;background:#e6f8f1;color:#15785c;font-size:8px;font-style:normal;font-weight:900}.ah-method-icon{display:grid;place-items:center;width:46px;height:46px;border-radius:15px;background:linear-gradient(145deg,#e4f6ff,#d9f0fc);color:#168ac2;font-size:22px}.ah-method-icon.email{background:linear-gradient(145deg,#ddf9ef,#eaf8f4);color:#138060}.ah-email-hero{position:relative;width:108px;height:86px;margin:2px auto 12px}.ah-email-hero>span{position:absolute;inset:13px 14px 7px;display:grid;place-items:center;border-radius:22px;background:linear-gradient(145deg,#dff8ef,#bcebdc);color:#16805f;font-size:38px;animation:ahHeroFloat 4s ease-in-out infinite}.ah-email-hero>i{position:absolute;right:2px;top:1px;display:grid;place-items:center;width:31px;height:31px;border-radius:50%;background:#12a979;color:#fff;font-style:normal;font-weight:900;box-shadow:0 0 0 7px rgba(18,169,121,.12)}.ah-status-card{display:flex;align-items:center;gap:10px;padding:11px 12px;border:1px solid #cce6dc;border-radius:14px;background:#f4fbf8;text-align:left}.ah-status-card>span{display:grid;place-items:center;width:29px;height:29px;border-radius:10px;background:#16a377;color:#fff}.ah-status-card strong,.ah-status-card small{display:block}.ah-status-card strong{font-size:12px}.ah-status-card small{margin-top:3px;color:#72867f;font-size:9px}
 .ah-telegram-hero{position:relative;width:115px;height:100px;margin:0 auto 3px}.ah-telegram-hero>span{position:absolute;inset:13px;display:grid;place-items:center;border-radius:50%;background:linear-gradient(145deg,#45b9eb,#148ccb);color:#fff;font-size:42px;transform:rotate(-22deg);box-shadow:0 16px 34px rgba(28,151,207,.24);animation:ahHeroFloat 4.2s ease-in-out infinite}.ah-telegram-hero>i{position:absolute;inset:2px;border:1px dashed #91d9f4;border-radius:50%;animation:ahOrbit 14s linear infinite}
@@ -495,4 +495,332 @@ body.ah-account-page-active>.ah-account-launcher{display:none!important}
    shrunk — this only adds empty space below the last option. */
 @media(max-width:760px){
   .ah-welcome-view{padding-bottom:calc(24px + env(safe-area-inset-bottom) + 96px)}
+}
+
+/* ===== Education step (school / college) — owner reference design, 2026-09-14 =====
+   Scoped to the two education panels so every other page (Welcome, Personal,
+   Security, Log In …) keeps its existing design. Code-native only: inline SVG
+   icons, gradients, no raster and no url() backgrounds. */
+.ah-signup-steplabel{display:none}
+[data-view="signup"]:is([data-signup-current-step="school"],[data-signup-current-step="college"]) .ah-signup-brand,
+[data-view="signup"]:is([data-signup-current-step="school"],[data-signup-current-step="college"]) .ah-signup-secure{display:none}
+[data-view="signup"]:is([data-signup-current-step="school"],[data-signup-current-step="college"]) .ah-signup-steplabel{
+  display:block;
+  margin-left:2px;
+  color:#0e2c25;
+  font-size:19px;
+  font-weight:900;
+  letter-spacing:-.01em;
+}
+
+/* compact stepper: ✓ Personal — 2 Education — 3 Security */
+[data-view="signup"]:is([data-signup-current-step="school"],[data-signup-current-step="college"]) .ah-signup-progress{
+  display:block;
+  height:auto;
+  margin:calc(6px + env(safe-area-inset-top)) auto 14px;
+  width:min(calc(100% - 40px),430px);
+}
+[data-view="signup"]:is([data-signup-current-step="school"],[data-signup-current-step="college"]) .ah-signup-progress ol{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  margin:0;
+  padding:0;
+  list-style:none;
+}
+[data-view="signup"]:is([data-signup-current-step="school"],[data-signup-current-step="college"]) .ah-signup-progress li{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  min-width:0;
+}
+[data-view="signup"]:is([data-signup-current-step="school"],[data-signup-current-step="college"]) .ah-signup-progress ol::before,
+[data-view="signup"]:is([data-signup-current-step="school"],[data-signup-current-step="college"]) .ah-signup-progress ol::after,
+[data-view="signup"]:is([data-signup-current-step="school"],[data-signup-current-step="college"]) .ah-signup-progress>b{
+  content:none!important;
+  display:none!important;
+}
+[data-view="signup"]:is([data-signup-current-step="school"],[data-signup-current-step="college"]) .ah-signup-progress li+li::before{
+  content:"";
+  width:26px;
+  height:2px;
+  flex:0 0 auto;
+  border-radius:2px;
+  background:#d7e5e0;
+}
+[data-view="signup"]:is([data-signup-current-step="school"],[data-signup-current-step="college"]) .ah-signup-progress li:has(button.done)+li::before{
+  background:#12a876;
+}
+[data-view="signup"]:is([data-signup-current-step="school"],[data-signup-current-step="college"]) .ah-signup-progress button{
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  padding:0;
+  border:0;
+  background:transparent;
+  color:#9aa9a3;
+  font:800 14.5px/1 inherit;
+  cursor:pointer;
+}
+[data-view="signup"]:is([data-signup-current-step="school"],[data-signup-current-step="college"]) .ah-signup-progress button i{
+  position:static;
+  display:grid;
+  place-items:center;
+  width:27px;
+  height:27px;
+  flex:0 0 auto;
+  border-radius:50%;
+  background:#e7efec;
+  color:#8b9c95;
+  font-style:normal;
+  font-size:13px;
+  font-weight:900;
+  box-shadow:none;
+}
+[data-view="signup"]:is([data-signup-current-step="school"],[data-signup-current-step="college"]) .ah-signup-progress button small{display:none}
+[data-view="signup"]:is([data-signup-current-step="school"],[data-signup-current-step="college"]) .ah-signup-progress button.done{color:#12a876}
+[data-view="signup"]:is([data-signup-current-step="school"],[data-signup-current-step="college"]) .ah-signup-progress button.done i{
+  background:#12a876;
+  color:#fff;
+  font-size:0;
+}
+[data-view="signup"]:is([data-signup-current-step="school"],[data-signup-current-step="college"]) .ah-signup-progress button.done i::before{
+  content:"";
+  width:12px;
+  height:7px;
+  border-left:2.4px solid #fff;
+  border-bottom:2.4px solid #fff;
+  border-radius:1px;
+  rotate:-45deg;
+  translate:0 -1px;
+}
+[data-view="signup"]:is([data-signup-current-step="school"],[data-signup-current-step="college"]) .ah-signup-progress button.active{color:#0e2c25}
+[data-view="signup"]:is([data-signup-current-step="school"],[data-signup-current-step="college"]) .ah-signup-progress button.active i{
+  background:#12a876;
+  color:#fff;
+  box-shadow:0 0 0 4px rgba(18,168,118,.12);
+}
+
+/* the education card itself */
+[data-view="signup"]:is([data-signup-current-step="school"],[data-signup-current-step="college"]) .ah-education-panel{
+  width:min(calc(100% - 40px),420px);
+  margin:0 auto;
+  padding:0 0 calc(20px + env(safe-area-inset-bottom));
+}
+.ah-signup-panel.ah-education-panel{width:min(calc(100% - 32px),430px);min-height:0;margin:0 auto;padding:0;border:0;border-radius:0;background:transparent;box-shadow:none}
+.ah-education-panel .ah-standalone-heading{background:transparent;border:0;box-shadow:none;padding:0}
+.ah-education-panel .ah-education-heading{margin:2px 0 14px}
+.ah-education-panel .ah-education-heading h3{
+  margin:0;
+  color:#0e2c25;
+  font-size:26px;
+  font-weight:900;
+  line-height:1.42;
+  letter-spacing:-.01em;
+}
+.ah-education-panel .ah-education-heading p{
+  margin:7px 0 0;
+  color:#7b8f88;
+  font-size:13.5px;
+  font-weight:600;
+  line-height:1.6;
+}
+.ah-education-panel .ah-education-ornament{display:none}
+.ah-education-panel .ah-search-field{margin:0}
+.ah-education-panel .ah-search-input-wrap{
+  display:flex;
+  align-items:center;
+  gap:11px;
+  height:58px;
+  box-sizing:border-box;
+  padding:0 15px;
+  border:1.5px solid #d8e5e0;
+  border-radius:17px;
+  background:#fff;
+  box-shadow:0 6px 16px rgba(15,72,58,.05);
+  transition:border-color .18s ease,box-shadow .18s ease;
+}
+.ah-education-panel .ah-search-input-wrap:focus-within{
+  border-color:#12a876;
+  box-shadow:0 0 0 4px rgba(18,168,118,.12);
+}
+.ah-education-panel .ah-search-glyph{display:grid;place-items:center;width:22px;height:22px;flex:0 0 auto;color:#5d8a7c}
+.ah-education-panel .ah-search-glyph svg{width:100%;height:100%;stroke:currentColor;stroke-width:1.9;stroke-linecap:round}
+.ah-education-panel .ah-search-input-wrap input,
+.ah-account-shell[data-visual-contract="code-native-page-system-v1"] .ah-education-panel .ah-account-input{
+  height:auto;
+  min-height:0;
+  padding:0;
+  border:0;
+  border-radius:0;
+  background:transparent;
+  box-shadow:none;
+  color:#12302a;
+  font-size:16.5px;
+  font-weight:700;
+}
+.ah-education-panel .ah-search-input-wrap input:focus{outline:none;box-shadow:none}
+.ah-education-panel .ah-search-input-wrap input::placeholder{color:#9fb0aa;font-weight:600}
+.ah-education-panel .ah-field-feedback{margin:9px 3px 0;color:#8a9c95;font-size:10.5px}
+.ah-education-panel .ah-institution-results{
+  position:static;
+  width:100%;
+  max-height:none;
+  margin:12px 0 0;
+  padding:7px;
+  border:1px solid #e2ede9;
+  border-radius:20px;
+  background:#fff;
+  box-shadow:0 14px 30px rgba(12,62,50,.07);
+  overflow:visible;
+}
+.ah-education-panel .ah-institution-results[hidden]{display:none!important}
+.ah-institution-option{
+  display:grid;
+  grid-template-columns:40px minmax(0,1fr) 26px;
+  align-items:center;
+  gap:11px;
+  width:100%;
+  box-sizing:border-box;
+  margin:0;
+  padding:9px 11px;
+  border:1px solid transparent;
+  border-radius:15px;
+  background:transparent;
+  text-align:left;
+  font-family:inherit;
+  cursor:pointer;
+  transition:background .16s ease,border-color .16s ease;
+}
+.ah-institution-option+.ah-institution-option{margin-top:2px}
+.ah-institution-option:hover{background:#f6fbf9}
+.ah-institution-option:focus-visible{outline:3px solid rgba(18,168,118,.24);outline-offset:-2px}
+.ah-institution-option.is-selected{border-color:#c8e8dc;background:#eaf8f3}
+.ah-institution-chip{
+  display:grid;
+  place-items:center;
+  width:40px;
+  height:40px;
+  border-radius:13px;
+  background:#eef7f3;
+  color:#0f8a63;
+}
+.ah-institution-chip svg{width:20px;height:20px;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.ah-institution-option.is-selected .ah-institution-chip{background:#dff2ea}
+.ah-institution-option.manual .ah-institution-chip{background:#f1f6f4;color:#6d8b80}
+.ah-institution-text{min-width:0}
+.ah-institution-text strong{display:block;color:#0f2c26;font-size:15px;font-weight:850;line-height:1.35}
+.ah-institution-text small{display:block;margin-top:3px;color:#839891;font-size:12.5px;font-weight:600}
+.ah-institution-check{
+  justify-self:end;
+  width:24px;
+  height:24px;
+  border:2px solid #dde8e4;
+  border-radius:50%;
+  background:#fff;
+  transition:border-color .16s ease,background .16s ease;
+}
+.ah-institution-option.is-selected .ah-institution-check{
+  position:relative;
+  border-color:#12a876;
+  background:#12a876;
+}
+.ah-institution-option.is-selected .ah-institution-check::before{
+  content:"";
+  position:absolute;
+  left:6.5px;
+  top:6.5px;
+  width:9px;
+  height:5px;
+  border-left:2.2px solid #fff;
+  border-bottom:2.2px solid #fff;
+  rotate:-45deg;
+}
+
+/* AI-style helper: code-native tips card, no dialog semantics and no network call */
+.ah-education-panel .ah-edu-assist{position:relative;display:flex;justify-content:flex-end;margin:14px 2px 0}
+.ah-edu-assist-button{
+  position:relative;
+  width:60px;
+  height:60px;
+  display:grid;
+  place-items:center;
+  border:0;
+  border-radius:50%;
+  background:linear-gradient(150deg,#12ba87,#0b8a61 60%,#07644a);
+  color:#fff;
+  cursor:pointer;
+  box-shadow:0 12px 24px -10px rgba(7,110,80,.55),inset 0 1px 0 rgba(255,255,255,.28);
+  transition:transform .18s cubic-bezier(.23,1,.32,1);
+}
+.ah-edu-assist-button:active{transform:scale(.96)}
+.ah-edu-assist-button::after{content:"✦";position:absolute;right:-1px;top:-5px;color:#f2b53a;font-size:14px;font-weight:900;line-height:1}
+.ah-edu-assist-icon{display:grid;place-items:center;width:32px;height:32px}
+.ah-edu-assist-icon svg{width:100%;height:100%;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.ah-edu-assist-card{
+  position:absolute;
+  right:0;
+  bottom:66px;
+  width:min(280px,86vw);
+  padding:14px 15px;
+  border:1px solid #d9e9e3;
+  border-radius:18px;
+  background:#fff;
+  box-shadow:0 18px 34px rgba(12,62,50,.14);
+  color:#26504a;
+}
+.ah-edu-assist-card[hidden]{display:none!important}
+.ah-edu-assist-card strong{display:block;color:#0f2c26;font-size:13.5px;font-weight:900}
+.ah-edu-assist-card ul{margin:8px 0 0;padding:0 0 0 17px;display:grid;gap:6px}
+.ah-edu-assist-card li{color:#5d7a72;font-size:11.5px;font-weight:650;line-height:1.55}
+
+/* bottom actions: compact back + full-width primary (reference layout) */
+.ah-education-panel .ah-education-actions{
+  display:grid;
+  grid-template-columns:minmax(0,1fr);
+  gap:11px;
+  margin:clamp(14px,4vh,30px) 0 0;
+  padding:0;
+}
+.ah-education-panel .ah-education-actions .ah-account-secondary{
+  width:52px;
+  min-height:56px;
+  padding:0;
+  border:1.5px solid #d8e5e0;
+  border-radius:17px;
+  background:#fff;
+  color:#315b50;
+  font-size:19px;
+  box-shadow:0 6px 16px rgba(15,72,58,.05);
+}
+.ah-education-panel .ah-education-actions .ah-account-primary.ah-education-next,
+.ah-account-shell[data-visual-contract="code-native-page-system-v1"] .ah-education-panel .ah-education-next{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:9px;
+  width:100%;
+  min-height:60px;
+  margin:0;
+  border:0;
+  border-radius:18px;
+  background:linear-gradient(135deg,#12ba87 0%,#0b8a61 55%,#076a4d 100%);
+  color:#fff;
+  font-size:16.5px;
+  font-weight:850;
+  box-shadow:0 16px 28px -14px rgba(6,110,80,.65),inset 0 1px 0 rgba(255,255,255,.28);
+}
+.ah-education-panel .ah-education-next b{font-size:17px;font-weight:800}
+.ah-education-panel .ah-education-next:active{transform:scale(.99)}
+@media(max-width:390px){
+  .ah-education-panel .ah-education-heading h3{font-size:23px}
+  .ah-education-panel .ah-institution-text strong{font-size:14.5px}
+  .ah-institution-option{grid-template-columns:42px minmax(0,1fr) 24px;gap:10px;padding:9px}
+  .ah-institution-chip{width:42px;height:42px;border-radius:13px}
+}
+
+@media(max-width:760px){
+  .ah-signup-panel.ah-education-panel{display:flex;flex-direction:column;min-height:calc(100svh - 126px - env(safe-area-inset-top))}
+  .ah-education-panel .ah-edu-assist{margin-top:auto}
+  .ah-education-panel .ah-education-actions{margin:14px 0 0}
 }

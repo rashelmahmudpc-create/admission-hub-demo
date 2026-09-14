@@ -9,8 +9,8 @@ const HTML = read('index.html');
 const SW = read('sw.js');
 const RELEASE = read('.github/workflows/telegram-auth-canary-activate.yml');
 const BUNDLE_GUARD = read('.github/workflows/cf-pages.yml');
-const UI_VERSION = '20260914-scroll-safe-v1';
-const SHELL_VERSION = 'v249-scroll-safe-20260914';
+const UI_VERSION = '20260914-education-page-v1';
+const SHELL_VERSION = 'v250-education-page-20260914';
 
 const signupStart = JS.indexOf('<form class="ah-account-view ah-signup-view"');
 const signupEnd = JS.indexOf('<div class="ah-account-view ah-created-view"', signupStart);
@@ -26,9 +26,9 @@ test('Signup 01 Personal is an input-bound native profile UI, not artwork or scr
   assert.ok(signupStart > 0 && signupEnd > signupStart);
   assert.match(signup, /data-personal-visual-contract="interactive-native-personal-v1"/);
   assert.match(signup, /data-media-contract="zero-raster-entry-v1"/);
-  assert.match(signup, /<i>01<\/i><span>Personal<\/span><small>Your identity<\/small>/);
-  assert.match(signup, /<i>02<\/i><span>Education<\/span><small>Study details<\/small>/);
-  assert.match(signup, /<i>03<\/i><span>Security<\/span><small>Secure account<\/small>/);
+  assert.match(signup, /<i>1<\/i><span>Personal<\/span><small>Your identity<\/small>/);
+  assert.match(signup, /<i>2<\/i><span>Education<\/span><small>Study details<\/small>/);
+  assert.match(signup, /<i>3<\/i><span>Security<\/span><small>Secure account<\/small>/);
   assert.match(personal, /data-dob-contract="premium-dropdown-dob-v2"/);
   assert.match(personal, /class="ah-dob-select" id="ah-dob-day"/);
   assert.match(personal, /class="ah-dob-select" id="ah-dob-month"/);
