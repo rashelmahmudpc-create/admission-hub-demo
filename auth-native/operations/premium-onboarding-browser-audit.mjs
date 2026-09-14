@@ -164,6 +164,18 @@ try {
     .every(n => Boolean(n) && getComputedStyle(n).display !== 'none' && getComputedStyle(n).visibility !== 'hidden')), true,
     'console, heading and Welcome art must all render on a phone');
   assert.deepEqual(await page.locator('.ah-entry-actions button').evaluateAll(b => b.map(n => Math.round(n.getBoundingClientRect().height) >= 44)), [true, true, true, true], 'every entry path keeps a natural 44px+ touch target');
+  // v249: the page may scroll, and the last option must be reachable even when a
+  // floating browser address bar covers the bottom of the screen.
+  assert.equal(await page.evaluate(async () => {
+    const guest = document.querySelector('.ah-entry-guest');
+    if (!guest) return false;
+    const coveredByBrowserBar = 80;
+    window.scrollTo(0, document.documentElement.scrollHeight);
+    await new Promise(resolve => setTimeout(resolve, 150));
+    const rect = guest.getBoundingClientRect();
+    return rect.bottom <= innerHeight - coveredByBrowserBar
+      || document.documentElement.scrollHeight <= innerHeight + 1;
+  }), true, 'the last Welcome option must be scrollable clear of a floating browser bar');
   const mobileWelcomeGeometry = await page.locator('.ah-account-shell').evaluate(node => {
     const box = node.getBoundingClientRect();
     return { width: box.width, height: box.height, viewportWidth: innerWidth, viewportHeight: innerHeight };
