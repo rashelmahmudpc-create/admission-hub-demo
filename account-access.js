@@ -281,10 +281,49 @@
         </form>
 
         <div class="ah-account-view ah-created-view" data-view="created" hidden>
-          <div class="ah-celebration" aria-hidden="true"><i>✦</i><b>◆</b><span>✓</span><em>✦</em></div>
-          <h3 class="ah-account-view-title">Account Created!</h3>
-          <p class="ah-account-mask">তোমার account সফলভাবে তৈরি হয়েছে।</p>
-          <button class="ah-account-primary ah-view-bottom-cta" type="button" data-role="created-continue">Continue →</button>
+          <header class="ah-created-hero">
+            <span class="ah-created-emblem" aria-hidden="true">
+              <span class="ah-created-ring"></span>
+              <svg viewBox="0 0 24 24" fill="none"><path d="M5.4 12.5l4.2 4.2L18.7 7.6"/></svg>
+              <i class="ah-created-spark one">✦</i>
+              <i class="ah-created-spark two">✦</i>
+              <i class="ah-created-spark three">✦</i>
+            </span>
+            <h3 class="ah-account-view-title">Account Created!</h3>
+            <p class="ah-account-mask">তোমার account তৈরি হয়েছে — প্রোফাইলের তথ্যও সংরক্ষিত।</p>
+          </header>
+
+          <section class="ah-created-card" aria-labelledby="ah-created-profile-title">
+            <header class="ah-created-card-head">
+              <span class="ah-created-card-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M12 12.4a4.2 4.2 0 1 0 0-8.4 4.2 4.2 0 0 0 0 8.4Z"/><path d="M4.4 20.2c.9-3.6 4-5.6 7.6-5.6s6.7 2 7.6 5.6"/></svg></span>
+              <span class="ah-created-card-titles"><strong id="ah-created-profile-title">তোমার প্রোফাইল</strong><small>এই তথ্যই তোমার admission profile</small></span>
+            </header>
+            <dl class="ah-created-rows">
+              <div><dt>নাম</dt><dd data-role="created-name">—</dd></div>
+              <div><dt>জন্ম তারিখ</dt><dd data-role="created-dob">—</dd></div>
+              <div><dt>বিদ্যালয়</dt><dd data-role="created-school">—</dd></div>
+              <div><dt>কলেজ / বিশ্ববিদ্যালয়</dt><dd data-role="created-college">—</dd></div>
+              <div><dt>Account</dt><dd data-role="created-email">—</dd></div>
+            </dl>
+            <p class="ah-created-card-foot">পরে profile থেকে যেকোনো তথ্য বদলাতে পারবে।</p>
+          </section>
+
+          <div class="ah-created-actions">
+            <button class="ah-account-primary ah-view-bottom-cta" type="button" data-role="created-continue">Continue →</button>
+            <p class="ah-created-footnote">তথ্য শুধু admission প্রস্তুতিতে ব্যবহার হবে।</p>
+          </div>
+
+          <section class="ah-created-next" aria-labelledby="ah-created-next-title">
+            <header class="ah-created-next-head">
+              <span class="ah-created-next-kicker">পরের ধাপ</span>
+              <strong id="ah-created-next-title">একটি verification বাকি</strong>
+            </header>
+            <p class="ah-created-next-copy">একটি বাস্তব method দিয়ে verify করলেই account পুরোপুরি সক্রিয় হবে। পছন্দের আগে কোনো message যাবে না।</p>
+            <ul class="ah-created-next-list">
+              <li><span class="ah-created-next-icon email" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><rect x="3.2" y="5.6" width="17.6" height="12.8" rx="3.2"/><path d="m4.6 8.2 7.4 5 7.4-5"/></svg></span><span><strong>Email verification</strong><small>নিরাপদ link — Email OTP নয়</small></span></li>
+              <li><span class="ah-created-next-icon telegram" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M20.4 4.6 3.9 11.1l4.9 1.7 1.6 5.1 2.7-3.4 4.3 2.9 3-12.8Z"/><path d="m8.8 12.8 7.6-5.3-5.4 6.7"/></svg></span><span><strong>Telegram</strong><small>official bot-এর ৬ সংখ্যার code</small></span></li>
+            </ul>
+          </section>
         </div>
 
         <div class="ah-account-view ah-verification-view" data-view="verify" data-mode="select" hidden>
@@ -1042,6 +1081,24 @@
     refreshProfileReadiness();
   };
 
+  const renderCreatedSummary = () => {
+    const profile = state.pendingProfile || {};
+    const set = (role, value) => {
+      const node = pageHost.querySelector(`[data-role="${role}"]`);
+      if (node) node.textContent = value && String(value).trim() ? String(value).trim() : '—';
+    };
+    const dobLabel = profile.dob
+      ? new Intl.DateTimeFormat('bn-BD', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${profile.dob}T00:00:00Z`))
+      : selectedDob()
+        ? new Intl.DateTimeFormat('bn-BD', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${selectedDob()}T00:00:00Z`))
+        : '';
+    set('created-name', profile.fullName || normalizedName());
+    set('created-dob', dobLabel);
+    set('created-school', profile.school?.name || state.institutionSelection.school?.name);
+    set('created-college', profile.higherInstitution?.name || state.institutionSelection.college?.name || 'এখন পড়ছ না');
+    set('created-email', state.verification?.emailMasked || state.verification?.email || '');
+  };
+
   const showView = (name, keepMessage = false) => {
     state.currentView = name;
     const shell = $('.ah-account-shell');
@@ -1061,6 +1118,16 @@
       populateDob();
       setSignupStep(state.signupStep || 'personal');
       updateDobPreview();
+    }
+    if (name === 'created') {
+      renderCreatedSummary();
+      // keep the success screen starting at the top: the security step can leave the
+      // page scrolled down and late font/layout work nudges the offset again.
+      const toTop = () => { try { window.scrollTo({ top: 0, behavior: 'auto' }); } catch (_) {} };
+      toTop();
+      if (typeof requestAnimationFrame === 'function') requestAnimationFrame(toTop);
+      setTimeout(toTop, 260);
+      setTimeout(toTop, 620);
     }
     if (name === 'verify') {
       const selecting = state.verification?.mode === 'select';

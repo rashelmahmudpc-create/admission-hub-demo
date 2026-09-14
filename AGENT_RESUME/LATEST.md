@@ -1,27 +1,23 @@
-# LATEST — Education ধাপের school/college পেজ (v250)
+# LATEST — "Account Created!" সফলতার স্ক্রিন premium করা (v251)
 
 **Updated:** 2026-09-14 (Asia/Dhaka) · Agent: **Arena Agent Mode**
 
 ## STATUS
 
-- **IMPLEMENTED:** the signup **Education** step now matches the owner's two reference screens —
-  school-select (`তোমার বিদ্যালয়ের নাম লিখো`) and college-select (`তুমি কোন কলেজ / বিশ্ববিদ্যালয়ে পড়েছ?`).
-  Code-native only (inline SVG, gradients, no raster): `Education` header with the existing back control,
-  compact `✓ Personal — ② Education — ③ Security` stepper, magnifier search field with green focus ring,
-  result rows with icon chip + bold name + `type · district` line + selection circle (green tick and
-  tinted row for the current choice), one full-width `Next →`, and the round helper button above it that
-  opens a small local tips card.
-- **UNCHANGED:** Welcome, Personal, Security, Log In and everything else stay exactly as approved
-  (v248 design; v249 phone scroll room). Nothing hidden, nothing shrunk, no content dropped; the school
-  suggestion cap (3 matches + 1 manual row) and every id/role used by the tests are unchanged.
-- **TESTED:** auth 62/62 · native-auth 203/203 · email 108/108 + 4/4 · release file asserts 61/61
-  (0 failing) · browser audit `pageErrors 0`, touch targets ≥44px, no dialog semantics ·
-  8 viewports 320→1440 with no horizontal overflow and a reachable Next button.
+- **IMPLEMENTED:** the signup success screen (`Account Created!`) is now a premium, clean screen —
+  layered success emblem + Bengali confirmation, a **saved-profile recap card** (নাম · জন্ম তারিখ ·
+  বিদ্যালয় · কলেজ/বিশ্ববিদ্যালয় · Account), one full-width `Continue →` (unchanged role, still opens the
+  verification selector) and a “পরের ধাপ” card that explains the two real verification methods.
+  The empty space is gone and the phone view starts at the top of the screen.
+- **UNCHANGED:** Welcome, Education (v250), Personal, Security, Log In and the verification flow; nothing
+  is hidden, nothing is shrunk, the v249 phone scroll cushion and the education phone layout stay as they are.
+- **TESTED:** auth 62/62 · native-auth 203/203 · email 108/108 + 4/4 · worker bundle exact ·
+  browser audit `pageErrors 0`, touch targets ≥44px, no duplicate ids · release file asserts 66/66 ·
+  360/390/430/1024 screenshots with the recap values correct and `Continue` visible on first paint.
 - **DEPLOYED:** pending the publish run after merge.
 
 ## DETAIL
 
-- `AGENT_RESUME/2026-09-14-education-reference-pages-v250.md`
-- History: v244 (premium rebuild, rejected) → v245 (3D hero removed) → v246/v247 (fit attempts: hidden +
-  scaled, rejected) → v248 (natural sizes, scrolling allowed) → v249 (phone scroll room) →
-  **v250 (education reference pages)**.
+- `AGENT_RESUME/2026-09-14-created-screen-v251.md`
+- History: v244 → v245 → v246/v247 → v248 → v249 → v250 (education reference pages) →
+  **v251 (premium Account Created screen)**.
