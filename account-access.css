@@ -974,11 +974,13 @@ body.ah-account-page-active>.ah-account-launcher{display:none!important}
   .ah-created-emblem{width:100px;height:100px}
 }
 
-/* ===== Auth reference screens (v252) — owner reference design, 2026-09-14 =====
+/* ===== Auth reference screens (v253) — owner reference design, 2026-09-14 =====
    Login, verification-method selector, email, telegram-intro and passkey-setup
    screens rebuilt code-native from the five owner reference images (IMG_4009,
    IMG_4010, IMG_4012, IMG_4013, IMG_4018). Inline SVG + gradients + CSS only:
-   no raster, no url() backgrounds. All data-view / data-role hooks unchanged. */
+   no raster, no url() backgrounds. All data-view / data-role hooks unchanged.
+   v253: login fields stay single-frame on iOS (autofill/focus-visible reset)
+   and use a slightly tighter rhythm. */
 .ah-login-view,.ah-verification-view,.ah-email-intro-view,.ah-telegram-intro-view,.ah-passkey-onboarding{display:flex;flex-direction:column;width:min(100%,430px);margin:0 auto}
 
 /* shared spark + hero language for the five screens */

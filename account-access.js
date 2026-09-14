@@ -909,7 +909,7 @@
     });
   };
 
-  // Reference auth screens (v252): one generic toggle for every code-native help
+  // Reference auth screens (v253): one generic toggle for every code-native help
   // card on the login / verify / email / telegram / passkey screens. Plain div
   // show/hide only - no dialog semantics, no network call, no AI routing.
   const setupHelpToggles = () => {
@@ -1684,9 +1684,17 @@
     close();
   };
   const prefillLogin = email => { if (email) $('#ah-login-email').value = email; };
+  const unavailableHint = () => {
+    try {
+      if (typeof location !== 'undefined' && !/(^|\.)admissionhub\.pages\.dev$/i.test(location.hostname || '')) {
+        return ' Real account শুধু admissionhub.pages.dev সাইটে খোলা যায়।';
+      }
+    } catch (_) {}
+    return '';
+  };
   const ensureAvailable = () => {
     if (state.available !== false) return true;
-    message('Account service এখন প্রস্তুত নয়—Guest হিসেবে Dashboard ব্যবহার করতে পারো।', 'info');
+    message('Account service এখন প্রস্তুত নয়—Guest হিসেবে Dashboard ব্যবহার করতে পারো।' + unavailableHint(), 'info');
     return false;
   };
 
