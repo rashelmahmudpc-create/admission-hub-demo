@@ -11,8 +11,8 @@ const CSS = readFileSync('dashboard-v2.css', 'utf8');
 t('dashboard-v2.js defer-লোড (?v=dash2)', H.includes('<script defer src="./dashboard-v2.js?v=dash2f10-main-ai"></script>'));
 t('dashboard-v2.css link (?v=dash2)', H.includes('<link rel="stylesheet" href="./dashboard-v2.css?v=dash2f9">'));
 t('sw APP_SHELL-এ dashboard-v2 (js+css)', SW.includes("'./dashboard-v2.js?v=dash2f10-main-ai'") && SW.includes("'./dashboard-v2.css?v=dash2f9'"));
-t('sw BUILD_ID v245-clean-welcome-20260914', SW.includes("const BUILD_ID = 'v245-clean-welcome-20260914'"));
-t('index sw-marker v195', H.includes('sw.js?v=v245-clean-welcome-20260914'));
+t('sw BUILD_ID v246-fit-welcome-20260914', SW.includes("const BUILD_ID = 'v246-fit-welcome-20260914'"));
+t('index sw-marker v195', H.includes('sw.js?v=v246-fit-welcome-20260914'));
 
 /* ২ — ১৪ মডিউল (ছবির প্রতিটি সেকশন) */
 t('১ Personal Header (avatar+তারিখ+🔔)', V2.includes('dv2-header') && V2.includes('Intl.DateTimeFormat') && V2.includes('dv2-bell'));

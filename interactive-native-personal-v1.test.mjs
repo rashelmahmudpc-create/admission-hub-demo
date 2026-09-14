@@ -9,8 +9,8 @@ const HTML = read('index.html');
 const SW = read('sw.js');
 const RELEASE = read('.github/workflows/telegram-auth-canary-activate.yml');
 const BUNDLE_GUARD = read('.github/workflows/cf-pages.yml');
-const UI_VERSION = '20260914-clean-welcome-v1';
-const SHELL_VERSION = 'v245-clean-welcome-20260914';
+const UI_VERSION = '20260914-fit-welcome-v1';
+const SHELL_VERSION = 'v246-fit-welcome-20260914';
 
 const signupStart = JS.indexOf('<form class="ah-account-view ah-signup-view"');
 const signupEnd = JS.indexOf('<div class="ah-account-view ah-created-view"', signupStart);

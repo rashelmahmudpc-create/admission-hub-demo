@@ -107,15 +107,15 @@ await test('content hydration is public and account-independent',
   !/AHAuth|ahPubToken|authHeaders|Authorization/.test(CLOUD));
 
 await test('service-worker build and HTML registration are synchronized',
-  SW.includes("const BUILD_ID = 'v245-clean-welcome-20260914'") &&
-  H.includes("const expectedSwVersion = 'v245-clean-welcome-20260914'") &&
-  H.includes('sw.js?v=v245-clean-welcome-20260914') &&
-  H.includes('admission-hub-shell-v245-clean-welcome-20260914'));
+  SW.includes("const BUILD_ID = 'v246-fit-welcome-20260914'") &&
+  H.includes("const expectedSwVersion = 'v246-fit-welcome-20260914'") &&
+  H.includes('sw.js?v=v246-fit-welcome-20260914') &&
+  H.includes('admission-hub-shell-v246-fit-welcome-20260914'));
 await test('service-worker shell cannot cache retired assets', retiredMarkers.every(marker => !SW.includes(marker)));
 await test('premium account and institution assets use synchronized cache-busting versions',
-  ['account-access.css?v=20260914-clean-welcome-v1', 'account-access.js?v=20260914-clean-welcome-v1', 'institutions-bd.js?v=bd-institutions-v1']
+  ['account-access.css?v=20260914-fit-welcome-v1', 'account-access.js?v=20260914-fit-welcome-v1', 'institutions-bd.js?v=bd-institutions-v1']
     .every(asset => H.includes(asset) && SW.includes(asset)) &&
-  H.indexOf('institutions-bd.js?v=bd-institutions-v1') < H.indexOf('account-access.js?v=20260914-clean-welcome-v1'));
+  H.indexOf('institutions-bd.js?v=bd-institutions-v1') < H.indexOf('account-access.js?v=20260914-fit-welcome-v1'));
 await test('premium Auth UI/server contract and curated-manual institution policy are locked',
   ACCOUNT_UI.includes("'X-AH-Auth-UI': 'auth-premium-v6'") &&
   AUTH_HANDLER.includes("const AUTH_UI_VERSION = 'auth-premium-v6'") &&

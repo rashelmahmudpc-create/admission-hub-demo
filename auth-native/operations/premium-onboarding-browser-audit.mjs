@@ -151,6 +151,8 @@ try {
     'Sign Up', 'Log In', 'Continue with Google', 'Continue as Guest'
   ]);
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), true, 'iPhone page has horizontal overflow');
+  assert.equal(await page.evaluate(() => document.documentElement.scrollHeight <= innerHeight + 1), true, 'iPhone Welcome must fit one screen without scrolling');
+  assert.deepEqual(await page.locator('.ah-entry-actions button').evaluateAll(b => b.map(n => Math.round(n.getBoundingClientRect().height) >= 44)), [true, true, true, true], 'every entry path keeps a 44px+ touch target while fitting one screen');
   const mobileWelcomeGeometry = await page.locator('.ah-account-shell').evaluate(node => {
     const box = node.getBoundingClientRect();
     return { width: box.width, height: box.height, viewportWidth: innerWidth, viewportHeight: innerHeight };
@@ -463,6 +465,7 @@ try {
   assert.equal(await desktopPage.locator('.ah-account-page').evaluate(node => getComputedStyle(node).position), 'relative');
   assert.equal(await desktopPage.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), true);
   assert.equal(await desktopPage.locator('[data-view="welcome"] img,[data-view="welcome"] picture,[data-view="welcome"] canvas,[data-view="welcome"] video').count(), 0);
+  assert.equal(await desktopPage.evaluate(() => document.documentElement.scrollHeight <= innerHeight + 1), true, 'Desktop Welcome must fit one screen without scrolling');
   const desktopConsole = await desktopPage.locator('.ah-journey-console').boundingBox();
   assert.ok(desktopConsole.width >= 500 && desktopConsole.width <= 580, JSON.stringify(desktopConsole));
   await desktopPage.getByRole('button', { name: 'Sign Up', exact: true }).click();
