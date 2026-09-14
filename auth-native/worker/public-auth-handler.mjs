@@ -116,7 +116,10 @@ const credentials = body => {
   if (!email || password.length < PASSWORD_MIN || password.length > PASSWORD_MAX || /[\r\n\u0000]/.test(password)) {
     throw new NativeAuthError(password && password.length < PASSWORD_MIN ? AUTH_ERROR_CODES.WEAK_PASSWORD : AUTH_ERROR_CODES.INVALID_INPUT);
   }
-  return Object.freeze({ email, password });
+  // "Remember me" (Phase 5): explicit false shortens the established session
+  // to REMEMBER_OFF_TTL_MS; absent/true keeps the standard SESSION_TTL_MS.
+  const remember = body?.remember !== false;
+  return Object.freeze({ email, password, remember });
 };
 
 const telegramWebhookInput = body => {
@@ -702,7 +705,7 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           } catch {}
         }
         if (!user.emailVerified && !telegramVerified) throw new NativeAuthError(AUTH_ERROR_CODES.EMAIL_NOT_VERIFIED);
-        const established = await callAuthority(env, '/internal/firebase/session/create', { input: { email: user.email, subject: user.subject }, context });
+        const established = await callAuthority(env, '/internal/firebase/session/create', { input: { email: user.email, subject: user.subject, remember: input.remember }, context });
         return authSuccess(request, established, signed.refreshToken, context, {
           emailVerified: user.emailVerified === true,
           telegramVerified

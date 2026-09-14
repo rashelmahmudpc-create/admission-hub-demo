@@ -3793,6 +3793,7 @@ var AuthSecretVault = class {
 // auth-native/core/auth-engine.mjs
 var AUTH_NATIVE_VERSION = "firebase-canonical-auth-v3";
 var SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1e3;
+var REMEMBER_OFF_TTL_MS = 7 * 24 * 60 * 60 * 1e3;
 var FIREBASE_VERIFICATION_RESEND_COOLDOWN_MS = 60 * 1e3;
 var PASSKEY_CHALLENGE_TTL_MS = 5 * 60 * 1e3;
 var PASSKEY_TICKET_TTL_MS = 60 * 1e3;
@@ -4039,6 +4040,7 @@ var CloudflareNativeAuthEngine = class {
     const context = normalizeContext(requestContext);
     const refs = await this.#references(email, context);
     const now = Number(this.now());
+    const sessionTtlMs = input.remember === false ? REMEMBER_OFF_TTL_MS : SESSION_TTL_MS;
     const sessionToken = randomToken(32, this.crypto);
     const userIdCandidate = `usr_${randomToken(18, this.crypto)}`;
     const [subjectRef, sessionRef] = await Promise.all([
@@ -4056,11 +4058,11 @@ var CloudflareNativeAuthEngine = class {
       deviceRef: refs.deviceRef,
       userAgent: context.userAgent,
       now,
-      sessionExpiresAt: now + SESSION_TTL_MS
+      sessionExpiresAt: now + sessionTtlMs
     }));
     return Object.freeze({
       sessionToken,
-      sessionExpiresAt: now + SESSION_TTL_MS,
+      sessionExpiresAt: now + sessionTtlMs,
       user: publicUser(established.user),
       created: Boolean(established.created)
     });
@@ -5084,7 +5086,8 @@ var credentials = (body) => {
   if (!email || password.length < PASSWORD_MIN || password.length > PASSWORD_MAX || /[\r\n\u0000]/.test(password)) {
     throw new NativeAuthError(password && password.length < PASSWORD_MIN ? AUTH_ERROR_CODES.WEAK_PASSWORD : AUTH_ERROR_CODES.INVALID_INPUT);
   }
-  return Object.freeze({ email, password });
+  const remember = body?.remember !== false;
+  return Object.freeze({ email, password, remember });
 };
 var telegramWebhookInput = (body) => {
   const message = body?.message;
@@ -5703,7 +5706,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           }
         }
         if (!user.emailVerified && !telegramVerified) throw new NativeAuthError(AUTH_ERROR_CODES.EMAIL_NOT_VERIFIED);
-        const established = await callAuthority(env, "/internal/firebase/session/create", { input: { email: user.email, subject: user.subject }, context });
+        const established = await callAuthority(env, "/internal/firebase/session/create", { input: { email: user.email, subject: user.subject, remember: input.remember }, context });
         return authSuccess(request, established, signed.refreshToken, context, {
           emailVerified: user.emailVerified === true,
           telegramVerified

@@ -16,6 +16,8 @@ import {
 
 export const AUTH_NATIVE_VERSION = 'firebase-canonical-auth-v3';
 export const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+// "Remember me" off: shorter-lived session (7 days) established at login.
+export const REMEMBER_OFF_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 export const FIREBASE_VERIFICATION_RESEND_COOLDOWN_MS = 60 * 1000;
 export const PASSKEY_CHALLENGE_TTL_MS = 5 * 60 * 1000;
 export const PASSKEY_TICKET_TTL_MS = 60 * 1000;
@@ -264,6 +266,7 @@ export class CloudflareNativeAuthEngine {
     const context = normalizeContext(requestContext);
     const refs = await this.#references(email, context);
     const now = Number(this.now());
+    const sessionTtlMs = input.remember === false ? REMEMBER_OFF_TTL_MS : SESSION_TTL_MS;
     const sessionToken = randomToken(32, this.crypto);
     const userIdCandidate = `usr_${randomToken(18, this.crypto)}`;
     const [subjectRef, sessionRef] = await Promise.all([
@@ -281,11 +284,11 @@ export class CloudflareNativeAuthEngine {
       deviceRef: refs.deviceRef,
       userAgent: context.userAgent,
       now,
-      sessionExpiresAt: now + SESSION_TTL_MS
+      sessionExpiresAt: now + sessionTtlMs
     }));
     return Object.freeze({
       sessionToken,
-      sessionExpiresAt: now + SESSION_TTL_MS,
+      sessionExpiresAt: now + sessionTtlMs,
       user: publicUser(established.user),
       created: Boolean(established.created)
     });

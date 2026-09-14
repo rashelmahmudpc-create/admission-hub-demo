@@ -28,6 +28,7 @@
     resendTimer: null,
     resendCooldownSeconds: 60,
     signupStep: 'personal',
+    returnDestination: '',
     signupJourney: false,
     pendingProfile: null,
     profileBound: false,
@@ -437,7 +438,7 @@
 
         <div class="ah-account-view ah-success-view" data-view="success" hidden><div class="ah-success-check" aria-hidden="true"><svg viewBox="0 0 120 120"><circle cx="60" cy="60" r="46"/><path d="m38 61 14 14 31-34"/></svg></div><p class="ah-view-kicker">ALL SET</p><h3 class="ah-account-view-title">সব ঠিক আছে! 🎉</h3><p class="ah-account-mask">তোমার account এখন প্রস্তুত।</p><div class="ah-ready-list"><span data-role="ready-profile">… Profile details দেখা হচ্ছে</span><span>✓ Verification Complete</span><span>✓ Admission Hub Ready</span></div><button class="ah-account-primary" type="button" data-role="enter-app">Admission Hub-এ প্রবেশ করো →</button></div>
 
-        <div class="ah-account-view" data-view="signed" hidden><div class="ah-account-secure"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M7 10V8a5 5 0 0 1 10 0v2m-11 0h12v10H6V10Zm6 4v2" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg><div><h3>Account নিরাপদ ও সক্রিয়</h3><p data-role="account-verification-summary">তোমার account সত্যিকারের যাচাইয়ের মাধ্যমে সক্রিয় আছে।</p></div></div><div class="ah-account-identity"><p class="ah-account-identity-label" data-role="identity-label">Admission Hub account</p><p class="ah-account-identity-value" data-role="identity">—</p></div><section class="ah-account-security-tools" data-role="passkey-tools" hidden><div class="ah-account-tool-head"><div><h3>Passkey</h3><p data-role="passkey-status">এই device-এ দ্রুত প্রবেশ চালু করতে পারো।</p></div><span aria-hidden="true">◉</span></div><div data-role="passkey-list"></div><button class="ah-account-secondary" type="button" data-role="passkey-add">নতুন Passkey যোগ করুন</button></section><button class="ah-account-secondary" type="button" data-role="backup-start" hidden>বিকল্প যাচাই</button><button class="ah-account-secondary" type="button" data-role="logout">Log Out</button><p class="ah-account-fine">Password ও প্রবেশের গোপন তথ্য এই পেজে দেখানো বা জমা রাখা হয় না।</p></div>
+        <div class="ah-account-view" data-view="signed" hidden><div class="ah-account-secure"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M7 10V8a5 5 0 0 1 10 0v2m-11 0h12v10H6V10Zm6 4v2" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg><div><h3>Account নিরাপদ ও সক্রিয়</h3><p data-role="account-verification-summary">তোমার account সত্যিকারের যাচাইয়ের মাধ্যমে সক্রিয় আছে।</p></div></div><div class="ah-account-identity"><p class="ah-account-identity-label" data-role="identity-label">Admission Hub account</p><p class="ah-account-identity-value" data-role="identity">—</p></div><section class="ah-account-security-tools" data-role="passkey-tools" hidden><div class="ah-account-tool-head"><div><h3>Passkey</h3><p data-role="passkey-status">এই device-এ দ্রুত প্রবেশ চালু করতে পারো।</p></div><span aria-hidden="true">◉</span></div><div data-role="passkey-list"></div><button class="ah-account-secondary" type="button" data-role="passkey-add">নতুন Passkey যোগ করুন</button></section><button class="ah-account-secondary" type="button" data-role="backup-start" hidden>বিকল্প যাচাই</button><button class="ah-account-secondary" type="button" data-role="logout">Log Out</button><button class="ah-account-secondary ah-account-danger" type="button" data-role="logout-all">সব device থেকে Log Out</button><p class="ah-account-fine">Password ও প্রবেশের গোপন তথ্য এই পেজে দেখানো বা জমা রাখা হয় না।</p></div>
       </div>
 
     </main>
@@ -1295,44 +1296,63 @@
   };
 
   const api = async (path, options = {}) => {
-    let requestPath = path;
+    const attempt = async () => {
+    let requestPath = path;  
+    try {  
+      const current = new URL(location.href);  
+      if (current.searchParams.get('telegramCanary') === '1') {  
+        const target = new URL(`${API}${path}`, current.origin);  
+        if (!target.searchParams.has('telegramCanary')) target.searchParams.set('telegramCanary', '1');  
+        requestPath = `${target.pathname.slice(API.length)}${target.search}`;  
+      }  
+    } catch (_) {}  
+    let response;  
+    const controller = new AbortController();  
+    const timeoutMs = Math.min(18000, Math.max(2000, Number(options.timeoutMs) || 18000));  
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);  
+    try {  
+      response = await fetch(`${API}${requestPath}`, {  
+        method: options.method || 'GET',  
+        credentials: 'same-origin',  
+        signal: controller.signal,  
+        headers: {  
+          'X-AH-Auth-UI': 'auth-premium-v6',  
+          ...(options.body ? { 'Content-Type': 'application/json' } : {})  
+        },  
+        ...(options.body ? { body: JSON.stringify(options.body) } : {})  
+      });  
+    } catch (error) {  
+      const text = error?.name === 'AbortError' ? 'সেবাটি সময়মতো সাড়া দেয়নি—আবার চেষ্টা করুন।' : 'ইন্টারনেট সংযোগ পাওয়া যাচ্ছে না।';  
+      throw Object.assign(new Error(text), { status: 0 });  
+    } finally { clearTimeout(timeout); }  
+    let data = {};  
+    try { data = await response.json(); } catch (_) {}  
+    if (!response.ok) {  
+      const error = new Error('Admission Hub অনুরোধটি শেষ করতে পারেনি।');  
+      error.status = response.status;  
+      error.code = typeof data?.error?.code === 'string' ? data.error.code : '';  
+      error.retryAfter = Number(data?.error?.retryAfter || response.headers.get('Retry-After') || 0);  
+      throw error;  
+    }  
+    return data;  
+    };
     try {
-      const current = new URL(location.href);
-      if (current.searchParams.get('telegramCanary') === '1') {
-        const target = new URL(`${API}${path}`, current.origin);
-        if (!target.searchParams.has('telegramCanary')) target.searchParams.set('telegramCanary', '1');
-        requestPath = `${target.pathname.slice(API.length)}${target.search}`;
-      }
-    } catch (_) {}
-    let response;
-    const controller = new AbortController();
-    const timeoutMs = Math.min(18000, Math.max(2000, Number(options.timeoutMs) || 18000));
-    const timeout = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-      response = await fetch(`${API}${requestPath}`, {
-        method: options.method || 'GET',
-        credentials: 'same-origin',
-        signal: controller.signal,
-        headers: {
-          'X-AH-Auth-UI': 'auth-premium-v6',
-          ...(options.body ? { 'Content-Type': 'application/json' } : {})
-        },
-        ...(options.body ? { body: JSON.stringify(options.body) } : {})
-      });
+      return await attempt();
     } catch (error) {
-      const text = error?.name === 'AbortError' ? 'সেবাটি সময়মতো সাড়া দেয়নি—আবার চেষ্টা করুন।' : 'ইন্টারনেট সংযোগ পাওয়া যাচ্ছে না।';
-      throw Object.assign(new Error(text), { status: 0 });
-    } finally { clearTimeout(timeout); }
-    let data = {};
-    try { data = await response.json(); } catch (_) {}
-    if (!response.ok) {
-      const error = new Error('Admission Hub অনুরোধটি শেষ করতে পারেনি।');
-      error.status = response.status;
-      error.code = typeof data?.error?.code === 'string' ? data.error.code : '';
-      error.retryAfter = Number(data?.error?.retryAfter || response.headers.get('Retry-After') || 0);
+      // Session recovery (Phase 5 §16/§27): an expired session on an
+      // authenticated tab triggers ONE coordinated refresh, then the original
+      // request is retried exactly once. No recovery loops: /session itself
+      // uses noRecovery, and this branch runs at most once per call.
+      if (!options.noRecovery && error.status === 401 && error.code === 'SESSION_INVALID' && ['AUTHENTICATED', 'LOGGING_OUT'].includes(sessionState)) {
+        setSessionState('RECOVERING');
+        if (!pageHost.hidden) message('Session যাচাই চলছে—একটু অপেক্ষা করো…', 'info');
+        const recovered = await coordinatedRefresh();
+        if (recovered && accountVerified(state.session)) {
+          try { return await attempt(); } catch (retryError) { throw retryError; }
+        }
+      }
       throw error;
     }
-    return data;
   };
 
   const updateLauncher = () => {
@@ -1398,6 +1418,9 @@
     state.backup = null;
     clearTelegramTimer();
     clearResendCooldown();
+    setSessionState('AUTHENTICATED');
+    scheduleNextRefresh();
+    broadcastAuthEvent('login');
     rememberEntry('account');
     updateLauncher();
     const showSetup = offerPasskey && state.capabilities.passkey.enrollmentAvailable && passkeyBrowserReady();
@@ -1411,6 +1434,7 @@
     else message(text, 'success');
     refreshPasskeyStatus();
     if (!onboarding) syncPendingProfile();
+    restoreReturnDestination();
   };
 
   const refreshPasskeyStatus = async () => {
@@ -1627,16 +1651,214 @@
     }
   };
 
+  /* ===== Session Engine (Phase 5, v256) — state machine + refresh coordinator =====
+     - Centralized state transitions (blueprint §3); UI reads data-session-state.
+     - Single-flight refresh: concurrent callers share ONE /session call (§21-22).
+     - Refresh retries network failures with backoff, max budget — no infinite
+       loops (§8); 401/403 are terminal auth states (§24).
+     - Network failure never logs the user out (§17).
+     - Session failure never touches identity: clearing local session state is
+       the most this module may do (§30). */
+  const SESSION_STATES = Object.freeze(['INITIALIZING', 'CHECKING_SESSION', 'AUTHENTICATED', 'REFRESHING', 'RECOVERING', 'EXPIRING', 'LOGGING_OUT', 'UNAUTHENTICATED', 'ERROR']);
+  const SESSION_TRANSITIONS = Object.freeze({
+    INITIALIZING: new Set(['CHECKING_SESSION', 'UNAUTHENTICATED', 'ERROR']),
+    CHECKING_SESSION: new Set(['AUTHENTICATED', 'UNAUTHENTICATED', 'ERROR']),
+    AUTHENTICATED: new Set(['REFRESHING', 'RECOVERING', 'EXPIRING', 'LOGGING_OUT', 'UNAUTHENTICATED', 'ERROR']),
+    REFRESHING: new Set(['AUTHENTICATED', 'RECOVERING', 'UNAUTHENTICATED', 'ERROR']),
+    RECOVERING: new Set(['AUTHENTICATED', 'UNAUTHENTICATED', 'ERROR']),
+    EXPIRING: new Set(['REFRESHING', 'RECOVERING', 'LOGGING_OUT', 'UNAUTHENTICATED', 'ERROR']),
+    LOGGING_OUT: new Set(['UNAUTHENTICATED', 'ERROR', 'RECOVERING', 'AUTHENTICATED']),
+    UNAUTHENTICATED: new Set(['CHECKING_SESSION', 'AUTHENTICATED', 'INITIALIZING']),
+    ERROR: new Set(['CHECKING_SESSION', 'UNAUTHENTICATED', 'AUTHENTICATED'])
+  });
+  let sessionState = 'INITIALIZING';
+  let wasEverAuthenticatedThisTab = false;
+  const getSessionState = () => sessionState;
+  const setSessionState = to => {
+    if (!SESSION_STATES.includes(to) || sessionState === to) return;
+    if (!SESSION_TRANSITIONS[sessionState].has(to)) return;
+    sessionState = to;
+    if (pageHost) pageHost.dataset.sessionState = to;
+    if (to === 'AUTHENTICATED') wasEverAuthenticatedThisTab = true;
+  };
+  const MAX_NETWORK_REFRESH_ATTEMPTS = 2;
+  const REFRESH_BACKOFF_MS = Object.freeze([400, 1200]);
+  const REFRESH_AHEAD_MS = 60 * 60 * 1000;
+  const REFRESH_SCHEDULE_MIN_MS = 60 * 1000;
+  const REFRESH_SCHEDULE_MAX_MS = 6 * 60 * 60 * 1000;
+  let refreshInFlight = null;
+  let refreshScheduleTimer = null;
+
+  const clearRefreshSchedule = () => {
+    if (refreshScheduleTimer) { clearTimeout(refreshScheduleTimer); refreshScheduleTimer = null; }
+  };
+  const scheduleNextRefresh = () => {
+    clearRefreshSchedule();
+    const expiresAt = Number(state.session?.expiresAt || 0);
+    if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) return;
+    const delay = Math.min(Math.max(expiresAt - Date.now() - REFRESH_AHEAD_MS, REFRESH_SCHEDULE_MIN_MS), REFRESH_SCHEDULE_MAX_MS);
+    refreshScheduleTimer = setTimeout(() => {
+      if (state.session && (sessionState === 'AUTHENTICATED' || sessionState === 'ERROR')) {
+        setSessionState('EXPIRING');
+        void refreshSession();
+      }
+    }, delay);
+  };
+
+  const clearAuthLocalState = () => {
+    state.session = null;
+    state.passkeys = [];
+    state.backup = null;
+    state.telegram = null;
+    clearTelegramTimer();
+    clearRefreshSchedule();
+  };
+
+  const performSessionRefresh = async () => {
+    if (sessionState === 'AUTHENTICATED' || sessionState === 'EXPIRING') setSessionState('REFRESHING');
+    let networkTries = 0;
+    for (;;) {
+      try {
+        const current = await api('/session', { noRecovery: true });
+        if (!accountVerified(current)) {
+          const hadSession = Boolean(state.session);
+          clearAuthLocalState();
+          setSessionState('UNAUTHENTICATED');
+          updateLauncher();
+          if (hadSession && !pageHost.hidden) showView('login');
+          return false;
+        }
+        state.session = current;
+        rememberEntry('account');
+        setSessionState('AUTHENTICATED');
+        updateLauncher();
+        if (!pageHost.hidden && state.session) showView('signed');
+        refreshPasskeyStatus();
+        scheduleNextRefresh();
+        return true;
+      } catch (error) {
+        if (error.status === 0 && networkTries < MAX_NETWORK_REFRESH_ATTEMPTS) {
+          networkTries += 1;
+          await new Promise(resolve => setTimeout(resolve, REFRESH_BACKOFF_MS[networkTries - 1] || 1200));
+          continue; // network hiccup: retry, state untouched (blueprint §17)
+        }
+        if (error.status === 0) {
+          // still offline: keep current auth state, retry on next trigger
+          if (state.session) setSessionState('AUTHENTICATED');
+          return Boolean(state.session);
+        }
+        // Terminal auth failure (401/403): the session is gone. Only redirect
+        // to the login view when this tab actually held a session — during a
+        // cold bootstrap the view choice belongs to the bootstrap flow.
+        const hadSession = Boolean(state.session);
+        clearAuthLocalState();
+        setSessionState('UNAUTHENTICATED');
+        updateLauncher();
+        if (hadSession && !pageHost.hidden) showView('login');
+        return false;
+      }
+    }
+  };
+
+  const coordinatedRefresh = () => {
+    if (!refreshInFlight) {
+      refreshInFlight = performSessionRefresh().finally(() => { refreshInFlight = null; });
+    }
+    return refreshInFlight;
+  };
+
   const refreshSession = async () => {
-    try {
-      const current = await api('/session');
-      state.session = accountVerified(current) ? current : null;
-    } catch (error) { if ([401, 403].includes(error.status)) state.session = null; }
-    if (state.session) rememberEntry('account');
-    updateLauncher();
-    if (!pageHost.hidden && state.session) showView('signed');
-    if (state.session) refreshPasskeyStatus();
+    if (sessionState === 'INITIALIZING') setSessionState('CHECKING_SESSION');
+    await coordinatedRefresh();
     return state.session;
+  };
+
+  /* ===== Multi-tab session sync (Phase 5 §25) =====
+     Login in one tab updates the others; logout in one tab signs them out.
+     BroadcastChannel only — no browser storage is ever used for auth sync,
+     keeping the zero-storage invariant (owner rule + protection tests). */
+  const AUTH_SYNC_CHANNEL = 'admission-hub-auth-v1';
+  const TAB_ID = `tab-${Math.random().toString(36).slice(2, 10)}`;
+  let authSyncChannel = null;
+  const broadcastAuthEvent = type => {
+    if (!authSyncChannel) return;
+    try { authSyncChannel.postMessage({ type, source: TAB_ID, at: Date.now() }); } catch (_) {}
+  };
+  const handleAuthSyncMessage = payload => {
+    if (!payload || typeof payload !== 'object' || payload.source === TAB_ID) return;
+    if (payload.type === 'logout' || payload.type === 'logout-all') {
+      if (state.session) {
+        clearAuthLocalState();
+        setSessionState('UNAUTHENTICATED');
+        updateLauncher();
+        if (!pageHost.hidden) {
+          showView('login');
+          message(payload.type === 'logout-all' ? 'সব device থেকে লগ আউট হয়ে গেছে।' : 'অন্য tab থেকে লগ আউট হয়েছে।', 'info');
+        }
+      }
+    } else if (payload.type === 'login') {
+      if (!state.session) void coordinatedRefresh();
+    }
+  };
+  const setupAuthSync = () => {
+    if (typeof BroadcastChannel === 'function' && !authSyncChannel) {
+      authSyncChannel = new BroadcastChannel(AUTH_SYNC_CHANNEL);
+      authSyncChannel.onmessage = event => handleAuthSyncMessage(event?.data);
+    }
+  };
+
+  /* ===== Deep-link restore (Phase 5 §19) =====
+     The anchor the user was heading to while logged out is remembered on
+     open() and restored exactly once after a successful re-login. */
+  const captureReturnDestination = () => {
+    try {
+      if (location.hash) state.returnDestination = location.hash;
+    } catch (_) {}
+  };
+  const restoreReturnDestination = () => {
+    const dest = state.returnDestination;
+    if (!dest || !accountVerified(state.session)) return;
+    state.returnDestination = '';
+    try {
+      close();
+    } catch (_) {}
+    try {
+      const target = new URL(location.href);
+      target.hash = dest;
+      history.replaceState(null, '', target.pathname + target.search + target.hash);
+      const el = document.getElementById(dest.slice(1));
+      if (el) el.scrollIntoView();
+    } catch (_) {}
+  };
+
+  const performLogoutAll = async () => {
+    if (state.busy || !accountVerified(state.session)) return false;
+    setBusy(true);
+    setSessionState('LOGGING_OUT');
+    try {
+      const result = await api('/session/logout-all', { method: 'POST', body: {} });
+      clearAuthLocalState();
+      setSessionState('UNAUTHENTICATED');
+      broadcastAuthEvent('logout-all');
+      updateLauncher();
+      showView('login');
+      message('সব device থেকে লগ আউট হয়েছে (' + (result.revoked ?? 0) + 'টি active session)। এখানে পুনরায় লগইন করতে হবে।', 'success');
+      return true;
+    } catch (error) {
+      if (error.status === 401 || error.status === 403) {
+        // The session was already gone: the end state is the same.
+        clearAuthLocalState();
+        setSessionState('UNAUTHENTICATED');
+        broadcastAuthEvent('logout-all');
+        updateLauncher();
+        showView('login');
+        message('সেশনটি আগে থেকেই শেষ হয়ে গেছে।', 'info');
+        return true;
+      }
+      setSessionState('ERROR');
+      message(friendlyError(error), 'error');
+      return false;
+    } finally { setBusy(false); }
   };
 
   const setAccountPageActive = active => {
@@ -1654,6 +1876,7 @@
   };
   const open = options => {
     const forceWelcome = options?.forceWelcome === true;
+    if (!accountVerified(state.session)) captureReturnDestination();
     setAccountPageActive(true);
     if (accountVerified(state.session)) showView('signed');
     else if (state.telegram) showView('telegram');
@@ -1848,6 +2071,7 @@
   const initialize = () => {
     if (state.initialized || !document.body) return;
     state.initialized = true;
+    setupAuthSync();
     document.body.append(launcher, pageHost);
     launcher.addEventListener('click', open);
     $('.ah-account-close').addEventListener('click', dismiss);
@@ -2057,7 +2281,7 @@
       rememberedEmail = $('#ah-login-remember')?.checked ? email : '';
       setBusy(true);
       try {
-        const result = await api('/login', { method: 'POST', body: { email, password } });
+        const result = await api('/login', { method: 'POST', body: { email, password, remember: $('#ah-login-remember')?.checked === true } });
         if (result.authenticated === true) {
           establishSession(result, 'যাচাইকৃত অ্যাকাউন্টে লগইন হয়েছে।');
         } else if (result.verification?.selectionRequired === true) {
@@ -2246,12 +2470,33 @@
     $('[data-role="logout"]').addEventListener('click', async () => {
       if (state.busy) return;
       setBusy(true);
+      setSessionState('LOGGING_OUT');
       try {
         await api('/session/logout', { method: 'POST', body: {} });
-        state.session = null; state.passkeys = []; state.backup = null; state.telegram = null; clearTelegramTimer();
-        updateLauncher(); showView('login'); message('নিরাপদভাবে লগ আউট হয়েছে।', 'success');
-      } catch (error) { message(friendlyError(error), 'error'); }
+        clearAuthLocalState();
+        setSessionState('UNAUTHENTICATED');
+        broadcastAuthEvent('logout');
+        updateLauncher(); showView('login'); message('নিরাপদভাবে লগ আউট হয়েছে।', 'success');
+      } catch (error) { setSessionState('ERROR'); message(friendlyError(error), 'error'); }
       finally { setBusy(false); }
+    });
+
+    $('[data-role="logout-all"]').addEventListener('click', async () => {
+      if (state.busy) return;
+      const button = $('[data-role="logout-all"]');
+      const ARMED_LABEL = 'নিশ্চিত করো—সব device বন্ধ হবে';
+      if (!button.dataset.armed) {
+        button.dataset.armed = '1';
+        button.dataset.label = button.textContent;
+        button.textContent = ARMED_LABEL;
+        setTimeout(() => { if (button.isConnected && button.dataset.armed) { delete button.dataset.armed; button.textContent = button.dataset.label; delete button.dataset.label; } }, 4000);
+        return;
+      }
+      delete button.dataset.armed;
+      const armedLabel = button.dataset.label;
+      delete button.dataset.label;
+      const done = await performLogoutAll();
+      if (button.isConnected) button.textContent = done ? 'সব device থেকে Log Out' : armedLabel;
     });
 
     let returnedFromEmail = false;
@@ -2317,6 +2562,8 @@
     open,
     refresh: refreshSession,
     getSession: () => state.session,
+    getSessionState: () => getSessionState(),
+    terminateAllSessions: () => performLogoutAll(),
     getEntryMode: entryMode,
     isGuest: () => entryMode() === 'guest' && !accountVerified(state.session),
     isVerified: () => accountVerified(state.session),

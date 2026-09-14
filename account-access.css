@@ -1171,3 +1171,5 @@ body.ah-account-page-active>.ah-account-launcher{display:none!important}
 @media(prefers-reduced-motion:reduce){
   .ah-login-spark,.ah-tg-orbit{animation:none}
 }
+
+.ah-account-danger{border-color:#e2b3ae;color:#a63a2b;background:#fff8f7}
