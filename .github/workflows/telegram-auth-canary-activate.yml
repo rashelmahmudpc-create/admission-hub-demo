@@ -149,11 +149,6 @@ jobs:
               -H 'Cache-Control: no-cache' --output "$1" "$2"
           }
 
-          fetch_public "$verify_dir/public-config.json" 'https://admissionhub.pages.dev/api/auth/v1/config'
-          fetch_public "$verify_dir/canary-config.json" 'https://admissionhub.pages.dev/api/auth/v1/config?telegramCanary=1'
-          node -e "const x=require(process.argv[1]); const a=x?.auth; const m=a?.methods; const t=m?.telegramVerification; if(a?.available!==true||a?.uiContract!=='auth-premium-v6'||a?.onboarding?.version!=='premium-onboarding-v1'||a?.emailVerifiedRequired!==false||m?.emailPassword?.available!==true||m?.passwordReset?.available!==true||m?.profile?.available!==true||m?.google?.available!==true||m?.google?.availabilityCode!=='READY'||m?.passkey?.available!==false||m?.passkey?.enrollmentAvailable!==true||m?.backup?.available!==false||m?.backup?.availabilityCode!=='LIVE_E2E_PENDING'||m?.backup?.providerNamesExposed!==false||t?.available!==true||t?.availabilityCode!=='READY'||t?.optional!==true||t?.codeLength!==6||t?.expiresInSeconds!==300||t?.maxAttempts!==5||t?.verifiesEmailOwnership!==false||t?.canonicalIdentity!=='firebase-uid') process.exit(1)" "$verify_dir/public-config.json"
-          node -e "const x=require(process.argv[1]); const a=x?.auth; const b=a?.methods?.backup; const t=a?.methods?.telegramVerification; if(a?.accountVerificationRequired!==true||a?.emailVerifiedRequired!==false||b?.available!==true||b?.availabilityCode!=='READY'||b?.genericFlow!==true||b?.providerNamesExposed!==false||b?.contactInput!=='none'||/telegram|bot|token|username|chat/i.test(JSON.stringify(b))||t?.available!==true||t?.availabilityCode!=='READY'||t?.optional!==true||t?.codeLength!==6||t?.expiresInSeconds!==300||t?.maxAttempts!==5||t?.verifiesEmailOwnership!==false||t?.canonicalIdentity!=='firebase-uid') process.exit(1)" "$verify_dir/canary-config.json"
-
           public_ready=false
           for attempt in 1 2 3 4 5 6 7 8; do
             fetch_public "$verify_dir/index.html" "https://admissionhub.pages.dev/?release=v254-login-input-20260914"
@@ -165,6 +160,22 @@ jobs:
             [ "$attempt" = '8' ] || sleep 5
           done
           test "$public_ready" = 'true'
+          echo 'verify: public shell settled on the new release'
+
+          config_ready=false
+          for attempt in 1 2 3; do
+            fetch_public "$verify_dir/public-config.json" 'https://admissionhub.pages.dev/api/auth/v1/config'
+            fetch_public "$verify_dir/canary-config.json" 'https://admissionhub.pages.dev/api/auth/v1/config?telegramCanary=1'
+            if node -e "const x=require(process.argv[1]); const a=x?.auth; const m=a?.methods; const t=m?.telegramVerification; if(a?.available!==true||a?.uiContract!=='auth-premium-v6'||a?.onboarding?.version!=='premium-onboarding-v1'||a?.emailVerifiedRequired!==false||m?.emailPassword?.available!==true||m?.passwordReset?.available!==true||m?.profile?.available!==true||m?.google?.available!==true||m?.google?.availabilityCode!=='READY'||m?.passkey?.available!==false||m?.passkey?.enrollmentAvailable!==true||m?.backup?.available!==false||m?.backup?.availabilityCode!=='LIVE_E2E_PENDING'||m?.backup?.providerNamesExposed!==false||t?.available!==true||t?.availabilityCode!=='READY'||t?.optional!==true||t?.codeLength!==6||t?.expiresInSeconds!==300||t?.maxAttempts!==5||t?.verifiesEmailOwnership!==false||t?.canonicalIdentity!=='firebase-uid') process.exit(1)" "$verify_dir/public-config.json" \
+              && node -e "const x=require(process.argv[1]); const a=x?.auth; const b=a?.methods?.backup; const t=a?.methods?.telegramVerification; if(a?.accountVerificationRequired!==true||a?.emailVerifiedRequired!==false||b?.available!==true||b?.availabilityCode!=='READY'||b?.genericFlow!==true||b?.providerNamesExposed!==false||b?.contactInput!=='none'||/telegram|bot|token|username|chat/i.test(JSON.stringify(b))||t?.available!==true||t?.availabilityCode!=='READY'||t?.optional!==true||t?.codeLength!==6||t?.expiresInSeconds!==300||t?.maxAttempts!==5||t?.verifiesEmailOwnership!==false||t?.canonicalIdentity!=='firebase-uid') process.exit(1)" "$verify_dir/canary-config.json"; then
+              config_ready=true
+              break
+            fi
+            [ "$attempt" = '3' ] || sleep 5
+          done
+          test "$config_ready" = 'true'
+          echo 'verify: auth config contracts READY'
+
           grep -Fq 'institutions-bd.js?v=bd-institutions-v1' "$verify_dir/index.html"
           grep -Fq 'account-access.css?v=20260914-login-input-v2' "$verify_dir/index.html"
           grep -Fq 'dashboard-v2.css?v=dash2f9' "$verify_dir/index.html"
