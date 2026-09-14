@@ -235,3 +235,34 @@ test('admin state change requires the admin token', async () => {
   }), app.env);
   assert.equal(res.status, 403);
 });
+
+test('deactivation is terminal: sessions revoked, reactivation only via recovery', async () => {
+  const app = await setup();
+  const off = await app.handler(request(`${AUTH_API_PREFIX}/admin/account/state`, {
+    body: { userId: app.session.user.id, status: 'deactivated' }, adminToken: app.adminToken
+  }), app.env);
+  assert.equal(off.status, 200);
+  assert.equal((await off.json()).account.status, 'deactivated');
+
+  // deactivated account can no longer use its session
+  const denied = await app.handler(request(`${AUTH_API_PREFIX}/account`, { cookie: app.cookie }), app.env);
+  assert.equal(denied.status, 401);
+
+  // direct reactivation is invalid (deactivated -> active is not a legal transition)
+  const direct = await app.handler(request(`${AUTH_API_PREFIX}/admin/account/state`, {
+    body: { userId: app.session.user.id, status: 'active' }, adminToken: app.adminToken
+  }), app.env);
+  assert.equal(direct.status, 409);
+  assert.equal((await direct.json()).error.code, AUTH_ERROR_CODES.ACCOUNT_STATE_INVALID);
+
+  // recovery path reactivates
+  const recovering = await app.handler(request(`${AUTH_API_PREFIX}/admin/account/state`, {
+    body: { userId: app.session.user.id, status: 'recovery' }, adminToken: app.adminToken
+  }), app.env);
+  assert.equal(recovering.status, 200);
+  const back = await app.handler(request(`${AUTH_API_PREFIX}/admin/account/state`, {
+    body: { userId: app.session.user.id, status: 'active' }, adminToken: app.adminToken
+  }), app.env);
+  assert.equal(back.status, 200);
+  assert.equal((await back.json()).account.status, 'active');
+});

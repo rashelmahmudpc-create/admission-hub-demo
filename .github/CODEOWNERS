@@ -1,6 +1,11 @@
 # Authentication Foundation and Email Gateway are protected infrastructure.
 /auth/ @sheikhrashel47-stack
 /auth-native/ @sheikhrashel47-stack
+/auth-native/core/account-lifecycle.mjs @sheikhrashel47-stack
+/auth-native/core/identity-reconciliation.mjs @sheikhrashel47-stack
+/identity-lifecycle.test.mjs @sheikhrashel47-stack
+/account-state-runtime.test.mjs @sheikhrashel47-stack
+/account-state-api.test.mjs @sheikhrashel47-stack
 /native-auth*.test.mjs @sheikhrashel47-stack
 /firebase-auth-ui.test.mjs @sheikhrashel47-stack
 /account-access.js @sheikhrashel47-stack

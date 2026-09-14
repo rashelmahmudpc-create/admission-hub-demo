@@ -56,16 +56,33 @@ authentication authority; Supabase binding আর হবে না। Phase 3-�
    no-write, session revocation on suspend, deactivated→recovery→active
    path, idempotent no-op, engine contract guard
 
+## Chunk 4 — Identity Regression Suite + guard wiring + protection contract (done)
+
+1. **Dedicated Identity Regression Suite:** `npm run test:identity`
+   (3 suites: identity-lifecycle 17 + account-state-runtime 9 +
+   account-state-api 10 = 36 tests)
+2. **Guard wiring:** identity suites যোগ হয়েছে `test:native-auth`-এ (CI-তে
+   auto-run) + `native-auth-guard.yml`-এ dedicated step
+   "Verify Identity Regression Suite (Protected Identity Core)" + PR
+   paths filter-এ identity test files
+3. **CODEOWNERS:** identity core modules + 3 identity test files explicitly
+   owner-protected
+4. **Deactivation path API test:** deactivated → session 401, direct
+   reactivation 409 (invalid), recovery → active OK
+5. **`docs/IDENTITY-CORE-PROTECTION.md`:** protected components list,
+   frozen invariants, mandatory change-control flow, deletion data
+   relationship map (architecture only — কোনো destructive endpoint নেই),
+   audit event inventory
+
 ## 📌 বর্তমান অবস্থা
 
 - **TESTED:** local — test:production-auth সব green: auth 62/62 ·
-  email 108/108 + 4/4 · native-auth 203/203 · identity-lifecycle 17/17 ·
-  account-state-runtime 9/9 · account-state-api 9/9
-- Bundle rebuild + commit (exact-bundle guard-এর জন্য)
-- Public/admin endpoints এখন DO-তে wired; production traffic-এ activate হবে
-  Chunk 4-এর protected publish-এ (endpoint-গুলো এখনই live bundle-এ আছে,
-  admin route token ছাড়া 403)
-- Phase 3 (Option A) progress: **Chunk 3/4**
+  email 108/108 + 4/4 · native-auth 239/239 (identity suites included) ·
+  test:identity 36/36 · worker bundle exact
+- **PROTECTED:** Identity Core এখন guard + CODEOWNERS + protection doc-এ
+  marked (blueprint §90 / EXTRA 17)
+- Phase 3 (Option A) progress: **Chunk 4/4 — code complete, publish+verify
+  চলছে**
 
 ## Chunk 3 — DO internal endpoints + public/admin contract API (done)
 
@@ -96,11 +113,13 @@ authentication authority; Supabase binding আর হবে না। Phase 3-�
 
 ## ⏭️ পরবর্তী কাজ (Phase 3 — Option A)
 
-**Chunk 3 DONE** — internal endpoints + public/admin API wired (see above).
+**Chunk 4 DONE** — Identity Regression Suite + guard wiring + protection
+contract + deactivation path (see above).
 
-1. **Chunk 4:** deactivation/deletion architecture + admin diagnostics UI
-   + dedicated Identity Regression Suite + guard wiring + deploy (protected
-   publish) + live verify + Phase 3 final report
+Remaining:
+1. **Protected publish** (dispatch `telegram-auth-canary-activate.yml` with
+   `PUBLISH_TELEGRAM_OTP` on main) + live verify of the new endpoints
+2. **Phase 3 final report** (owner approval gate — STOP after report)
 
 ## 🚨 STOP / সতর্কতা
 

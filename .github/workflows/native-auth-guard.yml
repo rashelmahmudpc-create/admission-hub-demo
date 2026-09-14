@@ -11,6 +11,9 @@ on:
       - 'telegram-otp-ui.test.mjs'
       - 'premium-onboarding-ui.test.mjs'
       - 'account-retirement.test.mjs'
+      - 'identity-lifecycle.test.mjs'
+      - 'account-state-runtime.test.mjs'
+      - 'account-state-api.test.mjs'
       - 'account-access.js'
       - 'account-access.css'
       - 'institutions-bd.js'
@@ -44,5 +47,7 @@ jobs:
         run: npm run check:worker-bundle
       - name: Verify Firebase Auth security and behavior
         run: npm run test:native-auth
+      - name: Verify Identity Regression Suite (Protected Identity Core)
+        run: npm run test:identity
       - name: Verify legacy account implementation remains retired
         run: node account-retirement.test.mjs
