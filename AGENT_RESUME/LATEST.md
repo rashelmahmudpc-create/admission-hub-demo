@@ -1,23 +1,24 @@
-# LATEST — "Account Created!" সফলতার স্ক্রিন premium করা (v251)
+# LATEST — Login / Verify / Email / Telegram / Passkey reference screens (v252)
 
 **Updated:** 2026-09-14 (Asia/Dhaka) · Agent: **Arena Agent Mode**
 
 ## STATUS
 
-- **IMPLEMENTED:** the signup success screen (`Account Created!`) is now a premium, clean screen —
-  layered success emblem + Bengali confirmation, a **saved-profile recap card** (নাম · জন্ম তারিখ ·
-  বিদ্যালয় · কলেজ/বিশ্ববিদ্যালয় · Account), one full-width `Continue →` (unchanged role, still opens the
-  verification selector) and a “পরের ধাপ” card that explains the two real verification methods.
-  The empty space is gone and the phone view starts at the top of the screen.
-- **UNCHANGED:** Welcome, Education (v250), Personal, Security, Log In and the verification flow; nothing
-  is hidden, nothing is shrunk, the v249 phone scroll cushion and the education phone layout stay as they are.
-- **TESTED:** auth 62/62 · native-auth 203/203 · email 108/108 + 4/4 · worker bundle exact ·
-  browser audit `pageErrors 0`, touch targets ≥44px, no duplicate ids · release file asserts 66/66 ·
-  360/390/430/1024 screenshots with the recap values correct and `Continue` visible on first paint.
+- **IMPLEMENTED:** the five owner reference screens are live as code-native UI
+  (inline SVG + CSS only) — Log In (`আবার দেখা হলো`), verification-method
+  selector (`একটি verification method বেছে নাও`), Email verify, Telegram
+  intro and Passkey setup. All data-view / data-role hooks, truth lines and
+  fail-closed states are unchanged; only the visuals were rebuilt.
+- **UNCHANGED:** Welcome, Personal, Education (v250), Security, Account Created
+  (v251), WhatsApp-info, the Telegram OTP form, Log In logic and the whole
+  verification flow; zero raster, no dialog semantics, no credential storage.
+- **TESTED:** auth 62/62 · native-auth 203/203 · agent-core 37/37 ·
+  retirement 30/30 · marker suites 12/12 · jsdom smoke 3/3 (zero JS errors,
+  no duplicate ids) · release asserts local incl. 6 new v252 checks.
 - **DEPLOYED:** pending the publish run after merge.
 
 ## DETAIL
 
-- `AGENT_RESUME/2026-09-14-created-screen-v251.md`
-- History: v244 → v245 → v246/v247 → v248 → v249 → v250 (education reference pages) →
-  **v251 (premium Account Created screen)**.
+- `AGENT_RESUME/2026-09-14-auth-reference-screens-v252.md`
+- History: v244 → v245 → v246/v247 → v248 → v249 → v250 (education) →
+  v251 (Account Created) → **v252 (auth reference screens)**.
