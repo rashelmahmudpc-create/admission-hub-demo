@@ -42,3 +42,24 @@ advanced-mode Pages worker that proxies `/api/*` and gates asset serving.
 - Public profile IDs match `^AH-[A-Z2-9]{6}$` (no `0`/`1`); `/AH-* / 200` in
   `_redirects` hands the path to the SPA.
 - `rsync` and `file` are unavailable in this sandbox; use Python equivalents.
+- Preference values have two sources of truth that must agree: the default and
+  allow-list in `loadPrefs()` (`profile-ui.js`) and the modes accepted by the
+  global `AhAppearance` engine (`index.html`). Adding a mode in only one place
+  makes the saved value silently reset on reload while the engine keeps
+  rendering it — the v267 `green`/Premium Green bug.
+- Any change to a versioned asset requires a coordinated bump: the `?v=` query
+  in `index.html`, `BUILD_ID` + `expectedSwVersion` in `index.html`/`sw.js`, and
+  the shell version asserted across many `*.test.mjs` files. Bump the `SW shell`
+  and `profile-vNN` markers together, then run `node scripts/sw-manifest.mjs` to
+  regenerate `ASSET_DIGESTS` in `sw.js`, or the SW precache rejects the shell.
+
+## Deployment access
+
+- `wrangler pages deploy dist --project-name admissionhub --branch main` with
+  `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` is the working deploy path.
+- The GitHub PAT in the remote URL can stop working mid-session even though
+  pushes succeeded earlier (reflog shows prior `update by push`). A 404 from
+  `api.github.com/repos/<owner>/<repo>` while the token itself is valid means
+  the repo is gone/renamed or the token's account lost access — it is not a
+  push-format problem. Confirm with `GET /user` (token identity) before
+  retrying; the deployed site can still ship via wrangler without GitHub.
