@@ -7,7 +7,12 @@
 /account-state-runtime.test.mjs @sheikhrashel47-stack
 /account-state-api.test.mjs @sheikhrashel47-stack
 /session-recovery-api.test.mjs @sheikhrashel47-stack
-/session-recovery-chaos.test.mjs @sheikhrashel47-stack
+
+# Phase 6 — Security Core protection contract.
+/security-*.test.mjs @sheikhrashel47-stack
+/docs/SECURITY-CORE-PROTECTION.md @sheikhrashel47-stack
+/docs/SESSION-CORE-PROTECTION.md @sheikhrashel47-stack
+/docs/IDENTITY-CORE-PROTECTION.md @sheikhrashel47-stack /session-recovery-chaos.test.mjs @sheikhrashel47-stack
 /native-auth*.test.mjs @sheikhrashel47-stack
 /firebase-auth-ui.test.mjs @sheikhrashel47-stack
 /account-access.js @sheikhrashel47-stack

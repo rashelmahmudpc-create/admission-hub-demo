@@ -16,6 +16,8 @@ on:
       - 'account-state-api.test.mjs'
       - 'session-recovery-api.test.mjs'
       - 'session-recovery-chaos.test.mjs'
+      - 'security-*.test.mjs'
+      - 'docs/SECURITY-CORE-PROTECTION.md'
       - 'account-access.js'
       - 'account-access.css'
       - 'institutions-bd.js'
