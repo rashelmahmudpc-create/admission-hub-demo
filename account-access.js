@@ -21,6 +21,7 @@
     telegram: null,
     telegramTimer: null,
     backup: null,
+    stepUp: null,
     passkeys: [],
     busy: false,
     initialized: false,
@@ -413,6 +414,8 @@
         <form class="ah-account-view" data-view="backup-prepare" hidden novalidate><div class="ah-account-verify-badge" aria-hidden="true">✓</div><h3 class="ah-account-view-title">বিকল্প verification</h3><p class="ah-account-mask">তোমার জন্য available নিরাপদ method ব্যবহার হবে।</p><div class="ah-account-field" data-role="backup-contact-field"><label class="ah-account-label" for="ah-backup-contact">Mobile number <span data-role="backup-contact-mode">(optional)</span></label><input class="ah-account-input" id="ah-backup-contact" type="tel" inputmode="tel" autocomplete="tel" maxlength="16" placeholder="+8801XXXXXXXXX"></div><button class="ah-account-primary" type="submit">Verification শুরু করুন</button><p class="ah-account-switch"><button class="ah-account-link" type="button" data-role="backup-prepare-cancel">ফিরে যান</button></p></form>
         <form class="ah-account-view" data-view="backup" hidden novalidate><div class="ah-account-verify-badge" aria-hidden="true">✓</div><h3 class="ah-account-view-title">বিকল্প verification</h3><p class="ah-account-mask" data-role="backup-instruction">নিরাপদ code লিখুন।</p><div class="ah-account-interaction" data-role="backup-interaction" hidden><a class="ah-account-primary ah-account-external" data-role="backup-link" target="_blank" rel="noopener noreferrer">Telegram খুলুন</a><p>START চাপুন এবং পাওয়া ৬ সংখ্যার code নিচে লিখুন। Telegram খোলা সফল যাচাই নয়; এটি Email মালিকানার প্রমাণও নয়।</p></div><div class="ah-account-field" data-role="backup-code-field"><label class="ah-account-label" for="ah-backup-code">৬ সংখ্যার code</label><input class="ah-account-input ah-account-otp" id="ah-backup-code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required></div><button class="ah-account-primary" type="submit" data-role="backup-verify">Verify</button><p class="ah-account-switch"><button class="ah-account-link" type="button" data-role="backup-cancel">ফিরে যান</button></p></form>
 
+        <form class="ah-account-view" data-view="step-up" hidden novalidate><div class="ah-account-verify-badge" aria-hidden="true">🔒</div><h3 class="ah-account-view-title">Security verification দরকার</h3><p class="ah-account-mask" data-role="step-up-instruction">সব device থেকে লগ আউট একটি গুরুত্বপূর্ণ কাজ। নিশ্চিত করতে তোমার verification-এ পাঠানো ৬ সংখ্যার code লিখুন।</p><div class="ah-account-interaction" data-role="step-up-interaction" hidden><a class="ah-account-primary ah-account-external" data-role="step-up-link" target="_blank" rel="noopener noreferrer">Telegram খুলুন</a><p>START চাপুন এবং পাওয়া ৬ সংখ্যার code নিচে লিখুন।</p></div><div class="ah-account-field"><label class="ah-account-label" for="ah-stepup-code">৬ সংখ্যার code</label><input class="ah-account-input ah-account-otp" id="ah-stepup-code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required></div><p class="ah-account-fine" data-role="step-up-expiry" hidden></p><button class="ah-account-primary" type="submit" data-role="step-up-verify">Verify</button><p class="ah-account-switch"><button class="ah-account-link" type="button" data-role="step-up-cancel">বাতিল করুন</button></p></form>
+
         <div class="ah-account-view ah-verified-view" data-view="verified" hidden>
           <div class="ah-success-check ah-success-glow" aria-hidden="true"><svg viewBox="0 0 120 120"><circle cx="60" cy="60" r="46"/><path d="m38 61 14 14 31-34"/></svg></div>
           <h3 class="ah-account-view-title" data-role="verified-title">Email Verified! 🎉</h3>
@@ -438,7 +441,7 @@
 
         <div class="ah-account-view ah-success-view" data-view="success" hidden><div class="ah-success-check" aria-hidden="true"><svg viewBox="0 0 120 120"><circle cx="60" cy="60" r="46"/><path d="m38 61 14 14 31-34"/></svg></div><p class="ah-view-kicker">ALL SET</p><h3 class="ah-account-view-title">সব ঠিক আছে! 🎉</h3><p class="ah-account-mask">তোমার account এখন প্রস্তুত।</p><div class="ah-ready-list"><span data-role="ready-profile">… Profile details দেখা হচ্ছে</span><span>✓ Verification Complete</span><span>✓ Admission Hub Ready</span></div><button class="ah-account-primary" type="button" data-role="enter-app">Admission Hub-এ প্রবেশ করো →</button></div>
 
-        <div class="ah-account-view" data-view="signed" hidden><div class="ah-account-secure"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M7 10V8a5 5 0 0 1 10 0v2m-11 0h12v10H6V10Zm6 4v2" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg><div><h3>Account নিরাপদ ও সক্রিয়</h3><p data-role="account-verification-summary">তোমার account সত্যিকারের যাচাইয়ের মাধ্যমে সক্রিয় আছে।</p></div></div><div class="ah-account-identity"><p class="ah-account-identity-label" data-role="identity-label">Admission Hub account</p><p class="ah-account-identity-value" data-role="identity">—</p></div><section class="ah-account-security-tools" data-role="passkey-tools" hidden><div class="ah-account-tool-head"><div><h3>Passkey</h3><p data-role="passkey-status">এই device-এ দ্রুত প্রবেশ চালু করতে পারো।</p></div><span aria-hidden="true">◉</span></div><div data-role="passkey-list"></div><button class="ah-account-secondary" type="button" data-role="passkey-add">নতুন Passkey যোগ করুন</button></section><button class="ah-account-secondary" type="button" data-role="backup-start" hidden>বিকল্প যাচাই</button><button class="ah-account-secondary" type="button" data-role="logout">Log Out</button><button class="ah-account-secondary ah-account-danger" type="button" data-role="logout-all">সব device থেকে Log Out</button><p class="ah-account-fine">Password ও প্রবেশের গোপন তথ্য এই পেজে দেখানো বা জমা রাখা হয় না।</p></div>
+        <div class="ah-account-view" data-view="signed" hidden><div class="ah-account-secure"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M7 10V8a5 5 0 0 1 10 0v2m-11 0h12v10H6V10Zm6 4v2" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg><div><h3>Account নিরাপদ ও সক্রিয়</h3><p data-role="account-verification-summary">তোমার account সত্যিকারের যাচাইয়ের মাধ্যমে সক্রিয় আছে।</p></div></div><div class="ah-account-identity"><p class="ah-account-identity-label" data-role="identity-label">Admission Hub account</p><p class="ah-account-identity-value" data-role="identity">—</p></div><section class="ah-account-security-tools" data-role="passkey-tools" hidden><div class="ah-account-tool-head"><div><h3>Passkey</h3><p data-role="passkey-status">এই device-এ দ্রুত প্রবেশ চালু করতে পারো।</p></div><span aria-hidden="true">◉</span></div><div data-role="passkey-list"></div><button class="ah-account-secondary" type="button" data-role="passkey-add">নতুন Passkey যোগ করুন</button></section><section class="ah-account-security-tools" data-role="trust-prompt" hidden><div class="ah-account-tool-head"><div><h3>এই device-কে trust করবে?</h3><p>পরবর্তী ৩০ দিন এই device থেকে লগইন করলে extra verification লাগবে না।</p></div></div><button class="ah-account-secondary" type="button" data-role="trust-accept">Trust করি (৩০ দিন)</button><button class="ah-account-link" type="button" data-role="trust-decline">না, ধন্যবাদ</button></section><button class="ah-account-secondary" type="button" data-role="backup-start" hidden>বিকল্প যাচাই</button><button class="ah-account-secondary" type="button" data-role="logout">Log Out</button><button class="ah-account-secondary ah-account-danger" type="button" data-role="logout-all">সব device থেকে Log Out</button><p class="ah-account-fine">Password ও প্রবেশের গোপন তথ্য এই পেজে দেখানো বা জমা রাখা হয় না।</p></div>
       </div>
 
     </main>
@@ -663,7 +666,9 @@
       TELEGRAM_VERIFICATION_UNAVAILABLE: 'Telegram verification এখন পাওয়া যাচ্ছে না—Email ব্যবহার করো।',
       SESSION_INVALID: 'নিরাপদ প্রবেশের সময় শেষ হয়েছে—আবার Log In করো।',
       PASSKEY_UNAVAILABLE: 'এই device-এ Passkey এখন পাওয়া যাচ্ছে না—অন্য পথ ব্যবহার করো।',
-      ACCOUNT_CONFLICT: 'এই পরিচয়টি অন্য account-এর সঙ্গে যুক্ত। নিরাপত্তার জন্য প্রবেশ বন্ধ রাখা হয়েছে।'
+      ACCOUNT_CONFLICT: 'এই পরিচয়টি অন্য account-এর সঙ্গে যুক্ত। নিরাপত্তার জন্য প্রবেশ বন্ধ রাখা হয়েছে।',
+      OTP_INVALID: 'কোডটি সঠিক নয়—আবার লিখে দেখো।',
+      CHALLENGE_INVALID: 'Verificationটি সঠিক নয় বা সময় শেষ—আবার চেষ্টা করো।'
     };
     if (known[error?.code]) return known[error.code];
     if (error?.status === 0) return 'ইন্টারনেট সংযোগ পাওয়া যাচ্ছে না—সংযোগ ঠিক হলে আবার চেষ্টা করো।';
@@ -1247,6 +1252,7 @@
       'google-link': () => $('#ah-link-email'),
       resend: () => $('#ah-resend-email'),
       backup: () => $('#ah-backup-code'),
+      'step-up': () => $('#ah-stepup-code'),
       verified: () => $('[data-role="verified-continue"]'),
       'security-setup': () => $('[data-role="setup-passkey"]'),
       success: () => $('[data-role="enter-app"]'),
@@ -1429,7 +1435,10 @@
       state.afterVerified = showSetup ? 'security-setup' : 'success';
       showView('verified');
     } else if (showSetup) showView('security-setup');
-    else showView('signed');
+    else {
+      showView('signed');
+      updateTrustPrompt();
+    }
     if (onboarding) message();
     else message(text, 'success');
     refreshPasskeyStatus();
@@ -1710,6 +1719,8 @@
     state.passkeys = [];
     state.backup = null;
     state.telegram = null;
+    clearStepUpTimer();
+    state.stepUp = null;
     clearTelegramTimer();
     clearRefreshSchedule();
   };
@@ -1831,20 +1842,110 @@
     } catch (_) {}
   };
 
+  /* ===== Phase 6 — Step-up security challenge (§12) =====
+     Sensitive actions (e.g. "log out on every device") can require a fresh
+     verification. The server answers STEP_UP_REQUIRED while the session is
+     still valid; the user completes the purpose-bound challenge and the
+     action is retried exactly once with the one-time stepUpToken. */
+  const clearStepUpTimer = () => {
+    if (state.stepUp?.timer) { clearInterval(state.stepUp.timer); state.stepUp.timer = null; }
+  };
+  const updateStepUpExpiry = () => {
+    const line = $('[data-role="step-up-expiry"]');
+    if (!line || !state.stepUp) return;
+    if (!state.stepUp.expiresAt) { line.hidden = true; return; }
+    const remaining = state.stepUp.expiresAt - Date.now();
+    line.hidden = false;
+    if (remaining <= 0) {
+      line.textContent = 'code-এর সময় শেষ হয়ে গেছে—বাতিল করে আবার চেষ্টা করুন।';
+      clearStepUpTimer();
+      return;
+    }
+    const minutes = Math.floor(remaining / 60000);
+    const seconds = Math.floor((remaining % 60000) / 1000);
+    line.textContent = `code আর ${minutes} মিনিট ${seconds} সেকেন্ডের জন্য বৈধ।`;
+  };
+  const finishStepUp = (showSigned = true) => {
+    clearStepUpTimer();
+    state.stepUp = null;
+    if (showSigned && accountVerified(state.session)) showView('signed');
+  };
+  const startStepUpChallenge = async pendingAction => {
+    if (!accountVerified(state.session)) return;
+    state.stepUp = { pending: pendingAction, challengeRef: '', method: '', expiresAt: 0, timer: null };
+    const codeInput = $('#ah-stepup-code');
+    if (codeInput) codeInput.value = '';
+    showView('step-up');
+    message('গুরুত্বপূর্ণ কাজটি নিশ্চিত করতে একটি fresh verification পাঠানো হচ্ছে…', 'info');
+    setBusy(true);
+    try {
+      const result = await api('/security/challenge/request', { method: 'POST', body: { purpose: 'step-up', method: 'email' } });
+      if (!state.stepUp || !state.stepUp.pending) return;
+      state.stepUp.challengeRef = String(result.challengeRef || '');
+      state.stepUp.method = String(result.method || 'email');
+      state.stepUp.expiresAt = Number(result.expiresAt || 0);
+      const telegram = result.interaction?.type === 'telegram-link';
+      const panel = $('[data-role="step-up-interaction"]');
+      if (panel) panel.hidden = !telegram;
+      if (telegram) {
+        const link = $('[data-role="step-up-link"]');
+        if (link) link.href = String(result.interaction.url || '');
+      }
+      const instruction = $('[data-role="step-up-instruction"]');
+      if (instruction) instruction.textContent = telegram
+        ? 'Official Telegram bot-এ START চাপুন, তারপর পাওয়া ৬ সংখ্যার code নিচে লিখুন।'
+        : 'তোমার verification-এ ৬ সংখ্যার code পাঠানো হয়েছে—কোডটি নিচে লিখুন।';
+      updateStepUpExpiry();
+      state.stepUp.timer = setInterval(updateStepUpExpiry, 1000);
+      focusWhenUnclaimed(() => $('#ah-stepup-code'), 80);
+    } catch (error) {
+      finishStepUp();
+      message(friendlyError(error), 'error');
+    } finally { setBusy(false); }
+  };
+
+  const completeLogoutAll = result => {
+    clearAuthLocalState();
+    setSessionState('UNAUTHENTICATED');
+    broadcastAuthEvent('logout-all');
+    updateLauncher();
+    showView('login');
+    message('সব device থেকে লগ আউট হয়েছে (' + (result.revoked ?? 0) + 'টি active session)। এখানে পুনরায় লগইন করতে হবে।', 'success');
+  };
+
   const performLogoutAll = async () => {
     if (state.busy || !accountVerified(state.session)) return false;
     setBusy(true);
     setSessionState('LOGGING_OUT');
     try {
       const result = await api('/session/logout-all', { method: 'POST', body: {} });
-      clearAuthLocalState();
-      setSessionState('UNAUTHENTICATED');
-      broadcastAuthEvent('logout-all');
-      updateLauncher();
-      showView('login');
-      message('সব device থেকে লগ আউট হয়েছে (' + (result.revoked ?? 0) + 'টি active session)। এখানে পুনরায় লগইন করতে হবে।', 'success');
+      completeLogoutAll(result);
       return true;
     } catch (error) {
+      if (error.status === 409 && error.code === 'STEP_UP_REQUIRED') {
+        // The session is still valid — the server asked for a fresh
+        // verification. Run the challenge, then retry with the token.
+        setSessionState('AUTHENTICATED');
+        void startStepUpChallenge(async stepUpToken => {
+          try {
+            const result = await api('/session/logout-all', { method: 'POST', body: { stepUpToken } });
+            completeLogoutAll(result);
+          } catch (retryError) {
+            if (retryError.status === 401 || retryError.status === 403) {
+              clearAuthLocalState();
+              setSessionState('UNAUTHENTICATED');
+              broadcastAuthEvent('logout-all');
+              updateLauncher();
+              showView('login');
+              message('সেশনটি আগে থেকেই শেষ হয়ে গেছে।', 'info');
+            } else {
+              setSessionState('ERROR');
+              message(friendlyError(retryError), 'error');
+            }
+          }
+        });
+        return false;
+      }
       if (error.status === 401 || error.status === 403) {
         // The session was already gone: the end state is the same.
         clearAuthLocalState();
@@ -1859,6 +1960,37 @@
       message(friendlyError(error), 'error');
       return false;
     } finally { setBusy(false); }
+  };
+
+  /* Phase 6 — "trust this device 30 days" consent (chunk-2 Q1). Offered
+     once after a login the policy flagged with trustOffer; accepting posts
+     to /security/device/trust, declining just hides the prompt. */
+  const updateTrustPrompt = () => {
+    const prompt = $('[data-role="trust-prompt"]');
+    if (!prompt) return;
+    const security = state.session?.session?.security;
+    prompt.hidden = !(security?.trustOffer === true && security?.trusted !== true);
+  };
+  const acceptDeviceTrust = async () => {
+    if (state.busy || !accountVerified(state.session)) return;
+    setBusy(true);
+    try {
+      await api('/security/device/trust', { method: 'POST', body: {} });
+      if (state.session?.session) {
+        state.session.session.security = { ...(state.session.session.security || {}), trusted: true, trustOffer: false };
+      }
+      updateTrustPrompt();
+      message('এই device trusted হয়েছে—৩০ দিনের মধ্যে extra verification লাগবে না।', 'success');
+    } catch (error) {
+      updateTrustPrompt();
+      message(friendlyError(error), 'error');
+    } finally { setBusy(false); }
+  };
+  const declineDeviceTrust = () => {
+    if (state.session?.session) {
+      state.session.session.security = { ...(state.session.session.security || {}), trustOffer: false };
+    }
+    updateTrustPrompt();
   };
 
   const setAccountPageActive = active => {
@@ -1886,6 +2018,7 @@
     if (state.available === false && state.currentView !== 'welcome') message('Account service এখন প্রস্তুত নয়—Guest হিসেবে Dashboard ব্যবহার করতে পারো।' + unavailableHint(), 'info');
   };
   const close = () => {
+    if (state.stepUp) finishStepUp(false);
     setAccountPageActive(false);
     message();
     try { launcher.focus(); } catch (_) {}
@@ -2466,6 +2599,40 @@
       finally { setBusy(false); }
     });
     $('[data-role="backup-cancel"]').addEventListener('click', () => { state.backup = null; $('#ah-backup-code').value = ''; configureBackupView(null); showView('signed'); });
+
+    $('[data-view="step-up"]').addEventListener('submit', async event => {
+      event.preventDefault();
+      if (state.busy || !state.stepUp?.challengeRef || !state.stepUp?.pending) return;
+      const code = $('#ah-stepup-code').value.trim();
+      if (!/^\d{6}$/.test(code)) return message('৬ সংখ্যার code লিখুন।', 'error');
+      setBusy(true);
+      try {
+        const result = await api('/security/challenge/verify', {
+          method: 'POST',
+          body: { challengeRef: state.stepUp.challengeRef, purpose: 'step-up', code }
+        });
+        const pending = state.stepUp?.pending;
+        const token = String(result.stepUpToken || '');
+        clearStepUpTimer();
+        state.stepUp = null;
+        $('#ah-stepup-code').value = '';
+        if (pending) await pending(token);
+      } catch (error) {
+        $('#ah-stepup-code').value = '';
+        message(friendlyError(error), 'error');
+      } finally { setBusy(false); }
+    });
+    $('[data-role="step-up-cancel"]').addEventListener('click', () => {
+      if (state.busy) return;
+      const challengeRef = state.stepUp?.challengeRef;
+      if (challengeRef) {
+        void api('/security/challenge/cancel', { method: 'POST', body: { challengeRef, purpose: 'step-up' } }).catch(() => {});
+      }
+      finishStepUp();
+    });
+
+    $('[data-role="trust-accept"]').addEventListener('click', () => { void acceptDeviceTrust(); });
+    $('[data-role="trust-decline"]').addEventListener('click', () => { declineDeviceTrust(); });
 
     $('[data-role="logout"]').addEventListener('click', async () => {
       if (state.busy) return;

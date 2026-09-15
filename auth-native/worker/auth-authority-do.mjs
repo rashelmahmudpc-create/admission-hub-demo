@@ -46,6 +46,9 @@ export class AdmissionAuthAuthority {
         providers: createConfiguredVerificationProviders(env),
         activated: ['canary', 'enabled'].includes(String(env.VERIFICATION_AUTH_ACTIVATION || ''))
       });
+      // Phase 6 — the engine's security challenges reuse this orchestrator
+      // for email/Telegram delivery.
+      this.engine.bindVerification(this.verification);
     });
   }
 
@@ -277,9 +280,9 @@ export class AdmissionAuthAuthority {
         return response(200, { ok: true, result });
       }
       if (url.pathname === '/internal/session/revoke-all') {
-        const session = await this.engine.getFirebaseSession(body.sessionToken, body.input);
-        const result = await this.repository.revokeUserSessions({ userId: session.user.id, now: Date.now() });
-        if (result.error) throw new NativeAuthError(result.error);
+        // Phase 6 — step-up-gated: the engine enforces recent-session or a
+        // verified step-up challenge before any session is revoked.
+        const result = await this.engine.revokeAllSessions({ ...(body.input || {}), sessionToken: body.sessionToken }, body.context);
         return response(200, { ok: true, result });
       }
       // Phase 6 — device trust + security state (internal; the public
@@ -300,6 +303,19 @@ export class AdmissionAuthAuthority {
       }
       if (url.pathname === '/internal/security/state') {
         const result = await this.engine.getSecurityState(body.input, body.context);
+        return response(200, { ok: true, result });
+      }
+      // Phase 6 — purpose-bound security challenges (§11-§12).
+      if (url.pathname === '/internal/security/challenge/request') {
+        const result = await this.engine.requestChallenge(body.input, body.context);
+        return response(200, { ok: true, result });
+      }
+      if (url.pathname === '/internal/security/challenge/verify') {
+        const result = await this.engine.verifyChallenge(body.input, body.context);
+        return response(200, { ok: true, result });
+      }
+      if (url.pathname === '/internal/security/challenge/cancel') {
+        const result = await this.engine.cancelChallenge(body.input, body.context);
         return response(200, { ok: true, result });
       }
       return response(404, { ok: false, error: { code: 'NOT_FOUND' } });

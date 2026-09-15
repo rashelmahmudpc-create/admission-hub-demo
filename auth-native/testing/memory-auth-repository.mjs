@@ -20,6 +20,7 @@ export class MemoryAuthRepository {
     this.profiles = new Map();
     this.accountStates = new Map();
     this.trustedDevices = new Map();
+    this.securityChallenges = new Map();
   }
 
   #storeTrustedDevice({ userId, deviceRef, browserClass, now, ttlMs, policyVersion, maxDevices }) {
@@ -476,7 +477,14 @@ export class MemoryAuthRepository {
     if (!user) return { error: AUTH_ERROR_CODES.SESSION_INVALID };
     if (user.status !== 'active') return { error: AUTH_ERROR_CODES.ACCOUNT_DISABLED };
     if (now - session.lastSeenAt > 6 * 60 * 60 * 1000) session.lastSeenAt = now;
-    return { expiresAt: session.expiresAt, user: copy(user) };
+    return { expiresAt: session.expiresAt, createdAt: session.createdAt, user: copy(user) };
+  }
+
+  recordSecurityEvent({ eventType, subjectRef, userId, now, deviceRef, purpose, policyVersion }) {
+    this.events.push({
+      type: eventType, subjectRef, userId, at: now,
+      deviceRef: deviceRef || null, purpose: purpose || null, policyVersion: policyVersion || null
+    });
   }
 
   async revokeSession({ sessionRef, now }) {
@@ -539,6 +547,80 @@ export class MemoryAuthRepository {
       failedLogins: Number(this.rates.get(`${emailScope}:${emailRef}:${emailStart}`)?.count || 0),
       rapidRequests: Number(this.rates.get(`${ipScope}:${ipRef}:${ipStart}`)?.count || 0)
     });
+  }
+
+  createSecurityChallenge({ challengeRef, userId, purpose, method, maxAttempts, now, ttlMs, policyVersion, deviceRef }) {
+    this.securityChallenges.set(challengeRef, {
+      challengeRef, userId, purpose, method,
+      status: 'created', attempts: 0, maxAttempts,
+      attemptId: null, deviceRef, stepUpTokenMac: null,
+      createdAt: now, expiresAt: now + Number(ttlMs),
+      verifiedAt: null, consumedAt: null, policyVersion
+    });
+    this.events.push({ type: 'security-challenge-created', userId, at: now, deviceRef, purpose, policyVersion });
+  }
+
+  markSecurityChallengeSent({ challengeRef, attemptId, now }) {
+    const row = this.securityChallenges.get(challengeRef);
+    if (row && row.status === 'created') { row.status = 'sent'; row.attemptId = attemptId; }
+  }
+
+  getSecurityChallenge({ challengeRef, userId, now }) {
+    const row = this.securityChallenges.get(challengeRef);
+    if (!row || row.userId !== userId) return null;
+    if (row.status === 'sent' && row.expiresAt <= now) { row.status = 'expired'; }
+    return { ...row };
+  }
+
+  recordSecurityChallengeAttempt({ challengeRef, now }) {
+    const row = this.securityChallenges.get(challengeRef);
+    if (row) row.attempts += 1;
+  }
+
+  verifySecurityChallenge({ challengeRef, now, stepUpTokenMac }) {
+    const row = this.securityChallenges.get(challengeRef);
+    if (!row || row.status !== 'sent') return false;
+    row.status = 'verified';
+    row.verifiedAt = now;
+    row.stepUpTokenMac = stepUpTokenMac;
+    return true;
+  }
+
+  failSecurityChallenge({ challengeRef }) {
+    const row = this.securityChallenges.get(challengeRef);
+    if (row && row.status === 'sent') row.status = 'failed';
+  }
+
+  cancelSecurityChallenge({ challengeRef }) {
+    const row = this.securityChallenges.get(challengeRef);
+    if (row && ['created', 'sent'].includes(row.status)) row.status = 'cancelled';
+  }
+
+  consumeSecurityChallenge({ challengeRef, now }) {
+    const row = this.securityChallenges.get(challengeRef);
+    if (!row || row.status !== 'verified' || row.consumedAt != null) return false;
+    row.consumedAt = now;
+    return true;
+  }
+
+  latestVerifiedStepUpChallenge({ userId, now }) {
+    const rows = [...this.securityChallenges.values()]
+      .filter(row => row.userId === userId && row.purpose === 'step-up' && row.status === 'verified'
+        && row.consumedAt == null && row.expiresAt > now)
+      .sort((a, b) => (b.verifiedAt || 0) - (a.verifiedAt || 0));
+    return rows.length ? { ...rows[0] } : null;
+  }
+
+  listSecurityChallenges({ userId, now }) {
+    const rows = [...this.securityChallenges.values()]
+      .filter(row => row.userId === userId && row.createdAt > now - (90 * 24 * 60 * 60 * 1000))
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .slice(0, 50);
+    return Object.freeze(rows.map(row => Object.freeze({
+      purpose: row.purpose, method: row.method, status: row.status,
+      attempts: row.attempts, createdAt: row.createdAt, expiresAt: row.expiresAt,
+      verifiedAt: row.verifiedAt, consumedAt: row.consumedAt, policyVersion: row.policyVersion
+    })));
   }
 
   async identitySnapshot() {
@@ -618,6 +700,7 @@ export class MemoryAuthRepository {
     for (const [id, row] of this.passkeyTickets) if (row.expiresAt <= now) this.passkeyTickets.delete(id);
     for (const [id, row] of this.sessions) if (row.expiresAt <= now || row.revokedAt) this.sessions.delete(id);
     for (const [id, row] of this.trustedDevices) if (row.expiresAt < now - (24 * 60 * 60 * 1000)) this.trustedDevices.delete(id);
+    for (const [id, row] of this.securityChallenges) if (row.expiresAt < now - (24 * 60 * 60 * 1000)) this.securityChallenges.delete(id);
     for (const [id, row] of this.rates) if (row.resetAt <= now) this.rates.delete(id);
     return { cleaned: true };
   }
@@ -646,7 +729,8 @@ export class MemoryAuthRepository {
       passkeyTickets: [...this.passkeyTickets.values()],
       accountVerificationTickets: [...this.accountVerificationTickets.values()],
       profiles: [...this.profiles.entries()],
-      trustedDevices: [...this.trustedDevices.values()]
+      trustedDevices: [...this.trustedDevices.values()],
+      securityChallenges: [...this.securityChallenges.values()]
     });
   }
 }

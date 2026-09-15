@@ -2,12 +2,14 @@ import { AUTH_ERROR_CODES, errorFromRepository, failAuth, NativeAuthError } from
 import {
   AuthHmac,
   coarseUserAgent,
+  constantTimeEqual,
   maskAuthEmail,
   normalizeAuthEmail,
   randomToken
 } from './crypto.mjs';
 import {
   SECURITY_PURPOSES,
+  SECURITY_RISK_RANK,
   resolveSecurityConfig
 } from './security-config.mjs';
 import { cooldownForFailure, evaluateRisk, resolveFailSafe } from './security-policy.mjs';
@@ -965,6 +967,225 @@ export class CloudflareNativeAuthEngine {
       now,
       policyVersion: config.policyVersion
     });
+  }
+
+  // The DO injects the verification orchestrator after construction (the
+  // engine owns security policy; the orchestrator owns delivery).
+  bindVerification(orchestrator) {
+    this.verification = orchestrator || null;
+  }
+
+  #requireVerification() {
+    if (!this.verification) failAuth(AUTH_ERROR_CODES.NOT_CONFIGURED);
+  }
+
+  #challengePurpose(value) {
+    const purpose = String(value || '');
+    return Object.values(SECURITY_PURPOSES).includes(purpose) ? purpose : null;
+  }
+
+  // Phase 6 — open a purpose-bound security challenge (§11). v1 methods are
+  // email and Telegram (passkey is reserved in the registry). The challenge
+  // reuses the existing verification ticket material for delivery; the
+  // security binding (purpose, single-use, device) lives in the challenge row.
+  async requestChallenge(input = {}, requestContext = {}) {
+    this.#requireVerification();
+    const purpose = this.#challengePurpose(input.purpose);
+    if (!purpose) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+    const method = String(input.method || 'email');
+    if (method === 'passkey') failAuth(AUTH_ERROR_CODES.PASSKEY_UNAVAILABLE);
+    if (!['email', 'telegram'].includes(method)) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+    const token = String(input.sessionToken || '').trim();
+    if (!/^[A-Za-z0-9_-]{40,96}$/.test(token)) failAuth(AUTH_ERROR_CODES.SESSION_INVALID);
+    const identity = await this.#firebaseIdentity({ ...input, sessionToken: token }, requestContext, AUTH_ERROR_CODES.SESSION_INVALID);
+    const now = Number(this.now());
+    const session = errorFromRepository(await this.repository.getExternalSession({
+      sessionRef: identity.sessionRef,
+      provider: 'firebase',
+      subjectRef: identity.subjectRef,
+      emailRef: identity.refs.emailRef,
+      now
+    }));
+    const config = this.securityConfig;
+    const challengeRef = randomToken(24, this.crypto);
+    this.repository.createSecurityChallenge({
+      challengeRef,
+      userId: session.user.id,
+      purpose,
+      method,
+      maxAttempts: config.challengeMaxAttempts,
+      now,
+      ttlMs: config.challengeTtlMs,
+      policyVersion: config.policyVersion,
+      deviceRef: identity.refs.deviceRef
+    });
+    let requested;
+    try {
+      requested = await this.verification.requestVerification({
+        sessionToken: token,
+        email: identity.email,
+        subject: identity.subject,
+        userId: session.user.id,
+        purpose: 'sensitive-action',
+        allowTelegramLink: true
+      }, requestContext);
+    } catch (cause) {
+      // Delivery failed: no silent bypass — the challenge is cancelled and
+      // the sensitive action stays unavailable until a challenge succeeds.
+      this.repository.cancelSecurityChallenge({ challengeRef });
+      throw cause instanceof NativeAuthError ? cause : new NativeAuthError(AUTH_ERROR_CODES.BACKUP_UNAVAILABLE);
+    }
+    this.repository.markSecurityChallengeSent({ challengeRef, attemptId: requested.attemptId, now });
+    return Object.freeze({
+      challengeRef,
+      attemptId: requested.attemptId,
+      purpose,
+      method,
+      expiresAt: Number(requested.expiresAt),
+      resendAfter: Number(requested.resendAfter || 0),
+      policyVersion: config.policyVersion,
+      ...(requested.interaction ? { interaction: requested.interaction } : {})
+    });
+  }
+
+  // Phase 6 — verify a challenge (§12): single-use, purpose-bound,
+  // device-bound, attempt-capped, expiring, non-replayable.
+  async verifyChallenge(input = {}, requestContext = {}) {
+    this.#requireVerification();
+    const challengeRef = String(input.challengeRef || '').trim();
+    if (!/^[A-Za-z0-9_-]{16,96}$/.test(challengeRef)) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+    const code = String(input.code || '').trim();
+    if (!/^\d{6}$/.test(code)) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+    const purpose = this.#challengePurpose(input.purpose);
+    if (!purpose) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+    const token = String(input.sessionToken || '').trim();
+    if (!/^[A-Za-z0-9_-]{40,96}$/.test(token)) failAuth(AUTH_ERROR_CODES.SESSION_INVALID);
+    const identity = await this.#firebaseIdentity({ ...input, sessionToken: token }, requestContext, AUTH_ERROR_CODES.SESSION_INVALID);
+    const now = Number(this.now());
+    const session = errorFromRepository(await this.repository.getExternalSession({
+      sessionRef: identity.sessionRef,
+      provider: 'firebase',
+      subjectRef: identity.subjectRef,
+      emailRef: identity.refs.emailRef,
+      now
+    }));
+    const row = this.repository.getSecurityChallenge({ challengeRef, userId: session.user.id, now });
+    if (!row || row.purpose !== purpose || row.deviceRef !== identity.refs.deviceRef) failAuth(AUTH_ERROR_CODES.CHALLENGE_INVALID);
+    if (row.status !== 'sent') failAuth(AUTH_ERROR_CODES.CHALLENGE_INVALID);
+    if (row.attempts >= row.maxAttempts) {
+      this.repository.failSecurityChallenge({ challengeRef });
+      failAuth(AUTH_ERROR_CODES.CHALLENGE_INVALID);
+    }
+    this.repository.recordSecurityChallengeAttempt({ challengeRef, now });
+    let verified;
+    try {
+      verified = await this.verification.verify({
+        sessionToken: token,
+        email: identity.email,
+        subject: identity.subject,
+        userId: session.user.id,
+        purpose: 'sensitive-action',
+        attemptId: row.attemptId,
+        code
+      }, requestContext);
+    } catch (cause) {
+      const after = this.repository.getSecurityChallenge({ challengeRef, userId: session.user.id, now });
+      if (after && after.status === 'sent' && after.attempts >= after.maxAttempts) {
+        this.repository.failSecurityChallenge({ challengeRef });
+      }
+      throw cause instanceof NativeAuthError ? cause : new NativeAuthError(AUTH_ERROR_CODES.STORAGE_UNAVAILABLE);
+    }
+    if (verified?.verified !== true) failAuth(AUTH_ERROR_CODES.OTP_INVALID);
+    const stepUpToken = randomToken(32, this.crypto);
+    const stepUpTokenMac = await this.hmac.hex('step-up-token-v1', stepUpToken);
+    const won = this.repository.verifySecurityChallenge({ challengeRef, now, stepUpTokenMac });
+    if (!won) failAuth(AUTH_ERROR_CODES.CHALLENGE_INVALID);
+    this.#eventSecurity('security-challenge-verified', session.user.id, identity.refs.deviceRef, now, purpose, this.securityConfig.policyVersion);
+    return Object.freeze({
+      verified: true,
+      purpose,
+      stepUpToken,
+      expiresAt: row.expiresAt,
+      policyVersion: this.securityConfig.policyVersion
+    });
+  }
+
+  async cancelChallenge(input = {}, requestContext = {}) {
+    const challengeRef = String(input.challengeRef || '').trim();
+    if (!/^[A-Za-z0-9_-]{16,96}$/.test(challengeRef)) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+    const token = String(input.sessionToken || '').trim();
+    if (!/^[A-Za-z0-9_-]{40,96}$/.test(token)) failAuth(AUTH_ERROR_CODES.SESSION_INVALID);
+    const identity = await this.#firebaseIdentity({ ...input, sessionToken: token }, requestContext, AUTH_ERROR_CODES.SESSION_INVALID);
+    const now = Number(this.now());
+    const session = errorFromRepository(await this.repository.getExternalSession({
+      sessionRef: identity.sessionRef,
+      provider: 'firebase',
+      subjectRef: identity.subjectRef,
+      emailRef: identity.refs.emailRef,
+      now
+    }));
+    this.repository.cancelSecurityChallenge({ challengeRef });
+    this.#eventSecurity('security-challenge-cancelled', session.user.id, identity.refs.deviceRef, now, String(input.purpose || ''), this.securityConfig.policyVersion);
+    return Object.freeze({ cancelled: true });
+  }
+
+  #eventSecurity(eventType, userId, deviceRef, now, purpose, policyVersion) {
+    try {
+      this.repository.recordSecurityEvent?.({ eventType, userId, deviceRef, now, purpose, policyVersion });
+    } catch {
+      // audit is best-effort; the security decision itself already happened
+    }
+  }
+
+  // Phase 6 — step-up-gated logout-all (§12). A presented step-up token is
+  // validated and consumed (single-use); without one, the action is allowed
+  // only while the session is recent AND current risk stays below ELEVATED.
+  async revokeAllSessions(input = {}, requestContext = {}) {
+    const token = String(input.sessionToken || '').trim();
+    if (!/^[A-Za-z0-9_-]{40,96}$/.test(token)) failAuth(AUTH_ERROR_CODES.SESSION_INVALID);
+    const identity = await this.#firebaseIdentity({ ...input, sessionToken: token }, requestContext, AUTH_ERROR_CODES.SESSION_INVALID);
+    const now = Number(this.now());
+    const session = errorFromRepository(await this.repository.getSession({ sessionRef: identity.sessionRef, now }));
+    const config = this.securityConfig;
+    const userId = session.user.id;
+    const stepUpToken = String(input.stepUpToken || '').trim();
+    if (stepUpToken) {
+      if (stepUpToken.length < 32 || stepUpToken.length > 128) failAuth(AUTH_ERROR_CODES.CHALLENGE_INVALID);
+      const row = this.repository.latestVerifiedStepUpChallenge({ userId, now });
+      const mac = await this.hmac.hex('step-up-token-v1', stepUpToken);
+      const consumed = row && row.deviceRef === identity.refs.deviceRef
+        && row.stepUpTokenMac && constantTimeEqual(row.stepUpTokenMac, mac)
+        && this.repository.consumeSecurityChallenge({ challengeRef: row.challengeRef, now });
+      if (!consumed) failAuth(AUTH_ERROR_CODES.CHALLENGE_INVALID);
+    } else {
+      const ageMs = now - Number(session.createdAt || 0);
+      const counts = await this.repository.getLoginRiskSignals({
+        emailScope: SECURITY_RISK_SCOPES.loginFailure.scope,
+        emailWindowMs: SECURITY_RISK_SCOPES.loginFailure.windowMs,
+        ipScope: SECURITY_RISK_SCOPES.rapidAuthIp.scope,
+        ipWindowMs: SECURITY_RISK_SCOPES.rapidAuthIp.windowMs,
+        emailRef: identity.refs.emailRef,
+        ipRef: identity.refs.ipRef,
+        now
+      });
+      const state = await this.repository.getAccountState({ userId, now });
+      const risk = evaluateRisk({
+        accountState: state.status || 'active',
+        failedLogins: counts.failedLogins,
+        rapidRequests: counts.rapidRequests,
+        newDevice: false,
+        recoveryActive: false,
+        unverifiedAccount: false
+      }, config);
+      const recent = ageMs <= config.stepUpRecentSessionMs;
+      if (!(recent && (SECURITY_RISK_RANK[risk.level] ?? 1) < SECURITY_RISK_RANK.ELEVATED)) {
+        // The client keeps its 2-step arm; this tells it to run a
+        // step-up challenge and retry with the returned stepUpToken.
+        failAuth(AUTH_ERROR_CODES.STEP_UP_REQUIRED);
+      }
+    }
+    const result = errorFromRepository(await this.repository.revokeUserSessions({ userId, now }));
+    return Object.freeze({ revoked: Number(result.revoked || 0) });
   }
 
   ping() { return this.repository.ping(); }

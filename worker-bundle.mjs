@@ -3244,6 +3244,8 @@ var AUTH_ERROR_CODES = Object.freeze({
   SESSION_INVALID: "SESSION_INVALID",
   VERIFICATION_UNAVAILABLE: "VERIFICATION_UNAVAILABLE",
   BACKUP_UNAVAILABLE: "BACKUP_UNAVAILABLE",
+  STEP_UP_REQUIRED: "STEP_UP_REQUIRED",
+  CHALLENGE_INVALID: "CHALLENGE_INVALID",
   AUTH_PROVIDER_UNAVAILABLE: "AUTH_PROVIDER_UNAVAILABLE",
   DELIVERY_UNAVAILABLE: "DELIVERY_UNAVAILABLE",
   STORAGE_UNAVAILABLE: "STORAGE_UNAVAILABLE",
@@ -3279,6 +3281,8 @@ var DEFAULTS2 = Object.freeze({
   [AUTH_ERROR_CODES.SESSION_INVALID]: Object.freeze({ status: 401, message: "নিরাপদ সেশন পাওয়া যায়নি।" }),
   [AUTH_ERROR_CODES.VERIFICATION_UNAVAILABLE]: Object.freeze({ status: 503, message: "যাচাইয়ের ইমেইল এখন পাঠানো যাচ্ছে না—একটু পরে আবার চেষ্টা করুন।" }),
   [AUTH_ERROR_CODES.BACKUP_UNAVAILABLE]: Object.freeze({ status: 503, message: "বিকল্প যাচাই এখন পাওয়া যাচ্ছে না—অন্য পদ্ধতি ব্যবহার করুন।" }),
+  [AUTH_ERROR_CODES.STEP_UP_REQUIRED]: Object.freeze({ status: 409, message: "এই গুরুত্বপূর্ণ কাজটি নিশ্চিত করতে একটি fresh security verification দরকার।" }),
+  [AUTH_ERROR_CODES.CHALLENGE_INVALID]: Object.freeze({ status: 409, message: "Security verification সঠিক নয় বা সময় শেষ হয়ে গেছে—আবার চেষ্টা করুন।" }),
   [AUTH_ERROR_CODES.AUTH_PROVIDER_UNAVAILABLE]: Object.freeze({ status: 503, message: "অ্যাকাউন্ট সেবা সাময়িকভাবে পাওয়া যাচ্ছে না—একটু পরে চেষ্টা করুন।" }),
   [AUTH_ERROR_CODES.DELIVERY_UNAVAILABLE]: Object.freeze({ status: 503, message: "ইমেইল এখন সাময়িকভাবে পাঠানো যাচ্ছে না—একটু পরে চেষ্টা করুন।" }),
   [AUTH_ERROR_CODES.STORAGE_UNAVAILABLE]: Object.freeze({ status: 503, message: "অ্যাকাউন্ট সেবা সাময়িকভাবে ব্যস্ত—একটু পরে চেষ্টা করুন।" }),
@@ -3451,6 +3455,7 @@ var SECURITY_FAILSAFE_POLICY = Object.freeze({
   critical: "block"
   // critical action is temporarily blocked + recovery path
 });
+var SECURITY_STEP_UP_RECENT_SESSION_MS = 5 * 60 * 1e3;
 var SECURITY_ACTION_CLASSES = Object.freeze(["lowRisk", "sensitive", "critical"]);
 var SECURITY_CONFIG = Object.freeze({
   policyVersion: SECURITY_POLICY_VERSION,
@@ -3467,7 +3472,8 @@ var SECURITY_CONFIG = Object.freeze({
   riskSessionPolicy: SECURITY_RISK_SESSION_POLICY,
   purposes: SECURITY_PURPOSES,
   failSafePolicy: SECURITY_FAILSAFE_POLICY,
-  actionClasses: SECURITY_ACTION_CLASSES
+  actionClasses: SECURITY_ACTION_CLASSES,
+  stepUpRecentSessionMs: SECURITY_STEP_UP_RECENT_SESSION_MS
 });
 function resolveSecurityConfig(overrideRaw = "") {
   if (!overrideRaw) return SECURITY_CONFIG;
@@ -4864,6 +4870,210 @@ var CloudflareNativeAuthEngine = class {
       now,
       policyVersion: config.policyVersion
     });
+  }
+  // The DO injects the verification orchestrator after construction (the
+  // engine owns security policy; the orchestrator owns delivery).
+  bindVerification(orchestrator) {
+    this.verification = orchestrator || null;
+  }
+  #requireVerification() {
+    if (!this.verification) failAuth(AUTH_ERROR_CODES.NOT_CONFIGURED);
+  }
+  #challengePurpose(value) {
+    const purpose = String(value || "");
+    return Object.values(SECURITY_PURPOSES).includes(purpose) ? purpose : null;
+  }
+  // Phase 6 — open a purpose-bound security challenge (§11). v1 methods are
+  // email and Telegram (passkey is reserved in the registry). The challenge
+  // reuses the existing verification ticket material for delivery; the
+  // security binding (purpose, single-use, device) lives in the challenge row.
+  async requestChallenge(input = {}, requestContext = {}) {
+    this.#requireVerification();
+    const purpose = this.#challengePurpose(input.purpose);
+    if (!purpose) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+    const method = String(input.method || "email");
+    if (method === "passkey") failAuth(AUTH_ERROR_CODES.PASSKEY_UNAVAILABLE);
+    if (!["email", "telegram"].includes(method)) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+    const token = String(input.sessionToken || "").trim();
+    if (!/^[A-Za-z0-9_-]{40,96}$/.test(token)) failAuth(AUTH_ERROR_CODES.SESSION_INVALID);
+    const identity = await this.#firebaseIdentity({ ...input, sessionToken: token }, requestContext, AUTH_ERROR_CODES.SESSION_INVALID);
+    const now = Number(this.now());
+    const session = errorFromRepository(await this.repository.getExternalSession({
+      sessionRef: identity.sessionRef,
+      provider: "firebase",
+      subjectRef: identity.subjectRef,
+      emailRef: identity.refs.emailRef,
+      now
+    }));
+    const config = this.securityConfig;
+    const challengeRef = randomToken(24, this.crypto);
+    this.repository.createSecurityChallenge({
+      challengeRef,
+      userId: session.user.id,
+      purpose,
+      method,
+      maxAttempts: config.challengeMaxAttempts,
+      now,
+      ttlMs: config.challengeTtlMs,
+      policyVersion: config.policyVersion,
+      deviceRef: identity.refs.deviceRef
+    });
+    let requested;
+    try {
+      requested = await this.verification.requestVerification({
+        sessionToken: token,
+        email: identity.email,
+        subject: identity.subject,
+        userId: session.user.id,
+        purpose: "sensitive-action",
+        allowTelegramLink: true
+      }, requestContext);
+    } catch (cause) {
+      this.repository.cancelSecurityChallenge({ challengeRef });
+      throw cause instanceof NativeAuthError ? cause : new NativeAuthError(AUTH_ERROR_CODES.BACKUP_UNAVAILABLE);
+    }
+    this.repository.markSecurityChallengeSent({ challengeRef, attemptId: requested.attemptId, now });
+    return Object.freeze({
+      challengeRef,
+      attemptId: requested.attemptId,
+      purpose,
+      method,
+      expiresAt: Number(requested.expiresAt),
+      resendAfter: Number(requested.resendAfter || 0),
+      policyVersion: config.policyVersion,
+      ...requested.interaction ? { interaction: requested.interaction } : {}
+    });
+  }
+  // Phase 6 — verify a challenge (§12): single-use, purpose-bound,
+  // device-bound, attempt-capped, expiring, non-replayable.
+  async verifyChallenge(input = {}, requestContext = {}) {
+    this.#requireVerification();
+    const challengeRef = String(input.challengeRef || "").trim();
+    if (!/^[A-Za-z0-9_-]{16,96}$/.test(challengeRef)) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+    const code = String(input.code || "").trim();
+    if (!/^\d{6}$/.test(code)) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+    const purpose = this.#challengePurpose(input.purpose);
+    if (!purpose) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+    const token = String(input.sessionToken || "").trim();
+    if (!/^[A-Za-z0-9_-]{40,96}$/.test(token)) failAuth(AUTH_ERROR_CODES.SESSION_INVALID);
+    const identity = await this.#firebaseIdentity({ ...input, sessionToken: token }, requestContext, AUTH_ERROR_CODES.SESSION_INVALID);
+    const now = Number(this.now());
+    const session = errorFromRepository(await this.repository.getExternalSession({
+      sessionRef: identity.sessionRef,
+      provider: "firebase",
+      subjectRef: identity.subjectRef,
+      emailRef: identity.refs.emailRef,
+      now
+    }));
+    const row = this.repository.getSecurityChallenge({ challengeRef, userId: session.user.id, now });
+    if (!row || row.purpose !== purpose || row.deviceRef !== identity.refs.deviceRef) failAuth(AUTH_ERROR_CODES.CHALLENGE_INVALID);
+    if (row.status !== "sent") failAuth(AUTH_ERROR_CODES.CHALLENGE_INVALID);
+    if (row.attempts >= row.maxAttempts) {
+      this.repository.failSecurityChallenge({ challengeRef });
+      failAuth(AUTH_ERROR_CODES.CHALLENGE_INVALID);
+    }
+    this.repository.recordSecurityChallengeAttempt({ challengeRef, now });
+    let verified;
+    try {
+      verified = await this.verification.verify({
+        sessionToken: token,
+        email: identity.email,
+        subject: identity.subject,
+        userId: session.user.id,
+        purpose: "sensitive-action",
+        attemptId: row.attemptId,
+        code
+      }, requestContext);
+    } catch (cause) {
+      const after = this.repository.getSecurityChallenge({ challengeRef, userId: session.user.id, now });
+      if (after && after.status === "sent" && after.attempts >= after.maxAttempts) {
+        this.repository.failSecurityChallenge({ challengeRef });
+      }
+      throw cause instanceof NativeAuthError ? cause : new NativeAuthError(AUTH_ERROR_CODES.STORAGE_UNAVAILABLE);
+    }
+    if (verified?.verified !== true) failAuth(AUTH_ERROR_CODES.OTP_INVALID);
+    const stepUpToken = randomToken(32, this.crypto);
+    const stepUpTokenMac = await this.hmac.hex("step-up-token-v1", stepUpToken);
+    const won = this.repository.verifySecurityChallenge({ challengeRef, now, stepUpTokenMac });
+    if (!won) failAuth(AUTH_ERROR_CODES.CHALLENGE_INVALID);
+    this.#eventSecurity("security-challenge-verified", session.user.id, identity.refs.deviceRef, now, purpose, this.securityConfig.policyVersion);
+    return Object.freeze({
+      verified: true,
+      purpose,
+      stepUpToken,
+      expiresAt: row.expiresAt,
+      policyVersion: this.securityConfig.policyVersion
+    });
+  }
+  async cancelChallenge(input = {}, requestContext = {}) {
+    const challengeRef = String(input.challengeRef || "").trim();
+    if (!/^[A-Za-z0-9_-]{16,96}$/.test(challengeRef)) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+    const token = String(input.sessionToken || "").trim();
+    if (!/^[A-Za-z0-9_-]{40,96}$/.test(token)) failAuth(AUTH_ERROR_CODES.SESSION_INVALID);
+    const identity = await this.#firebaseIdentity({ ...input, sessionToken: token }, requestContext, AUTH_ERROR_CODES.SESSION_INVALID);
+    const now = Number(this.now());
+    const session = errorFromRepository(await this.repository.getExternalSession({
+      sessionRef: identity.sessionRef,
+      provider: "firebase",
+      subjectRef: identity.subjectRef,
+      emailRef: identity.refs.emailRef,
+      now
+    }));
+    this.repository.cancelSecurityChallenge({ challengeRef });
+    this.#eventSecurity("security-challenge-cancelled", session.user.id, identity.refs.deviceRef, now, String(input.purpose || ""), this.securityConfig.policyVersion);
+    return Object.freeze({ cancelled: true });
+  }
+  #eventSecurity(eventType, userId, deviceRef, now, purpose, policyVersion) {
+    try {
+      this.repository.recordSecurityEvent?.({ eventType, userId, deviceRef, now, purpose, policyVersion });
+    } catch {
+    }
+  }
+  // Phase 6 — step-up-gated logout-all (§12). A presented step-up token is
+  // validated and consumed (single-use); without one, the action is allowed
+  // only while the session is recent AND current risk stays below ELEVATED.
+  async revokeAllSessions(input = {}, requestContext = {}) {
+    const token = String(input.sessionToken || "").trim();
+    if (!/^[A-Za-z0-9_-]{40,96}$/.test(token)) failAuth(AUTH_ERROR_CODES.SESSION_INVALID);
+    const identity = await this.#firebaseIdentity({ ...input, sessionToken: token }, requestContext, AUTH_ERROR_CODES.SESSION_INVALID);
+    const now = Number(this.now());
+    const session = errorFromRepository(await this.repository.getSession({ sessionRef: identity.sessionRef, now }));
+    const config = this.securityConfig;
+    const userId = session.user.id;
+    const stepUpToken = String(input.stepUpToken || "").trim();
+    if (stepUpToken) {
+      if (stepUpToken.length < 32 || stepUpToken.length > 128) failAuth(AUTH_ERROR_CODES.CHALLENGE_INVALID);
+      const row = this.repository.latestVerifiedStepUpChallenge({ userId, now });
+      const mac = await this.hmac.hex("step-up-token-v1", stepUpToken);
+      const consumed = row && row.deviceRef === identity.refs.deviceRef && row.stepUpTokenMac && constantTimeEqual(row.stepUpTokenMac, mac) && this.repository.consumeSecurityChallenge({ challengeRef: row.challengeRef, now });
+      if (!consumed) failAuth(AUTH_ERROR_CODES.CHALLENGE_INVALID);
+    } else {
+      const ageMs = now - Number(session.createdAt || 0);
+      const counts = await this.repository.getLoginRiskSignals({
+        emailScope: SECURITY_RISK_SCOPES.loginFailure.scope,
+        emailWindowMs: SECURITY_RISK_SCOPES.loginFailure.windowMs,
+        ipScope: SECURITY_RISK_SCOPES.rapidAuthIp.scope,
+        ipWindowMs: SECURITY_RISK_SCOPES.rapidAuthIp.windowMs,
+        emailRef: identity.refs.emailRef,
+        ipRef: identity.refs.ipRef,
+        now
+      });
+      const state = await this.repository.getAccountState({ userId, now });
+      const risk = evaluateRisk({
+        accountState: state.status || "active",
+        failedLogins: counts.failedLogins,
+        rapidRequests: counts.rapidRequests,
+        newDevice: false,
+        recoveryActive: false,
+        unverifiedAccount: false
+      }, config);
+      const recent = ageMs <= config.stepUpRecentSessionMs;
+      if (!(recent && (SECURITY_RISK_RANK[risk.level] ?? 1) < SECURITY_RISK_RANK.ELEVATED)) {
+        failAuth(AUTH_ERROR_CODES.STEP_UP_REQUIRED);
+      }
+    }
+    const result = errorFromRepository(await this.repository.revokeUserSessions({ userId, now }));
+    return Object.freeze({ revoked: Number(result.revoked || 0) });
   }
   ping() {
     return this.repository.ping();
@@ -6790,12 +7000,77 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         return json3(request, 200, { ok: true, authenticated: false }, { "Set-Cookie": clearAuthCookies() });
       }
       if (request.method === "POST" && url.pathname === `${AUTH_API_PREFIX}/session/logout-all`) {
+        const body = await readJson(request);
         const current = await firebaseReadySession({ provider, jar, env, context, allowTelegram: telegramVerificationRequested(env, url) });
         const result = await callAuthority(env, "/internal/session/revoke-all", {
           sessionToken: current.sessionToken,
-          input: { email: current.user.email, subject: current.user.subject }
+          input: { email: current.user.email, subject: current.user.subject, stepUpToken: String(body?.stepUpToken || "") },
+          context
         });
         return json3(request, 200, { ok: true, authenticated: false, revoked: Number(result?.revoked || 0) }, { "Set-Cookie": clearAuthCookies() });
+      }
+      if (request.method === "POST" && url.pathname === `${AUTH_API_PREFIX}/security/challenge/request`) {
+        const body = await readJson(request);
+        const current = await firebaseReadySession({ provider, jar, env, context, allowTelegram: telegramVerificationRequested(env, url) });
+        const result = await callAuthority(env, "/internal/security/challenge/request", {
+          input: {
+            sessionToken: current.sessionToken,
+            email: current.user.email,
+            subject: current.user.subject,
+            purpose: String(body?.purpose || ""),
+            method: String(body?.method || "email")
+          },
+          context
+        });
+        return json3(request, 200, { ok: true, ...result }, {
+          "Set-Cookie": sessionCookies(current.session, current.refreshed.refreshToken, context)
+        });
+      }
+      if (request.method === "POST" && url.pathname === `${AUTH_API_PREFIX}/security/challenge/verify`) {
+        const body = await readJson(request);
+        const current = await firebaseReadySession({ provider, jar, env, context, allowTelegram: telegramVerificationRequested(env, url) });
+        const result = await callAuthority(env, "/internal/security/challenge/verify", {
+          input: {
+            sessionToken: current.sessionToken,
+            email: current.user.email,
+            subject: current.user.subject,
+            challengeRef: String(body?.challengeRef || ""),
+            purpose: String(body?.purpose || ""),
+            code: String(body?.code || "")
+          },
+          context
+        });
+        return json3(request, 200, { ok: true, ...result }, {
+          "Set-Cookie": sessionCookies(current.session, current.refreshed.refreshToken, context)
+        });
+      }
+      if (request.method === "POST" && url.pathname === `${AUTH_API_PREFIX}/security/challenge/cancel`) {
+        const body = await readJson(request);
+        const current = await firebaseReadySession({ provider, jar, env, context, allowTelegram: telegramVerificationRequested(env, url) });
+        const result = await callAuthority(env, "/internal/security/challenge/cancel", {
+          input: {
+            sessionToken: current.sessionToken,
+            email: current.user.email,
+            subject: current.user.subject,
+            challengeRef: String(body?.challengeRef || ""),
+            purpose: String(body?.purpose || "")
+          },
+          context
+        });
+        return json3(request, 200, { ok: true, ...result }, {
+          "Set-Cookie": sessionCookies(current.session, current.refreshed.refreshToken, context)
+        });
+      }
+      if (request.method === "POST" && url.pathname === `${AUTH_API_PREFIX}/security/device/trust`) {
+        await readJson(request);
+        const current = await firebaseReadySession({ provider, jar, env, context, allowTelegram: telegramVerificationRequested(env, url) });
+        const result = await callAuthority(env, "/internal/security/device/trust", {
+          input: { sessionToken: current.sessionToken, email: current.user.email, subject: current.user.subject },
+          context
+        });
+        return json3(request, 200, { ok: true, ...result }, {
+          "Set-Cookie": sessionCookies(current.session, current.refreshed.refreshToken, context)
+        });
       }
       return json3(request, 404, { ok: false, error: { code: "NOT_FOUND", message: "Endpoint পাওয়া যায়নি।" } });
     } catch (cause) {
@@ -7328,6 +7603,31 @@ var SqliteAuthRepository = class {
         FOREIGN KEY(user_id) REFERENCES auth_users(user_id)
       )`,
       `CREATE INDEX IF NOT EXISTS auth_trusted_devices_expiry ON auth_trusted_devices(expires_at)`,
+      // Phase 6 — first-class security challenges (§11-§12). Purpose-bound,
+      // single-use, attempt-capped, expiring. `attempt_id` links the
+      // underlying verification attempt (email/Telegram material);
+      // `step_up_token_mac` carries the one-time token a verified step-up
+      // challenge hands to the sensitive action that consumed it.
+      `CREATE TABLE IF NOT EXISTS auth_security_challenges (
+        challenge_ref TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        purpose TEXT NOT NULL,
+        method TEXT NOT NULL,
+        status TEXT NOT NULL CHECK(status IN ('created','sent','verified','failed','expired','cancelled')),
+        attempts INTEGER NOT NULL DEFAULT 0,
+        max_attempts INTEGER NOT NULL,
+        attempt_id TEXT,
+        device_ref TEXT NOT NULL,
+        step_up_token_mac TEXT,
+        created_at INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL,
+        verified_at INTEGER,
+        consumed_at INTEGER,
+        policy_version TEXT,
+        FOREIGN KEY(user_id) REFERENCES auth_users(user_id)
+      )`,
+      `CREATE INDEX IF NOT EXISTS auth_security_challenges_user ON auth_security_challenges(user_id,purpose,status,created_at DESC)`,
+      `CREATE INDEX IF NOT EXISTS auth_security_challenges_expiry ON auth_security_challenges(expires_at)`,
       // Phase 3 — lifecycle overlay. Existing auth_users rows stay untouched;
       // users without a state row implicitly hold the legacy 'active' state.
       `CREATE TABLE IF NOT EXISTS auth_account_state (
@@ -7424,6 +7724,116 @@ var SqliteAuthRepository = class {
       browserClass: String(row.browserClass || "unknown"),
       trustedAt: Number(row.trustedAt),
       expiresAt: Number(row.expiresAt)
+    })));
+  }
+  // Phase 6 — security challenge lifecycle (§11-§12).
+  createSecurityChallenge({ challengeRef, userId, purpose, method, maxAttempts, now, ttlMs, policyVersion, deviceRef }) {
+    this.sql.exec(
+      `INSERT INTO auth_security_challenges(
+        challenge_ref,user_id,purpose,method,status,attempts,max_attempts,attempt_id,
+        device_ref,step_up_token_mac,created_at,expires_at,verified_at,consumed_at,policy_version
+      ) VALUES(?,?,?,?, 'created', 0,?,?,?, NULL,NULL,?,NULL,NULL,?)`,
+      challengeRef,
+      userId,
+      purpose,
+      method,
+      maxAttempts,
+      null,
+      deviceRef,
+      now,
+      now + Number(ttlMs),
+      policyVersion || null
+    );
+    this.#event("security-challenge-created", null, userId, now, { deviceRef, purpose, policyVersion });
+  }
+  markSecurityChallengeSent({ challengeRef, attemptId, now }) {
+    this.sql.exec(
+      "UPDATE auth_security_challenges SET status='sent',attempt_id=? WHERE challenge_ref=? AND status='created'",
+      attemptId,
+      challengeRef
+    );
+  }
+  getSecurityChallenge({ challengeRef, userId, now }) {
+    const row = this.#one(
+      `SELECT challenge_ref AS challengeRef,user_id AS userId,purpose,method,status,attempts AS attempts,
+        max_attempts AS maxAttempts,attempt_id AS attemptId,device_ref AS deviceRef,
+        step_up_token_mac AS stepUpTokenMac,created_at AS createdAt,expires_at AS expiresAt,
+        consumed_at AS consumedAt,policy_version AS policyVersion
+       FROM auth_security_challenges WHERE challenge_ref=? AND user_id=?`,
+      challengeRef,
+      userId
+    );
+    if (!row) return null;
+    if (row.status === "sent" && Number(row.expiresAt) <= now) {
+      this.sql.exec("UPDATE auth_security_challenges SET status='expired' WHERE challenge_ref=? AND status='sent'", challengeRef);
+      row.status = "expired";
+    }
+    return row;
+  }
+  recordSecurityChallengeAttempt({ challengeRef, now }) {
+    this.sql.exec("UPDATE auth_security_challenges SET attempts=attempts+1 WHERE challenge_ref=?", challengeRef);
+  }
+  // Single-use, race-safe: only a still-sent challenge can be flipped to
+  // verified. The flip is proven by the token MAC stored in the row — a
+  // concurrent second verify sees the winner's MAC and loses.
+  verifySecurityChallenge({ challengeRef, now, stepUpTokenMac }) {
+    this.sql.exec(
+      "UPDATE auth_security_challenges SET status='verified',verified_at=?,step_up_token_mac=? WHERE challenge_ref=? AND status='sent'",
+      now,
+      stepUpTokenMac,
+      challengeRef
+    );
+    const row = this.#one("SELECT step_up_token_mac AS mac FROM auth_security_challenges WHERE challenge_ref=?", challengeRef);
+    return row?.mac != null && row.mac === stepUpTokenMac;
+  }
+  failSecurityChallenge({ challengeRef }) {
+    this.sql.exec("UPDATE auth_security_challenges SET status='failed' WHERE challenge_ref=? AND status='sent'", challengeRef);
+  }
+  cancelSecurityChallenge({ challengeRef }) {
+    this.sql.exec("UPDATE auth_security_challenges SET status='cancelled' WHERE challenge_ref=? AND status IN ('created','sent')", challengeRef);
+  }
+  // Consume a verified step-up token for the sensitive action that presented
+  // it (constant-time compare by the caller; this only flips once).
+  consumeSecurityChallenge({ challengeRef, now }) {
+    this.sql.exec(
+      "UPDATE auth_security_challenges SET consumed_at=? WHERE challenge_ref=? AND status='verified' AND consumed_at IS NULL",
+      now,
+      challengeRef
+    );
+    const row = this.#one("SELECT consumed_at AS consumedAt FROM auth_security_challenges WHERE challenge_ref=?", challengeRef);
+    return row?.consumedAt != null;
+  }
+  latestVerifiedStepUpChallenge({ userId, now }) {
+    const row = this.#one(
+      `SELECT challenge_ref AS challengeRef,step_up_token_mac AS stepUpTokenMac,device_ref AS deviceRef,
+        expires_at AS expiresAt,consumed_at AS consumedAt
+       FROM auth_security_challenges
+       WHERE user_id=? AND purpose='step-up' AND status='verified' AND consumed_at IS NULL AND expires_at>?
+       ORDER BY verified_at DESC LIMIT 1`,
+      userId,
+      now
+    );
+    return row || null;
+  }
+  listSecurityChallenges({ userId, now }) {
+    const rows = this.#rows(
+      `SELECT purpose,method,status,attempts AS attempts,created_at AS createdAt,expires_at AS expiresAt,
+        verified_at AS verifiedAt,consumed_at AS consumedAt,policy_version AS policyVersion
+       FROM auth_security_challenges WHERE user_id=? AND created_at>?
+       ORDER BY created_at DESC LIMIT 50`,
+      userId,
+      now - EVENT_RETENTION_MS
+    );
+    return Object.freeze(rows.map((row) => Object.freeze({
+      purpose: String(row.purpose),
+      method: String(row.method),
+      status: String(row.status),
+      attempts: Number(row.attempts),
+      createdAt: Number(row.createdAt),
+      expiresAt: Number(row.expiresAt),
+      verifiedAt: row.verifiedAt == null ? null : Number(row.verifiedAt),
+      consumedAt: row.consumedAt == null ? null : Number(row.consumedAt),
+      policyVersion: row.policyVersion || null
     })));
   }
   // Risk signals for the login decision (§3-§4), derived from auth_rate_limits
@@ -7568,6 +7978,15 @@ var SqliteAuthRepository = class {
       extras.purpose || null,
       extras.policyVersion || null
     );
+  }
+  // Public audit hook for security decisions that originate in the engine
+  // (challenge lifecycle, step-up enforcement, trust changes).
+  recordSecurityEvent({ eventType, subjectRef, userId, now, deviceRef, purpose, policyVersion }) {
+    this.#event(eventType, subjectRef || null, userId || null, now, {
+      deviceRef: deviceRef || null,
+      purpose: purpose || null,
+      policyVersion: policyVersion || null
+    });
   }
   #profileForUser(userId) {
     const row = this.#one(
@@ -8299,7 +8718,7 @@ var SqliteAuthRepository = class {
   async getSession({ sessionRef, now }) {
     return this.#transaction(() => {
       const row = this.#one(
-        `SELECT s.expires_at AS expiresAt,s.last_seen_at AS lastSeenAt,
+        `SELECT s.expires_at AS expiresAt,s.last_seen_at AS lastSeenAt,s.created_at AS sessionCreatedAt,
           u.user_id AS id,u.email_mask AS emailMask,u.status,u.created_at AS createdAt
          FROM auth_sessions s JOIN auth_users u ON u.user_id=s.user_id
          WHERE s.session_ref=? AND s.revoked_at IS NULL`,
@@ -8312,6 +8731,7 @@ var SqliteAuthRepository = class {
       }
       return {
         expiresAt: Number(row.expiresAt),
+        createdAt: Number(row.sessionCreatedAt),
         user: { id: row.id, emailMask: row.emailMask, status: row.status, createdAt: Number(row.createdAt) }
       };
     });
@@ -8354,6 +8774,7 @@ var SqliteAuthRepository = class {
       this.sql.exec("DELETE FROM auth_passkey_credentials WHERE status='revoked' AND revoked_at<?", now - EVENT_RETENTION_MS);
       this.sql.exec("DELETE FROM auth_rate_limits WHERE expires_at<=?", now);
       this.sql.exec("DELETE FROM auth_trusted_devices WHERE expires_at<?", now - DAY_MS);
+      this.sql.exec("DELETE FROM auth_security_challenges WHERE expires_at<?", now - DAY_MS);
       this.sql.exec("DELETE FROM auth_sessions WHERE expires_at<=? OR revoked_at IS NOT NULL", now);
       this.sql.exec("DELETE FROM auth_security_events WHERE occurred_at<?", now - EVENT_RETENTION_MS);
       this.sql.exec("INSERT INTO auth_meta(key,value) VALUES('last_cleanup',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", String(now));
@@ -10245,6 +10666,7 @@ var AdmissionAuthAuthority = class {
         providers: createConfiguredVerificationProviders(env),
         activated: ["canary", "enabled"].includes(String(env.VERIFICATION_AUTH_ACTIVATION || ""))
       });
+      this.engine.bindVerification(this.verification);
     });
   }
   async #scheduleExpiry() {
@@ -10472,9 +10894,7 @@ var AdmissionAuthAuthority = class {
         return response2(200, { ok: true, result });
       }
       if (url.pathname === "/internal/session/revoke-all") {
-        const session = await this.engine.getFirebaseSession(body.sessionToken, body.input);
-        const result = await this.repository.revokeUserSessions({ userId: session.user.id, now: Date.now() });
-        if (result.error) throw new NativeAuthError(result.error);
+        const result = await this.engine.revokeAllSessions({ ...body.input || {}, sessionToken: body.sessionToken }, body.context);
         return response2(200, { ok: true, result });
       }
       if (url.pathname === "/internal/firebase/login/failure") {
@@ -10493,6 +10913,18 @@ var AdmissionAuthAuthority = class {
       }
       if (url.pathname === "/internal/security/state") {
         const result = await this.engine.getSecurityState(body.input, body.context);
+        return response2(200, { ok: true, result });
+      }
+      if (url.pathname === "/internal/security/challenge/request") {
+        const result = await this.engine.requestChallenge(body.input, body.context);
+        return response2(200, { ok: true, result });
+      }
+      if (url.pathname === "/internal/security/challenge/verify") {
+        const result = await this.engine.verifyChallenge(body.input, body.context);
+        return response2(200, { ok: true, result });
+      }
+      if (url.pathname === "/internal/security/challenge/cancel") {
+        const result = await this.engine.cancelChallenge(body.input, body.context);
         return response2(200, { ok: true, result });
       }
       return response2(404, { ok: false, error: { code: "NOT_FOUND" } });

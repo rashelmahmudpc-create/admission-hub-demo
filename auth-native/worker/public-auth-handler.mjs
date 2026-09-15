@@ -1319,13 +1319,87 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
       }
       if (request.method === 'POST' && url.pathname === `${AUTH_API_PREFIX}/session/logout-all`) {
         // Phase 5 §12: revoke every session for the current user on every
-        // device. Requires a valid session; other users' sessions untouched.
+        // device. Phase 6 §12: step-up gated — a verified step-up challenge
+        // (stepUpToken) is required once the session is no longer recent or
+        // current risk reaches ELEVATED. A STEP_UP_REQUIRED error keeps the
+        // session alive so the client can run the challenge and retry.
+        const body = await readJson(request);
         const current = await firebaseReadySession({ provider, jar, env, context, allowTelegram: telegramVerificationRequested(env, url) });
         const result = await callAuthority(env, '/internal/session/revoke-all', {
           sessionToken: current.sessionToken,
-          input: { email: current.user.email, subject: current.user.subject }
+          input: { email: current.user.email, subject: current.user.subject, stepUpToken: String(body?.stepUpToken || '') },
+          context
         });
         return json(request, 200, { ok: true, authenticated: false, revoked: Number(result?.revoked || 0) }, { 'Set-Cookie': clearAuthCookies() });
+      }
+
+      // Phase 6 — purpose-bound security challenges (§11-§12). Session
+      // required; codes are delivered by the existing verification pipeline
+      // (email/Telegram). A verified challenge returns a one-time
+      // stepUpToken bound to this user+device.
+      if (request.method === 'POST' && url.pathname === `${AUTH_API_PREFIX}/security/challenge/request`) {
+        const body = await readJson(request);
+        const current = await firebaseReadySession({ provider, jar, env, context, allowTelegram: telegramVerificationRequested(env, url) });
+        const result = await callAuthority(env, '/internal/security/challenge/request', {
+          input: {
+            sessionToken: current.sessionToken,
+            email: current.user.email,
+            subject: current.user.subject,
+            purpose: String(body?.purpose || ''),
+            method: String(body?.method || 'email')
+          },
+          context
+        });
+        return json(request, 200, { ok: true, ...result }, {
+          'Set-Cookie': sessionCookies(current.session, current.refreshed.refreshToken, context)
+        });
+      }
+      if (request.method === 'POST' && url.pathname === `${AUTH_API_PREFIX}/security/challenge/verify`) {
+        const body = await readJson(request);
+        const current = await firebaseReadySession({ provider, jar, env, context, allowTelegram: telegramVerificationRequested(env, url) });
+        const result = await callAuthority(env, '/internal/security/challenge/verify', {
+          input: {
+            sessionToken: current.sessionToken,
+            email: current.user.email,
+            subject: current.user.subject,
+            challengeRef: String(body?.challengeRef || ''),
+            purpose: String(body?.purpose || ''),
+            code: String(body?.code || '')
+          },
+          context
+        });
+        return json(request, 200, { ok: true, ...result }, {
+          'Set-Cookie': sessionCookies(current.session, current.refreshed.refreshToken, context)
+        });
+      }
+      if (request.method === 'POST' && url.pathname === `${AUTH_API_PREFIX}/security/challenge/cancel`) {
+        const body = await readJson(request);
+        const current = await firebaseReadySession({ provider, jar, env, context, allowTelegram: telegramVerificationRequested(env, url) });
+        const result = await callAuthority(env, '/internal/security/challenge/cancel', {
+          input: {
+            sessionToken: current.sessionToken,
+            email: current.user.email,
+            subject: current.user.subject,
+            challengeRef: String(body?.challengeRef || ''),
+            purpose: String(body?.purpose || '')
+          },
+          context
+        });
+        return json(request, 200, { ok: true, ...result }, {
+          'Set-Cookie': sessionCookies(current.session, current.refreshed.refreshToken, context)
+        });
+      }
+      // Phase 6 — explicit "trust this device" (the 30-day consent).
+      if (request.method === 'POST' && url.pathname === `${AUTH_API_PREFIX}/security/device/trust`) {
+        await readJson(request);
+        const current = await firebaseReadySession({ provider, jar, env, context, allowTelegram: telegramVerificationRequested(env, url) });
+        const result = await callAuthority(env, '/internal/security/device/trust', {
+          input: { sessionToken: current.sessionToken, email: current.user.email, subject: current.user.subject },
+          context
+        });
+        return json(request, 200, { ok: true, ...result }, {
+          'Set-Cookie': sessionCookies(current.session, current.refreshed.refreshToken, context)
+        });
       }
 
       return json(request, 404, { ok: false, error: { code: 'NOT_FOUND', message: 'Endpoint পাওয়া যায়নি।' } });

@@ -179,6 +179,31 @@ export class SqliteAuthRepository {
         FOREIGN KEY(user_id) REFERENCES auth_users(user_id)
       )`,
       `CREATE INDEX IF NOT EXISTS auth_trusted_devices_expiry ON auth_trusted_devices(expires_at)`,
+      // Phase 6 — first-class security challenges (§11-§12). Purpose-bound,
+      // single-use, attempt-capped, expiring. `attempt_id` links the
+      // underlying verification attempt (email/Telegram material);
+      // `step_up_token_mac` carries the one-time token a verified step-up
+      // challenge hands to the sensitive action that consumed it.
+      `CREATE TABLE IF NOT EXISTS auth_security_challenges (
+        challenge_ref TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        purpose TEXT NOT NULL,
+        method TEXT NOT NULL,
+        status TEXT NOT NULL CHECK(status IN ('created','sent','verified','failed','expired','cancelled')),
+        attempts INTEGER NOT NULL DEFAULT 0,
+        max_attempts INTEGER NOT NULL,
+        attempt_id TEXT,
+        device_ref TEXT NOT NULL,
+        step_up_token_mac TEXT,
+        created_at INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL,
+        verified_at INTEGER,
+        consumed_at INTEGER,
+        policy_version TEXT,
+        FOREIGN KEY(user_id) REFERENCES auth_users(user_id)
+      )`,
+      `CREATE INDEX IF NOT EXISTS auth_security_challenges_user ON auth_security_challenges(user_id,purpose,status,created_at DESC)`,
+      `CREATE INDEX IF NOT EXISTS auth_security_challenges_expiry ON auth_security_challenges(expires_at)`,
       // Phase 3 — lifecycle overlay. Existing auth_users rows stay untouched;
       // users without a state row implicitly hold the legacy 'active' state.
       `CREATE TABLE IF NOT EXISTS auth_account_state (
@@ -281,6 +306,110 @@ export class SqliteAuthRepository {
       browserClass: String(row.browserClass || 'unknown'),
       trustedAt: Number(row.trustedAt),
       expiresAt: Number(row.expiresAt)
+    })));
+  }
+
+  // Phase 6 — security challenge lifecycle (§11-§12).
+  createSecurityChallenge({ challengeRef, userId, purpose, method, maxAttempts, now, ttlMs, policyVersion, deviceRef }) {
+    this.sql.exec(
+      `INSERT INTO auth_security_challenges(
+        challenge_ref,user_id,purpose,method,status,attempts,max_attempts,attempt_id,
+        device_ref,step_up_token_mac,created_at,expires_at,verified_at,consumed_at,policy_version
+      ) VALUES(?,?,?,?, 'created', 0,?,?,?, NULL,NULL,?,NULL,NULL,?)`,
+      challengeRef, userId, purpose, method, maxAttempts, null, deviceRef, now, now + Number(ttlMs), policyVersion || null
+    );
+    this.#event('security-challenge-created', null, userId, now, { deviceRef, purpose, policyVersion });
+  }
+
+  markSecurityChallengeSent({ challengeRef, attemptId, now }) {
+    this.sql.exec(
+      "UPDATE auth_security_challenges SET status='sent',attempt_id=? WHERE challenge_ref=? AND status='created'",
+      attemptId, challengeRef
+    );
+  }
+
+  getSecurityChallenge({ challengeRef, userId, now }) {
+    const row = this.#one(
+      `SELECT challenge_ref AS challengeRef,user_id AS userId,purpose,method,status,attempts AS attempts,
+        max_attempts AS maxAttempts,attempt_id AS attemptId,device_ref AS deviceRef,
+        step_up_token_mac AS stepUpTokenMac,created_at AS createdAt,expires_at AS expiresAt,
+        consumed_at AS consumedAt,policy_version AS policyVersion
+       FROM auth_security_challenges WHERE challenge_ref=? AND user_id=?`,
+      challengeRef, userId
+    );
+    if (!row) return null;
+    if (row.status === 'sent' && Number(row.expiresAt) <= now) {
+      this.sql.exec("UPDATE auth_security_challenges SET status='expired' WHERE challenge_ref=? AND status='sent'", challengeRef);
+      row.status = 'expired';
+    }
+    return row;
+  }
+
+  recordSecurityChallengeAttempt({ challengeRef, now }) {
+    this.sql.exec('UPDATE auth_security_challenges SET attempts=attempts+1 WHERE challenge_ref=?', challengeRef);
+  }
+
+  // Single-use, race-safe: only a still-sent challenge can be flipped to
+  // verified. The flip is proven by the token MAC stored in the row — a
+  // concurrent second verify sees the winner's MAC and loses.
+  verifySecurityChallenge({ challengeRef, now, stepUpTokenMac }) {
+    this.sql.exec(
+      "UPDATE auth_security_challenges SET status='verified',verified_at=?,step_up_token_mac=? WHERE challenge_ref=? AND status='sent'",
+      now, stepUpTokenMac, challengeRef
+    );
+    const row = this.#one('SELECT step_up_token_mac AS mac FROM auth_security_challenges WHERE challenge_ref=?', challengeRef);
+    return row?.mac != null && row.mac === stepUpTokenMac;
+  }
+
+  failSecurityChallenge({ challengeRef }) {
+    this.sql.exec("UPDATE auth_security_challenges SET status='failed' WHERE challenge_ref=? AND status='sent'", challengeRef);
+  }
+
+  cancelSecurityChallenge({ challengeRef }) {
+    this.sql.exec("UPDATE auth_security_challenges SET status='cancelled' WHERE challenge_ref=? AND status IN ('created','sent')", challengeRef);
+  }
+
+  // Consume a verified step-up token for the sensitive action that presented
+  // it (constant-time compare by the caller; this only flips once).
+  consumeSecurityChallenge({ challengeRef, now }) {
+    this.sql.exec(
+      "UPDATE auth_security_challenges SET consumed_at=? WHERE challenge_ref=? AND status='verified' AND consumed_at IS NULL",
+      now, challengeRef
+    );
+    const row = this.#one('SELECT consumed_at AS consumedAt FROM auth_security_challenges WHERE challenge_ref=?', challengeRef);
+    return row?.consumedAt != null;
+  }
+
+  latestVerifiedStepUpChallenge({ userId, now }) {
+    const row = this.#one(
+      `SELECT challenge_ref AS challengeRef,step_up_token_mac AS stepUpTokenMac,device_ref AS deviceRef,
+        expires_at AS expiresAt,consumed_at AS consumedAt
+       FROM auth_security_challenges
+       WHERE user_id=? AND purpose='step-up' AND status='verified' AND consumed_at IS NULL AND expires_at>?
+       ORDER BY verified_at DESC LIMIT 1`,
+      userId, now
+    );
+    return row || null;
+  }
+
+  listSecurityChallenges({ userId, now }) {
+    const rows = this.#rows(
+      `SELECT purpose,method,status,attempts AS attempts,created_at AS createdAt,expires_at AS expiresAt,
+        verified_at AS verifiedAt,consumed_at AS consumedAt,policy_version AS policyVersion
+       FROM auth_security_challenges WHERE user_id=? AND created_at>?
+       ORDER BY created_at DESC LIMIT 50`,
+      userId, now - EVENT_RETENTION_MS
+    );
+    return Object.freeze(rows.map(row => Object.freeze({
+      purpose: String(row.purpose),
+      method: String(row.method),
+      status: String(row.status),
+      attempts: Number(row.attempts),
+      createdAt: Number(row.createdAt),
+      expiresAt: Number(row.expiresAt),
+      verifiedAt: row.verifiedAt == null ? null : Number(row.verifiedAt),
+      consumedAt: row.consumedAt == null ? null : Number(row.consumedAt),
+      policyVersion: row.policyVersion || null
     })));
   }
 
@@ -421,6 +550,16 @@ export class SqliteAuthRepository {
       String(eventType).slice(0, 48), subjectRef || null, userId || null, now,
       extras.deviceRef || null, extras.purpose || null, extras.policyVersion || null
     );
+  }
+
+  // Public audit hook for security decisions that originate in the engine
+  // (challenge lifecycle, step-up enforcement, trust changes).
+  recordSecurityEvent({ eventType, subjectRef, userId, now, deviceRef, purpose, policyVersion }) {
+    this.#event(eventType, subjectRef || null, userId || null, now, {
+      deviceRef: deviceRef || null,
+      purpose: purpose || null,
+      policyVersion: policyVersion || null
+    });
   }
 
   #profileForUser(userId) {
@@ -1062,7 +1201,7 @@ export class SqliteAuthRepository {
   async getSession({ sessionRef, now }) {
     return this.#transaction(() => {
       const row = this.#one(
-        `SELECT s.expires_at AS expiresAt,s.last_seen_at AS lastSeenAt,
+        `SELECT s.expires_at AS expiresAt,s.last_seen_at AS lastSeenAt,s.created_at AS sessionCreatedAt,
           u.user_id AS id,u.email_mask AS emailMask,u.status,u.created_at AS createdAt
          FROM auth_sessions s JOIN auth_users u ON u.user_id=s.user_id
          WHERE s.session_ref=? AND s.revoked_at IS NULL`,
@@ -1075,6 +1214,7 @@ export class SqliteAuthRepository {
       }
       return {
         expiresAt: Number(row.expiresAt),
+        createdAt: Number(row.sessionCreatedAt),
         user: { id: row.id, emailMask: row.emailMask, status: row.status, createdAt: Number(row.createdAt) }
       };
     });
@@ -1121,6 +1261,7 @@ export class SqliteAuthRepository {
       this.sql.exec("DELETE FROM auth_passkey_credentials WHERE status='revoked' AND revoked_at<?", now - EVENT_RETENTION_MS);
       this.sql.exec('DELETE FROM auth_rate_limits WHERE expires_at<=?', now);
       this.sql.exec('DELETE FROM auth_trusted_devices WHERE expires_at<?', now - DAY_MS);
+      this.sql.exec('DELETE FROM auth_security_challenges WHERE expires_at<?', now - DAY_MS);
       this.sql.exec('DELETE FROM auth_sessions WHERE expires_at<=? OR revoked_at IS NOT NULL', now);
       this.sql.exec('DELETE FROM auth_security_events WHERE occurred_at<?', now - EVENT_RETENTION_MS);
       this.sql.exec("INSERT INTO auth_meta(key,value) VALUES('last_cleanup',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", String(now));

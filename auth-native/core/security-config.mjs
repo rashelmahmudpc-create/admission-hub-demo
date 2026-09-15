@@ -79,6 +79,12 @@ export const SECURITY_FAILSAFE_POLICY = Object.freeze({
   critical: 'block' // critical action is temporarily blocked + recovery path
 });
 
+// Step-up policy (§12): sensitive account actions (logout-all in v1) are
+// allowed without a fresh challenge only while the session is recent AND the
+// request's risk stays below ELEVATED. "Recent" is the arm window the client
+// keeps between the user's confirmation tap and the request.
+export const SECURITY_STEP_UP_RECENT_SESSION_MS = 5 * 60 * 1000; // 5 minutes
+
 // Security action classes used by the fail-safe resolver.
 export const SECURITY_ACTION_CLASSES = Object.freeze(['lowRisk', 'sensitive', 'critical']);
 
@@ -97,7 +103,8 @@ export const SECURITY_CONFIG = Object.freeze({
   riskSessionPolicy: SECURITY_RISK_SESSION_POLICY,
   purposes: SECURITY_PURPOSES,
   failSafePolicy: SECURITY_FAILSAFE_POLICY,
-  actionClasses: SECURITY_ACTION_CLASSES
+  actionClasses: SECURITY_ACTION_CLASSES,
+  stepUpRecentSessionMs: SECURITY_STEP_UP_RECENT_SESSION_MS
 });
 
 /**
