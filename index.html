@@ -1027,7 +1027,7 @@ const NAV_TABS=[
   {key:'exam', icon:'📝', label:'Exam'},
   {key:'ai', icon:'🤖', label:'AI'},
   {key:'history', icon:'📋', label:'History'},
-  {key:'profile', icon:'👤', label:'Profile'},
+  {key:'my-profile', icon:'👤', label:'Profile'},
 ];
 
 function baseTab(path){
@@ -1040,7 +1040,7 @@ function baseTab(path){
   if(path.startsWith('study-hub/quick-notes')) return 'study-hub/quick-notes';
   if(path.startsWith('progress/plan')) return 'dashboard';
   if(path.startsWith('progress')) return 'dashboard';
-  if(path.startsWith('profile')) return 'profile'; /* Phase 7 — Profile tab */
+  if(path==='my-profile') return 'my-profile'; /* Phase 7 — Profile tab (route name avoids the retired 'profile' legacy route) */
   return 'dashboard';
 }
 
@@ -1139,7 +1139,7 @@ function render(){
   if(p.startsWith('history/')) return renderHistoryDetail(p.split('/')[1]);
   if(p==='mistakes') return renderMistakes();
   if(p==='progress') return renderProgress();
-  if(p==='profile') return (window.renderProfilePage ? window.renderProfilePage() : renderDashboard()); /* Phase 7 */
+  if(p==='my-profile') return (window.renderProfilePage ? window.renderProfilePage() : renderDashboard()); /* Phase 7 */
   if(p==='settings') return renderDashboard();
   if(p==='dictionary'||p==='question-bank/settings') return renderLazyToolFallback(p);
   renderDashboard();

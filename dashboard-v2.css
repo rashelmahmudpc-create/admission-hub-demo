@@ -15,6 +15,8 @@
 .dv2-header{display:flex;align-items:center;gap:11px;padding:14px 4px 2px}
 .dv2-avatar{width:46px;height:46px;border-radius:50%;background:linear-gradient(135deg,#0f6b4f,#14a06f);color:#fff;display:grid;place-items:center;font-weight:800;font-size:17px;flex-shrink:0;box-shadow:0 8px 18px rgba(15,107,79,.25);position:relative;overflow:hidden}
 .dv2-avatar-img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:1}
+.dv2-avatar-tap{cursor:pointer}
+.dv2-avatar-tap:active{transform:scale(.96)}
 .dv2-hello b{font-size:17px;font-weight:850;color:#16241c}
 .dv2-hello .dv2-muted{margin-top:2px}
 .dv2-bell{margin-left:auto;width:40px;height:40px;border-radius:13px;background:#fff;border:1px solid #e3ece7;display:grid;place-items:center;font-size:18px;box-shadow:0 6px 14px rgba(15,107,79,.06)}

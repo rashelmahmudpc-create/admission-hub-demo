@@ -85,15 +85,19 @@ test('index.html: Profile tab (6th) wired into bottom nav + router', () => {
   const navStart = HTML.indexOf('const NAV_TABS=[');
   const nav = HTML.slice(navStart, navStart + 900);
   assert.ok(navStart > 0);
-  assert.match(nav, /key:'profile', icon:'👤', label:'Profile'/);
+  assert.match(nav, /key:'my-profile', icon:'👤', label:'Profile'/);
   // order: after history
-  assert.ok(nav.indexOf("key:'history'") < nav.indexOf("key:'profile'"));
+  assert.ok(nav.indexOf("key:'history'") < nav.indexOf("key:'my-profile'"));
   const entries = nav.slice(0, nav.indexOf('];')).match(/key:'/g) || [];
   assert.equal(entries.length, 6);
   // baseTab highlights the profile tab
-  assert.match(HTML, /if\(path\.startsWith\('profile'\)\) return 'profile'/);
+  assert.match(HTML, /if\(path==='my-profile'\) return 'my-profile'/);
   // hash route dispatch
-  assert.match(HTML, /if\(p==='profile'\) return \(window\.renderProfilePage/);
+  assert.match(HTML, /if\(p==='my-profile'\) return \(window\.renderProfilePage/);
+  // Route-name regression: the legacy 'profile' hash route stays RETIRED
+  // (redirected to dashboard) — the Profile tab must use a different path.
+  assert.match(HTML, /const retiredAccountRoute = p === 'profile' \|\| p\.startsWith\('profile\/'\)/);
+  assert.doesNotMatch(HTML, /if\(p==='profile'\)/);
   // pretty pathname URL dispatch
   assert.ok(HTML.includes("/^\\/(AH-[A-Z2-9]{6})\\/?$/"), "pathname dispatch regex missing");
   assert.match(HTML, /window\.renderPublicProfilePage\(pid\)/);
@@ -111,6 +115,12 @@ test('sw.js caches the profile assets', () => {
 
 test('_redirects serves /AH-* to the SPA', () => {
   assert.match(REDIRECTS, /^\/AH-\* \/ 200/m);
+});
+
+test('dashboard avatar is the top entry point to the Profile tab', () => {
+  assert.match(DASH, /dv2-avatar-tap/);
+  assert.match(DASH, /dv2-avatar-tap[\s\S]{0,140}my-profile/);
+  assert.match(DASH_CSS, /\.dv2-avatar-tap\{cursor:pointer\}/);
 });
 
 test('dashboard header upgrades to the uploaded avatar', () => {

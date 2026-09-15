@@ -640,7 +640,7 @@
             </div>
           </div>`);
         $('[data-role="public-open-app"]')?.addEventListener('click', () => {
-          if (typeof window.navigate === 'function') window.navigate('profile');
+          if (typeof window.navigate === 'function') window.navigate('my-profile');
           else { location.hash = 'profile'; if (typeof window.render === 'function') window.render(); }
         });
       })
