@@ -4186,6 +4186,17 @@ var AVATAR_MIME_MAGIC = Object.freeze({
 var WEBP_MAGIC_OFFSET8 = 1346520407;
 var AVATAR_MAX_BYTES = 2 * 1024 * 1024;
 var AVATAR_MIN_BYTES = 64;
+// Calendar year from a stored timestamp (ms epoch, s epoch, or YYYYMMDD
+// compact date). The old raw-slice produced fake "1789"-style years.
+function joinedYearOf(ts) {
+  const t = Number(ts);
+  if (!Number.isFinite(t) || t <= 0) return null;
+  if (t >= 10000000 && t <= 99999999) return Math.floor(t / 10000); // YYYYMMDD
+  const ms = t < 1e12 ? t * 1000 : t;
+  const y = new Date(ms).getFullYear();
+  return y >= 1990 && y <= 2100 ? y : null;
+}
+
 function normalizeProfilePatch(value = {}) {
   if (!value || typeof value !== "object" || Array.isArray(value)) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
   const fields = /* @__PURE__ */ Object.create(null);
@@ -9162,7 +9173,7 @@ var SqliteAuthRepository = class _SqliteAuthRepository {
       publicId,
       completion: this.#profileCompletion(profile, { avatarPresent }),
       avatarPresent,
-      joinedYear: account ? Number(String(account.createdAt).slice(0, 4)) : null,
+      joinedYear: account ? joinedYearOf(account.createdAt) : null,
       lastLoginAt: account ? Number(account.lastLoginAt) : null
     };
   }
@@ -9230,7 +9241,7 @@ var SqliteAuthRepository = class _SqliteAuthRepository {
         target: target ? { name: target.name, unit: target.unit || "", year: target.year || "" } : null,
         admissionSession: profile.admissionSession || null,
         goal: profile.academicGoal || null,
-        joinedYear: Number(String(row.createdAt).slice(0, 4)) || null,
+        joinedYear: joinedYearOf(row.createdAt),
         bio: row.bio || "",
         completion: this.#profileCompletion(profile, { avatarPresent: false })
       },

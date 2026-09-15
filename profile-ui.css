@@ -14,7 +14,7 @@
   --pp-line: rgba(20, 35, 29, 0.10);
 }
 
-.pp-wrap { max-width: 520px; margin: 0 auto; padding: 4px 14px 40px; }
+.pp-wrap { max-width: 520px; margin: 0 auto; padding: 2px 10px 34px; }
 .pp-head { display: flex; align-items: flex-start; justify-content: space-between; margin: 18px 2px 16px; }
 .pp-head h1 { font-size: 24px; margin: 0 0 2px; }
 .pp-head .muted { font-size: 12.5px; }
@@ -49,13 +49,14 @@
 .pp-hero-chip i { font-style: normal; font-size: 11px; opacity: 0.8; }
 .pp-hero-line { font-size: 12.5px; opacity: 0.92; margin-top: 7px; font-weight: 600; }
 .pp-hero-bio { font-size: 12.5px; opacity: 0.85; margin-top: 5px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.pp-hero-edit { margin-top: 14px; background: #fff; color: var(--pp-emerald-deep); width: auto; padding: 9px 18px; font-size: 13.5px; border-radius: 999px; }
+.pp-hero-edit { margin: 14px auto 0; display: block; width: auto; padding: 9px 20px; font-size: 13.5px; border-radius: 999px; background: #fff; color: var(--pp-emerald-deep); }
 .pp-greeting { font-size: 13px; text-align: center; opacity: 0.75; margin: 2px 0 14px; }
 
 /* ---------------- stats strip (real data only) ---------------- */
-.pp-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 4px 0 12px; background: #fff; border: 1px solid var(--pp-line); border-radius: 18px; padding: 12px 8px; cursor: pointer; }
+.pp-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; margin: 2px 0 12px; background: #fff; border: 1px solid var(--pp-line); border-radius: 18px; padding: 12px 0; cursor: pointer; }
 .pp-stats:active { background: var(--pp-emerald-soft); }
-.pp-stat { display: flex; flex-direction: column; align-items: center; gap: 2px; text-align: center; min-width: 0; }
+.pp-stat { display: flex; flex-direction: column; align-items: center; gap: 2px; text-align: center; min-width: 0; padding: 0 4px; }
+.pp-stat + .pp-stat { border-left: 1px solid rgba(20, 35, 29, 0.08); }
 .pp-stat-ic { font-size: 17px; line-height: 1; }
 .pp-stat-num { font-size: 17px; font-weight: 800; color: var(--pp-ink); font-variant-numeric: tabular-nums; }
 .pp-stat small { font-size: 10px; opacity: 0.6; line-height: 1.25; }
@@ -67,7 +68,7 @@
 .pp-ring svg { width: 64px; height: 64px; display: block; }
 .pp-ring b { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 13.5px; font-weight: 800; color: var(--pp-emerald-deep); }
 .pp-comp-info { min-width: 0; flex: 1; }
-.pp-comp-cta { margin-top: 8px; border: none; background: var(--pp-emerald-soft); color: var(--pp-emerald-deep); font-weight: 700; font-size: 12.5px; border-radius: 999px; padding: 7px 14px; cursor: pointer; }
+.pp-comp-cta { margin-top: 8px; border: none; background: none; color: var(--pp-emerald); font-weight: 800; font-size: 13px; cursor: pointer; padding: 0; }
 .pp-comp-cta:active { opacity: 0.8; }
 .pp-meter { width: 44%; height: 8px; border-radius: 99px; background: rgba(15, 107, 79, 0.12); overflow: hidden; flex: none; }
 .pp-meter i { display: block; height: 100%; border-radius: 99px; background: linear-gradient(90deg, #0f6b4f, #2a9d72); transition: width 400ms ease; }
@@ -103,6 +104,10 @@
 /* ---------------- achievements ---------------- */
 .pp-achv-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
 .pp-achv-cell { display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 12px 4px; border-radius: 14px; background: var(--pp-emerald-soft); }
+.pp-achv-cell[data-id="first-mock"] { background: #fdeedd; }
+.pp-achv-cell[data-id="mcq-100"] { background: #e3f3e8; }
+.pp-achv-cell[data-id="streak-7"] { background: #efe6fb; }
+.pp-achv-cell[data-id="mcq-500"] { background: #fdf3d7; }
 .pp-achv-cell span { font-size: 20px; line-height: 1; }
 .pp-achv-cell small { font-size: 9.5px; font-weight: 700; color: var(--pp-emerald-deep); text-align: center; line-height: 1.2; }
 .pp-achv-cell.off { background: #f2f5f3; filter: grayscale(1); opacity: 0.65; }

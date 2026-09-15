@@ -1,5 +1,5 @@
 const CACHE_PREFIX = 'admission-hub-shell-';
-const BUILD_ID = 'v257-profile-core-20260915';
+const BUILD_ID = 'v258-profile-v2-20260916';
 const CACHE_NAME = `${CACHE_PREFIX}${BUILD_ID}`;
 const VERSION_HEADER = 'X-Admission-Hub-Build';
 const DOCUMENT_NETWORK_TIMEOUT_MS = 2500;
@@ -20,8 +20,8 @@ const APP_SHELL = [
   './account-access.css?v=20260916-account-entry-v2',
   './institutions-bd.js?v=bd-institutions-v1',
   './account-access.js?v=20260916-account-entry-v2',
-  './profile-ui.js?v=profile-v4',
-  './profile-ui.css?v=profile-v4',
+  './profile-ui.js?v=profile-v5',
+  './profile-ui.css?v=profile-v5',
   './data-protection.js?v=dp-v3-fastboot',
   './dashboard-v2.js?v=dash2f11-profile-tap',
   './ai-agent-chat.js?v=agent-f1-ui-chatv15-identity',

@@ -5,6 +5,17 @@ import { transitionAccount, isSessionUsable } from '../core/account-lifecycle.mj
 const DAY_MS = 24 * 60 * 60 * 1000;
 const EVENT_RETENTION_MS = 90 * DAY_MS;
 
+// Calendar year from a stored timestamp (ms epoch, s epoch, or YYYYMMDD
+// compact date). The old raw-slice produced fake "1789"-style years.
+function joinedYearOf(ts) {
+  const t = Number(ts);
+  if (!Number.isFinite(t) || t <= 0) return null;
+  if (t >= 10000000 && t <= 99999999) return Math.floor(t / 10000); // YYYYMMDD
+  const ms = t < 1e12 ? t * 1000 : t;
+  const y = new Date(ms).getFullYear();
+  return y >= 1990 && y <= 2100 ? y : null;
+}
+
 export class SqliteAuthRepository {
   constructor(storage) {
     if (!storage?.sql || typeof storage.sql.exec !== 'function') throw new TypeError('SQLite Durable Object storage is required.');
@@ -1149,7 +1160,7 @@ export class SqliteAuthRepository {
       publicId,
       completion: this.#profileCompletion(profile, { avatarPresent }),
       avatarPresent,
-      joinedYear: account ? Number(String(account.createdAt).slice(0, 4)) : null,
+      joinedYear: account ? joinedYearOf(account.createdAt) : null,
       lastLoginAt: account ? Number(account.lastLoginAt) : null
     };
   }
@@ -1223,7 +1234,7 @@ export class SqliteAuthRepository {
         target: target ? { name: target.name, unit: target.unit || '', year: target.year || '' } : null,
         admissionSession: profile.admissionSession || null,
         goal: profile.academicGoal || null,
-        joinedYear: Number(String(row.createdAt).slice(0, 4)) || null,
+        joinedYear: joinedYearOf(row.createdAt),
         bio: row.bio || '',
         completion: this.#profileCompletion(profile, { avatarPresent: false })
       },

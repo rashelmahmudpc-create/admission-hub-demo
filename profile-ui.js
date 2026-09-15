@@ -26,7 +26,10 @@
   const bnNum = (n) => Number(n || 0).toLocaleString('bn-BD');
   // Years are shown in Bengali digits WITHOUT a thousands separator
   // ("২০২৬ সাল" — not "২,০২").
-  const bnYear = (y) => String(y || '').replace(/[0-9]/g, (d) => '০১২৪৫৬৭৮৯'[d]);
+  // Bengali digits generated from Unicode code points (U+09E6..U+09EF) —
+  // typo-proof mapping, all ten digits guaranteed.
+  const BN_DIGITS = Array.from({ length: 10 }, (_, i) => String.fromCharCode(0x09E6 + i));
+  const bnYear = (y) => String(y == null ? '' : y).replace(/[0-9]/g, (d) => BN_DIGITS[d]);
   const bnDate = (ts) => {
     if (!ts) return '';
     try { return new Intl.DateTimeFormat('bn-BD', { month: 'short', year: 'numeric' }).format(new Date(ts)); }
@@ -261,11 +264,41 @@
 
   /* ---------------- sections ---------------- */
 
+  // Critical layout styles are also emitted inline with the page. A stale or
+  // half-applied stylesheet must never be able to collapse the identity space
+  // (device-cache resilience; values mirror profile-ui.css).
+  const CRITICAL_CSS = `
+.pp-wrap{max-width:520px;margin:0 auto;padding:2px 10px 34px}
+.pp-hero{text-align:left;padding:16px 14px 14px;border-radius:20px;margin-bottom:10px;background:linear-gradient(150deg,#0f6b4f 0%,#17845f 55%,#2a9d72 100%);color:#fff}
+.pp-hero-row{display:flex;align-items:center;gap:14px}
+.pp-hero-avatar{position:relative;width:72px;height:72px;flex:none;border-radius:50%;overflow:visible;display:inline-flex;align-items:center;justify-content:center;border:2.5px solid rgba(255,255,255,.85);background:#eef6f1;padding:0;cursor:pointer}
+.pp-avatar-img{width:100%;height:100%;object-fit:cover;display:block}
+.pp-avatar-svg{display:block;width:100%;height:100%}
+.pp-avatar-svg svg{width:100%;height:100%;display:block}
+.pp-cam-badge{position:absolute;right:-2px;bottom:-2px;width:24px;height:24px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;font-size:12px}
+.pp-hero-idblock{min-width:0;flex:1}
+.pp-hero-name{font-size:19px;font-weight:800;display:flex;align-items:center;gap:6px}
+.pp-verified{display:inline-flex;width:18px;height:18px;border-radius:50%;background:#7ce0b3;color:#0b5640;font-size:11px;font-weight:800;align-items:center;justify-content:center}
+.pp-hero-chip{display:inline-flex;align-items:center;gap:7px;margin-top:7px;padding:4px 11px;border-radius:999px;background:rgba(255,255,255,.16);border:none;color:#fff;font-size:12.5px;cursor:pointer;width:auto}
+.pp-hero-line{font-size:12.5px;opacity:.92;margin-top:7px;font-weight:600}
+.pp-hero-bio{font-size:12.5px;opacity:.85;margin-top:5px;line-height:1.4}
+.pp-hero-edit{margin:14px auto 0;display:block;width:auto;padding:9px 20px;font-size:13.5px;border-radius:999px;background:#fff;color:#0b5640;border:none;cursor:pointer;font-weight:700}
+.pp-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:0;margin:2px 0 12px;background:#fff;border:1px solid rgba(20,35,29,.1);border-radius:18px;padding:12px 0;cursor:pointer}
+.pp-stat{display:flex;flex-direction:column;align-items:center;gap:2px;text-align:center;min-width:0;padding:0 4px}
+.pp-stat+.pp-stat{border-left:1px solid rgba(20,35,29,.08)}
+.pp-stat-num{font-size:17px;font-weight:800;color:#14231d}
+.pp-stat small{font-size:10px;opacity:.6}
+.pp-ring{position:relative;width:64px;height:64px;flex:none;display:inline-flex;align-items:center;justify-content:center}
+.pp-ring svg{width:64px;height:64px;display:block}
+.pp-ring b{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:13.5px;font-weight:800;color:#0b5640}
+.pp-ac-row{display:flex;align-items:center;gap:12px;width:100%;text-align:left;border:none;background:none;font:inherit;color:inherit;padding:10px 6px;cursor:pointer;border-radius:12px}`;
+
   function identityCard() {
     const d = state.data || {};
     const p = d.profile || {};
     const year = p.admissionSession || d.joinedYear || '';
     return `
+      <style>${CRITICAL_CSS}</style>
       <div class="pp-hero" data-profile-contract="profile-identity-v1">
         <div class="pp-hero-row">
           <button class="pp-hero-avatar" data-role="open-avatar-page" type="button" aria-label="Avatar পরিবর্তন করো">
@@ -353,7 +386,7 @@
         <div class="pp-card-head"><span class="pp-card-title">Achievements</span><button class="pp-card-edit" data-role="open-achv-sheet" type="button">View All</button></div>
         <div class="pp-achv-grid">
           ${ACHIEVEMENTS.map((a) => `
-            <div class="pp-achv-cell ${earned.has(a.id) ? 'on' : 'off'}" title="${esc(a.hint)}">
+            <div class="pp-achv-cell ${earned.has(a.id) ? 'on' : 'off'}" data-id="${a.id}" title="${esc(a.hint)}">
               <span aria-hidden="true">${earned.has(a.id) ? a.icon : '🔒'}</span>
               <small>${esc(a.name)}</small>
             </div>`).join('')}
@@ -1166,15 +1199,10 @@
       $('[data-role="guest-signin"]')?.addEventListener('click', () => account.open());
       return;
     }
-    // skeleton while loading
-    shell(`
-      <div class="pp-wrap">
-        <div class="pp-skel" aria-label="Profile লোড হচ্ছে"></div>
-        <div class="pp-skel" style="height:120px"></div>
-        <div class="pp-skel" style="height:64px"></div>
-        <div data-role="profile-toast" class="pp-toast" aria-live="polite"></div>
-        <div data-role="sheet-host"></div>
-      </div>`);
+    // No loading screen (owner directive): render the identity space
+    // immediately — from cached data on revisit, otherwise from the empty
+    // state — and refresh silently in the background.
+    renderCurrentView();
     loadProfile()
       .then(() => {
         renderCurrentView();

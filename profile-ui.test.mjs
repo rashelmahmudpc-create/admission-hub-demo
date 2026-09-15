@@ -104,13 +104,13 @@ test('index.html: Profile tab (6th) wired into bottom nav + router', () => {
 });
 
 test('index.html: profile assets linked with versions', () => {
-  assert.match(HTML, /<link rel="stylesheet" href="\.\/profile-ui\.css\?v=profile-v4">/);
-  assert.match(HTML, /<script defer src="\.\/profile-ui\.js\?v=profile-v4"><\/script>/);
+  assert.match(HTML, /<link rel="stylesheet" href="\.\/profile-ui\.css\?v=profile-v5">/);
+  assert.match(HTML, /<script defer src="\.\/profile-ui\.js\?v=profile-v5"><\/script>/);
 });
 
 test('sw.js caches the profile assets', () => {
-  assert.match(SW, /'\.\/profile-ui\.js\?v=profile-v4',/);
-  assert.match(SW, /'\.\/profile-ui\.css\?v=profile-v4',/);
+  assert.match(SW, /'\.\/profile-ui\.js\?v=profile-v5',/);
+  assert.match(SW, /'\.\/profile-ui\.css\?v=profile-v5',/);
 });
 
 test('_redirects serves /AH-* to the SPA', () => {
@@ -209,6 +209,29 @@ test('V2: edit page validates before patching; avatar page has upload/camera/def
   assert.match(UI, /getUserMedia/);
   // six generated default avatar styles, zero raster
   assert.match(UI, /defaultAvatarSvg\(state\.data\?\.profile\?\.fullName/);
+});
+
+test('hotfix: bnYear maps all 10 digits via code points (no "undefined" regression)', () => {
+  // digit table generated from U+09E6..U+09EF — structurally complete
+  assert.match(UI, /String\.fromCharCode\(0x09E6 \+ i\)/);
+  assert.match(UI, /BN_DIGITS\[d\]/);
+  const BN_DIGITS = Array.from({ length: 10 }, (_, i) => String.fromCharCode(0x09E6 + i));
+  const bnYear = (y) => String(y == null ? '' : y).replace(/[0-9]/g, (d) => BN_DIGITS[d]);
+  assert.equal(bnYear(2026), '\u09E8\u09E6\u09E8\u09EC'); // ২০৬
+  assert.equal(bnYear('1789'), '\u09E7\u09ED\u09EE\u09EF'); // ১৭৯
+  assert.equal(bnYear(null), '');
+  assert.ok(!String(bnYear(2026)).includes('undefined'));
+});
+
+test('hotfix: no skeleton loading — profile renders immediately (owner directive)', () => {
+  assert.doesNotMatch(UI, /pp-skel[\s\S]{0,120}Profile লোড/);
+  assert.match(UI, /renderCurrentView\(\);\n    loadProfile\(\)/);
+});
+
+test('hotfix: hero layout resilience — critical styles shipped inline with the page', () => {
+  assert.match(UI, /CRITICAL_CSS/);
+  assert.match(UI, /<style>\$\{CRITICAL_CSS\}<\/style>/);
+  assert.match(UI, /\.pp-hero-avatar\{[^}]*width:72px[^}]*height:72px/);
 });
 
 test('V2: emerald visual language, no indigo remnant in profile chrome', () => {

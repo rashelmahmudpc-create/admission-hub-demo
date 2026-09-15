@@ -4,6 +4,17 @@ import { transitionAccount, isSessionUsable } from '../core/account-lifecycle.mj
 
 const copy = value => value == null ? value : structuredClone(value);
 
+// Calendar year from a stored timestamp (ms epoch, s epoch, or YYYYMMDD
+// compact date). The old raw-slice produced fake "1789"-style years.
+function joinedYearOf(ts) {
+  const t = Number(ts);
+  if (!Number.isFinite(t) || t <= 0) return null;
+  if (t >= 10000000 && t <= 99999999) return Math.floor(t / 10000); // YYYYMMDD
+  const ms = t < 1e12 ? t * 1000 : t;
+  const y = new Date(ms).getFullYear();
+  return y >= 1990 && y <= 2100 ? y : null;
+}
+
 export class MemoryAuthRepository {
   constructor() {
     this.usersByEmail = new Map();
@@ -362,7 +373,7 @@ export class MemoryAuthRepository {
       publicId,
       completion: this.#profileCompletion(profile, { avatarPresent }),
       avatarPresent,
-      joinedYear: user ? Number(String(user.createdAt).slice(0, 4)) : null,
+      joinedYear: user ? joinedYearOf(user.createdAt) : null,
       lastLoginAt: user?.lastLoginAt || null
     };
   }
@@ -418,7 +429,7 @@ export class MemoryAuthRepository {
       profile: {
         ...base,
         target: target ? { name: target.name, unit: target.unit || '', year: target.year || '' } : null,
-        joinedYear: Number(String(user.createdAt).slice(0, 4)) || null,
+        joinedYear: joinedYearOf(user.createdAt),
         bio: profile.bio || '',
         completion: this.#profileCompletion(profile, { avatarPresent: false })
       },
