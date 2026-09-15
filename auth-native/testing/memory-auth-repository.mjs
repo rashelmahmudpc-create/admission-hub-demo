@@ -19,6 +19,28 @@ export class MemoryAuthRepository {
     this.accountVerificationTickets = new Map();
     this.profiles = new Map();
     this.accountStates = new Map();
+    this.trustedDevices = new Map();
+  }
+
+  #storeTrustedDevice({ userId, deviceRef, browserClass, now, ttlMs, policyVersion, maxDevices }) {
+    const browser = String(browserClass || '').slice(0, 40) || 'unknown';
+    const expiresAt = now + Number(ttlMs);
+    const active = [...this.trustedDevices.values()]
+      .filter(row => row.userId === userId && !row.revokedAt && row.expiresAt > now)
+      .sort((a, b) => a.trustedAt - b.trustedAt || String(a.deviceRef).localeCompare(String(b.deviceRef)));
+    const max = Math.max(1, Number(maxDevices) || 10);
+    if (active.length >= max) {
+      const overflow = active.slice(0, active.length - max + 1);
+      for (const row of overflow) {
+        row.revokedAt = now;
+        this.events.push({ type: 'device-trust-evicted', userId, at: now, purpose: null, policyVersion });
+      }
+    }
+    this.trustedDevices.set(`${userId}|${deviceRef}`, {
+      userId, deviceRef, browserClass: browser, trustedAt: now, expiresAt, revokedAt: null, policyVersion
+    });
+    this.events.push({ type: 'device-trusted', userId, at: now, deviceRef, policyVersion });
+    return expiresAt;
   }
 
   #consume(limits, now) {
@@ -119,7 +141,11 @@ export class MemoryAuthRepository {
       deviceRef: input.deviceRef,
       userAgent: input.userAgent
     });
-    this.events.push({ type: created ? 'firebase-account-linked' : 'firebase-login', subjectRef: input.subjectRef, userId: user.id, at: input.now });
+    this.events.push({
+      type: input.loginEvent || (created ? 'firebase-account-linked' : 'firebase-login'),
+      subjectRef: input.subjectRef, userId: user.id, at: input.now,
+      ...(input.eventExtras || {})
+    });
     return { established: true, created, user: copy(user) };
   }
 
@@ -176,6 +202,7 @@ export class MemoryAuthRepository {
       emailRef: input.emailRef,
       refreshCipher: input.refreshCipher,
       state: 'active',
+      purpose: input.purpose || null,
       createdAt: input.now,
       expiresAt: input.expiresAt,
       consumedAt: null,
@@ -209,7 +236,20 @@ export class MemoryAuthRepository {
       ipRef: input.ipRef, deviceRef: input.deviceRef, userAgent: input.userAgent
     });
     user.lastLoginAt = input.now;
-    return { established: true, user: copy(user) };
+    let trusted = false;
+    if (row.purpose === 'new-device' && input.trust && Number(input.trust.ttlMs) > 0) {
+      this.#storeTrustedDevice({
+        userId: user.id, deviceRef: input.deviceRef, browserClass: input.userAgent,
+        now: input.now, ttlMs: input.trust.ttlMs, policyVersion: input.trust.policyVersion, maxDevices: input.trust.maxDevices
+      });
+      trusted = true;
+    }
+    this.events.push({
+      type: row.purpose === 'new-device' ? 'new-device-challenge-completed' : 'firebase-telegram-verification-session',
+      subjectRef: input.subjectRef, userId: user.id, at: input.now,
+      ...(row.purpose ? { deviceRef: input.deviceRef, purpose: row.purpose, policyVersion: input.trust?.policyVersion } : {})
+    });
+    return { established: true, trusted, user: copy(user) };
   }
 
   async getFirebaseIdentity(input) {
@@ -459,6 +499,48 @@ export class MemoryAuthRepository {
     return { revoked };
   }
 
+  async isDeviceTrusted({ userId, deviceRef, now }) {
+    const row = this.trustedDevices.get(`${userId}|${deviceRef}`);
+    return Object.freeze({ trusted: Boolean(row && !row.revokedAt && row.expiresAt > now) });
+  }
+
+  async registerTrustedDevice({ userId, deviceRef, browserClass, now, ttlMs, policyVersion, maxDevices }) {
+    if (!this.users.has(userId)) return { error: AUTH_ERROR_CODES.ACCOUNT_NOT_FOUND };
+    if (!deviceRef || deviceRef.length > 128) return { error: AUTH_ERROR_CODES.INVALID_INPUT };
+    const expiresAt = this.#storeTrustedDevice({ userId, deviceRef, browserClass, now, ttlMs, policyVersion, maxDevices });
+    return Object.freeze({ registered: true, expiresAt });
+  }
+
+  async revokeTrustedDevice({ userId, deviceRef, now, policyVersion }) {
+    if (!this.users.has(userId)) return { error: AUTH_ERROR_CODES.ACCOUNT_NOT_FOUND };
+    let revoked = 0;
+    for (const row of this.trustedDevices.values()) {
+      if (row.userId !== userId || row.revokedAt || row.expiresAt <= now) continue;
+      if (deviceRef && row.deviceRef !== deviceRef) continue;
+      row.revokedAt = now;
+      revoked += 1;
+    }
+    if (revoked > 0) this.events.push({ type: 'device-revoked', userId, at: now, deviceRef: deviceRef || null, policyVersion });
+    return Object.freeze({ revoked });
+  }
+
+  async listTrustedDevices({ userId, now }) {
+    const rows = [...this.trustedDevices.values()]
+      .filter(row => row.userId === userId && !row.revokedAt && row.expiresAt > now)
+      .sort((a, b) => b.trustedAt - a.trustedAt)
+      .map(row => ({ deviceRef: row.deviceRef, browserClass: row.browserClass, trustedAt: row.trustedAt, expiresAt: row.expiresAt }));
+    return Object.freeze(rows.map(row => Object.freeze(row)));
+  }
+
+  async getLoginRiskSignals({ emailScope, emailWindowMs, ipScope, ipWindowMs, emailRef, ipRef, now }) {
+    const emailStart = Math.floor(Number(now) / Number(emailWindowMs)) * Number(emailWindowMs);
+    const ipStart = Math.floor(Number(now) / Number(ipWindowMs)) * Number(ipWindowMs);
+    return Object.freeze({
+      failedLogins: Number(this.rates.get(`${emailScope}:${emailRef}:${emailStart}`)?.count || 0),
+      rapidRequests: Number(this.rates.get(`${ipScope}:${ipRef}:${ipStart}`)?.count || 0)
+    });
+  }
+
   async identitySnapshot() {
     const users = [...this.users.values()]
       .filter(user => user && user.id)
@@ -535,6 +617,7 @@ export class MemoryAuthRepository {
     for (const [id, row] of this.passkeyChallenges) if (row.expiresAt <= now) this.passkeyChallenges.delete(id);
     for (const [id, row] of this.passkeyTickets) if (row.expiresAt <= now) this.passkeyTickets.delete(id);
     for (const [id, row] of this.sessions) if (row.expiresAt <= now || row.revokedAt) this.sessions.delete(id);
+    for (const [id, row] of this.trustedDevices) if (row.expiresAt < now - (24 * 60 * 60 * 1000)) this.trustedDevices.delete(id);
     for (const [id, row] of this.rates) if (row.resetAt <= now) this.rates.delete(id);
     return { cleaned: true };
   }
@@ -562,7 +645,8 @@ export class MemoryAuthRepository {
       passkeyChallenges: [...this.passkeyChallenges.values()],
       passkeyTickets: [...this.passkeyTickets.values()],
       accountVerificationTickets: [...this.accountVerificationTickets.values()],
-      profiles: [...this.profiles.entries()]
+      profiles: [...this.profiles.entries()],
+      trustedDevices: [...this.trustedDevices.values()]
     });
   }
 }

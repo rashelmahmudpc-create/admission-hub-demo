@@ -3396,6 +3396,177 @@ function coarseUserAgent(value) {
   return `${device} · ${browser}`;
 }
 
+// auth-native/core/security-config.mjs
+var SECURITY_POLICY_VERSION = "security-policy-v1";
+var SECURITY_RISK_LEVELS = Object.freeze(["LOW", "NORMAL", "ELEVATED", "HIGH", "CRITICAL"]);
+var SECURITY_RISK_RANK = Object.freeze({
+  LOW: 0,
+  NORMAL: 1,
+  ELEVATED: 2,
+  HIGH: 3,
+  CRITICAL: 4
+});
+var SECURITY_CHALLENGE_TTL_MS = 15 * 60 * 1e3;
+var SECURITY_CHALLENGE_MAX_ATTEMPTS = 5;
+var SECURITY_CHALLENGE_METHODS_V1 = Object.freeze(["email", "telegram", "passkey"]);
+var SECURITY_TRUST_TTL_MS = 30 * 24 * 60 * 60 * 1e3;
+var SECURITY_TRUST_MAX_DEVICES_PER_USER = 10;
+var SECURITY_FAILED_LOGIN_WINDOW_MS = 15 * 60 * 1e3;
+var SECURITY_COOLDOWN_THRESHOLD_FAILURES = 5;
+var SECURITY_COOLDOWN_STEPS_MS = Object.freeze([
+  5 * 60 * 1e3,
+  // 5 min
+  15 * 60 * 1e3,
+  // 15 min
+  60 * 60 * 1e3
+  // 60 min — ceiling; never permanent
+]);
+var SECURITY_RISK_THRESHOLDS = Object.freeze({
+  failedLoginElevatedAt: 3,
+  // 3+ failed logins in window -> ELEVATED signal
+  failedLoginHighAt: 8,
+  // 8+ -> HIGH signal
+  rapidAuthRequestsWindowMs: 60 * 1e3,
+  rapidAuthRequestsHighAt: 20
+  // 20+ auth requests / IP / minute -> HIGH signal
+});
+var SECURITY_RISK_SESSION_POLICY = Object.freeze({
+  LOW: { sessionTtlMs: 30 * 24 * 60 * 60 * 1e3, trustOffer: true, challenge: null },
+  NORMAL: { sessionTtlMs: 30 * 24 * 60 * 60 * 1e3, trustOffer: true, challenge: null },
+  ELEVATED: { sessionTtlMs: 30 * 24 * 60 * 60 * 1e3, trustOffer: true, challenge: "new-device" },
+  HIGH: { sessionTtlMs: 24 * 60 * 60 * 1e3, trustOffer: false, challenge: "step-up" },
+  CRITICAL: { sessionTtlMs: null, trustOffer: false, challenge: null, block: true }
+});
+var SECURITY_PURPOSES = Object.freeze({
+  STEP_UP: "step-up",
+  NEW_DEVICE: "new-device",
+  RECOVERY: "recovery",
+  DEVICE_REVOCATION: "device-revoke"
+});
+var SECURITY_FAILSAFE_POLICY = Object.freeze({
+  lowRisk: "proceed",
+  // normal action under normal auth
+  sensitive: "challenge",
+  // sensitive action requires stronger verification
+  critical: "block"
+  // critical action is temporarily blocked + recovery path
+});
+var SECURITY_ACTION_CLASSES = Object.freeze(["lowRisk", "sensitive", "critical"]);
+var SECURITY_CONFIG = Object.freeze({
+  policyVersion: SECURITY_POLICY_VERSION,
+  riskLevels: SECURITY_RISK_LEVELS,
+  challengeTtlMs: SECURITY_CHALLENGE_TTL_MS,
+  challengeMaxAttempts: SECURITY_CHALLENGE_MAX_ATTEMPTS,
+  challengeMethods: SECURITY_CHALLENGE_METHODS_V1,
+  trustTtlMs: SECURITY_TRUST_TTL_MS,
+  trustMaxDevicesPerUser: SECURITY_TRUST_MAX_DEVICES_PER_USER,
+  failedLoginWindowMs: SECURITY_FAILED_LOGIN_WINDOW_MS,
+  cooldownThresholdFailures: SECURITY_COOLDOWN_THRESHOLD_FAILURES,
+  cooldownStepsMs: SECURITY_COOLDOWN_STEPS_MS,
+  riskThresholds: SECURITY_RISK_THRESHOLDS,
+  riskSessionPolicy: SECURITY_RISK_SESSION_POLICY,
+  purposes: SECURITY_PURPOSES,
+  failSafePolicy: SECURITY_FAILSAFE_POLICY,
+  actionClasses: SECURITY_ACTION_CLASSES
+});
+function resolveSecurityConfig(overrideRaw = "") {
+  if (!overrideRaw) return SECURITY_CONFIG;
+  try {
+    const parsed = JSON.parse(String(overrideRaw));
+    if (!parsed || typeof parsed !== "object") return SECURITY_CONFIG;
+    const base = { ...SECURITY_CONFIG };
+    for (const key of Object.keys(base)) {
+      if (!(key in parsed)) continue;
+      const value = parsed[key];
+      if (typeof base[key] === "number") {
+        if (!Number.isFinite(value) || value <= 0) return SECURITY_CONFIG;
+        base[key] = value;
+      } else if (typeof base[key] === "string") {
+        if (typeof value !== "string" || !value) return SECURITY_CONFIG;
+        base[key] = value;
+      }
+    }
+    return Object.freeze(base);
+  } catch {
+    return SECURITY_CONFIG;
+  }
+}
+
+// auth-native/core/security-policy.mjs
+function rank(level) {
+  return SECURITY_RISK_RANK[level] ?? 0;
+}
+function evaluateRisk(signals = {}, config = resolveSecurityConfig()) {
+  const t = config.riskThresholds;
+  const facts = [];
+  const behaviors = [];
+  if (signals.accountState === "suspended" || signals.accountState === "deactivated") {
+    facts.push("account-disabled");
+  } else if (signals.accountState === "restricted") {
+    facts.push("account-restricted");
+  }
+  if (signals.recoveryActive === true) facts.push("recovery-active");
+  const failed = Math.max(0, Number(signals.failedLogins) || 0);
+  if (failed >= t.failedLoginHighAt) behaviors.push("failed-logins-high");
+  else if (failed >= t.failedLoginElevatedAt) behaviors.push("failed-logins-elevated");
+  if (signals.rapidRequests >= t.rapidAuthRequestsHighAt) behaviors.push("rapid-requests");
+  if (signals.newDevice === true) behaviors.push("new-device");
+  if (signals.unverifiedAccount === true) behaviors.push("unverified-account");
+  let level = "LOW";
+  if (facts.includes("account-disabled")) {
+    level = "CRITICAL";
+  } else {
+    let behaviorRank = 0;
+    for (const signal of behaviors) {
+      const signalRank = signal === "unverified-account" ? rank("NORMAL") : rank("ELEVATED");
+      behaviorRank = Math.max(behaviorRank, signalRank);
+    }
+    if (behaviors.length >= 2) behaviorRank = Math.min(behaviorRank + 1, rank("HIGH"));
+    if (facts.length > 0 && behaviors.length > 0) behaviorRank = Math.max(behaviorRank, rank("HIGH"));
+    const levels = [...SECURITY_RISK_LEVELS];
+    level = behaviors.length > 0 || facts.length > 0 ? levels[Math.min(behaviorRank, levels.length - 1)] : "NORMAL";
+  }
+  const actions = policyActions(level, config);
+  return Object.freeze({
+    level,
+    reasons: Object.freeze([...facts, ...behaviors]),
+    actions,
+    policyVersion: config.policyVersion
+  });
+}
+function policyActions(level, config) {
+  const policy = config.riskSessionPolicy[level] || config.riskSessionPolicy.NORMAL;
+  const challenge = policy.challenge || null;
+  return Object.freeze({
+    // A pending challenge always gates the action: the caller may only
+    // proceed after the challenge is verified for the matching purpose.
+    proceed: policy.block !== true && challenge === null,
+    challenge,
+    block: policy.block === true,
+    sessionTtlMs: policy.sessionTtlMs || null,
+    trustOffer: policy.trustOffer === true,
+    recoveryPath: policy.block === true
+  });
+}
+function cooldownForFailure(failures, config = resolveSecurityConfig()) {
+  const n = Math.max(0, Number(failures) || 0);
+  if (n < config.cooldownThresholdFailures) return 0;
+  const steps = config.cooldownStepsMs;
+  const index = Math.min(n - config.cooldownThresholdFailures, steps.length - 1);
+  return steps[index] ?? 0;
+}
+function resolveFailSafe(actionClass, config = resolveSecurityConfig()) {
+  const cls = SECURITY_ACTION_CLASSES.includes(actionClass) ? actionClass : "sensitive";
+  const fallback = config.failSafePolicy[cls] || config.failSafePolicy.sensitive;
+  return Object.freeze({
+    fallback,
+    proceed: fallback === "proceed",
+    challenge: fallback === "challenge",
+    block: fallback === "block",
+    policyVersion: config.policyVersion
+  });
+}
+
 // auth-native/core/webauthn.mjs
 var encoder3 = new TextEncoder();
 var decoder = new TextDecoder("utf-8", { fatal: true });
@@ -3799,6 +3970,10 @@ var PASSKEY_CHALLENGE_TTL_MS = 5 * 60 * 1e3;
 var PASSKEY_TICKET_TTL_MS = 60 * 1e3;
 var ACCOUNT_VERIFICATION_TICKET_TTL_MS = 15 * 60 * 1e3;
 var PASSKEY_RP_ID = "admissionhub.pages.dev";
+var SECURITY_RISK_SCOPES = Object.freeze({
+  loginFailure: Object.freeze({ scope: "security-login-fail-email-15m", windowMs: 15 * 60 * 1e3 }),
+  rapidAuthIp: Object.freeze({ scope: "security-auth-ip-60s", windowMs: 60 * 1e3 })
+});
 var PASSKEY_REGISTRATION_LIMITS = Object.freeze([
   Object.freeze({ scope: "passkey-register-user-hour", source: "email", limit: 6, windowMs: 60 * 60 * 1e3 }),
   Object.freeze({ scope: "passkey-register-ip-hour", source: "ip", limit: 20, windowMs: 60 * 60 * 1e3 }),
@@ -3834,7 +4009,8 @@ var FIREBASE_OPERATION_LIMITS = Object.freeze({
   login: Object.freeze([
     Object.freeze({ scope: "firebase-login-email-15m", source: "email", limit: 12, windowMs: 15 * 60 * 1e3 }),
     Object.freeze({ scope: "firebase-login-ip-15m", source: "ip", limit: 60, windowMs: 15 * 60 * 1e3 }),
-    Object.freeze({ scope: "firebase-login-device-15m", source: "device", limit: 30, windowMs: 15 * 60 * 1e3 })
+    Object.freeze({ scope: "firebase-login-device-15m", source: "device", limit: 30, windowMs: 15 * 60 * 1e3 }),
+    Object.freeze({ scope: SECURITY_RISK_SCOPES.rapidAuthIp.scope, source: "ip", limit: 1e5, windowMs: SECURITY_RISK_SCOPES.rapidAuthIp.windowMs })
   ]),
   google: Object.freeze([
     Object.freeze({ scope: "firebase-google-ip-15m", source: "ip", limit: 60, windowMs: 15 * 60 * 1e3 }),
@@ -3891,6 +4067,11 @@ var requiredRepositoryMethods = Object.freeze([
   "completePasskeySession",
   "getPasskeyStatus",
   "removePasskey",
+  "isDeviceTrusted",
+  "registerTrustedDevice",
+  "revokeTrustedDevice",
+  "listTrustedDevices",
+  "getLoginRiskSignals",
   "ping",
   "cleanup",
   "nextExpiry"
@@ -3970,7 +4151,7 @@ var validChallengeId = (value) => {
   return challengeId;
 };
 var CloudflareNativeAuthEngine = class {
-  constructor({ repository, hmacSecret, now = () => Date.now(), cryptoImpl = globalThis.crypto, passkeyRpId = PASSKEY_RP_ID, passkeyOrigins = [`https://${PASSKEY_RP_ID}`] } = {}) {
+  constructor({ repository, hmacSecret, now = () => Date.now(), cryptoImpl = globalThis.crypto, passkeyRpId = PASSKEY_RP_ID, passkeyOrigins = [`https://${PASSKEY_RP_ID}`], securityConfigRaw = "" } = {}) {
     this.repository = assertRepository(repository);
     this.hmac = new AuthHmac(hmacSecret, cryptoImpl);
     this.vault = new AuthSecretVault(hmacSecret, cryptoImpl);
@@ -3978,6 +4159,7 @@ var CloudflareNativeAuthEngine = class {
     this.crypto = cryptoImpl;
     this.passkeyRpId = String(passkeyRpId || PASSKEY_RP_ID);
     this.passkeyOrigins = Object.freeze([...new Set(passkeyOrigins.map((value) => new URL(value).origin))]);
+    this.securityConfig = resolveSecurityConfig(securityConfigRaw);
   }
   async #references(email, context) {
     const values = await Promise.all([
@@ -4028,10 +4210,132 @@ var CloudflareNativeAuthEngine = class {
       eventType: `firebase-${operation}`,
       subjectRef: input.email ? refs.emailRef : null
     }));
+    let retryAfter = 0;
+    if (operation === "login" && input.email) {
+      const config = this.securityConfig;
+      const failScope = SECURITY_RISK_SCOPES.loginFailure;
+      const signals = await this.repository.getLoginRiskSignals({
+        emailScope: failScope.scope,
+        emailWindowMs: failScope.windowMs,
+        ipScope: SECURITY_RISK_SCOPES.rapidAuthIp.scope,
+        ipWindowMs: SECURITY_RISK_SCOPES.rapidAuthIp.windowMs,
+        emailRef: refs.emailRef,
+        ipRef: refs.ipRef,
+        now
+      });
+      const cooldownMs = cooldownForFailure(signals.failedLogins, config);
+      if (cooldownMs > 0) {
+        const windowStart = Math.floor(now / failScope.windowMs) * failScope.windowMs;
+        const resumeAt = windowStart + cooldownMs;
+        if (now < resumeAt) retryAfter = Math.max(1, Math.ceil((resumeAt - now) / 1e3));
+      }
+    }
     return Object.freeze({
       accepted: true,
       ...input.email ? { email, emailMask: maskAuthEmail(email) } : {},
+      ...retryAfter ? { retryAfter } : {},
       acceptedAt: now
+    });
+  }
+  // Phase 6 — record one failed login attempt (count-only risk scope).
+  // Called by the public handler only on credential-rejection, so the
+  // cooldown measures real failures, not total attempts.
+  async recordLoginFailure(input = {}, requestContext = {}) {
+    const email = input.email ? normalizeAuthEmail(input.email) : "";
+    if (!email) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+    const context = normalizeContext(requestContext);
+    const refs = await this.#references(email, context);
+    const now = Number(this.now());
+    const failScope = SECURITY_RISK_SCOPES.loginFailure;
+    errorFromRepository(await this.repository.consumeLimits({
+      limits: [Object.freeze({ scope: failScope.scope, key: refs.emailRef, limit: 1e5, windowMs: failScope.windowMs })],
+      now,
+      eventType: "login-failed",
+      subjectRef: refs.emailRef
+    }));
+    const config = this.securityConfig;
+    const signals = await this.repository.getLoginRiskSignals({
+      emailScope: failScope.scope,
+      emailWindowMs: failScope.windowMs,
+      ipScope: SECURITY_RISK_SCOPES.rapidAuthIp.scope,
+      ipWindowMs: SECURITY_RISK_SCOPES.rapidAuthIp.windowMs,
+      emailRef: refs.emailRef,
+      ipRef: refs.ipRef,
+      now
+    });
+    const cooldownMs = cooldownForFailure(signals.failedLogins, config);
+    let retryAfter = 0;
+    if (cooldownMs > 0) {
+      const windowStart = Math.floor(now / failScope.windowMs) * failScope.windowMs;
+      const resumeAt = windowStart + cooldownMs;
+      if (now < resumeAt) retryAfter = Math.max(1, Math.ceil((resumeAt - now) / 1e3));
+    }
+    return Object.freeze({ accepted: true, ...retryAfter ? { retryAfter } : {} });
+  }
+  // Phase 6 — risk decision for a login attempt (§3, §4, §30).
+  //
+  // Inputs are already-normalized server-side facts (never raw PII). The
+  // decision is fail-safe: if evaluation cannot complete, sensitive actions
+  // fall toward a challenge — never a silent proceed (§30-§31).
+  async #loginRiskDecision({ email, subject, refs, now, verified, newDevice }) {
+    const config = this.securityConfig;
+    const signals = {
+      accountState: "active",
+      failedLogins: 0,
+      rapidRequests: 0,
+      newDevice: newDevice === true,
+      recoveryActive: false,
+      // v1: recovery flows are not yet DO-tracked
+      unverifiedAccount: verified !== true
+    };
+    let trusted = false;
+    try {
+      const counts = await this.repository.getLoginRiskSignals({
+        emailScope: SECURITY_RISK_SCOPES.loginFailure.scope,
+        emailWindowMs: SECURITY_RISK_SCOPES.loginFailure.windowMs,
+        ipScope: SECURITY_RISK_SCOPES.rapidAuthIp.scope,
+        ipWindowMs: SECURITY_RISK_SCOPES.rapidAuthIp.windowMs,
+        emailRef: refs.emailRef,
+        ipRef: refs.ipRef,
+        now
+      });
+      signals.failedLogins = counts.failedLogins;
+      signals.rapidRequests = counts.rapidRequests;
+      const subjectRef = await this.hmac.hex("firebase-subject-v1", subject);
+      const identity = await this.repository.getFirebaseIdentity({ subjectRef, emailRef: refs.emailRef });
+      if (identity.user) {
+        trusted = Boolean((await this.repository.isDeviceTrusted({
+          userId: identity.user.id,
+          deviceRef: refs.deviceRef,
+          now
+        })).trusted);
+        const state = await this.repository.getAccountState({ userId: identity.user.id, now });
+        signals.accountState = state.status || "active";
+        if (trusted) signals.newDevice = false;
+      }
+    } catch {
+      const failSafe = resolveFailSafe("sensitive", config);
+      return Object.freeze({
+        level: "ELEVATED",
+        trusted: false,
+        challenge: failSafe.challenge ? "new-device" : null,
+        block: failSafe.block,
+        sessionTtlMs: config.riskSessionPolicy.ELEVATED.sessionTtlMs,
+        trustOffer: false,
+        policyVersion: config.policyVersion
+      });
+    }
+    const risk = evaluateRisk(signals, config);
+    const actions = risk.actions;
+    const challenge = actions.block ? null : trusted ? null : actions.challenge;
+    return Object.freeze({
+      level: risk.level,
+      trusted,
+      challenge,
+      block: actions.block === true,
+      sessionTtlMs: actions.sessionTtlMs,
+      trustOffer: actions.trustOffer === true,
+      policyVersion: risk.policyVersion
     });
   }
   async establishFirebaseSession(input = {}, requestContext = {}) {
@@ -4040,7 +4344,27 @@ var CloudflareNativeAuthEngine = class {
     const context = normalizeContext(requestContext);
     const refs = await this.#references(email, context);
     const now = Number(this.now());
-    const sessionTtlMs = input.remember === false ? REMEMBER_OFF_TTL_MS : SESSION_TTL_MS;
+    const decision = await this.#loginRiskDecision({
+      email,
+      subject,
+      refs,
+      now,
+      verified: input.verified === true,
+      newDevice: input.newDevice === true
+    });
+    if (decision.block) failAuth(AUTH_ERROR_CODES.ACCOUNT_DISABLED);
+    if (decision.challenge && input.securityChallenge === true) {
+      return Object.freeze({
+        challenge: Object.freeze({
+          type: decision.challenge,
+          level: decision.level,
+          policyVersion: decision.policyVersion
+        })
+      });
+    }
+    const rememberTtl = input.remember === false ? REMEMBER_OFF_TTL_MS : SESSION_TTL_MS;
+    const riskTtl = Number(decision.sessionTtlMs) > 0 ? Number(decision.sessionTtlMs) : null;
+    const sessionTtlMs = riskTtl ? Math.min(rememberTtl, riskTtl) : rememberTtl;
     const sessionToken = randomToken(32, this.crypto);
     const userIdCandidate = `usr_${randomToken(18, this.crypto)}`;
     const [subjectRef, sessionRef] = await Promise.all([
@@ -4058,13 +4382,21 @@ var CloudflareNativeAuthEngine = class {
       deviceRef: refs.deviceRef,
       userAgent: context.userAgent,
       now,
-      sessionExpiresAt: now + sessionTtlMs
+      sessionExpiresAt: now + sessionTtlMs,
+      loginEvent: decision.trusted ? "login-trusted-device" : null,
+      eventExtras: decision.trusted ? { deviceRef: refs.deviceRef, policyVersion: decision.policyVersion } : {}
     }));
     return Object.freeze({
       sessionToken,
       sessionExpiresAt: now + sessionTtlMs,
       user: publicUser(established.user),
-      created: Boolean(established.created)
+      created: Boolean(established.created),
+      security: Object.freeze({
+        level: decision.level,
+        trusted: decision.trusted === true,
+        trustOffer: decision.trustOffer === true,
+        policyVersion: decision.policyVersion
+      })
     });
   }
   async getFirebaseSession(sessionToken, input = {}) {
@@ -4086,6 +4418,7 @@ var CloudflareNativeAuthEngine = class {
     if (refreshToken.length < 20 || refreshToken.length > 4096 || /[\r\n\u0000;]/.test(refreshToken)) {
       failAuth(AUTH_ERROR_CODES.TELEGRAM_VERIFICATION_INVALID);
     }
+    const purpose = Object.values(SECURITY_PURPOSES).includes(input.purpose) ? input.purpose : null;
     const identity = await this.#firebaseIdentity(input, requestContext, AUTH_ERROR_CODES.TELEGRAM_VERIFICATION_INVALID);
     const now = Number(this.now());
     const verificationTicket = randomToken(32, this.crypto);
@@ -4101,6 +4434,7 @@ var CloudflareNativeAuthEngine = class {
       emailRef: identity.refs.emailRef,
       emailMask: maskAuthEmail(identity.email),
       refreshCipher,
+      purpose,
       ipRef: identity.refs.ipRef,
       deviceRef: identity.refs.deviceRef,
       limits: this.#limits(ACCOUNT_VERIFICATION_LIMITS, identity.refs),
@@ -4153,6 +4487,7 @@ var CloudflareNativeAuthEngine = class {
     const identity = await this.#firebaseIdentity(input, requestContext, AUTH_ERROR_CODES.TELEGRAM_VERIFICATION_INVALID);
     const now = Number(this.now());
     const sessionToken = randomToken(32, this.crypto);
+    const config = this.securityConfig;
     const [ticketRef, sessionRef] = await Promise.all([
       this.hmac.hex("session-ref-v1", token),
       this.hmac.hex("session-ref-v1", sessionToken)
@@ -4166,13 +4501,19 @@ var CloudflareNativeAuthEngine = class {
       deviceRef: identity.refs.deviceRef,
       userAgent: identity.context.userAgent,
       now,
-      sessionExpiresAt: now + SESSION_TTL_MS
+      sessionExpiresAt: now + SESSION_TTL_MS,
+      trust: {
+        ttlMs: config.trustTtlMs,
+        maxDevices: config.trustMaxDevicesPerUser,
+        policyVersion: config.policyVersion
+      }
     }));
     return Object.freeze({
       sessionToken,
       sessionExpiresAt: now + SESSION_TTL_MS,
       user: publicUser(completed.user),
-      created: false
+      created: false,
+      trusted: completed.trusted === true
     });
   }
   async getFirebaseIdentity(input = {}, requestContext = {}) {
@@ -4449,6 +4790,80 @@ var CloudflareNativeAuthEngine = class {
     const sessionRef = await this.hmac.hex("session-ref-v1", token);
     const result = await this.repository.revokeSession({ sessionRef, now: Number(this.now()) });
     return Object.freeze({ revoked: Boolean(result?.revoked) });
+  }
+  // Phase 6 — device trust management (§5-§7). All three require a valid
+  // session for the caller's own account; trust never touches other users.
+  async trustCurrentDevice(input = {}, requestContext = {}) {
+    const identity = await this.#firebaseIdentity(input, requestContext, AUTH_ERROR_CODES.SESSION_INVALID);
+    const now = Number(this.now());
+    const session = errorFromRepository(await this.repository.getExternalSession({
+      sessionRef: identity.sessionRef,
+      provider: "firebase",
+      subjectRef: identity.subjectRef,
+      emailRef: identity.refs.emailRef,
+      now
+    }));
+    const config = this.securityConfig;
+    const result = errorFromRepository(await this.repository.registerTrustedDevice({
+      userId: session.user.id,
+      deviceRef: identity.refs.deviceRef,
+      browserClass: identity.context.userAgent,
+      now,
+      ttlMs: config.trustTtlMs,
+      maxDevices: config.trustMaxDevicesPerUser,
+      policyVersion: config.policyVersion
+    }));
+    return Object.freeze({ trusted: true, expiresAt: result.expiresAt, policyVersion: config.policyVersion });
+  }
+  async revokeTrustedDevice(input = {}, requestContext = {}) {
+    const identity = await this.#firebaseIdentity(input, requestContext, AUTH_ERROR_CODES.SESSION_INVALID);
+    const now = Number(this.now());
+    const session = errorFromRepository(await this.repository.getExternalSession({
+      sessionRef: identity.sessionRef,
+      provider: "firebase",
+      subjectRef: identity.subjectRef,
+      emailRef: identity.refs.emailRef,
+      now
+    }));
+    const config = this.securityConfig;
+    const requested = String(input.deviceRef || "").trim();
+    let deviceRef;
+    if (input.scope === "all") deviceRef = null;
+    else if (input.scope === "current" || !requested) deviceRef = identity.refs.deviceRef;
+    else if (/^[A-Za-z0-9_-]{16,128}$/.test(requested)) deviceRef = requested;
+    else failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+    const result = errorFromRepository(await this.repository.revokeTrustedDevice({
+      userId: session.user.id,
+      deviceRef,
+      now,
+      policyVersion: config.policyVersion
+    }));
+    return Object.freeze({ revoked: Number(result.revoked || 0) });
+  }
+  async getSecurityState(input = {}, requestContext = {}) {
+    const identity = await this.#firebaseIdentity(input, requestContext, AUTH_ERROR_CODES.SESSION_INVALID);
+    const now = Number(this.now());
+    const session = errorFromRepository(await this.repository.getExternalSession({
+      sessionRef: identity.sessionRef,
+      provider: "firebase",
+      subjectRef: identity.subjectRef,
+      emailRef: identity.refs.emailRef,
+      now
+    }));
+    const config = this.securityConfig;
+    const [state, devices, trusted] = await Promise.all([
+      this.repository.getAccountState({ userId: session.user.id, now }),
+      this.repository.listTrustedDevices({ userId: session.user.id, now }),
+      this.repository.isDeviceTrusted({ userId: session.user.id, deviceRef: identity.refs.deviceRef, now })
+    ]);
+    return Object.freeze({
+      userId: session.user.id,
+      accountStatus: state.status,
+      currentDeviceTrusted: trusted.trusted === true,
+      devices,
+      now,
+      policyVersion: config.policyVersion
+    });
   }
   ping() {
     return this.repository.ping();
@@ -5285,7 +5700,10 @@ var authSuccess = (request, established, refreshToken, context, verification = {
     telegramVerified,
     created: Boolean(established.created),
     user: established.user,
-    session: { expiresAt: established.sessionExpiresAt }
+    // Phase 6 — security decision travels with the session: trustOffer drives
+    // the "trust this device 30 days" prompt (Chunk 3 client); HIGH risk
+    // shortens expiresAt server-side.
+    session: { expiresAt: established.sessionExpiresAt, security: established.security || null }
   }, { "Set-Cookie": [...sessionCookies(established, refreshToken, context), ...extraCookies] });
 };
 var googleEndpointReady = (env) => ["canary", "enabled"].includes(String(env?.GOOGLE_AUTH_ACTIVATION || ""));
@@ -5648,12 +6066,25 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         if (!provider.configured) throw new NativeAuthError(AUTH_ERROR_CODES.NOT_CONFIGURED);
         const input = credentials(await readJson(request));
         const prepared = await callAuthority(env, "/internal/firebase/rate", { input: { operation: "login", email: input.email }, context });
+        if (Number(prepared?.retryAfter) > 0) {
+          return json3(request, 429, { ok: false, error: { code: "RATE_LIMITED", message: "অনেকবার চেষ্টা হয়েছে—একটু পরে আবার চেষ্টা করুন।" } }, { "Retry-After": String(prepared.retryAfter) });
+        }
         let signed;
         let user;
+        let failureRetryAfter = 0;
         try {
           signed = await provider.signIn(prepared.email, input.password);
         } catch (cause) {
-          throw providerError(cause, "signin");
+          if (cause instanceof FirebaseRequestError && ["INVALID_LOGIN_CREDENTIALS", "EMAIL_NOT_FOUND", "INVALID_PASSWORD"].includes(cause.reason)) {
+            try {
+              const recorded = await callAuthority(env, "/internal/firebase/login/failure", { input: { email: prepared.email }, context });
+              failureRetryAfter = Number(recorded?.retryAfter || 0);
+            } catch {
+            }
+          }
+          const error = providerError(cause, "signin");
+          if (failureRetryAfter > 0) error.retryAfter = Math.max(Number(error.retryAfter || 0), failureRetryAfter);
+          throw error;
         }
         try {
           user = await provider.lookup(signed.idToken);
@@ -5706,7 +6137,61 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           }
         }
         if (!user.emailVerified && !telegramVerified) throw new NativeAuthError(AUTH_ERROR_CODES.EMAIL_NOT_VERIFIED);
-        const established = await callAuthority(env, "/internal/firebase/session/create", { input: { email: user.email, subject: user.subject, remember: input.remember }, context });
+        const established = await callAuthority(env, "/internal/firebase/session/create", {
+          input: {
+            email: user.email,
+            subject: user.subject,
+            remember: input.remember,
+            verified: user.emailVerified === true || telegramVerified === true,
+            newDevice: context.isNewDevice === true,
+            securityChallenge: true
+          },
+          context
+        });
+        if (established.challenge) {
+          let ticket;
+          try {
+            const temporaryRefreshMaterial = signed.refreshToken;
+            ticket = await callAuthority(env, "/internal/firebase/account-verification/begin", {
+              input: {
+                email: user.email,
+                subject: user.subject,
+                refreshToken: temporaryRefreshMaterial,
+                purpose: "new-device"
+              },
+              context
+            });
+          } catch {
+            throw new NativeAuthError(AUTH_ERROR_CODES.VERIFICATION_UNAVAILABLE, {
+              message: "নিরাপত্তার জন্য এই ডিভাইসটি এখন যাচাই করা যাচ্ছে না—একটু পরে আবার চেষ্টা করুন।"
+            });
+          }
+          return json3(request, 202, {
+            ok: true,
+            authenticated: false,
+            accountVerified: true,
+            verification: {
+              sent: false,
+              selectionRequired: true,
+              emailMasked: prepared.emailMask,
+              reason: "new-device",
+              options: {
+                email: { available: true, verifiesEmailOwnership: true },
+                telegram: { available: telegramAvailable, verifiesEmailOwnership: false }
+              }
+            },
+            security: {
+              challenge: established.challenge.type,
+              level: established.challenge.level,
+              policyVersion: established.challenge.policyVersion
+            }
+          }, {
+            "Set-Cookie": [
+              ...context.isNewDevice ? [deviceCookie(context.deviceId)] : [],
+              verificationCookie(ticket.verificationTicket)
+            ]
+          });
+        }
         return authSuccess(request, established, signed.refreshToken, context, {
           emailVerified: user.emailVerified === true,
           telegramVerified
@@ -6741,6 +7226,7 @@ var SqliteAuthRepository = class {
         email_ref TEXT NOT NULL,
         refresh_cipher TEXT NOT NULL,
         state TEXT NOT NULL CHECK(state IN ('active','consumed','expired','superseded')),
+        purpose TEXT,
         created_at INTEGER NOT NULL,
         expires_at INTEGER NOT NULL,
         consumed_at INTEGER,
@@ -6821,9 +7307,27 @@ var SqliteAuthRepository = class {
         event_type TEXT NOT NULL,
         subject_ref TEXT,
         user_id TEXT,
-        occurred_at INTEGER NOT NULL
+        occurred_at INTEGER NOT NULL,
+        device_ref TEXT,
+        purpose TEXT,
+        policy_version TEXT
       )`,
       `CREATE INDEX IF NOT EXISTS auth_security_events_time ON auth_security_events(occurred_at DESC)`,
+      // Phase 6 — device trust (§5-§7). Opaque HMAC device refs only; no
+      // fingerprinting, no location. A trusted device skips the new-device
+      // challenge for its TTL.
+      `CREATE TABLE IF NOT EXISTS auth_trusted_devices (
+        user_id TEXT NOT NULL,
+        device_ref TEXT NOT NULL,
+        browser_class TEXT NOT NULL,
+        trusted_at INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL,
+        revoked_at INTEGER,
+        policy_version TEXT,
+        PRIMARY KEY(user_id, device_ref),
+        FOREIGN KEY(user_id) REFERENCES auth_users(user_id)
+      )`,
+      `CREATE INDEX IF NOT EXISTS auth_trusted_devices_expiry ON auth_trusted_devices(expires_at)`,
       // Phase 3 — lifecycle overlay. Existing auth_users rows stay untouched;
       // users without a state row implicitly hold the legacy 'active' state.
       `CREATE TABLE IF NOT EXISTS auth_account_state (
@@ -6837,7 +7341,102 @@ var SqliteAuthRepository = class {
       `CREATE INDEX IF NOT EXISTS auth_account_state_status ON auth_account_state(status)`
     ];
     for (const statement of statements) this.sql.exec(statement);
-    this.sql.exec("INSERT INTO auth_meta(key,value) VALUES('schema_version','5') ON CONFLICT(key) DO UPDATE SET value=excluded.value");
+    const eventColumns = new Set(this.#rows("PRAGMA table_info(auth_security_events)").map((row) => row.name));
+    if (!eventColumns.has("device_ref")) this.sql.exec("ALTER TABLE auth_security_events ADD COLUMN device_ref TEXT");
+    if (!eventColumns.has("purpose")) this.sql.exec("ALTER TABLE auth_security_events ADD COLUMN purpose TEXT");
+    if (!eventColumns.has("policy_version")) this.sql.exec("ALTER TABLE auth_security_events ADD COLUMN policy_version TEXT");
+    const ticketColumns = new Set(this.#rows("PRAGMA table_info(auth_account_verification_tickets)").map((row) => row.name));
+    if (!ticketColumns.has("purpose")) this.sql.exec("ALTER TABLE auth_account_verification_tickets ADD COLUMN purpose TEXT");
+    this.sql.exec("INSERT INTO auth_meta(key,value) VALUES('schema_version','6') ON CONFLICT(key) DO UPDATE SET value=excluded.value");
+  }
+  // Phase 6 — device trust lifecycle (§5-§7). Refs are opaque HMAC values;
+  // nothing here stores raw device ids, IPs or user agents.
+  #storeTrustedDevice({ userId, deviceRef, browserClass, now, ttlMs, policyVersion, maxDevices }) {
+    const browser = String(browserClass || "").slice(0, 40) || "unknown";
+    const expiresAt = now + Number(ttlMs);
+    const active = this.#rows(
+      "SELECT device_ref AS deviceRef FROM auth_trusted_devices WHERE user_id=? AND revoked_at IS NULL AND expires_at>? ORDER BY trusted_at ASC, device_ref ASC",
+      userId,
+      now
+    );
+    const max = Math.max(1, Number(maxDevices) || 10);
+    if (active.length >= max) {
+      const overflow = active.slice(0, active.length - max + 1);
+      for (const row of overflow) {
+        this.sql.exec("UPDATE auth_trusted_devices SET revoked_at=? WHERE user_id=? AND device_ref=? AND revoked_at IS NULL", now, userId, row.deviceRef);
+      }
+      this.#event("device-trust-evicted", null, userId, now, { policyVersion });
+    }
+    this.sql.exec(
+      `INSERT INTO auth_trusted_devices(user_id,device_ref,browser_class,trusted_at,expires_at,revoked_at,policy_version)
+       VALUES(?,?,?,?,?,NULL,?)
+       ON CONFLICT(user_id,device_ref) DO UPDATE SET
+         browser_class=excluded.browser_class, trusted_at=excluded.trusted_at, expires_at=excluded.expires_at,
+         revoked_at=NULL, policy_version=excluded.policy_version`,
+      userId,
+      deviceRef,
+      browser,
+      now,
+      expiresAt,
+      policyVersion || null
+    );
+    this.#event("device-trusted", null, userId, now, { deviceRef, policyVersion });
+    return expiresAt;
+  }
+  async isDeviceTrusted({ userId, deviceRef, now }) {
+    const row = this.#one(
+      "SELECT 1 AS ok FROM auth_trusted_devices WHERE user_id=? AND device_ref=? AND revoked_at IS NULL AND expires_at>?",
+      userId,
+      deviceRef,
+      now
+    );
+    return Object.freeze({ trusted: Boolean(row) });
+  }
+  async registerTrustedDevice({ userId, deviceRef, browserClass, now, ttlMs, policyVersion, maxDevices }) {
+    return this.#transaction(() => {
+      const user = this.#one("SELECT user_id AS id FROM auth_users WHERE user_id=?", userId);
+      if (!user) return { error: AUTH_ERROR_CODES.ACCOUNT_NOT_FOUND };
+      if (!deviceRef || deviceRef.length > 128) return { error: AUTH_ERROR_CODES.INVALID_INPUT };
+      const expiresAt = this.#storeTrustedDevice({ userId, deviceRef, browserClass, now, ttlMs, policyVersion, maxDevices });
+      return Object.freeze({ registered: true, expiresAt });
+    });
+  }
+  async revokeTrustedDevice({ userId, deviceRef, now, policyVersion }) {
+    return this.#transaction(() => {
+      const user = this.#one("SELECT user_id AS id FROM auth_users WHERE user_id=?", userId);
+      if (!user) return { error: AUTH_ERROR_CODES.ACCOUNT_NOT_FOUND };
+      const rows = deviceRef ? this.#rows("SELECT device_ref AS deviceRef FROM auth_trusted_devices WHERE user_id=? AND device_ref=? AND revoked_at IS NULL", userId, deviceRef) : this.#rows("SELECT device_ref AS deviceRef FROM auth_trusted_devices WHERE user_id=? AND revoked_at IS NULL", userId);
+      if (!rows.length) return Object.freeze({ revoked: 0 });
+      if (deviceRef) this.sql.exec("UPDATE auth_trusted_devices SET revoked_at=? WHERE user_id=? AND device_ref=? AND revoked_at IS NULL", now, userId, deviceRef);
+      else this.sql.exec("UPDATE auth_trusted_devices SET revoked_at=? WHERE user_id=? AND revoked_at IS NULL", now, userId);
+      this.#event("device-revoked", null, userId, now, { deviceRef: deviceRef || null, policyVersion });
+      return Object.freeze({ revoked: rows.length });
+    });
+  }
+  async listTrustedDevices({ userId, now }) {
+    const rows = this.#rows(
+      "SELECT device_ref AS deviceRef,browser_class AS browserClass,trusted_at AS trustedAt,expires_at AS expiresAt FROM auth_trusted_devices WHERE user_id=? AND revoked_at IS NULL AND expires_at>? ORDER BY trusted_at DESC",
+      userId,
+      now
+    );
+    return Object.freeze(rows.map((row) => Object.freeze({
+      deviceRef: String(row.deviceRef),
+      browserClass: String(row.browserClass || "unknown"),
+      trustedAt: Number(row.trustedAt),
+      expiresAt: Number(row.expiresAt)
+    })));
+  }
+  // Risk signals for the login decision (§3-§4), derived from auth_rate_limits
+  // state only — no new table, no raw identifiers leave the DO.
+  async getLoginRiskSignals({ emailScope, emailWindowMs, ipScope, ipWindowMs, emailRef, ipRef, now }) {
+    const emailStart = Math.floor(Number(now) / Number(emailWindowMs)) * Number(emailWindowMs);
+    const ipStart = Math.floor(Number(now) / Number(ipWindowMs)) * Number(ipWindowMs);
+    const emailRow = this.#one("SELECT count FROM auth_rate_limits WHERE scope=? AND bucket_key=? AND window_start=?", emailScope, emailRef, emailStart);
+    const ipRow = this.#one("SELECT count FROM auth_rate_limits WHERE scope=? AND bucket_key=? AND window_start=?", ipScope, ipRef, ipStart);
+    return Object.freeze({
+      failedLogins: Number(emailRow?.count || 0),
+      rapidRequests: Number(ipRow?.count || 0)
+    });
   }
   // Read-only reconciliation snapshot (Phase 3). HMAC refs only — never
   // emails, tokens or raw provider subjects.
@@ -6958,13 +7557,16 @@ var SqliteAuthRepository = class {
     }
     return denied;
   }
-  #event(eventType, subjectRef, userId, now) {
+  #event(eventType, subjectRef, userId, now, extras = {}) {
     this.sql.exec(
-      "INSERT INTO auth_security_events(event_type,subject_ref,user_id,occurred_at) VALUES(?,?,?,?)",
+      "INSERT INTO auth_security_events(event_type,subject_ref,user_id,occurred_at,device_ref,purpose,policy_version) VALUES(?,?,?,?,?,?,?)",
       String(eventType).slice(0, 48),
       subjectRef || null,
       userId || null,
-      now
+      now,
+      extras.deviceRef || null,
+      extras.purpose || null,
+      extras.policyVersion || null
     );
   }
   #profileForUser(userId) {
@@ -7145,7 +7747,13 @@ var SqliteAuthRepository = class {
         input.deviceRef,
         input.userAgent
       );
-      this.#event(created ? "firebase-account-linked" : "firebase-login", input.subjectRef, user.id, input.now);
+      this.#event(
+        input.loginEvent || (created ? "firebase-account-linked" : "firebase-login"),
+        input.subjectRef,
+        user.id,
+        input.now,
+        input.eventExtras || {}
+      );
       return { established: true, created, user };
     });
   }
@@ -7234,14 +7842,15 @@ var SqliteAuthRepository = class {
       );
       this.sql.exec(
         `INSERT INTO auth_account_verification_tickets(
-          ticket_ref,user_id,subject_ref,email_ref,refresh_cipher,state,created_at,expires_at,
+          ticket_ref,user_id,subject_ref,email_ref,refresh_cipher,state,purpose,created_at,expires_at,
           consumed_at,ip_ref,device_ref
-        ) VALUES(?,?,?,?,?,'active',?,?,NULL,?,?)`,
+        ) VALUES(?,?,?,?,?,'active',?,?,?,NULL,?,?)`,
         input.ticketRef,
         user.id,
         input.subjectRef,
         input.emailRef,
         input.refreshCipher,
+        input.purpose || null,
         input.now,
         input.expiresAt,
         input.ipRef,
@@ -7276,7 +7885,7 @@ var SqliteAuthRepository = class {
     return this.#transaction(() => {
       const row = this.#one(
         `SELECT t.user_id AS userId,t.subject_ref AS subjectRef,t.email_ref AS emailRef,
-          t.state,t.expires_at AS expiresAt,u.email_mask AS emailMask,u.status,u.created_at AS createdAt
+          t.state,t.purpose AS purpose,t.expires_at AS expiresAt,u.email_mask AS emailMask,u.status,u.created_at AS createdAt
          FROM auth_account_verification_tickets t JOIN auth_users u ON u.user_id=t.user_id
          WHERE t.ticket_ref=? AND t.device_ref=?`,
         input.ticketRef,
@@ -7305,9 +7914,29 @@ var SqliteAuthRepository = class {
         input.userAgent
       );
       this.sql.exec("UPDATE auth_users SET last_login_at=? WHERE user_id=?", input.now, row.userId);
-      this.#event("firebase-telegram-verification-session", input.subjectRef, row.userId, input.now);
+      let trusted = false;
+      if (row.purpose === "new-device" && input.trust && Number(input.trust.ttlMs) > 0) {
+        this.#storeTrustedDevice({
+          userId: row.userId,
+          deviceRef: input.deviceRef,
+          browserClass: input.userAgent,
+          now: input.now,
+          ttlMs: input.trust.ttlMs,
+          policyVersion: input.trust.policyVersion,
+          maxDevices: input.trust.maxDevices
+        });
+        trusted = true;
+      }
+      this.#event(
+        row.purpose === "new-device" ? "new-device-challenge-completed" : "firebase-telegram-verification-session",
+        input.subjectRef,
+        row.userId,
+        input.now,
+        row.purpose ? { deviceRef: input.deviceRef, purpose: row.purpose, policyVersion: input.trust?.policyVersion } : {}
+      );
       return {
         established: true,
+        trusted,
         user: { id: row.userId, emailRef: row.emailRef, emailMask: row.emailMask, status: row.status, createdAt: Number(row.createdAt) }
       };
     });
@@ -7724,6 +8353,7 @@ var SqliteAuthRepository = class {
       this.sql.exec("DELETE FROM auth_passkey_tickets WHERE expires_at<=?", now);
       this.sql.exec("DELETE FROM auth_passkey_credentials WHERE status='revoked' AND revoked_at<?", now - EVENT_RETENTION_MS);
       this.sql.exec("DELETE FROM auth_rate_limits WHERE expires_at<=?", now);
+      this.sql.exec("DELETE FROM auth_trusted_devices WHERE expires_at<?", now - DAY_MS);
       this.sql.exec("DELETE FROM auth_sessions WHERE expires_at<=? OR revoked_at IS NOT NULL", now);
       this.sql.exec("DELETE FROM auth_security_events WHERE occurred_at<?", now - EVENT_RETENTION_MS);
       this.sql.exec("INSERT INTO auth_meta(key,value) VALUES('last_cleanup',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", String(now));
@@ -9604,7 +10234,8 @@ var AdmissionAuthAuthority = class {
       this.verificationRepository.migrate();
       this.engine = new CloudflareNativeAuthEngine({
         repository: this.repository,
-        hmacSecret: env.AUTH_HMAC_SECRET
+        hmacSecret: env.AUTH_HMAC_SECRET,
+        securityConfigRaw: env.SECURITY_CONFIG_JSON
       });
       const persistedVerificationConfig = await this.verificationRepository.getRuntimeConfig();
       this.verification = new VerificationOrchestrator({
@@ -9844,6 +10475,24 @@ var AdmissionAuthAuthority = class {
         const session = await this.engine.getFirebaseSession(body.sessionToken, body.input);
         const result = await this.repository.revokeUserSessions({ userId: session.user.id, now: Date.now() });
         if (result.error) throw new NativeAuthError(result.error);
+        return response2(200, { ok: true, result });
+      }
+      if (url.pathname === "/internal/firebase/login/failure") {
+        const result = await this.engine.recordLoginFailure(body.input, body.context);
+        return response2(200, { ok: true, result });
+      }
+      if (url.pathname === "/internal/security/device/trust") {
+        const result = await this.engine.trustCurrentDevice(body.input, body.context);
+        await this.#scheduleExpiry();
+        return response2(200, { ok: true, result });
+      }
+      if (url.pathname === "/internal/security/device/revoke") {
+        const result = await this.engine.revokeTrustedDevice(body.input, body.context);
+        await this.#scheduleExpiry();
+        return response2(200, { ok: true, result });
+      }
+      if (url.pathname === "/internal/security/state") {
+        const result = await this.engine.getSecurityState(body.input, body.context);
         return response2(200, { ok: true, result });
       }
       return response2(404, { ok: false, error: { code: "NOT_FOUND" } });

@@ -1,4 +1,4 @@
-import { AUTH_ERROR_CODES, errorFromRepository, failAuth } from './errors.mjs';
+import { AUTH_ERROR_CODES, errorFromRepository, failAuth, NativeAuthError } from './errors.mjs';
 import {
   AuthHmac,
   coarseUserAgent,
@@ -6,6 +6,11 @@ import {
   normalizeAuthEmail,
   randomToken
 } from './crypto.mjs';
+import {
+  SECURITY_PURPOSES,
+  resolveSecurityConfig
+} from './security-config.mjs';
+import { cooldownForFailure, evaluateRisk, resolveFailSafe } from './security-policy.mjs';
 import { AuthSecretVault } from './secret-vault.mjs';
 import {
   PASSKEY_ALGORITHM,
@@ -23,6 +28,14 @@ export const PASSKEY_CHALLENGE_TTL_MS = 5 * 60 * 1000;
 export const PASSKEY_TICKET_TTL_MS = 60 * 1000;
 export const ACCOUNT_VERIFICATION_TICKET_TTL_MS = 15 * 60 * 1000;
 export const PASSKEY_RP_ID = 'admissionhub.pages.dev';
+
+// Phase 6 — risk-signal scopes stored in the existing auth_rate_limits table
+// (no new table). Both are count-only: the huge limits mean they measure,
+// they never hard-block.
+export const SECURITY_RISK_SCOPES = Object.freeze({
+  loginFailure: Object.freeze({ scope: 'security-login-fail-email-15m', windowMs: 15 * 60 * 1000 }),
+  rapidAuthIp: Object.freeze({ scope: 'security-auth-ip-60s', windowMs: 60 * 1000 })
+});
 
 const PASSKEY_REGISTRATION_LIMITS = Object.freeze([
   Object.freeze({ scope: 'passkey-register-user-hour', source: 'email', limit: 6, windowMs: 60 * 60 * 1000 }),
@@ -62,7 +75,8 @@ const FIREBASE_OPERATION_LIMITS = Object.freeze({
   login: Object.freeze([
     Object.freeze({ scope: 'firebase-login-email-15m', source: 'email', limit: 12, windowMs: 15 * 60 * 1000 }),
     Object.freeze({ scope: 'firebase-login-ip-15m', source: 'ip', limit: 60, windowMs: 15 * 60 * 1000 }),
-    Object.freeze({ scope: 'firebase-login-device-15m', source: 'device', limit: 30, windowMs: 15 * 60 * 1000 })
+    Object.freeze({ scope: 'firebase-login-device-15m', source: 'device', limit: 30, windowMs: 15 * 60 * 1000 }),
+    Object.freeze({ scope: SECURITY_RISK_SCOPES.rapidAuthIp.scope, source: 'ip', limit: 100_000, windowMs: SECURITY_RISK_SCOPES.rapidAuthIp.windowMs })
   ]),
   google: Object.freeze([
     Object.freeze({ scope: 'firebase-google-ip-15m', source: 'ip', limit: 60, windowMs: 15 * 60 * 1000 }),
@@ -104,6 +118,8 @@ const requiredRepositoryMethods = Object.freeze([
   'beginPasskeyRegistration', 'getPasskeyRegistrationChallenge', 'finishPasskeyRegistration',
   'beginPasskeyAuthentication', 'getPasskeyAuthenticationMaterial', 'issuePasskeyTicket',
   'completePasskeySession', 'getPasskeyStatus', 'removePasskey',
+  'isDeviceTrusted', 'registerTrustedDevice', 'revokeTrustedDevice', 'listTrustedDevices',
+  'getLoginRiskSignals',
   'ping', 'cleanup', 'nextExpiry'
 ]);
 
@@ -192,7 +208,7 @@ const validChallengeId = value => {
 };
 
 export class CloudflareNativeAuthEngine {
-  constructor({ repository, hmacSecret, now = () => Date.now(), cryptoImpl = globalThis.crypto, passkeyRpId = PASSKEY_RP_ID, passkeyOrigins = [`https://${PASSKEY_RP_ID}`] } = {}) {
+  constructor({ repository, hmacSecret, now = () => Date.now(), cryptoImpl = globalThis.crypto, passkeyRpId = PASSKEY_RP_ID, passkeyOrigins = [`https://${PASSKEY_RP_ID}`], securityConfigRaw = '' } = {}) {
     this.repository = assertRepository(repository);
     this.hmac = new AuthHmac(hmacSecret, cryptoImpl);
     this.vault = new AuthSecretVault(hmacSecret, cryptoImpl);
@@ -200,6 +216,10 @@ export class CloudflareNativeAuthEngine {
     this.crypto = cryptoImpl;
     this.passkeyRpId = String(passkeyRpId || PASSKEY_RP_ID);
     this.passkeyOrigins = Object.freeze([...new Set(passkeyOrigins.map(value => new URL(value).origin))]);
+    // Phase 6 — effective security config (env override via
+    // SECURITY_CONFIG_JSON is validated; bad overrides fall back to the
+    // frozen conservative baseline).
+    this.securityConfig = resolveSecurityConfig(securityConfigRaw);
   }
 
   async #references(email, context) {
@@ -253,10 +273,147 @@ export class CloudflareNativeAuthEngine {
       eventType: `firebase-${operation}`,
       subjectRef: input.email ? refs.emailRef : null
     }));
+    // Phase 6 — escalating cooldown after repeated failed logins (§14):
+    // measured from recorded failures (auth_rate_limits state), applied as a
+    // delay within the current window. Ceiling 60 min — never a lockout.
+    let retryAfter = 0;
+    if (operation === 'login' && input.email) {
+      const config = this.securityConfig;
+      const failScope = SECURITY_RISK_SCOPES.loginFailure;
+      const signals = await this.repository.getLoginRiskSignals({
+        emailScope: failScope.scope,
+        emailWindowMs: failScope.windowMs,
+        ipScope: SECURITY_RISK_SCOPES.rapidAuthIp.scope,
+        ipWindowMs: SECURITY_RISK_SCOPES.rapidAuthIp.windowMs,
+        emailRef: refs.emailRef,
+        ipRef: refs.ipRef,
+        now
+      });
+      // Block when the already-recorded failure count has reached the
+      // threshold: "5 failures → the next attempt waits." (Plan §13-§14.)
+      const cooldownMs = cooldownForFailure(signals.failedLogins, config);
+      if (cooldownMs > 0) {
+        const windowStart = Math.floor(now / failScope.windowMs) * failScope.windowMs;
+        const resumeAt = windowStart + cooldownMs;
+        if (now < resumeAt) retryAfter = Math.max(1, Math.ceil((resumeAt - now) / 1000));
+      }
+    }
     return Object.freeze({
       accepted: true,
       ...(input.email ? { email, emailMask: maskAuthEmail(email) } : {}),
+      ...(retryAfter ? { retryAfter } : {}),
       acceptedAt: now
+    });
+  }
+
+  // Phase 6 — record one failed login attempt (count-only risk scope).
+  // Called by the public handler only on credential-rejection, so the
+  // cooldown measures real failures, not total attempts.
+  async recordLoginFailure(input = {}, requestContext = {}) {
+    const email = input.email ? normalizeAuthEmail(input.email) : '';
+    if (!email) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+    const context = normalizeContext(requestContext);
+    const refs = await this.#references(email, context);
+    const now = Number(this.now());
+    const failScope = SECURITY_RISK_SCOPES.loginFailure;
+    errorFromRepository(await this.repository.consumeLimits({
+      limits: [Object.freeze({ scope: failScope.scope, key: refs.emailRef, limit: 100_000, windowMs: failScope.windowMs })],
+      now,
+      eventType: 'login-failed',
+      subjectRef: refs.emailRef
+    }));
+    const config = this.securityConfig;
+    const signals = await this.repository.getLoginRiskSignals({
+      emailScope: failScope.scope,
+      emailWindowMs: failScope.windowMs,
+      ipScope: SECURITY_RISK_SCOPES.rapidAuthIp.scope,
+      ipWindowMs: SECURITY_RISK_SCOPES.rapidAuthIp.windowMs,
+      emailRef: refs.emailRef,
+      ipRef: refs.ipRef,
+      now
+    });
+    const cooldownMs = cooldownForFailure(signals.failedLogins, config);
+    let retryAfter = 0;
+    if (cooldownMs > 0) {
+      const windowStart = Math.floor(now / failScope.windowMs) * failScope.windowMs;
+      const resumeAt = windowStart + cooldownMs;
+      if (now < resumeAt) retryAfter = Math.max(1, Math.ceil((resumeAt - now) / 1000));
+    }
+    return Object.freeze({ accepted: true, ...(retryAfter ? { retryAfter } : {}) });
+  }
+
+  // Phase 6 — risk decision for a login attempt (§3, §4, §30).
+  //
+  // Inputs are already-normalized server-side facts (never raw PII). The
+  // decision is fail-safe: if evaluation cannot complete, sensitive actions
+  // fall toward a challenge — never a silent proceed (§30-§31).
+  async #loginRiskDecision({ email, subject, refs, now, verified, newDevice }) {
+    const config = this.securityConfig;
+    const signals = {
+      accountState: 'active',
+      failedLogins: 0,
+      rapidRequests: 0,
+      newDevice: newDevice === true,
+      recoveryActive: false, // v1: recovery flows are not yet DO-tracked
+      unverifiedAccount: verified !== true
+    };
+    let trusted = false;
+    try {
+      // Behavioural signals are read even when the account has no local
+      // identity yet (the rate-limit rows exist from the first attempt).
+      const counts = await this.repository.getLoginRiskSignals({
+        emailScope: SECURITY_RISK_SCOPES.loginFailure.scope,
+        emailWindowMs: SECURITY_RISK_SCOPES.loginFailure.windowMs,
+        ipScope: SECURITY_RISK_SCOPES.rapidAuthIp.scope,
+        ipWindowMs: SECURITY_RISK_SCOPES.rapidAuthIp.windowMs,
+        emailRef: refs.emailRef,
+        ipRef: refs.ipRef,
+        now
+      });
+      signals.failedLogins = counts.failedLogins;
+      signals.rapidRequests = counts.rapidRequests;
+      const subjectRef = await this.hmac.hex('firebase-subject-v1', subject);
+      const identity = await this.repository.getFirebaseIdentity({ subjectRef, emailRef: refs.emailRef });
+      if (identity.user) {
+        trusted = Boolean((await this.repository.isDeviceTrusted({
+          userId: identity.user.id,
+          deviceRef: refs.deviceRef,
+          now
+        })).trusted);
+        const state = await this.repository.getAccountState({ userId: identity.user.id, now });
+        signals.accountState = state.status || 'active';
+        // A trusted device has, by definition, been seen before — it must
+        // not itself raise the risk level.
+        if (trusted) signals.newDevice = false;
+      }
+    } catch {
+      // Fall through to the fail-safe below — an evaluation outage must not
+      // silently allow a sensitive action, and must not lock normal logins
+      // out when the risk engine is the thing that failed.
+      const failSafe = resolveFailSafe('sensitive', config);
+      return Object.freeze({
+        level: 'ELEVATED',
+        trusted: false,
+        challenge: failSafe.challenge ? 'new-device' : null,
+        block: failSafe.block,
+        sessionTtlMs: config.riskSessionPolicy.ELEVATED.sessionTtlMs,
+        trustOffer: false,
+        policyVersion: config.policyVersion
+      });
+    }
+    const risk = evaluateRisk(signals, config);
+    const actions = risk.actions;
+    // A trusted device skips the new-device challenge (fast path), but a
+    // CRITICAL account fact always blocks — trust never outranks authority.
+    const challenge = actions.block ? null : (trusted ? null : actions.challenge);
+    return Object.freeze({
+      level: risk.level,
+      trusted,
+      challenge,
+      block: actions.block === true,
+      sessionTtlMs: actions.sessionTtlMs,
+      trustOffer: actions.trustOffer === true,
+      policyVersion: risk.policyVersion
     });
   }
 
@@ -266,7 +423,27 @@ export class CloudflareNativeAuthEngine {
     const context = normalizeContext(requestContext);
     const refs = await this.#references(email, context);
     const now = Number(this.now());
-    const sessionTtlMs = input.remember === false ? REMEMBER_OFF_TTL_MS : SESSION_TTL_MS;
+    const decision = await this.#loginRiskDecision({
+      email,
+      subject,
+      refs,
+      now,
+      verified: input.verified === true,
+      newDevice: input.newDevice === true
+    });
+    if (decision.block) failAuth(AUTH_ERROR_CODES.ACCOUNT_DISABLED);
+    if (decision.challenge && input.securityChallenge === true) {
+      return Object.freeze({
+        challenge: Object.freeze({
+          type: decision.challenge,
+          level: decision.level,
+          policyVersion: decision.policyVersion
+        })
+      });
+    }
+    const rememberTtl = input.remember === false ? REMEMBER_OFF_TTL_MS : SESSION_TTL_MS;
+    const riskTtl = Number(decision.sessionTtlMs) > 0 ? Number(decision.sessionTtlMs) : null;
+    const sessionTtlMs = riskTtl ? Math.min(rememberTtl, riskTtl) : rememberTtl;
     const sessionToken = randomToken(32, this.crypto);
     const userIdCandidate = `usr_${randomToken(18, this.crypto)}`;
     const [subjectRef, sessionRef] = await Promise.all([
@@ -284,13 +461,21 @@ export class CloudflareNativeAuthEngine {
       deviceRef: refs.deviceRef,
       userAgent: context.userAgent,
       now,
-      sessionExpiresAt: now + sessionTtlMs
+      sessionExpiresAt: now + sessionTtlMs,
+      loginEvent: decision.trusted ? 'login-trusted-device' : null,
+      eventExtras: decision.trusted ? { deviceRef: refs.deviceRef, policyVersion: decision.policyVersion } : {}
     }));
     return Object.freeze({
       sessionToken,
       sessionExpiresAt: now + sessionTtlMs,
       user: publicUser(established.user),
-      created: Boolean(established.created)
+      created: Boolean(established.created),
+      security: Object.freeze({
+        level: decision.level,
+        trusted: decision.trusted === true,
+        trustOffer: decision.trustOffer === true,
+        policyVersion: decision.policyVersion
+      })
     });
   }
 
@@ -314,6 +499,10 @@ export class CloudflareNativeAuthEngine {
     if (refreshToken.length < 20 || refreshToken.length > 4096 || /[\r\n\u0000;]/.test(refreshToken)) {
       failAuth(AUTH_ERROR_CODES.TELEGRAM_VERIFICATION_INVALID);
     }
+    // Phase 6 — purpose-bound ticket (new-device challenge reuses the
+    // existing ticket flow). Only known purposes are accepted; anything
+    // else falls back to the legacy (purpose-less) verification ticket.
+    const purpose = Object.values(SECURITY_PURPOSES).includes(input.purpose) ? input.purpose : null;
     const identity = await this.#firebaseIdentity(input, requestContext, AUTH_ERROR_CODES.TELEGRAM_VERIFICATION_INVALID);
     const now = Number(this.now());
     const verificationTicket = randomToken(32, this.crypto);
@@ -329,6 +518,7 @@ export class CloudflareNativeAuthEngine {
       emailRef: identity.refs.emailRef,
       emailMask: maskAuthEmail(identity.email),
       refreshCipher,
+      purpose,
       ipRef: identity.refs.ipRef,
       deviceRef: identity.refs.deviceRef,
       limits: this.#limits(ACCOUNT_VERIFICATION_LIMITS, identity.refs),
@@ -383,6 +573,7 @@ export class CloudflareNativeAuthEngine {
     const identity = await this.#firebaseIdentity(input, requestContext, AUTH_ERROR_CODES.TELEGRAM_VERIFICATION_INVALID);
     const now = Number(this.now());
     const sessionToken = randomToken(32, this.crypto);
+    const config = this.securityConfig;
     const [ticketRef, sessionRef] = await Promise.all([
       this.hmac.hex('session-ref-v1', token),
       this.hmac.hex('session-ref-v1', sessionToken)
@@ -396,13 +587,19 @@ export class CloudflareNativeAuthEngine {
       deviceRef: identity.refs.deviceRef,
       userAgent: identity.context.userAgent,
       now,
-      sessionExpiresAt: now + SESSION_TTL_MS
+      sessionExpiresAt: now + SESSION_TTL_MS,
+      trust: {
+        ttlMs: config.trustTtlMs,
+        maxDevices: config.trustMaxDevicesPerUser,
+        policyVersion: config.policyVersion
+      }
     }));
     return Object.freeze({
       sessionToken,
       sessionExpiresAt: now + SESSION_TTL_MS,
       user: publicUser(completed.user),
-      created: false
+      created: false,
+      trusted: completed.trusted === true
     });
   }
 
@@ -691,6 +888,83 @@ export class CloudflareNativeAuthEngine {
     const sessionRef = await this.hmac.hex('session-ref-v1', token);
     const result = await this.repository.revokeSession({ sessionRef, now: Number(this.now()) });
     return Object.freeze({ revoked: Boolean(result?.revoked) });
+  }
+
+  // Phase 6 — device trust management (§5-§7). All three require a valid
+  // session for the caller's own account; trust never touches other users.
+  async trustCurrentDevice(input = {}, requestContext = {}) {
+    const identity = await this.#firebaseIdentity(input, requestContext, AUTH_ERROR_CODES.SESSION_INVALID);
+    const now = Number(this.now());
+    const session = errorFromRepository(await this.repository.getExternalSession({
+      sessionRef: identity.sessionRef,
+      provider: 'firebase',
+      subjectRef: identity.subjectRef,
+      emailRef: identity.refs.emailRef,
+      now
+    }));
+    const config = this.securityConfig;
+    const result = errorFromRepository(await this.repository.registerTrustedDevice({
+      userId: session.user.id,
+      deviceRef: identity.refs.deviceRef,
+      browserClass: identity.context.userAgent,
+      now,
+      ttlMs: config.trustTtlMs,
+      maxDevices: config.trustMaxDevicesPerUser,
+      policyVersion: config.policyVersion
+    }));
+    return Object.freeze({ trusted: true, expiresAt: result.expiresAt, policyVersion: config.policyVersion });
+  }
+
+  async revokeTrustedDevice(input = {}, requestContext = {}) {
+    const identity = await this.#firebaseIdentity(input, requestContext, AUTH_ERROR_CODES.SESSION_INVALID);
+    const now = Number(this.now());
+    const session = errorFromRepository(await this.repository.getExternalSession({
+      sessionRef: identity.sessionRef,
+      provider: 'firebase',
+      subjectRef: identity.subjectRef,
+      emailRef: identity.refs.emailRef,
+      now
+    }));
+    const config = this.securityConfig;
+    const requested = String(input.deviceRef || '').trim();
+    let deviceRef;
+    if (input.scope === 'all') deviceRef = null;
+    else if (input.scope === 'current' || !requested) deviceRef = identity.refs.deviceRef;
+    else if (/^[A-Za-z0-9_-]{16,128}$/.test(requested)) deviceRef = requested;
+    else failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+    const result = errorFromRepository(await this.repository.revokeTrustedDevice({
+      userId: session.user.id,
+      deviceRef,
+      now,
+      policyVersion: config.policyVersion
+    }));
+    return Object.freeze({ revoked: Number(result.revoked || 0) });
+  }
+
+  async getSecurityState(input = {}, requestContext = {}) {
+    const identity = await this.#firebaseIdentity(input, requestContext, AUTH_ERROR_CODES.SESSION_INVALID);
+    const now = Number(this.now());
+    const session = errorFromRepository(await this.repository.getExternalSession({
+      sessionRef: identity.sessionRef,
+      provider: 'firebase',
+      subjectRef: identity.subjectRef,
+      emailRef: identity.refs.emailRef,
+      now
+    }));
+    const config = this.securityConfig;
+    const [state, devices, trusted] = await Promise.all([
+      this.repository.getAccountState({ userId: session.user.id, now }),
+      this.repository.listTrustedDevices({ userId: session.user.id, now }),
+      this.repository.isDeviceTrusted({ userId: session.user.id, deviceRef: identity.refs.deviceRef, now })
+    ]);
+    return Object.freeze({
+      userId: session.user.id,
+      accountStatus: state.status,
+      currentDeviceTrusted: trusted.trusted === true,
+      devices,
+      now,
+      policyVersion: config.policyVersion
+    });
   }
 
   ping() { return this.repository.ping(); }

@@ -154,7 +154,11 @@ class EngineNamespace {
         '/internal/profile/save': () => this.engine.saveProfile(body.input, body.context),
         '/internal/profile/get': () => this.engine.getProfile(body.input, body.context),
         '/internal/session/get': () => this.engine.getSession(body.sessionToken),
-        '/internal/session/revoke': () => this.engine.revokeSession(body.sessionToken)
+        '/internal/session/revoke': () => this.engine.revokeSession(body.sessionToken),
+        '/internal/firebase/login/failure': () => this.engine.recordLoginFailure(body.input, body.context),
+        '/internal/security/device/trust': () => this.engine.trustCurrentDevice(body.input, body.context),
+        '/internal/security/device/revoke': () => this.engine.revokeTrustedDevice(body.input, body.context),
+        '/internal/security/state': () => this.engine.getSecurityState(body.input, body.context)
       };
       if (!routes[url.pathname]) return Response.json({ ok: false }, { status: 404 });
       return Response.json({ ok: true, result: await routes[url.pathname]() });
@@ -363,7 +367,7 @@ test('password reset uses genuine email action while returning the same non-enum
   assert.equal(resets[0].body.continueUrl, 'https://admissionhub.pages.dev/?passwordReset=1');
 });
 
-test('unverified Firebase account is denied, verified account gets opaque HttpOnly session', async () => {
+test('unverified Firebase account is denied, verified account on a new device passes one challenge then fast-paths', async () => {
   const app = handlerSetup();
   const email = 'verified.user@example.com';
   const password = 'Secure-password-88';
@@ -375,18 +379,50 @@ test('unverified Firebase account is denied, verified account gets opaque HttpOn
   assert.equal(extractCookiePair(denied, '__Host-ah_session'), '');
 
   app.firebase.users.get(email).emailVerified = true;
-  const login = await app.handler(apiRequest(`${AUTH_API_PREFIX}/login`, { method: 'POST', body: { email, password } }), app.env, {});
-  assert.equal(login.status, 200);
-  const loginBody = await login.json();
+  // Phase 6: verified account + brand-new device = ONE challenge (202),
+  // not an immediate session. The existing verification selection UI
+  // carries the challenge; completing it issues the session AND 30-day
+  // device trust (single consent moment).
+  const challenged = await app.handler(apiRequest(`${AUTH_API_PREFIX}/login`, { method: 'POST', body: { email, password } }), app.env, {});
+  assert.equal(challenged.status, 202);
+  const challengeBody = await challenged.json();
+  assert.equal(challengeBody.authenticated, false);
+  assert.equal(challengeBody.accountVerified, true);
+  assert.equal(challengeBody.verification.selectionRequired, true);
+  assert.equal(challengeBody.verification.reason, 'new-device');
+  assert.equal(challengeBody.security.challenge, 'new-device');
+  assert.equal(extractCookiePair(challenged, '__Host-ah_session'), '');
+  const deviceCookie = extractCookiePair(challenged, '__Host-ah_device');
+  const verificationCookie = extractCookiePair(challenged, '__Host-ah_verification');
+  assert.ok(deviceCookie);
+  assert.ok(verificationCookie);
+
+  const cookies = `${deviceCookie}; ${verificationCookie}`;
+  // The account is already email-verified, so the email method short-circuits
+  // (existing behaviour); completing the device-bound ticket is what issues
+  // the session and the 30-day trust.
+  const started = await app.handler(apiRequest(`${AUTH_API_PREFIX}/account-verification/email/start`, { method: 'POST', body: {}, cookie: cookies }), app.env, {});
+  assert.equal(started.status, 200);
+  assert.equal((await started.json()).alreadyVerified, true);
+  const completed = await app.handler(apiRequest(`${AUTH_API_PREFIX}/account-verification/email/status`, { method: 'POST', body: {}, cookie: cookies }), app.env, {});
+  assert.equal(completed.status, 200);
+  const loginBody = await completed.json();
   assert.equal(loginBody.authenticated, true);
   assert.equal(loginBody.emailVerified, true);
   assert.equal('sessionToken' in loginBody, false);
   assert.equal(JSON.stringify(loginBody).includes(password), false);
-  const session = extractCookiePair(login, '__Host-ah_session');
-  const firebase = extractCookiePair(login, '__Host-ah_firebase');
+  const session = extractCookiePair(completed, '__Host-ah_session');
+  const firebase = extractCookiePair(completed, '__Host-ah_firebase');
   assert.ok(session);
   assert.ok(firebase);
-  assert.match(login.headers.get('Set-Cookie'), /HttpOnly; Secure; SameSite=Strict/);
+  assert.match(completed.headers.get('Set-Cookie'), /HttpOnly; Secure; SameSite=Strict/);
+
+  // Completing the new-device challenge registered 30-day trust for exactly
+  // this user+device — nothing stored for anyone else.
+  const trustedRows = app.state.repository.snapshot().trustedDevices;
+  assert.equal(trustedRows.length, 1);
+  assert.equal(trustedRows[0].userId, loginBody.user.id);
+  assert.equal(trustedRows[0].expiresAt - trustedRows[0].trustedAt, 30 * 24 * 60 * 60 * 1000);
 
   const current = await app.handler(apiRequest(`${AUTH_API_PREFIX}/session`, { cookie: `${session}; ${firebase}` }), app.env, {});
   assert.equal(current.status, 200);
@@ -394,6 +430,13 @@ test('unverified Firebase account is denied, verified account gets opaque HttpOn
   assert.equal(currentBody.emailVerified, true);
   assert.equal(currentBody.user.id, loginBody.user.id);
   assert.ok(extractCookiePair(current, '__Host-ah_firebase'));
+
+  // Same device again: trusted fast path, no second challenge.
+  const fast = await app.handler(apiRequest(`${AUTH_API_PREFIX}/login`, { method: 'POST', body: { email, password }, cookie: deviceCookie }), app.env, {});
+  assert.equal(fast.status, 200, 'trusted device skips the new-device challenge');
+  const fastBody = await fast.json();
+  assert.equal(fastBody.authenticated, true);
+  assert.equal(fastBody.session.security.trusted, true);
 
   const logout = await app.handler(apiRequest(`${AUTH_API_PREFIX}/session/logout`, { method: 'POST', cookie: `${session}; ${firebase}`, body: {} }), app.env, {});
   assert.equal(logout.status, 200);

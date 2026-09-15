@@ -35,7 +35,8 @@ export class AdmissionAuthAuthority {
       this.verificationRepository.migrate();
       this.engine = new CloudflareNativeAuthEngine({
         repository: this.repository,
-        hmacSecret: env.AUTH_HMAC_SECRET
+        hmacSecret: env.AUTH_HMAC_SECRET,
+        securityConfigRaw: env.SECURITY_CONFIG_JSON
       });
       const persistedVerificationConfig = await this.verificationRepository.getRuntimeConfig();
       this.verification = new VerificationOrchestrator({
@@ -279,6 +280,26 @@ export class AdmissionAuthAuthority {
         const session = await this.engine.getFirebaseSession(body.sessionToken, body.input);
         const result = await this.repository.revokeUserSessions({ userId: session.user.id, now: Date.now() });
         if (result.error) throw new NativeAuthError(result.error);
+        return response(200, { ok: true, result });
+      }
+      // Phase 6 — device trust + security state (internal; the public
+      // /security/* surface lands with its own auth+shape in Chunk 4).
+      if (url.pathname === '/internal/firebase/login/failure') {
+        const result = await this.engine.recordLoginFailure(body.input, body.context);
+        return response(200, { ok: true, result });
+      }
+      if (url.pathname === '/internal/security/device/trust') {
+        const result = await this.engine.trustCurrentDevice(body.input, body.context);
+        await this.#scheduleExpiry();
+        return response(200, { ok: true, result });
+      }
+      if (url.pathname === '/internal/security/device/revoke') {
+        const result = await this.engine.revokeTrustedDevice(body.input, body.context);
+        await this.#scheduleExpiry();
+        return response(200, { ok: true, result });
+      }
+      if (url.pathname === '/internal/security/state') {
+        const result = await this.engine.getSecurityState(body.input, body.context);
         return response(200, { ok: true, result });
       }
       return response(404, { ok: false, error: { code: 'NOT_FOUND' } });

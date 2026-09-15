@@ -293,7 +293,10 @@ const authSuccess = (request, established, refreshToken, context, verification =
     telegramVerified,
     created: Boolean(established.created),
     user: established.user,
-    session: { expiresAt: established.sessionExpiresAt }
+    // Phase 6 — security decision travels with the session: trustOffer drives
+    // the "trust this device 30 days" prompt (Chunk 3 client); HIGH risk
+    // shortens expiresAt server-side.
+    session: { expiresAt: established.sessionExpiresAt, security: established.security || null }
   }, { 'Set-Cookie': [...sessionCookies(established, refreshToken, context), ...extraCookies] });
 };
 
@@ -656,9 +659,28 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         if (!provider.configured) throw new NativeAuthError(AUTH_ERROR_CODES.NOT_CONFIGURED);
         const input = credentials(await readJson(request));
         const prepared = await callAuthority(env, '/internal/firebase/rate', { input: { operation: 'login', email: input.email }, context });
+        // Phase 6 — escalating cooldown after repeated failed logins (§14):
+        // the DO counts recorded failures and asks us to delay this attempt.
+        // A delay, never a lockout: the cooldown always expires.
+        if (Number(prepared?.retryAfter) > 0) {
+          return json(request, 429, { ok: false, error: { code: 'RATE_LIMITED', message: 'অনেকবার চেষ্টা হয়েছে—একটু পরে আবার চেষ্টা করুন।' } }, { 'Retry-After': String(prepared.retryAfter) });
+        }
         let signed;
         let user;
-        try { signed = await provider.signIn(prepared.email, input.password); } catch (cause) { throw providerError(cause, 'signin'); }
+        let failureRetryAfter = 0;
+        try {
+          signed = await provider.signIn(prepared.email, input.password);
+        } catch (cause) {
+          if (cause instanceof FirebaseRequestError && ['INVALID_LOGIN_CREDENTIALS', 'EMAIL_NOT_FOUND', 'INVALID_PASSWORD'].includes(cause.reason)) {
+            try {
+              const recorded = await callAuthority(env, '/internal/firebase/login/failure', { input: { email: prepared.email }, context });
+              failureRetryAfter = Number(recorded?.retryAfter || 0);
+            } catch {}
+          }
+          const error = providerError(cause, 'signin');
+          if (failureRetryAfter > 0) error.retryAfter = Math.max(Number(error.retryAfter || 0), failureRetryAfter);
+          throw error;
+        }
         try { user = await provider.lookup(signed.idToken); } catch (cause) { throw providerError(cause, 'lookup'); }
         assertProviderUser(signed, user);
         const telegramRequested = telegramVerificationRequested(env, url);
@@ -705,7 +727,66 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           } catch {}
         }
         if (!user.emailVerified && !telegramVerified) throw new NativeAuthError(AUTH_ERROR_CODES.EMAIL_NOT_VERIFIED);
-        const established = await callAuthority(env, '/internal/firebase/session/create', { input: { email: user.email, subject: user.subject, remember: input.remember }, context });
+        const established = await callAuthority(env, '/internal/firebase/session/create', {
+          input: {
+            email: user.email,
+            subject: user.subject,
+            remember: input.remember,
+            verified: user.emailVerified === true || telegramVerified === true,
+            newDevice: context.isNewDevice === true,
+            securityChallenge: true
+          },
+          context
+        });
+        // Phase 6 — new device (or elevated risk) on a verified account:
+        // challenge-first-then-proceed, reusing the existing verification
+        // selection UI. Completing it issues the session AND earns 30-day
+        // device trust (single consent moment, no TOTP in v1).
+        if (established.challenge) {
+          let ticket;
+          try {
+            const temporaryRefreshMaterial = signed.refreshToken;
+            ticket = await callAuthority(env, '/internal/firebase/account-verification/begin', {
+              input: {
+                email: user.email,
+                subject: user.subject,
+                refreshToken: temporaryRefreshMaterial,
+                purpose: 'new-device'
+              },
+              context
+            });
+          } catch {
+            // Fail closed: a risk decision can never be silently bypassed.
+            throw new NativeAuthError(AUTH_ERROR_CODES.VERIFICATION_UNAVAILABLE, {
+              message: 'নিরাপত্তার জন্য এই ডিভাইসটি এখন যাচাই করা যাচ্ছে না—একটু পরে আবার চেষ্টা করুন।'
+            });
+          }
+          return json(request, 202, {
+            ok: true,
+            authenticated: false,
+            accountVerified: true,
+            verification: {
+              sent: false,
+              selectionRequired: true,
+              emailMasked: prepared.emailMask,
+              reason: 'new-device',
+              options: {
+                email: { available: true, verifiesEmailOwnership: true },
+                telegram: { available: telegramAvailable, verifiesEmailOwnership: false }
+              }
+            },
+            security: {
+              challenge: established.challenge.type,
+              level: established.challenge.level,
+              policyVersion: established.challenge.policyVersion
+            }
+          }, {
+            'Set-Cookie': [
+              ...(context.isNewDevice ? [deviceCookie(context.deviceId)] : []),
+              verificationCookie(ticket.verificationTicket)
+            ]
+          });
+        }
         return authSuccess(request, established, signed.refreshToken, context, {
           emailVerified: user.emailVerified === true,
           telegramVerified

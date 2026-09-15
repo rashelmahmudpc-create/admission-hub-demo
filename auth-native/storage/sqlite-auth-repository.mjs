@@ -77,6 +77,7 @@ export class SqliteAuthRepository {
         email_ref TEXT NOT NULL,
         refresh_cipher TEXT NOT NULL,
         state TEXT NOT NULL CHECK(state IN ('active','consumed','expired','superseded')),
+        purpose TEXT,
         created_at INTEGER NOT NULL,
         expires_at INTEGER NOT NULL,
         consumed_at INTEGER,
@@ -163,6 +164,21 @@ export class SqliteAuthRepository {
         policy_version TEXT
       )`,
       `CREATE INDEX IF NOT EXISTS auth_security_events_time ON auth_security_events(occurred_at DESC)`,
+      // Phase 6 — device trust (§5-§7). Opaque HMAC device refs only; no
+      // fingerprinting, no location. A trusted device skips the new-device
+      // challenge for its TTL.
+      `CREATE TABLE IF NOT EXISTS auth_trusted_devices (
+        user_id TEXT NOT NULL,
+        device_ref TEXT NOT NULL,
+        browser_class TEXT NOT NULL,
+        trusted_at INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL,
+        revoked_at INTEGER,
+        policy_version TEXT,
+        PRIMARY KEY(user_id, device_ref),
+        FOREIGN KEY(user_id) REFERENCES auth_users(user_id)
+      )`,
+      `CREATE INDEX IF NOT EXISTS auth_trusted_devices_expiry ON auth_trusted_devices(expires_at)`,
       // Phase 3 — lifecycle overlay. Existing auth_users rows stay untouched;
       // users without a state row implicitly hold the legacy 'active' state.
       `CREATE TABLE IF NOT EXISTS auth_account_state (
@@ -186,7 +202,99 @@ export class SqliteAuthRepository {
     if (!eventColumns.has('device_ref')) this.sql.exec('ALTER TABLE auth_security_events ADD COLUMN device_ref TEXT');
     if (!eventColumns.has('purpose')) this.sql.exec('ALTER TABLE auth_security_events ADD COLUMN purpose TEXT');
     if (!eventColumns.has('policy_version')) this.sql.exec('ALTER TABLE auth_security_events ADD COLUMN policy_version TEXT');
+    // Phase 6 — challenge purpose on account-verification tickets (new-device
+    // challenges reuse the existing ticket flow; NULL = legacy verification).
+    const ticketColumns = new Set(this.#rows('PRAGMA table_info(auth_account_verification_tickets)').map(row => row.name));
+    if (!ticketColumns.has('purpose')) this.sql.exec('ALTER TABLE auth_account_verification_tickets ADD COLUMN purpose TEXT');
     this.sql.exec("INSERT INTO auth_meta(key,value) VALUES('schema_version','6') ON CONFLICT(key) DO UPDATE SET value=excluded.value");
+  }
+
+  // Phase 6 — device trust lifecycle (§5-§7). Refs are opaque HMAC values;
+  // nothing here stores raw device ids, IPs or user agents.
+  #storeTrustedDevice({ userId, deviceRef, browserClass, now, ttlMs, policyVersion, maxDevices }) {
+    const browser = String(browserClass || '').slice(0, 40) || 'unknown';
+    const expiresAt = now + Number(ttlMs);
+    const active = this.#rows(
+      'SELECT device_ref AS deviceRef FROM auth_trusted_devices WHERE user_id=? AND revoked_at IS NULL AND expires_at>? ORDER BY trusted_at ASC, device_ref ASC',
+      userId, now
+    );
+    const max = Math.max(1, Number(maxDevices) || 10);
+    if (active.length >= max) {
+      const overflow = active.slice(0, active.length - max + 1);
+      for (const row of overflow) {
+        this.sql.exec('UPDATE auth_trusted_devices SET revoked_at=? WHERE user_id=? AND device_ref=? AND revoked_at IS NULL', now, userId, row.deviceRef);
+      }
+      this.#event('device-trust-evicted', null, userId, now, { policyVersion });
+    }
+    this.sql.exec(
+      `INSERT INTO auth_trusted_devices(user_id,device_ref,browser_class,trusted_at,expires_at,revoked_at,policy_version)
+       VALUES(?,?,?,?,?,NULL,?)
+       ON CONFLICT(user_id,device_ref) DO UPDATE SET
+         browser_class=excluded.browser_class, trusted_at=excluded.trusted_at, expires_at=excluded.expires_at,
+         revoked_at=NULL, policy_version=excluded.policy_version`,
+      userId, deviceRef, browser, now, expiresAt, policyVersion || null
+    );
+    this.#event('device-trusted', null, userId, now, { deviceRef, policyVersion });
+    return expiresAt;
+  }
+
+  async isDeviceTrusted({ userId, deviceRef, now }) {
+    const row = this.#one(
+      'SELECT 1 AS ok FROM auth_trusted_devices WHERE user_id=? AND device_ref=? AND revoked_at IS NULL AND expires_at>?',
+      userId, deviceRef, now
+    );
+    return Object.freeze({ trusted: Boolean(row) });
+  }
+
+  async registerTrustedDevice({ userId, deviceRef, browserClass, now, ttlMs, policyVersion, maxDevices }) {
+    return this.#transaction(() => {
+      const user = this.#one('SELECT user_id AS id FROM auth_users WHERE user_id=?', userId);
+      if (!user) return { error: AUTH_ERROR_CODES.ACCOUNT_NOT_FOUND };
+      if (!deviceRef || deviceRef.length > 128) return { error: AUTH_ERROR_CODES.INVALID_INPUT };
+      const expiresAt = this.#storeTrustedDevice({ userId, deviceRef, browserClass, now, ttlMs, policyVersion, maxDevices });
+      return Object.freeze({ registered: true, expiresAt });
+    });
+  }
+
+  async revokeTrustedDevice({ userId, deviceRef, now, policyVersion }) {
+    return this.#transaction(() => {
+      const user = this.#one('SELECT user_id AS id FROM auth_users WHERE user_id=?', userId);
+      if (!user) return { error: AUTH_ERROR_CODES.ACCOUNT_NOT_FOUND };
+      const rows = deviceRef
+        ? this.#rows('SELECT device_ref AS deviceRef FROM auth_trusted_devices WHERE user_id=? AND device_ref=? AND revoked_at IS NULL', userId, deviceRef)
+        : this.#rows('SELECT device_ref AS deviceRef FROM auth_trusted_devices WHERE user_id=? AND revoked_at IS NULL', userId);
+      if (!rows.length) return Object.freeze({ revoked: 0 });
+      if (deviceRef) this.sql.exec('UPDATE auth_trusted_devices SET revoked_at=? WHERE user_id=? AND device_ref=? AND revoked_at IS NULL', now, userId, deviceRef);
+      else this.sql.exec('UPDATE auth_trusted_devices SET revoked_at=? WHERE user_id=? AND revoked_at IS NULL', now, userId);
+      this.#event('device-revoked', null, userId, now, { deviceRef: deviceRef || null, policyVersion });
+      return Object.freeze({ revoked: rows.length });
+    });
+  }
+
+  async listTrustedDevices({ userId, now }) {
+    const rows = this.#rows(
+      'SELECT device_ref AS deviceRef,browser_class AS browserClass,trusted_at AS trustedAt,expires_at AS expiresAt FROM auth_trusted_devices WHERE user_id=? AND revoked_at IS NULL AND expires_at>? ORDER BY trusted_at DESC',
+      userId, now
+    );
+    return Object.freeze(rows.map(row => Object.freeze({
+      deviceRef: String(row.deviceRef),
+      browserClass: String(row.browserClass || 'unknown'),
+      trustedAt: Number(row.trustedAt),
+      expiresAt: Number(row.expiresAt)
+    })));
+  }
+
+  // Risk signals for the login decision (§3-§4), derived from auth_rate_limits
+  // state only — no new table, no raw identifiers leave the DO.
+  async getLoginRiskSignals({ emailScope, emailWindowMs, ipScope, ipWindowMs, emailRef, ipRef, now }) {
+    const emailStart = Math.floor(Number(now) / Number(emailWindowMs)) * Number(emailWindowMs);
+    const ipStart = Math.floor(Number(now) / Number(ipWindowMs)) * Number(ipWindowMs);
+    const emailRow = this.#one('SELECT count FROM auth_rate_limits WHERE scope=? AND bucket_key=? AND window_start=?', emailScope, emailRef, emailStart);
+    const ipRow = this.#one('SELECT count FROM auth_rate_limits WHERE scope=? AND bucket_key=? AND window_start=?', ipScope, ipRef, ipStart);
+    return Object.freeze({
+      failedLogins: Number(emailRow?.count || 0),
+      rapidRequests: Number(ipRow?.count || 0)
+    });
   }
 
   // Read-only reconciliation snapshot (Phase 3). HMAC refs only — never
@@ -468,7 +576,11 @@ export class SqliteAuthRepository {
         input.sessionRef, user.id, input.now, input.sessionExpiresAt, input.now,
         input.ipRef, input.deviceRef, input.userAgent
       );
-      this.#event(created ? 'firebase-account-linked' : 'firebase-login', input.subjectRef, user.id, input.now);
+      this.#event(
+        input.loginEvent || (created ? 'firebase-account-linked' : 'firebase-login'),
+        input.subjectRef, user.id, input.now,
+        input.eventExtras || {}
+      );
       return { established: true, created, user };
     });
   }
@@ -549,11 +661,11 @@ export class SqliteAuthRepository {
       );
       this.sql.exec(
         `INSERT INTO auth_account_verification_tickets(
-          ticket_ref,user_id,subject_ref,email_ref,refresh_cipher,state,created_at,expires_at,
+          ticket_ref,user_id,subject_ref,email_ref,refresh_cipher,state,purpose,created_at,expires_at,
           consumed_at,ip_ref,device_ref
-        ) VALUES(?,?,?,?,?,'active',?,?,NULL,?,?)`,
+        ) VALUES(?,?,?,?,?,'active',?,?,?,NULL,?,?)`,
         input.ticketRef, user.id, input.subjectRef, input.emailRef, input.refreshCipher,
-        input.now, input.expiresAt, input.ipRef, input.deviceRef
+        input.purpose || null, input.now, input.expiresAt, input.ipRef, input.deviceRef
       );
       this.#event('firebase-account-verification-started', input.subjectRef, user.id, input.now);
       return { prepared: true, user };
@@ -585,7 +697,7 @@ export class SqliteAuthRepository {
     return this.#transaction(() => {
       const row = this.#one(
         `SELECT t.user_id AS userId,t.subject_ref AS subjectRef,t.email_ref AS emailRef,
-          t.state,t.expires_at AS expiresAt,u.email_mask AS emailMask,u.status,u.created_at AS createdAt
+          t.state,t.purpose AS purpose,t.expires_at AS expiresAt,u.email_mask AS emailMask,u.status,u.created_at AS createdAt
          FROM auth_account_verification_tickets t JOIN auth_users u ON u.user_id=t.user_id
          WHERE t.ticket_ref=? AND t.device_ref=?`,
         input.ticketRef, input.deviceRef
@@ -607,9 +719,29 @@ export class SqliteAuthRepository {
         input.ipRef, input.deviceRef, input.userAgent
       );
       this.sql.exec('UPDATE auth_users SET last_login_at=? WHERE user_id=?', input.now, row.userId);
-      this.#event('firebase-telegram-verification-session', input.subjectRef, row.userId, input.now);
+      // Phase 6 — completing a new-device challenge is the consent moment:
+      // the device that verified earns 30-day trust (config-driven TTL).
+      let trusted = false;
+      if (row.purpose === 'new-device' && input.trust && Number(input.trust.ttlMs) > 0) {
+        this.#storeTrustedDevice({
+          userId: row.userId,
+          deviceRef: input.deviceRef,
+          browserClass: input.userAgent,
+          now: input.now,
+          ttlMs: input.trust.ttlMs,
+          policyVersion: input.trust.policyVersion,
+          maxDevices: input.trust.maxDevices
+        });
+        trusted = true;
+      }
+      this.#event(
+        row.purpose === 'new-device' ? 'new-device-challenge-completed' : 'firebase-telegram-verification-session',
+        input.subjectRef, row.userId, input.now,
+        row.purpose ? { deviceRef: input.deviceRef, purpose: row.purpose, policyVersion: input.trust?.policyVersion } : {}
+      );
       return {
         established: true,
+        trusted,
         user: { id: row.userId, emailRef: row.emailRef, emailMask: row.emailMask, status: row.status, createdAt: Number(row.createdAt) }
       };
     });
@@ -988,6 +1120,7 @@ export class SqliteAuthRepository {
       this.sql.exec('DELETE FROM auth_passkey_tickets WHERE expires_at<=?', now);
       this.sql.exec("DELETE FROM auth_passkey_credentials WHERE status='revoked' AND revoked_at<?", now - EVENT_RETENTION_MS);
       this.sql.exec('DELETE FROM auth_rate_limits WHERE expires_at<=?', now);
+      this.sql.exec('DELETE FROM auth_trusted_devices WHERE expires_at<?', now - DAY_MS);
       this.sql.exec('DELETE FROM auth_sessions WHERE expires_at<=? OR revoked_at IS NOT NULL', now);
       this.sql.exec('DELETE FROM auth_security_events WHERE occurred_at<?', now - EVENT_RETENTION_MS);
       this.sql.exec("INSERT INTO auth_meta(key,value) VALUES('last_cleanup',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", String(now));
