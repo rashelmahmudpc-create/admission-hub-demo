@@ -114,7 +114,7 @@ test('index.html: profile assets linked with versions (v262)', () => {
 });
 
 test('sw.js caches the profile assets (v262)', () => {
-  assert.match(SW, /const BUILD_ID = 'v262-catalog-instant-20260916';/);
+  assert.match(SW, /const BUILD_ID = 'v263-selfheal-20260916';/);
   assert.match(SW, /'\.\/academic-catalog\.js\?v=acad-cat-v1',/);
   assert.match(SW, /'\.\/profile-ui\.js\?v=profile-v9',/);
   assert.match(SW, /'\.\/profile-ui\.css\?v=profile-v9',/);
@@ -570,4 +570,17 @@ test('7B3: Google login seeds empty profile fields only (server, verified data, 
   assert.match(PROVIDER, /photoUrl: typeof user\.photoUrl === 'string'/);
   // non-Google avatar URLs are refused (SSRF guard)
   assert.match(HANDLER, /GOOGLE_AVATAR_HOSTS/);
+});
+
+test('v263: truncated-script self-heal (owner bug: "SyntaxError: Unexpected EOF" pill)', () => {
+  // the global crash handler detects parse errors on .js assets and reloads once
+  assert.match(HTML, /Unexpected \(EOF\|end of input\)/);
+  assert.match(HTML, /ah-script-reload/);
+  assert.match(HTML, /Date\.now\(\) - last > 60000/);
+  assert.match(HTML, /location\.reload\(\)/);
+  // friendly Bengali message if the truncation repeats within the guard window
+  assert.match(HTML, /ফাইল অসম্পূর্ণ এসেছে/);
+  // service worker bounds static-asset fetches (no infinite hang on stalled links)
+  assert.match(SW, /STATIC_ASSET_TIMEOUT_MS = 12000/);
+  assert.match(SW, /controller\.abort\(\), STATIC_ASSET_TIMEOUT_MS/);
 });

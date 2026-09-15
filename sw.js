@@ -1,8 +1,10 @@
 const CACHE_PREFIX = 'admission-hub-shell-';
-const BUILD_ID = 'v262-catalog-instant-20260916';
+const BUILD_ID = 'v263-selfheal-20260916';
 const CACHE_NAME = `${CACHE_PREFIX}${BUILD_ID}`;
 const VERSION_HEADER = 'X-Admission-Hub-Build';
 const DOCUMENT_NETWORK_TIMEOUT_MS = 2500;
+// A stalled asset connection must never hang a script/style load forever.
+const STATIC_ASSET_TIMEOUT_MS = 12000;
 const isCurrentBuild = response => response && response.headers && response.headers.get(VERSION_HEADER) === BUILD_ID;
 function markBuild(response) {
   if (!response || !response.ok) return response;
@@ -154,10 +156,16 @@ self.addEventListener('fetch', event => {
     if (staticAsset) {
       const cached = await caches.match(request);
       if (cached && isCurrentBuild(cached)) return cached;
+      // Bounded fetch: on a flaky link a partial/stalled download fails fast
+      // (-> self-heal reload) instead of hanging the page boot forever.
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), STATIC_ASSET_TIMEOUT_MS);
       try {
-        return await cacheNetworkResponse(request, await fetch(request));
+        return await cacheNetworkResponse(request, await fetch(request, { signal: controller.signal }));
       } catch (_) {
         return offlineFallback(request);
+      } finally {
+        clearTimeout(timer);
       }
     }
     try {

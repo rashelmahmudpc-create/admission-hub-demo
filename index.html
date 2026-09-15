@@ -716,7 +716,32 @@ textarea{min-height:96px}
       if (document.body) mount(); else document.addEventListener('DOMContentLoaded', mount, { once: true });
     } catch (_) {}
   };
-  window.addEventListener('error', (e) => { if (e && (e.message || e.error)) { show('Error', e.message || (e.error && e.error.message) || ''); trace('err', e.message || ''); } });
+  window.addEventListener('error', (e) => {
+    if (!e || !(e.message || e.error)) return;
+    const msg = String(e.message || '');
+    // SELF-HEAL (owner bug): a script file arriving TRUNCATED over a flaky
+    // network makes the engine report a parse error — iOS Safari:
+    // "SyntaxError: Unexpected EOF", Chrome: "Unexpected end of input".
+    // One silent reload recovers it: the service-worker precache then serves
+    // the complete file. Guarded per minute so a dead link can't loop reloads.
+    if (e.filename && /Unexpected (EOF|end of input)|Unexpected token/i.test(msg) && /\.js(\?|$)/i.test(e.filename)) {
+      try {
+        const key = 'ah-script-reload';
+        const last = Number(sessionStorage.getItem(key) || 0);
+        if (Date.now() - last > 60000) {
+          sessionStorage.setItem(key, String(Date.now()));
+          trace('selfheal-reload', e.filename);
+          location.reload();
+          return;
+        }
+        show('Error', 'ইন্টারনেট সংযোগে সমস্যা — একটা ফাইল অসম্পূর্ণ এসেছে। নিচে রিফ্রেশ করলে ঠিক হয়ে যাবে। (' + msg + ')');
+        trace('err-truncated', e.filename);
+        return;
+      } catch (_) { /* fall through to normal error surfacing */ }
+    }
+    show('Error', e.message || (e.error && e.error.message) || '');
+    trace('err', e.message || '');
+  });
   window.addEventListener('unhandledrejection', (e) => { const r = e && e.reason; if (r) { show('Crash', (r && r.message) || String(r)); trace('reject', (r && r.message) || String(r)); } });
   window.addEventListener('hashchange', () => trace('route', location.hash));
 })();
@@ -4843,15 +4868,15 @@ window.__admissionBootPromise.catch(error => console.error('[Admission Hub] boot
     // Do not reload on controllerchange: iOS standalone clients can enter a blank-screen reload loop.
     // The updated worker takes control now; the current document remains usable and the next launch uses the new shell.
     try{
-      const expectedSwVersion = 'v262-catalog-instant-20260916';
+      const expectedSwVersion = 'v263-selfheal-20260916';
       // register() on the same scope performs an in-place update. Never unregister
       // the active iOS worker first: that discards the instant offline shell.
-      const registration=await navigator.serviceWorker.register('./sw.js?v=v262-catalog-instant-20260916',{scope:'./',updateViaCache:'none'});
+      const registration=await navigator.serviceWorker.register('./sw.js?v=v263-selfheal-20260916',{scope:'./',updateViaCache:'none'});
       await registration.update().catch(()=>{});
       // Purge every old app-shell cache (any build id ≠ current). This guarantees
       // stale pre-retirement application shells can never be served from cache again.
       try {
-        const cur = 'admission-hub-shell-v262-catalog-instant-20260916';
+        const cur = 'admission-hub-shell-v263-selfheal-20260916';
         const names = await caches.keys();
         for (const name of names) {
           if (name.startsWith('admission-hub-shell-') && name !== cur) await caches.delete(name).catch(()=>{});

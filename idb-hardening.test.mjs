@@ -22,7 +22,7 @@ test('boot-critical local scripts remain parser-ordered', /src="\.\/session-pers
 test('heavy app seed and result analysis remain deferred', /app-seed\.js[^>]*defer/.test(H) && /result-analysis-500\.js[^>]*defer/.test(H));
 test('retired identity/onboarding scripts are no longer boot-critical or loaded', !/premium-auth|onboarding\.js|curriculum-config|accounts\.google\.com/.test(H));
 
-test('service-worker build marker is synchronized', SW.includes("const BUILD_ID = 'v262-catalog-instant-20260916'") && H.includes('sw.js?v=v262-catalog-instant-20260916'));
+test('service-worker build marker is synchronized', SW.includes("const BUILD_ID = 'v263-selfheal-20260916'") && H.includes('sw.js?v=v263-selfheal-20260916'));
 test('data protection summarizes stores with count rather than full reads', DP.includes('tx.objectStore(name).count()'));
 test('unprotected automatic Pages deploy stays retired', WF.includes('Cloudflare Pages Bundle Guard (No Deploy)') && !WF.includes('wrangler-action') && !WF.includes('pages deploy dist --project-name admissionhub'));
 

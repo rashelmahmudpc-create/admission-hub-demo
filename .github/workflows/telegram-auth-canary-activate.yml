@@ -151,7 +151,7 @@ jobs:
 
           public_ready=false
           for attempt in 1 2 3 4 5 6 7 8; do
-            fetch_public "$verify_dir/index.html" "https://admissionhub.pages.dev/?release=v262-catalog-instant-20260916"
+            fetch_public "$verify_dir/index.html" "https://admissionhub.pages.dev/?release=v263-selfheal-20260916"
             if grep -Fq 'account-access.js?v=20260915-session-engine-v1' "$verify_dir/index.html" \
               && grep -Fq 'ai-agent-chat.js?v=agent-f1-ui-chatv16-personalization' "$verify_dir/index.html"; then
               public_ready=true
@@ -182,13 +182,13 @@ jobs:
           grep -Fq 'dashboard-v2.js?v=dash2f10-main-ai' "$verify_dir/index.html"
           grep -Fq 'ai-agent-chat.js?v=agent-f1-ui-chatv16-personalization' "$verify_dir/index.html"
           grep -Fq 'phase12-ui.js?v=nav-resume-router-v11-main-ai' "$verify_dir/index.html"
-          grep -Fq 'sw.js?v=v262-catalog-instant-20260916' "$verify_dir/index.html"
+          grep -Fq 'sw.js?v=v263-selfheal-20260916' "$verify_dir/index.html"
           verify_retired_media_absent() {
             asset="$1"
             status=$(curl --silent --show-error --connect-timeout 10 --max-time 30 \
               -H 'Cache-Control: no-cache' --dump-header "$verify_dir/${asset}.headers" \
               --output "$verify_dir/${asset}.body" --write-out '%{http_code}' \
-              "https://admissionhub.pages.dev/${asset}?retired=v262-catalog-instant-20260916")
+              "https://admissionhub.pages.dev/${asset}?retired=v263-selfheal-20260916")
             case "$status" in
               404|410) ;;
               200)
@@ -207,7 +207,7 @@ jobs:
           fetch_public "$verify_dir/dashboard-v2.js" 'https://admissionhub.pages.dev/dashboard-v2.js?v=dash2f10-main-ai'
           fetch_public "$verify_dir/ai-agent-chat.js" 'https://admissionhub.pages.dev/ai-agent-chat.js?v=agent-f1-ui-chatv16-personalization'
           fetch_public "$verify_dir/phase12-ui.js" 'https://admissionhub.pages.dev/phase12-ui.js?v=nav-resume-router-v11-main-ai'
-          fetch_public "$verify_dir/sw.js" 'https://admissionhub.pages.dev/sw.js?v=v262-catalog-instant-20260916'
+          fetch_public "$verify_dir/sw.js" 'https://admissionhub.pages.dev/sw.js?v=v263-selfheal-20260916'
 
           grep -Fq "'X-AH-Auth-UI': 'auth-premium-v6'" "$verify_dir/account-access.js"
           grep -Fq 'data-visual-contract="code-native-page-system-v1"' "$verify_dir/account-access.js"
@@ -270,7 +270,7 @@ jobs:
           grep -Fq "if(p==='ai'){ if(window.renderAiAgentPage)" "$verify_dir/index.html"
           grep -Fq '<span>AI</span>' "$verify_dir/dashboard-v2.js"
           grep -Fq 'window.renderAiAgentPage = render' "$verify_dir/ai-agent-chat.js"
-          grep -Fq "const BUILD_ID = 'v262-catalog-instant-20260916'" "$verify_dir/sw.js"
+          grep -Fq "const BUILD_ID = 'v263-selfheal-20260916'" "$verify_dir/sw.js"
           ! grep -Fq 'onboarding-welcome-hero.webp' "$verify_dir/sw.js"
           ! grep -Fq 'onboarding-personal-hero.webp' "$verify_dir/sw.js"
           grep -Fq './ai-agent-chat.js?v=agent-f1-ui-chatv16-personalization' "$verify_dir/sw.js"
