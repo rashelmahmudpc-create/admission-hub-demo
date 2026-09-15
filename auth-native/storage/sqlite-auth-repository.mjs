@@ -413,6 +413,76 @@ export class SqliteAuthRepository {
     })));
   }
 
+
+  // Phase 6 Chunk 4 — recent login history for the privacy boundary (§27):
+  // method + coarse browser class + time only. No IP, no location, no raw
+  // email or raw device identifier ever leave this method.
+  recentSecurityHistory({ userId, now, limit }) {
+    const sessions = this.#rows(
+      `SELECT s.created_at AS at,s.user_agent AS browserClass,s.revoked_at AS revokedAt,s.device_ref AS deviceRef
+       FROM auth_sessions s WHERE s.user_id=?
+       ORDER BY s.created_at DESC, s.rowid DESC LIMIT ?`,
+      userId, Math.min(Number(limit) || 10, 50)
+    );
+    return Object.freeze(sessions.map(session => {
+      const event = this.#one(
+        `SELECT event_type AS eventType FROM auth_security_events
+         WHERE user_id=? AND occurred_at=? AND (device_ref IS ? OR ? IS NULL)
+           AND event_type IN ('firebase-login','firebase-account-linked','login-trusted-device','firebase-passkey-login','new-device-challenge-completed')
+         ORDER BY rowid DESC LIMIT 1`,
+        userId, session.at, session.deviceRef, session.deviceRef
+      );
+      const type = event ? String(event.eventType) : 'firebase-login';
+      return Object.freeze({
+        at: Number(session.at),
+        method: type === 'firebase-passkey-login' ? 'passkey' : 'credentials',
+        browserClass: String(session.browserClass || 'unknown'),
+        trusted: type === 'login-trusted-device',
+        active: session.revokedAt == null
+      });
+    }));
+  }
+
+  // Phase 6 Chunk 4 — admin security health: event counts inside a window.
+  securityEventCounts({ now, windowMs }) {
+    const start = Number(now) - Number(windowMs);
+    const counts = {};
+    this.#rows(
+      'SELECT event_type AS eventType,count(*) AS n FROM auth_security_events WHERE occurred_at>=? GROUP BY event_type',
+      start
+    ).forEach(row => { counts[String(row.eventType)] = Number(row.n); });
+    return Object.freeze({
+      failedLogins: counts['login-failed'] || 0,
+      challengesCreated: counts['security-challenge-created'] || 0,
+      challengesVerified: counts['security-challenge-verified'] || 0,
+      challengesFailed: counts['security-challenge-failed'] || 0,
+      newDeviceLogins: counts['new-device-challenge-completed'] || 0,
+      devicesRevoked: counts['device-revoked'] || 0,
+      sessionsRevoked: counts['account-sessions-revoked'] || 0
+    });
+  }
+
+  // Phase 6 Chunk 4 — paged ledger view for admins: refs only, no PII
+  // (subject/user/device are opaque HMAC refs; there is no raw column here).
+  listSecurityEvents({ limit, before }) {
+    const rows = before
+      ? this.#rows(
+        `SELECT event_type AS eventType,subject_ref AS subjectRef,user_id AS userId,occurred_at AS occurredAt,
+          device_ref AS deviceRef,purpose,policy_version AS policyVersion
+         FROM auth_security_events WHERE occurred_at<?
+         ORDER BY occurred_at DESC, rowid DESC LIMIT ?`,
+        before, limit
+      )
+      : this.#rows(
+        `SELECT event_type AS eventType,subject_ref AS subjectRef,user_id AS userId,occurred_at AS occurredAt,
+          device_ref AS deviceRef,purpose,policy_version AS policyVersion
+         FROM auth_security_events
+         ORDER BY occurred_at DESC, rowid DESC LIMIT ?`,
+        limit
+      );
+    return Object.freeze({ entries: rows });
+  }
+
   // Risk signals for the login decision (§3-§4), derived from auth_rate_limits
   // state only — no new table, no raw identifiers leave the DO.
   async getLoginRiskSignals({ emailScope, emailWindowMs, ipScope, ipWindowMs, emailRef, ipRef, now }) {

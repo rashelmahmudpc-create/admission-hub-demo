@@ -917,7 +917,10 @@ export class CloudflareNativeAuthEngine {
     return Object.freeze({ trusted: true, expiresAt: result.expiresAt, policyVersion: config.policyVersion });
   }
 
-  async revokeTrustedDevice(input = {}, requestContext = {}) {
+  // Phase 6 Chunk 4 — recent login history for the signed-in user (§27).
+  // Privacy boundary: method, coarse browser class and time only — no IP,
+  // no location, no raw device identifier, no raw email.
+  async securityHistory(input = {}, requestContext = {}) {
     const identity = await this.#firebaseIdentity(input, requestContext, AUTH_ERROR_CODES.SESSION_INVALID);
     const now = Number(this.now());
     const session = errorFromRepository(await this.repository.getExternalSession({
@@ -927,6 +930,70 @@ export class CloudflareNativeAuthEngine {
       emailRef: identity.refs.emailRef,
       now
     }));
+    const rows = errorFromRepository(await this.repository.recentSecurityHistory({
+      userId: session.user.id,
+      now,
+      limit: 10
+    }));
+    return Object.freeze({
+      entries: rows.map(row => Object.freeze({
+        at: Number(row.at),
+        method: row.method,
+        browserClass: row.browserClass,
+        trusted: row.trusted === true,
+        active: row.active === true
+      })),
+      policyVersion: this.securityConfig.policyVersion
+    });
+  }
+
+  // Phase 6 Chunk 4 — admin security health (counts + rates, refs only).
+  async securityHealth() {
+    const now = Number(this.now());
+    const windowMs = 15 * 60 * 1000;
+    const counts = errorFromRepository(await this.repository.securityEventCounts({ now, windowMs }));
+    return Object.freeze({
+      windowMs,
+      now,
+      failedLogins: counts.failedLogins,
+      challengesCreated: counts.challengesCreated,
+      challengesVerified: counts.challengesVerified,
+      challengesFailed: counts.challengesFailed,
+      newDeviceLogins: counts.newDeviceLogins,
+      devicesRevoked: counts.devicesRevoked,
+      sessionsRevoked: counts.sessionsRevoked
+    });
+  }
+
+  // Phase 6 Chunk 4 — paged security event ledger (refs only, no PII).
+  async securityEventsPage(input = {}) {
+    const limit = Math.min(Math.max(Number(input.limit) || 50, 1), 200);
+    const before = input.before ? Number(input.before) : null;
+    if (before !== null && (!Number.isFinite(before) || before <= 0)) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+    const result = errorFromRepository(await this.repository.listSecurityEvents({ limit, before }));
+    const entries = result.entries.map(row => Object.freeze({
+      eventType: row.eventType,
+      subjectRef: row.subjectRef || null,
+      userId: row.userId || null,
+      occurredAt: Number(row.occurredAt),
+      deviceRef: row.deviceRef || null,
+      purpose: row.purpose || null,
+      policyVersion: row.policyVersion || null
+    }));
+    return Object.freeze({
+      entries: Object.freeze(entries),
+      nextBefore: entries.length === limit ? Number(entries[entries.length - 1].occurredAt) : null
+    });
+  }
+
+  // Phase 6 Chunk 4 — step-up-gated trusted-device revocation.
+  async revokeTrustedDevice(input = {}, requestContext = {}) {
+    const token = String(input.sessionToken || '').trim();
+    if (!/^[A-Za-z0-9_-]{40,96}$/.test(token)) failAuth(AUTH_ERROR_CODES.SESSION_INVALID);
+    const identity = await this.#firebaseIdentity({ ...input, sessionToken: token }, requestContext, AUTH_ERROR_CODES.SESSION_INVALID);
+    const now = Number(this.now());
+    const session = errorFromRepository(await this.repository.getSession({ sessionRef: identity.sessionRef, now }));
+    await this.#assertStepUp(input, identity, session, now);
     const config = this.securityConfig;
     const requested = String(input.deviceRef || '').trim();
     let deviceRef;
@@ -1105,6 +1172,8 @@ export class CloudflareNativeAuthEngine {
       verified: true,
       purpose,
       stepUpToken,
+      emailMasked: session.user.emailMask,
+      browserClass: identity.context.userAgent || null,
       expiresAt: row.expiresAt,
       policyVersion: this.securityConfig.policyVersion
     });
@@ -1137,15 +1206,12 @@ export class CloudflareNativeAuthEngine {
     }
   }
 
-  // Phase 6 — step-up-gated logout-all (§12). A presented step-up token is
-  // validated and consumed (single-use); without one, the action is allowed
-  // only while the session is recent AND current risk stays below ELEVATED.
-  async revokeAllSessions(input = {}, requestContext = {}) {
-    const token = String(input.sessionToken || '').trim();
-    if (!/^[A-Za-z0-9_-]{40,96}$/.test(token)) failAuth(AUTH_ERROR_CODES.SESSION_INVALID);
-    const identity = await this.#firebaseIdentity({ ...input, sessionToken: token }, requestContext, AUTH_ERROR_CODES.SESSION_INVALID);
-    const now = Number(this.now());
-    const session = errorFromRepository(await this.repository.getSession({ sessionRef: identity.sessionRef, now }));
+  // Phase 6 — the shared step-up gate (§12). A presented stepUpToken is
+  // validated (constant-time MAC, device-bound) and consumed exactly once;
+  // without one, the action is allowed only while the session is recent AND
+  // current risk stays below ELEVATED. Otherwise the client's 2-step arm
+  // runs a challenge and retries with a fresh token.
+  async #assertStepUp(input, identity, session, now) {
     const config = this.securityConfig;
     const userId = session.user.id;
     const stepUpToken = String(input.stepUpToken || '').trim();
@@ -1157,35 +1223,47 @@ export class CloudflareNativeAuthEngine {
         && row.stepUpTokenMac && constantTimeEqual(row.stepUpTokenMac, mac)
         && this.repository.consumeSecurityChallenge({ challengeRef: row.challengeRef, now });
       if (!consumed) failAuth(AUTH_ERROR_CODES.CHALLENGE_INVALID);
-    } else {
-      const ageMs = now - Number(session.createdAt || 0);
-      const counts = await this.repository.getLoginRiskSignals({
-        emailScope: SECURITY_RISK_SCOPES.loginFailure.scope,
-        emailWindowMs: SECURITY_RISK_SCOPES.loginFailure.windowMs,
-        ipScope: SECURITY_RISK_SCOPES.rapidAuthIp.scope,
-        ipWindowMs: SECURITY_RISK_SCOPES.rapidAuthIp.windowMs,
-        emailRef: identity.refs.emailRef,
-        ipRef: identity.refs.ipRef,
-        now
-      });
-      const state = await this.repository.getAccountState({ userId, now });
-      const risk = evaluateRisk({
-        accountState: state.status || 'active',
-        failedLogins: counts.failedLogins,
-        rapidRequests: counts.rapidRequests,
-        newDevice: false,
-        recoveryActive: false,
-        unverifiedAccount: false
-      }, config);
-      const recent = ageMs <= config.stepUpRecentSessionMs;
-      if (!(recent && (SECURITY_RISK_RANK[risk.level] ?? 1) < SECURITY_RISK_RANK.ELEVATED)) {
-        // The client keeps its 2-step arm; this tells it to run a
-        // step-up challenge and retry with the returned stepUpToken.
-        failAuth(AUTH_ERROR_CODES.STEP_UP_REQUIRED);
-      }
+      return;
     }
-    const result = errorFromRepository(await this.repository.revokeUserSessions({ userId, now }));
-    return Object.freeze({ revoked: Number(result.revoked || 0) });
+    const ageMs = now - Number(session.createdAt || 0);
+    const counts = await this.repository.getLoginRiskSignals({
+      emailScope: SECURITY_RISK_SCOPES.loginFailure.scope,
+      emailWindowMs: SECURITY_RISK_SCOPES.loginFailure.windowMs,
+      ipScope: SECURITY_RISK_SCOPES.rapidAuthIp.scope,
+      ipWindowMs: SECURITY_RISK_SCOPES.rapidAuthIp.windowMs,
+      emailRef: identity.refs.emailRef,
+      ipRef: identity.refs.ipRef,
+      now
+    });
+    const state = await this.repository.getAccountState({ userId, now });
+    const risk = evaluateRisk({
+      accountState: state.status || 'active',
+      failedLogins: counts.failedLogins,
+      rapidRequests: counts.rapidRequests,
+      newDevice: false,
+      recoveryActive: false,
+      unverifiedAccount: false
+    }, config);
+    const recent = ageMs <= config.stepUpRecentSessionMs;
+    if (!(recent && (SECURITY_RISK_RANK[risk.level] ?? 1) < SECURITY_RISK_RANK.ELEVATED)) {
+      failAuth(AUTH_ERROR_CODES.STEP_UP_REQUIRED);
+    }
+  }
+
+  // Phase 6 — step-up-gated logout-all (§12).
+  async revokeAllSessions(input = {}, requestContext = {}) {
+    const token = String(input.sessionToken || '').trim();
+    if (!/^[A-Za-z0-9_-]{40,96}$/.test(token)) failAuth(AUTH_ERROR_CODES.SESSION_INVALID);
+    const identity = await this.#firebaseIdentity({ ...input, sessionToken: token }, requestContext, AUTH_ERROR_CODES.SESSION_INVALID);
+    const now = Number(this.now());
+    const session = errorFromRepository(await this.repository.getSession({ sessionRef: identity.sessionRef, now }));
+    await this.#assertStepUp(input, identity, session, now);
+    const result = errorFromRepository(await this.repository.revokeUserSessions({ userId: session.user.id, now }));
+    return Object.freeze({
+      revoked: Number(result.revoked || 0),
+      emailMasked: session.user.emailMask,
+      browserClass: identity.context.userAgent || null
+    });
   }
 
   ping() { return this.repository.ping(); }

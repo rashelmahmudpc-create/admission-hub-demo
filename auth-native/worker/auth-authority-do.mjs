@@ -4,6 +4,7 @@ import { reconcileIdentitySnapshot, summarizeIdentityHealth } from '../core/iden
 import { SqliteAuthRepository } from '../storage/sqlite-auth-repository.mjs';
 import { VerificationOrchestrator } from '../verification/orchestrator.mjs';
 import { createConfiguredVerificationProviders } from '../verification/providers.mjs';
+import { dispatchSecurityNotifications } from '../core/security-notifications.mjs';
 import { SqliteVerificationRepository } from '../verification/sqlite-verification-repository.mjs';
 
 const JSON_HEADERS = Object.freeze({
@@ -49,7 +50,26 @@ export class AdmissionAuthAuthority {
       // Phase 6 — the engine's security challenges reuse this orchestrator
       // for email/Telegram delivery.
       this.engine.bindVerification(this.verification);
+      // Phase 6 Chunk 4 — security notifications. Phase 6 ships DRY-RUN:
+      // nothing is sent live unless the deployment explicitly enables it AND
+      // a sender is configured (none is wired yet, so it stays inert).
+      this.securityNotificationsDryRun = String(env.SECURITY_NOTIFICATIONS_ACTIVATION || 'dry-run') !== 'enabled';
+      this.securityNotificationSender = null;
     });
+  }
+
+  // Fire-and-forget: a notification failure must never break the auth path.
+  #dispatchSecurityEvents(events = []) {
+    if (!events.length) return;
+    try {
+      void dispatchSecurityNotifications({
+        events,
+        dryRun: this.securityNotificationsDryRun !== false,
+        sendSecurityEmail: this.securityNotificationSender
+      }).catch(() => {});
+    } catch (_) {
+      // Never let notification bookkeeping break a security decision.
+    }
   }
 
   async #scheduleExpiry() {
@@ -105,6 +125,15 @@ export class AdmissionAuthAuthority {
       if (url.pathname === '/internal/firebase/session/create') {
         const result = await this.engine.establishFirebaseSession(body.input, body.context);
         await this.#scheduleExpiry();
+        // Phase 6 Chunk 4 — a login the policy flags as a new device earns
+        // the new-device-login notice (dry-run in Phase 6).
+        if (result?.security?.trustOffer === true && result?.security?.trusted !== true && result?.user?.emailMasked) {
+          this.#dispatchSecurityEvents([{
+            eventType: 'new-device-login',
+            emailMasked: result.user.emailMasked,
+            browserClass: body.context?.userAgent || null
+          }]);
+        }
         return response(200, { ok: true, result });
       }
       if (url.pathname === '/internal/firebase/session/get') {
@@ -283,6 +312,15 @@ export class AdmissionAuthAuthority {
         // Phase 6 — step-up-gated: the engine enforces recent-session or a
         // verified step-up challenge before any session is revoked.
         const result = await this.engine.revokeAllSessions({ ...(body.input || {}), sessionToken: body.sessionToken }, body.context);
+        // A step-up token proves the policy demanded a fresh verification —
+        // that is the suspicious-activity signal worth a notice.
+        if (result?.emailMasked && String(body.input?.stepUpToken || '')) {
+          this.#dispatchSecurityEvents([{
+            eventType: 'suspicious-activity',
+            emailMasked: result.emailMasked,
+            browserClass: result.browserClass || null
+          }]);
+        }
         return response(200, { ok: true, result });
       }
       // Phase 6 — device trust + security state (internal; the public
@@ -312,10 +350,33 @@ export class AdmissionAuthAuthority {
       }
       if (url.pathname === '/internal/security/challenge/verify') {
         const result = await this.engine.verifyChallenge(body.input, body.context);
+        if (result?.emailMasked) {
+          this.#dispatchSecurityEvents([{
+            eventType: 'suspicious-activity',
+            emailMasked: result.emailMasked,
+            browserClass: result.browserClass || null
+          }]);
+        }
         return response(200, { ok: true, result });
       }
       if (url.pathname === '/internal/security/challenge/cancel') {
         const result = await this.engine.cancelChallenge(body.input, body.context);
+        return response(200, { ok: true, result });
+      }
+      // Phase 6 Chunk 4 — user-facing security history (privacy boundary:
+      // method + coarse browser class + time; no IP, no location).
+      if (url.pathname === '/internal/security/history') {
+        const result = await this.engine.securityHistory(body.input, body.context);
+        return response(200, { ok: true, result });
+      }
+      // Phase 6 Chunk 4 — admin security surface (token-gated in the public
+      // handler; refs only, no PII).
+      if (url.pathname === '/internal/admin/security/health') {
+        const result = await this.engine.securityHealth();
+        return response(200, { ok: true, result });
+      }
+      if (url.pathname === '/internal/admin/security/events') {
+        const result = await this.engine.securityEventsPage(body.input || {});
         return response(200, { ok: true, result });
       }
       return response(404, { ok: false, error: { code: 'NOT_FOUND' } });

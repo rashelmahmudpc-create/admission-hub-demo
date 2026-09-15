@@ -4821,7 +4821,10 @@ var CloudflareNativeAuthEngine = class {
     }));
     return Object.freeze({ trusted: true, expiresAt: result.expiresAt, policyVersion: config.policyVersion });
   }
-  async revokeTrustedDevice(input = {}, requestContext = {}) {
+  // Phase 6 Chunk 4 — recent login history for the signed-in user (§27).
+  // Privacy boundary: method, coarse browser class and time only — no IP,
+  // no location, no raw device identifier, no raw email.
+  async securityHistory(input = {}, requestContext = {}) {
     const identity = await this.#firebaseIdentity(input, requestContext, AUTH_ERROR_CODES.SESSION_INVALID);
     const now = Number(this.now());
     const session = errorFromRepository(await this.repository.getExternalSession({
@@ -4831,6 +4834,67 @@ var CloudflareNativeAuthEngine = class {
       emailRef: identity.refs.emailRef,
       now
     }));
+    const rows = errorFromRepository(await this.repository.recentSecurityHistory({
+      userId: session.user.id,
+      now,
+      limit: 10
+    }));
+    return Object.freeze({
+      entries: rows.map((row) => Object.freeze({
+        at: Number(row.at),
+        method: row.method,
+        browserClass: row.browserClass,
+        trusted: row.trusted === true,
+        active: row.active === true
+      })),
+      policyVersion: this.securityConfig.policyVersion
+    });
+  }
+  // Phase 6 Chunk 4 — admin security health (counts + rates, refs only).
+  async securityHealth() {
+    const now = Number(this.now());
+    const windowMs = 15 * 60 * 1e3;
+    const counts = errorFromRepository(await this.repository.securityEventCounts({ now, windowMs }));
+    return Object.freeze({
+      windowMs,
+      now,
+      failedLogins: counts.failedLogins,
+      challengesCreated: counts.challengesCreated,
+      challengesVerified: counts.challengesVerified,
+      challengesFailed: counts.challengesFailed,
+      newDeviceLogins: counts.newDeviceLogins,
+      devicesRevoked: counts.devicesRevoked,
+      sessionsRevoked: counts.sessionsRevoked
+    });
+  }
+  // Phase 6 Chunk 4 — paged security event ledger (refs only, no PII).
+  async securityEventsPage(input = {}) {
+    const limit = Math.min(Math.max(Number(input.limit) || 50, 1), 200);
+    const before = input.before ? Number(input.before) : null;
+    if (before !== null && (!Number.isFinite(before) || before <= 0)) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+    const result = errorFromRepository(await this.repository.listSecurityEvents({ limit, before }));
+    const entries = result.entries.map((row) => Object.freeze({
+      eventType: row.eventType,
+      subjectRef: row.subjectRef || null,
+      userId: row.userId || null,
+      occurredAt: Number(row.occurredAt),
+      deviceRef: row.deviceRef || null,
+      purpose: row.purpose || null,
+      policyVersion: row.policyVersion || null
+    }));
+    return Object.freeze({
+      entries: Object.freeze(entries),
+      nextBefore: entries.length === limit ? Number(entries[entries.length - 1].occurredAt) : null
+    });
+  }
+  // Phase 6 Chunk 4 — step-up-gated trusted-device revocation.
+  async revokeTrustedDevice(input = {}, requestContext = {}) {
+    const token = String(input.sessionToken || "").trim();
+    if (!/^[A-Za-z0-9_-]{40,96}$/.test(token)) failAuth(AUTH_ERROR_CODES.SESSION_INVALID);
+    const identity = await this.#firebaseIdentity({ ...input, sessionToken: token }, requestContext, AUTH_ERROR_CODES.SESSION_INVALID);
+    const now = Number(this.now());
+    const session = errorFromRepository(await this.repository.getSession({ sessionRef: identity.sessionRef, now }));
+    await this.#assertStepUp(input, identity, session, now);
     const config = this.securityConfig;
     const requested = String(input.deviceRef || "").trim();
     let deviceRef;
@@ -5001,6 +5065,8 @@ var CloudflareNativeAuthEngine = class {
       verified: true,
       purpose,
       stepUpToken,
+      emailMasked: session.user.emailMask,
+      browserClass: identity.context.userAgent || null,
       expiresAt: row.expiresAt,
       policyVersion: this.securityConfig.policyVersion
     });
@@ -5029,15 +5095,12 @@ var CloudflareNativeAuthEngine = class {
     } catch {
     }
   }
-  // Phase 6 — step-up-gated logout-all (§12). A presented step-up token is
-  // validated and consumed (single-use); without one, the action is allowed
-  // only while the session is recent AND current risk stays below ELEVATED.
-  async revokeAllSessions(input = {}, requestContext = {}) {
-    const token = String(input.sessionToken || "").trim();
-    if (!/^[A-Za-z0-9_-]{40,96}$/.test(token)) failAuth(AUTH_ERROR_CODES.SESSION_INVALID);
-    const identity = await this.#firebaseIdentity({ ...input, sessionToken: token }, requestContext, AUTH_ERROR_CODES.SESSION_INVALID);
-    const now = Number(this.now());
-    const session = errorFromRepository(await this.repository.getSession({ sessionRef: identity.sessionRef, now }));
+  // Phase 6 — the shared step-up gate (§12). A presented stepUpToken is
+  // validated (constant-time MAC, device-bound) and consumed exactly once;
+  // without one, the action is allowed only while the session is recent AND
+  // current risk stays below ELEVATED. Otherwise the client's 2-step arm
+  // runs a challenge and retries with a fresh token.
+  async #assertStepUp(input, identity, session, now) {
     const config = this.securityConfig;
     const userId = session.user.id;
     const stepUpToken = String(input.stepUpToken || "").trim();
@@ -5047,33 +5110,46 @@ var CloudflareNativeAuthEngine = class {
       const mac = await this.hmac.hex("step-up-token-v1", stepUpToken);
       const consumed = row && row.deviceRef === identity.refs.deviceRef && row.stepUpTokenMac && constantTimeEqual(row.stepUpTokenMac, mac) && this.repository.consumeSecurityChallenge({ challengeRef: row.challengeRef, now });
       if (!consumed) failAuth(AUTH_ERROR_CODES.CHALLENGE_INVALID);
-    } else {
-      const ageMs = now - Number(session.createdAt || 0);
-      const counts = await this.repository.getLoginRiskSignals({
-        emailScope: SECURITY_RISK_SCOPES.loginFailure.scope,
-        emailWindowMs: SECURITY_RISK_SCOPES.loginFailure.windowMs,
-        ipScope: SECURITY_RISK_SCOPES.rapidAuthIp.scope,
-        ipWindowMs: SECURITY_RISK_SCOPES.rapidAuthIp.windowMs,
-        emailRef: identity.refs.emailRef,
-        ipRef: identity.refs.ipRef,
-        now
-      });
-      const state = await this.repository.getAccountState({ userId, now });
-      const risk = evaluateRisk({
-        accountState: state.status || "active",
-        failedLogins: counts.failedLogins,
-        rapidRequests: counts.rapidRequests,
-        newDevice: false,
-        recoveryActive: false,
-        unverifiedAccount: false
-      }, config);
-      const recent = ageMs <= config.stepUpRecentSessionMs;
-      if (!(recent && (SECURITY_RISK_RANK[risk.level] ?? 1) < SECURITY_RISK_RANK.ELEVATED)) {
-        failAuth(AUTH_ERROR_CODES.STEP_UP_REQUIRED);
-      }
+      return;
     }
-    const result = errorFromRepository(await this.repository.revokeUserSessions({ userId, now }));
-    return Object.freeze({ revoked: Number(result.revoked || 0) });
+    const ageMs = now - Number(session.createdAt || 0);
+    const counts = await this.repository.getLoginRiskSignals({
+      emailScope: SECURITY_RISK_SCOPES.loginFailure.scope,
+      emailWindowMs: SECURITY_RISK_SCOPES.loginFailure.windowMs,
+      ipScope: SECURITY_RISK_SCOPES.rapidAuthIp.scope,
+      ipWindowMs: SECURITY_RISK_SCOPES.rapidAuthIp.windowMs,
+      emailRef: identity.refs.emailRef,
+      ipRef: identity.refs.ipRef,
+      now
+    });
+    const state = await this.repository.getAccountState({ userId, now });
+    const risk = evaluateRisk({
+      accountState: state.status || "active",
+      failedLogins: counts.failedLogins,
+      rapidRequests: counts.rapidRequests,
+      newDevice: false,
+      recoveryActive: false,
+      unverifiedAccount: false
+    }, config);
+    const recent = ageMs <= config.stepUpRecentSessionMs;
+    if (!(recent && (SECURITY_RISK_RANK[risk.level] ?? 1) < SECURITY_RISK_RANK.ELEVATED)) {
+      failAuth(AUTH_ERROR_CODES.STEP_UP_REQUIRED);
+    }
+  }
+  // Phase 6 — step-up-gated logout-all (§12).
+  async revokeAllSessions(input = {}, requestContext = {}) {
+    const token = String(input.sessionToken || "").trim();
+    if (!/^[A-Za-z0-9_-]{40,96}$/.test(token)) failAuth(AUTH_ERROR_CODES.SESSION_INVALID);
+    const identity = await this.#firebaseIdentity({ ...input, sessionToken: token }, requestContext, AUTH_ERROR_CODES.SESSION_INVALID);
+    const now = Number(this.now());
+    const session = errorFromRepository(await this.repository.getSession({ sessionRef: identity.sessionRef, now }));
+    await this.#assertStepUp(input, identity, session, now);
+    const result = errorFromRepository(await this.repository.revokeUserSessions({ userId: session.user.id, now }));
+    return Object.freeze({
+      revoked: Number(result.revoked || 0),
+      emailMasked: session.user.emailMask,
+      browserClass: identity.context.userAgent || null
+    });
   }
   ping() {
     return this.repository.ping();
@@ -7072,6 +7148,56 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           "Set-Cookie": sessionCookies(current.session, current.refreshed.refreshToken, context)
         });
       }
+      if (request.method === "GET" && url.pathname === `${AUTH_API_PREFIX}/security/state`) {
+        const current = await firebaseReadySession({ provider, jar, env, context, allowTelegram: telegramVerificationRequested(env, url) });
+        const result = await callAuthority(env, "/internal/security/state", {
+          input: { sessionToken: current.sessionToken, email: current.user.email, subject: current.user.subject },
+          context
+        });
+        return json3(request, 200, { ok: true, ...result }, {
+          "Set-Cookie": sessionCookies(current.session, current.refreshed.refreshToken, context)
+        });
+      }
+      if (request.method === "GET" && url.pathname === `${AUTH_API_PREFIX}/security/history`) {
+        const current = await firebaseReadySession({ provider, jar, env, context, allowTelegram: telegramVerificationRequested(env, url) });
+        const result = await callAuthority(env, "/internal/security/history", {
+          input: { sessionToken: current.sessionToken, email: current.user.email, subject: current.user.subject },
+          context
+        });
+        return json3(request, 200, { ok: true, ...result }, {
+          "Set-Cookie": sessionCookies(current.session, current.refreshed.refreshToken, context)
+        });
+      }
+      if (request.method === "POST" && url.pathname === `${AUTH_API_PREFIX}/security/devices/revoke`) {
+        const body = await readJson(request);
+        const current = await firebaseReadySession({ provider, jar, env, context, allowTelegram: telegramVerificationRequested(env, url) });
+        const result = await callAuthority(env, "/internal/security/device/revoke", {
+          input: {
+            sessionToken: current.sessionToken,
+            email: current.user.email,
+            subject: current.user.subject,
+            scope: String(body?.scope || "current"),
+            deviceRef: String(body?.deviceRef || ""),
+            stepUpToken: String(body?.stepUpToken || "")
+          },
+          context
+        });
+        return json3(request, 200, { ok: true, ...result }, {
+          "Set-Cookie": sessionCookies(current.session, current.refreshed.refreshToken, context)
+        });
+      }
+      if (request.method === "GET" && url.pathname === `${AUTH_API_PREFIX}/admin/security/health`) {
+        if (!adminAuthorized(request, env)) return json3(request, 403, { ok: false, error: { code: "FORBIDDEN", message: "অনুমতি নেই।" } });
+        const result = await callAuthority(env, "/internal/admin/security/health", {});
+        return json3(request, 200, { ok: true, result });
+      }
+      if (request.method === "GET" && url.pathname === `${AUTH_API_PREFIX}/admin/security/events`) {
+        if (!adminAuthorized(request, env)) return json3(request, 403, { ok: false, error: { code: "FORBIDDEN", message: "অনুমতি নেই।" } });
+        const limit = Math.min(Math.max(Number(url.searchParams.get("limit")) || 50, 1), 200);
+        const before = url.searchParams.get("before") ? Number(url.searchParams.get("before")) : null;
+        const result = await callAuthority(env, "/internal/admin/security/events", { input: { limit, before } });
+        return json3(request, 200, { ok: true, ...result });
+      }
       return json3(request, 404, { ok: false, error: { code: "NOT_FOUND", message: "Endpoint পাওয়া যায়নি।" } });
     } catch (cause) {
       const error = asNativeAuthError(cause);
@@ -7835,6 +7961,77 @@ var SqliteAuthRepository = class {
       consumedAt: row.consumedAt == null ? null : Number(row.consumedAt),
       policyVersion: row.policyVersion || null
     })));
+  }
+  // Phase 6 Chunk 4 — recent login history for the privacy boundary (§27):
+  // method + coarse browser class + time only. No IP, no location, no raw
+  // email or raw device identifier ever leave this method.
+  recentSecurityHistory({ userId, now, limit }) {
+    const sessions = this.#rows(
+      `SELECT s.created_at AS at,s.user_agent AS browserClass,s.revoked_at AS revokedAt,s.device_ref AS deviceRef
+       FROM auth_sessions s WHERE s.user_id=?
+       ORDER BY s.created_at DESC, s.rowid DESC LIMIT ?`,
+      userId,
+      Math.min(Number(limit) || 10, 50)
+    );
+    return Object.freeze(sessions.map((session) => {
+      const event = this.#one(
+        `SELECT event_type AS eventType FROM auth_security_events
+         WHERE user_id=? AND occurred_at=? AND (device_ref IS ? OR ? IS NULL)
+           AND event_type IN ('firebase-login','firebase-account-linked','login-trusted-device','firebase-passkey-login','new-device-challenge-completed')
+         ORDER BY rowid DESC LIMIT 1`,
+        userId,
+        session.at,
+        session.deviceRef,
+        session.deviceRef
+      );
+      const type = event ? String(event.eventType) : "firebase-login";
+      return Object.freeze({
+        at: Number(session.at),
+        method: type === "firebase-passkey-login" ? "passkey" : "credentials",
+        browserClass: String(session.browserClass || "unknown"),
+        trusted: type === "login-trusted-device",
+        active: session.revokedAt == null
+      });
+    }));
+  }
+  // Phase 6 Chunk 4 — admin security health: event counts inside a window.
+  securityEventCounts({ now, windowMs }) {
+    const start = Number(now) - Number(windowMs);
+    const counts = {};
+    this.#rows(
+      "SELECT event_type AS eventType,count(*) AS n FROM auth_security_events WHERE occurred_at>=? GROUP BY event_type",
+      start
+    ).forEach((row) => {
+      counts[String(row.eventType)] = Number(row.n);
+    });
+    return Object.freeze({
+      failedLogins: counts["login-failed"] || 0,
+      challengesCreated: counts["security-challenge-created"] || 0,
+      challengesVerified: counts["security-challenge-verified"] || 0,
+      challengesFailed: counts["security-challenge-failed"] || 0,
+      newDeviceLogins: counts["new-device-challenge-completed"] || 0,
+      devicesRevoked: counts["device-revoked"] || 0,
+      sessionsRevoked: counts["account-sessions-revoked"] || 0
+    });
+  }
+  // Phase 6 Chunk 4 — paged ledger view for admins: refs only, no PII
+  // (subject/user/device are opaque HMAC refs; there is no raw column here).
+  listSecurityEvents({ limit, before }) {
+    const rows = before ? this.#rows(
+      `SELECT event_type AS eventType,subject_ref AS subjectRef,user_id AS userId,occurred_at AS occurredAt,
+          device_ref AS deviceRef,purpose,policy_version AS policyVersion
+         FROM auth_security_events WHERE occurred_at<?
+         ORDER BY occurred_at DESC, rowid DESC LIMIT ?`,
+      before,
+      limit
+    ) : this.#rows(
+      `SELECT event_type AS eventType,subject_ref AS subjectRef,user_id AS userId,occurred_at AS occurredAt,
+          device_ref AS deviceRef,purpose,policy_version AS policyVersion
+         FROM auth_security_events
+         ORDER BY occurred_at DESC, rowid DESC LIMIT ?`,
+      limit
+    );
+    return Object.freeze({ entries: rows });
   }
   // Risk signals for the login decision (§3-§4), derived from auth_rate_limits
   // state only — no new table, no raw identifiers leave the DO.
@@ -9885,6 +10082,122 @@ function createConfiguredVerificationProviders(env = {}, { fetchImpl = globalThi
 }
 var __verificationProvidersTest = Object.freeze({ httpsOrigin, boundedJson, httpFailure });
 
+// auth-native/core/security-notifications.mjs
+var SECURITY_NOTIFICATION_EVENTS = Object.freeze({
+  "new-device-login": Object.freeze({
+    template: "security-new-device-login",
+    subject: "Admission Hub: নতুন device থেকে লগইন",
+    body: 'তোমার Admission Hub account একটি নতুন device থেকে লগইন করেছে। যদি এটি তুমি না হও, তাহলে দ্রুত তোমার password পরিবর্তন করো এবং "সব device থেকে Log Out" ব্যবহার করো।'
+  }),
+  "password-changed": Object.freeze({
+    template: "security-password-changed",
+    subject: "Admission Hub: password পরিবর্তন হয়েছে",
+    body: "তোমার Admission Hub account-এর password সম্প্রতি পরিবর্তন হয়েছে। যদি এটি তুমি না করো, দ্রুত password reset করো।"
+  }),
+  "passkey-added": Object.freeze({
+    template: "security-passkey-added",
+    subject: "Admission Hub: নতুন Passkey যুক্ত হয়েছে",
+    body: "তোমার Admission Hub account-এ একটি নতুন Passkey যুক্ত হয়েছে। যদি এটি তুমি না করো, তাহলে Account-এ গিয়ে Passkey-গুলোর তালিকা দেখে নাও।"
+  }),
+  "passkey-removed": Object.freeze({
+    template: "security-passkey-removed",
+    subject: "Admission Hub: Passkey মুছে ফেলা হয়েছে",
+    body: "তোমার Admission Hub account থেকে একটি Passkey মুছে ফেলা হয়েছে।"
+  }),
+  "recovery-started": Object.freeze({
+    template: "security-recovery-started",
+    subject: "Admission Hub: account recovery শুরু হয়েছে",
+    body: "তোমার Admission Hub account-এর জন্য একটি recovery শুরু হয়েছে। Recovery code কেবল তোমাকেই ব্যবহার করো—এটি কারো সঙ্গে শেয়ার করো না।"
+  }),
+  "recovery-completed": Object.freeze({
+    template: "security-recovery-completed",
+    subject: "Admission Hub: account recovery সম্পন্ন",
+    body: "তোমার Admission Hub account-এর recovery সম্পন্ন হয়েছে। নিশ্চিত হতে তোমার security settings দেখে নাও।"
+  }),
+  "suspicious-activity": Object.freeze({
+    template: "security-suspicious-activity",
+    subject: "Admission Hub: অস্বাভাবিক activity",
+    body: "তোমার Admission Hub account-এ অস্বাভাবিক activity লক্ষ্য করা গেছে। নিশ্চিত হতে তোমার password, Passkey-গুলো এবং trusted devices দেখে নাও।"
+  })
+});
+var isMaskedEmail = (value) => {
+  const text = String(value || "");
+  return /^[A-Za-z0-9]{1,3}\*{2,}@[A-Za-z0-9.-]+$/.test(text);
+};
+function renderSecurityNotification(input = {}) {
+  const spec = SECURITY_NOTIFICATION_EVENTS[String(input.eventType || "")];
+  if (!spec) return null;
+  const emailMasked = String(input.emailMasked || "");
+  if (input.email !== void 0) throw new TypeError("raw email is not allowed in security notifications");
+  if (!isMaskedEmail(emailMasked)) throw new TypeError("security notifications require the masked email only");
+  const lines = [spec.body];
+  if (input.browserClass) lines.push(`Device: ${String(input.browserClass)}`);
+  if (input.at) {
+    let when = "";
+    try {
+      when = new Date(Number(input.at)).toLocaleString("bn-BD", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Dhaka" });
+    } catch (_) {
+      when = "";
+    }
+    if (when) lines.push(`সময়: ${when} (ঢাকা)`);
+  }
+  return Object.freeze({
+    eventType: String(input.eventType),
+    template: spec.template,
+    subject: spec.subject,
+    body: lines.join("\n"),
+    emailMasked
+  });
+}
+async function dispatchSecurityNotifications({
+  events = [],
+  dryRun = true,
+  sendSecurityEmail,
+  now = Date.now
+} = {}) {
+  const rendered = [];
+  for (const event of events) {
+    try {
+      const item = renderSecurityNotification({ ...event, at: event.at ?? now() });
+      if (item) rendered.push(item);
+    } catch (error) {
+      rendered.push(Object.freeze({ skipped: true, eventType: String(event?.eventType || "unknown"), reason: "pii-contract" }));
+    }
+  }
+  const sent = [];
+  if (!dryRun) {
+    if (typeof sendSecurityEmail !== "function") {
+      for (const item of rendered) {
+        if (!item.skipped) sent.push(Object.freeze({ template: item.template, ok: false, reason: "sender-not-configured" }));
+      }
+    } else {
+      for (const item of rendered) {
+        if (item.skipped) {
+          sent.push(item);
+          continue;
+        }
+        let ok = false;
+        let reason2 = null;
+        try {
+          const result = await sendSecurityEmail(item);
+          ok = result?.ok !== false;
+          reason2 = ok ? null : String(result?.reason || "send-failed");
+        } catch (_) {
+          ok = false;
+          reason2 = "send-error";
+        }
+        sent.push(Object.freeze({ template: item.template, ok, ...reason2 ? { reason: reason2 } : {} }));
+      }
+    }
+  }
+  return Object.freeze({
+    dryRun: dryRun === true,
+    requested: rendered.length,
+    skipped: rendered.filter((item) => item.skipped === true).length,
+    sent: Object.freeze(sent)
+  });
+}
+
 // auth-native/verification/sqlite-verification-repository.mjs
 var DAY_MS2 = 864e5;
 var EVENT_RETENTION_MS2 = 90 * DAY_MS2;
@@ -10667,7 +10980,22 @@ var AdmissionAuthAuthority = class {
         activated: ["canary", "enabled"].includes(String(env.VERIFICATION_AUTH_ACTIVATION || ""))
       });
       this.engine.bindVerification(this.verification);
+      this.securityNotificationsDryRun = String(env.SECURITY_NOTIFICATIONS_ACTIVATION || "dry-run") !== "enabled";
+      this.securityNotificationSender = null;
     });
+  }
+  // Fire-and-forget: a notification failure must never break the auth path.
+  #dispatchSecurityEvents(events = []) {
+    if (!events.length) return;
+    try {
+      void dispatchSecurityNotifications({
+        events,
+        dryRun: this.securityNotificationsDryRun !== false,
+        sendSecurityEmail: this.securityNotificationSender
+      }).catch(() => {
+      });
+    } catch (_) {
+    }
   }
   async #scheduleExpiry() {
     const expiries = await Promise.all([this.engine.nextExpiry(), this.verification.nextExpiry()]);
@@ -10719,6 +11047,13 @@ var AdmissionAuthAuthority = class {
       if (url.pathname === "/internal/firebase/session/create") {
         const result = await this.engine.establishFirebaseSession(body.input, body.context);
         await this.#scheduleExpiry();
+        if (result?.security?.trustOffer === true && result?.security?.trusted !== true && result?.user?.emailMasked) {
+          this.#dispatchSecurityEvents([{
+            eventType: "new-device-login",
+            emailMasked: result.user.emailMasked,
+            browserClass: body.context?.userAgent || null
+          }]);
+        }
         return response2(200, { ok: true, result });
       }
       if (url.pathname === "/internal/firebase/session/get") {
@@ -10895,6 +11230,13 @@ var AdmissionAuthAuthority = class {
       }
       if (url.pathname === "/internal/session/revoke-all") {
         const result = await this.engine.revokeAllSessions({ ...body.input || {}, sessionToken: body.sessionToken }, body.context);
+        if (result?.emailMasked && String(body.input?.stepUpToken || "")) {
+          this.#dispatchSecurityEvents([{
+            eventType: "suspicious-activity",
+            emailMasked: result.emailMasked,
+            browserClass: result.browserClass || null
+          }]);
+        }
         return response2(200, { ok: true, result });
       }
       if (url.pathname === "/internal/firebase/login/failure") {
@@ -10921,10 +11263,29 @@ var AdmissionAuthAuthority = class {
       }
       if (url.pathname === "/internal/security/challenge/verify") {
         const result = await this.engine.verifyChallenge(body.input, body.context);
+        if (result?.emailMasked) {
+          this.#dispatchSecurityEvents([{
+            eventType: "suspicious-activity",
+            emailMasked: result.emailMasked,
+            browserClass: result.browserClass || null
+          }]);
+        }
         return response2(200, { ok: true, result });
       }
       if (url.pathname === "/internal/security/challenge/cancel") {
         const result = await this.engine.cancelChallenge(body.input, body.context);
+        return response2(200, { ok: true, result });
+      }
+      if (url.pathname === "/internal/security/history") {
+        const result = await this.engine.securityHistory(body.input, body.context);
+        return response2(200, { ok: true, result });
+      }
+      if (url.pathname === "/internal/admin/security/health") {
+        const result = await this.engine.securityHealth();
+        return response2(200, { ok: true, result });
+      }
+      if (url.pathname === "/internal/admin/security/events") {
+        const result = await this.engine.securityEventsPage(body.input || {});
         return response2(200, { ok: true, result });
       }
       return response2(404, { ok: false, error: { code: "NOT_FOUND" } });

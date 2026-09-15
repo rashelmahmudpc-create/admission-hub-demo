@@ -1401,6 +1401,61 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           'Set-Cookie': sessionCookies(current.session, current.refreshed.refreshToken, context)
         });
       }
+      // Phase 6 Chunk 4 — signed-in security state (device list, trust, status).
+      if (request.method === 'GET' && url.pathname === `${AUTH_API_PREFIX}/security/state`) {
+        const current = await firebaseReadySession({ provider, jar, env, context, allowTelegram: telegramVerificationRequested(env, url) });
+        const result = await callAuthority(env, '/internal/security/state', {
+          input: { sessionToken: current.sessionToken, email: current.user.email, subject: current.user.subject },
+          context
+        });
+        return json(request, 200, { ok: true, ...result }, {
+          'Set-Cookie': sessionCookies(current.session, current.refreshed.refreshToken, context)
+        });
+      }
+      // Phase 6 Chunk 4 — recent login history (privacy boundary: method,
+      // coarse browser class and time only; no IP, no location, ever).
+      if (request.method === 'GET' && url.pathname === `${AUTH_API_PREFIX}/security/history`) {
+        const current = await firebaseReadySession({ provider, jar, env, context, allowTelegram: telegramVerificationRequested(env, url) });
+        const result = await callAuthority(env, '/internal/security/history', {
+          input: { sessionToken: current.sessionToken, email: current.user.email, subject: current.user.subject },
+          context
+        });
+        return json(request, 200, { ok: true, ...result }, {
+          'Set-Cookie': sessionCookies(current.session, current.refreshed.refreshToken, context)
+        });
+      }
+      // Phase 6 Chunk 4 — step-up-gated trusted-device revocation.
+      if (request.method === 'POST' && url.pathname === `${AUTH_API_PREFIX}/security/devices/revoke`) {
+        const body = await readJson(request);
+        const current = await firebaseReadySession({ provider, jar, env, context, allowTelegram: telegramVerificationRequested(env, url) });
+        const result = await callAuthority(env, '/internal/security/device/revoke', {
+          input: {
+            sessionToken: current.sessionToken,
+            email: current.user.email,
+            subject: current.user.subject,
+            scope: String(body?.scope || 'current'),
+            deviceRef: String(body?.deviceRef || ''),
+            stepUpToken: String(body?.stepUpToken || '')
+          },
+          context
+        });
+        return json(request, 200, { ok: true, ...result }, {
+          'Set-Cookie': sessionCookies(current.session, current.refreshed.refreshToken, context)
+        });
+      }
+      // Phase 6 Chunk 4 — admin security surface (token-gated, refs only).
+      if (request.method === 'GET' && url.pathname === `${AUTH_API_PREFIX}/admin/security/health`) {
+        if (!adminAuthorized(request, env)) return json(request, 403, { ok: false, error: { code: 'FORBIDDEN', message: 'অনুমতি নেই।' } });
+        const result = await callAuthority(env, '/internal/admin/security/health', {});
+        return json(request, 200, { ok: true, result });
+      }
+      if (request.method === 'GET' && url.pathname === `${AUTH_API_PREFIX}/admin/security/events`) {
+        if (!adminAuthorized(request, env)) return json(request, 403, { ok: false, error: { code: 'FORBIDDEN', message: 'অনুমতি নেই।' } });
+        const limit = Math.min(Math.max(Number(url.searchParams.get('limit')) || 50, 1), 200);
+        const before = url.searchParams.get('before') ? Number(url.searchParams.get('before')) : null;
+        const result = await callAuthority(env, '/internal/admin/security/events', { input: { limit, before } });
+        return json(request, 200, { ok: true, ...result });
+      }
 
       return json(request, 404, { ok: false, error: { code: 'NOT_FOUND', message: 'Endpoint পাওয়া যায়নি।' } });
     } catch (cause) {

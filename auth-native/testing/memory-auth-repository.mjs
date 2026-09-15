@@ -623,6 +623,62 @@ export class MemoryAuthRepository {
     })));
   }
 
+  recentSecurityHistory({ userId, now, limit }) {
+    const loginTypes = ['firebase-login', 'firebase-account-linked', 'login-trusted-device', 'firebase-passkey-login', 'new-device-challenge-completed'];
+    const rows = [...this.sessions.values()]
+      .filter(session => session.userId === userId)
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .slice(0, Math.min(Number(limit) || 10, 50));
+    return Object.freeze(rows.map(session => {
+      const event = [...this.events].reverse().find(candidate =>
+        candidate.userId === userId
+        && candidate.at === session.createdAt
+        && loginTypes.includes(candidate.type)
+        && (candidate.deviceRef == null ? session.deviceRef == null : candidate.deviceRef === session.deviceRef)
+      );
+      const type = event ? event.type : 'firebase-login';
+      return Object.freeze({
+        at: Number(session.createdAt),
+        method: type === 'firebase-passkey-login' ? 'passkey' : 'credentials',
+        browserClass: String(session.userAgent || 'unknown'),
+        trusted: type === 'login-trusted-device',
+        active: session.revokedAt == null
+      });
+    }));
+  }
+
+  securityEventCounts({ now, windowMs }) {
+    const start = Number(now) - Number(windowMs);
+    const counts = {};
+    for (const event of this.events) if (event.at >= start) counts[event.type] = (counts[event.type] || 0) + 1;
+    return Object.freeze({
+      failedLogins: counts['login-failed'] || 0,
+      challengesCreated: counts['security-challenge-created'] || 0,
+      challengesVerified: counts['security-challenge-verified'] || 0,
+      challengesFailed: counts['security-challenge-failed'] || 0,
+      newDeviceLogins: counts['new-device-challenge-completed'] || 0,
+      devicesRevoked: counts['device-revoked'] || 0,
+      sessionsRevoked: counts['account-sessions-revoked'] || 0
+    });
+  }
+
+  listSecurityEvents({ limit, before }) {
+    const rows = this.events
+      .filter(event => (before ? event.at < Number(before) : true))
+      .sort((a, b) => b.at - a.at)
+      .slice(0, limit)
+      .map(event => Object.freeze({
+        eventType: event.type,
+        subjectRef: event.subjectRef || null,
+        userId: event.userId || null,
+        occurredAt: Number(event.at),
+        deviceRef: event.deviceRef || null,
+        purpose: event.purpose || null,
+        policyVersion: event.policyVersion || null
+      }));
+    return Object.freeze({ entries: rows });
+  }
+
   async identitySnapshot() {
     const users = [...this.users.values()]
       .filter(user => user && user.id)
