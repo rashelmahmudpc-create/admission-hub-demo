@@ -1,42 +1,32 @@
-# LATEST — PHASE 6 COMPLETE & LIVE ✅
+# LATEST — Phase 6 LIVE ✅ · Phase 7 PLAN awaiting approval
 
 **Updated:** 2026-09-15 (Asia/Dhaka) · Agent: **Arena Agent Mode**
 
 ## STATUS
 
-- **PHASE 6 (Security, Device Trust & Risk Engine) — COMPLETE & LIVE.**
-  `v256-security-core-20260915` is serving on
-  **https://admissionhub.pages.dev** (Pages deployment `b9237110`),
-  worker `admission-gk` version `3b1b4c97-9f84-4cd2-a6cc-5db5a3245458`
-  (rollback anchor: `6c5ba2f2-443b-45e4-88ec-90a959f746f7`).
-- Commits: `9f00cf3` → `3fc8860` → `eb64e9a` → `377ae00` → `a6d1554`
-  → `efb238e` (+ docs commit).
-- Publish was **manual** (Cloudflare API, owner-authorized): GitHub
-  disabled **Actions AND Pages** at the account level ("Actions has been
-  disabled for this user"; github.io demo → "Site not found"). All
-  workflow pre-gates passed locally; the workflow's own live-verification
-  script ran unmodified against the live host: PASS. Telegram canary
-  activated (webhook already correct), transient secret deleted,
-  activation route closed (403).
-- Documented exception: `verify-google-browser-origin.mjs` not re-run in
-  the sandbox (no root for Chromium system libs) — justified: Phase 6
-  diff touches zero Google files; live google config still `READY`.
-- **Demo host** `sheikhrashel47-stack.github.io/admission-hub-demo/`
-  still 404 until GitHub re-enables Pages (support ticket path). Will
-  serve v256 automatically after re-enable (legacy branch-based build).
-- **Report:** `docs/PHASE6-FINAL-REPORT.md` (deploy section updated).
+- **PHASE 6 COMPLETE & LIVE** — `v256-security-core-20260915` on
+  admissionhub.pages.dev (Pages `b9237110`, worker `3b1b4c97...`,
+  rollback anchor `6c5ba2f2...`). Manual owner-authorized publish
+  (GitHub disabled Actions+Pages at account level). Full workflow
+  verification script PASS. Google login browser-verified by owner.
+  Report: `docs/PHASE6-FINAL-REPORT.md`.
+- **PHASE 7 (Profile & Personal Identity Experience) — PLAN READY,
+  awaiting owner approval** → `docs/PHASE7-PLAN.md`.
+  - Audit done: Phase 3 profile base exists (`auth_profiles`,
+    GET/POST /profile, events system, initials avatar); gaps =
+    mobile/bio/avatar(R2)/target/AH-public-ID/visibility/completion/
+    dynamic context/PATCH semantics.
+  - 5 chunks: core data+PATCH · avatar(R2) · public identity+privacy ·
+    dynamic UI (new `profile-ui.js`) · protection+v257+release.
+  - 4 open questions in plan §11 (R2 bucket + token R2 scope, public
+    URL, SVG default avatar, Profile nav tab).
 
-## NEXT (owner, when ready)
+## OWNER TODO (non-blocking)
 
-1. GitHub Support ticket to re-enable Actions + Pages on the account
-   (message draft in chat history). Then: the `native-auth-guard.yml`
-   push guard and the protected publish workflow work again; demo host
-   revives automatically.
-2. Phase 7 planning (roadmap gate) — start only on owner approval.
+- GitHub Support ticket: re-enable Actions + Pages (draft in chat).
+  Demo host (github.io) still 404 until then; serves v256 automatically
+  after re-enable.
 
 ## BEFORE (still true)
 
-- **PHASE 5 COMPLETE** — was live on both hosts
-  (`v255-session-engine-20260915`). Report: `docs/PHASE5-FINAL-REPORT.md`.
-- Phases 1-4 COMPLETE (v252 line). Reports: `docs/PHASE3-*`,
-  `docs/PHASE4-FINAL-REPORT.md`.
+- Phases 3/4/5 COMPLETE (v255 line). Reports in `docs/`.
