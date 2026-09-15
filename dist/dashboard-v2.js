@@ -176,8 +176,10 @@
     const avatarInner = (typeof window.__ahHasAvatar === 'function' && window.__ahHasAvatar())
       ? '<img class="dv2-avatar-img" src="/api/auth/v1/profile/avatar" alt="" onerror="this.remove()">' + avatarLetter
       : avatarLetter;
+    // Phase 7 hotfix — the dashboard avatar is the top entry point to the
+    // Profile tab (same destination as the bottom-nav 👤). One identity surface.
     const header = '<div class="dv2-header">' +
-      '<div class="dv2-avatar">' + avatarInner + '</div>' +
+      '<div class="dv2-avatar dv2-avatar-tap" data-role="open-profile" title="Profile" onclick="navigate(\'my-profile\')">' + avatarInner + '</div>' +
       '<div class="dv2-hello"><b>' + escv((C().user && C().user.name) || 'শুভ শুভ - Scholar') + '</b>' +
       '<div class="dv2-muted">' + new Intl.DateTimeFormat('bn-BD', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(new Date()) + '</div></div>' +
       '<button class="dv2-bell dv2-bell-c" onclick="navigate(\'history\')" aria-label="নোটিফিকেশন">🔔</button></div>';
