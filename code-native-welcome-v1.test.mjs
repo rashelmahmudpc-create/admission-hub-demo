@@ -125,7 +125,7 @@ test('custom Guest Dashboard is absent and Guest returns to the ordinary app rou
 });
 
 test('code-native assets and service-worker release markers are synchronized', () => {
-  for (const asset of [`account-access.css?v=${UI_VERSION}`, `account-access.js?v=${UI_VERSION}`, 'dashboard-v2.css?v=dash2f9', 'dashboard-v2.js?v=dash2f10-main-ai']) {
+  for (const asset of [`account-access.css?v=${UI_VERSION}`, `account-access.js?v=${UI_VERSION}`, 'dashboard-v2.css?v=dash2f10', 'dashboard-v2.js?v=dash2f11-profile-tap']) {
     assert.ok(HTML.includes(asset), asset);
     assert.ok(SW.includes(asset), asset);
   }
@@ -133,7 +133,7 @@ test('code-native assets and service-worker release markers are synchronized', (
   assert.match(HTML, new RegExp(`expectedSwVersion = '${SHELL_VERSION}'`));
   assert.match(HTML, new RegExp(`sw\\.js\\?v=${SHELL_VERSION}`));
   assert.ok(HTML.indexOf('institutions-bd.js?v=bd-institutions-v1') < HTML.indexOf(`account-access.js?v=${UI_VERSION}`));
-  assert.ok(HTML.indexOf(`account-access.js?v=${UI_VERSION}`) < HTML.indexOf('dashboard-v2.js?v=dash2f10-main-ai'));
+  assert.ok(HTML.indexOf(`account-access.js?v=${UI_VERSION}`) < HTML.indexOf('dashboard-v2.js?v=dash2f11-profile-tap'));
 });
 
 test('protected publication remains the only release path for code-native entry v1', () => {

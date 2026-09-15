@@ -30,7 +30,7 @@ test('production code contains no superseded command-center markers', (() => {
 
 test('HTML and service worker are no-cache controlled', HEADERS.includes('/sw.js') && HEADERS.includes('/index.html') && HEADERS.includes('Cache-Control: no-cache'));
 test('dashboard and app-shell build markers are current',
-  H.includes('dashboard-v2.js?v=dash2f10-main-ai') && SW.includes('dashboard-v2.js?v=dash2f10-main-ai') &&
+  H.includes('dashboard-v2.js?v=dash2f11-profile-tap') && SW.includes('dashboard-v2.js?v=dash2f11-profile-tap') &&
   SW.includes("const BUILD_ID = 'v257-profile-core-20260915'") && H.includes('sw.js?v=v257-profile-core-20260915'));
 
 test('dashboard-v2 renders without any account bootstrap', await (async () => {

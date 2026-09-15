@@ -104,13 +104,13 @@ test('index.html: Profile tab (6th) wired into bottom nav + router', () => {
 });
 
 test('index.html: profile assets linked with versions', () => {
-  assert.match(HTML, /<link rel="stylesheet" href="\.\/profile-ui\.css\?v=profile-v1">/);
-  assert.match(HTML, /<script defer src="\.\/profile-ui\.js\?v=profile-v1"><\/script>/);
+  assert.match(HTML, /<link rel="stylesheet" href="\.\/profile-ui\.css\?v=profile-v2">/);
+  assert.match(HTML, /<script defer src="\.\/profile-ui\.js\?v=profile-v2"><\/script>/);
 });
 
 test('sw.js caches the profile assets', () => {
-  assert.match(SW, /'\.\/profile-ui\.js\?v=profile-v1',/);
-  assert.match(SW, /'\.\/profile-ui\.css\?v=profile-v1',/);
+  assert.match(SW, /'\.\/profile-ui\.js\?v=profile-v2',/);
+  assert.match(SW, /'\.\/profile-ui\.css\?v=profile-v2',/);
 });
 
 test('_redirects serves /AH-* to the SPA', () => {
