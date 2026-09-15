@@ -3246,6 +3246,8 @@ var AUTH_ERROR_CODES = Object.freeze({
   BACKUP_UNAVAILABLE: "BACKUP_UNAVAILABLE",
   STEP_UP_REQUIRED: "STEP_UP_REQUIRED",
   CHALLENGE_INVALID: "CHALLENGE_INVALID",
+  PROFILE_VERSION_CONFLICT: "PROFILE_VERSION_CONFLICT",
+  PUBLIC_PROFILE_NOT_FOUND: "PUBLIC_PROFILE_NOT_FOUND",
   AUTH_PROVIDER_UNAVAILABLE: "AUTH_PROVIDER_UNAVAILABLE",
   DELIVERY_UNAVAILABLE: "DELIVERY_UNAVAILABLE",
   STORAGE_UNAVAILABLE: "STORAGE_UNAVAILABLE",
@@ -3283,6 +3285,8 @@ var DEFAULTS2 = Object.freeze({
   [AUTH_ERROR_CODES.BACKUP_UNAVAILABLE]: Object.freeze({ status: 503, message: "বিকল্প যাচাই এখন পাওয়া যাচ্ছে না—অন্য পদ্ধতি ব্যবহার করুন।" }),
   [AUTH_ERROR_CODES.STEP_UP_REQUIRED]: Object.freeze({ status: 409, message: "এই গুরুত্বপূর্ণ কাজটি নিশ্চিত করতে একটি fresh security verification দরকার।" }),
   [AUTH_ERROR_CODES.CHALLENGE_INVALID]: Object.freeze({ status: 409, message: "Security verification সঠিক নয় বা সময় শেষ হয়ে গেছে—আবার চেষ্টা করুন।" }),
+  [AUTH_ERROR_CODES.PROFILE_VERSION_CONFLICT]: Object.freeze({ status: 409, message: "Profile-এ একই সময়ে অন্য জায়গা থেকে পরিবর্তন হয়েছে—আবার দেখে সংরক্ষণ করুন।" }),
+  [AUTH_ERROR_CODES.PUBLIC_PROFILE_NOT_FOUND]: Object.freeze({ status: 404, message: "এই public profile পাওয়া যায়নি।" }),
   [AUTH_ERROR_CODES.AUTH_PROVIDER_UNAVAILABLE]: Object.freeze({ status: 503, message: "অ্যাকাউন্ট সেবা সাময়িকভাবে পাওয়া যাচ্ছে না—একটু পরে চেষ্টা করুন।" }),
   [AUTH_ERROR_CODES.DELIVERY_UNAVAILABLE]: Object.freeze({ status: 503, message: "ইমেইল এখন সাময়িকভাবে পাঠানো যাচ্ছে না—একটু পরে চেষ্টা করুন।" }),
   [AUTH_ERROR_CODES.STORAGE_UNAVAILABLE]: Object.freeze({ status: 503, message: "অ্যাকাউন্ট সেবা সাময়িকভাবে ব্যস্ত—একটু পরে চেষ্টা করুন।" }),
@@ -4044,6 +4048,24 @@ var FIREBASE_OPERATION_LIMITS = Object.freeze({
     Object.freeze({ scope: "firebase-profile-device-day", source: "device", limit: 60, windowMs: 24 * 60 * 60 * 1e3 }),
     Object.freeze({ scope: "firebase-profile-ip-hour", source: "ip", limit: 300, windowMs: 60 * 60 * 1e3 }),
     Object.freeze({ scope: "firebase-profile-global-minute", source: "global", limit: 1e3, windowMs: 60 * 1e3 })
+  ]),
+  // Phase 7 — profile patch + avatar + public reads.
+  "profile-patch": Object.freeze([
+    Object.freeze({ scope: "firebase-profile-email-day", source: "email", limit: 30, windowMs: 24 * 60 * 60 * 1e3 }),
+    Object.freeze({ scope: "firebase-profile-device-day", source: "device", limit: 60, windowMs: 24 * 60 * 60 * 1e3 }),
+    Object.freeze({ scope: "firebase-profile-ip-hour", source: "ip", limit: 300, windowMs: 60 * 60 * 1e3 }),
+    Object.freeze({ scope: "firebase-profile-global-minute", source: "global", limit: 1e3, windowMs: 60 * 1e3 })
+  ]),
+  "avatar-write": Object.freeze([
+    Object.freeze({ scope: "firebase-avatar-email-day", source: "email", limit: 10, windowMs: 24 * 60 * 60 * 1e3 }),
+    Object.freeze({ scope: "firebase-avatar-device-day", source: "device", limit: 20, windowMs: 24 * 60 * 60 * 1e3 }),
+    Object.freeze({ scope: "firebase-avatar-ip-hour", source: "ip", limit: 60, windowMs: 60 * 60 * 1e3 }),
+    Object.freeze({ scope: "firebase-avatar-global-minute", source: "global", limit: 100, windowMs: 60 * 1e3 })
+  ]),
+  "public-profile-read": Object.freeze([
+    Object.freeze({ scope: "firebase-publicprofile-ip-15m", source: "ip", limit: 60, windowMs: 15 * 60 * 1e3 }),
+    Object.freeze({ scope: "firebase-publicprofile-device-15m", source: "device", limit: 30, windowMs: 15 * 60 * 1e3 }),
+    Object.freeze({ scope: "firebase-publicprofile-global-minute", source: "global", limit: 600, windowMs: 60 * 1e3 })
   ])
 });
 var requiredRepositoryMethods = Object.freeze([
@@ -4156,9 +4178,60 @@ var validChallengeId = (value) => {
   if (!/^[A-Za-z0-9_-]{24,96}$/.test(challengeId)) failAuth(AUTH_ERROR_CODES.PASSKEY_INVALID);
   return challengeId;
 };
+var AVATAR_MIME_MAGIC = Object.freeze({
+  "image/jpeg": Object.freeze([255, 216, 255]),
+  "image/png": Object.freeze([137, 80, 78, 71]),
+  "image/webp": Object.freeze([82, 73, 70, 70])
+});
+var WEBP_MAGIC_OFFSET8 = 1346520407;
+var AVATAR_MAX_BYTES = 2 * 1024 * 1024;
+var AVATAR_MIN_BYTES = 64;
+function normalizeProfilePatch(value = {}) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+  const fields = /* @__PURE__ */ Object.create(null);
+  let touched = false;
+  for (const [key, raw] of Object.entries(value)) {
+    if (raw === void 0) continue;
+    touched = true;
+    if (key === "fullName") {
+      const name = cleanProfileText(raw, 80);
+      if (name.length < 2 || name.length > 80 || !/^[\p{L}\p{M} .'-]+$/u.test(name)) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+      fields.fullName = name;
+    } else if (key === "mobile") {
+      const mobile = String(raw || "").replace(/[\s()-]/g, "");
+      if (!/^\+?[0-9]{8,15}$/.test(mobile)) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+      fields.mobile = mobile;
+    } else if (key === "bio") {
+      const bio = String(raw || "").normalize("NFKC").replace(/\s+/g, " ").trim().slice(0, 281);
+      if (bio.length > 280 || /[\r\n\u0000]/.test(bio)) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+      fields.bio = bio;
+    } else if (key === "target") {
+      if (raw === null) {
+        fields.targets = [];
+        continue;
+      }
+      if (!raw || typeof raw !== "object" || Array.isArray(raw)) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+      const name = cleanProfileText(raw.name, 120);
+      const unit = cleanProfileText(raw.unit, 20);
+      const year = cleanProfileText(raw.year, 10);
+      if (name.length < 2 || name.length > 120 || unit.length > 20 || year.length > 10 || /[\r\n\u0000<>]/.test(name) || /[\r\n\u0000<>]/.test(unit) || /[\r\n\u0000<>]/.test(year)) {
+        failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+      }
+      fields.targets = [Object.freeze({ name, unit, year })];
+    } else if (key === "visibility") {
+      if (!["private", "limited", "public"].includes(raw)) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+      fields.visibility = raw;
+    } else {
+      failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+    }
+  }
+  if (!touched) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+  return Object.freeze(fields);
+}
 var CloudflareNativeAuthEngine = class {
-  constructor({ repository, hmacSecret, now = () => Date.now(), cryptoImpl = globalThis.crypto, passkeyRpId = PASSKEY_RP_ID, passkeyOrigins = [`https://${PASSKEY_RP_ID}`], securityConfigRaw = "" } = {}) {
+  constructor({ repository, hmacSecret, now = () => Date.now(), cryptoImpl = globalThis.crypto, passkeyRpId = PASSKEY_RP_ID, passkeyOrigins = [`https://${PASSKEY_RP_ID}`], securityConfigRaw = "", avatarStore = null } = {}) {
     this.repository = assertRepository(repository);
+    this.avatarStore = avatarStore || null;
     this.hmac = new AuthHmac(hmacSecret, cryptoImpl);
     this.vault = new AuthSecretVault(hmacSecret, cryptoImpl);
     this.now = now;
@@ -4574,6 +4647,201 @@ var CloudflareNativeAuthEngine = class {
       now: Number(this.now())
     }));
     return Object.freeze({ profile: result.profile || null });
+  }
+  // -------------------------------------------------------------------
+  // Phase 7 — Profile & Personal Identity (blueprint §3-§36)
+  // The profile is a consumer of the protected Identity/Session/Security
+  // cores: every operation below starts from the verified session
+  // (#firebaseIdentity) and never rewrites identity or auth fields.
+  // -------------------------------------------------------------------
+  #bufferToBase64(buffer) {
+    const bytes = new Uint8Array(buffer);
+    let binary = "";
+    for (let i = 0; i < bytes.length; i += 32768) {
+      binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 32768));
+    }
+    return btoa(binary);
+  }
+  // High-dynamic blueprint §01/§04/§05/§13/§14 — deterministic rule table.
+  // No AI, no behavioral inference; only real account/profile state.
+  profileContext({ profile = null, completion = 0, lastLoginAt = null, now = Date.now() }) {
+    const DAY_MS3 = 864e5;
+    const createdAt = profile?.createdAt ? Number(profile.createdAt) : null;
+    const hasTarget = Array.isArray(profile?.targets) && profile.targets.length > 0 && Boolean(profile.targets[0]?.name);
+    const ageDays = createdAt ? (now - createdAt) / DAY_MS3 : Number.POSITIVE_INFINITY;
+    const gapDays = lastLoginAt ? (now - Number(lastLoginAt)) / DAY_MS3 : Number.POSITIVE_INFINITY;
+    let context = "DEFAULT";
+    let greeting = "আগে থেকেই চলো";
+    if (!profile || Number(completion) < 60) {
+      context = "PROFILE_INCOMPLETE";
+      greeting = "তোমার প্রোফাইলটা পূরণ করে নাও";
+    } else if (ageDays < 7) {
+      context = "NEW_USER";
+      greeting = "Admission Hub-এ স্বাগতম!";
+    } else if (hasTarget) {
+      context = "GOAL_SET";
+      greeting = "লক্ষ্যে অগ্রসর হও";
+    } else if (gapDays > 14) {
+      context = "RETURNING";
+      greeting = "ফিরে আসায় ভালো লাগলো!";
+    }
+    const sectionOrder = Object.freeze({
+      PROFILE_INCOMPLETE: Object.freeze(["identity", "completion", "academic", "security"]),
+      NEW_USER: Object.freeze(["identity", "completion", "academic", "security"]),
+      GOAL_SET: Object.freeze(["identity", "goal", "academic", "stats"]),
+      RETURNING: Object.freeze(["identity", "goal", "stats", "academic"]),
+      DEFAULT: Object.freeze(["identity", "academic", "completion", "security"])
+    }[context]);
+    return Object.freeze({
+      context,
+      greeting,
+      sectionOrder,
+      freshness: "LIVE",
+      computedAt: now
+    });
+  }
+  async getProfileV2(input = {}, requestContext = {}) {
+    const identity = await this.#firebaseIdentity(input, requestContext, AUTH_ERROR_CODES.SESSION_INVALID);
+    let avatar = { present: false };
+    if (this.avatarStore?.available?.()) {
+      try {
+        avatar = await this.avatarStore.getAvatarMeta(identity.subjectRef);
+      } catch {
+        avatar = { present: false };
+      }
+    }
+    const result = errorFromRepository(await this.repository.getProfileV2({
+      sessionRef: identity.sessionRef,
+      subjectRef: identity.subjectRef,
+      emailRef: identity.refs.emailRef,
+      now: Number(this.now()),
+      avatarPresent: avatar.present === true
+    }));
+    return Object.freeze({
+      profile: result.profile || null,
+      publicId: result.publicId,
+      completion: Number(result.completion || 0),
+      avatar: avatar.present === true ? Object.freeze({ present: true, mime: avatar.mime, bytes: Number(avatar.bytes), updatedAt: Number(avatar.updatedAt) }) : Object.freeze({ present: false }),
+      avatarUrl: avatar.present === true ? "/api/auth/v1/profile/avatar" : null,
+      joinedYear: result.joinedYear || null,
+      context: this.profileContext({
+        profile: result.profile,
+        completion: result.completion,
+        lastLoginAt: result.lastLoginAt,
+        now: Number(this.now())
+      })
+    });
+  }
+  async saveProfilePatch(input = {}, requestContext = {}) {
+    const fields = normalizeProfilePatch(input.fields);
+    const identity = await this.#firebaseIdentity(input, requestContext, AUTH_ERROR_CODES.SESSION_INVALID);
+    const result = errorFromRepository(await this.repository.saveProfilePatch({
+      sessionRef: identity.sessionRef,
+      subjectRef: identity.subjectRef,
+      emailRef: identity.refs.emailRef,
+      fields,
+      expectVersion: input.expectVersion === void 0 || input.expectVersion === null ? null : Number(input.expectVersion),
+      now: Number(this.now())
+    }));
+    return Object.freeze({ saved: result.saved === true, profile: result.profile || null });
+  }
+  #validateAvatar(bytes, mime) {
+    const magic = AVATAR_MIME_MAGIC[mime];
+    if (!magic) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+    if (bytes.byteLength < AVATAR_MIN_BYTES || bytes.byteLength > AVATAR_MAX_BYTES) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+    for (let i = 0; i < magic.length; i += 1) {
+      if (bytes[i] !== magic[i]) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+    }
+    if (mime === "image/webp" && (bytes[8] | bytes[9] << 8 | bytes[10] << 16 | bytes[11] << 24) !== WEBP_MAGIC_OFFSET8) {
+      failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+    }
+    return bytes.byteLength;
+  }
+  async saveAvatar(input = {}, requestContext = {}) {
+    if (!this.avatarStore?.available?.()) failAuth(AUTH_ERROR_CODES.STORAGE_UNAVAILABLE);
+    const mime = String(input.mime || "");
+    let bytes;
+    try {
+      bytes = Uint8Array.from(atob(String(input.data || "")), (char) => char.charCodeAt(0));
+    } catch {
+      failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+    }
+    const size = this.#validateAvatar(bytes, mime);
+    const identity = await this.#firebaseIdentity(input, requestContext, AUTH_ERROR_CODES.SESSION_INVALID);
+    const now = Number(this.now());
+    await this.avatarStore.saveAvatar({ userId: identity.subjectRef, data: bytes, mime, now });
+    await this.repository.recordSecurityEvent({
+      eventType: "profile-avatar-changed",
+      subjectRef: identity.subjectRef,
+      userId: null,
+      now,
+      purpose: null,
+      policyVersion: null
+    });
+    return Object.freeze({ saved: true, mime, bytes: size });
+  }
+  async deleteAvatar(input = {}, requestContext = {}) {
+    if (!this.avatarStore?.available?.()) failAuth(AUTH_ERROR_CODES.STORAGE_UNAVAILABLE);
+    const identity = await this.#firebaseIdentity(input, requestContext, AUTH_ERROR_CODES.SESSION_INVALID);
+    await this.avatarStore.deleteAvatar(identity.subjectRef);
+    await this.repository.recordSecurityEvent({
+      eventType: "profile-avatar-removed",
+      subjectRef: identity.subjectRef,
+      userId: null,
+      now: Number(this.now()),
+      purpose: null,
+      policyVersion: null
+    });
+    return Object.freeze({ deleted: true });
+  }
+  async getAvatarData(input = {}, requestContext = {}) {
+    if (!this.avatarStore?.available?.()) return Object.freeze({ present: false });
+    const identity = await this.#firebaseIdentity(input, requestContext, AUTH_ERROR_CODES.SESSION_INVALID);
+    const avatar = await this.avatarStore.getAvatar(identity.subjectRef);
+    if (!avatar?.present) return Object.freeze({ present: false });
+    return Object.freeze({
+      present: true,
+      mime: avatar.mime,
+      bytes: Number(avatar.bytes),
+      data: this.#bufferToBase64(avatar.data)
+    });
+  }
+  async getPublicProfile(input = {}) {
+    const publicId = String(input.publicId || "").trim();
+    if (!/^AH-[A-Z2-9]{6}$/.test(publicId)) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+    const result = errorFromRepository(await this.repository.getPublicProfile({
+      publicId,
+      now: Number(this.now())
+    }));
+    let avatarPresent = false;
+    if (result.subjectRef && this.avatarStore?.available?.()) {
+      try {
+        avatarPresent = (await this.avatarStore.getAvatarMeta(result.subjectRef)).present === true;
+      } catch {
+        avatarPresent = false;
+      }
+    }
+    const profile = { ...result.profile, avatarPresent };
+    return Object.freeze({ profile: Object.freeze(profile) });
+  }
+  // Public-safe avatar: only exists when the profile's visibility allows a
+  // public surface (limited/public); private profiles 404 (no existence leak).
+  async getPublicAvatar(input = {}) {
+    const publicId = String(input.publicId || "").trim();
+    if (!/^AH-[A-Z2-9]{6}$/.test(publicId)) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+    const result = errorFromRepository(await this.repository.getPublicProfile({
+      publicId,
+      now: Number(this.now())
+    }));
+    if (!result.subjectRef || !this.avatarStore?.available?.()) return Object.freeze({ present: false });
+    const avatar = await this.avatarStore.getAvatar(result.subjectRef);
+    if (!avatar?.present) return Object.freeze({ present: false });
+    return Object.freeze({
+      present: true,
+      mime: avatar.mime,
+      bytes: Number(avatar.bytes),
+      data: this.#bufferToBase64(avatar.data)
+    });
   }
   async beginPasskeyRegistration(input = {}, requestContext = {}) {
     const token = String(input.sessionToken || "").trim();
@@ -5743,12 +6011,12 @@ var firebaseCookie = (token, maxAge) => secureCookie(AUTH_FIREBASE_COOKIE, token
 var deviceCookie = (token) => `${AUTH_DEVICE_COOKIE}=${encodeURIComponent(token)}; Path=/; Max-Age=${YEAR_SECONDS}; HttpOnly; Secure; SameSite=Lax`;
 var verificationCookie = (token, maxAge = 15 * 60) => secureCookie(AUTH_VERIFICATION_COOKIE, token, maxAge);
 var clearAuthCookies = () => [sessionCookie("", 0), firebaseCookie("", 0), verificationCookie("", 0)];
-async function readJson(request) {
+async function readJson(request, maxBytes = MAX_BODY_BYTES) {
   if (!String(request.headers.get("Content-Type") || "").toLowerCase().startsWith("application/json")) {
     throw new NativeAuthError(AUTH_ERROR_CODES.INVALID_INPUT);
   }
   const declared = Number(request.headers.get("Content-Length") || 0);
-  if (declared > MAX_BODY_BYTES || !request.body) throw new NativeAuthError(AUTH_ERROR_CODES.INVALID_INPUT);
+  if (declared > maxBytes || !request.body) throw new NativeAuthError(AUTH_ERROR_CODES.INVALID_INPUT);
   const reader = request.body.getReader();
   const decoder3 = new TextDecoder();
   let raw = "";
@@ -5757,7 +6025,7 @@ async function readJson(request) {
     const { done, value } = await reader.read();
     if (done) break;
     size += value.byteLength;
-    if (size > MAX_BODY_BYTES) {
+    if (size > maxBytes) {
       await reader.cancel();
       throw new NativeAuthError(AUTH_ERROR_CODES.INVALID_INPUT);
     }
@@ -6828,7 +7096,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           context,
           allowTelegram: telegramVerificationRequested(env, url)
         });
-        const result = await callAuthority(env, "/internal/profile/get", {
+        const result = await callAuthority(env, "/internal/profile/get-v2", {
           input: {
             sessionToken: current.sessionToken,
             email: current.user.email,
@@ -6836,9 +7104,158 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           },
           context
         });
-        return json3(request, 200, { ok: true, profile: result?.profile || null }, {
+        return json3(request, 200, {
+          ok: true,
+          profile: result?.profile || null,
+          publicId: result?.publicId || null,
+          completion: Number(result?.completion || 0),
+          avatar: result?.avatar || { present: false },
+          avatarUrl: result?.avatarUrl || null,
+          joinedYear: result?.joinedYear || null,
+          context: result?.context || null
+        }, {
           "Set-Cookie": sessionCookies(current.session, current.refreshed.refreshToken, context)
         });
+      }
+      if (request.method === "POST" && url.pathname === `${AUTH_API_PREFIX}/profile/patch`) {
+        if (!provider.configured) throw new NativeAuthError(AUTH_ERROR_CODES.NOT_CONFIGURED);
+        const body = await readJson(request);
+        const current = await firebaseReadySession({
+          provider,
+          jar,
+          env,
+          context,
+          allowTelegram: telegramVerificationRequested(env, url)
+        });
+        await callAuthority(env, "/internal/firebase/rate", {
+          input: { operation: "profile-patch", email: current.user.email },
+          context
+        });
+        const result = await callAuthority(env, "/internal/profile/patch", {
+          input: {
+            sessionToken: current.sessionToken,
+            email: current.user.email,
+            subject: current.user.subject,
+            fields: body?.fields,
+            expectVersion: body?.expectVersion
+          },
+          context
+        });
+        return json3(request, 200, { ok: true, saved: result?.saved === true, profile: result?.profile || null }, {
+          "Set-Cookie": sessionCookies(current.session, current.refreshed.refreshToken, context)
+        });
+      }
+      if (request.method === "POST" && url.pathname === `${AUTH_API_PREFIX}/profile/avatar`) {
+        if (!provider.configured) throw new NativeAuthError(AUTH_ERROR_CODES.NOT_CONFIGURED);
+        const body = await readJson(request, 35e5);
+        const current = await firebaseReadySession({
+          provider,
+          jar,
+          env,
+          context,
+          allowTelegram: telegramVerificationRequested(env, url)
+        });
+        await callAuthority(env, "/internal/firebase/rate", {
+          input: { operation: "avatar-write", email: current.user.email },
+          context
+        });
+        const result = await callAuthority(env, "/internal/avatar/save", {
+          input: {
+            sessionToken: current.sessionToken,
+            email: current.user.email,
+            subject: current.user.subject,
+            data: body?.data,
+            mime: body?.mime
+          },
+          context
+        });
+        return json3(request, 200, { ok: true, saved: result?.saved === true }, {
+          "Set-Cookie": sessionCookies(current.session, current.refreshed.refreshToken, context)
+        });
+      }
+      if (request.method === "DELETE" && url.pathname === `${AUTH_API_PREFIX}/profile/avatar`) {
+        if (!provider.configured) throw new NativeAuthError(AUTH_ERROR_CODES.NOT_CONFIGURED);
+        const current = await firebaseReadySession({
+          provider,
+          jar,
+          env,
+          context,
+          allowTelegram: telegramVerificationRequested(env, url)
+        });
+        await callAuthority(env, "/internal/firebase/rate", {
+          input: { operation: "avatar-write", email: current.user.email },
+          context
+        });
+        const result = await callAuthority(env, "/internal/avatar/delete", {
+          input: {
+            sessionToken: current.sessionToken,
+            email: current.user.email,
+            subject: current.user.subject
+          },
+          context
+        });
+        return json3(request, 200, { ok: true, deleted: result?.deleted === true }, {
+          "Set-Cookie": sessionCookies(current.session, current.refreshed.refreshToken, context)
+        });
+      }
+      if (request.method === "GET" && url.pathname === `${AUTH_API_PREFIX}/profile/avatar`) {
+        if (!provider.configured) throw new NativeAuthError(AUTH_ERROR_CODES.NOT_CONFIGURED);
+        const current = await firebaseReadySession({
+          provider,
+          jar,
+          env,
+          context,
+          allowTelegram: telegramVerificationRequested(env, url)
+        });
+        const result = await callAuthority(env, "/internal/avatar/get", {
+          input: {
+            sessionToken: current.sessionToken,
+            email: current.user.email,
+            subject: current.user.subject
+          },
+          context
+        });
+        if (!result?.present) return json3(request, 404, { ok: false, error: { code: "AVATAR_NOT_FOUND" } });
+        const bytes = Uint8Array.from(atob(result.data), (char) => char.charCodeAt(0));
+        return new Response(bytes, {
+          status: 200,
+          headers: new Headers({
+            "Content-Type": result.mime,
+            "Content-Length": String(bytes.byteLength),
+            "Cache-Control": "private, max-age=3600, no-store=0",
+            ...corsHeaders(request)
+          })
+        });
+      }
+      if (request.method === "GET" && url.pathname.startsWith("/api/public/profile/")) {
+        const suffix = decodeURIComponent(url.pathname.slice("/api/public/profile/".length));
+        const isAvatar = suffix.endsWith("/avatar");
+        const publicId = isAvatar ? suffix.slice(0, -"/avatar".length) : suffix;
+        await callAuthority(env, "/internal/firebase/rate", {
+          input: { operation: "public-profile-read" },
+          context
+        });
+        if (isAvatar) {
+          const result2 = await callAuthority(env, "/internal/public-profile/avatar", {
+            input: { publicId }
+          });
+          if (!result2?.present) return json3(request, 404, { ok: false, error: { code: "AVATAR_NOT_FOUND" } });
+          const bytes = Uint8Array.from(atob(result2.data), (char) => char.charCodeAt(0));
+          return new Response(bytes, {
+            status: 200,
+            headers: new Headers({
+              "Content-Type": result2.mime,
+              "Content-Length": String(bytes.byteLength),
+              "Cache-Control": "public, max-age=3600",
+              "Cross-Origin-Resource-Policy": "cross-site",
+              ...corsHeaders(request)
+            })
+          });
+        }
+        const result = await callAuthority(env, "/internal/public-profile/get", {
+          input: { publicId }
+        });
+        return json3(request, 200, { ok: true, profile: result?.profile || null });
       }
       if (request.method === "GET" && url.pathname === `${AUTH_API_PREFIX}/account`) {
         if (!provider.configured) throw new NativeAuthError(AUTH_ERROR_CODES.NOT_CONFIGURED);
@@ -7556,7 +7973,7 @@ function summarizeIdentityHealth(result) {
 // auth-native/storage/sqlite-auth-repository.mjs
 var DAY_MS = 24 * 60 * 60 * 1e3;
 var EVENT_RETENTION_MS = 90 * DAY_MS;
-var SqliteAuthRepository = class {
+var SqliteAuthRepository = class _SqliteAuthRepository {
   constructor(storage) {
     if (!storage?.sql || typeof storage.sql.exec !== "function") throw new TypeError("SQLite Durable Object storage is required.");
     this.storage = storage;
@@ -7773,7 +8190,20 @@ var SqliteAuthRepository = class {
     if (!eventColumns.has("policy_version")) this.sql.exec("ALTER TABLE auth_security_events ADD COLUMN policy_version TEXT");
     const ticketColumns = new Set(this.#rows("PRAGMA table_info(auth_account_verification_tickets)").map((row) => row.name));
     if (!ticketColumns.has("purpose")) this.sql.exec("ALTER TABLE auth_account_verification_tickets ADD COLUMN purpose TEXT");
-    this.sql.exec("INSERT INTO auth_meta(key,value) VALUES('schema_version','6') ON CONFLICT(key) DO UPDATE SET value=excluded.value");
+    const profileColumns = new Set(this.#rows("PRAGMA table_info(auth_profiles)").map((row) => row.name));
+    if (!profileColumns.has("mobile")) this.sql.exec("ALTER TABLE auth_profiles ADD COLUMN mobile TEXT");
+    if (!profileColumns.has("bio")) this.sql.exec("ALTER TABLE auth_profiles ADD COLUMN bio TEXT");
+    if (!profileColumns.has("targets")) this.sql.exec("ALTER TABLE auth_profiles ADD COLUMN targets TEXT DEFAULT '[]'");
+    if (!profileColumns.has("visibility")) this.sql.exec("ALTER TABLE auth_profiles ADD COLUMN visibility TEXT NOT NULL DEFAULT 'private'");
+    this.sql.exec(
+      `CREATE TABLE IF NOT EXISTS auth_public_identities (
+        user_id TEXT PRIMARY KEY,
+        public_id TEXT NOT NULL UNIQUE,
+        created_at INTEGER NOT NULL,
+        FOREIGN KEY(user_id) REFERENCES auth_users(user_id)
+      )`
+    );
+    this.sql.exec("INSERT INTO auth_meta(key,value) VALUES('schema_version','7') ON CONFLICT(key) DO UPDATE SET value=excluded.value");
   }
   // Phase 6 — device trust lifecycle (§5-§7). Refs are opaque HMAC values;
   // nothing here stores raw device ids, IPs or user agents.
@@ -8185,48 +8615,69 @@ var SqliteAuthRepository = class {
       policyVersion: policyVersion || null
     });
   }
+  #parseTargets(raw) {
+    try {
+      const value = JSON.parse(String(raw || "[]"));
+      return Array.isArray(value) ? value : [];
+    } catch {
+      return [];
+    }
+  }
   #profileForUser(userId) {
     const row = this.#one(
       `SELECT profile_version AS version,full_name AS fullName,date_of_birth AS dob,
         school_id AS schoolId,school_name AS schoolName,school_district AS schoolDistrict,
         higher_id AS higherId,higher_name AS higherName,higher_district AS higherDistrict,
+        mobile AS mobile,bio AS bio,targets AS targets,visibility AS visibility,
         created_at AS createdAt,updated_at AS updatedAt
        FROM auth_profiles WHERE user_id=?`,
       userId
     );
     if (!row) return null;
+    const visibility = ["private", "limited", "public"].includes(row.visibility) ? row.visibility : "private";
     return {
       version: Number(row.version || 1),
       fullName: row.fullName,
       dob: row.dob,
       school: { id: row.schoolId, name: row.schoolName, district: row.schoolDistrict || "" },
       higherInstitution: row.higherId ? { id: row.higherId, name: row.higherName, district: row.higherDistrict || "" } : null,
+      mobile: row.mobile || "",
+      bio: row.bio || "",
+      targets: this.#parseTargets(row.targets),
+      visibility,
       createdAt: Number(row.createdAt),
       updatedAt: Number(row.updatedAt)
     };
   }
   #writeProfile(userId, profile, now) {
     const higher = profile.higherInstitution || null;
+    const targets = JSON.stringify(Array.isArray(profile.targets) ? profile.targets : []);
+    const visibility = ["private", "limited", "public"].includes(profile.visibility) ? profile.visibility : "private";
     this.sql.exec(
       `INSERT INTO auth_profiles(
         user_id,profile_version,full_name,date_of_birth,school_id,school_name,school_district,
-        higher_id,higher_name,higher_district,created_at,updated_at
-      ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
+        higher_id,higher_name,higher_district,mobile,bio,targets,visibility,created_at,updated_at
+      ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
       ON CONFLICT(user_id) DO UPDATE SET
         profile_version=excluded.profile_version,full_name=excluded.full_name,date_of_birth=excluded.date_of_birth,
         school_id=excluded.school_id,school_name=excluded.school_name,school_district=excluded.school_district,
         higher_id=excluded.higher_id,higher_name=excluded.higher_name,higher_district=excluded.higher_district,
+        mobile=excluded.mobile,bio=excluded.bio,targets=excluded.targets,visibility=excluded.visibility,
         updated_at=excluded.updated_at`,
       userId,
       Number(profile.version || 1),
-      profile.fullName,
-      profile.dob,
-      profile.school.id,
-      profile.school.name,
-      profile.school.district || "",
+      profile.fullName || "",
+      profile.dob || "",
+      profile.school?.id || "",
+      profile.school?.name || "",
+      profile.school?.district || "",
       higher?.id || null,
       higher?.name || null,
       higher?.district || null,
+      profile.mobile || "",
+      profile.bio || "",
+      targets,
+      visibility,
       now,
       now
     );
@@ -8598,6 +9049,153 @@ var SqliteAuthRepository = class {
     const session = this.#canonicalSession(input);
     if (session.error) return session;
     return { profile: this.#profileForUser(session.user.id) };
+  }
+  // ---------------------------------------------------------------------
+  // Phase 7 — Profile & Personal Identity (blueprint §3-§4, §14, §21, §25)
+  // Profile is a consumer of the protected Identity Core: everything below
+  // derives the user from the verified session and never rewrites
+  // identity/auth fields.
+  // ---------------------------------------------------------------------
+  // Deterministic, permanent, non-sensitive public display ID (blueprint §14).
+  // 31-char alphabet (no ambiguous 0/O/1/I/L glyphs); 6 digits ≈ 887M
+  // combinations. Rare deterministic collisions retry with a salt.
+  static PUBLIC_ID_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+  async #derivePublicId(userId, attempt = 0) {
+    const { crypto: crypto2 } = globalThis;
+    const digest = await crypto2.subtle.digest("SHA-256", new TextEncoder().encode(`ah-public-id-v1|${userId}|${attempt}`));
+    const bytes = new Uint8Array(digest).subarray(0, 4);
+    const alphabet = _SqliteAuthRepository.PUBLIC_ID_ALPHABET;
+    let value = (bytes[0] << 24 | bytes[1] << 16 | bytes[2] << 8 | bytes[3]) >>> 0;
+    let out = "";
+    for (let i = 0; i < 6; i += 1) {
+      out += alphabet[value % 31];
+      value = Math.floor(value / 31);
+    }
+    return `AH-${out}`;
+  }
+  async #ensurePublicIdentity(userId, now) {
+    const existing = this.#one("SELECT public_id AS publicId FROM auth_public_identities WHERE user_id=?", userId);
+    if (existing) return existing.publicId;
+    let attempt = 0;
+    for (; ; ) {
+      attempt += 1;
+      const candidate = await this.#derivePublicId(userId, attempt - 1);
+      const clash = this.#one("SELECT user_id AS userId FROM auth_public_identities WHERE public_id=?", candidate);
+      if (clash && clash.userId !== userId) continue;
+      this.sql.exec("INSERT INTO auth_public_identities(user_id,public_id,created_at) VALUES(?,?,?)", userId, candidate, now);
+      return candidate;
+    }
+  }
+  // Blueprint §4 — profile provisioning must never fail a login. Creates a
+  // neutral, editable placeholder row for accounts that reached a verified
+  // session without an onboarding row (legacy/abandoned-onboarding edge).
+  #provisionProfile(userId, now) {
+    if (this.#profileForUser(userId)) return null;
+    this.sql.exec(
+      `INSERT INTO auth_profiles(
+        user_id,profile_version,full_name,date_of_birth,school_id,school_name,school_district,
+        higher_id,higher_name,higher_district,mobile,bio,targets,visibility,created_at,updated_at
+      ) VALUES(?,1,'','','','','',NULL,NULL,NULL,'','','[]','private',?,?)`,
+      userId,
+      now,
+      now
+    );
+    this.#event("profile-provisioned", null, userId, now);
+    return this.#profileForUser(userId);
+  }
+  // Blueprint §6 — weighted, display-only completion (never blocks access).
+  #profileCompletion(profile, { avatarPresent = false } = {}) {
+    if (!profile) return 0;
+    let score = 0;
+    if (profile.fullName && profile.fullName.length >= 2) score += 25;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(String(profile.dob || ""))) score += 15;
+    if (profile.mobile) score += 15;
+    if (profile.school && profile.school.name) score += 10;
+    if (profile.higherInstitution && profile.higherInstitution.name) score += 10;
+    if (Array.isArray(profile.targets) && profile.targets.length > 0 && profile.targets[0]?.name) score += 15;
+    if (avatarPresent) score += 10;
+    return Math.min(100, score);
+  }
+  async getProfileV2(input) {
+    const session = this.#canonicalSession(input);
+    if (session.error) return session;
+    const provisioned = this.#provisionProfile(session.user.id, input.now);
+    const profile = provisioned || this.#profileForUser(session.user.id);
+    const publicId = await this.#ensurePublicIdentity(session.user.id, input.now);
+    const avatarPresent = input.avatarPresent === true;
+    const account = this.#one("SELECT created_at AS createdAt,last_login_at AS lastLoginAt FROM auth_users WHERE user_id=?", session.user.id);
+    return {
+      profile,
+      publicId,
+      completion: this.#profileCompletion(profile, { avatarPresent }),
+      avatarPresent,
+      joinedYear: account ? Number(String(account.createdAt).slice(0, 4)) : null,
+      lastLoginAt: account ? Number(account.lastLoginAt) : null
+    };
+  }
+  // Blueprint §27/§28 — PATCH semantics: only provided fields change;
+  // optimistic concurrency via profile_version (client sends expectVersion).
+  async saveProfilePatch(input) {
+    return this.#transaction(() => {
+      const session = this.#canonicalSession(input);
+      if (session.error) return session;
+      const provisioned = this.#provisionProfile(session.user.id, input.now);
+      const current = provisioned || this.#profileForUser(session.user.id);
+      const expect = input.expectVersion === void 0 || input.expectVersion === null ? null : Number(input.expectVersion);
+      if (expect !== null && Number.isFinite(expect) && expect !== current.version) {
+        return { error: AUTH_ERROR_CODES.PROFILE_VERSION_CONFLICT, currentVersion: current.version };
+      }
+      const next = {
+        ...current,
+        version: current.version + 1,
+        ...input.fields,
+        updatedAt: input.now
+      };
+      this.#writeProfile(session.user.id, next, input.now);
+      const changed = Object.keys(input.fields);
+      this.#event(changed.includes("visibility") ? "profile-visibility-changed" : "profile-patched", input.subjectRef, session.user.id, input.now);
+      return { saved: true, profile: this.#profileForUser(session.user.id) };
+    });
+  }
+  // Blueprint §22 — public-safe projection. Private profiles never surface;
+  // limited = name + ID + avatar; public = + target + joined year + bio.
+  // Never includes email, mobile, DOB, school details or internal refs.
+  async getPublicProfile(input) {
+    const row = this.#one(
+      `SELECT p.user_id AS userId,p.full_name AS fullName,p.bio AS bio,p.targets AS targets,p.visibility AS visibility,
+        u.created_at AS createdAt,
+        (SELECT subject_ref FROM auth_external_identities WHERE user_id=p.user_id AND provider='firebase' LIMIT 1) AS subjectRef
+       FROM auth_profiles p
+       JOIN auth_users u ON u.user_id=p.user_id
+       JOIN auth_public_identities x ON x.user_id=p.user_id
+       LEFT JOIN auth_account_state st ON st.user_id=p.user_id
+       WHERE x.public_id=? AND u.status='active' AND COALESCE(st.status,'active')='active'`,
+      input.publicId
+    );
+    if (!row) return { error: AUTH_ERROR_CODES.PUBLIC_PROFILE_NOT_FOUND };
+    const visibility = ["private", "limited", "public"].includes(row.visibility) ? row.visibility : "private";
+    if (visibility === "private") return { error: AUTH_ERROR_CODES.PUBLIC_PROFILE_NOT_FOUND };
+    const publicId = this.#one("SELECT public_id AS publicId FROM auth_public_identities WHERE user_id=?", row.userId);
+    const profile = this.#profileForUser(row.userId);
+    const base = {
+      publicId: publicId?.publicId,
+      displayName: row.fullName || "Admission Student",
+      avatarPresent: false,
+      visibility
+    };
+    if (visibility !== "public") return { profile: base, subjectRef: row.subjectRef || null };
+    const targets = this.#parseTargets(row.targets);
+    const target = targets[0] || null;
+    return {
+      profile: {
+        ...base,
+        target: target ? { name: target.name, unit: target.unit || "", year: target.year || "" } : null,
+        joinedYear: Number(String(row.createdAt).slice(0, 4)) || null,
+        bio: row.bio || "",
+        completion: this.#profileCompletion(profile, { avatarPresent: false })
+      },
+      subjectRef: row.subjectRef || null
+    };
   }
   async beginPasskeyRegistration(input) {
     return this.#transaction(() => {
@@ -10937,6 +11535,61 @@ var SqliteVerificationRepository = class {
   }
 };
 
+// auth-native/storage/d1-profile-repository.mjs
+var TABLE = `CREATE TABLE IF NOT EXISTS avatars (
+  user_id TEXT PRIMARY KEY,
+  data BLOB NOT NULL,
+  mime TEXT NOT NULL,
+  bytes INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+)`;
+var D1ProfileStore = class {
+  #ready = false;
+  constructor(d1) {
+    this.d1 = d1 || null;
+  }
+  available() {
+    return Boolean(this.d1);
+  }
+  async #ensureTable() {
+    if (this.#ready) return;
+    await this.d1.prepare(TABLE).run();
+    this.#ready = true;
+  }
+  async saveAvatar({ userId, data, mime, now }) {
+    await this.#ensureTable();
+    const bytes = new Uint8Array(data);
+    await this.d1.prepare(
+      `INSERT INTO avatars(user_id,data,mime,bytes,updated_at) VALUES(?,?,?,?,?)
+       ON CONFLICT(user_id) DO UPDATE SET data=excluded.data,mime=excluded.mime,bytes=excluded.bytes,updated_at=excluded.updated_at`
+    ).bind(userId, bytes, mime, bytes.byteLength, now).run();
+    return { saved: true, mime, bytes: bytes.byteLength, updatedAt: now };
+  }
+  async getAvatarMeta(userId) {
+    await this.#ensureTable();
+    const row = await this.d1.prepare("SELECT mime,bytes,updated_at FROM avatars WHERE user_id=?").bind(userId).first();
+    if (!row) return { present: false };
+    return { present: true, mime: row.mime, bytes: Number(row.bytes), updatedAt: Number(row.updated_at) };
+  }
+  async getAvatar(userId) {
+    await this.#ensureTable();
+    const row = await this.d1.prepare("SELECT data,mime,bytes,updated_at FROM avatars WHERE user_id=?").bind(userId).first();
+    if (!row) return { present: false };
+    return {
+      present: true,
+      data: row.data,
+      mime: row.mime,
+      bytes: Number(row.bytes),
+      updatedAt: Number(row.updated_at)
+    };
+  }
+  async deleteAvatar(userId) {
+    await this.#ensureTable();
+    await this.d1.prepare("DELETE FROM avatars WHERE user_id=?").bind(userId).run();
+    return { deleted: true };
+  }
+};
+
 // auth-native/worker/auth-authority-do.mjs
 var JSON_HEADERS2 = Object.freeze({
   "Content-Type": "application/json; charset=utf-8",
@@ -10948,9 +11601,9 @@ var response2 = (status, body, extraHeaders = {}) => new Response(JSON.stringify
   status,
   headers: { ...JSON_HEADERS2, ...extraHeaders }
 });
-async function readJson2(request) {
+async function readJson2(request, maxBytes = 32768) {
   const raw = await request.text();
-  if (!raw || raw.length > 32768) throw new NativeAuthError(AUTH_ERROR_CODES.INVALID_INPUT);
+  if (!raw || raw.length > maxBytes) throw new NativeAuthError(AUTH_ERROR_CODES.INVALID_INPUT);
   try {
     return JSON.parse(raw);
   } catch {
@@ -10969,7 +11622,10 @@ var AdmissionAuthAuthority = class {
       this.engine = new CloudflareNativeAuthEngine({
         repository: this.repository,
         hmacSecret: env.AUTH_HMAC_SECRET,
-        securityConfigRaw: env.SECURITY_CONFIG_JSON
+        securityConfigRaw: env.SECURITY_CONFIG_JSON,
+        // Phase 7 — avatar store (D1 binding PROFILE_DB; absent until the
+        // binding is added at publish time — avatar routes degrade to 503).
+        avatarStore: new D1ProfileStore(env.PROFILE_DB || null)
       });
       const persistedVerificationConfig = await this.verificationRepository.getRuntimeConfig();
       this.verification = new VerificationOrchestrator({
@@ -11038,7 +11694,7 @@ var AdmissionAuthAuthority = class {
         return response2(200, { ok: true, ...await this.engine.ping() });
       }
       if (request.method !== "POST") return response2(405, { ok: false, error: { code: "METHOD_NOT_ALLOWED" } }, { Allow: "POST" });
-      const body = await readJson2(request);
+      const body = await readJson2(request, url.pathname === "/internal/avatar/save" ? 35e5 : 32768);
       if (url.pathname === "/internal/firebase/rate") {
         const result = await this.engine.consumeFirebaseOperation(body.input, body.context);
         await this.#scheduleExpiry();
@@ -11084,6 +11740,34 @@ var AdmissionAuthAuthority = class {
       }
       if (url.pathname === "/internal/profile/get") {
         const result = await this.engine.getProfile(body.input, body.context);
+        return response2(200, { ok: true, result });
+      }
+      if (url.pathname === "/internal/profile/get-v2") {
+        const result = await this.engine.getProfileV2(body.input, body.context);
+        return response2(200, { ok: true, result });
+      }
+      if (url.pathname === "/internal/profile/patch") {
+        const result = await this.engine.saveProfilePatch(body.input, body.context);
+        return response2(200, { ok: true, result });
+      }
+      if (url.pathname === "/internal/avatar/save") {
+        const result = await this.engine.saveAvatar(body.input, body.context);
+        return response2(200, { ok: true, result });
+      }
+      if (url.pathname === "/internal/avatar/delete") {
+        const result = await this.engine.deleteAvatar(body.input, body.context);
+        return response2(200, { ok: true, result });
+      }
+      if (url.pathname === "/internal/avatar/get") {
+        const result = await this.engine.getAvatarData(body.input, body.context);
+        return response2(200, { ok: true, result });
+      }
+      if (url.pathname === "/internal/public-profile/get") {
+        const result = await this.engine.getPublicProfile(body.input || {});
+        return response2(200, { ok: true, result });
+      }
+      if (url.pathname === "/internal/public-profile/avatar") {
+        const result = await this.engine.getPublicAvatar(body.input || {});
         return response2(200, { ok: true, result });
       }
       if (url.pathname === "/internal/account/state") {

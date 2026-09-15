@@ -43,3 +43,9 @@ id = "b9353515b098427687afcfb8654ed359"
 [[kv_namespaces]]
 binding = "OLD_KV"
 id = "942828aa82e546d4af11796ef92ab134"
+
+# Phase 7 — profile avatar store (avatars BLOBs). Core profile data stays in the DO SQLite DB.
+[[d1_databases]]
+binding = "PROFILE_DB"
+database_name = "admission-profile"
+database_id = "8f7cf101-66a3-437d-bc98-a8984698d7f5"
