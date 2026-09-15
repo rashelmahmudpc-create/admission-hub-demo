@@ -157,7 +157,10 @@ export class SqliteAuthRepository {
         event_type TEXT NOT NULL,
         subject_ref TEXT,
         user_id TEXT,
-        occurred_at INTEGER NOT NULL
+        occurred_at INTEGER NOT NULL,
+        device_ref TEXT,
+        purpose TEXT,
+        policy_version TEXT
       )`,
       `CREATE INDEX IF NOT EXISTS auth_security_events_time ON auth_security_events(occurred_at DESC)`,
       // Phase 3 — lifecycle overlay. Existing auth_users rows stay untouched;
@@ -173,7 +176,17 @@ export class SqliteAuthRepository {
       `CREATE INDEX IF NOT EXISTS auth_account_state_status ON auth_account_state(status)`
     ];
     for (const statement of statements) this.sql.exec(statement);
-    this.sql.exec("INSERT INTO auth_meta(key,value) VALUES('schema_version','5') ON CONFLICT(key) DO UPDATE SET value=excluded.value");
+    // Phase 6 — schema v6: auth_security_events gains device_ref / purpose /
+    // policy_version. Brand-new databases get them from the CREATE above;
+    // existing deployments are upgraded by column-presence checks. Gating on
+    // actual columns (not the shared schema_version key, which the
+    // verification repository also writes) keeps this idempotent and
+    // order-independent across restarts.
+    const eventColumns = new Set(this.#rows('PRAGMA table_info(auth_security_events)').map(row => row.name));
+    if (!eventColumns.has('device_ref')) this.sql.exec('ALTER TABLE auth_security_events ADD COLUMN device_ref TEXT');
+    if (!eventColumns.has('purpose')) this.sql.exec('ALTER TABLE auth_security_events ADD COLUMN purpose TEXT');
+    if (!eventColumns.has('policy_version')) this.sql.exec('ALTER TABLE auth_security_events ADD COLUMN policy_version TEXT');
+    this.sql.exec("INSERT INTO auth_meta(key,value) VALUES('schema_version','6') ON CONFLICT(key) DO UPDATE SET value=excluded.value");
   }
 
   // Read-only reconciliation snapshot (Phase 3). HMAC refs only — never
@@ -294,10 +307,11 @@ export class SqliteAuthRepository {
     return denied;
   }
 
-  #event(eventType, subjectRef, userId, now) {
+  #event(eventType, subjectRef, userId, now, extras = {}) {
     this.sql.exec(
-      'INSERT INTO auth_security_events(event_type,subject_ref,user_id,occurred_at) VALUES(?,?,?,?)',
-      String(eventType).slice(0, 48), subjectRef || null, userId || null, now
+      'INSERT INTO auth_security_events(event_type,subject_ref,user_id,occurred_at,device_ref,purpose,policy_version) VALUES(?,?,?,?,?,?,?)',
+      String(eventType).slice(0, 48), subjectRef || null, userId || null, now,
+      extras.deviceRef || null, extras.purpose || null, extras.policyVersion || null
     );
   }
 

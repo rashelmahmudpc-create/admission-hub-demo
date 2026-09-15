@@ -405,3 +405,40 @@ test('SQLite schema 5 upgrades a populated pre-Telegram verification table idemp
   });
   assert.equal(fixture.database.prepare("SELECT value FROM auth_meta WHERE key='schema_version'").get().value, '5');
 });
+
+test('SQLite schema v6 upgrades an existing v5 database and stays idempotent', async t => {
+  const fixture = storageFixture();
+  t.after(() => fixture.database.close());
+  // Pre-existing v5 deployment: events table without the Phase 6 columns.
+  fixture.database.exec('CREATE TABLE auth_meta(key TEXT PRIMARY KEY, value TEXT NOT NULL)');
+  fixture.database.exec("INSERT INTO auth_meta(key,value) VALUES('schema_version','5')");
+  fixture.database.exec('CREATE TABLE auth_security_events(event_id INTEGER PRIMARY KEY AUTOINCREMENT, event_type TEXT NOT NULL, subject_ref TEXT, user_id TEXT, occurred_at INTEGER NOT NULL)');
+  fixture.database.exec("INSERT INTO auth_security_events(event_type,subject_ref,user_id,occurred_at) VALUES('firebase-login','old-subject','usr_old',1800000000000)");
+
+  const repository = new SqliteAuthRepository(fixture.storage);
+  repository.migrate();
+  const columns = new Set(fixture.database.prepare('PRAGMA table_info(auth_security_events)').all().map(row => row.name));
+  assert.ok(columns.has('device_ref'));
+  assert.ok(columns.has('purpose'));
+  assert.ok(columns.has('policy_version'));
+  const preserved = fixture.database.prepare(
+    'SELECT event_type AS eventType, device_ref AS deviceRef, purpose AS purpose, policy_version AS policyVersion FROM auth_security_events WHERE subject_ref=?'
+  ).get('old-subject');
+  assert.deepEqual(preserved, { eventType: 'firebase-login', deviceRef: null, purpose: null, policyVersion: null });
+
+  // Second migrate (next DO activation) must not re-apply the ALTERs.
+  repository.migrate();
+  const ping = await repository.ping();
+  assert.equal(ping.ok, true);
+  assert.equal(ping.schema, 6);
+
+  const accepted = await repository.consumeLimits({
+    limits: [{ scope: 'login', key: 'ip-ref', windowMs: 900_000, limit: 12 }],
+    now: START + 10, eventType: 'login-attempt', subjectRef: 'new-subject'
+  });
+  assert.equal(accepted.accepted, true);
+  const fresh = fixture.database.prepare(
+    'SELECT device_ref, purpose, policy_version FROM auth_security_events WHERE event_type=?'
+  ).get('login-attempt');
+  assert.deepEqual(fresh, { device_ref: null, purpose: null, policy_version: null });
+});
