@@ -1,26 +1,31 @@
-# LATEST — Phase 7 APPROVED · implementation started
+# Agent Resume — LATEST
 
-**Updated:** 2026-09-15 (Asia/Dhaka) · Agent: **Arena Agent Mode**
+_Last updated: 2026-09-15 (Phase 7, Chunk 5)_
 
 ## STATUS
 
 - **PHASE 6 COMPLETE & LIVE** — `v256-security-core-20260915` on
   admissionhub.pages.dev. Report: `docs/PHASE6-FINAL-REPORT.md`.
-- **PHASE 7 (Profile & Personal Identity) — PLAN APPROVED, Chunk 1 in
-  progress** → plan: `docs/PHASE7-PLAN.md`.
-  - Owner decisions: all storage on Cloudflare (core in DO SQLite,
-    avatars in D1 5 GB free); public URL
-    `admissionhub.pages.dev/AH-XXXXXX` (clean path via _redirects);
-    default avatar = generated SVG; Profile tab in bottom nav (5th, 👤).
-  - Chunks: 1 core data (PATCH + versioning + public ID + completion) →
-    2 avatar (D1) → 3 public profile + privacy → 4 dynamic UI
-    (`profile-ui.js` + bottom nav) → 5 protection + SCALING-PLAN +
-    v257 + manual publish.
-  - Publish blocker: CF token needs **D1: Edit** added (owner recreates
-    at publish time). D1 DB `admission-profile` created at publish.
+- **PHASE 7 (Profile & Personal Identity) — BUILT, TESTED, RELEASE-READY**
+  → plan: `docs/PHASE7-PLAN.md`, architecture/protection:
+  `docs/PHASE7-PROFILE-IDENTITY.md`, growth: `SCALING-PLAN.md`.
+- Chunks 1–4 committed & pushed (commits `6e81f35`, `534820d`, `3fed1cf` +
+  chunk-5 release-prep commit). Version strings bumped in main to
+  `v257-profile-core-20260915`.
+- Full gate green: `test:production-auth` 381/381, identity 36, session 22,
+  worker bundle check.
 
-## OWNER TODO (non-blocking)
+## BLOCKED ON (owner, protected)
 
-- GitHub Support ticket: re-enable Actions + Pages (demo host 404 until
-  then).
-- At publish: new CF token (Workers Edit + Pages Edit + D1 Edit).
+1. CF token with **D1 Edit** scope (current token lacks it — error 10001).
+2. D1 database `admission-profile` created + `PROFILE_DB` binding in
+   `wrangler.toml` for worker `admission-gk` (steps in
+   `docs/PHASE7-PROFILE-IDENTITY.md` §Release).
+3. Protected publish via `telegram-auth-canary-activate.yml` (environment
+   `email-gateway-production`) → live v257.
+
+## DO NOT
+
+- Do not start Phase 8 (auto-publish is not authorized).
+- Do not loosen the public/private visibility allowlist.
+- Do not introduce raster assets (zero-raster rule) or external storage.
