@@ -196,6 +196,10 @@ export class AdmissionAuthAuthority {
         const result = await this.engine.getPublicProfile(body.input || {});
         return response(200, { ok: true, result });
       }
+      if (url.pathname === '/internal/public-profile/avatar') {
+        const result = await this.engine.getPublicAvatar(body.input || {});
+        return response(200, { ok: true, result });
+      }
       if (url.pathname === '/internal/account/state') {
         const session = await this.engine.getFirebaseSession(body.sessionToken, body.input);
         const state = await this.repository.getAccountState({ userId: session.user.id, now: Date.now() });

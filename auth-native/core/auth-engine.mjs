@@ -916,6 +916,26 @@ export class CloudflareNativeAuthEngine {
     return Object.freeze({ profile: Object.freeze(profile) });
   }
 
+  // Public-safe avatar: only exists when the profile's visibility allows a
+  // public surface (limited/public); private profiles 404 (no existence leak).
+  async getPublicAvatar(input = {}) {
+    const publicId = String(input.publicId || '').trim();
+    if (!/^AH-[A-Z2-9]{6}$/.test(publicId)) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+    const result = errorFromRepository(await this.repository.getPublicProfile({
+      publicId,
+      now: Number(this.now())
+    }));
+    if (!result.subjectRef || !this.avatarStore?.available?.()) return Object.freeze({ present: false });
+    const avatar = await this.avatarStore.getAvatar(result.subjectRef);
+    if (!avatar?.present) return Object.freeze({ present: false });
+    return Object.freeze({
+      present: true,
+      mime: avatar.mime,
+      bytes: Number(avatar.bytes),
+      data: this.#bufferToBase64(avatar.data)
+    });
+  }
+
   async beginPasskeyRegistration(input = {}, requestContext = {}) {
     const token = String(input.sessionToken || '').trim();
     const refreshToken = String(input.refreshToken || '').trim();

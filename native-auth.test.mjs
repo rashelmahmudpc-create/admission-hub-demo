@@ -159,6 +159,7 @@ class EngineNamespace {
         '/internal/avatar/delete': () => this.engine.deleteAvatar(body.input, body.context),
         '/internal/avatar/get': () => this.engine.getAvatarData(body.input, body.context),
         '/internal/public-profile/get': () => this.engine.getPublicProfile(body.input || {}),
+        '/internal/public-profile/avatar': () => this.engine.getPublicAvatar(body.input || {}),
         '/internal/session/get': () => this.engine.getSession(body.sessionToken),
         '/internal/session/revoke': () => this.engine.revokeSession(body.sessionToken),
         '/internal/firebase/login/failure': () => this.engine.recordLoginFailure(body.input, body.context),

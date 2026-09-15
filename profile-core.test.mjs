@@ -596,6 +596,42 @@ test('public: invalid public ID format and unknown IDs are rejected', async () =
   await assert.rejects(state.engine.getPublicProfile({ publicId: 'AH-ZZZZZZ' }), error => error.code === AUTH_ERROR_CODES.PUBLIC_PROFILE_NOT_FOUND);
 });
 
+test('public avatar: bytes follow visibility — private/unknown 404, limited/public expose the exact upload', async () => {
+  const state = makeState({ d1: makeFakeD1() });
+  const email = 'pub-avatar@example.com';
+  const subject = 'sub-pub-avatar-1';
+  const session = await login(state, email, subject);
+  await state.engine.saveProfile({
+    sessionToken: session.sessionToken, email, subject,
+    profile: { fullName: 'Avatar Public', dob: '2007-07-07', school: { id: 'manual', name: 'Hidden School', district: 'Dhaka' }, higherInstitution: null }
+  }, state.context);
+  const view = await state.engine.getProfileV2(profileInput(session, email, subject), state.context);
+  const publicId = view.publicId;
+  const bytes = tinyJpeg();
+  await state.engine.saveAvatar({ ...profileInput(session, email, subject), data: toBase64(bytes), mime: 'image/jpeg' }, state.context);
+
+  // private (default) → no avatar surface (same 404 boundary as the projection)
+  await assert.rejects(state.engine.getPublicAvatar({ publicId }), error => error.code === AUTH_ERROR_CODES.PUBLIC_PROFILE_NOT_FOUND);
+
+  // limited → name + avatar allowed
+  await state.engine.saveProfilePatch({ ...profileInput(session, email, subject), fields: { visibility: 'limited' } }, state.context);
+  const lim = await state.engine.getPublicAvatar({ publicId });
+  assert.equal(lim.present, true);
+  assert.equal(lim.mime, 'image/jpeg');
+  assert.equal(lim.bytes, bytes.byteLength);
+  assert.deepEqual(Uint8Array.from(Buffer.from(lim.data, 'base64')), bytes);
+
+  // public → still the same bytes
+  await state.engine.saveProfilePatch({ ...profileInput(session, email, subject), fields: { visibility: 'public' } }, state.context);
+  const pub = await state.engine.getPublicAvatar({ publicId });
+  assert.equal(pub.present, true);
+  assert.equal(pub.bytes, bytes.byteLength);
+
+  // invalid / unknown IDs never leak
+  await assert.rejects(state.engine.getPublicAvatar({ publicId: 'bad' }), error => error.code === AUTH_ERROR_CODES.INVALID_INPUT);
+  await assert.rejects(state.engine.getPublicAvatar({ publicId: 'AH-ZZZZZZ' }), error => error.code === AUTH_ERROR_CODES.PUBLIC_PROFILE_NOT_FOUND);
+});
+
 test('public: suspended accounts disappear from the public projection', async () => {
   const state = makeState();
   const email = 'sus@example.com';

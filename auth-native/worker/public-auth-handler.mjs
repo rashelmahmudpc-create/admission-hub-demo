@@ -1196,10 +1196,29 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
       // Phase 7 — public-safe profile projection (unauthenticated,
       // rate-limited). Private profiles never surface.
       if (request.method === 'GET' && url.pathname.startsWith('/api/public/profile/')) {
-        const publicId = decodeURIComponent(url.pathname.slice('/api/public/profile/'.length));
+        const suffix = decodeURIComponent(url.pathname.slice('/api/public/profile/'.length));
+        const isAvatar = suffix.endsWith('/avatar');
+        const publicId = isAvatar ? suffix.slice(0, -'/avatar'.length) : suffix;
         await callAuthority(env, '/internal/firebase/rate', {
           input: { operation: 'public-profile-read' }, context
         });
+        if (isAvatar) {
+          const result = await callAuthority(env, '/internal/public-profile/avatar', {
+            input: { publicId }
+          });
+          if (!result?.present) return json(request, 404, { ok: false, error: { code: 'AVATAR_NOT_FOUND' } });
+          const bytes = Uint8Array.from(atob(result.data), char => char.charCodeAt(0));
+          return new Response(bytes, {
+            status: 200,
+            headers: new Headers({
+              'Content-Type': result.mime,
+              'Content-Length': String(bytes.byteLength),
+              'Cache-Control': 'public, max-age=3600',
+              'Cross-Origin-Resource-Policy': 'cross-site',
+              ...corsHeaders(request)
+            })
+          });
+        }
         const result = await callAuthority(env, '/internal/public-profile/get', {
           input: { publicId }
         });
