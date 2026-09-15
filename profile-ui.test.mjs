@@ -141,6 +141,81 @@ test('profile chrome is code-native: no raster art classes in CSS', () => {
   assert.doesNotMatch(CSS, /url\(\s*["']?\.\/.*\.(png|jpe?g|webp)/i);
 });
 
+test('V2: identity space sections all present (hero, stats, academic, journey, achievements, prefs, privacy, edit, avatar)', () => {
+  assert.match(UI, /pp-hero-row/);
+  assert.match(UI, /Admission Candidate/);
+  assert.match(UI, /pp-stats/);
+  assert.match(UI, /Day Streak/);
+  assert.match(UI, /pp-academic/);
+  assert.match(UI, /TARGET UNIVERSITIES/);
+  assert.match(UI, /ADMISSION SESSION/);
+  assert.match(UI, /ACADEMIC GOAL/);
+  assert.match(UI, /PREFERRED SUBJECTS/);
+  assert.match(UI, /Your Journey/);
+  assert.match(UI, /First Mock/);
+  assert.match(UI, /Admission Ready/);
+  assert.match(UI, /pp-achv-grid/);
+  assert.match(UI, /Preferences/);
+  assert.match(UI, /Privacy &amp; Visibility/);
+  assert.match(UI, /pp-switch/);
+  assert.match(UI, /Edit Profile/);
+  assert.match(UI, /Change Avatar/);
+  assert.match(UI, /Change Photo/);
+  assert.match(UI, /Save Changes/);
+});
+
+test('V2: stats strip reads real local study data (never faked)', () => {
+  assert.match(UI, /window\.CACHE/);
+  assert.match(UI, /window\.computeStreak/);
+  assert.match(UI, /examResults/);
+  assert.match(UI, /r\?\.mode === 'mock'/);
+  // honest empty state, no invented numbers
+  assert.match(UI, /'—'/);
+});
+
+test('V2: academic identity persists multi-targets + session + goal + subjects through PATCH', () => {
+  assert.match(UI, /sheet-save-targets/);
+  assert.match(UI, /admissionSession/);
+  assert.match(UI, /academicGoal/);
+  assert.match(UI, /sheet-save-subjects/);
+  assert.match(UI, /\{ targets: list \}/);
+});
+
+test('V2: journey + achievements are honest (display-only, no XP, no fake unlock)', () => {
+  assert.match(UI, /real milestones/i);
+  assert.match(UI, /display-only/i);
+  assert.doesNotMatch(UI, /\+ *\d+ *XP/i);
+  assert.match(UI, /journeyMilestones/);
+  assert.match(UI, /ACHIEVEMENTS/);
+});
+
+test('V2: explicit preferences are user-controlled local-first data (Phase 8 bridge)', () => {
+  assert.match(UI, /ah-profile-prefs-v1/);
+  assert.match(UI, /loadPrefs/);
+  assert.match(UI, /savePrefs/);
+  assert.match(UI, /pref-notifications/);
+  assert.match(UI, /pref-ai/);
+  // unavailable options are honest (disabled), not faked
+  assert.match(UI, /শীঘ্রই আসছে/);
+});
+
+test('V2: edit page validates before patching; avatar page has upload/camera/default tabs', () => {
+  assert.match(UI, /saveEditPage/);
+  assert.match(UI, /pp-edit-name/);
+  assert.match(UI, /pp-edit-dob/);
+  assert.match(UI, /pp-edit-bio/);
+  assert.match(UI, /av-tab/);
+  assert.match(UI, /pick-default-avatar/);
+  assert.match(UI, /getUserMedia/);
+  // six generated default avatar styles, zero raster
+  assert.match(UI, /defaultAvatarSvg\(state\.data\?\.profile\?\.fullName/);
+});
+
+test('V2: emerald visual language, no indigo remnant in profile chrome', () => {
+  assert.match(CSS, /--pp-emerald: #0f6b4f/);
+  assert.doesNotMatch(CSS, /#4c7af8/);
+});
+
 test('floating account launcher removed; Profile tab is the single account entry point', () => {
   const ACC = read('account-access.js');
   // the launcher element is never attached to the document body
