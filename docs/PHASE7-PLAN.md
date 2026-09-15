@@ -1,10 +1,22 @@
 # 🎓 Phase 7 — Profile & Personal Identity Experience · PLAN
 
-**Status:** DRAFT — awaiting owner approval
+**Status:** ✅ APPROVED (owner, 2026-09-15) — implementation started
 **Date:** 2026-09-15 (Asia/Dhaka) · Agent: Arena Agent Mode
 **Version target:** `v257-profile-identity-2026MMDD`
 **Blueprint:** Phase 7 master blueprint + extra high-dynamic profile blueprint
 (owner-supplied, 44 + 44 sections)
+
+## Owner decisions (approved 2026-09-15)
+
+1. **All storage stays on Cloudflare** — core data in existing DO SQLite,
+   avatar blobs in D1. No external services.
+2. **Public URL — simplest possible:** `https://admissionhub.pages.dev/AH-XXXXXX`
+   (clean path; served via `_redirects` catch-all → SPA boot detects
+   pathname → renders public profile view).
+3. **Default avatar = generated SVG** (initials + deterministic hue from
+   user_id; zero storage, zero raster, code-native).
+4. **Profile tab in the bottom navigation bar** (5th item: 👤 Profile,
+   next to Home/Exam/AI/History).
 
 ---
 
@@ -292,13 +304,10 @@ leak ✓ · protected publish + live verify ✓.
 
 ---
 
-## 11. Open questions for owner (answer at approval)
+## 11. Open questions for owner (ANSWERED 2026-09-15)
 
-1. **Avatar storage:** Cloudflare **D1** (free 5 GB, no card, ~200–250K
-   avatars) — OK? Token will need D1 Edit added (recreate with Workers
-   Edit + Pages Edit + D1 Edit; paste new token at publish time).
-   Growth path: R2/MinIO migration documented in SCALING-PLAN.md.
-2. **Public profile URL:** `admissionhub.pages.dev/u/AH-XXXXXX` — OK?
-3. **Default avatar:** generated SVG (initials + deterministic color),
-   zero-raster — OK? (matches owner zero-raster rule)
-4. **Dashboard nav label:** add a `Profile` tab (👤) — OK?
+1. ✅ **Avatar storage:** D1 (free 5 GB, no card). Token at publish time
+   will need D1 Edit (Workers Edit + Pages Edit + D1 Edit).
+2. ✅ **Public URL:** `https://admissionhub.pages.dev/AH-XXXXXX` (clean path).
+3. ✅ **Default avatar:** generated SVG (initials + deterministic color).
+4. ✅ **Profile tab:** bottom navigation bar, 5th item (👤).

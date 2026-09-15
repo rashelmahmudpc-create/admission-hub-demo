@@ -1,32 +1,26 @@
-# LATEST — Phase 6 LIVE ✅ · Phase 7 PLAN awaiting approval
+# LATEST — Phase 7 APPROVED · implementation started
 
 **Updated:** 2026-09-15 (Asia/Dhaka) · Agent: **Arena Agent Mode**
 
 ## STATUS
 
 - **PHASE 6 COMPLETE & LIVE** — `v256-security-core-20260915` on
-  admissionhub.pages.dev (Pages `b9237110`, worker `3b1b4c97...`,
-  rollback anchor `6c5ba2f2...`). Manual owner-authorized publish
-  (GitHub disabled Actions+Pages at account level). Full workflow
-  verification script PASS. Google login browser-verified by owner.
-  Report: `docs/PHASE6-FINAL-REPORT.md`.
-- **PHASE 7 (Profile & Personal Identity Experience) — PLAN READY,
-  awaiting owner approval** → `docs/PHASE7-PLAN.md`.
-  - Audit done: Phase 3 profile base exists (`auth_profiles`,
-    GET/POST /profile, events system, initials avatar); gaps =
-    mobile/bio/avatar(R2)/target/AH-public-ID/visibility/completion/
-    dynamic context/PATCH semantics.
-  - 5 chunks: core data+PATCH · avatar(R2) · public identity+privacy ·
-    dynamic UI (new `profile-ui.js`) · protection+v257+release.
-  - 4 open questions in plan §11 (R2 bucket + token R2 scope, public
-    URL, SVG default avatar, Profile nav tab).
+  admissionhub.pages.dev. Report: `docs/PHASE6-FINAL-REPORT.md`.
+- **PHASE 7 (Profile & Personal Identity) — PLAN APPROVED, Chunk 1 in
+  progress** → plan: `docs/PHASE7-PLAN.md`.
+  - Owner decisions: all storage on Cloudflare (core in DO SQLite,
+    avatars in D1 5 GB free); public URL
+    `admissionhub.pages.dev/AH-XXXXXX` (clean path via _redirects);
+    default avatar = generated SVG; Profile tab in bottom nav (5th, 👤).
+  - Chunks: 1 core data (PATCH + versioning + public ID + completion) →
+    2 avatar (D1) → 3 public profile + privacy → 4 dynamic UI
+    (`profile-ui.js` + bottom nav) → 5 protection + SCALING-PLAN +
+    v257 + manual publish.
+  - Publish blocker: CF token needs **D1: Edit** added (owner recreates
+    at publish time). D1 DB `admission-profile` created at publish.
 
 ## OWNER TODO (non-blocking)
 
-- GitHub Support ticket: re-enable Actions + Pages (draft in chat).
-  Demo host (github.io) still 404 until then; serves v256 automatically
-  after re-enable.
-
-## BEFORE (still true)
-
-- Phases 3/4/5 COMPLETE (v255 line). Reports in `docs/`.
+- GitHub Support ticket: re-enable Actions + Pages (demo host 404 until
+  then).
+- At publish: new CF token (Workers Edit + Pages Edit + D1 Edit).
