@@ -32,7 +32,9 @@ const PROFILE = {
 };
 
 // Boot profile-ui.js against a verified session and hand back the live DOM.
-function boot() {
+// preseed lands in localStorage before any script runs, which is how a real
+// reload hands saved preferences to the next page load.
+function boot(preseed = {}) {
   const dom = new JSDOM('<!doctype html><html><head></head><body><div id="app"></div></body></html>', {
     url: 'https://admissionhub.pages.dev/#my-profile',
     runScripts: 'dangerously',
@@ -52,6 +54,9 @@ function boot() {
   };
   window.CACHE = { examResults: [], mistakes: [] };
   window.localStorage.setItem('ah-public-profile-id', PROFILE.publicId);
+  for (const [key, value] of Object.entries(preseed)) {
+    window.localStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value));
+  }
   window.fetch = async (url) => {
     const u = String(url);
     const body = u.includes('/api/auth/v1/profile') ? PROFILE : {};
@@ -226,6 +231,23 @@ test('appearance offers three modes and applies app-wide', async () => {
   const saved = JSON.parse(window.localStorage.getItem('ah-profile-prefs-v1') || '{}');
   assert.equal(saved.appearance, 'dark', 'appearance choice must persist');
   assert.equal(window.__appearance, 'dark', 'appearance must be pushed to the app-wide theme engine');
+  window.close();
+});
+
+test('Premium Green survives a reload (owner bug: green reverted to Light)', async () => {
+  // A real reload hands the saved prefs to the next page load, so seed
+  // localStorage before any script runs. Before the fix, loadPrefs only
+  // allow-listed light/dark/system, so 'green' was rewritten to 'light' and the
+  // picker showed Light selected while the engine still rendered green.
+  const window = boot({ 'ah-profile-prefs-v1': { appearance: 'green', v: 1 } });
+  await waitFor(() => window.document.querySelector('[data-role="pref-appearance"]'), 'profile render');
+  click(window, 'pref-appearance');
+  await waitFor(() => window.document.querySelector('[data-role="pick-appearance"]'), 'appearance options');
+
+  const green = [...window.document.querySelectorAll('[data-role="pick-appearance"]')].find(b => b.dataset.value === 'green');
+  assert.ok(green, 'Premium Green option must be offered');
+  assert.equal(green.classList.contains('on'), true, 'Premium Green must stay selected after reload');
+  assert.equal(green.querySelector('.pp-vradio').textContent.trim(), '●', 'green radio must be filled');
   window.close();
 });
 

@@ -62,7 +62,7 @@
       return {
         language: raw.language === 'en' ? 'en' : 'bn',
         notifications: raw.notifications === 'off' ? 'off' : 'on',
-        appearance: ['light', 'dark', 'system'].includes(raw.appearance) ? raw.appearance : 'light',
+        appearance: ['light', 'dark', 'system', 'green'].includes(raw.appearance) ? raw.appearance : 'light',
         aiAssistant: raw.aiAssistant === 'off' ? 'off' : 'on',
         avatarStyle: Number.isInteger(raw.avatarStyle) && raw.avatarStyle >= 0 && raw.avatarStyle <= 9 ? raw.avatarStyle : 0,
         avatarGender: raw.avatarGender === 'girl' ? 'girl' : 'boy',
