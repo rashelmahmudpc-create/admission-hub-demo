@@ -50,7 +50,7 @@ test('১১. protection snapshot runs as idle post-boot work',
 
 /* PWA lifecycle */
 test('১২. build/cache/static-Welcome and main-app AI versions are synchronized',
-  SW.includes("const BUILD_ID = 'v261-profile-v8-20260916'") && H.includes("const expectedSwVersion = 'v261-profile-v8-20260916'") && H.includes('sw.js?v=v261-profile-v8-20260916') && H.includes('account-access.js?v=20260916-account-entry-v4') && SW.includes('account-access.js?v=20260916-account-entry-v4') && H.includes('ai-agent-chat.js?v=agent-f1-ui-chatv16-personalization') && SW.includes('ai-agent-chat.js?v=agent-f1-ui-chatv16-personalization'));
+  SW.includes("const BUILD_ID = 'v262-catalog-instant-20260916'") && H.includes("const expectedSwVersion = 'v262-catalog-instant-20260916'") && H.includes('sw.js?v=v262-catalog-instant-20260916') && H.includes('account-access.js?v=20260916-account-entry-v4') && SW.includes('account-access.js?v=20260916-account-entry-v4') && H.includes('ai-agent-chat.js?v=agent-f1-ui-chatv16-personalization') && SW.includes('ai-agent-chat.js?v=agent-f1-ui-chatv16-personalization'));
 test('১৩. service-worker activation never navigates or reloads open clients',
   !SW.includes('c.navigate(c.url)') && !SW.includes("self.clients.matchAll({ type: 'window', includeUncontrolled: true });\n      for"));
 test('১৪. installed PWA document is bounded network-first with fast offline fallback',
@@ -58,7 +58,7 @@ test('১৪. installed PWA document is bounded network-first with fast offline 
   SW.includes('const DOCUMENT_NETWORK_TIMEOUT_MS = 2500') &&
   SW.includes("fetch(request, { cache: 'no-store', signal: controller.signal })") &&
   SW.includes('return offlineFallback(request);'));
-test('১৫. precache stays lean because code-native entry pages add no raster assets', shellAssets > 0 && shellAssets <= 15 && !appShellBlock.includes('result-analysis-500.js') && !appShellBlock.includes("  '',"));
+test('১৫. precache stays lean because code-native entry pages add no raster assets', shellAssets > 0 && shellAssets <= 17 && !appShellBlock.includes('result-analysis-500.js') && !appShellBlock.includes("  '',"));
 test('১৬. PWA updates are in-place; active worker is never unregistered first', !H.includes('registration.unregister()'));
 
 /* AI composer and response */

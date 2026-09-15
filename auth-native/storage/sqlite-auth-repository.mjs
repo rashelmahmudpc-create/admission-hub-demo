@@ -702,7 +702,8 @@ export class SqliteAuthRepository {
       fullName: row.fullName,
       dob: row.dob,
       school: { id: row.schoolId, name: row.schoolName, district: row.schoolDistrict || '' },
-      higherInstitution: row.higherId ? { id: row.higherId, name: row.higherName, district: row.higherDistrict || '' } : null,
+      // Presence is the NAME (patch-created institutions carry no id).
+      higherInstitution: row.higherName ? { id: row.higherId || '', name: row.higherName, district: row.higherDistrict || '' } : null,
       mobile: row.mobile || '',
       bio: row.bio || '',
       targets: this.#parseTargets(row.targets),
@@ -735,7 +736,9 @@ export class SqliteAuthRepository {
         updated_at=excluded.updated_at`,
       userId, Number(profile.version || 1), profile.fullName || '', profile.dob || '',
       profile.school?.id || '', profile.school?.name || '', profile.school?.district || '',
-      higher?.id || null, higher?.name || null, higher?.district || null,
+      // Preserve institutions that have a name but no id (patch path);
+      // a bare `id || null` silently dropped them (owner data loss).
+      higher ? (higher.id || '') : null, higher ? (higher.name || '') : null, higher ? (higher.district || '') : null,
       profile.mobile || '', profile.bio || '', targets, visibility,
       profile.admissionSession || '', profile.academicGoal || '', subjects, now, now
     );

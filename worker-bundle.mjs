@@ -4266,6 +4266,27 @@ function normalizeProfilePatch(value = {}) {
       const bio = String(raw || "").normalize("NFKC").replace(/\s+/g, " ").trim().slice(0, 281);
       if (bio.length > 280 || /[\r\n\u0000]/.test(bio)) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
       fields.bio = bio;
+    } else if (key === "dob") {
+      const v = String(raw || "").trim();
+      if (v && !/^\d{4}-\d{2}-\d{2}$/.test(v)) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+      if (v) {
+        const y = Number(v.slice(0, 4));
+        const parsed = /* @__PURE__ */ new Date(`${v}T00:00:00Z`);
+        if (!Number.isFinite(parsed.getTime()) || y < 1940 || y > 2020) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+      }
+      fields.dob = v;
+    } else if (key === "school" || key === "higherInstitution") {
+      if (raw === null || raw === "") {
+        fields[key] = null;
+        continue;
+      }
+      if (!raw || typeof raw !== "object" || Array.isArray(raw)) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+      const instName = cleanProfileText(raw.name, 120);
+      const instDistrict = cleanProfileText(raw.district || "", 80);
+      if (instName.length < 2 || instName.length > 120 || instDistrict.length > 80 || /[\r\n\u0000<>]/.test(instName) || /[\r\n\u0000<>]/.test(instDistrict)) {
+        failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+      }
+      fields[key] = Object.freeze({ id: "", name: instName, district: instDistrict });
     } else if (key === "target") {
       if (raw === null) {
         fields.targets = [];
@@ -7273,6 +7294,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           ok: true,
           profile: result?.profile || null,
           publicId: result?.publicId || null,
+          email: current.user.email || null,
           completion: Number(result?.completion || 0),
           avatar: result?.avatar || { present: false },
           avatarUrl: result?.avatarUrl || null,
@@ -8829,7 +8851,8 @@ var SqliteAuthRepository = class _SqliteAuthRepository {
       fullName: row.fullName,
       dob: row.dob,
       school: { id: row.schoolId, name: row.schoolName, district: row.schoolDistrict || "" },
-      higherInstitution: row.higherId ? { id: row.higherId, name: row.higherName, district: row.higherDistrict || "" } : null,
+      // Presence is the NAME (patch-created institutions carry no id).
+      higherInstitution: row.higherName ? { id: row.higherId || "", name: row.higherName, district: row.higherDistrict || "" } : null,
       mobile: row.mobile || "",
       bio: row.bio || "",
       targets: this.#parseTargets(row.targets),
@@ -8866,9 +8889,11 @@ var SqliteAuthRepository = class _SqliteAuthRepository {
       profile.school?.id || "",
       profile.school?.name || "",
       profile.school?.district || "",
-      higher?.id || null,
-      higher?.name || null,
-      higher?.district || null,
+      // Preserve institutions that have a name but no id (patch path);
+      // a bare `id || null` silently dropped them (owner data loss).
+      higher ? higher.id || "" : null,
+      higher ? higher.name || "" : null,
+      higher ? higher.district || "" : null,
       profile.mobile || "",
       profile.bio || "",
       targets,

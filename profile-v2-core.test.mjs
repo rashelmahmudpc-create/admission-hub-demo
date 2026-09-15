@@ -313,3 +313,84 @@ test('v8: limited visibility still hides academic identity (name + ID + avatar o
   assert.ok(!('admissionSession' in pub));
   assert.ok(!('goal' in pub));
 });
+
+// ---------------------------------------------------------------------------
+// v262 — Edit Profile: dob/school/higherInstitution are patchable (owner bug:
+// saving a changed DOB returned 400 INVALID_INPUT because the patch
+// allow-list rejected the field; server now stores the canonical date).
+// ---------------------------------------------------------------------------
+
+test('v262: DOB is patchable — canonical date stored, read back, localized-safe', async () => {
+  const state = makeState();
+  const email = 'v262dob@example.com';
+  const subject = 'sub-v262dob-1';
+  const session = await login(state, email, subject);
+  const res = await patch(state, session, email, subject, { dob: '2007-01-12' });
+  assert.equal(res.saved, true);
+  const v = await view(state, session, email, subject);
+  assert.equal(v.profile.dob, '2007-01-12');
+  // completion counts the DOB
+  assert.ok(v.completion > 0);
+});
+
+test('v262: DOB validation — non-canonical values are rejected', async () => {
+  const state = makeState();
+  const email = 'v262dobv@example.com';
+  const subject = 'sub-v262dobv-1';
+  const session = await login(state, email, subject);
+  for (const bad of ['12 Jan 2007', '2007/01/12', '2007-13-40', '2030-01-01', '1939-01-01', '2007-01-12T00:00:00Z']) {
+    await assert.rejects(
+      () => patch(state, session, email, subject, { dob: bad }),
+      (err) => err.code === AUTH_ERROR_CODES.INVALID_INPUT || err.name === 'NativeAuthError',
+      `dob ${bad} should be rejected`
+    );
+  }
+});
+
+test('v262: DOB can be cleared (empty string)', async () => {
+  const state = makeState();
+  const email = 'v262dobc@example.com';
+  const subject = 'sub-v262dobc-1';
+  const session = await login(state, email, subject);
+  await patch(state, session, email, subject, { dob: '2007-01-12' });
+  const res = await patch(state, session, email, subject, { dob: '' });
+  assert.equal(res.saved, true);
+  const v = await view(state, session, email, subject);
+  assert.equal(v.profile.dob, '');
+});
+
+test('v262: school + higherInstitution patchable, with null-clear', async () => {
+  const state = makeState();
+  const email = 'v262sch@example.com';
+  const subject = 'sub-v262sch-1';
+  const session = await login(state, email, subject);
+  const res = await patch(state, session, email, subject, {
+    school: { name: 'Zayan High School', district: 'Cox’s Bazar' },
+    higherInstitution: { name: 'Chittagong College' }
+  });
+  assert.equal(res.saved, true);
+  const v = await view(state, session, email, subject);
+  assert.equal(v.profile.school.name, 'Zayan High School');
+  assert.equal(v.profile.higherInstitution.name, 'Chittagong College');
+  // invalid school (no name) is rejected
+  await assert.rejects(
+    () => patch(state, session, email, subject, { school: { name: 'X' } }),
+    (err) => err.code === AUTH_ERROR_CODES.INVALID_INPUT || err.name === 'NativeAuthError'
+  );
+  // null clears
+  const cleared = await patch(state, session, email, subject, { higherInstitution: null });
+  assert.equal(cleared.saved, true);
+  const v2 = await view(state, session, email, subject);
+  assert.equal(v2.profile.higherInstitution, null);
+});
+
+test('v262: patch allow-list still rejects unknown fields (no open schema)', async () => {
+  const state = makeState();
+  const email = 'v262unk@example.com';
+  const subject = 'sub-v262unk-1';
+  const session = await login(state, email, subject);
+  await assert.rejects(
+    () => patch(state, session, email, subject, { hack: '1' }),
+    (err) => err.code === AUTH_ERROR_CODES.INVALID_INPUT || err.name === 'NativeAuthError'
+  );
+});

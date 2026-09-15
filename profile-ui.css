@@ -308,6 +308,27 @@
 .pp-right { text-align: right; margin: 6px 0 0; }
 .pp-acad-save { margin: 4px 0 18px; border-radius: 14px; padding: 13px 18px; font-size: 14.5px; }
 
+/* ---------------- Academic catalog (v262): searchable university,
+   catalog unit select, per-unit official subject grid, priority targets */
+.pp-acad-addrow-multi { flex-wrap: wrap; }
+.pp-acad-uni { position: relative; flex: 1 1 100%; }
+.pp-acad-ulist { position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 30; background: #fff; border: 1px solid var(--pp-line); border-radius: 12px; box-shadow: 0 10px 26px rgba(10, 43, 30, 0.14); overflow: hidden; }
+.pp-acad-uitem { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: 100%; box-sizing: border-box; padding: 10px 12px; border: none; border-bottom: 1px solid #eef3f0; background: none; font: inherit; font-size: 13.5px; font-weight: 700; color: #0c3b2a; cursor: pointer; text-align: left; }
+.pp-acad-uitem:last-child { border-bottom: none; }
+.pp-acad-uitem:hover, .pp-acad-uitem:active { background: var(--pp-emerald-soft); }
+.pp-acad-uitem small { font-size: 11.5px; font-weight: 600; opacity: 0.6; }
+.pp-acad-addrow-multi select { flex: 1 1 38%; min-width: 0; box-sizing: border-box; appearance: none; -webkit-appearance: none; border: 1.5px solid var(--pp-line); border-radius: 12px; padding: 10px 12px; font: inherit; font-size: 14px; background: #f6f9f7; color: #0c3b2a; }
+.pp-acad-addrow-multi select:disabled { opacity: 0.55; }
+.pp-acad-addrow-multi .pp-btn-secondary { flex: none; }
+.pp-acad-prio { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 50%; background: var(--pp-emerald); color: #fff; font-size: 10.5px; font-weight: 800; flex: none; }
+.pp-chip-move { border: none; background: none; color: var(--pp-emerald-deep); font-size: 10px; line-height: 1; cursor: pointer; padding: 2px; opacity: 0.85; }
+.pp-chip-move:active { opacity: 1; }
+.pp-acad-subjgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(138px, 1fr)); gap: 8px; margin: 8px 0 12px; }
+.pp-acad-subj { display: flex; align-items: center; gap: 8px; border: 1.5px solid var(--pp-line); border-radius: 12px; padding: 9px 12px; font-size: 13px; font-weight: 600; color: #0c3b2a; background: #f6f9f7; cursor: pointer; box-sizing: border-box; }
+.pp-acad-subj input { width: 15px; height: 15px; accent-color: var(--pp-emerald); flex: none; margin: 0; }
+.pp-acad-subj:has(input:checked) { border-color: var(--pp-emerald); background: var(--pp-emerald-soft); }
+.pp-acad-otherchips { margin-top: 4px; }
+
 /* ---------------- v6: save state machine ---------------- */
 .pp-btn-primary.pp-save-busy { opacity: 0.75; cursor: wait; }
 .pp-btn-primary.pp-save-ok { background: linear-gradient(135deg, #16a34a, #15803d); }
@@ -475,6 +496,12 @@
 [data-theme="dark"] .pp-ach-bar { background: #22352d; }
 [data-theme="dark"] .pp-jm-dot { background: var(--pp-card); }
 [data-theme="dark"] .pp-select-wrap select { background: var(--pp-input); color: var(--pp-ink); }
+[data-theme="dark"] .pp-acad-ulist { background: var(--pp-card); border-color: var(--pp-line); }
+[data-theme="dark"] .pp-acad-uitem { color: var(--pp-ink); border-bottom-color: #1d2b24; }
+[data-theme="dark"] .pp-acad-uitem:hover, [data-theme="dark"] .pp-acad-uitem:active { background: #16241d; }
+[data-theme="dark"] .pp-acad-addrow-multi select { background: var(--pp-input); color: var(--pp-ink); }
+[data-theme="dark"] .pp-acad-subj { background: var(--pp-input); color: var(--pp-ink); border-color: var(--pp-line); }
+[data-theme="dark"] .pp-acad-subj:has(input:checked) { background: #16241d; border-color: var(--pp-emerald); }
 [data-theme="dark"] .pp-guest-google { background: #101915; color: #f2f2f0; border-color: #2d3d35; }
 [data-theme="dark"] .pp-guest-duo-btn,
 [data-theme="dark"] .pp-btn-outline { background: #101915; color: #4ade80; border-color: #1d5c43; }

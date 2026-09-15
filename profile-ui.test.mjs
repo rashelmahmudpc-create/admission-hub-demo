@@ -107,14 +107,92 @@ test('index.html: Profile tab (6th) wired into bottom nav + router', () => {
   assert.match(HTML, /window\.renderPublicProfilePage\(pid\)/);
 });
 
-test('index.html: profile assets linked with versions', () => {
-  assert.match(HTML, /<link rel="stylesheet" href="\.\/profile-ui\.css\?v=profile-v8">/);
-  assert.match(HTML, /<script defer src="\.\/profile-ui\.js\?v=profile-v8"><\/script>/);
+test('index.html: profile assets linked with versions (v262)', () => {
+  assert.match(HTML, /<link rel="stylesheet" href="\.\/profile-ui\.css\?v=profile-v9">/);
+  assert.match(HTML, /<script defer src="\.\/academic-catalog\.js\?v=acad-cat-v1"><\/script>/);
+  assert.match(HTML, /<script defer src="\.\/profile-ui\.js\?v=profile-v9"><\/script>/);
 });
 
-test('sw.js caches the profile assets', () => {
-  assert.match(SW, /'\.\/profile-ui\.js\?v=profile-v8',/);
-  assert.match(SW, /'\.\/profile-ui\.css\?v=profile-v8',/);
+test('sw.js caches the profile assets (v262)', () => {
+  assert.match(SW, /const BUILD_ID = 'v262-catalog-instant-20260916';/);
+  assert.match(SW, /'\.\/academic-catalog\.js\?v=acad-cat-v1',/);
+  assert.match(SW, /'\.\/profile-ui\.js\?v=profile-v9',/);
+  assert.match(SW, /'\.\/profile-ui\.css\?v=profile-v9',/);
+});
+
+test('v262: academic catalog engine — official per-university+session units (no generic A/B/C/D)', () => {
+  const CAT = read('academic-catalog.js');
+  // maintainable data layer, versioned, official sources cited
+  assert.match(CAT, /ah-acad-catalog-v1/);
+  assert.match(CAT, /admission\.cu\.ac\.bd/);
+  assert.match(CAT, /admission\.ru\.ac\.bd/);
+  assert.match(CAT, /apply\.ku\.ac\.bd/);
+  // CU 2025-26 = A, B, B1, B2, C, D, D1 (official) — RU = A, B, C
+  assert.match(CAT, /cu: \{ A: U\('A'/);
+  assert.match(CAT, /B1: U\('B1'/);
+  assert.match(CAT, /ru: \{ A: U\('A', 'sciencePhysics'\), B: U\('B', 'commerce'\), C: U\('C', 'humanities'\) \}/);
+  // BUET/IUT have NO unit system — a single admission entry, never A/B/C/D
+  assert.match(CAT, /buet: \{ BUET: U\('BUET'/);
+  assert.match(CAT, /iut: \{ IUT: U\('IUT'/);
+  // API surface for the UI selectors
+  for (const fn of ['listSessions', 'searchUniversities', 'getUniversity', 'unitsFor', 'unitFor', 'subjectsFor', 'groupLabel']) {
+    assert.match(CAT, new RegExp(`function ${fn}\\(`), `${fn} missing`);
+  }
+  // the UI consumes the catalog — no hardcoded unit arrays in profile-ui.js
+  assert.match(UI, /window\.AH_AcademicCatalog/);
+  assert.match(UI, /acadCat\(\)/);
+  assert.match(UI, /data-acad-catalog-contract="catalog-driven-units-v1"/);
+  // Bangla + English alias search
+  assert.match(CAT, /ঢাকা/);
+  assert.match(CAT, /চট্টগ্রাম/);
+});
+
+test('v262: academic session select reaches the draft (false "already saved" killed)', () => {
+  // the session <select> must have a change listener bound on every render
+  assert.match(UI, /pp-acad-session/);
+  assert.match(UI, /sessSel\) sessSel\.addEventListener\('change'/);
+  assert.match(UI, /d\.session = String\(sessSel\.value/);
+  // unit change re-validates the subject selection (owner spec)
+  assert.match(UI, /acadInvalidateSubjects/);
+  assert.match(UI, /unitSel\.addEventListener\('change'/);
+  // university search suggestions from the catalog
+  assert.match(UI, /updateUniSuggestions/);
+  assert.match(UI, /acad-pick-uni/);
+  // priority targets — reorderable
+  assert.match(UI, /acad-move-target/);
+});
+
+test('v262: chip attributes render on the element, never as text (owner bug)', () => {
+  // chip() puts `extra` on the span tag itself
+  assert.match(UI, /const chip = \(label, xrole, extra\) => `<span class="pp-chip pp-chip-lg"\$\{extra \|\| ''\}>\$\{label\}<button/);
+  // no leftover pattern where attributes were spliced AFTER the label text
+  assert.doesNotMatch(UI, /<span class=\"pp-chip pp-chip-lg\">\$\{label\}\$\{extra/);
+});
+
+test('v262: instant profile — persistent cache, background sync, offline PENDING_SYNC', () => {
+  assert.match(UI, /ah-profile-cache:/);
+  assert.match(UI, /profileCacheRead\(\)/);
+  assert.match(UI, /profileCacheWrite\(body\)/);
+  // a valid cache is never overwritten with null
+  assert.match(UI, /never clobber with null/);
+  // offline edits queue and flush when the network returns
+  assert.match(UI, /PENDING_SYNC/);
+  assert.match(UI, /flushProfileQueue/);
+  assert.match(UI, /addEventListener\('online'/);
+  // cache cleared on logout (privacy — next user never sees this user's data)
+  assert.match(UI, /profileCacheClear\(\)/);
+});
+
+test('v262: DOB canonical store + localized Bangla display; server accepts dob/school/higherInstitution patch', () => {
+  assert.match(UI, /bnDob/);
+  assert.match(UI, /data-role="dob-preview"/);
+  const ENGINE = read('auth-native/core/auth-engine.mjs');
+  assert.match(ENGINE, /key === 'dob'/);
+  assert.match(ENGINE, /key === 'school' \|\| key === 'higherInstitution'/);
+  assert.match(ENGINE, /y < 1940 \|\| y > 2020/);
+  // email surfaces on the private /profile route for the read-only row
+  const HANDLER = read('auth-native/worker/public-auth-handler.mjs');
+  assert.match(HANDLER, /email: current\.user\.email \|\| null/);
 });
 
 test('_redirects serves /AH-* to the SPA', () => {

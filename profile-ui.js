@@ -35,6 +35,13 @@
     try { return new Intl.DateTimeFormat('bn-BD', { month: 'short', year: 'numeric' }).format(new Date(ts)); }
     catch (_) { return ''; }
   };
+  // DOB renders localized from the canonical ISO date (owner spec: store
+  // canonical, display localized — never the reverse).
+  const bnDob = (iso) => {
+    if (!iso || !/^\d{4}-\d{2}-\d{2}$/.test(String(iso))) return '';
+    try { return new Intl.DateTimeFormat('bn-BD', { day: 'numeric', month: 'long', year: 'numeric' }).format(new Date(`${iso}T00:00:00`)); }
+    catch (_) { return ''; }
+  };
 
   /* ---------------- local preferences (local-first, Phase 8 bridge) ---------------- */
 
@@ -109,10 +116,84 @@
     throw lastErr || new Error('Network error');
   }
 
+  /* ---------------- INSTANT PROFILE (owner spec): cache-first render ----
+     Persistent localStorage cache per user -> render immediately on every
+     navigation (no skeleton on revisit) -> silent background read-back.
+     Offline edits queue to PENDING_SYNC and flush when the network returns.
+     A valid cache is NEVER overwritten with null/empty data.            */
+  const PROFILE_CACHE_PREFIX = 'ah-profile-cache:';
+  const PROFILE_CACHE_KEY = 'ah-profile-cache-key';
+  const PROFILE_QUEUE_KEY = 'ah-profile-queue-v1';
+
+  function profileCacheWrite(data) {
+    try {
+      if (!data || !data.publicId || !data.profile) return; // never clobber with null
+      const entry = {
+        publicId: data.publicId,
+        email: data.email || null,
+        profile: data.profile,
+        completion: data.completion ?? null,
+        context: data.context || null,
+        avatar: data.avatar || { present: false },
+        avatarUrl: data.avatarUrl || null,
+        joinedYear: data.joinedYear || null,
+        ts: Date.now()
+      };
+      localStorage.setItem(PROFILE_CACHE_PREFIX + data.publicId, JSON.stringify(entry));
+      localStorage.setItem(PROFILE_CACHE_KEY, String(data.publicId));
+    } catch (_) { /* private mode — session-only, still fine */ }
+  }
+  function profileCacheRead() {
+    try {
+      const pid = localStorage.getItem(PROFILE_CACHE_KEY);
+      if (!pid) return null;
+      const raw = localStorage.getItem(PROFILE_CACHE_PREFIX + pid);
+      const entry = raw ? JSON.parse(raw) : null;
+      return (entry && entry.profile && entry.publicId === pid) ? entry : null;
+    } catch (_) { return null; }
+  }
+  function profileCacheClear() {
+    try {
+      const pid = state?.data?.publicId || localStorage.getItem(PROFILE_CACHE_KEY);
+      if (pid) localStorage.removeItem(PROFILE_CACHE_PREFIX + pid);
+      localStorage.removeItem(PROFILE_CACHE_KEY);
+      localStorage.removeItem(PROFILE_QUEUE_KEY);
+    } catch (_) {}
+  }
+  function profileQueueRead() {
+    try { const q = JSON.parse(localStorage.getItem(PROFILE_QUEUE_KEY) || '[]'); return Array.isArray(q) ? q : []; }
+    catch (_) { return []; }
+  }
+  function profileQueueWrite(q) {
+    try { localStorage.setItem(PROFILE_QUEUE_KEY, JSON.stringify(q)); } catch (_) {}
+  }
+  // PENDING_SYNC flush — applied in order, stops at the first failure so
+  // older writes can't be reordered past a newer one.
+  async function flushProfileQueue() {
+    const q = profileQueueRead();
+    if (!q.length || state.busy) return;
+    const rest = [];
+    for (const item of q) {
+      try { await patch(item.fields); } catch (_) { rest.push(item); break; }
+    }
+    profileQueueWrite(rest);
+  }
+  function bindOnlineFlush() {
+    try {
+      window.addEventListener('online', () => {
+        if (authGate() !== 'authed') return;
+        loadProfile().then(() => flushProfileQueue()).then(() => {
+          if (state.view === 'profile') renderCurrentView();
+        }).catch(() => {});
+      }, { once: true });
+    } catch (_) {}
+  }
+
   async function loadProfile() {
     const body = await api(`${API}/profile`);
     state.data = body;
     state.version = body?.profile?.version || null;
+    profileCacheWrite(body);
     return body;
   }
 
@@ -123,6 +204,7 @@
     });
     if (body?.profile) state.version = body.profile.version || state.version;
     state.data = { ...state.data, profile: body.profile };
+    profileCacheWrite(state.data);
     return body;
   }
 
@@ -664,13 +746,14 @@
         </label>
         <div class="pp-field pp-field-ro" data-email-row-contract="email-readonly-v1">
           <span>Email <em class="pp-ro-chip">Not editable</em></span>
-          <div class="pp-ro-value">${esc(p.email || '—')}</div>
+          <div class="pp-ro-value">${esc(state.data?.email || p.email || '—')}</div>
         </div>
         <label class="pp-field"><span>Mobile Number ${p.mobile ? '<em class="pp-saved-chip">✓ Saved</em>' : '<em>(optional)</em>'}</span>
           <input id="pp-edit-mobile" type="tel" inputmode="tel" maxlength="16" autocomplete="tel" value="${esc(p.mobile || '')}" placeholder="+8801XXXXXXXXX">
         </label>
         <label class="pp-field"><span>Date of Birth</span>
           <input id="pp-edit-dob" type="date" value="${esc(p.dob || '')}">
+          <small class="pp-fine" data-role="dob-preview" ${p.dob ? '' : 'hidden'}>${bnDob(p.dob)}</small>
         </label>
         <label class="pp-field"><span>Bio <em>(optional, সর্বোচ্চ ২৮০)</em></span>
           <textarea id="pp-edit-bio" rows="3" maxlength="280" placeholder="নিজের সম্পর্কে এক লাইন…">${esc(p.bio || '')}</textarea>
@@ -735,24 +818,95 @@
       </div>`;
   }
 
-  /* ------- Academic Identity — dedicated edit page (reference panel 3) ------- */
+  /* ------- Academic Identity — dedicated edit page (reference panel 3) -------
+     Owner spec: units/subjects come from window.AH_AcademicCatalog —
+     university + session driven, never a generic A/B/C/D assumption.
+     The UI selectors below contain NO unit arrays of their own. */
+  const acadCat = () => (typeof window.AH_AcademicCatalog === 'object' && window.AH_AcademicCatalog) || null;
+
   function academicDraftInit() {
     const p = state.data?.profile || {};
     state.acad = {
       targets: Array.isArray(p.targets) ? p.targets.filter((t) => t && t.name).map((t) => ({ name: String(t.name), unit: String(t.unit || ''), year: String(t.year || '') })) : [],
       session: String(p.admissionSession || ''),
       goal: String(p.academicGoal || ''),
-      subjects: Array.isArray(p.subjects) ? p.subjects.map((x) => String(x)) : []
+      subjects: Array.isArray(p.subjects) ? p.subjects.map((x) => String(x)).filter(Boolean) : [],
+      manual: new Set(Array.isArray(p.subjects) ? p.subjects.map((x) => String(x)).filter(Boolean) : []),
+      pendingUni: '',
+      pendingUnit: '',
+      suggestOpen: false
     };
+  }
+
+  // Unit change re-validates: subjects outside the new unit's official list
+  // are dropped (manually added ones are kept — owner data is never lost).
+  function acadInvalidateSubjects() {
+    const d = state.acad;
+    const cat = acadCat();
+    if (!cat || !d.pendingUni || !d.pendingUnit) return;
+    const official = cat.subjectsFor(d.pendingUni, d.session, d.pendingUnit);
+    if (!official.length) return;
+    d.subjects = d.subjects.filter((s) => official.includes(s) || d.manual.has(s));
+  }
+
+  // Active unit context: pending selection first, else the first
+  // catalog-known target (for rendering its official subjects).
+  function acadUnitContext() {
+    const d = state.acad;
+    const cat = acadCat();
+    let uniId = d.pendingUni || '';
+    let unitId = d.pendingUnit || '';
+    if (!uniId && d.targets.length) {
+      const u0 = cat ? cat.getUniversity(d.targets[0].name) : null;
+      if (u0 && d.targets[0].unit) { uniId = u0.id; unitId = d.targets[0].unit; }
+    }
+    if (!uniId) return { uniId: '', unitId: '', units: [], subjects: [], uniName: '' };
+    const u = cat ? cat.getUniversity(uniId) : null;
+    const units = cat && d.session ? cat.unitsFor(uniId, d.session) : [];
+    const subjects = cat && unitId ? cat.subjectsFor(uniId, d.session, unitId) : [];
+    return { uniId, unitId, units, subjects, uniName: u ? u.name : uniId };
   }
 
   function academicPageMarkup() {
     if (!state.acad) academicDraftInit();
     const d = state.acad;
-    const nowY = new Date().getFullYear();
-    const yearOpts = [];
-    for (let y = nowY - 25; y <= nowY + 10; y += 1) yearOpts.push(`<option value="${y}" ${String(d.session) === String(y) ? 'selected' : ''}>${bnYear(y)} (${y})</option>`);
-    const chip = (label, xrole, extra) => `<span class="pp-chip pp-chip-lg">${label}${extra || ''}<button class="pp-chip-x" data-role="${xrole}" type="button" aria-label="মুছে ফেলো">×</button></span>`;
+    const cat = acadCat();
+    const ctx = acadUnitContext();
+    const sessions = cat ? cat.listSessions() : [];
+    const sessionOpts = sessions.map((s) => `<option value="${esc(s.id)}" ${d.session === s.id ? 'selected' : ''}>${esc(s.label)}${s.status === 'provisional' ? ' (provisional)' : ''}</option>`).join('');
+    // extra = attributes for the CHIP SPAN itself (a leaked text arg renders
+    // raw markup — contract: no-attribute-leak-v1).
+    const chip = (label, xrole, extra) => `<span class="pp-chip pp-chip-lg"${extra || ''}>${label}<button class="pp-chip-x" data-role="${xrole}" type="button" aria-label="মুছে ফেলো">×</button></span>`;
+    const targetsHtml = d.targets.map((t, i) => `
+      <span class="pp-chip pp-chip-lg pp-acad-target" data-index="${i}">
+        <b class="pp-acad-prio" aria-hidden="true">${bnYear(i + 1)}.</b>${esc(t.name)}${t.unit ? ` <em>· ${esc(t.unit)}</em>` : ''}${t.year ? ` <em>· ${esc(t.year)}</em>` : ''}
+        ${i > 0 ? `<button class="pp-chip-move" data-role="acad-move-target" data-index="${i}" data-dir="-1" type="button" aria-label="উপরে">▲</button>` : ''}
+        ${i < d.targets.length - 1 ? `<button class="pp-chip-move" data-role="acad-move-target" data-index="${i}" data-dir="1" type="button" aria-label="নিচে">▼</button>` : ''}
+        <button class="pp-chip-x" data-role="acad-del-target" data-index="${i}" type="button" aria-label="মুছে ফেলো">×</button>
+      </span>`).join('');
+    const addRow = d.targets.length < 5 ? `
+      <div class="pp-acad-addrow pp-acad-addrow-multi">
+        <div class="pp-acad-uni">
+          <input id="pp-acad-u" type="text" maxlength="120" placeholder="ইউনিভার্সিটি লিখো… (যেমন: CU, ঢাকা, BUET)" aria-label="University" autocomplete="off">
+          <div id="pp-acad-ulist" class="pp-acad-ulist" hidden></div>
+        </div>
+        <select id="pp-acad-unit" ${ctx.units.length ? '' : 'disabled'} aria-label="Unit">
+          <option value="">Unit —</option>
+          ${ctx.units.map((u) => `<option value="${esc(u.id)}" ${ctx.unitId === u.id ? 'selected' : ''}>${esc(u.id)} — ${esc(cat.groupLabel(ctx.uniId, d.session, u.id))}</option>`).join('')}
+        </select>
+        <input id="pp-acad-year" type="text" maxlength="10" placeholder="Year (optional)" aria-label="Year">
+        <button class="pp-btn-secondary" data-role="acad-add-target" type="button">+ Add</button>
+      </div>
+      <p class="pp-fine" data-acad-catalog-contract="catalog-driven-units-v1">Unit ও subject নির্ভর করে নির্বাচিত university + session-এর official catalog-এর ওপর।</p>` : '<p class="pp-fine">সর্বোচ্চ 5টা target রাখা যায়।</p>';
+    const subjChecked = (s) => d.subjects.some((x) => x.toLowerCase() === s.toLowerCase());
+    const officialBlock = ctx.subjects.length
+      ? `<p class="pp-fine">Official subjects — <b>${esc(ctx.uniName)} · ${esc(ctx.unitId)} · ${esc(d.session || '—')}</b>:</p>
+        <div class="pp-acad-subjgrid" data-role="acad-subjgrid">
+          ${ctx.subjects.map((s) => `<label class="pp-acad-subj"><input type="checkbox" class="pp-acad-subjbox" value="${esc(s)}" ${subjChecked(s) ? 'checked' : ''}><span>${esc(s)}</span></label>`).join('')}
+        </div>`
+      : '<p class="pp-fine">Target-এ university + unit নির্বাচন করলে ওই unit-এর official subject-গুলো এখানে দেখাবে।</p>';
+    const otherSubjs = ctx.subjects.length ? d.subjects.filter((s) => !ctx.subjects.includes(s)) : d.subjects;
+    const otherChips = otherSubjs.map((x) => chip(esc(x), 'acad-del-subject', ` data-value="${esc(x)}"`)).join('');
     return `
       <div class="pp-topbar">
         <button class="pp-iconbtn pp-topbar-back" data-role="acad-back" type="button" aria-label="← Profile">←</button>
@@ -760,43 +914,52 @@
         <span class="pp-topbar-spacer" aria-hidden="true"></span>
       </div>
       <section class="pp-card pp-acad-sec">
-        <h2>🎯 Target Universities</h2>
-        <div class="pp-acad-chips">
-          ${d.targets.map((t, i) => chip(esc(t.name) + (t.unit ? ` <em>· ${esc(t.unit)}</em>` : ''), 'acad-del-target', ` data-index="${i}"`)).join('') || '<p class="pp-fine">এখনো কোনো target নেই — নিচে যোগ করো।</p>'}
-        </div>
-        ${d.targets.length < 5 ? `
-        <div class="pp-acad-addrow">
-          <input id="pp-acad-tname" type="text" maxlength="120" placeholder="ইউনিভার্সিটি / কলেজ" aria-label="Target name">
-          <input id="pp-acad-tunit" type="text" maxlength="20" placeholder="Unit (optional)" aria-label="Unit">
-          <button class="pp-btn-secondary" data-role="acad-add-target" type="button">+ Add</button>
-        </div>` : '<p class="pp-fine">সর্বোচ্চ 5টা target রাখা যায়।</p>'}
+        <h2>📅 Admission Session</h2>
+        <label class="pp-field"><span>Session</span>
+          <div class="pp-select-wrap"><select id="pp-acad-session" aria-label="Admission session"><option value="">— Select —</option>${sessionOpts}</select><svg aria-hidden="true" viewBox="0 0 12 8"><path d="M1 1.8 6 6.6 11 1.8"/></svg></div>
+        </label>
       </section>
       <section class="pp-card pp-acad-sec">
-        <h2>📅 Admission Session</h2>
-        <label class="pp-field"><span>Session year</span>
-          <div class="pp-select-wrap"><select id="pp-acad-session" aria-label="Admission session year"><option value="">— Select —</option>${yearOpts.join('')}</select><svg aria-hidden="true" viewBox="0 0 12 8"><path d="M1 1.8 6 6.6 11 1.8"/></svg></div>
-        </label>
+        <h2>🎯 Target Universities <em class="pp-fine">(১ম = first choice)</em></h2>
+        <div class="pp-acad-chips">
+          ${targetsHtml || '<p class="pp-fine">এখনো কোনো target নেই — নিচে যোগ করো।</p>'}
+        </div>
+        ${addRow}
       </section>
       <section class="pp-card pp-acad-sec">
         <h2>🚀 Academic Goal</h2>
         <label class="pp-field"><span>তোমার goal <em>(সর্বোচ্চ ১৬০)</em></span>
-          <textarea id="pp-acad-goal" rows="3" maxlength="160" placeholder="যেমন: 2026-এ BUET CSE-তে ভর্তি হবো">${esc(d.goal)}</textarea>
+          <textarea id="pp-acad-goal" rows="3" maxlength="160" placeholder="যেমন: 2026-এ CU CSE-তে ভর্তি হবো">${esc(d.goal)}</textarea>
         </label>
         <p class="pp-fine pp-right"><span data-role="acad-goal-count">${d.goal.length}</span>/160</p>
       </section>
       <section class="pp-card pp-acad-sec">
-        <h2>🧪 Preferred Subjects</h2>
-        <div class="pp-acad-chips">
-          ${d.subjects.map((x) => chip(esc(x), 'acad-del-subject', ` data-value="${esc(x)}"`)).join('') || '<p class="pp-fine">এখনো কোনো subject নেই।</p>'}
+        <h2>🧪 Preferred Subjects <em class="pp-fine">(সর্বোচ্চ ৮)</em></h2>
+        ${officialBlock}
+        <div class="pp-acad-chips pp-acad-otherchips">
+          ${otherChips || '<p class="pp-fine">অন্য subject থাকলে নিচে add করো।</p>'}
         </div>
         ${d.subjects.length < 8 ? `
         <div class="pp-acad-addrow">
-          <input id="pp-acad-subject" type="text" maxlength="40" placeholder="যেমন: Physics" aria-label="Subject">
+          <input id="pp-acad-subject" type="text" maxlength="40" placeholder="অন্য subject (manual)" aria-label="Subject">
           <button class="pp-btn-secondary" data-role="acad-add-subject" type="button">+ Add</button>
         </div>` : '<p class="pp-fine">সর্বোচ্চ 8টা subject রাখা যায়।</p>'}
       </section>
       <p class="pp-fine pp-acad-err" data-role="acad-error" hidden></p>
       <button class="pp-btn-primary pp-acad-save" data-role="acad-save" type="button">Save Changes</button>`;
+  }
+
+  // Catalog search suggestions — swap the list node only (keeps input focus).
+  function updateUniSuggestions(input) {
+    const box = $('#pp-acad-ulist');
+    if (!box) return;
+    const cat = acadCat();
+    const q = String(input?.value || '').trim();
+    if (!cat || !q) { box.hidden = true; box.innerHTML = ''; return; }
+    const hits = cat.searchUniversities(q, 5);
+    if (!hits.length) { box.hidden = true; box.innerHTML = ''; return; }
+    box.innerHTML = hits.map((h) => `<button type="button" class="pp-acad-uitem" data-role="acad-pick-uni" data-uni="${esc(h.university.id)}"><b>${esc(h.university.name)}</b><small>${esc((h.university.aliases || []).slice(0, 3).join(' · '))}</small></button>`).join('');
+    box.hidden = false;
   }
 
   function acadErr(msg) {
@@ -1367,11 +1530,40 @@
       }
       else if (role === 'acad-add-target') {
         const d = state.acad;
-        const name = String($('#pp-acad-tname')?.value || '').trim().replace(/\s+/g, ' ');
-        const unit = String($('#pp-acad-tunit')?.value || '').trim().replace(/\s+/g, ' ');
-        if (name.length < 2) { acadErr('ইউনিভার্সিটি/কলেজের নাম দাও (কমপক্ষে ২ অক্ষর)।'); return; }
+        const cat = acadCat();
+        const uText = String($('#pp-acad-u')?.value || '').trim().replace(/\s+/g, ' ');
+        let name = uText;
+        if (d.pendingUni && cat) {
+          const u = cat.getUniversity(d.pendingUni);
+          if (u) name = u.name; // official catalog name wins
+        }
+        const unit = String($('#pp-acad-unit')?.value || d.pendingUnit || '').trim().replace(/\s+/g, ' ');
+        const year = String($('#pp-acad-year')?.value || '').trim().replace(/\s+/g, ' ').slice(0, 10);
+        if (name.length < 2) { acadErr('ইউনিভার্সিটির নাম দাও (কমপক্ষে ২ অক্ষর)।'); return; }
+        if (name.length > 120) { acadErr('নামটি বড় হয়ে গেছে।'); return; }
         if (unit.length > 20) { acadErr('Unit সর্বোচ্চ ২০ অক্ষর।'); return; }
-        d.targets.push({ name, unit });
+        if (d.targets.some((t) => t.name.toLowerCase() === name.toLowerCase())) { acadErr('এই target আগেই আছে।'); return; }
+        d.targets.push({ name, unit, year });
+        d.pendingUni = '';
+        d.pendingUnit = '';
+        renderCurrentView();
+        return;
+      }
+      else if (role === 'acad-pick-uni') {
+        const d = state.acad;
+        d.pendingUni = String(el.dataset.uni || '');
+        d.pendingUnit = '';
+        d.suggestOpen = false;
+        renderCurrentView();
+        return;
+      }
+      else if (role === 'acad-move-target') {
+        const d = state.acad;
+        const i = Number(el.dataset.index);
+        const j = i + Number(el.dataset.dir || 0);
+        if (j < 0 || j >= d.targets.length) return;
+        const t = d.targets.splice(i, 1)[0];
+        d.targets.splice(j, 0, t);
         renderCurrentView();
         return;
       }
@@ -1384,8 +1576,11 @@
         const d = state.acad;
         const v = String($('#pp-acad-subject')?.value || '').trim().replace(/\s+/g, ' ');
         if (!v) { acadErr('Subject-এর নাম দাও।'); return; }
+        if (v.length > 40) { acadErr('Subject-এর নাম 40 অক্ষরের বেশি হতে পারে না।'); return; }
         if (d.subjects.some((x) => x.toLowerCase() === v.toLowerCase())) { acadErr('Subjectটা আগেই আছে।'); return; }
+        if (d.subjects.length >= 8) { acadErr('সর্বোচ্চ 8টা subject রাখা যায়।'); return; }
         d.subjects.push(v);
+        if (d.manual) d.manual.add(v); // manual picks survive unit switches
         renderCurrentView();
         return;
       }
@@ -1423,6 +1618,48 @@
   if (goal) goal.addEventListener('input', () => {
     const c = $('[data-role="acad-goal-count"]');
     if (c) c.textContent = String(goal.value.length);
+  });
+  // Academic page — the session SELECT must reach the draft on every change
+  // (owner bug: stale select => false "কোনো পরিবর্তন নেই" + fake already-saved).
+  const sessSel = $('#pp-acad-session');
+  if (sessSel) sessSel.addEventListener('change', () => {
+    const d = state.acad;
+    d.session = String(sessSel.value || '').trim();
+    const cat = acadCat();
+    if (d.pendingUni && d.pendingUnit && cat) {
+      const ok = cat.unitsFor(d.pendingUni, d.session).some((u) => u.id === d.pendingUnit);
+      if (!ok) d.pendingUnit = '';
+      acadInvalidateSubjects();
+    }
+    renderCurrentView();
+  });
+  const unitSel = $('#pp-acad-unit');
+  if (unitSel) unitSel.addEventListener('change', () => {
+    const d = state.acad;
+    d.pendingUnit = String(unitSel.value || '');
+    acadInvalidateSubjects(); // unit change re-validates subject selection
+    renderCurrentView();
+  });
+  const uniInput = $('#pp-acad-u');
+  if (uniInput) uniInput.addEventListener('input', () => updateUniSuggestions(uniInput));
+  // Official subject checkboxes — toggle the draft, re-render chip/counter row.
+  const subjBoxes = Array.from(document.querySelectorAll('.pp-acad-subjbox'));
+  if (subjBoxes.length) subjBoxes.forEach((box) => box.addEventListener('change', () => {
+    const d = state.acad;
+    const v = String(box.value || '');
+    if (!v) return;
+    if (box.checked) {
+      if (!d.subjects.some((x) => x.toLowerCase() === v.toLowerCase()) && d.subjects.length < 8) d.subjects.push(v);
+    } else {
+      d.subjects = d.subjects.filter((x) => x.toLowerCase() !== v.toLowerCase());
+    }
+    renderCurrentView();
+  }));
+  // DOB stored canonical (YYYY-MM-DD) — preview the localized Bangla value.
+  const dobIn = $('#pp-edit-dob');
+  if (dobIn) dobIn.addEventListener('input', () => {
+    const pv = $('[data-role="dob-preview"]');
+    if (pv) { const t = bnDob(dobIn.value); pv.hidden = !t; pv.textContent = t; }
   });
 }
 
@@ -1547,6 +1784,16 @@
         }
         if (err.status === 429) {
           failBtn('একটু দ্রুত বেশি — এক-দু সেকেন্ড পরে আবার চেষ্টা করো।');
+          return;
+        }
+        // Offline / network loss — never lose the edit: queue it as
+        // PENDING_SYNC, flush automatically when the network returns.
+        const offlineLike = !window.navigator.onLine || err.status === 0 || !err.status || err.name === 'AbortError';
+        if (offlineLike) {
+          const q = profileQueueRead();
+          q.push({ fields, ts: Date.now() });
+          profileQueueWrite(q);
+          failBtn('অফলাইন — পরিবর্তনগুলো PENDING_SYNC-এ রাখা হয়েছে; নেট ফিরলে নিজেই save হবে।');
           return;
         }
         failBtn(err.message || 'সংরক্ষণ করা যায়নি — আবার চেষ্টা করো।');
@@ -1713,6 +1960,19 @@
     if (authChangeBound) return;
     authChangeBound = true;
     window.addEventListener('admissionhub:authchange', () => {
+      // Session gone (logout/terminate) — drop the local profile cache and
+      // drafts so the next user on this device never sees this user's data.
+      const acc = window.AdmissionAccount;
+      const stillAuthed = !!(acc && (
+        acc.isVerified() ||
+        (typeof acc.getSessionState === 'function' &&
+          ['AUTHENTICATED', 'REFRESHING', 'RECOVERING'].includes(String(acc.getSessionState() || '')))));
+      if (!stillAuthed && state.data) {
+        profileCacheClear();
+        state.data = null;
+        state.version = null;
+        state.acad = null;
+      }
       // Re-render only the profile home — never the edit/avatar pages (input safety).
       if (state.view === 'profile') {
         try { window.renderProfilePage(); } catch (_) {}
@@ -1758,13 +2018,24 @@
     }
     // AUTHENTICATED. First open (no data yet): skeleton for the profile fetch.
     // Revisit (data cached): render instantly, refresh silently in background.
+    // Persistent cache (ah-profile-cache): even on a fresh app start the
+    // profile paints BEFORE the network round-trip — no skeleton, no blank.
     if (!state.data) {
-      shell(profileSkeleton(), { topbar: false });
-    } else {
-      shell(profileViewMarkup(), { topbar: false });
-      bindPageEvents($('#app'));
+      const cached = profileCacheRead();
+      if (cached) {
+        state.data = cached;
+        state.version = cached.profile?.version || null;
+      } else {
+        shell(profileSkeleton(), { topbar: false });
+      }
     }
+    if (state.data) {
+      shell(profileViewMarkup(), { topbar: false });
+      bindPageEvents($('#app));
+    }
+    bindOnlineFlush();
     Promise.all([loadProfile(), loadAiPrefs()])
+      .then(() => flushProfileQueue())
       .then(() => {
         if (state.view !== 'profile') return; // user navigated away — no clobber
         renderCurrentView();

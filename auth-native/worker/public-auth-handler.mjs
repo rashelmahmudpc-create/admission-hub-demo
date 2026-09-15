@@ -1149,6 +1149,7 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           ok: true,
           profile: result?.profile || null,
           publicId: result?.publicId || null,
+          email: current.user.email || null,
           completion: Number(result?.completion || 0),
           avatar: result?.avatar || { present: false },
           avatarUrl: result?.avatarUrl || null,

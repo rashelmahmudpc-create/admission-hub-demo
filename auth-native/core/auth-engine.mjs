@@ -262,6 +262,27 @@ export function normalizeProfilePatch(value = {}) {
       const bio = String(raw || '').normalize('NFKC').replace(/\s+/g, ' ').trim().slice(0, 281);
       if (bio.length > 280 || /[\r\n\u0000]/.test(bio)) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
       fields.bio = bio;
+    } else if (key === 'dob') {
+      // Canonical date value (YYYY-MM-DD) or '' to clear — never a display string.
+      const v = String(raw || '').trim();
+      if (v && !/^\d{4}-\d{2}-\d{2}$/.test(v)) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+      if (v) {
+        const y = Number(v.slice(0, 4));
+        const parsed = new Date(`${v}T00:00:00Z`);
+        if (!Number.isFinite(parsed.getTime()) || y < 1940 || y > 2020) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+      }
+      fields.dob = v;
+    } else if (key === 'school' || key === 'higherInstitution') {
+      // null/'' clears; otherwise { name (required), district? } — id is server-owned.
+      if (raw === null || raw === '') { fields[key] = null; continue; }
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+      const instName = cleanProfileText(raw.name, 120);
+      const instDistrict = cleanProfileText(raw.district || '', 80);
+      if (instName.length < 2 || instName.length > 120 || instDistrict.length > 80
+        || /[\r\n\u0000<>]/.test(instName) || /[\r\n\u0000<>]/.test(instDistrict)) {
+        failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+      }
+      fields[key] = Object.freeze({ id: '', name: instName, district: instDistrict });
     } else if (key === 'target') {
       if (raw === null) { fields.targets = []; continue; }
       if (!raw || typeof raw !== 'object' || Array.isArray(raw)) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
