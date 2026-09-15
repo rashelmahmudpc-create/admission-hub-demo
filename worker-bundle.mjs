@@ -7858,7 +7858,7 @@ var SqliteAuthRepository = class {
       `INSERT INTO auth_security_challenges(
         challenge_ref,user_id,purpose,method,status,attempts,max_attempts,attempt_id,
         device_ref,step_up_token_mac,created_at,expires_at,verified_at,consumed_at,policy_version
-      ) VALUES(?,?,?,?, 'created', 0,?,?,?, NULL,NULL,?,NULL,NULL,?)`,
+      ) VALUES(?,?,?,?, 'created', 0,?,?,?, NULL,?,?,NULL,NULL,?)`,
       challengeRef,
       userId,
       purpose,
