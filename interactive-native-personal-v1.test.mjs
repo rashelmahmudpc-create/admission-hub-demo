@@ -10,7 +10,7 @@ const SW = read('sw.js');
 const RELEASE = read('.github/workflows/telegram-auth-canary-activate.yml');
 const BUNDLE_GUARD = read('.github/workflows/cf-pages.yml');
 const UI_VERSION = '20260916-account-entry-v4';
-const SHELL_VERSION = 'v260-profile-v7-20260916';
+const SHELL_VERSION = 'v261-profile-v8-20260916';
 
 const signupStart = JS.indexOf('<form class="ah-account-view ah-signup-view"');
 const signupEnd = JS.indexOf('<div class="ah-account-view ah-created-view"', signupStart);
@@ -107,6 +107,6 @@ test('code-native release markers and fail-closed publication checks are synchro
 test('Signup stays AI-free while the ordinary application AI remains shipped', () => {
   assert.doesNotMatch(JS, /\/api\/ai\/chat|data-role="guide|class="ah-guide/);
   assert.doesNotMatch(CSS, /\.ah-guide/);
-  assert.match(HTML, /<script defer src="\.\/ai-agent-chat\.js\?v=agent-f1-ui-chatv15-identity"><\/script>/);
-  assert.match(SW, /\.\/ai-agent-chat\.js\?v=agent-f1-ui-chatv15-identity/);
+  assert.match(HTML, /<script defer src="\.\/ai-agent-chat\.js\?v=agent-f1-ui-chatv16-personalization"><\/script>/);
+  assert.match(SW, /\.\/ai-agent-chat\.js\?v=agent-f1-ui-chatv16-personalization/);
 });

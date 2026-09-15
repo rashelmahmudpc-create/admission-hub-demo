@@ -1,6 +1,6 @@
 // ai-agent.js
 var AGENT_VERSION = "agent-f1";
-var SYSTEM_PROMPT_V = "sys-f1-2-onboarding-safe";
+var SYSTEM_PROMPT_V = "sys-f1-3-ai-personalization";
 var INTENTS = {
   GENERAL_CHAT: "GENERAL_CHAT",
   ACADEMIC_EXPLAIN: "ACADEMIC_EXPLAIN",
@@ -116,6 +116,17 @@ function capStats(stats) {
   if (stats.mistakes != null) s.mistakes = num(stats.mistakes, 0, 1e5);
   return Object.keys(s).length ? s : null;
 }
+var AI_PREFS_DEFAULT = Object.freeze({ langStyle: "bn", tone: "friendly", responseLen: "balanced", memory: true });
+function sanitizeAiPrefs(value) {
+  if (!value || typeof value !== "object") return null;
+  const pick = (v, set, dflt) => set.has(String(v)) ? String(v) : dflt;
+  return {
+    langStyle: pick(value.langStyle, /* @__PURE__ */ new Set(["bn", "en", "mix"]), AI_PREFS_DEFAULT.langStyle),
+    tone: pick(value.tone, /* @__PURE__ */ new Set(["friendly", "professional", "simple", "motivating", "direct"]), AI_PREFS_DEFAULT.tone),
+    responseLen: pick(value.responseLen, /* @__PURE__ */ new Set(["short", "balanced", "detailed"]), AI_PREFS_DEFAULT.responseLen),
+    memory: value.memory === false ? false : true
+  };
+}
 function buildSystemPrompt(opts = {}) {
   const stats = capStats(opts.stats);
   const examMode = String(opts.examMode || "");
@@ -157,6 +168,21 @@ EXAM INTEGRITY — ACTIVE (mock-running): answers, hints and explanations are RE
 QUIZ MODE — reply with ONLY a valid JSON object (no markdown fences, no text outside JSON):
 {"title":"<short topic title>","questions":[{"q":"<question>","options":["<A>","<B>","<C>","<D>"],"answer":0,"explanation":"<1-2 sentence Bangla explanation of the answer>"}]}
 Rules: exactly 5 questions (or the count the user asked, 1-10); admission-level quality; answer is the 0-based index of the correct option; question/options/explanation in the user's language (Bangla unless the user wrote English); 4 options each.`;
+  const prefs = sanitizeAiPrefs(opts.prefs);
+  if (prefs) {
+    const langLine = prefs.langStyle === "en" ? "Reply in English." : prefs.langStyle === "mix" ? "Reply in a natural mix of Bangla and English (code-mixing is fine)." : "Reply in Bangla (Bangla script).";
+    const toneLine = {
+      friendly: "Keep a warm, encouraging, friendly tone.",
+      professional: "Keep a professional, precise tone.",
+      simple: "Use the simplest possible words and short sentences.",
+      motivating: "Keep an uplifting, motivating tone; encourage the student.",
+      direct: "Be direct and to the point; no small talk."
+    }[prefs.tone];
+    const lenLine = prefs.responseLen === "short" ? "Keep answers short (2-4 sentences unless the student asks for more)." : prefs.responseLen === "detailed" ? "Give detailed, well-structured answers with examples when useful." : "Keep answers balanced: enough detail, no padding.";
+    p += `
+
+STUDENT PREFERENCES (এই ব্যবহারকারীর নিজস্ব পছন্দ — অন্য কারাংশে প্রয়োগ করো না): ${langLine} ${toneLine} ${lenLine}`;
+  }
   if (stats) {
     const bits = [];
     if (stats.exams != null) bits.push(`মোট পরীক্ষা: ${stats.exams}`);
@@ -391,8 +417,16 @@ async function agentChat(request, env, uid, opts = {}) {
   const examMode = body.context && body.context.examMode === "mock-running" ? "mock-running" : "";
   const stats = capStats(body.context && body.context.stats);
   const safety = safetyGate(intent, examMode);
+  let aiPrefs = null;
+  try {
+    const rawPrefs = await getKv(env.PUB_KV, "aiprefs:" + sendCtx.uid);
+    aiPrefs = rawPrefs ? sanitizeAiPrefs(JSON.parse(rawPrefs)) : null;
+  } catch (_) {
+    aiPrefs = null;
+  }
+  const memoryOn = persistMemory && !(aiPrefs && aiPrefs.memory === false);
   let mem = [];
-  if (persistMemory) {
+  if (memoryOn) {
     try {
       const rawMem = await getKv(env.PUB_KV, "chatmem:" + sendCtx.uid);
       const parsedMem = JSON.parse(rawMem || "[]");
@@ -405,12 +439,12 @@ async function agentChat(request, env, uid, opts = {}) {
   if (msgs.length < 3 && mem.length) msgs = mem.concat(msgs);
   if (msgs.length > 16) {
     const summary = summarizeTo(msgs);
-    if (persistMemory) await putKv(env.PUB_KV, "chatmemsum:" + sendCtx.uid, summary);
+    if (memoryOn) await putKv(env.PUB_KV, "chatmemsum:" + sendCtx.uid, summary);
     msgs = msgs.slice(-12);
   }
   msgs = msgs.slice(-24);
-  const systemPrompt = buildSystemPrompt({ stats, examMode, quiz: quizMode, onboarding });
-  let summaryText = persistMemory ? await getKv(env.PUB_KV, "chatmemsum:" + sendCtx.uid) : "";
+  const systemPrompt = buildSystemPrompt({ stats, examMode, quiz: quizMode, onboarding, prefs: aiPrefs });
+  let summaryText = memoryOn ? await getKv(env.PUB_KV, "chatmemsum:" + sendCtx.uid) : "";
   const sys = summaryText ? systemPrompt + "\n\n" + String(summaryText) : systemPrompt;
   const hasImage = msgs.some((m) => m.image);
   const partsOf = (m) => {
@@ -446,7 +480,7 @@ async function agentChat(request, env, uid, opts = {}) {
   }
   const failures = [];
   const finalize = async (model, provider, text) => {
-    if (!persistMemory) return;
+    if (!memoryOn) return;
     try {
       const next = msgs.concat([{ role: "user", content: v.messages[v.messages.length - 1].content }, { role: "assistant", content: text }]).slice(-24).map((x) => ({ role: x.role, content: x.content }));
       await putKv(env.PUB_KV, "chatmem:" + sendCtx.uid, JSON.stringify(next));
@@ -788,6 +822,30 @@ var public_worker_default = {
       if (path === "/api/ai/status" && request.method === "GET") {
         const identity = await aiRequestIdentity(request, env, false);
         return agentStatus(request, env, identity.uid);
+      }
+      if (path === "/api/ai/prefs" && request.method === "GET") {
+        const identity = await aiRequestIdentity(request, env, false);
+        let prefs = null;
+        try {
+          const raw = await env.PUB_KV.get("aiprefs:" + identity.uid);
+          prefs = raw ? sanitizeAiPrefs(JSON.parse(raw)) : null;
+        } catch (_) {
+          prefs = null;
+        }
+        return json({ prefs: prefs || AI_PREFS_DEFAULT });
+      }
+      if (path === "/api/ai/prefs" && request.method === "POST") {
+        const identity = await aiRequestIdentity(request, env, false);
+        if (!identity.authenticated) return json({ error: "sign_in_required", message: "AI Personalization save-এর জন্য login দরকার।" }, 401);
+        const body = await request.json().catch(() => null);
+        const prefs = sanitizeAiPrefs(body);
+        if (!prefs) return json({ error: "invalid_prefs", message: "সঠিক preference দাও।" }, 400);
+        try {
+          await env.PUB_KV.put("aiprefs:" + identity.uid, JSON.stringify(prefs));
+        } catch (_) {
+          return json({ error: "save_failed", message: "এখন save করা গেল না — আবার চেষ্টা করো।" }, 500);
+        }
+        return json({ ok: true, prefs });
       }
       if (path === "/api/ai/chat" && request.method === "POST") {
         const identity = await aiRequestIdentity(request, env);

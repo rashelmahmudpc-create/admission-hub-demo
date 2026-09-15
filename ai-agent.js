@@ -16,7 +16,7 @@
  * env/fetch পরীক্ষায় mock করা যায় (ai-agent-f1.test.mjs)।
  */
 export const AGENT_VERSION = 'agent-f1';
-export const SYSTEM_PROMPT_V = 'sys-f1-2-onboarding-safe';
+export const SYSTEM_PROMPT_V = 'sys-f1-3-ai-personalization';
 
 export const INTENTS = {
   GENERAL_CHAT: 'GENERAL_CHAT',
@@ -141,6 +141,19 @@ export function capStats(stats) {
   return Object.keys(s).length ? s : null;
 }
 
+/* ── AI Personalization (blueprint §19-20) — per-user, allowlisted, bounded ── */
+export const AI_PREFS_DEFAULT = Object.freeze({ langStyle: "bn", tone: "friendly", responseLen: "balanced", memory: true });
+export function sanitizeAiPrefs(value) {
+  if (!value || typeof value !== "object") return null;
+  const pick = (v, set, dflt) => (set.has(String(v)) ? String(v) : dflt);
+  return {
+    langStyle: pick(value.langStyle, new Set(["bn", "en", "mix"]), AI_PREFS_DEFAULT.langStyle),
+    tone: pick(value.tone, new Set(["friendly", "professional", "simple", "motivating", "direct"]), AI_PREFS_DEFAULT.tone),
+    responseLen: pick(value.responseLen, new Set(["short", "balanced", "detailed"]), AI_PREFS_DEFAULT.responseLen),
+    memory: value.memory === false ? false : true
+  };
+}
+
 /* ── Master System Prompt (মালিক-স্পেক §9) ------------------------------- */
 export function buildSystemPrompt(opts = {}) {
   const stats = capStats(opts.stats);
@@ -175,6 +188,27 @@ HARD RULES:
 - Institution suggestions are advisory and limited to the exact supplied names; if no match, explain the manual-name option.`;
   if (examMode === 'mock-running') p += `\n\nEXAM INTEGRITY — ACTIVE (mock-running): answers, hints and explanations are REFUSED.`;
   if (opts.quiz) p += `\n\nQUIZ MODE — reply with ONLY a valid JSON object (no markdown fences, no text outside JSON):\n{"title":"<short topic title>","questions":[{"q":"<question>","options":["<A>","<B>","<C>","<D>"],"answer":0,"explanation":"<1-2 sentence Bangla explanation of the answer>"}]}\nRules: exactly 5 questions (or the count the user asked, 1-10); admission-level quality; answer is the 0-based index of the correct option; question/options/explanation in the user's language (Bangla unless the user wrote English); 4 options each.`;
+  const prefs = sanitizeAiPrefs(opts.prefs);
+  if (prefs) {
+    const langLine = prefs.langStyle === "en"
+      ? "Reply in English."
+      : prefs.langStyle === "mix"
+        ? "Reply in a natural mix of Bangla and English (code-mixing is fine)."
+        : "Reply in Bangla (Bangla script).";
+    const toneLine = {
+      friendly: "Keep a warm, encouraging, friendly tone.",
+      professional: "Keep a professional, precise tone.",
+      simple: "Use the simplest possible words and short sentences.",
+      motivating: "Keep an uplifting, motivating tone; encourage the student.",
+      direct: "Be direct and to the point; no small talk."
+    }[prefs.tone];
+    const lenLine = prefs.responseLen === "short"
+      ? "Keep answers short (2-4 sentences unless the student asks for more)."
+      : prefs.responseLen === "detailed"
+        ? "Give detailed, well-structured answers with examples when useful."
+        : "Keep answers balanced: enough detail, no padding.";
+    p += `\n\nSTUDENT PREFERENCES (এই ব্যবহারকারীর নিজস্ব পছন্দ — অন্য কারাংশে প্রয়োগ করো না): ${langLine} ${toneLine} ${lenLine}`;
+  }
   if (stats) {
     const bits = [];
     if (stats.exams != null) bits.push(`মোট পরীক্ষা: ${stats.exams}`);
@@ -408,9 +442,18 @@ export async function agentChat(request, env, uid, opts = {}) {
   const stats = capStats(body.context && body.context.stats);
   const safety = safetyGate(intent, examMode);
 
+  /* AI personalization (blueprint §19-20): per-user KV prefs, allowlisted.
+     Keyed by identity uid — never shared/leaked between users. */
+  let aiPrefs = null;
+  try {
+    const rawPrefs = await getKv(env.PUB_KV, 'aiprefs:' + sendCtx.uid);
+    aiPrefs = rawPrefs ? sanitizeAiPrefs(JSON.parse(rawPrefs)) : null;
+  } catch (_) { aiPrefs = null; }
+  const memoryOn = persistMemory && !(aiPrefs && aiPrefs.memory === false);
+
   /* conversation memory: পুরনো কনভো (KV) + সাম্প্রতিক message */
   let mem = [];
-  if (persistMemory) {
+  if (memoryOn) {
     try {
       const rawMem = await getKv(env.PUB_KV, 'chatmem:' + sendCtx.uid);
       const parsedMem = JSON.parse(rawMem || '[]');
@@ -421,13 +464,13 @@ export async function agentChat(request, env, uid, opts = {}) {
   if (msgs.length < 3 && mem.length) msgs = mem.concat(msgs);
   if (msgs.length > 16) {
     const summary = summarizeTo(msgs);
-    if (persistMemory) await putKv(env.PUB_KV, 'chatmemsum:' + sendCtx.uid, summary);
+    if (memoryOn) await putKv(env.PUB_KV, 'chatmemsum:' + sendCtx.uid, summary);
     msgs = msgs.slice(-12);
   }
   msgs = msgs.slice(-24);
 
-  const systemPrompt = buildSystemPrompt({ stats, examMode, quiz: quizMode, onboarding });
-  let summaryText = persistMemory ? await getKv(env.PUB_KV, 'chatmemsum:' + sendCtx.uid) : '';
+  const systemPrompt = buildSystemPrompt({ stats, examMode, quiz: quizMode, onboarding, prefs: aiPrefs });
+  let summaryText = memoryOn ? await getKv(env.PUB_KV, 'chatmemsum:' + sendCtx.uid) : '';
   const sys = summaryText ? systemPrompt + '\n\n' + String(summaryText) : systemPrompt;
 
   const hasImage = msgs.some(m => m.image);
@@ -465,8 +508,9 @@ export async function agentChat(request, env, uid, opts = {}) {
   const failures = [];
   const finalize = async (model, provider, text) => {
     /* Guest content is never persisted. Signed-in memory is keyed only by the
-       server-validated account identity and has no client-controlled UID. */
-    if (!persistMemory) return;
+       server-validated account identity and has no client-controlled UID.
+       Memory-off preference (blueprint §19) also disables all writes. */
+    if (!memoryOn) return;
     try {
       const next = msgs.concat([{ role: 'user', content: v.messages[v.messages.length - 1].content }, { role: 'assistant', content: text }]).slice(-24).map(x => ({ role: x.role, content: x.content }));
       await putKv(env.PUB_KV, 'chatmem:' + sendCtx.uid, JSON.stringify(next));

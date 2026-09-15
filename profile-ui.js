@@ -64,7 +64,6 @@
     sheet: null,       // open sheet type
     busy: false,
     view: 'profile',   // profile | edit | avatar
-    avatarTab: 'upload', // upload | camera | default
     prefs: loadPrefs()
   };
 
@@ -198,19 +197,23 @@
         }
         for (const m of mistakes) if (m && m.mastered === true) mastered += 1;
         out.mcqs = mcqs; out.mocks = mocks; out.mastered = mastered;
-        out.earned = ACHIEVEMENTS.filter((a) => a.earned({ streak: out.streak, mcqs, mocks, mastered })).map((a) => a.id);
+        out.earned = ACHIEVEMENTS.filter((a) => achUnlocked(a, { streak: out.streak, mcqs, mocks, mastered })).map((a) => a.id);
       }
     } catch (_) { /* data unavailable — honest "—" */ }
     return out;
   }
 
-  // Real-data achievements only (no XP, no fake, no rankings we cannot compute).
+  // Real-data achievements only (blueprint §15): icon / title / status /
+  // progress / reward. Unlocks are computed from local study data — never faked.
+  // `reward` is a display slot (future-reward compatible; '—' until configured).
   const ACHIEVEMENTS = [
-    { id: 'first-mock', icon: '📝', name: 'First Mock', hint: 'প্রথম mock test complete করো', earned: (s) => (s.mocks || 0) >= 1 },
-    { id: 'mcq-100', icon: '📚', name: '100 MCQs', hint: 'মোট 100টা MCQ complete করো', earned: (s) => (s.mcqs || 0) >= 100 },
-    { id: 'streak-7', icon: '🔥', name: '7 Day Streak', hint: '7 দিনের practice streak বানাও', earned: (s) => (s.streak || 0) >= 7 },
-    { id: 'mistake-crusher', icon: '🎯', name: 'Mistake Crusher', hint: '5টা mistake master করো', earned: (s) => (s.mastered || 0) >= 5 }
+    { id: 'first-mock', icon: '📝', name: 'First Mock', desc: 'প্রথম mock test complete করুন', target: 1, progress: (st) => Math.min(1, st.mocks || 0), reward: '—' },
+    { id: 'mcq-100', icon: '📚', name: '100 MCQs', desc: 'মোট 100 MCQ complete করুন', target: 100, progress: (st) => Math.min(100, st.mcqs || 0), reward: '—' },
+    { id: 'mcq-500', icon: '🏆', name: '500 MCQs', desc: 'মোট 500 MCQ complete করুন', target: 500, progress: (st) => Math.min(500, st.mcqs || 0), reward: '—' },
+    { id: 'streak-7', icon: '🔥', name: '7 Day Streak', desc: '7 দিনের practice streak বানান', target: 7, progress: (st) => Math.min(7, st.streak || 0), reward: '—' },
+    { id: 'mistake-crusher', icon: '🎯', name: 'Mistake Crusher', desc: '5টা mistake master করুন', target: 5, progress: (st) => Math.min(5, st.mastered || 0), reward: '—' }
   ];
+  const achUnlocked = (a, st) => (a.progress(st) || 0) >= a.target;
 
   function journeyMilestones(p, stats) {
     const completion = Number(state.data?.completion || 0);
@@ -272,15 +275,15 @@
     const pct = Number(state.data?.completion || 0);
     const missing = missingItems(state.data?.profile);
     return `
-      <div class="card pp-card pp-comp" data-completion-contract="gentle-completion-v1">
+      <div class="card pp-card pp-comp" data-completion-contract="official-completion-v1">
         <div class="pp-comp-row">
           ${ringMarkup(pct)}
           <div class="pp-comp-info">
             <div class="pp-kicker">PROFILE COMPLETION · ${esc(completionBand(pct))}</div>
             <p class="pp-hint">${missing.length
-              ? `যা বাকি: ${missing.slice(0, 3).map(esc).join(', ')}${missing.length > 3 ? '…' : ''} — যখন খুশি, নিজের ঝামেলায়।`
-              : 'সব তথ্য পূর্ণ — ধন্যবাদ! ✦'}</p>
-            <button class="pp-comp-cta" data-role="open-edit-page" type="button">Complete Profile →</button>
+              ? `বাকি: ${missing.slice(0, 3).map(esc).join(', ')}${missing.length > 3 ? '…' : ''} — Profile সম্পূর্ণ করুন।`
+              : 'Profile সম্পূর্ণ — ধন্যবাদ।'}</p>
+            <button class="pp-comp-cta" data-role="open-edit-page" type="button">Profile সম্পূর্ণ করুন</button>
           </div>
         </div>
       </div>`;
@@ -303,7 +306,6 @@
 .pp-cam-badge{position:absolute;right:-2px;bottom:-2px;width:24px;height:24px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;font-size:12px}
 .pp-hero-idblock{min-width:0;flex:1;position:relative}
 .pp-hero-name{font-size:19px;font-weight:800;color:#0c3b2a;display:flex;align-items:center;gap:6px}
-.pp-verified{display:inline-flex;width:18px;height:18px;border-radius:50%;background:#16a34a;color:#fff;font-size:11px;font-weight:800;align-items:center;justify-content:center}
 .pp-hero-chip{display:inline-flex;align-items:center;gap:7px;margin-top:8px;padding:4px 11px;border-radius:999px;background:rgba(255,255,255,.85);border:1px solid rgba(22,163,74,.3);color:#0b5640;font-size:12.5px;cursor:pointer;width:auto}
 .pp-hero-line{font-size:12.5px;color:#166534;margin-top:8px;font-weight:650}
 .pp-hero-bio{font-size:12.5px;color:#14532d;opacity:.88;margin-top:5px;line-height:1.45}
@@ -347,7 +349,7 @@
             <span class="pp-cam-badge" aria-hidden="true">📷</span>
           </button>
           <div class="pp-hero-idblock">
-            <div class="pp-hero-name">${esc(p.fullName || 'নাম যোগ করো')}${p.fullName ? '<span class="pp-verified" aria-label="saved">✓</span>' : ''}</div>
+            <div class="pp-hero-name">${esc(p.fullName || 'নাম যোগ করো')}</div>
             <button class="pp-hero-chip" data-role="copy-public-id" type="button" title="ট্যাপ করে কপি করো">
               <span>AH-ID</span><b>${esc(d.publicId || '—')}</b><i aria-hidden="true">⧉</i>
             </button>
@@ -355,7 +357,7 @@
             ${p.bio ? `<div class="pp-hero-bio">${esc(p.bio)}</div>` : ''}
           </div>
         </div>
-        <button class="pp-btn-primary pp-hero-edit" data-role="open-edit-page" type="button">✏️ Edit Profile</button>
+        <button class="pp-btn-primary pp-hero-edit" data-role="open-edit-page" type="button">Edit Profile</button>
       </div>
       <div class="pp-greeting">${esc(d.context?.greeting || 'আগে থেকেই চলো')}</div>`;
   }
@@ -419,24 +421,40 @@
       </div>`;
   }
 
-  function achievementsCard() {
-    const s = localStats();
-    const earned = new Set(s.earned);
+  function achievementRowMarkup(a, st) {
+    const prog = a.progress(st) || 0;
+    const on = prog >= a.target;
+    const pct = Math.min(100, Math.round((prog / a.target) * 100));
     return `
-      <div class="card pp-card pp-achv">
-        <div class="pp-card-head"><span class="pp-card-title">Achievements</span><button class="pp-card-edit" data-role="open-achv-sheet" type="button">View All</button></div>
-        <div class="pp-achv-grid">
-          ${ACHIEVEMENTS.map((a) => `
-            <div class="pp-achv-cell ${earned.has(a.id) ? 'on' : 'off'}" data-id="${a.id}" title="${esc(a.hint)}">
-              <span aria-hidden="true">${earned.has(a.id) ? a.icon : '🔒'}</span>
-              <small>${esc(a.name)}</small>
-            </div>`).join('')}
+      <div class="pp-ach-row ${on ? 'on' : 'lock'}" data-ach-id="${a.id}" data-ach-progress="${pct}">
+        <span class="pp-ach-ic" aria-hidden="true">${on ? a.icon : '🔒'}</span>
+        <div class="pp-ach-body">
+          <div class="pp-ach-line"><b>${esc(a.name)}</b><span class="pp-ach-status">${on ? 'Unlocked' : 'Locked'}</span></div>
+          <div class="pp-ach-bar" aria-hidden="true"><i style="width:${pct}%"></i></div>
+          <small>${esc(a.desc)} · ${prog} / ${a.target} · Reward: ${esc(a.reward)}</small>
         </div>
-        ${s.ready && s.earned.length === 0 ? '<p class="pp-ach-empty" data-role="achievements-empty">তোর প্রথম achievement-এর জন্য প্রস্তুত? 🚀 Practice শুরু করলেই আনলক হবে।</p>' : ''}
-        <p class="pp-fine">Display-only — real data থেকে unlock হয়, reward/XP নেই।</p>
       </div>`;
   }
 
+  function achievementsCard() {
+    const s = localStats();
+    return `
+      <div class="card pp-card pp-achv">
+        <div class="pp-card-head"><span class="pp-card-title">Achievements</span><button class="pp-card-edit" data-role="open-achv-sheet" type="button">View All</button></div>
+        <div class="pp-ach-list" data-achievements-contract="achv-progress-v1">
+          ${ACHIEVEMENTS.slice(0, 3).map((a) => achievementRowMarkup(a, s)).join('')}
+        </div>
+        ${s.ready && s.earned.length === 0 ? '<p class="pp-ach-empty" data-role="achievements-empty">প্রথম achievement-এর জন্য practice শুরু করুন।</p>' : ''}
+        <p class="pp-fine">Real data থেকে unlock হয় — কোনো fake progress নেই।</p>
+      </div>`;
+  }
+
+  function aiPrefsSummary(pf) {
+    const style = pf.langStyle === 'en' ? 'English' : pf.langStyle === 'mix' ? 'বাংলা+English' : 'বাংলা';
+    const tone = String(pf.tone || 'friendly').charAt(0).toUpperCase() + String(pf.tone || 'friendly').slice(1);
+    const len = String(pf.responseLen || 'balanced').charAt(0).toUpperCase() + String(pf.responseLen || 'balanced').slice(1);
+    return `${style} · ${tone} · ${len}`;
+  }
   function prefsCard() {
     const pf = state.prefs;
     const row = (icon, label, value, role, extra = '') => `
@@ -451,8 +469,8 @@
         <div class="pp-card-head"><span class="pp-card-title">Preferences</span><button class="pp-card-edit" data-role="open-prefs-sheet" type="button">Edit</button></div>
         ${row('🌐', 'Language', pf.language === 'en' ? 'English' : 'বাংলা (Bengali)', 'pref-language')}
         ${row('🔔', 'Notifications', pf.notifications === 'on' ? 'On' : 'Off', 'pref-notifications')}
-        ${row('🎨', 'Appearance', pf.appearance === 'dark' ? 'Dark' : pf.appearance === 'system' ? 'System' : 'Light Mode', 'pref-appearance')}
-        ${row('🤖', 'AI Assistant', pf.aiAssistant === 'on' ? 'Enabled' : 'Disabled', 'pref-ai')}
+        ${row('🎨', 'Appearance', pf.appearance === 'dark' ? 'Dark' : pf.appearance === 'system' ? 'System' : pf.appearance === 'green' ? 'Premium Green' : 'Light Mode', 'pref-appearance')}
+        ${row('🤖', 'AI Personalization', state.aiPrefs ? aiPrefsSummary(state.aiPrefs) : 'Set your style', 'open-ai-prefs')}
         <p class="pp-fine">Explicit settings — তুমি কী চাও সেটা তুমিই ঠিক করো।</p>
       </div>`;
   }
@@ -498,8 +516,8 @@
       <div class="card pp-card pp-prefs-page">
         ${row('🌐', 'Language', pf.language === 'en' ? 'English' : 'বাংলা (Bengali)', 'pref-language')}
         ${row('🔔', 'Notifications', pf.notifications === 'on' ? 'On' : 'Off', 'pref-notifications')}
-        ${row('🎨', 'Appearance', pf.appearance === 'dark' ? 'Dark' : pf.appearance === 'system' ? 'System' : 'Light Mode', 'pref-appearance', pf.appearance !== 'light' ? 'pp-soon' : '')}
-        ${row('🤖', 'AI Assistant', pf.aiAssistant === 'on' ? 'Enabled' : 'Disabled', 'pref-ai')}
+        ${row('🎨', 'Appearance', pf.appearance === 'dark' ? 'Dark' : pf.appearance === 'system' ? 'System' : pf.appearance === 'green' ? 'Premium Green' : 'Light Mode', 'pref-appearance')}
+        ${row('🤖', 'AI Personalization', state.aiPrefs ? aiPrefsSummary(state.aiPrefs) : 'Set your style', 'open-ai-prefs')}
       </div>
       <p class="pp-fine">Explicit settings — তুমি কী চাও সেটা তুমিই ঠিক করো।</p>
       <button class="pp-btn-primary pp-page-save" data-role="prefs-save" type="button">Save Changes</button>
@@ -635,7 +653,7 @@
         <div class="pp-edit-top">
           <button class="pp-iconbtn" data-role="back-profile" type="button" aria-label="ফিরে যাও">←</button>
           <h2>Edit Profile</h2>
-          <span class="pp-edit-ic" aria-hidden="true">✏️</span>
+          <span></span>
         </div>
         <div class="pp-edit-photo">
           <div class="pp-edit-photo-img">${avatarPreviewMarkup(84)}</div>
@@ -644,6 +662,10 @@
         <label class="pp-field"><span>Full Name *</span>
           <input id="pp-edit-name" type="text" maxlength="80" autocomplete="name" value="${esc(p.fullName || '')}" placeholder="তোমার পুরো নাম">
         </label>
+        <div class="pp-field pp-field-ro" data-email-row-contract="email-readonly-v1">
+          <span>Email <em class="pp-ro-chip">Not editable</em></span>
+          <div class="pp-ro-value">${esc(p.email || '—')}</div>
+        </div>
         <label class="pp-field"><span>Mobile Number ${p.mobile ? '<em class="pp-saved-chip">✓ Saved</em>' : '<em>(optional)</em>'}</span>
           <input id="pp-edit-mobile" type="tel" inputmode="tel" maxlength="16" autocomplete="tel" value="${esc(p.mobile || '')}" placeholder="+8801XXXXXXXXX">
         </label>
@@ -655,15 +677,14 @@
           <small class="pp-bio-count" data-role="bio-count">${bioLen}/280</small>
         </label>
         <p class="pp-fine" data-role="sheet-error" hidden></p>
-        <button class="pp-btn-primary pp-edit-save" data-role="edit-save" type="button">Save Changes</button>
-        <p class="pp-fine">Email auth system-এ manage হয় — profile থেকে change করা যায় না।</p>
+        <p class="pp-fine pp-edit-dirty" data-role="edit-dirty" hidden>অপরিবর্তিত কিছু নেই — পরিবর্তন করলে Save হবে</p>
+        <button class="pp-btn-primary pp-edit-save" data-role="edit-save" type="button" data-save-engine-contract="central-save-v1">Save Changes</button>
       </div>`;
   }
 
   /* ---------------- avatar page ---------------- */
 
   function avatarPageMarkup() {
-    const tab = state.avatarTab;
     const hasPhoto = state.data?.avatar?.present === true;
     return `
       <div class="pp-edit">
@@ -672,32 +693,28 @@
           <h2>Change Avatar</h2>
           ${hasPhoto ? '<button class="pp-iconbtn pp-danger" data-role="avatar-remove" type="button" aria-label="Photo সরাও">🗑</button>' : '<span></span>'}
         </div>
-        <div class="pp-av-tabs" role="tablist">
-          <button class="pp-av-tab ${tab === 'upload' ? 'on' : ''}" data-role="av-tab" data-tab="upload" type="button">Upload</button>
-          <button class="pp-av-tab ${tab === 'camera' ? 'on' : ''}" data-role="av-tab" data-tab="camera" type="button">Camera</button>
-          <button class="pp-av-tab ${tab === 'default' ? 'on' : ''}" data-role="av-tab" data-tab="default" type="button">Default</button>
+        <div class="pp-av-current">
+          ${avatarPreviewMarkup(120)}
+          <div class="pp-av-current-label">${hasPhoto ? 'Current Avatar' : 'Default Avatar'}</div>
         </div>
-        <div class="pp-av-preview">${avatarPreviewMarkup(120)}</div>
-        ${tab === 'upload' ? `
-          <label class="pp-btn-primary pp-av-upload">📁 Upload from Gallery
-            <input data-role="avatar-file" type="file" accept="image/jpeg,image/png,image/webp" hidden>
-          </label>
-          <p class="pp-fine">সরাসরি ১:১ center-crop হবে — ছবি distort হবে না।</p>` : ''}
+        <button class="pp-btn-primary pp-av-pick" data-role="av-capture-open" type="button">📷 Take Photo</button>
+        <label class="pp-btn-secondary pp-av-pick" type="button">🖼️ Choose from Gallery
+          <input data-role="avatar-file-gallery" type="file" accept="image/jpeg,image/png,image/webp" hidden>
+        </label>
+        <input data-role="avatar-file-capture" type="file" accept="image/*" capture="environment" hidden>
         <div class="pp-av-hint" data-avatar-hint-contract="square-crop-v1">
           <span aria-hidden="true">✅</span>
-          <div><b>Best photo size</b><small>1:1 · সর্বোচ্চ 2MB · JPG, PNG — নিজে ১:১ center-crop হবে</small></div>
+          <div><b>Best photo size</b><small>1:1 · সর্বোচ্চ 2MB · JPG, PNG</small></div>
         </div>
-        ${tab === 'camera' ? `
-          <button class="pp-btn-primary pp-av-upload" data-role="av-camera" type="button">📷 Open Camera</button>
-          <p class="pp-fine" data-role="camera-error" hidden></p>` : ''}
-        ${tab === 'default' ? `
-          <div class="pp-av-defaults">
-            ${[0, 1, 2, 3, 4, 5].map((s) => `
-              <button class="pp-av-def ${state.prefs.avatarStyle === s ? 'on' : ''}" data-role="pick-default-avatar" data-style="${s}" type="button" aria-label="Default style ${s + 1}">
-                ${defaultAvatarSvg(state.data?.profile?.fullName || 'A', state.data?.publicId || 'ah', s)}
-              </button>`).join('')}
-          </div>
-          <p class="pp-fine">${hasPhoto ? 'Uploaded photo আছে — default দেখতে আগে photo সরানো দরকার।' : 'নাম থেকে generated — কোনো ছবি দিতে হবে না।'}</p>` : ''}
+        ${state.avatarError ? `<p class="pp-fine pp-av-err" role="alert">${esc(state.avatarError)}</p>` : ''}
+        <div class="pp-av-sec">Default Avatars</div>
+        <div class="pp-av-defaults">
+          ${[0, 1, 2, 3, 4, 5].map((st) => `
+            <button class="pp-av-def ${state.prefs.avatarStyle === st ? 'on' : ''}" data-role="pick-default-avatar" data-style="${st}" type="button" aria-label="Default style ${st + 1}">
+              ${defaultAvatarSvg(state.data?.profile?.fullName || 'A', state.data?.publicId || 'ah', st)}
+            </button>`).join('')}
+        </div>
+        <p class="pp-fine">নাম থেকে generated — কোনো ছবি দিতে হবে না।</p>
       </div>`;
   }
 
@@ -848,17 +865,11 @@
 
   function achvSheet() {
     const s = localStats();
-    const earned = new Set(s.earned);
     return sheetShell('Achievements', `
-      <div class="pp-jl">
-        ${ACHIEVEMENTS.map((a) => `
-          <div class="pp-jl-row ${earned.has(a.id) ? 'on' : 'off'}">
-            <span aria-hidden="true">${earned.has(a.id) ? a.icon : '🔒'}</span>
-            <span><b>${esc(a.name)}</b><small>${esc(a.hint)}</small></span>
-            <em>${earned.has(a.id) ? 'Unlocked' : 'Not yet'}</em>
-          </div>`).join('')}
+      <div class="pp-ach-list pp-ach-list-full">
+        ${ACHIEVEMENTS.map((a) => achievementRowMarkup(a, s)).join('')}
       </div>
-      <p class="pp-fine">Display-only — real progress থেকে unlock হয়; XP/reward নেই।</p>
+      <p class="pp-fine">Real study data থেকে unlock হয় — কোনো fake progress নেই।</p>
       <div class="pp-sheet-actions"><button class="pp-btn-ghost" data-role="sheet-close" type="button">বন্ধ করো</button></div>`);
   }
 
@@ -875,18 +886,96 @@
         <span><b>${esc(label)}</b><small>${esc(desc)}${note ? ` — ${esc(note)}` : ''}</small></span>
       </button>`;
     return sheetShell('Preferences', `
-      <div class="pp-kicker">LANGUAGE</div>
+      <div class="pp-kicker">LANGUAGE — whole app</div>
       <div class="pp-vlist">
-        ${opt('bn', 'বাংলা (Bengali)', 'Default language')}
-        ${opt('en', 'English', 'শীঘ্রই আসছে', true)}
+        ${opt('bn', 'বাংলা (Bengali)', 'ডিফল্ট — সব পেজে প্রয়োগ হয়')}
+        ${opt('en', 'English', 'সব পেজে প্রয়োগ হয়')}
       </div>
-      <div class="pp-kicker" style="margin-top:14px">APPEARANCE</div>
+      <div class="pp-kicker" style="margin-top:14px">APPEARANCE — all pages, nav, cards</div>
       <div class="pp-vlist">
-        ${appt('light', 'Light Mode', 'Default theme')}
-        ${appt('dark', 'Dark Mode', 'শীঘ্রই আসছে', true)}
-        ${appt('system', 'System', 'শীঘ্রই আসছে', true)}
+        ${appt('light', 'Light', 'ডিফল্ট থিম')}
+        ${appt('dark', 'Dark', 'রাতের মোড')}
+        ${appt('system', 'System', 'Device-এর সাথে মানানসই')}
+        ${appt('green', 'Premium Green', 'Admission Hub signature green')}
       </div>
       <div class="pp-sheet-actions"><button class="pp-btn-ghost" data-role="sheet-close" type="button">বাতিল</button></div>`);
+  }
+
+  const AI_PREFS_DEFAULT = { langStyle: 'bn', tone: 'friendly', responseLen: 'balanced', memory: true };
+  const aiOpt = (role, val, label, current) => `
+      <button class="pp-vopt ${current === val ? 'on' : ''}" data-role="${role}" data-value="${val}" type="button">
+        <span class="pp-vradio" aria-hidden="true">${current === val ? '●' : '○'}</span>
+        <span><b>${esc(label)}</b></span>
+      </button>`;
+  function aiPrefsSheet() {
+    const pf = state.aiPrefs || AI_PREFS_DEFAULT;
+    return sheetShell('AI Personalization', `
+      <p class="pp-fine" data-ai-prefs-contract="ai-personalization-v1">এই পছন্দ শুধু তোমার AI চ্যাটে প্রয়োগ হয় — অন্য user-এর সাথে কখনো share হয় না।</p>
+      <div class="pp-kicker">LANGUAGE STYLE</div>
+      <div class="pp-vlist">
+        ${aiOpt('pick-ai-style', 'bn', 'বাংলা', pf.langStyle)}
+        ${aiOpt('pick-ai-style', 'en', 'English', pf.langStyle)}
+        ${aiOpt('pick-ai-style', 'mix', 'বাংলা + English', pf.langStyle)}
+      </div>
+      <div class="pp-kicker" style="margin-top:14px">TONE</div>
+      <div class="pp-vlist">
+        ${aiOpt('pick-ai-tone', 'friendly', 'Friendly', pf.tone)}
+        ${aiOpt('pick-ai-tone', 'professional', 'Professional', pf.tone)}
+        ${aiOpt('pick-ai-tone', 'simple', 'Simple', pf.tone)}
+        ${aiOpt('pick-ai-tone', 'motivating', 'Motivating', pf.tone)}
+        ${aiOpt('pick-ai-tone', 'direct', 'Direct', pf.tone)}
+      </div>
+      <div class="pp-kicker" style="margin-top:14px">RESPONSE</div>
+      <div class="pp-vlist">
+        ${aiOpt('pick-ai-len', 'short', 'Short', pf.responseLen)}
+        ${aiOpt('pick-ai-len', 'balanced', 'Balanced', pf.responseLen)}
+        ${aiOpt('pick-ai-len', 'detailed', 'Detailed', pf.responseLen)}
+      </div>
+      <div class="pp-kicker" style="margin-top:14px">MEMORY</div>
+      <div class="pp-vlist">
+        <div class="pp-priv-row">
+          <div>
+            <div class="pp-value">Conversation Memory</div>
+            <p class="pp-fine">AI তোমার আগের কথা মনে রাখবে (device+account-এ save হয়)</p>
+          </div>
+          <button class="pp-switch ${pf.memory ? 'on' : ''}" data-role="toggle-ai-memory" type="button" role="switch" aria-checked="${pf.memory}" aria-label="AI memory"><i></i></button>
+        </div>
+      </div>
+      <p class="pp-fine" data-role="ai-prefs-status" hidden></p>
+      <div class="pp-sheet-actions"><button class="pp-btn-ghost" data-role="sheet-close" type="button">বাতিল</button></div>`);
+  }
+
+  function refreshAiPrefsSheet(statusMsg) {
+    const host = document.querySelector('[data-role="sheet-host"]');
+    if (!host) return;
+    host.innerHTML = aiPrefsSheet();
+    if (statusMsg) {
+      const el = host.querySelector('[data-role="ai-prefs-status"]');
+      if (el) { el.hidden = false; el.textContent = statusMsg; }
+    }
+  }
+
+  async function saveAiPrefs() {
+    if (state.aiSaving) return;
+    state.aiSaving = true;
+    try {
+      const body = await api('/api/ai/prefs', { method: 'POST', body: JSON.stringify(state.aiPrefs) });
+      state.aiPrefs = body?.prefs || state.aiPrefs;
+      refreshAiPrefsSheet('Save হয়েছে ✓ — পরের chat-এই প্রয়োগ হবে।');
+    } catch (e) {
+      refreshAiPrefsSheet('Save fail — আবার চেষ্টা করো।');
+      toast('AI preferences save fail', true);
+    } finally { state.aiSaving = false; }
+  }
+
+  async function loadAiPrefs() {
+    if (state.aiPrefs) return;
+    try {
+      const body = await api('/api/ai/prefs');
+      state.aiPrefs = body?.prefs || { ...AI_PREFS_DEFAULT };
+    } catch (_) {
+      state.aiPrefs = { ...AI_PREFS_DEFAULT };
+    }
   }
 
   function visibilitySheet() {
@@ -918,6 +1007,7 @@
     state.sheet = null;
     if (type === 'journey') host.innerHTML = journeySheet();
     else if (type === 'achv') host.innerHTML = achvSheet();
+    else if (type === 'aiprefs') { host.innerHTML = aiPrefsSheet(); }
     else if (type === 'prefs') host.innerHTML = prefsSheet();
     else if (type === 'visibility') host.innerHTML = visibilitySheet();
     else host.innerHTML = '';
@@ -945,54 +1035,160 @@
 
   /* ---------------- avatar actions ---------------- */
 
-  function downscaleToBase64(file) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onerror = () => reject(new Error('ছবিটি পড়া যায়নি'));
-      reader.onload = () => {
-        const img = new Image();
-        img.onerror = () => reject(new Error('ছবিটি বোঝা যায়নি (JPEG/PNG/WebP দাও)'));
-        img.onload = () => {
-          const MAX = 512;
-          // PHASE O — 1:1 center crop (face-weighted) BEFORE downscale:
-          // circular avatars are never stretched or distorted.
-          const side = Math.min(img.width, img.height);
-          const sx = (img.width - side) / 2;
-          const sy = Math.max(0, (img.height - side) * 0.45);
-          const canvas = document.createElement('canvas');
-          canvas.width = MAX; canvas.height = MAX;
-          const ctx = canvas.getContext('2d');
-          if (!ctx) return reject(new Error('এই ব্রাউজারে ছবি প্রসেস করা যায়নি'));
-          ctx.imageSmoothingQuality = 'high';
-          ctx.drawImage(img, sx, sy, side, side, 0, 0, MAX, MAX);
-          canvas.toBlob((blob) => {
-            if (!blob) return reject(new Error('ছবি সংরক্ষণ করা যায়নি'));
-            if (blob.size > 2 * 1024 * 1024) return reject(new Error('ছবি অনেক বড় — ছোট ছবি দাও'));
-            const fr = new FileReader();
-            fr.onerror = () => reject(new Error('ছবি সংরক্ষণ করা যায়নি'));
-            fr.onload = () => resolve({ data: String(fr.result).split(',')[1] || '', mime: 'image/jpeg' });
-            fr.readAsDataURL(blob);
-          }, 'image/jpeg', 0.85);
-        };
-        img.src = String(reader.result);
-      };
-      reader.readAsDataURL(file);
-    });
+  /* -------- avatar capture -> CROP MODAL (zoom + pan) -> 512x512 JPEG -> save -------- */
+  const crop = { img: null, url: null, zoom: 1, px: 0, py: 0, drag: null };
+  const CROP_BOX = 160; // display size of the crop circle (matches CSS)
+
+  function openCropModal(file) {
+    const url = URL.createObjectURL(file);
+    const im = new Image();
+    im.onload = () => {
+      crop.img = im;
+      crop.url = url;
+      crop.zoom = 1;
+      crop.px = 0;
+      crop.py = 0;
+      renderCrop();
+    };
+    im.onerror = () => {
+      URL.revokeObjectURL(url);
+      state.avatarError = 'ছবিটা পড়া যায়নি — অন্য ছবি দিয়ে দেখুন।';
+      renderCurrentView();
+    };
+    im.src = url;
   }
 
-  async function onAvatarFile(file) {
-    if (!file) return;
-    if (state.busy) return;
-    state.busy = true;
+  function cropModalMarkup() {
+    return `
+      <div class="pp-crop-overlay" role="dialog" aria-modal="true" aria-label="Crop avatar">
+        <div class="pp-crop">
+          <div class="pp-edit-top">
+            <button class="pp-iconbtn" data-role="crop-cancel" type="button" aria-label="বাতিল">✕</button>
+            <h2>Crop Avatar</h2>
+            <span></span>
+          </div>
+          <div class="pp-crop-stage" data-role="crop-stage">
+            <div class="pp-crop-circle">
+              <img data-role="crop-img" alt="" draggable="false">
+            </div>
+          </div>
+          <div class="pp-crop-zoom">
+            <button class="pp-iconbtn" data-role="crop-zoom-out" type="button" aria-label="ছোট করো">−</button>
+            <div class="pp-crop-zoomtrack"><div class="pp-crop-zoomdot" data-role="crop-zoomdot"></div></div>
+            <button class="pp-iconbtn" data-role="crop-zoom-in" type="button" aria-label="বড় করো">+</button>
+          </div>
+          <p class="pp-fine pp-crop-hint">ধরে টানুন · বড় ছোট করুন — ফেস মাঝখানে থাকবে</p>
+          <div class="pp-crop-actions">
+            <button class="pp-btn-ghost" data-role="crop-cancel" type="button">Cancel</button>
+            <button class="pp-btn-primary" data-role="crop-save" type="button" data-crop-save-contract="crop-save-v1">✓ Save Avatar</button>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  function renderCrop() {
+    let host = document.getElementById('pp-crop-host');
+    if (!host) {
+      host = document.createElement('div');
+      host.id = 'pp-crop-host';
+      document.body.appendChild(host);
+    }
+    host.innerHTML = cropModalMarkup();
+    const imgEl = host.querySelector('[data-role="crop-img"]');
+    if (imgEl) imgEl.src = crop.url;
+    applyCropTransform();
+    const stage = host.querySelector('[data-role="crop-stage"]');
+    if (stage) {
+      stage.style.touchAction = 'none';
+      stage.addEventListener('pointerdown', (e) => {
+        crop.drag = { x: e.clientX, y: e.clientY, px: crop.px, py: crop.py };
+        try { stage.setPointerCapture(e.pointerId); } catch (_) {}
+      });
+      stage.addEventListener('pointermove', (e) => {
+        if (!crop.drag) return;
+        crop.px = crop.drag.px + (e.clientX - crop.drag.x);
+        crop.py = crop.drag.py + (e.clientY - crop.drag.y);
+        clampCropPan();
+        applyCropTransform();
+      });
+      const end = () => { crop.drag = null; };
+      stage.addEventListener('pointerup', end);
+      stage.addEventListener('pointercancel', end);
+    }
+  }
+
+  function clampCropPan() {
+    const im = crop.img;
+    if (!im) return;
+    const base = Math.max(CROP_BOX / im.naturalWidth, CROP_BOX / im.naturalHeight) * crop.zoom;
+    const maxX = Math.max(0, (im.naturalWidth * base - CROP_BOX) / 2);
+    const maxY = Math.max(0, (im.naturalHeight * base - CROP_BOX) / 2);
+    crop.px = Math.min(maxX, Math.max(-maxX, crop.px));
+    crop.py = Math.min(maxY, Math.max(-maxY, crop.py));
+  }
+
+  function applyCropTransform() {
+    const host = document.getElementById('pp-crop-host');
+    if (!host) return;
+    const imgEl = host.querySelector('[data-role="crop-img"]');
+    if (imgEl) imgEl.style.transform = `translate(${crop.px}px, ${crop.py}px) scale(${crop.zoom})`;
+    const dot = host.querySelector('[data-role="crop-zoomdot"]');
+    if (dot) dot.style.left = `${((crop.zoom - 1) / 2) * 100}%`;
+  }
+
+  function closeCrop() {
+    if (crop.url) { URL.revokeObjectURL(crop.url); crop.url = null; }
+    crop.img = null;
+    crop.zoom = 1;
+    crop.px = 0;
+    crop.py = 0;
+    const host = document.getElementById('pp-crop-host');
+    if (host) host.innerHTML = '';
+  }
+
+  async function saveCrop() {
+    const im = crop.img;
+    if (!im) return;
+    state.avatarBusy = true;
     try {
-      const { data, mime } = await downscaleToBase64(file);
-      await api(`${API}/profile/avatar`, { method: 'POST', body: JSON.stringify({ data, mime }) });
-      await loadProfile();
+      const canvas = document.createElement('canvas');
+      canvas.width = 512;
+      canvas.height = 512;
+      const ctx = canvas.getContext('2d');
+      const scale = Math.max(512 / im.naturalWidth, 512 / im.naturalHeight) * crop.zoom;
+      const dx = (512 - im.naturalWidth * scale) / 2 + crop.px * (512 / CROP_BOX);
+      const dy = (512 - im.naturalHeight * scale) / 2 + crop.py * (512 / CROP_BOX);
+      ctx.fillStyle = '#eef3ef';
+      ctx.fillRect(0, 0, 512, 512);
+      ctx.drawImage(im, dx, dy, im.naturalWidth * scale, im.naturalHeight * scale);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+      const b64 = dataUrl.split(',')[1];
+      closeCrop();
+      await uploadAvatarBase64(b64, 'image/jpeg');
+    } catch (_) {
+      state.avatarBusy = false;
       renderCurrentView();
-      toast('Avatar আপডেট হয়েছে ✦');
-    } catch (err) {
-      toast(err.message || 'Avatar আপলোড করা যায়নি', true);
-    } finally { state.busy = false; }
+    }
+  }
+
+  async function uploadAvatarBase64(b64, mime) {
+    state.avatarBusy = true;
+    state.avatarError = '';
+    renderCurrentView();
+    try {
+      await api(`${API}/profile/avatar`, { method: 'POST', body: JSON.stringify({ data: b64, mime }) });
+      state.data = await loadProfile();
+      state.showSuccessModal = true;
+      renderCurrentView();
+    } catch (e) {
+      const msg = String((e && e.message) || '');
+      if (/timeout|aborted/i.test(msg)) state.avatarError = 'টাইম আউট — ইন্টারনেট চেক করে আবার চেষ্টা করুন।';
+      else if (/2MB|size|larger/i.test(msg)) state.avatarError = 'ছবিটা 2MB-এর বেশি — ছোট ছবি ব্যবহার করুন।';
+      else state.avatarError = 'Save fail — আবার চেষ্টা করুন।';
+      renderCurrentView();
+    } finally {
+      state.avatarBusy = false;
+    }
   }
 
   async function onAvatarRemove() {
@@ -1000,7 +1196,7 @@
     state.busy = true;
     try {
       await api(`${API}/profile/avatar`, { method: 'DELETE' });
-      await loadProfile();
+      state.data = await loadProfile();
       renderCurrentView();
       toast('Avatar সরানো হয়েছে — generated avatar ফিরেছে');
     } catch (err) {
@@ -1008,59 +1204,13 @@
     } finally { state.busy = false; }
   }
 
-  async function onAvatarCamera() {
-    if (state.busy) return;
-    if (!navigator.mediaDevices?.getUserMedia) {
-      const el = $('[data-role="camera-error"]');
-      if (el) { el.hidden = false; el.textContent = 'Camera এই device/browser-এ available নাই — Upload tab use করো।'; }
-      return;
-    }
-    state.busy = true;
-    const errEl = $('[data-role="camera-error"]');
-    let stream = null;
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false });
-      const video = document.createElement('video');
-      video.muted = true; video.playsInline = true;
-      video.style.cssText = 'width:100%;max-width:420px;border-radius:16px;';
-      video.srcObject = stream;
-      const host = $('[data-role="sheet-host"]');
-      const box = document.createElement('div');
-      box.style.padding = '8px 0';
-      box.appendChild(video);
-      host.appendChild(box);
-      await video.play();
-      const shotBtn = document.createElement('button');
-      shotBtn.type = 'button';
-      shotBtn.className = 'pp-btn-primary';
-      shotBtn.style.margin = '12px 0';
-      shotBtn.textContent = '📸 ছবি তোলো';
-      host.appendChild(shotBtn);
-      await new Promise((resolve) => {
-        shotBtn.addEventListener('click', async () => {
-          try {
-            const w = video.videoWidth || 720; const h = video.videoHeight || 720;
-            const canvas = document.createElement('canvas');
-            canvas.width = w; canvas.height = h;
-            canvas.getContext('2d').drawImage(video, 0, 0, w, h);
-            const blob = await new Promise((res) => canvas.toBlob(res, 'image/jpeg', 0.85));
-            const file = blob ? new File([blob], 'camera.jpg', { type: 'image/jpeg' }) : null;
-            box.remove(); shotBtn.remove();
-            if (file) onAvatarFile(file);
-          } catch (_) {
-            box.remove(); shotBtn.remove();
-            if (errEl) { errEl.hidden = false; errEl.textContent = 'Camera থেকে ছবি তোলা যায়নি — আবার চেষ্টা করো।'; }
-          }
-          resolve();
-        }, { once: true });
-      });
-    } catch (err) {
-      const el = $('[data-role="camera-error"]');
-      if (el) { el.hidden = false; el.textContent = err?.name === 'NotAllowedError' ? 'Camera permission দিলে ছবি তোলা যাবে — Upload tab-ও আছে।' : 'Camera খোলা যায়নি — Upload tab use করো।'; }
-    } finally {
-      if (stream) stream.getTracks().forEach((t) => t.stop());
-      state.busy = false;
-    }
+  function onAvatarFilePick(input) {
+    const file = input.files && input.files[0];
+    input.value = '';
+    if (!file) return;
+    if (!/^image\//.test(file.type || '')) { state.avatarError = 'File type support করে না — JPG/PNG দিন।'; renderCurrentView(); return; }
+    if (file.size > 2_000_000) { state.avatarError = 'ছবিটা 2MB-এর বেশি — ছোট ছবি ব্যবহার করুন।'; renderCurrentView(); return; }
+    openCropModal(file);
   }
 
   /* ---------------- events ---------------- */
@@ -1128,8 +1278,15 @@
       else if (role === 'open-edit-page') { state.view = 'edit'; renderCurrentView(); return; }
       else if (role === 'open-avatar-page') { state.view = 'avatar'; renderCurrentView(); return; }
       else if (role === 'back-profile') { state.view = 'profile'; renderCurrentView(); return; }
-      else if (role === 'av-tab') { state.avatarTab = el.dataset.tab; renderCurrentView(); return; }
-      else if (role === 'av-camera') { onAvatarCamera(); return; }
+      else if (role === 'av-capture-open') {
+        const cap = $('[data-role="avatar-file-capture"]');
+        if (cap) cap.click();
+        return;
+      }
+      else if (role === 'crop-cancel') { closeCrop(); return; }
+      else if (role === 'crop-zoom-in') { crop.zoom = Math.min(3, crop.zoom + 0.25); clampCropPan(); applyCropTransform(); return; }
+      else if (role === 'crop-zoom-out') { crop.zoom = Math.max(1, crop.zoom - 0.25); clampCropPan(); applyCropTransform(); return; }
+      else if (role === 'crop-save') { saveCrop(); return; }
       else if (role === 'avatar-remove') { onAvatarRemove(); return; }
       else if (role === 'pick-default-avatar') {
         state.prefs.avatarStyle = Number(el.dataset.style) || 0;
@@ -1145,21 +1302,40 @@
         savePrefs(state.prefs); renderCurrentView(); toast('Notifications setting সেভ হয়েছে ✓');
         return;
       }
-      else if (role === 'pref-ai') {
-        state.prefs.aiAssistant = state.prefs.aiAssistant === 'on' ? 'off' : 'on';
-        savePrefs(state.prefs); renderCurrentView(); toast('AI Assistant setting সেভ হয়েছে ✓');
-        return;
-      }
       else if (role === 'pick-language') {
         if (el.disabled) return;
         state.prefs.language = el.dataset.value;
-        savePrefs(state.prefs); closeSheet(); renderCurrentView(); toast('Language সেভ হয়েছে ✓');
+        savePrefs(state.prefs);
+        try { if (window.AhI18n) window.AhI18n.set(el.dataset.value); } catch (_) {}
+        closeSheet(); renderCurrentView(); toast('Language সেভ হয়েছে ✓');
         return;
       }
       else if (role === 'pick-appearance') {
         if (el.disabled) return;
         state.prefs.appearance = el.dataset.value;
-        savePrefs(state.prefs); closeSheet(); renderCurrentView(); toast('Appearance সেভ হয়েছে ✓');
+        savePrefs(state.prefs);
+        try { if (window.AhAppearance) window.AhAppearance.set(el.dataset.value); } catch (_) {}
+        closeSheet(); renderCurrentView(); toast('Appearance সেভ হয়েছে ✓');
+        return;
+      }
+      else if (role === 'open-ai-prefs') {
+        if (!state.aiPrefs) { loadAiPrefs().then(() => { state.sheet = 'aiprefs'; renderCurrentView(); }); }
+        else { state.sheet = 'aiprefs'; renderCurrentView(); }
+        return;
+      }
+      else if (role === 'pick-ai-style' || role === 'pick-ai-tone' || role === 'pick-ai-len') {
+        if (!state.aiPrefs) state.aiPrefs = { ...AI_PREFS_DEFAULT };
+        const key = role === 'pick-ai-style' ? 'langStyle' : role === 'pick-ai-tone' ? 'tone' : 'responseLen';
+        state.aiPrefs[key] = el.dataset.value;
+        refreshAiPrefsSheet();
+        saveAiPrefs();
+        return;
+      }
+      else if (role === 'toggle-ai-memory') {
+        if (!state.aiPrefs) state.aiPrefs = { ...AI_PREFS_DEFAULT };
+        state.aiPrefs.memory = !state.aiPrefs.memory;
+        refreshAiPrefsSheet();
+        saveAiPrefs();
         return;
       }
       else if (role === 'copy-public-id') { copyText(state.data?.publicId || '').then(() => toast('AH-ID কপি হয়েছে')); return; }
@@ -1235,20 +1411,20 @@
         return;
       }
     });
-    // bio counter (live)
-    const bio = $('#pp-edit-bio');
-    if (bio) bio.addEventListener('input', () => {
-      const c = $('[data-role="bio-count"]');
-      if (c) c.textContent = `${bio.value.length}/280`;
-    });
-    // academic goal counter (live)
-    const goal = $('#pp-acad-goal');
-    if (goal) goal.addEventListener('input', () => {
-      const c = $('[data-role="acad-goal-count"]');
-      if (c) c.textContent = String(goal.value.length);
-    });
-    }
   }
+  // Per-element listeners run on EVERY render — the nodes are new each time,
+  // so a once-per-root binding would orphan them (counter/UX regression).
+  const bio = $('#pp-edit-bio');
+  if (bio) bio.addEventListener('input', () => {
+    const c = $('[data-role="bio-count"]');
+    if (c) c.textContent = `${bio.value.length}/280`;
+  });
+  const goal = $('#pp-acad-goal');
+  if (goal) goal.addEventListener('input', () => {
+    const c = $('[data-role="acad-goal-count"]');
+    if (c) c.textContent = String(goal.value.length);
+  });
+}
 
   function sheetTargets() {
     if (Array.isArray(state.sheetTargets)) return state.sheetTargets.slice();
@@ -1265,6 +1441,45 @@
     if (err) { err.hidden = false; err.textContent = msg; }
   }
 
+  function editReadFields() {
+    const p = state.data?.profile || {};
+    return {
+      name: String($('#pp-edit-name')?.value || '').trim(),
+      mobile: String($('#pp-edit-mobile')?.value || '').trim(),
+      dob: String($('#pp-edit-dob')?.value || '').trim(),
+      bio: String($('#pp-edit-bio')?.value || '').trim(),
+      p
+    };
+  }
+  function editDirty() {
+    const { name, mobile, dob, bio, p } = editReadFields();
+    return name !== (p.fullName || '')
+      || mobile !== (p.mobile || '')
+      || dob !== (p.dob || '')
+      || bio !== (p.bio || '');
+  }
+  function editValidate(fields) {
+    const { name, mobile, bio } = fields;
+    if (name !== (fields.p.fullName || '') && name.length < 2) return 'নাম কমপক্ষে ২ অক্ষরের হতে হবে।';
+    if (mobile !== (fields.p.mobile || '')) {
+      const digits = mobile.replace(/[\s()-]/g, '');
+      if (digits && !/^\+?[0-9]{8,15}$/.test(digits)) return 'সঠিক মোবাইল নম্বর দাও (যেমন: +8801XXXXXXXXX)।';
+    }
+    if (bio.length > 280) return 'Bio সর্বোচ্চ ২৮০ অক্ষর হতে পারে।';
+    return '';
+  }
+  function refreshEditDirty() {
+    const btn = $('button[data-role="edit-save"]');
+    const hint = $('[data-role="edit-dirty"]');
+    if (!btn) return;
+    const fields = editReadFields();
+    const dirty = editDirty();
+    const invalid = editValidate(fields);
+    const usable = dirty && !invalid;
+    btn.classList.toggle('pp-save-idle', !dirty);
+    btn.classList.toggle('pp-save-dirty', usable);
+    if (hint) hint.hidden = !dirty;
+  }
   function saveEditPage() {
     const p = state.data?.profile || {};
     const fields = {};
@@ -1364,20 +1579,23 @@
 
   function guestPrompt() {
     const benefits = [
-      'Goal অনুযায়ী personalized practice',
-      'Weak point-ভিত্তিক smart recommendations',
-      'Progress + achievements এক জায়গায়',
-      'যেকোনো device-এ synced progress',
-      'Admission roadmap + guidance'
+      'সব progress save হবে',
+      'Exam history সব device-এ',
+      'Academic profile — target, session, goal',
+      'Leaderboard ও rewards',
+      'AI তোমার জন্য personalized'
     ];
     return `
       <div class="card pp-card pp-guest" data-guest-contract="guest-profile-v2">
         <div class="pp-guest-art" aria-hidden="true">${GUEST_ART}</div>
-        <h2>Guest Profile</h2>
-        <p class="pp-guest-sub">Login করলে তোমার সম্পূর্ণ profile unlock হবে — নাম, লক্ষ্য, progress, সব এক জায়গায়।</p>
+        <h2>Your Profile</h2>
+        <p class="pp-guest-sub">Sign in to create your profile — এক identity, সব device-এ।</p>
         <div class="pp-guest-actions">
-          <button class="pp-btn-primary" data-role="guest-signin" type="button">Login</button>
-          <button class="pp-btn-outline" data-role="guest-create" type="button">Create Account</button>
+          <button class="pp-guest-google" data-role="guest-google" type="button" data-guest-google-contract="guest-google-cta-v1"><span class="pp-google-g" aria-hidden="true">G</span>Continue with Google</button>
+          <div class="pp-guest-duo">
+            <button class="pp-guest-duo-btn" data-role="guest-signin" type="button">Log in</button>
+            <button class="pp-guest-duo-btn" data-role="guest-create" type="button">Sign up</button>
+          </div>
         </div>
         <div class="pp-guest-benefits">
           <b>With your profile, you can:</b>
@@ -1433,8 +1651,17 @@
     else if (state.view === 'privacy') shell(privacyPageMarkup(), { topbar: false });
     else shell(profileViewMarkup(), { topbar: false });
     bindPageEvents($('#app'));
-    const file = $('[data-role="avatar-file"]');
-    if (file) file.addEventListener('change', (e) => { onAvatarFile(e.target.files?.[0]); e.target.value = ''; });
+    const gal = $('[data-role="avatar-file-gallery"]');
+    if (gal) gal.addEventListener('change', (e) => onAvatarFilePick(e.target));
+    const cap = $('[data-role="avatar-file-capture"]');
+    if (cap) cap.addEventListener('change', (e) => onAvatarFilePick(e.target));
+    if (state.view === 'edit') {
+      ['pp-edit-name', 'pp-edit-mobile', 'pp-edit-dob', 'pp-edit-bio'].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('input', refreshEditDirty);
+      });
+      refreshEditDirty();
+    }
   }
 
   // Reference brand row (top of the Profile home) — code-native leaf mark.
@@ -1516,8 +1743,13 @@
           ${brandHeader()}
           ${guestPrompt()}
         </div>`, { topbar: false });
-      $('[data-role="guest-signin"]')?.addEventListener('click', () => account.open());
-      // Create Account — same honest account flow, deep-linked to the signup step.
+      // Continue with Google — account sheet welcome view (Google One Tap first control).
+      $('[data-role="guest-google"]')?.addEventListener('click', () => account.open());
+      $('[data-role="guest-signin"]')?.addEventListener('click', () => {
+        account.open();
+        window.setTimeout(() => document.querySelector('[data-role="welcome-login"]')?.click(), 120);
+      });
+      // Sign up — same honest account flow, deep-linked to the signup step.
       $('[data-role="guest-create"]')?.addEventListener('click', () => {
         account.open();
         window.setTimeout(() => document.querySelector('[data-role="welcome-signup"]')?.click(), 120);
@@ -1532,7 +1764,7 @@
       shell(profileViewMarkup(), { topbar: false });
       bindPageEvents($('#app'));
     }
-    loadProfile()
+    Promise.all([loadProfile(), loadAiPrefs()])
       .then(() => {
         if (state.view !== 'profile') return; // user navigated away — no clobber
         renderCurrentView();

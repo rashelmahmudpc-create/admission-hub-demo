@@ -13,7 +13,7 @@ const SW = read('sw.js');
 const PAGES_GUARD = read('.github/workflows/cf-pages.yml');
 const RELEASE_WORKFLOW = read('.github/workflows/telegram-auth-canary-activate.yml');
 const UI_VERSION = '20260916-account-entry-v4';
-const SHELL_VERSION = 'v260-profile-v7-20260916';
+const SHELL_VERSION = 'v261-profile-v8-20260916';
 
 const between = (source, start, end) => {
   const from = source.indexOf(start);
@@ -108,8 +108,8 @@ test('unsupported verification methods remain truthful and fail closed', () => {
 test('Signup Assistant is removed while the ordinary app AI remains available', () => {
   assert.doesNotMatch(JS, /ASSISTANT_ENABLED|data-role="guide|ah-guide|AI Assistant|context:\s*\{\s*onboarding/);
   assert.doesNotMatch(CSS, /\.ah-guide|\.ah-assistant-hint/);
-  assert.match(HTML, /ai-agent-chat\.js\?v=agent-f1-ui-chatv15-identity/);
-  assert.match(SW, /ai-agent-chat\.js\?v=agent-f1-ui-chatv15-identity/);
+  assert.match(HTML, /ai-agent-chat\.js\?v=agent-f1-ui-chatv16-personalization/);
+  assert.match(SW, /ai-agent-chat\.js\?v=agent-f1-ui-chatv16-personalization/);
   assert.match(HTML, /\{key:'ai', icon:'🤖', label:'AI'\}/);
   assert.match(HTML, /if\(p==='ai'\)\{ if\(window\.renderAiAgentPage\)/);
   assert.match(DASH_JS, /navigate\((?:\\?'|")ai/);

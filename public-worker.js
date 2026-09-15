@@ -1,7 +1,7 @@
 // Admission Hub — Public Product Worker (account system retired, v221)
 // Active routes: public content · Firebase-account/ephemeral-guest AI · content admin.
 // The former login/profile/onboarding/session/state APIs are intentionally absent.
-import { agentChat, agentStatus } from './ai-agent.js';
+import { agentChat, agentStatus, sanitizeAiPrefs, AI_PREFS_DEFAULT } from './ai-agent.js';
 
 const JSONH = {
   'Content-Type': 'application/json',
@@ -199,6 +199,29 @@ export default {
       if (path === '/api/ai/status' && request.method === 'GET') {
         const identity = await aiRequestIdentity(request, env, false);
         return agentStatus(request, env, identity.uid);
+      }
+      if (path === '/api/ai/prefs' && request.method === 'GET') {
+        const identity = await aiRequestIdentity(request, env, false);
+        let prefs = null;
+        try {
+          const raw = await env.PUB_KV.get('aiprefs:' + identity.uid);
+          prefs = raw ? sanitizeAiPrefs(JSON.parse(raw)) : null;
+        } catch (_) { prefs = null; }
+        return json({ prefs: prefs || AI_PREFS_DEFAULT });
+      }
+      if (path === '/api/ai/prefs' && request.method === 'POST') {
+        const identity = await aiRequestIdentity(request, env, false);
+        // Personalization is saved per ACCOUNT (guest uids are ephemeral by design).
+        if (!identity.authenticated) return json({ error: 'sign_in_required', message: 'AI Personalization save-এর জন্য login দরকার।' }, 401);
+        const body = await request.json().catch(() => null);
+        const prefs = sanitizeAiPrefs(body);
+        if (!prefs) return json({ error: 'invalid_prefs', message: 'সঠিক preference দাও।' }, 400);
+        try {
+          await env.PUB_KV.put('aiprefs:' + identity.uid, JSON.stringify(prefs));
+        } catch (_) {
+          return json({ error: 'save_failed', message: 'এখন save করা গেল না — আবার চেষ্টা করো।' }, 500);
+        }
+        return json({ ok: true, prefs });
       }
       if (path === '/api/ai/chat' && request.method === 'POST') {
         const identity = await aiRequestIdentity(request, env);

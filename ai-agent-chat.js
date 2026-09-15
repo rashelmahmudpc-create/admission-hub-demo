@@ -21,8 +21,8 @@
   const MAX_MSGS = 40;
   const MAX_HISTORY = 12;
 
-  const lang = (() => { try { return localStorage.getItem('ahLang') === 'en' ? 'en' : 'bn'; } catch (_) { return 'bn'; } })();
-  const T = lang === 'en' ? {
+  let lang = (() => { try { return localStorage.getItem('ahLang') === 'en' ? 'en' : 'bn'; } catch (_) { return 'bn'; } })();
+  const T_EN = {
     title: 'Admission Hub AI', sub: 'AI Study Assistant', online: 'Online',
     heroTitle: 'Hey! I am Admission Hub AI',
     heroBody: 'Your admission preparation questions, MCQs, explanations and study support — I am here for all of it.',
@@ -54,8 +54,9 @@
     feedbackQ: 'What went wrong?', fb1: 'Incorrect', fb2: 'Not helpful', fb3: 'Too complicated', fb4: 'Missing information', fb5: 'Other',
     confirmDel: 'Delete this conversation?', cancel: 'Cancel', del: 'Delete', delDone: 'Conversation deleted',
     searchPh: 'Search conversations...', noResults: 'No matches found', emptySearch: 'Clear search', connected: 'Student data connected', publicMode: 'Public mode',
-    stop: 'Stop', send: 'Send', attach: 'Add to conversation', savedTip: 'Saved', welcomeSub: 'Ask me anything about your admission preparation.', studying: 'What are we studying today?'
-  } : {
+    stop: 'Stop', send: 'Send', attach: 'Add to conversation', savedTip: 'Saved', welcomeSub: 'Ask me anything about your admission preparation.', studying: 'What are we studying today?', themeGreen: 'Premium Green'
+  };
+  const T_BN = {
     title: 'Admission Hub AI', sub: 'AI Study Assistant', online: 'Online',
     heroTitle: 'Hey! আমি Admission Hub AI',
     heroBody: 'তোমার admission preparation-এর প্রশ্ন, MCQ, explanation আর study support—সবকিছুতেই আমি আছি।',
@@ -87,13 +88,15 @@
     feedbackQ: 'কী ভুল ছিল?', fb1: 'ভুল', fb2: 'কাজের না', fb3: 'খুব জটিল', fb4: 'তথ্য অনুপস্থিত', fb5: 'অন্যান্য',
     confirmDel: 'এই কথোপকথনটা ডিলিট করবে?', cancel: 'Cancel', del: 'Delete', delDone: 'কথোপকথন ডিলিট হয়েছে',
     searchPh: 'কথোপকথনে খোঁজো…', noResults: 'কিছু পাওয়া যায়নি', emptySearch: 'খোঁজা বন্ধ করো', connected: 'Student data connected', publicMode: 'Public mode',
-    stop: 'Stop', send: 'Send', attach: 'Add to conversation', savedTip: 'সেভ হয়েছে', welcomeSub: 'তোমার admission প্রস্তুতি নিয়ে যেকোনো প্রশ্ন করো।', studying: 'আজ কী পড়বো?'
+    stop: 'Stop', send: 'Send', attach: 'Add to conversation', savedTip: 'সেভ হয়েছে', welcomeSub: 'তোমার admission প্রস্তুতি নিয়ে যেকোনো প্রশ্ন করো।', studying: 'আজ কী পড়বো?', themeGreen: 'Premium Green'
   };
-
-  /* ── themes ── */
+  let T = lang === 'en' ? T_EN : T_BN;
+  try { window.addEventListener('ah:lang', () => { try { lang = (localStorage.getItem('ahLang') === 'en') ? 'en' : 'bn'; } catch (_) { lang = 'bn'; } T = lang === 'en' ? T_EN : T_BN; try { if (typeof render === 'function') render(); } catch (_) {} }); } catch (_) {}
+  /* ── themes ─ */
   const THEMES = {
     light: { bg: '#F7F9F8', card: '#ffffff', ink: '#16302A', sub: '#5F7A72', primary: '#0E6B4F', mint: '#E4F3EC', line: 'rgba(15,107,79,.14)', user: '#0E5F45' },
     dark: { bg: '#0F1714', card: '#182420', ink: '#E8F4EF', sub: '#8FA8A0', primary: '#2FBF8F', mint: '#14332A', line: 'rgba(47,191,143,.18)', user: '#134F3E' },
+    green: { bg: '#EEF7F1', card: '#ffffff', ink: '#0E2B20', sub: '#51705F', primary: '#0B5F43', mint: '#D9F2E4', line: 'rgba(11,95,67,.16)', user: '#0B4A35' },
     oled: { bg: '#000000', card: '#0B0F0D', ink: '#EAF5F0', sub: '#7E968D', primary: '#35D6A2', mint: '#0E1F19', line: 'rgba(53,214,162,.16)', user: '#0E7A54' }
   };
 
@@ -713,7 +716,14 @@
       } catch (_) { sessions = [mkSession('', [])]; cur = 0; }
     }
     msgs = sessions[cur].msgs;
-    const savedTheme = scopedRead(THEME_KEY);
+    const savedTheme = (() => {
+      const local = scopedRead(THEME_KEY);
+      if (local && THEMES[local]) return local;
+      // blueprint §18: global Appearance (Profile → Preferences) wins when the
+      // AI page has no local choice of its own.
+      try { const g = (window.AhAppearance && window.AhAppearance.get()) || ''; if (THEMES[g]) return g; } catch (_) {}
+      return local;
+    })();
     theme = THEMES[savedTheme] ? savedTheme : 'light';
   };
 
@@ -1074,6 +1084,7 @@
         <button data-theme="light" class="${theme === 'light' ? 'on' : ''}">☀️ <span>${esc(T.themeLight)}</span></button>
         <button data-theme="system" class="${theme === 'system' ? 'on' : ''}">◐ <span>${esc(T.themeSys)}</span></button>
         <button data-theme="dark" class="${theme === 'dark' ? 'on' : ''}">🌙 <span>${esc(T.themeDark)}</span></button>
+        <button data-theme="green" class="${theme === 'green' ? 'on' : ''}">🌿 <span>${esc(T.themeGreen)}</span></button>
         <button data-theme="oled" class="${theme === 'oled' ? 'on' : ''}">⬛ <span>${esc(T.themeOled)}</span></button>
       </div>
       <div class="ai-dr-acts">
@@ -1120,7 +1131,7 @@
     for (const k of ['bg', 'card', 'ink', 'sub', 'primary', 'mint', 'line', 'user']) r.style.setProperty('--ai-' + k, t[k]);
     r.setAttribute('data-theme', effTheme());
   }
-  function setTheme(t) { theme = THEMES[t] ? t : 'light'; try { scopedWrite(THEME_KEY, theme); } catch (_) {} applyThemeVars(); renderChrome(); document.querySelectorAll('.ai-dr-themes button').forEach((b) => b.classList.toggle('on', b.getAttribute('data-theme') === theme)); }
+  function setTheme(t) { theme = THEMES[t] ? t : 'light'; try { scopedWrite(THEME_KEY, theme); } catch (_) {} try { if (window.AhAppearance) { if (t === 'system') window.AhAppearance.set('system'); else if (t !== 'oled') window.AhAppearance.set(t); } } catch (_) {} applyThemeVars(); renderChrome(); document.querySelectorAll('.ai-dr-themes button').forEach((b) => b.classList.toggle('on', b.getAttribute('data-theme') === theme)); }
   try { (window.matchMedia ? matchMedia('(prefers-color-scheme: dark)') : null).addEventListener && matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (theme === 'system') setTheme('system'); }); } catch (_) {}
   function closeMenu() { menuOpen = false; const m = document.querySelector('.ai-drawerback') || document.querySelector('.ai-menu'); if (m) m.remove(); }
   function setSheetUI(open) { attachOpen = open;

@@ -6,7 +6,7 @@ let pass = 0, fail = 0;
 const t = (n, c) => { if (c) { pass++; console.log('  ✓', n); } else { fail++; console.log('  ✗', n); } }
 
 const A = await import('./ai-agent.js');
-const { classifyIntent, validateChatReq, capStats, buildSystemPrompt, summarizeTo, safetyGate, authVerificationGuidance, sanitizeOnboardingContext, onboardingSecretDetected, routerChain, geminiTextFromChunk, sseParse, ProviderError, INTENTS, __test } = A;
+const { classifyIntent, validateChatReq, capStats, buildSystemPrompt, summarizeTo, safetyGate, authVerificationGuidance, sanitizeOnboardingContext, onboardingSecretDetected, routerChain, geminiTextFromChunk, sseParse, ProviderError, INTENTS, sanitizeAiPrefs, __test } = A;
 
 /* ── ১. Intent Engine ── */
 const IC = [
@@ -261,6 +261,46 @@ t('৩৬. onboarding password model, rate-memory ও response history-র আ�
   && onboardingSafetyText.includes('Password, verification code বা গোপন তথ্য Assistant নেয় না')
   && !onboardingSafetyText.includes('hunter2')
   && ![...onboardingSafety.store.keys()].some(key => key.includes('uid_onboarding_safety')));
+
+/* ── AI Personalization (blueprint §19-20) ── */
+t('৩৮. sanitizeAiPrefs: allowlist-চেক + memory শুধু explicit false-এ off',
+  sanitizeAiPrefs({ langStyle: 'xx', tone: 'ok', responseLen: 'short', memory: false }).langStyle === 'bn'
+  && sanitizeAiPrefs({ langStyle: 'xx', tone: 'ok', responseLen: 'short', memory: false }).tone === 'friendly'
+  && sanitizeAiPrefs({ langStyle: 'xx', tone: 'ok', responseLen: 'short', memory: false }).memory === false
+  && sanitizeAiPrefs(null) === null
+  && sanitizeAiPrefs({}).langStyle === 'bn' && sanitizeAiPrefs({}).memory === true);
+const ppPrefs = buildSystemPrompt({ prefs: { langStyle: 'en', tone: 'direct', responseLen: 'short' } });
+t('৩৯. SystemPrompt: STUDENT PREFERENCES block — lang/tone/len directive',
+  ppPrefs.includes('STUDENT PREFERENCES') && ppPrefs.includes('Reply in English.')
+  && ppPrefs.includes('Be direct and to the point') && ppPrefs.includes('Keep answers short')
+  && !buildSystemPrompt({}).includes('STUDENT PREFERENCES'));
+{
+  // earlier E2E tests install/restore globalThis.fetch from fire-and-forget IIFEs;
+  // drain their pending turns so the fake below is the only one in play.
+  await new Promise((r) => setTimeout(r, 100));
+  const { env, store } = stubEnv();
+  store.set('aiprefs:uid_pref_on', JSON.stringify({ langStyle: 'mix', tone: 'motivating', responseLen: 'detailed', memory: true }));
+  let captured = '';
+  const restore = fakeFetch({ 'streamGenerateContent': (url, init) => { captured = String(init.body || ''); return sseRes(gChunk('প্রশ্ন ভালো!')); } });
+  const r1 = await A.agentChat(new Request('https://x/api/ai/chat', { method: 'POST', body: JSON.stringify({ messages: [{ role: 'user', content: 'নবজাতক টেটানাস কী?' }] }) }), env, 'uid_pref_on');
+  restore();
+  await r1.text(); // consume the stream — memory write happens on stream completion
+  const sysSent = JSON.parse(captured).system_instruction?.parts?.[0]?.text || '';
+  t('৪০. agentChat: saved user prefs reach the model request (per-user KV)',
+    r1.status === 200 && sysSent.includes('STUDENT PREFERENCES')
+    && sysSent.includes('natural mix of Bangla and English') && sysSent.includes('uplifting, motivating')
+    && !!store.get('chatmem:uid_pref_on'));
+  const { env: env2, store: store2 } = stubEnv();
+  store2.set('aiprefs:uid_pref_off', JSON.stringify({ langStyle: 'bn', tone: 'simple', responseLen: 'balanced', memory: false }));
+  const restore2 = fakeFetch({ 'streamGenerateContent': sseRes(gChunk('চালিয়ে যাও!')) });
+  const r2 = await A.agentChat(new Request('https://x/api/ai/chat', { method: 'POST', body: JSON.stringify({ messages: [{ role: 'user', content: 'হ্যালো' }] }) }), env2, 'uid_pref_off');
+  restore2();
+  const r2body = await r2.text();
+  void r2body;
+  t('৪১. agentChat: memory-off preference → zero chatmem writes (no leak)',
+    r2.status === 200 && ![...store2.keys()].some(k => k.includes('chatmem:uid_pref_off'))
+    && [...store2.keys()].some(k => k.startsWith('airl:uid_pref_off:')));
+}
 
 console.log(`\n🤖 AGENT-CORE-F1: ${pass} pass / ${fail} fail`);
 process.exit(fail ? 1 : 0);

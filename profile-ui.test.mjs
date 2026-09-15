@@ -53,18 +53,22 @@ test('PATCH uses optimistic versioning with conflict + rate-limit handling', () 
   assert.match(UI, /429/);
 });
 
-test('avatar pipeline: client downscale + generated default fallback + remove', () => {
-  assert.match(UI, /downscaleToBase64/);
-  assert.match(UI, /canvas\.width = w/);
-  assert.match(UI, /image\/jpeg/);
-  assert.match(UI, /2 \* 1024 \* 1024/);
+test('avatar pipeline: native camera/gallery -> crop (zoom+pan) -> 512 JPEG -> save', () => {
+  assert.match(UI, /capture="environment"/); // Take Photo opens the DEVICE camera
+  assert.doesNotMatch(UI, /getUserMedia/);   // in-app camera UI is banned
+  assert.match(UI, /data-role="avatar-file-capture"/);
+  assert.match(UI, /data-role="avatar-file-gallery"/);
+  assert.match(UI, /data-crop-save-contract="crop-save-v1"/);
+  assert.match(UI, /crop-zoom-in/);
+  assert.match(UI, /crop-zoom-out/);
+  assert.match(UI, /2_000_000/);
   assert.match(UI, /profile\/avatar/);
   assert.match(UI, /method: 'DELETE'/);
 });
 
-test('completion is gentle, never pressure', () => {
-  assert.match(UI, /data-completion-contract="gentle-completion-v1"/);
-  assert.match(UI, /নিজের ঝামেলায়/);
+test('completion: official short copy, real fields only (casual banned)', () => {
+  assert.match(UI, /data-completion-contract="official-completion-v1"/);
+  assert.doesNotMatch(UI, /নিজের ঝামেলায়/);
   assert.doesNotMatch(UI, /এখনই সম্পূর্ণ করো/);
   assert.doesNotMatch(UI, /তোমার প্রোফাইল অসম্পূর্ণ/);
 });
@@ -104,13 +108,13 @@ test('index.html: Profile tab (6th) wired into bottom nav + router', () => {
 });
 
 test('index.html: profile assets linked with versions', () => {
-  assert.match(HTML, /<link rel="stylesheet" href="\.\/profile-ui\.css\?v=profile-v7">/);
-  assert.match(HTML, /<script defer src="\.\/profile-ui\.js\?v=profile-v7"><\/script>/);
+  assert.match(HTML, /<link rel="stylesheet" href="\.\/profile-ui\.css\?v=profile-v8">/);
+  assert.match(HTML, /<script defer src="\.\/profile-ui\.js\?v=profile-v8"><\/script>/);
 });
 
 test('sw.js caches the profile assets', () => {
-  assert.match(SW, /'\.\/profile-ui\.js\?v=profile-v7',/);
-  assert.match(SW, /'\.\/profile-ui\.css\?v=profile-v7',/);
+  assert.match(SW, /'\.\/profile-ui\.js\?v=profile-v8',/);
+  assert.match(SW, /'\.\/profile-ui\.css\?v=profile-v8',/);
 });
 
 test('_redirects serves /AH-* to the SPA', () => {
@@ -154,7 +158,7 @@ test('V2: identity space sections all present (hero, stats, academic, journey, a
   assert.match(UI, /Your Journey/);
   assert.match(UI, /First Mock/);
   assert.match(UI, /Admission Ready/);
-  assert.match(UI, /pp-achv-grid/);
+  assert.match(UI, /pp-ach-list/);
   assert.match(UI, /Preferences/);
   assert.match(UI, /Privacy &amp; Visibility/);
   assert.match(UI, /pp-switch/);
@@ -191,34 +195,59 @@ test('V2: Academic Identity — dedicated edit page, multi-field save in one PAT
   assert.match(UI, /fields\.subjects = subjects/);
 });
 
-test('V2: journey + achievements are honest (display-only, no XP, no fake unlock)', () => {
+test('V2: journey + achievements are honest (real data only, no XP, no fake unlock)', () => {
   assert.match(UI, /real milestones/i);
-  assert.match(UI, /display-only/i);
+  assert.match(UI, /কোনো fake progress নেই/);
   assert.doesNotMatch(UI, /\+ *\d+ *XP/i);
   assert.match(UI, /journeyMilestones/);
   assert.match(UI, /ACHIEVEMENTS/);
 });
 
-test('V2: explicit preferences are user-controlled local-first data (Phase 8 bridge)', () => {
+test('V2: preferences = centralized i18n + 4-theme appearance + AI personalization (blueprint §16-20)', () => {
   assert.match(UI, /ah-profile-prefs-v1/);
   assert.match(UI, /loadPrefs/);
   assert.match(UI, /savePrefs/);
   assert.match(UI, /pref-notifications/);
-  assert.match(UI, /pref-ai/);
-  // unavailable options are honest (disabled), not faked
-  assert.match(UI, /শীঘ্রই আসছে/);
+  // language is a real whole-app switch (no more "coming soon")
+  assert.doesNotMatch(UI, /শীঘ্রই আসছে/);
+  assert.match(UI, /pick-language/);
+  assert.match(UI, /AhI18n/);
+  // appearance: light/dark/system/premium green via the global engine
+  assert.match(UI, /AhAppearance/);
+  assert.match(UI, /'green', 'Premium Green'/);
+  // AI Assistant ENABLED toggle is gone; replaced by per-user AI Personalization
+  assert.doesNotMatch(UI, /pref-ai/);
+  assert.match(UI, /open-ai-prefs/);
+  assert.match(UI, /data-ai-prefs-contract="ai-personalization-v1"/);
+  assert.match(UI, /pick-ai-style/);
+  assert.match(UI, /pick-ai-tone/);
+  assert.match(UI, /pick-ai-len/);
+  assert.match(UI, /toggle-ai-memory/);
+  assert.match(UI, /\/api\/ai\/prefs/);
 });
 
-test('V2: edit page validates before patching; avatar page has upload/camera/default tabs', () => {
+test('V2: edit page validates before patching; avatar page = single screen (Take Photo / Gallery / Defaults)', () => {
   assert.match(UI, /saveEditPage/);
   assert.match(UI, /pp-edit-name/);
   assert.match(UI, /pp-edit-dob/);
   assert.match(UI, /pp-edit-bio/);
-  assert.match(UI, /av-tab/);
+  assert.doesNotMatch(UI, /av-tab/);
   assert.match(UI, /pick-default-avatar/);
-  assert.match(UI, /getUserMedia/);
+  assert.match(UI, /av-capture-open/);
+  assert.match(UI, /Take Photo/);
+  assert.match(UI, /Choose from Gallery/);
   // six generated default avatar styles, zero raster
   assert.match(UI, /defaultAvatarSvg\(state\.data\?\.profile\?\.fullName/);
+});
+
+test('FINAL REBUILD: header clean (no ✓ badge / no pencil) + email read-only row + dirty-state Save', () => {
+  assert.doesNotMatch(UI, /pp-verified/);
+  assert.doesNotMatch(UI, /✏️/);
+  assert.match(UI, /data-email-row-contract="email-readonly-v1"/);
+  assert.match(UI, /Not editable/);
+  assert.match(UI, /data-save-engine-contract="central-save-v1"/);
+  assert.match(UI, /refreshEditDirty/);
+  assert.match(UI, /pp-save-dirty/);
 });
 
 test('hotfix: bnYear maps all 10 digits via code points (no "undefined" regression)', () => {
@@ -289,18 +318,23 @@ test('7B2: hero is the LIGHT reference design (dark text on mint, code-native wa
   assert.doesNotMatch(UI, /pp-hero[^\n]*<img/);
 });
 
-test('7B2: guest profile — no fake identity, Login + Create Account + benefits checklist', () => {
+test('7B2: guest profile — no fake identity, 3 CTAs (Google / Log in / Sign up) + benefits', () => {
   assert.match(UI, /data-guest-contract="guest-profile-v2"/);
-  assert.match(UI, /Guest Profile/);
-  assert.match(UI, /data-role="guest-signin"[^>]*>Login</);
-  assert.match(UI, /data-role="guest-create"[^>]*>Create Account</);
+  assert.match(UI, /Your Profile/);
+  assert.match(UI, /Sign in to create your profile/);
+  assert.match(UI, /data-guest-google-contract="guest-google-cta-v1"/);
+  assert.match(UI, /Continue with Google/);
+  assert.match(UI, /data-role="guest-signin"[^>]*>Log in</);
+  assert.match(UI, /data-role="guest-create"[^>]*>Sign up</);
   assert.match(UI, /With your profile, you can:/);
   const benefits = UI.match(/pp-guest-benefits[\s\S]{0,400}?<ul>/);
   assert.ok(benefits, 'benefits list present');
   const list = UI.slice(UI.indexOf('const benefits = ['), UI.indexOf('];', UI.indexOf('const benefits = [')));
-  assert.match(list, /personalized practice/);
-  assert.match(list, /recommendations/);
-  assert.match(list, /Admission roadmap/);
+  assert.match(list, /progress save/);
+  assert.match(list, /Exam history/);
+  assert.match(list, /Academic profile/);
+  assert.match(list, /Leaderboard/);
+  assert.match(list, /personalized/);
   // zero fake data: no demo names/avatars/stats anywhere in the profile layer
   for (const hay of [UI, CSS, INDEX]) {
     assert.doesNotMatch(hay, /Rasel Ahmed/);
@@ -339,11 +373,18 @@ test('7B3: 16px content padding via .page (double padding killed) + app-like scr
   assert.match(INDEX, /::-webkit-scrollbar\{width:0;height:0;display:none;\}/);
 });
 
-test('7B2: achievements are real-data only (incl. Mistake Crusher from mastered mistakes) + honest empty state', () => {
+test('7B2: achievements = icon/title/status/progress/reward rows, real data only, honest empty state', () => {
+  assert.match(UI, /data-achievements-contract="achv-progress-v1"/);
   assert.match(UI, /mistake-crusher/);
   assert.match(UI, /m\.mastered === true/);
   assert.match(UI, /data-role="achievements-empty"/);
-  assert.match(UI, /প্রথম achievement-এর জন্য প্রস্তুত/);
+  assert.match(UI, /প্রথম achievement-এর জন্য practice শুরু করুন/);
+  // progress model incl. the blueprint example (500 MCQs — Complete 500 MCQs)
+  assert.match(UI, /'500 MCQs'/);
+  assert.match(UI, /target: 500/);
+  assert.match(UI, /Reward: /);
+  assert.match(UI, /pp-ach-status/);
+  assert.match(UI, /pp-ach-bar/);
   assert.doesNotMatch(UI, /Top 10%/); // rankings we cannot compute are never faked
 });
 
@@ -391,11 +432,12 @@ test('7B3: PHASE J — per-section error boundary (one broken section never blan
   assert.match(CSS, /\.pp-section-error/);
 });
 
-test('7B3: PHASE N/O — avatar circular in CSS + 1:1 center crop before downscale', () => {
+test('7B3: avatar circular everywhere + crop modal (zoom/pan) -> 512x512', () => {
   assert.match(CSS, /\.pp-avatar-img \{[^}]*border-radius: 50%/);
+  assert.match(CSS, /\.pp-crop-circle img \{[^}]*object-fit: cover/s);
   assert.match(UI, /\.pp-avatar-img\{[^}]*border-radius:50%\}/);
-  assert.match(UI, /PHASE O — 1:1 center crop/);
-  assert.match(UI, /const side = Math\.min\(img\.width, img\.height\)/);
+  assert.match(UI, /canvas\.width = 512/);
+  assert.match(UI, /clampCropPan/);
   assert.match(UI, /data-avatar-hint-contract="square-crop-v1"/);
 });
 

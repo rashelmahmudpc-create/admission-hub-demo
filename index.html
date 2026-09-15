@@ -18,6 +18,80 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
+<script>
+/* ADMISSION HUB — Global Appearance Engine (blueprint §18):
+   light / dark / system / green (Premium Green). Single source of truth:
+   <html data-theme="..."> — app chrome, profile, sheets all follow. */
+(function () {
+  var KEY = 'ah-appearance';
+  var MODES = ['light', 'dark', 'system', 'green'];
+  function get() {
+    try { var v = localStorage.getItem(KEY); return MODES.indexOf(v) >= 0 ? v : 'light'; }
+    catch (_) { return 'light'; }
+  }
+  function resolved() {
+    var m = get();
+    if (m === 'system') {
+      try { return (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light'; }
+      catch (_) { return 'light'; }
+    }
+    return m;
+  }
+  function apply() {
+    var r = resolved();
+    var root = document.documentElement;
+    if (r === 'light') { root.removeAttribute('data-theme'); root.style.colorScheme = 'light'; }
+    else { root.setAttribute('data-theme', r); root.style.colorScheme = (r === 'green') ? 'light' : r; }
+  }
+  function set(mode) {
+    if (MODES.indexOf(mode) < 0) mode = 'light';
+    try { localStorage.setItem(KEY, mode); } catch (_) {}
+    apply();
+    try { window.dispatchEvent(new CustomEvent('ah:appearance', { detail: { mode: mode, resolved: resolved() } })); } catch (_) {}
+  }
+  try { if (window.matchMedia) matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function () { if (get() === 'system') apply(); }); } catch (_) {}
+  window.AhAppearance = { get: get, set: set, resolved: resolved, apply: apply };
+  apply();
+})();
+/* ADMISSION HUB — Global i18n Engine (blueprint §17): bn (default) / en.
+   Canonical key: ahLang (AI page reads it too). Markup contract for the
+   whole app: [data-bn]/[data-en] text, [data-ph-bn]/[data-ph-en] placeholder,
+   [data-aria-bn]/[data-aria-en] aria-label. */
+(function () {
+  var KEY = 'ahLang';
+  var LANGS = ['bn', 'en'];
+  function get() {
+    try { var v = localStorage.getItem(KEY); return LANGS.indexOf(v) >= 0 ? v : 'bn'; }
+    catch (_) { return 'bn'; }
+  }
+  function apply(root) {
+    var lang = get();
+    var scope = root || document;
+    scope.querySelectorAll('[data-bn]').forEach(function (el) {
+      var t = el.getAttribute(lang === 'bn' ? 'data-bn' : 'data-en');
+      if (t != null && t !== '') el.textContent = t;
+    });
+    scope.querySelectorAll('[data-ph-bn]').forEach(function (el) {
+      var t = el.getAttribute(lang === 'bn' ? 'data-ph-bn' : 'data-ph-en');
+      if (t != null) el.setAttribute('placeholder', t);
+    });
+    scope.querySelectorAll('[data-aria-bn]').forEach(function (el) {
+      var t = el.getAttribute(lang === 'bn' ? 'data-aria-bn' : 'data-aria-en');
+      if (t != null) el.setAttribute('aria-label', t);
+    });
+    try { document.documentElement.setAttribute('lang', lang === 'bn' ? 'bn' : 'en'); } catch (_) {}
+  }
+  function set(lang) {
+    if (LANGS.indexOf(lang) < 0) lang = 'bn';
+    try { localStorage.setItem(KEY, lang); } catch (_) {}
+    apply();
+    try { window.dispatchEvent(new CustomEvent('ah:lang', { detail: { lang: lang } })); } catch (_) {}
+  }
+  window.AhI18n = { get: get, set: set, apply: apply };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function () { apply(); });
+  else apply();
+})();
+</script>
 <meta name="apple-mobile-web-app-title" content="Admission Hub">
 <link rel="apple-touch-icon" href="./apple-touch-icon.png">
 <link rel="icon" href="./favicon.ico" sizes="any">
@@ -132,6 +206,19 @@ body.app-booting,body.app-booting #app{background:#faf9f6!important;color:#1a1d1
   --sub:#8a6b73;
   --line:#f2d9e0;
   --green:#1e8e5a;
+  --red:#c0392b;
+  --orange:#c98a2c;
+}
+[data-theme="green"]{
+  --emerald:#0b5f43;
+  --emerald-d:#094a35;
+  --mint:#d9f2e4;
+  --bg:#eef7f1;
+  --card:#ffffff;
+  --text:#0e2b20;
+  --sub:#51705f;
+  --line:#cfe5d9;
+  --green:#0b5f43;
   --red:#c0392b;
   --orange:#c98a2c;
 }
@@ -636,7 +723,7 @@ textarea{min-height:96px}
 </script>
 <script src="./session-persist.js?v=session-v1"></script>
 <link rel="stylesheet" href="./account-access.css?v=20260916-account-entry-v4">
-<link rel="stylesheet" href="./profile-ui.css?v=profile-v7">
+<link rel="stylesheet" href="./profile-ui.css?v=profile-v8">
 <!-- Signup/Onboarding Assistant বন্ধ; মূল অ্যাপের account-aware AI Assistant চালু আছে। -->
 <style id="ah-boot-min">.ah-boot{width:100%;min-height:100dvh;display:grid;place-content:center;justify-items:center;gap:9px;color:#17221d;background:#f1faf6}.ah-boot-mark{display:grid;place-items:center;width:56px;height:56px;border-radius:17px;background:#0f6b4f;color:#fff;font-size:26px;box-shadow:0 12px 28px rgba(15,107,79,.30)}.ah-boot b{font-size:19px;font-weight:800;letter-spacing:.01em}.ah-boot i{font-style:normal;font-size:12px;color:#5e7168;animation:ahBootPulse 1.15s ease-in-out infinite}@keyframes ahBootPulse{0%,100%{opacity:.55}50%{opacity:1}}@media(prefers-reduced-motion:reduce){.ah-boot i{animation:none}}</style>
 </head>
@@ -4756,15 +4843,15 @@ window.__admissionBootPromise.catch(error => console.error('[Admission Hub] boot
     // Do not reload on controllerchange: iOS standalone clients can enter a blank-screen reload loop.
     // The updated worker takes control now; the current document remains usable and the next launch uses the new shell.
     try{
-      const expectedSwVersion = 'v260-profile-v7-20260916';
+      const expectedSwVersion = 'v261-profile-v8-20260916';
       // register() on the same scope performs an in-place update. Never unregister
       // the active iOS worker first: that discards the instant offline shell.
-      const registration=await navigator.serviceWorker.register('./sw.js?v=v260-profile-v7-20260916',{scope:'./',updateViaCache:'none'});
+      const registration=await navigator.serviceWorker.register('./sw.js?v=v261-profile-v8-20260916',{scope:'./',updateViaCache:'none'});
       await registration.update().catch(()=>{});
       // Purge every old app-shell cache (any build id ≠ current). This guarantees
       // stale pre-retirement application shells can never be served from cache again.
       try {
-        const cur = 'admission-hub-shell-v260-profile-v7-20260916';
+        const cur = 'admission-hub-shell-v261-profile-v8-20260916';
         const names = await caches.keys();
         for (const name of names) {
           if (name.startsWith('admission-hub-shell-') && name !== cur) await caches.delete(name).catch(()=>{});
@@ -4899,8 +4986,8 @@ window.__admissionBootPromise.catch(error => console.error('[Admission Hub] boot
 </script>
 <!-- First-interaction modules execute before optional/heavy tools. -->
 <script defer src="./dashboard-v2.js?v=dash2f11-profile-tap"></script>
-<script defer src="./profile-ui.js?v=profile-v7"></script>
-<script defer src="./ai-agent-chat.js?v=agent-f1-ui-chatv15-identity"></script>
+<script defer src="./profile-ui.js?v=profile-v8"></script>
+<script defer src="./ai-agent-chat.js?v=agent-f1-ui-chatv16-personalization"></script>
 <script defer src="qbank-redesign.js?v=practice15"></script>
 <script defer src="urgent-fix.js?v=practice13"></script>
 <script defer src="phase12-ui.js?v=nav-resume-router-v11-main-ai"></script>

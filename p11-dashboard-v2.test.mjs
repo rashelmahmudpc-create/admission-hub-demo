@@ -11,8 +11,8 @@ const CSS = readFileSync('dashboard-v2.css', 'utf8');
 t('dashboard-v2.js defer-লোড (?v=dash2)', H.includes('<script defer src="./dashboard-v2.js?v=dash2f11-profile-tap"></script>'));
 t('dashboard-v2.css link (?v=dash2)', H.includes('<link rel="stylesheet" href="./dashboard-v2.css?v=dash2f10">'));
 t('sw APP_SHELL-এ dashboard-v2 (js+css)', SW.includes("'./dashboard-v2.js?v=dash2f11-profile-tap'") && SW.includes("'./dashboard-v2.css?v=dash2f10'"));
-t('sw BUILD_ID v260-profile-v7-20260916', SW.includes("const BUILD_ID = 'v260-profile-v7-20260916'"));
-t('index sw-marker v195', H.includes('sw.js?v=v260-profile-v7-20260916'));
+t('sw BUILD_ID v261-profile-v8-20260916', SW.includes("const BUILD_ID = 'v261-profile-v8-20260916'"));
+t('index sw-marker v195', H.includes('sw.js?v=v261-profile-v8-20260916'));
 
 /* ২ — ১৪ মডিউল (ছবির প্রতিটি সেকশন) */
 t('১ Personal Header (avatar+তারিখ+🔔)', V2.includes('dv2-header') && V2.includes('Intl.DateTimeFormat') && V2.includes('dv2-bell'));
@@ -28,7 +28,7 @@ t('১০ Admission Goal (বিশ্ববিদ্যালয় + Days Left
 t('১১ 90-Day Roadmap (Day X/90 + checklist + Full Plan)', V2.includes('90-Day Roadmap') && V2.includes('Day ') && V2.includes('Study Checklist') && V2.includes('progress/plan'));
 t('১২ Study Tools (Notes/Vocabulary/Dictionary/More — Problem Solver বাদ)', V2.includes('Study Tools') && V2.includes('Notes') && V2.includes("navigate(\\'notes\\')") && V2.includes("navigate(\\'vocabulary-master\\')") && !V2.includes('Problem Solver'));
 t('১৩ Bottom Nav ৫ core tabs (Home/Bank/Exam/AI/History; Profile retired)', /NAV_TABS=.*key:'dashboard'.*key:'question-bank'.*key:'exam'.*key:'ai'.*key:'history'/s.test(H) && !H.includes("key:'profile'") && !H.includes("key:'ai-chat'"));
-t('১৪ মূল অ্যাপের AI Assistant script/nav/dashboard/direct route চালু', H.includes('ai-agent-chat.js?v=agent-f1-ui-chatv15-identity') && H.includes("key:'ai'") && H.includes("if(p==='ai'){ if(window.renderAiAgentPage)") && V2.includes("navigate('ai')") && V2.includes("navigate(\\'ai\\')"));
+t('১৪ মূল অ্যাপের AI Assistant script/nav/dashboard/direct route চালু', H.includes('ai-agent-chat.js?v=agent-f1-ui-chatv16-personalization') && H.includes("key:'ai'") && H.includes("if(p==='ai'){ if(window.renderAiAgentPage)") && V2.includes("navigate('ai')") && V2.includes("navigate(\\'ai\\')"));
 t('পুরনো-ড্যাশ-সম্পূর্ণ-বিলুপ্ত (মালিক-নির্দেশ ২০২৬-০৯-০৭): renderV2-এ previous()/intel-ক্যাপচার-নেই + dv2Cleanup-পরিচ্ছন্নতা', !V2.includes('data-dv2-phase5') && !V2.includes('intel = el.outerHTML') && V2.includes('function dv2Cleanup') && V2.includes('[data-phase5-dashboard],[data-phase34-dashboard]') && !/previous\(\);[\s\S]{0,300}data-phase5-dashboard/.test(V2));
 
 /* ৩ — ডেটা-সততা: CACHE-ভিত্তিক, কোনো ফেক সংখ্যা নয় */
