@@ -2,6 +2,8 @@
   "type": "module",
   "scripts": {
     "build:worker": "npx --yes esbuild@0.25.9 gk-agent-worker.js --bundle --format=esm --platform=browser --target=es2022 --charset=utf8 --outfile=worker-bundle.mjs",
+    "sw:manifest": "node scripts/sw-manifest.mjs",
+    "check:sw-manifest": "node scripts/sw-manifest.mjs && git diff --quiet -- sw.js || (echo 'sw.js digests out of date; run: npm run sw:manifest' && exit 1)",
     "check:worker-bundle": "tmp=$(mktemp) && npx --yes esbuild@0.25.9 gk-agent-worker.js --bundle --format=esm --platform=browser --target=es2022 --charset=utf8 --outfile=$tmp >/dev/null && cmp -s worker-bundle.mjs $tmp; code=$?; rm -f $tmp; exit $code",
     "audit:premium-browser": "node auth-native/operations/premium-onboarding-browser-audit.mjs",
     "notify:telegram": "node email-gateway/operations/notify-telegram.mjs",

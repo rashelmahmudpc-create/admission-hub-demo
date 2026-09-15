@@ -107,23 +107,23 @@ await test('content hydration is public and account-independent',
   !/AHAuth|ahPubToken|authHeaders|Authorization/.test(CLOUD));
 
 await test('service-worker build and HTML registration are synchronized',
-  SW.includes("const BUILD_ID = 'v263-selfheal-20260916'") &&
-  H.includes("const expectedSwVersion = 'v263-selfheal-20260916'") &&
-  H.includes('sw.js?v=v263-selfheal-20260916') &&
-  H.includes('admission-hub-shell-v263-selfheal-20260916'));
+  SW.includes("const BUILD_ID = 'v264-cleancache-20260916'") &&
+  H.includes("const expectedSwVersion = 'v264-cleancache-20260916'") &&
+  H.includes('sw.js?v=v264-cleancache-20260916') &&
+  H.includes('admission-hub-shell-v264-cleancache-20260916'));
 await test('service-worker shell cannot cache retired assets', retiredMarkers.every(marker => !SW.includes(marker)));
 await test('premium account and institution assets use synchronized cache-busting versions',
-  ['account-access.css?v=20260916-account-entry-v4', 'account-access.js?v=20260916-account-entry-v4', 'institutions-bd.js?v=bd-institutions-v1']
+  ['account-access.css?v=20260916-account-entry-v5', 'account-access.js?v=20260916-account-entry-v5', 'institutions-bd.js?v=bd-institutions-v2']
     .every(asset => H.includes(asset) && SW.includes(asset)) &&
-  H.indexOf('institutions-bd.js?v=bd-institutions-v1') < H.indexOf('account-access.js?v=20260916-account-entry-v4'));
+  H.indexOf('institutions-bd.js?v=bd-institutions-v2') < H.indexOf('account-access.js?v=20260916-account-entry-v5'));
 await test('premium Auth UI/server contract and curated-manual institution policy are locked',
   ACCOUNT_UI.includes("'X-AH-Auth-UI': 'auth-premium-v6'") &&
   AUTH_HANDLER.includes("const AUTH_UI_VERSION = 'auth-premium-v6'") &&
   AUTH_HANDLER.includes("version: 'premium-onboarding-v1'") &&
   INSTITUTIONS.includes("coverage: 'curated-starter-index'") && INSTITUTIONS.includes("mode: 'manual'"));
 await test('main-app AI client is versioned in the public shell while prior shells are still purged',
-  SW.includes('ai-agent-chat.js?v=agent-f1-ui-chatv16-personalization') &&
-  H.includes('ai-agent-chat.js?v=agent-f1-ui-chatv16-personalization') &&
+  SW.includes('ai-agent-chat.js?v=agent-f1-ui-chatv17-clean') &&
+  H.includes('ai-agent-chat.js?v=agent-f1-ui-chatv17-clean') &&
   H.includes("name.startsWith('admission-hub-shell-')") && SW.includes('.filter(key => key !== CACHE_NAME)'));
 
 const forbiddenWorkerRoutes = retiredRoutes.filter(route => !route.startsWith('/api/admin/'));

@@ -12,8 +12,8 @@ const HTML = read('index.html');
 const SW = read('sw.js');
 const PAGES_GUARD = read('.github/workflows/cf-pages.yml');
 const RELEASE_WORKFLOW = read('.github/workflows/telegram-auth-canary-activate.yml');
-const UI_VERSION = '20260916-account-entry-v4';
-const SHELL_VERSION = 'v263-selfheal-20260916';
+const UI_VERSION = '20260916-account-entry-v5';
+const SHELL_VERSION = 'v264-cleancache-20260916';
 
 const between = (source, start, end) => {
   const from = source.indexOf(start);
@@ -108,8 +108,8 @@ test('unsupported verification methods remain truthful and fail closed', () => {
 test('Signup Assistant is removed while the ordinary app AI remains available', () => {
   assert.doesNotMatch(JS, /ASSISTANT_ENABLED|data-role="guide|ah-guide|AI Assistant|context:\s*\{\s*onboarding/);
   assert.doesNotMatch(CSS, /\.ah-guide|\.ah-assistant-hint/);
-  assert.match(HTML, /ai-agent-chat\.js\?v=agent-f1-ui-chatv16-personalization/);
-  assert.match(SW, /ai-agent-chat\.js\?v=agent-f1-ui-chatv16-personalization/);
+  assert.match(HTML, /ai-agent-chat\.js\?v=agent-f1-ui-chatv17-clean/);
+  assert.match(SW, /ai-agent-chat\.js\?v=agent-f1-ui-chatv17-clean/);
   assert.match(HTML, /\{key:'ai', icon:'🤖', label:'AI'\}/);
   assert.match(HTML, /if\(p==='ai'\)\{ if\(window\.renderAiAgentPage\)/);
   assert.match(DASH_JS, /navigate\((?:\\?'|")ai/);
@@ -125,15 +125,15 @@ test('custom Guest Dashboard is absent and Guest returns to the ordinary app rou
 });
 
 test('code-native assets and service-worker release markers are synchronized', () => {
-  for (const asset of [`account-access.css?v=${UI_VERSION}`, `account-access.js?v=${UI_VERSION}`, 'dashboard-v2.css?v=dash2f10', 'dashboard-v2.js?v=dash2f11-profile-tap']) {
+  for (const asset of [`account-access.css?v=${UI_VERSION}`, `account-access.js?v=${UI_VERSION}`, 'dashboard-v2.css?v=dash2f11-clean', 'dashboard-v2.js?v=dash2f12-clean']) {
     assert.ok(HTML.includes(asset), asset);
     assert.ok(SW.includes(asset), asset);
   }
   assert.match(SW, new RegExp(`const BUILD_ID = '${SHELL_VERSION}'`));
   assert.match(HTML, new RegExp(`expectedSwVersion = '${SHELL_VERSION}'`));
   assert.match(HTML, new RegExp(`sw\\.js\\?v=${SHELL_VERSION}`));
-  assert.ok(HTML.indexOf('institutions-bd.js?v=bd-institutions-v1') < HTML.indexOf(`account-access.js?v=${UI_VERSION}`));
-  assert.ok(HTML.indexOf(`account-access.js?v=${UI_VERSION}`) < HTML.indexOf('dashboard-v2.js?v=dash2f11-profile-tap'));
+  assert.ok(HTML.indexOf('institutions-bd.js?v=bd-institutions-v2') < HTML.indexOf(`account-access.js?v=${UI_VERSION}`));
+  assert.ok(HTML.indexOf(`account-access.js?v=${UI_VERSION}`) < HTML.indexOf('dashboard-v2.js?v=dash2f12-clean'));
 });
 
 test('protected publication remains the only release path for code-native entry v1', () => {

@@ -108,16 +108,16 @@ test('index.html: Profile tab (6th) wired into bottom nav + router', () => {
 });
 
 test('index.html: profile assets linked with versions (v262)', () => {
-  assert.match(HTML, /<link rel="stylesheet" href="\.\/profile-ui\.css\?v=profile-v9">/);
-  assert.match(HTML, /<script defer src="\.\/academic-catalog\.js\?v=acad-cat-v1"><\/script>/);
-  assert.match(HTML, /<script defer src="\.\/profile-ui\.js\?v=profile-v9"><\/script>/);
+  assert.match(HTML, /<link rel="stylesheet" href="\.\/profile-ui\.css\?v=profile-v10">/);
+  assert.match(HTML, /<script defer src="\.\/academic-catalog\.js\?v=acad-cat-v2"><\/script>/);
+  assert.match(HTML, /<script defer src="\.\/profile-ui\.js\?v=profile-v10"><\/script>/);
 });
 
 test('sw.js caches the profile assets (v262)', () => {
-  assert.match(SW, /const BUILD_ID = 'v263-selfheal-20260916';/);
-  assert.match(SW, /'\.\/academic-catalog\.js\?v=acad-cat-v1',/);
-  assert.match(SW, /'\.\/profile-ui\.js\?v=profile-v9',/);
-  assert.match(SW, /'\.\/profile-ui\.css\?v=profile-v9',/);
+  assert.match(SW, /const BUILD_ID = 'v264-cleancache-20260916';/);
+  assert.match(SW, /'\.\/academic-catalog\.js\?v=acad-cat-v2',/);
+  assert.match(SW, /'\.\/profile-ui\.js\?v=profile-v10',/);
+  assert.match(SW, /'\.\/profile-ui\.css\?v=profile-v10',/);
 });
 
 test('v262: academic catalog engine — official per-university+session units (no generic A/B/C/D)', () => {
@@ -579,8 +579,29 @@ test('v263: truncated-script self-heal (owner bug: "SyntaxError: Unexpected EOF"
   assert.match(HTML, /Date\.now\(\) - last > 60000/);
   assert.match(HTML, /location\.reload\(\)/);
   // friendly Bengali message if the truncation repeats within the guard window
-  assert.match(HTML, /ফাইল অসম্পূর্ণ এসেছে/);
+  assert.match(HTML, /অসম্পূর্ণ এসেছে/);
   // service worker bounds static-asset fetches (no infinite hang on stalled links)
   assert.match(SW, /STATIC_ASSET_TIMEOUT_MS = 12000/);
   assert.match(SW, /controller\.abort\(\), STATIC_ASSET_TIMEOUT_MS/);
+});
+
+test('v264: poisoned-cache fix — asset re-pin, no-store SW fetch, digest-verified precache', () => {
+  // New cache keys for every shell asset (device HTTP/SW caches held a
+  // truncated copy from the network-blip window — new URL = clean fetch).
+  assert.match(HTML, /profile-ui\.js\?v=profile-v10/);
+  assert.match(HTML, /profile-ui\.css\?v=profile-v10/);
+  assert.match(HTML, /academic-catalog\.js\?v=acad-cat-v2/);
+  assert.match(HTML, /dashboard-v2\.js\?v=dash2f12-clean/);
+  assert.match(HTML, /session-persist\.js\?v=session-v2/);
+  // SW runtime asset fetches never consult the browser HTTP cache
+  assert.match(SW, /fetch\(request, \{ cache: 'no-store', signal: controller\.signal \}\)/);
+  // Generated digest manifest — a truncated download can never be precached
+  assert.match(SW, /sw-manifest:start/);
+  assert.match(SW, /sw-manifest:end/);
+  assert.match(SW, /blob\.digest\('SHA-256'\)/);
+  assert.match(SW, /hex !== expected/);
+  // Self-heal clears the poisoned shell-cache entry before the reload and
+  // names the file in the fallback message (diagnosable next time)
+  assert.match(HTML, /c\.delete\(new Request\(String\(e\.filename\)/);
+  assert.match(HTML, /fname \+ ' অসম্পূর্ণ এসেছে/);
 });

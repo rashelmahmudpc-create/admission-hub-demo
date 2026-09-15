@@ -5,11 +5,11 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Admission Hub — ভর্তি প্রস্তুতি, প্রশ্নব্যাংক ও বিজ্ঞপ্তি</title>
-<link rel="stylesheet" href="./dashboard-v2.css?v=dash2f10">
+<link rel="stylesheet" href="./dashboard-v2.css?v=dash2f11-clean">
 
 <link rel="manifest" href="manifest.json">
 <link rel="alternate" type="application/manifest+json" href="manifest.webmanifest">
-<link rel="stylesheet" href="./3d-loader.css?v=3d-v1">
+<link rel="stylesheet" href="./3d-loader.css?v=3d-v2">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Bengali:wght@400;500;600;700;800&family=Noto+Serif+Bengali:wght@500;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
@@ -722,19 +722,29 @@ textarea{min-height:96px}
     // SELF-HEAL (owner bug): a script file arriving TRUNCATED over a flaky
     // network makes the engine report a parse error — iOS Safari:
     // "SyntaxError: Unexpected EOF", Chrome: "Unexpected end of input".
-    // One silent reload recovers it: the service-worker precache then serves
-    // the complete file. Guarded per minute so a dead link can't loop reloads.
+    // The bad copy may sit in the shell cache — delete it, then reload once
+    // (guarded per minute so a dead link can't loop reloads).
     if (e.filename && /Unexpected (EOF|end of input)|Unexpected token/i.test(msg) && /\.js(\?|$)/i.test(e.filename)) {
+      const fname = String(e.filename).split('/').pop().split('?')[0];
       try {
         const key = 'ah-script-reload';
         const last = Number(sessionStorage.getItem(key) || 0);
         if (Date.now() - last > 60000) {
           sessionStorage.setItem(key, String(Date.now()));
           trace('selfheal-reload', e.filename);
-          location.reload();
+          (async () => {
+            try {
+              const keys = await caches.keys();
+              for (const k of keys) {
+                const c = await caches.open(k);
+                await c.delete(new Request(String(e.filename), { method: 'GET' }));
+              }
+            } catch (_) {}
+            location.reload();
+          })();
           return;
         }
-        show('Error', 'ইন্টারনেট সংযোগে সমস্যা — একটা ফাইল অসম্পূর্ণ এসেছে। নিচে রিফ্রেশ করলে ঠিক হয়ে যাবে। (' + msg + ')');
+        show('Error', 'ইন্টারনেট সংযোগে সমস্যা — ' + fname + ' অসম্পূর্ণ এসেছে। নিচে রিফ্রেশ করলে ঠিক হয়ে যাবে। (' + msg + ')');
         trace('err-truncated', e.filename);
         return;
       } catch (_) { /* fall through to normal error surfacing */ }
@@ -746,9 +756,9 @@ textarea{min-height:96px}
   window.addEventListener('hashchange', () => trace('route', location.hash));
 })();
 </script>
-<script src="./session-persist.js?v=session-v1"></script>
-<link rel="stylesheet" href="./account-access.css?v=20260916-account-entry-v4">
-<link rel="stylesheet" href="./profile-ui.css?v=profile-v9">
+<script src="./session-persist.js?v=session-v2"></script>
+<link rel="stylesheet" href="./account-access.css?v=20260916-account-entry-v5">
+<link rel="stylesheet" href="./profile-ui.css?v=profile-v10">
 <!-- Signup/Onboarding Assistant বন্ধ; মূল অ্যাপের account-aware AI Assistant চালু আছে। -->
 <style id="ah-boot-min">.ah-boot{width:100%;min-height:100dvh;display:grid;place-content:center;justify-items:center;gap:9px;color:#17221d;background:#f1faf6}.ah-boot-mark{display:grid;place-items:center;width:56px;height:56px;border-radius:17px;background:#0f6b4f;color:#fff;font-size:26px;box-shadow:0 12px 28px rgba(15,107,79,.30)}.ah-boot b{font-size:19px;font-weight:800;letter-spacing:.01em}.ah-boot i{font-style:normal;font-size:12px;color:#5e7168;animation:ahBootPulse 1.15s ease-in-out infinite}@keyframes ahBootPulse{0%,100%{opacity:.55}50%{opacity:1}}@media(prefers-reduced-motion:reduce){.ah-boot i{animation:none}}</style>
 </head>
@@ -757,8 +767,8 @@ textarea{min-height:96px}
 <div id="navRoot" aria-label="Primary navigation"></div>
 <div id="toast" class="toast"></div>
 <div id="modalRoot"></div>
-<script defer src="./institutions-bd.js?v=bd-institutions-v1"></script>
-<script defer src="./account-access.js?v=20260916-account-entry-v4"></script>
+<script defer src="./institutions-bd.js?v=bd-institutions-v2"></script>
+<script defer src="./account-access.js?v=20260916-account-entry-v5"></script>
 <script>
 (function installAdmissionSafety(){
   'use strict';
@@ -4868,15 +4878,15 @@ window.__admissionBootPromise.catch(error => console.error('[Admission Hub] boot
     // Do not reload on controllerchange: iOS standalone clients can enter a blank-screen reload loop.
     // The updated worker takes control now; the current document remains usable and the next launch uses the new shell.
     try{
-      const expectedSwVersion = 'v263-selfheal-20260916';
+      const expectedSwVersion = 'v264-cleancache-20260916';
       // register() on the same scope performs an in-place update. Never unregister
       // the active iOS worker first: that discards the instant offline shell.
-      const registration=await navigator.serviceWorker.register('./sw.js?v=v263-selfheal-20260916',{scope:'./',updateViaCache:'none'});
+      const registration=await navigator.serviceWorker.register('./sw.js?v=v264-cleancache-20260916',{scope:'./',updateViaCache:'none'});
       await registration.update().catch(()=>{});
       // Purge every old app-shell cache (any build id ≠ current). This guarantees
       // stale pre-retirement application shells can never be served from cache again.
       try {
-        const cur = 'admission-hub-shell-v263-selfheal-20260916';
+        const cur = 'admission-hub-shell-v264-cleancache-20260916';
         const names = await caches.keys();
         for (const name of names) {
           if (name.startsWith('admission-hub-shell-') && name !== cur) await caches.delete(name).catch(()=>{});
@@ -5010,10 +5020,10 @@ window.__admissionBootPromise.catch(error => console.error('[Admission Hub] boot
 })();
 </script>
 <!-- First-interaction modules execute before optional/heavy tools. -->
-<script defer src="./dashboard-v2.js?v=dash2f11-profile-tap"></script>
-<script defer src="./academic-catalog.js?v=acad-cat-v1"></script>
-<script defer src="./profile-ui.js?v=profile-v9"></script>
-<script defer src="./ai-agent-chat.js?v=agent-f1-ui-chatv16-personalization"></script>
+<script defer src="./dashboard-v2.js?v=dash2f12-clean"></script>
+<script defer src="./academic-catalog.js?v=acad-cat-v2"></script>
+<script defer src="./profile-ui.js?v=profile-v10"></script>
+<script defer src="./ai-agent-chat.js?v=agent-f1-ui-chatv17-clean"></script>
 <script defer src="qbank-redesign.js?v=practice15"></script>
 <script defer src="urgent-fix.js?v=practice13"></script>
 <script defer src="phase12-ui.js?v=nav-resume-router-v11-main-ai"></script>
