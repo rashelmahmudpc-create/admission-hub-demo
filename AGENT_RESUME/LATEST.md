@@ -1,43 +1,39 @@
-# LATEST — Phase 5 COMPLETE · Phase 6 plan prepared (STOP for approval)
+# LATEST — Phase 6 COMPLETE (code) · publish PENDING (Actions disabled)
 
 **Updated:** 2026-09-15 (Asia/Dhaka) · Agent: **Arena Agent Mode**
 
 ## STATUS
 
-- **PHASE 5 COMPLETE** — deployed (publish run 34892826370 ✅), live on both
-  hosts (`v255-session-engine-20260915`), all guards green.
-  Report: `docs/PHASE5-FINAL-REPORT.md`.
-- **PHASE 6 (Security, Device Trust & Risk Engine)** — blueprint received
-  from owner (2026-09-15). Recon + existing-security audit + threat map
-  done. Execution plan prepared:
-  **`docs/PHASE6-SECURITY-EXECUTION-PLAN.md`** (5 chunks, ~58 new tests).
-- **NO Phase 6 code written yet** — STOP at plan-approval gate
-  (blueprint §40).
+- **PHASE 6 (Security, Device Trust & Risk Engine) — code + tests
+  COMPLETE**, all commits pushed to `main`:
+  - `9f00cf3` Chunk 1 — central security config + risk policy
+  - `3fc8860` Chunk 2 — risk engine on /login + device trust lifecycle
+  - `eb64e9a` Chunk 3 — challenge engine + step-up (server + client UI)
+  - `377ae00` Chunk 4 — security history, notifications, admin foundation
+  - `a6d1554` Chunk 5 — chaos suite (14; caught + fixed a real sqlite bug)
+  - `efb238e` v256 bump + `docs/SECURITY-CORE-PROTECTION.md` + guard/CODEOWNERS
+- **All suites green at `efb238e`:** native-auth **332/332** (incl. 56 new
+  security tests), identity 36, session 22, auth 62, email 108+4, exact
+  bundle check exit 0.
+- **Report:** `docs/PHASE6-FINAL-REPORT.md`.
 
-## PHASE 6 PLAN SUMMARY (details in the plan doc)
+## BLOCKED — protected publish (needs owner action)
 
-- Security engine **inside the existing auth DO** (one authority, no new
-  network hop on the login path).
-- Central frozen security config + policy version
-  (`security-policy-v1`) — all thresholds in one place.
-- Risk levels LOW→CRITICAL, conservative combination (no single-signal
-  accusation; no auto-suspension; no permanent lockout — escalating
-  cooldown + step-up instead).
-- Device trust registry (30-day trust after successful verification;
-  revoke current/individual/all).
-- Generic purpose-bound single-use challenge engine; v1 methods: email
-  OTP + Telegram OTP + passkey (TOTP later via method registry).
-- Step-up on sensitive actions (logout-all, password change, future
-  email change).
-- Security history (no location), notification boundary (dry-run),
-  token-protected admin foundation.
-- Chunks: 1) config+policy+ledger · 2) risk+device trust · 3) challenge+
-  step-up (client UI) · 4) history+notifications+admin · 5) chaos+
-  takeover+regression+deploy+report.
+- GitHub **Actions is currently disabled on the account** — API returns
+  "Actions has been disabled for this user" (dispatch 422). It was working
+  during Phase 5 (v255 publish run 34892826370).
+- **Owner action:** re-enable Actions (GitHub → Settings → Actions →
+  General workflow permissions), then I (or the owner) trigger the
+  protected publish: `telegram-auth-canary-activate.yml` with
+  `confirmation = PUBLISH_TELEGRAM_OTP`.
+- After publish: verify live marker `v256-security-core-20260915` on both
+  hosts (admissionhub.pages.dev + sheikhrashel47-stack.github.io demo) and
+  the API contract (anon 401 on `/security/*`, 403 no-token on
+  `/admin/security/*`).
 
-## STOP
+## BEFORE (still true)
 
-- **Phase 6 implementation শুরু হবে না** — মালিকের explicit plan approval
-  দরকার (+ plan-এর Q1: new-device challenge-once + trust — recommendation
-  দেওয়া আছে)।
-- Phase 5/4/3 invariants intact — Phase 6 replace করবে না, extend করবে।
+- **PHASE 5 COMPLETE** — live on both hosts (`v255-session-engine-20260915`),
+  all guards green. Report: `docs/PHASE5-FINAL-REPORT.md`.
+- Phases 1-4 COMPLETE (v252 line). Reports: `docs/PHASE3-*`,
+  `docs/PHASE4-FINAL-REPORT.md`.
