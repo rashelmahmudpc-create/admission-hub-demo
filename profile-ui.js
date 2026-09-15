@@ -74,21 +74,40 @@
 
   /* ---------------- API ---------------- */
 
+  // PHASE I — no request may hang forever: controlled timeout, ONE retry,
+  // then a clean error the UI can turn into "Retry".
+  const API_TIMEOUT_MS = 8000;
   async function api(path, opts = {}) {
-    const res = await fetch(path, {
-      credentials: 'same-origin',
-      headers: opts.body ? { 'Content-Type': 'application/json' } : undefined,
-      ...opts
-    });
-    let body = null;
-    try { body = await res.json(); } catch (_) { body = {}; }
-    if (!res.ok) {
-      const err = new Error(body?.error?.message || 'সমস্যা হয়েছে');
-      err.status = res.status;
-      err.code = body?.error?.code || '';
-      throw err;
+    let lastErr = null;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+      try {
+        const res = await fetch(path, {
+          credentials: 'same-origin',
+          headers: opts.body ? { 'Content-Type': 'application/json' } : undefined,
+          signal: controller.signal,
+          ...opts
+        });
+        let body = null;
+        try { body = await res.json(); } catch (_) { body = {}; }
+        if (!res.ok) {
+          const err = new Error(body?.error?.message || 'সমস্যা হয়েছে');
+          err.status = res.status;
+          err.code = body?.error?.code || '';
+          throw err; // deterministic server answer — retrying would not help
+        }
+        return body;
+      } catch (err) {
+        lastErr = err;
+        const networkLike = err.name === 'AbortError' || err.status === 0 || !err.status;
+        if (networkLike && attempt === 0) { await new Promise((r) => setTimeout(r, 500)); continue; }
+        throw err;
+      } finally {
+        clearTimeout(timer);
+      }
     }
-    return body;
+    throw lastErr || new Error('Network error');
   }
 
   async function loadProfile() {
@@ -273,12 +292,12 @@
   // half-applied stylesheet must never be able to collapse the identity space
   // (device-cache resilience; values mirror profile-ui.css).
   const CRITICAL_CSS = `
-.pp-wrap{max-width:640px;margin:0 auto;padding:2px 16px 34px}
+.pp-wrap{max-width:640px;margin:0 auto;padding:0 0 8px}
 .pp-hero{position:relative;overflow:hidden;text-align:left;padding:20px 18px 16px;border-radius:22px;margin-bottom:12px;background:linear-gradient(160deg,#f2fbf6 0%,#e4f6ec 48%,#d5f0e2 100%);color:#0c3b2a;border:1px solid rgba(21,128,61,.14)}
 .pp-hero-wash{position:absolute;right:0;bottom:0;width:100%;height:58%;pointer-events:none}
 .pp-hero-row{position:relative;display:flex;align-items:center;gap:14px}
 .pp-hero-avatar{position:relative;width:72px;height:72px;flex:none;border-radius:50%;overflow:visible;display:inline-flex;align-items:center;justify-content:center;border:3px solid #16a34a;background:#eef6f1;padding:0;cursor:pointer}
-.pp-avatar-img{width:100%;height:100%;object-fit:cover;display:block}
+.pp-avatar-img{width:100%;height:100%;object-fit:cover;display:block;border-radius:50%}
 .pp-avatar-svg{display:block;width:100%;height:100%}
 .pp-avatar-svg svg{width:100%;height:100%;display:block}
 .pp-cam-badge{position:absolute;right:-2px;bottom:-2px;width:24px;height:24px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;font-size:12px}
@@ -442,7 +461,7 @@
     const v = state.data?.profile?.visibility || 'private';
     const isPublic = v === 'public';
     return `
-      <div class="card pp-card pp-privacy" data-role="open-visibility">
+      <div class="card pp-card pp-privacy" data-role="open-privacy-page">
         <div class="pp-card-head"><span class="pp-card-title">Privacy &amp; Visibility</span><span class="pp-arrow" aria-hidden="true">→</span></div>
         <div class="pp-priv-row">
           <div>
@@ -457,6 +476,94 @@
           <button class="pp-btn-secondary" data-role="copy-public-link" type="button">লিংক কপি</button>
         </div>` : ''}
         <p class="pp-fine">Email, mobile, জন্মের তারিখ আর school-এর বিস্তারিত কখনো public হবে না।</p>
+      </div>`;
+  }
+
+  /* ------- dedicated pages (reference panels 5/6) ------- */
+  function prefsPageMarkup() {
+    const pf = state.prefs;
+    const row = (icon, label, value, role, extra = '') => `
+      <button class="pp-pref-row" data-role="${role}" type="button">
+        <span class="pp-pref-ic" aria-hidden="true">${icon}</span>
+        <span class="pp-pref-label">${label}</span>
+        <span class="pp-pref-value ${extra}">${value}</span>
+        <span class="pp-arrow" aria-hidden="true">→</span>
+      </button>`;
+    return `
+      <div class="pp-topbar">
+        <button class="pp-iconbtn pp-topbar-back" data-role="prefs-back" type="button" aria-label="← Profile">←</button>
+        <h1 class="pp-topbar-title">Preferences</h1>
+        <span class="pp-topbar-spacer" aria-hidden="true"></span>
+      </div>
+      <div class="card pp-card pp-prefs-page">
+        ${row('🌐', 'Language', pf.language === 'en' ? 'English' : 'বাংলা (Bengali)', 'pref-language')}
+        ${row('🔔', 'Notifications', pf.notifications === 'on' ? 'On' : 'Off', 'pref-notifications')}
+        ${row('🎨', 'Appearance', pf.appearance === 'dark' ? 'Dark' : pf.appearance === 'system' ? 'System' : 'Light Mode', 'pref-appearance', pf.appearance !== 'light' ? 'pp-soon' : '')}
+        ${row('🤖', 'AI Assistant', pf.aiAssistant === 'on' ? 'Enabled' : 'Disabled', 'pref-ai')}
+      </div>
+      <p class="pp-fine">Explicit settings — তুমি কী চাও সেটা তুমিই ঠিক করো।</p>
+      <button class="pp-btn-primary pp-page-save" data-role="prefs-save" type="button">Save Changes</button>
+      <div data-role="profile-toast" class="pp-toast" aria-live="polite"></div>
+      <div data-role="sheet-host"></div>`;
+  }
+
+  function privacyPageMarkup() {
+    const v = state.data?.profile?.visibility || 'private';
+    const isPublic = v === 'public';
+    const visible = isPublic
+      ? ['Name', 'Bio', 'Admission Goal', 'Target Universities', 'Academic Session', 'Achievements', 'Preferred Subjects']
+      : (v === 'limited' ? ['Name', 'AH-ID', 'Avatar'] : []);
+    return `
+      <div class="pp-topbar">
+        <button class="pp-iconbtn pp-topbar-back" data-role="privacy-back" type="button" aria-label="← Profile">←</button>
+        <h1 class="pp-topbar-title">Privacy &amp; Visibility</h1>
+        <span class="pp-topbar-spacer" aria-hidden="true"></span>
+      </div>
+      <div class="card pp-card pp-priv-page">
+        <div class="pp-priv-row">
+          <div>
+            <div class="pp-value">Public Profile</div>
+            <p class="pp-fine">${isPublic ? 'Allow others to view your public information' : 'Public নয় — কেউ দেখতে পাবে না'}</p>
+          </div>
+          <button class="pp-switch ${isPublic ? 'on' : ''}" data-role="toggle-public" type="button" role="switch" aria-checked="${isPublic}" aria-label="Public Profile toggle"><i></i></button>
+        </div>
+        ${v !== 'private' ? `
+        <div class="pp-public-link">
+          <code>${location.origin}/${esc(state.data?.publicId || '')}</code>
+          <button class="pp-btn-secondary" data-role="copy-public-link" type="button">লিংক কপি</button>
+        </div>` : ''}
+      </div>
+      <div class="card pp-card pp-priv-visible">
+        <h3>What will be visible?</h3>
+        ${visible.length
+          ? `<ul>${visible.map((x) => `<li><span aria-hidden="true">✓</span>${x}</li>`).join('')}</ul>`
+          : '<p class="pp-fine">Private — এখনো কিছুই public নয়।</p>'}
+      </div>
+      ${v !== 'private' ? `
+      <button class="card pp-card pp-priv-row" data-role="open-visibility" type="button">
+        <span class="pp-pref-ic" aria-hidden="true">🛡</span>
+        <span class="pp-pref-label">Visibility level</span>
+        <span class="pp-pref-value">${v === 'public' ? 'Public' : 'Limited'}</span>
+        <span class="pp-arrow" aria-hidden="true">→</span>
+      </button>` : ''}
+      <div class="pp-priv-safe">
+        <span aria-hidden="true">🛡</span>
+        <p><b>Your personal information</b>(email, mobile, DOB) will never be visible to others.</p>
+      </div>
+      <div data-role="profile-toast" class="pp-toast" aria-live="polite"></div>
+      <div data-role="sheet-host"></div>`;
+  }
+
+  // Reference "Profile updated successfully!" modal (post-save confirmation).
+  function successModal() {
+    return `
+      <div class="pp-modal-backdrop" data-role="modal-backdrop">
+        <div class="pp-modal" role="dialog" aria-modal="true" aria-label="Profile updated successfully">
+          <div class="pp-modal-check" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="#16a34a" stroke-width="2"/><path d="M7.5 12.5l3 3 6-6.5" stroke="#16a34a" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+          <b>Profile updated successfully!</b>
+          <small>Your changes have been saved.</small>
+          <button class="pp-btn-primary" data-role="modal-ok" type="button">OK</button>
+        </div>
       </div>`;
   }
 
@@ -483,6 +590,18 @@
     security: privacyCard
   };
 
+  // PHASE J — error boundary: one broken section must never blank the page.
+  const safeSection = (key, fn) => {
+    try {
+      const html = fn();
+      if (typeof html === 'string' && html) return html;
+      return '';
+    } catch (err) {
+      // Isolate the failure; the rest of the profile keeps working.
+      return `<div class="card pp-card pp-section-error" data-role="section-error" data-section="${key}"><p class="pp-fine">এই অংশটা দেখা যাচ্ছে না — বাকি সব ঠিক আছে।</p></div>`;
+    }
+  };
+
   function sectionsMarkup() {
     const order = Array.isArray(state.data?.context?.sectionOrder) ? state.data.context.sectionOrder : ['identity', 'academic', 'completion', 'security'];
     const seen = new Set();
@@ -493,16 +612,16 @@
       if (seen.has(key)) continue;
       seen.add(key);
       const fn = SECTION_RENDER[key];
-      if (fn) parts.push(fn());
+      if (fn) parts.push(safeSection(key, fn));
     }
-    if (!seen.has('identity')) parts.unshift(identityCard());
-    if (!seen.has('academic') && !seen.has('goal')) parts.splice(1, 0, academicCard());
-    if (!seen.has('security')) parts.push(privacyCard());
+    if (!seen.has('identity')) parts.unshift(safeSection('identity', identityCard));
+    if (!seen.has('academic') && !seen.has('goal')) parts.splice(1, 0, safeSection('academic', academicCard));
+    if (!seen.has('security')) parts.push(safeSection('security', privacyCard));
     // fixed identity-space tail (not reordered by context)
-    parts.push(journeyCard());
-    parts.push(achievementsCard());
-    parts.push(prefsCard());
-    parts.push(accountCard());
+    parts.push(safeSection('journey', journeyCard));
+    parts.push(safeSection('achievements', achievementsCard));
+    parts.push(safeSection('prefs', prefsCard));
+    parts.push(safeSection('account', accountCard));
     return parts.join('');
   }
 
@@ -563,7 +682,11 @@
           <label class="pp-btn-primary pp-av-upload">📁 Upload from Gallery
             <input data-role="avatar-file" type="file" accept="image/jpeg,image/png,image/webp" hidden>
           </label>
-          <p class="pp-fine">JPEG/PNG/WebP — বড় ছবি নিজে ছোট করে নেবে।</p>` : ''}
+          <p class="pp-fine">সরাসরি ১:১ center-crop হবে — ছবি distort হবে না।</p>` : ''}
+        <div class="pp-av-hint" data-avatar-hint-contract="square-crop-v1">
+          <span aria-hidden="true">✅</span>
+          <div><b>Best photo size</b><small>1:1 · সর্বোচ্চ 2MB · JPG, PNG — নিজে ১:১ center-crop হবে</small></div>
+        </div>
         ${tab === 'camera' ? `
           <button class="pp-btn-primary pp-av-upload" data-role="av-camera" type="button">📷 Open Camera</button>
           <p class="pp-fine" data-role="camera-error" hidden></p>` : ''}
@@ -691,6 +814,7 @@
     }
     savePatch(fields, () => {
       state.view = 'profile';
+      state.showSuccessModal = true; // reference "Profile updated successfully!" modal
       renderProfilePage();
     });
   }
@@ -830,14 +954,17 @@
         img.onerror = () => reject(new Error('ছবিটি বোঝা যায়নি (JPEG/PNG/WebP দাও)'));
         img.onload = () => {
           const MAX = 512;
-          const scale = Math.min(1, MAX / Math.max(img.width, img.height));
-          const w = Math.max(1, Math.round(img.width * scale));
-          const h = Math.max(1, Math.round(img.height * scale));
+          // PHASE O — 1:1 center crop (face-weighted) BEFORE downscale:
+          // circular avatars are never stretched or distorted.
+          const side = Math.min(img.width, img.height);
+          const sx = (img.width - side) / 2;
+          const sy = Math.max(0, (img.height - side) * 0.45);
           const canvas = document.createElement('canvas');
-          canvas.width = w; canvas.height = h;
+          canvas.width = MAX; canvas.height = MAX;
           const ctx = canvas.getContext('2d');
           if (!ctx) return reject(new Error('এই ব্রাউজারে ছবি প্রসেস করা যায়নি'));
-          ctx.drawImage(img, 0, 0, w, h);
+          ctx.imageSmoothingQuality = 'high';
+          ctx.drawImage(img, sx, sy, side, side, 0, 0, MAX, MAX);
           canvas.toBlob((blob) => {
             if (!blob) return reject(new Error('ছবি সংরক্ষণ করা যায়নি'));
             if (blob.size > 2 * 1024 * 1024) return reject(new Error('ছবি অনেক বড় — ছোট ছবি দাও'));
@@ -949,8 +1076,15 @@
     return Promise.resolve();
   }
 
+  // Delegated handlers are bound ONCE per host element — re-renders replace
+  // innerHTML (not the host), so a second binding would double-fire every
+  // click (duplicate saves, double navigations).
+  const boundHosts = new WeakSet();
   function bindPageEvents(root) {
-    root.addEventListener('click', (e) => {
+    if (!root) return;
+    if (!boundHosts.has(root)) {
+      boundHosts.add(root);
+      root.addEventListener('click', (e) => {
       const el = e.target.closest('[data-role]');
       if (!el) return;
       const role = el.dataset.role;
@@ -960,10 +1094,36 @@
         renderCurrentView();
         return;
       }
+      else if (role === 'open-prefs-sheet') {
+        state.view = 'prefs';
+        renderCurrentView();
+        return;
+      }
+      else if (role === 'prefs-back') {
+        state.view = 'profile';
+        renderProfilePage();
+        return;
+      }
+      else if (role === 'prefs-save') {
+        savePrefs(state.prefs);
+        toast('Preferences সেভ হয়েছে ✓');
+        return;
+      }
+      else if (role === 'privacy-back') {
+        state.view = 'profile';
+        renderProfilePage();
+        return;
+      }
+      else if (role === 'modal-ok') {
+        const m = document.querySelector('[data-role="modal-backdrop"]');
+        if (m) m.remove();
+        return;
+      }
       else if (role === 'open-journey-sheet') state.sheet = 'journey';
       else if (role === 'open-achv-sheet') state.sheet = 'achv';
       else if (role === 'open-prefs-sheet') state.sheet = 'prefs';
       else if (role === 'open-visibility') state.sheet = 'visibility';
+      else if (role === 'open-privacy-page') { state.view = 'privacy'; renderCurrentView(); return; }
       else if (role === 'sheet-close' || role === 'sheet-backdrop') { closeSheet(); return; }
       else if (role === 'open-edit-page') { state.view = 'edit'; renderCurrentView(); return; }
       else if (role === 'open-avatar-page') { state.view = 'avatar'; renderCurrentView(); return; }
@@ -1058,6 +1218,14 @@
         renderCurrentView();
         return;
       }
+      else if (role === 'brand-bell') {
+        try { window.NotificationHub?.openCenter?.(); } catch (_) { toast('Notification center এখনো ready নয়।'); }
+        return;
+      }
+      else if (role === 'brand-account') {
+        window.AdmissionAccount?.open();
+        return;
+      }
       else if (role === 'acad-save') {
         saveAcademicPage();
         return;
@@ -1079,6 +1247,7 @@
       const c = $('[data-role="acad-goal-count"]');
       if (c) c.textContent = String(goal.value.length);
     });
+    }
   }
 
   function sheetTargets() {
@@ -1121,7 +1290,7 @@
       fields.bio = bio;
     }
     if (!Object.keys(fields).length) { sheetErr('কিছু না পরিবর্তন করলে সংরক্ষণ করা যাবে না।'); return; }
-    savePatch(fields, () => { state.view = 'profile'; renderProfilePage(); });
+    savePatch(fields, () => { state.view = 'profile'; state.showSuccessModal = true; renderProfilePage(); });
   }
 
   // Save button state machine (master prompt §06):
@@ -1144,11 +1313,17 @@
     };
     if (btn) { btn.classList.remove('pp-save-fail'); btn.classList.add('pp-save-busy'); btn.disabled = true; btn.textContent = 'Saving…'; }
     patch(fields)
-      .then(() => {
+      .then(async () => {
         // Server confirmed — frontend "success" নয়, real persistence এর পর।
         if (btn) { btn.classList.remove('pp-save-busy'); btn.classList.add('pp-save-ok'); btn.textContent = 'SUCCESS ✓'; }
         toast('সংরক্ষিত হয়েছে ✓');
-        window.setTimeout(() => { onDone && onDone(); }, 400);
+        window.setTimeout(async () => {
+          // PHASE M — READ-BACK: save-এর পর canonical data আবার fetch করে UI
+          // সেটাই দেখায় যা database-এ আছে। "looks changed, refresh-এ পুরনো"
+          // সম্ভবই নয়।
+          try { await loadProfile(); } catch (_) { /* read-back fail: server already confirmed the write */ }
+          onDone && onDone();
+        }, 400);
       })
       .catch((err) => {
         if (err.status === 409) {
@@ -1212,9 +1387,13 @@
   }
 
   function profileViewMarkup() {
+    const modal = state.showSuccessModal ? successModal() : '';
+    state.showSuccessModal = false;
     return `
       <div class="pp-wrap">
+        ${brandHeader()}
         ${sectionsMarkup()}
+        ${modal}
         <div data-role="profile-toast" class="pp-toast" aria-live="polite"></div>
         <div data-role="sheet-host"></div>
       </div>`;
@@ -1241,20 +1420,77 @@
   function renderCurrentView() {
     const host = $('#app');
     if (!host) return;
-    const account = window.AdmissionAccount;
-    const signedIn = account && !account.isGuest() && account.isVerified();
-    if (!signedIn) { state.view = 'profile'; window.renderProfilePage(); return; }
+    const gate = authGate();
+    if (gate !== 'authed') { state.view = 'profile'; window.renderProfilePage(); return; }
     const shell = (inner, opts = {}) => {
       if (typeof window.renderShell === 'function') return window.renderShell(inner, opts);
       host.innerHTML = inner;
     };
-    if (state.view === 'edit') shell(editViewMarkup());
-    else if (state.view === 'avatar') shell(avatarViewMarkup());
-    else if (state.view === 'academic') shell(academicViewMarkup());
-    else shell(profileViewMarkup());
+    if (state.view === 'edit') shell(editViewMarkup(), { topbar: false });
+    else if (state.view === 'avatar') shell(avatarViewMarkup(), { topbar: false });
+    else if (state.view === 'academic') shell(academicViewMarkup(), { topbar: false });
+    else if (state.view === 'prefs') shell(prefsPageMarkup(), { topbar: false });
+    else if (state.view === 'privacy') shell(privacyPageMarkup(), { topbar: false });
+    else shell(profileViewMarkup(), { topbar: false });
     bindPageEvents($('#app'));
     const file = $('[data-role="avatar-file"]');
     if (file) file.addEventListener('change', (e) => { onAvatarFile(e.target.files?.[0]); e.target.value = ''; });
+  }
+
+  // Reference brand row (top of the Profile home) — code-native leaf mark.
+  function brandHeader() {
+    return `
+      <div class="pp-brand" data-brand-contract="profile-brand-row-v1">
+        <span class="pp-brand-logo" aria-hidden="true">
+          <svg viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="15" fill="#e7f6ee"/><path d="M16 25c0-6.5 2.6-10.5 7-13-1 7-3.2 11.2-7 13z" fill="#16a34a"/><path d="M16 25c0-5-2-8.2-5.6-10.3.8 5.7 2.6 8.9 5.6 10.3z" fill="#22c55e"/></svg>
+        </span>
+        <div class="pp-brand-text"><b>Admission Hub</b><small>Your Admission. Our Mission.</small></div>
+        <span class="pp-brand-actions">
+          <button class="pp-brand-ic" data-role="brand-bell" type="button" aria-label="Notifications">🔔</button>
+          <button class="pp-brand-ic" data-role="brand-account" type="button" aria-label="Account">👤</button>
+        </span>
+      </div>`;
+  }
+
+  /* ---------------- AUTH STABLE (Phase 7B3) — 3-state gate ----------------
+     AUTH_LOADING  → skeleton (never guest, never stale)
+     AUTHENTICATED → real profile
+     GUEST         → guest card (only after the auth check COMPLETED)          */
+  function authGate() {
+    const acc = window.AdmissionAccount;
+    if (!acc) return 'loading';
+    if (acc.isVerified()) return 'authed'; // verified session — render immediately (no flash during background refresh)
+    const st = typeof acc.getSessionState === 'function' ? String(acc.getSessionState() || '') : '';
+    if (st === 'UNAUTHENTICATED') return 'guest'; // check finished, no session
+    return 'loading'; // INITIALIZING / CHECKING_SESSION / REFRESHING / RECOVERING / EXPIRING / ERROR
+  }
+
+  function profileSkeleton() {
+    return `
+      <div class="pp-wrap" data-auth-gate="loading" aria-busy="true">
+        ${brandHeader()}
+        <div class="pp-skel-pp" aria-hidden="true">
+          <div class="pp-skel-row"><div class="pp-skel pp-skel-avatar"></div>
+            <div class="pp-skel-col"><div class="pp-skel pp-skel-name"></div><div class="pp-skel pp-skel-chip"></div><div class="pp-skel pp-skel-line"></div></div>
+          </div>
+          <div class="pp-skel pp-skel-stats"></div>
+          <div class="pp-skel pp-skel-card"></div>
+          <div class="pp-skel pp-skel-card"></div>
+        </div>
+        <p class="pp-fine pp-skel-note" data-role="skeleton-note">Login যাচাই হচ্ছে…</p>
+      </div>`;
+  }
+
+  let authChangeBound = false;
+  function bindAuthGate() {
+    if (authChangeBound) return;
+    authChangeBound = true;
+    window.addEventListener('admissionhub:authchange', () => {
+      // Re-render only the profile home — never the edit/avatar pages (input safety).
+      if (state.view === 'profile') {
+        try { window.renderProfilePage(); } catch (_) {}
+      }
+    });
   }
 
   window.renderProfilePage = function renderProfilePage() {
@@ -1262,15 +1498,22 @@
     const host = $('#app');
     if (!host) return;
     const account = window.AdmissionAccount;
-    const signedIn = account && !account.isGuest() && account.isVerified();
     const shell = (inner, opts = {}) => {
       if (typeof window.renderShell === 'function') return window.renderShell(inner, opts);
       host.innerHTML = inner;
     };
-    if (!signedIn) {
+    bindAuthGate();
+    const gate = authGate();
+    if (gate === 'loading') {
+      // AUTH_LOADING: skeleton only — never a guest fallback, never stale data.
+      shell(profileSkeleton(), { topbar: false });
+      return;
+    }
+    if (gate === 'guest') {
+      // GUEST: auth check COMPLETE and no authenticated user.
       shell(`
         <div class="pp-wrap">
-          <div class="pp-head"><h1>Profile</h1><div class="muted">তোমার personal identity</div></div>
+          ${brandHeader()}
           ${guestPrompt()}
         </div>`, { topbar: false });
       $('[data-role="guest-signin"]')?.addEventListener('click', () => account.open());
@@ -1281,19 +1524,26 @@
       });
       return;
     }
-    // No loading screen (owner directive): render the identity space
-    // immediately — from cached data on revisit, otherwise from the empty
-    // state — and refresh silently in the background.
-    renderCurrentView();
+    // AUTHENTICATED. First open (no data yet): skeleton for the profile fetch.
+    // Revisit (data cached): render instantly, refresh silently in background.
+    if (!state.data) {
+      shell(profileSkeleton(), { topbar: false });
+    } else {
+      shell(profileViewMarkup(), { topbar: false });
+      bindPageEvents($('#app'));
+    }
     loadProfile()
       .then(() => {
+        if (state.view !== 'profile') return; // user navigated away — no clobber
         renderCurrentView();
       })
       .catch(() => {
-        // failure isolation: session stays usable, profile shows a fallback
+        if (state.view !== 'profile') return;
+        // Failure isolation: session stays authenticated; only the profile
+        // data is unavailable. NEVER downgrade to guest.
         shell(`
-          <div class="pp-wrap">
-            <div class="pp-head"><h1>Profile</h1><div class="muted">তোমার personal identity</div></div>
+          <div class="pp-wrap" data-auth-gate="error">
+            ${brandHeader()}
             <div class="card pp-card pp-fallback">
               <p>Profile লোড করা যায়নি — নিশ্চিন্ত থাকো, তোমার session আর ডেটা ঠিক আছে।</p>
               <button class="pp-btn-primary" data-role="retry-profile" type="button">আবার চেষ্টা করো</button>

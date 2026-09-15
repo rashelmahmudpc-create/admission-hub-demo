@@ -305,11 +305,16 @@ export class FirebaseEmailPasswordProvider {
       throw new FirebaseRequestError('INVALID_PROVIDER_RESPONSE');
     }
     const providerRows = Array.isArray(user.providerUserInfo) ? user.providerUserInfo : [];
+    // displayName/photoUrl come from the VERIFIED Firebase user record (server
+    // side, idToken-bound) — used only to seed a brand-new profile's empty
+    // fields. They never overwrite student-owned data.
     return Object.freeze({
       subject: user.localId,
       email: user.email,
       emailVerified: user.emailVerified === true,
       disabled: user.disabled === true,
+      displayName: typeof user.displayName === 'string' && user.displayName ? user.displayName : null,
+      photoUrl: typeof user.photoUrl === 'string' && user.photoUrl ? user.photoUrl : null,
       providers: Object.freeze(providerRows.map(row => String(row?.providerId || '')).filter(Boolean)),
       googleSubjects: Object.freeze(providerRows
         .filter(row => row?.providerId === 'google.com' && validSubject(row?.rawId))

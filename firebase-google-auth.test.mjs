@@ -21,7 +21,9 @@ const request = (path, body) => new Request(`https://worker.example${path}`, {
 });
 
 class AuthorityMock {
-  constructor({ conflict = false } = {}) { this.conflict = conflict; this.calls = []; }
+  constructor({ conflict = false, profile = null, profileError = false } = {}) {
+    this.conflict = conflict; this.profile = profile; this.profileError = profileError; this.calls = [];
+  }
   idFromName(name) { return name; }
   get() { return { fetch: this.fetch.bind(this) }; }
   async fetch(input, init) {
@@ -29,6 +31,16 @@ class AuthorityMock {
     const path = new URL(req.url).pathname;
     const body = req.method === 'GET' ? {} : await req.json();
     this.calls.push({ path, body });
+    if (path === '/internal/profile/get-v2') {
+      if (this.profileError) return response({ ok: false, error: { code: 'STORAGE_UNAVAILABLE' } }, 500);
+      return response({ ok: true, result: {
+        profile: { fullName: this.profile?.name || '', version: 1 },
+        avatar: { present: Boolean(this.profile?.avatarPresent) },
+        publicId: 'AH-TEST01', completion: this.profile?.name ? 15 : 0
+      } });
+    }
+    if (path === '/internal/profile/patch') return response({ ok: true, result: { saved: true, profile: null } });
+    if (path === '/internal/avatar/save') return response({ ok: true, result: { saved: true } });
     if (path === '/internal/firebase/rate') return response({ ok: true, result: { accepted: true, ...(body.input?.email ? { email: body.input.email } : {}) } });
     if (path === '/internal/firebase/session/create') {
       if (this.conflict) return response({ ok: false, error: { code: AUTH_ERROR_CODES.ACCOUNT_CONFLICT } }, 409);
@@ -43,7 +55,7 @@ class AuthorityMock {
   }
 }
 
-function googleFetch({ isNewUser = false, deleted = [], deleteFails = false, includeGoogle = true } = {}) {
+function googleFetch({ isNewUser = false, deleted = [], deleteFails = false, includeGoogle = true, displayName = undefined, photoUrl = undefined } = {}) {
   return async (url, init = {}) => {
     const path = new URL(url).pathname;
     const body = init.body ? JSON.parse(String(init.body)) : {};
@@ -77,6 +89,8 @@ function googleFetch({ isNewUser = false, deleted = [], deleteFails = false, inc
         email: 'google.user@example.com',
         emailVerified: true,
         disabled: false,
+        displayName,
+        photoUrl,
         providerUserInfo: includeGoogle ? [{ providerId: 'google.com', rawId: 'google-subject' }] : []
       }] });
     }
@@ -255,4 +269,82 @@ test('Google linking reauthenticates the existing Firebase account and preserves
   assert.equal(sessionCall.body.input.subject, existingSubject);
   assert.equal(sessionCall.body.input.email, 'google.user@example.com');
   assert.equal(calls.every(call => call.init.redirect === 'manual'), true);
+});
+
+/* ---------------- Google → automatic profile sync (owner blueprint) ---------------- */
+
+const JPEG_BYTES = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(24, 7)]);
+
+function withAvatarFetch(urlText, impl) {
+  const real = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    if (String(url).includes(urlText)) return impl(String(url), init);
+    return real.call(globalThis, url, init);
+  };
+  return () => { globalThis.fetch = real; };
+}
+
+test('Google login seeds a BLANK profile with the verified name + avatar (no user re-entry)', async () => {
+  const authority = new AuthorityMock({ profile: { name: '', avatarPresent: false } });
+  const restore = withAvatarFetch('googleusercontent.com', () => new Response(JPEG_BYTES, { status: 200, headers: { 'Content-Type': 'image/jpeg' } }));
+  try {
+    const handler = createNativeAuthHandler({ fetchImpl: googleFetch({ displayName: 'Rashel Zayan', photoUrl: 'https://lh3.googleusercontent.com/a/face-photo' }) });
+    const result = await handler(request(`${AUTH_API_PREFIX}/google`, { idToken: TOKEN('google-id') }), {
+      AUTH_AUTHORITY: authority,
+      FIREBASE_WEB_API_KEY: API_KEY,
+      GOOGLE_AUTH_ACTIVATION: 'enabled'
+    });
+    assert.equal(result.status, 200);
+    const patchCall = authority.calls.find(c => c.path === '/internal/profile/patch');
+    assert.ok(patchCall, 'name patch issued');
+    assert.equal(patchCall.body.input.fields.fullName, 'Rashel Zayan');
+    const avatarCall = authority.calls.find(c => c.path === '/internal/avatar/save');
+    assert.ok(avatarCall, 'avatar seeded');
+    assert.equal(avatarCall.body.input.mime, 'image/jpeg');
+    assert.equal(Buffer.from(avatarCall.body.input.data, 'base64').subarray(0, 3).toString('hex'), 'ffd8ff');
+  } finally { restore(); }
+});
+
+test('Google login NEVER overwrites data the user already set (no silent overwrite)', async () => {
+  const authority = new AuthorityMock({ profile: { name: 'Rasel Ahmed', avatarPresent: true } });
+  const restore = withAvatarFetch('googleusercontent.com', () => new Response(JPEG_BYTES, { status: 200 }));
+  try {
+    const handler = createNativeAuthHandler({ fetchImpl: googleFetch({ displayName: 'Rashel Zayan', photoUrl: 'https://lh3.googleusercontent.com/a/face-photo' }) });
+    const result = await handler(request(`${AUTH_API_PREFIX}/google`, { idToken: TOKEN('google-id') }), {
+      AUTH_AUTHORITY: authority,
+      FIREBASE_WEB_API_KEY: API_KEY,
+      GOOGLE_AUTH_ACTIVATION: 'enabled'
+    });
+    assert.equal(result.status, 200);
+    assert.equal(authority.calls.some(c => c.path === '/internal/profile/patch'), false);
+    assert.equal(authority.calls.some(c => c.path === '/internal/avatar/save'), false);
+  } finally { restore(); }
+});
+
+test('Google avatar seeding refuses non-Google URLs (no SSRF) and missing data', async () => {
+  const authority = new AuthorityMock({ profile: { name: '', avatarPresent: false } });
+  const restore = withAvatarFetch('evil.example', () => new Response(JPEG_BYTES, { status: 200 }));
+  try {
+    const handler = createNativeAuthHandler({ fetchImpl: googleFetch({ displayName: 'Rashel Zayan', photoUrl: 'https://evil.example/photo.jpg' }) });
+    const result = await handler(request(`${AUTH_API_PREFIX}/google`, { idToken: TOKEN('google-id') }), {
+      AUTH_AUTHORITY: authority,
+      FIREBASE_WEB_API_KEY: API_KEY,
+      GOOGLE_AUTH_ACTIVATION: 'enabled'
+    });
+    assert.equal(result.status, 200);
+    assert.equal(authority.calls.some(c => c.path === '/internal/avatar/save'), false);
+    assert.ok(authority.calls.some(c => c.path === '/internal/profile/patch'), 'name still seeded');
+  } finally { restore(); }
+});
+
+test('Profile seed failure never breaks the Google login (best-effort by design)', async () => {
+  const authority = new AuthorityMock({ profile: { name: '' }, profileError: true });
+  const handler = createNativeAuthHandler({ fetchImpl: googleFetch({ displayName: 'Rashel Zayan', photoUrl: 'https://lh3.googleusercontent.com/a/x' }) });
+  const result = await handler(request(`${AUTH_API_PREFIX}/google`, { idToken: TOKEN('google-id') }), {
+    AUTH_AUTHORITY: authority,
+    FIREBASE_WEB_API_KEY: API_KEY,
+    GOOGLE_AUTH_ACTIVATION: 'enabled'
+  });
+  assert.equal(result.status, 200);
+  assert.equal((await result.json()).authenticated, true);
 });

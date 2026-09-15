@@ -143,6 +143,62 @@ const googleCredential = body => {
   return Object.freeze(accessToken ? { accessToken } : { idToken });
 };
 
+// Google Login → Automatic Profile Sync (owner blueprint):
+// Google data populates ONLY the empty fields of a NEW profile.
+// User-modified data always wins — no silent overwrite, ever.
+const GOOGLE_AVATAR_HOSTS = Object.freeze(['.googleusercontent.com']);
+const isGoogleAvatarUrl = raw => {
+  try {
+    const u = new URL(String(raw || ''));
+    if (u.protocol !== 'https:') return false;
+    return GOOGLE_AVATAR_HOSTS.some(h => u.hostname.endsWith(h));
+  } catch { return false; }
+};
+const looksLikeName = value => {
+  const v = String(value || '').trim();
+  return v.length >= 2 && v.length <= 80 && /^[\p{L}\p{M} .'-]+$/u.test(v);
+};
+async function seedGoogleProfile(env, context, established, googleUser) {
+  const sessionToken = String(established?.sessionToken || '');
+  const email = String(googleUser?.email || '');
+  const subject = String(googleUser?.subject || '');
+  if (!sessionToken || !email || !subject) return;
+  const input = Object.freeze({ sessionToken, email, subject });
+  let current = null;
+  try {
+    // callAuthority already unwraps the authority envelope (data.result).
+    current = await callAuthority(env, '/internal/profile/get-v2', { input, context });
+  } catch { return; }
+  if (!current) return;
+  // 1) Name — only when the profile has none yet.
+  if (!current.profile?.fullName && looksLikeName(googleUser.displayName)) {
+    try {
+      await callAuthority(env, '/internal/profile/patch', { input: { ...input, fields: { fullName: String(googleUser.displayName).trim() } }, context });
+    } catch { /* seeding is best-effort; login must never fail on it */ }
+  }
+  // 2) Avatar — only when the user has none yet, and only from Google's own CDN.
+  if (!current.avatar?.present && isGoogleAvatarUrl(googleUser.photoUrl)) {
+    try {
+      const res = await fetch(String(googleUser.photoUrl), {
+        redirect: 'manual',
+        signal: AbortSignal.timeout(12_000),
+        headers: { Accept: 'image/*' }
+      });
+      if (!res.ok) return;
+      const buf = Buffer.from(await res.arrayBuffer());
+      if (buf.byteLength > 2 * 1024 * 1024) return;
+      const isJpeg = buf.length > 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff;
+      const isPng = buf.length > 8 && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47;
+      const mime = isJpeg ? 'image/jpeg' : isPng ? 'image/png' : null;
+      if (!mime) return;
+      await callAuthority(env, '/internal/avatar/save', {
+        input: { sessionToken, email, subject, data: buf.toString('base64'), mime },
+        context
+      });
+    } catch { /* avatar seeding is best-effort */ }
+  }
+}
+
 async function callAuthority(env, path, body, method = 'POST') {
   if (!env?.AUTH_AUTHORITY || typeof env.AUTH_AUTHORITY.idFromName !== 'function') {
     throw new NativeAuthError(AUTH_ERROR_CODES.NOT_CONFIGURED);
@@ -817,6 +873,13 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           }
           throw cause;
         }
+        // Google → auto profile: seed the empty name/avatar from the VERIFIED
+        // Firebase user. Never overwrites anything the student already set.
+        // A seeding failure must never break or delay the login.
+        try {
+          const establishedBody = established?.result || established;
+          await seedGoogleProfile(env, context, establishedBody, user);
+        } catch { /* best-effort by design */ }
         return authSuccess(request, established, signed.refreshToken, context);
       }
 

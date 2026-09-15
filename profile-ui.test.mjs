@@ -104,13 +104,13 @@ test('index.html: Profile tab (6th) wired into bottom nav + router', () => {
 });
 
 test('index.html: profile assets linked with versions', () => {
-  assert.match(HTML, /<link rel="stylesheet" href="\.\/profile-ui\.css\?v=profile-v6">/);
-  assert.match(HTML, /<script defer src="\.\/profile-ui\.js\?v=profile-v6"><\/script>/);
+  assert.match(HTML, /<link rel="stylesheet" href="\.\/profile-ui\.css\?v=profile-v7">/);
+  assert.match(HTML, /<script defer src="\.\/profile-ui\.js\?v=profile-v7"><\/script>/);
 });
 
 test('sw.js caches the profile assets', () => {
-  assert.match(SW, /'\.\/profile-ui\.js\?v=profile-v6',/);
-  assert.match(SW, /'\.\/profile-ui\.css\?v=profile-v6',/);
+  assert.match(SW, /'\.\/profile-ui\.js\?v=profile-v7',/);
+  assert.match(SW, /'\.\/profile-ui\.css\?v=profile-v7',/);
 });
 
 test('_redirects serves /AH-* to the SPA', () => {
@@ -233,9 +233,15 @@ test('hotfix: bnYear maps all 10 digits via code points (no "undefined" regressi
   assert.ok(!String(bnYear(2026)).includes('undefined'));
 });
 
-test('hotfix: no skeleton loading — profile renders immediately (owner directive)', () => {
-  assert.doesNotMatch(UI, /pp-skel[\s\S]{0,120}Profile লোড/);
-  assert.match(UI, /renderCurrentView\(\);\n    loadProfile\(\)/);
+test('7B3: auth gate — AUTH_LOADING shows skeleton (never guest); guest only after the check COMPLETES', () => {
+  // old "no skeleton" directive superseded by master prompt Phase U/V:
+  // skeleton is required during loading; guest is forbidden until AUTH_CHECK_COMPLETE.
+  assert.match(UI, /function authGate\(\)/);
+  assert.match(UI, /data-auth-gate="loading"/);
+  assert.match(UI, /Login যাচাই হচ্ছে/);
+  assert.match(UI, /st === 'UNAUTHENTICATED'\) return 'guest'/);
+  assert.match(UI, /admissionhub:authchange/);
+  assert.match(UI, /bindAuthGate/);
 });
 
 test('hotfix: hero layout resilience — critical styles shipped inline with the page', () => {
@@ -325,9 +331,10 @@ test('7B2: Academic Identity is a dedicated edit page (targets/session/goal/subj
   assert.match(CSS, /\.pp-acad-sec \{ padding: 16px/);
 });
 
-test('7B2: 16px content padding + app-like scrolling without visible scrollbars', () => {
-  assert.match(CSS, /\.pp-wrap \{ position: relative; padding: 2px 16px 34px/);
-  assert.match(UI, /\.pp-wrap\{max-width:640px;margin:0 auto;padding:2px 16px 34px\}/);
+test('7B3: 16px content padding via .page (double padding killed) + app-like scrolling, no visible scrollbar', () => {
+  assert.match(CSS, /\.pp-wrap \{ position: relative; padding: 0 0 8px/);
+  assert.match(UI, /\.pp-wrap\{max-width:640px;margin:0 auto;padding:0 0 8px\}/);
+  assert.match(INDEX, /\.page\{padding:18px 16px 30px\}/);
   assert.match(INDEX, /scrollbar-width:none/);
   assert.match(INDEX, /::-webkit-scrollbar\{width:0;height:0;display:none;\}/);
 });
@@ -353,4 +360,94 @@ test('7B2: signup collects mobile and the server full-save accepts it (one sourc
   assert.match(ACC, /data-role="mobile-feedback"/);
   assert.match(ENGINE, /mobile: mobile \|\| ''/);
   assert.ok(ENGINE.includes('mobile && !/^\\+?[0-9]{8,15}$/.test(mobile)'), 'server mobile validation');
+});
+
+/* ------------------------------------------------------------------ */
+/* Phase 7B3 — EMERGENCY STABILIZATION acceptance tests               */
+/* ------------------------------------------------------------------ */
+
+test('7B3: PHASE I/H — every profile request has a timeout and ONE retry, never an infinite hang', () => {
+  assert.match(UI, /API_TIMEOUT_MS = 8000/);
+  assert.match(UI, /new AbortController\(\)/);
+  assert.match(UI, /attempt < 2/);
+  assert.match(UI, /networkLike && attempt === 0/);
+});
+
+test('7B3: PHASE H — delegated handlers bind once per host (no duplicate clicks/saves)', () => {
+  assert.match(UI, /const boundHosts = new WeakSet\(\)/);
+  assert.match(UI, /if \(!boundHosts\.has\(root\)\)/);
+  assert.match(UI, /boundHosts\.add\(root\)/);
+});
+
+test('7B3: PHASE M — save does WRITE → CONFIRM → READ-BACK → UI', () => {
+  assert.match(UI, /PHASE M — READ-BACK/);
+  assert.match(UI, /await loadProfile\(\);/);
+});
+
+test('7B3: PHASE J — per-section error boundary (one broken section never blanks the page)', () => {
+  assert.match(UI, /const safeSection = /);
+  assert.match(UI, /pp-section-error/);
+  assert.match(UI, /safeSection\('achievements', achievementsCard\)/);
+  assert.match(CSS, /\.pp-section-error/);
+});
+
+test('7B3: PHASE N/O — avatar circular in CSS + 1:1 center crop before downscale', () => {
+  assert.match(CSS, /\.pp-avatar-img \{[^}]*border-radius: 50%/);
+  assert.match(UI, /\.pp-avatar-img\{[^}]*border-radius:50%\}/);
+  assert.match(UI, /PHASE O — 1:1 center crop/);
+  assert.match(UI, /const side = Math\.min\(img\.width, img\.height\)/);
+  assert.match(UI, /data-avatar-hint-contract="square-crop-v1"/);
+});
+
+test('7B3: PHASE Q — brand row on profile home, no double topbar, #app wider on desktop', () => {
+  assert.match(UI, /function brandHeader\(\)/);
+  assert.match(UI, /data-brand-contract="profile-brand-row-v1"/);
+  assert.match(UI, /Your Admission\. Our Mission\./);
+  assert.match(UI, /shell\(profileViewMarkup\(\), \{ topbar: false \}\)/);
+  assert.match(INDEX, /#app\{max-width:760px/);
+});
+
+test('7B3: PHASE A/D — account auth state notifies on every transition (observable authority)', () => {
+  assert.match(ACC, /Phase 7B3 \(AUTH STABLE\)/);
+  assert.match(ACC, /setSessionState = to => \{[\s\S]{0,900}try \{ notify\(\); \}/);
+  assert.match(ACC, /admissionhub:authchange/);
+});
+
+test('7B3: PHASE P — Preferences & Privacy are dedicated pages (reference), save works, success modal on save', () => {
+  assert.match(UI, /function prefsPageMarkup\(\)/);
+  assert.match(UI, /function privacyPageMarkup\(\)/);
+  assert.match(UI, /pp-topbar-title">Preferences</);
+  assert.match(UI, /Privacy &amp; Visibility/);
+  assert.match(UI, /What will be visible\?/);
+  assert.match(UI, /data-role="prefs-save"/);
+  assert.match(UI, /data-role="open-privacy-page"/);
+  assert.match(UI, /function successModal\(\)/);
+  assert.match(UI, /Profile updated successfully!/);
+  assert.match(UI, /Your changes have been saved\./);
+  assert.match(UI, /state.showSuccessModal = true/);
+  assert.match(CSS, /\.pp-modal-backdrop/);
+  assert.match(CSS, /\.pp-priv-visible/);
+});
+
+test('7B3: signup → profile automatic (client sends name+mobile+dob+school+college in one canonical write)', () => {
+  // collectProfile carries every signup field; the server full-save accepts mobile
+  assert.match(ACC, /mobile: normalizedMobile\(\)/);
+  assert.match(ACC, /fullName: normalizedName\(\)/);
+  assert.match(ACC, /dob: selectedDob\(\)/);
+  assert.match(ACC, /school: Object\.freeze\(\{ \.\.\.state\.institutionSelection\.school \}\)/);
+  assert.match(ACC, /higherInstitution: state\.institutionSelection\.college/);
+  assert.match(ACC, /api\(pending \? '\/profile\/pending' : '\/profile',/);
+});
+
+test('7B3: Google login seeds empty profile fields only (server, verified data, never overwrites)', () => {
+  const HANDLER = read('auth-native/worker/public-auth-handler.mjs');
+  const PROVIDER = read('auth-native/providers/firebase-auth.mjs');
+  assert.match(HANDLER, /seedGoogleProfile/);
+  assert.match(HANDLER, /isGoogleAvatarUrl/);
+  assert.match(HANDLER, /looksLikeName/);
+  assert.match(HANDLER, /Never overwrites anything the student already set/);
+  assert.match(PROVIDER, /displayName: typeof user\.displayName === 'string'/);
+  assert.match(PROVIDER, /photoUrl: typeof user\.photoUrl === 'string'/);
+  // non-Google avatar URLs are refused (SSRF guard)
+  assert.match(HANDLER, /GOOGLE_AVATAR_HOSTS/);
 });

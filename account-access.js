@@ -1701,6 +1701,10 @@
     sessionState = to;
     if (pageHost) pageHost.dataset.sessionState = to;
     if (to === 'AUTHENTICATED') wasEverAuthenticatedThisTab = true;
+    // Phase 7B3 (AUTH STABLE): every auth state transition is observable,
+    // so auth-dependent UI (Profile) can leave AUTH_LOADING deterministically
+    // instead of guessing. Guest is only ever rendered after the check completes.
+    try { notify(); } catch (_) {}
   };
   const MAX_NETWORK_REFRESH_ATTEMPTS = 2;
   const REFRESH_BACKOFF_MS = Object.freeze([400, 1200]);

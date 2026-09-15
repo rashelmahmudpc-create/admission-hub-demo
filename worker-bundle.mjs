@@ -5786,6 +5786,8 @@ var FirebaseEmailPasswordProvider = class {
       email: user.email,
       emailVerified: user.emailVerified === true,
       disabled: user.disabled === true,
+      displayName: typeof user.displayName === "string" && user.displayName ? user.displayName : null,
+      photoUrl: typeof user.photoUrl === "string" && user.photoUrl ? user.photoUrl : null,
       providers: Object.freeze(providerRows.map((row) => String(row?.providerId || "")).filter(Boolean)),
       googleSubjects: Object.freeze(providerRows.filter((row) => row?.providerId === "google.com" && validSubject2(row?.rawId)).map((row) => String(row.rawId)))
     });
@@ -6122,6 +6124,61 @@ var googleCredential2 = (body) => {
   if (value.length < 20 || value.length > 4096 || /[\r\n\u0000;]/.test(value)) throw new NativeAuthError(AUTH_ERROR_CODES.INVALID_INPUT);
   return Object.freeze(accessToken ? { accessToken } : { idToken });
 };
+var GOOGLE_AVATAR_HOSTS = Object.freeze([".googleusercontent.com"]);
+var isGoogleAvatarUrl = (raw) => {
+  try {
+    const u = new URL(String(raw || ""));
+    if (u.protocol !== "https:") return false;
+    return GOOGLE_AVATAR_HOSTS.some((h) => u.hostname.endsWith(h));
+  } catch {
+    return false;
+  }
+};
+var looksLikeName = (value) => {
+  const v = String(value || "").trim();
+  return v.length >= 2 && v.length <= 80 && /^[\p{L}\p{M} .'-]+$/u.test(v);
+};
+async function seedGoogleProfile(env, context, established, googleUser) {
+  const sessionToken = String(established?.sessionToken || "");
+  const email = String(googleUser?.email || "");
+  const subject = String(googleUser?.subject || "");
+  if (!sessionToken || !email || !subject) return;
+  const input = Object.freeze({ sessionToken, email, subject });
+  let current = null;
+  try {
+    current = await callAuthority(env, "/internal/profile/get-v2", { input, context });
+  } catch {
+    return;
+  }
+  if (!current) return;
+  if (!current.profile?.fullName && looksLikeName(googleUser.displayName)) {
+    try {
+      await callAuthority(env, "/internal/profile/patch", { input: { ...input, fields: { fullName: String(googleUser.displayName).trim() } }, context });
+    } catch {
+    }
+  }
+  if (!current.avatar?.present && isGoogleAvatarUrl(googleUser.photoUrl)) {
+    try {
+      const res = await fetch(String(googleUser.photoUrl), {
+        redirect: "manual",
+        signal: AbortSignal.timeout(12e3),
+        headers: { Accept: "image/*" }
+      });
+      if (!res.ok) return;
+      const buf = Buffer.from(await res.arrayBuffer());
+      if (buf.byteLength > 2 * 1024 * 1024) return;
+      const isJpeg = buf.length > 3 && buf[0] === 255 && buf[1] === 216 && buf[2] === 255;
+      const isPng = buf.length > 8 && buf[0] === 137 && buf[1] === 80 && buf[2] === 78 && buf[3] === 71;
+      const mime = isJpeg ? "image/jpeg" : isPng ? "image/png" : null;
+      if (!mime) return;
+      await callAuthority(env, "/internal/avatar/save", {
+        input: { sessionToken, email, subject, data: buf.toString("base64"), mime },
+        context
+      });
+    } catch {
+    }
+  }
+}
 async function callAuthority(env, path, body, method = "POST") {
   if (!env?.AUTH_AUTHORITY || typeof env.AUTH_AUTHORITY.idFromName !== "function") {
     throw new NativeAuthError(AUTH_ERROR_CODES.NOT_CONFIGURED);
@@ -6834,6 +6891,11 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
             throw new NativeAuthError(AUTH_ERROR_CODES.ACCOUNT_LINK_REQUIRED);
           }
           throw cause;
+        }
+        try {
+          const establishedBody = established?.result || established;
+          await seedGoogleProfile(env, context, establishedBody, user);
+        } catch {
         }
         return authSuccess(request, established, signed.refreshToken, context);
       }
