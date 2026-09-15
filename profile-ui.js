@@ -160,32 +160,37 @@
   /* ---------------- real local study data (honest, never faked) ---------------- */
 
   function localStats() {
-    const out = { ready: false, streak: null, mcqs: null, mocks: null, firstFlash: null, firstMock: null, earned: [] };
+    const out = { ready: false, streak: null, mcqs: null, mocks: null, mastered: null, firstFlash: null, firstMock: null, earned: [] };
     try {
       const cache = window.CACHE;
       const results = Array.isArray(cache?.examResults) ? cache.examResults : [];
-      if (!results.length && typeof window.computeStreak !== 'function') { out.ready = true; out.streak = 0; out.mcqs = 0; out.mocks = 0; return out; }
-      out.ready = true;
-      out.streak = typeof window.computeStreak === 'function' ? (window.computeStreak() || 0) : 0;
-      let mcqs = 0; let mocks = 0;
-      for (const r of results) {
-        const n = Number(r?.questionCount ?? r?.totalQuestions ?? (r?.snapshot || []).length) || 0;
-        mcqs += n;
-        const ts = Number(r?.date) || null;
-        if (r?.mode === 'mock') { mocks += 1; if (ts && (!out.firstMock || ts < out.firstMock)) out.firstMock = ts; }
-        else if (ts && (!out.firstFlash || ts < out.firstFlash)) out.firstFlash = ts;
+      const mistakes = Array.isArray(cache?.mistakes) ? cache.mistakes : [];
+      const bootReady = !window.__admissionBootStatus || window.__admissionBootStatus === 'ready';
+      if (bootReady && (results.length > 0 || typeof window.computeStreak === 'function')) {
+        out.ready = true;
+        out.streak = typeof window.computeStreak === 'function' ? (window.computeStreak() || 0) : 0;
+        let mcqs = 0; let mocks = 0; let mastered = 0;
+        for (const r of results) {
+          const n = Number(r?.questionCount ?? r?.totalQuestions ?? (r?.snapshot || []).length) || 0;
+          mcqs += n;
+          const ts = Number(r?.date) || null;
+          if (r?.mode === 'mock') { mocks += 1; if (ts && (!out.firstMock || ts < out.firstMock)) out.firstMock = ts; }
+          else if (ts && (!out.firstFlash || ts < out.firstFlash)) out.firstFlash = ts;
+        }
+        for (const m of mistakes) if (m && m.mastered === true) mastered += 1;
+        out.mcqs = mcqs; out.mocks = mocks; out.mastered = mastered;
+        out.earned = ACHIEVEMENTS.filter((a) => a.earned({ streak: out.streak, mcqs, mocks, mastered })).map((a) => a.id);
       }
-      out.mcqs = mcqs; out.mocks = mocks;
-      out.earned = ACHIEVEMENTS.filter((a) => a.earned({ streak: out.streak, mcqs, mocks })).map((a) => a.id);
     } catch (_) { /* data unavailable — honest "—" */ }
     return out;
   }
 
+  // Real-data achievements only (no XP, no fake, no rankings we cannot compute).
   const ACHIEVEMENTS = [
     { id: 'first-mock', icon: '📝', name: 'First Mock', hint: 'প্রথম mock test complete করো', earned: (s) => (s.mocks || 0) >= 1 },
     { id: 'mcq-100', icon: '📚', name: '100 MCQs', hint: 'মোট 100টা MCQ complete করো', earned: (s) => (s.mcqs || 0) >= 100 },
     { id: 'streak-7', icon: '🔥', name: '7 Day Streak', hint: '7 দিনের practice streak বানাও', earned: (s) => (s.streak || 0) >= 7 },
-    { id: 'mcq-500', icon: '🏆', name: '500 MCQs', hint: 'মোট 500টা MCQ complete করো', earned: (s) => (s.mcqs || 0) >= 500 }
+    { id: 'mistake-crusher', icon: '🎯', name: 'Mistake Crusher', hint: '5টা mistake master করো', earned: (s) => (s.mastered || 0) >= 5 }
   ];
 
   function journeyMilestones(p, stats) {
@@ -268,21 +273,22 @@
   // half-applied stylesheet must never be able to collapse the identity space
   // (device-cache resilience; values mirror profile-ui.css).
   const CRITICAL_CSS = `
-.pp-wrap{max-width:520px;margin:0 auto;padding:2px 10px 34px}
-.pp-hero{text-align:left;padding:16px 14px 14px;border-radius:20px;margin-bottom:10px;background:linear-gradient(150deg,#0f6b4f 0%,#17845f 55%,#2a9d72 100%);color:#fff}
-.pp-hero-row{display:flex;align-items:center;gap:14px}
-.pp-hero-avatar{position:relative;width:72px;height:72px;flex:none;border-radius:50%;overflow:visible;display:inline-flex;align-items:center;justify-content:center;border:2.5px solid rgba(255,255,255,.85);background:#eef6f1;padding:0;cursor:pointer}
+.pp-wrap{max-width:640px;margin:0 auto;padding:2px 16px 34px}
+.pp-hero{position:relative;overflow:hidden;text-align:left;padding:20px 18px 16px;border-radius:22px;margin-bottom:12px;background:linear-gradient(160deg,#f2fbf6 0%,#e4f6ec 48%,#d5f0e2 100%);color:#0c3b2a;border:1px solid rgba(21,128,61,.14)}
+.pp-hero-wash{position:absolute;right:0;bottom:0;width:100%;height:58%;pointer-events:none}
+.pp-hero-row{position:relative;display:flex;align-items:center;gap:14px}
+.pp-hero-avatar{position:relative;width:72px;height:72px;flex:none;border-radius:50%;overflow:visible;display:inline-flex;align-items:center;justify-content:center;border:3px solid #16a34a;background:#eef6f1;padding:0;cursor:pointer}
 .pp-avatar-img{width:100%;height:100%;object-fit:cover;display:block}
 .pp-avatar-svg{display:block;width:100%;height:100%}
 .pp-avatar-svg svg{width:100%;height:100%;display:block}
 .pp-cam-badge{position:absolute;right:-2px;bottom:-2px;width:24px;height:24px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;font-size:12px}
-.pp-hero-idblock{min-width:0;flex:1}
-.pp-hero-name{font-size:19px;font-weight:800;display:flex;align-items:center;gap:6px}
-.pp-verified{display:inline-flex;width:18px;height:18px;border-radius:50%;background:#7ce0b3;color:#0b5640;font-size:11px;font-weight:800;align-items:center;justify-content:center}
-.pp-hero-chip{display:inline-flex;align-items:center;gap:7px;margin-top:7px;padding:4px 11px;border-radius:999px;background:rgba(255,255,255,.16);border:none;color:#fff;font-size:12.5px;cursor:pointer;width:auto}
-.pp-hero-line{font-size:12.5px;opacity:.92;margin-top:7px;font-weight:600}
-.pp-hero-bio{font-size:12.5px;opacity:.85;margin-top:5px;line-height:1.4}
-.pp-hero-edit{margin:14px auto 0;display:block;width:auto;padding:9px 20px;font-size:13.5px;border-radius:999px;background:#fff;color:#0b5640;border:none;cursor:pointer;font-weight:700}
+.pp-hero-idblock{min-width:0;flex:1;position:relative}
+.pp-hero-name{font-size:19px;font-weight:800;color:#0c3b2a;display:flex;align-items:center;gap:6px}
+.pp-verified{display:inline-flex;width:18px;height:18px;border-radius:50%;background:#16a34a;color:#fff;font-size:11px;font-weight:800;align-items:center;justify-content:center}
+.pp-hero-chip{display:inline-flex;align-items:center;gap:7px;margin-top:8px;padding:4px 11px;border-radius:999px;background:rgba(255,255,255,.85);border:1px solid rgba(22,163,74,.3);color:#0b5640;font-size:12.5px;cursor:pointer;width:auto}
+.pp-hero-line{font-size:12.5px;color:#166534;margin-top:8px;font-weight:650}
+.pp-hero-bio{font-size:12.5px;color:#14532d;opacity:.88;margin-top:5px;line-height:1.45}
+.pp-hero-edit{position:relative;margin:16px auto 0;display:block;width:100%;max-width:320px;padding:12px 20px;font-size:14px;font-weight:750;border-radius:14px;background:linear-gradient(150deg,#16a34a,#15803d);color:#fff;border:none;cursor:pointer}
 .pp-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:0;margin:2px 0 12px;background:#fff;border:1px solid rgba(20,35,29,.1);border-radius:18px;padding:12px 0;cursor:pointer}
 .pp-stat{display:flex;flex-direction:column;align-items:center;gap:2px;text-align:center;min-width:0;padding:0 4px}
 .pp-stat+.pp-stat{border-left:1px solid rgba(20,35,29,.08)}
@@ -293,6 +299,21 @@
 .pp-ring b{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:13.5px;font-weight:800;color:#0b5640}
 .pp-ac-row{display:flex;align-items:center;gap:12px;width:100%;text-align:left;border:none;background:none;font:inherit;color:inherit;padding:10px 6px;cursor:pointer;border-radius:12px}`;
 
+  // Reference hero wash — code-native SVG (soft mountains + graduation cap),
+  // never a raster image.
+  const HERO_WASH = `
+    <svg class="pp-hero-wash" viewBox="0 0 360 190" preserveAspectRatio="xMaxYMax slice" aria-hidden="true" focusable="false">
+      <path d="M0 190 L0 132 C 52 104, 96 96, 142 112 C 188 128, 236 124, 286 100 C 318 86, 342 84, 360 92 L360 190 Z" fill="#16a34a" fill-opacity="0.10"/>
+      <path d="M0 190 L0 156 C 60 138, 118 132, 176 144 C 234 156, 292 150, 360 128 L360 190 Z" fill="#15803d" fill-opacity="0.12"/>
+      <path d="M0 190 L0 176 C 70 164, 150 162, 224 170 C 288 176, 330 174, 360 166 L360 190 Z" fill="#166534" fill-opacity="0.10"/>
+      <g transform="translate(306 58) scale(1.05)" fill="none" stroke="#15803d" stroke-opacity="0.34" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M0 8 L14 2 L28 8 L14 14 Z"/>
+        <path d="M8 11 v7 c 0 2.4 11 2.4 11 0 v-7"/>
+        <line x1="28" y1="8" x2="28" y2="18"/>
+        <circle cx="28" cy="19.4" r="1.3" fill="#15803d" fill-opacity="0.34" stroke="none"/>
+      </g>
+    </svg>`;
+
   function identityCard() {
     const d = state.data || {};
     const p = d.profile || {};
@@ -300,6 +321,7 @@
     return `
       <style>${CRITICAL_CSS}</style>
       <div class="pp-hero" data-profile-contract="profile-identity-v1">
+        ${HERO_WASH}
         <div class="pp-hero-row">
           <button class="pp-hero-avatar" data-role="open-avatar-page" type="button" aria-label="Avatar পরিবর্তন করো">
             ${avatarMarkup()}
@@ -327,7 +349,7 @@
         <b class="pp-stat-num">${value}</b>
         <small>${label}</small>
       </div>`;
-    const v = (x, zero = '0') => (x == null ? '—' : bnNum(x) === '0' && zero === 'zero' ? '0' : bnNum(x));
+    const v = (x) => (x == null || !s.ready ? '—' : bnNum(x));
     return `
       <div class="pp-stats" data-role="go-exam" role="button" tabindex="0" aria-label="Study stats — Exam পেজে যাও">
         ${cell('🔥', v(s.streak), 'Day Streak')}
@@ -335,7 +357,7 @@
         ${cell('📝', v(s.mocks), 'Mock Tests')}
         ${cell('🏆', v(s.earned.length), 'Achievements')}
       </div>
-      ${s.ready && (s.mcqs || 0) === 0 ? '<p class="pp-fine pp-stats-hint">প্রথম practice শেষ করলে stats এখানে জীবন্ত হয়ে উঠবে।</p>' : ''}`;
+      ${s.ready && (s.mcqs || 0) === 0 ? '<p class="pp-fine pp-stats-hint" data-role="stats-note">প্রথম practice শেষ করলে stats এখানে জীবন্ত হয়ে উঠবে।</p>' : ''}`;
   }
 
   function academicCard() {
@@ -350,11 +372,11 @@
       </button>`;
     return `
       <div class="card pp-card pp-academic">
-        <div class="pp-card-head"><span class="pp-card-title">Academic Identity</span><button class="pp-card-edit" data-role="open-target" type="button">Edit</button></div>
-        ${row('🎯', 'TARGET UNIVERSITIES', targets.map((t) => `${t.name}${t.unit ? ` (${t.unit})` : ''}`).join(', ') || 'Add target universities', 'open-target', 'Add target universities')}
-        ${row('📅', 'ADMISSION SESSION', p.admissionSession ? bnYear(p.admissionSession) : 'Not set', 'open-session', 'Session যোগ করো')}
-        ${row('🚀', 'ACADEMIC GOAL', p.academicGoal || 'Set a goal', 'open-goal', 'Set a goal — specific লক্ষ্য')}
-        ${row('🧪', 'PREFERRED SUBJECTS', Array.isArray(p.subjects) && p.subjects.length ? p.subjects.join(', ') : 'Add subjects', 'open-subjects', 'কোন subject পছন্দ?')}
+        <div class="pp-card-head"><span class="pp-card-title">Academic Identity</span><button class="pp-card-edit" data-role="open-academic" type="button">Edit</button></div>
+        ${row('🎯', 'TARGET UNIVERSITIES', targets.map((t) => `${t.name}${t.unit ? ` (${t.unit})` : ''}`).join(', ') || 'Add target universities', 'open-academic', 'Add target universities')}
+        ${row('📅', 'ADMISSION SESSION', p.admissionSession ? bnYear(p.admissionSession) : 'Not set', 'open-academic', 'Session যোগ করো')}
+        ${row('🚀', 'ACADEMIC GOAL', p.academicGoal || 'Set a goal', 'open-academic', 'Set a goal — specific লক্ষ্য')}
+        ${row('🧪', 'PREFERRED SUBJECTS', Array.isArray(p.subjects) && p.subjects.length ? p.subjects.join(', ') : 'Add subjects', 'open-academic', 'কোন subject পছন্দ?')}
       </div>`;
   }
 
@@ -391,6 +413,7 @@
               <small>${esc(a.name)}</small>
             </div>`).join('')}
         </div>
+        ${s.ready && s.earned.length === 0 ? '<p class="pp-ach-empty" data-role="achievements-empty">তোর প্রথম achievement-এর জন্য প্রস্তুত? 🚀 Practice শুরু করলেই আনলক হবে।</p>' : ''}
         <p class="pp-fine">Display-only — real data থেকে unlock হয়, reward/XP নেই।</p>
       </div>`;
   }
@@ -572,89 +595,113 @@
       </div>`;
   }
 
-  function targetSheet() {
+  /* ------- Academic Identity — dedicated edit page (reference panel 3) ------- */
+  function academicDraftInit() {
     const p = state.data?.profile || {};
-    const targets = Array.isArray(p.targets) ? p.targets : [];
-    const canAdd = targets.length < 5;
-    return sheetShell('Target Universities', `
-      <div class="pp-tlist">
-        ${targets.map((t, i) => `
-          <div class="pp-titem">
-            <span><b>${esc(t.name)}</b>${t.unit ? ` · ${esc(t.unit)}` : ''}${t.year ? ` · ${esc(bnYear(t.year))}` : ''}</span>
-            <button class="pp-iconbtn" data-role="sheet-del-target" data-index="${i}" type="button" aria-label="মুছে ফেলো">×</button>
-          </div>`).join('') || '<p class="pp-fine">এখনো কোনো target নেই।</p>'}
+    state.acad = {
+      targets: Array.isArray(p.targets) ? p.targets.filter((t) => t && t.name).map((t) => ({ name: String(t.name), unit: String(t.unit || ''), year: String(t.year || '') })) : [],
+      session: String(p.admissionSession || ''),
+      goal: String(p.academicGoal || ''),
+      subjects: Array.isArray(p.subjects) ? p.subjects.map((x) => String(x)) : []
+    };
+  }
+
+  function academicPageMarkup() {
+    if (!state.acad) academicDraftInit();
+    const d = state.acad;
+    const nowY = new Date().getFullYear();
+    const yearOpts = [];
+    for (let y = nowY - 25; y <= nowY + 10; y += 1) yearOpts.push(`<option value="${y}" ${String(d.session) === String(y) ? 'selected' : ''}>${bnYear(y)} (${y})</option>`);
+    const chip = (label, xrole, extra) => `<span class="pp-chip pp-chip-lg">${label}${extra || ''}<button class="pp-chip-x" data-role="${xrole}" type="button" aria-label="মুছে ফেলো">×</button></span>`;
+    return `
+      <div class="pp-topbar">
+        <button class="pp-iconbtn pp-topbar-back" data-role="acad-back" type="button" aria-label="← Profile">←</button>
+        <h1 class="pp-topbar-title">Academic Identity</h1>
+        <span class="pp-topbar-spacer" aria-hidden="true"></span>
       </div>
-      ${canAdd ? `
-      <div class="pp-add-target">
-        <label class="pp-field"><span>ইউনিভার্সিটি / কলেজ</span>
-          <input id="pp-t-name" type="text" maxlength="120" placeholder="যেমন: Rajshahi University">
-        </label>
-        <div class="pp-2col">
-          <label class="pp-field"><span>Unit <em>(optional)</em></span>
-            <input id="pp-t-unit" type="text" maxlength="20" placeholder="A Unit / CSE">
-          </label>
-          <label class="pp-field"><span>বছর <em>(optional)</em></span>
-            <input id="pp-t-year" type="text" maxlength="10" placeholder="2026">
-          </label>
+      <section class="pp-card pp-acad-sec">
+        <h2>🎯 Target Universities</h2>
+        <div class="pp-acad-chips">
+          ${d.targets.map((t, i) => chip(esc(t.name) + (t.unit ? ` <em>· ${esc(t.unit)}</em>` : ''), 'acad-del-target', ` data-index="${i}"`)).join('') || '<p class="pp-fine">এখনো কোনো target নেই — নিচে যোগ করো।</p>'}
         </div>
-        <button class="pp-btn-secondary" data-role="sheet-add-target" type="button">+ Target যোগ করো</button>
-      </div>` : '<p class="pp-fine">সর্বোচ্চ 5টা target রাখা যায়।</p>'}
-      <p class="pp-fine" data-role="sheet-error" hidden></p>
-      <div class="pp-sheet-actions">
-        <button class="pp-btn-primary" data-role="sheet-save-targets" type="button">সংরক্ষণ করো</button>
-        <button class="pp-btn-ghost" data-role="sheet-close" type="button">বাতিল</button>
-      </div>`);
-  }
-
-  function sessionSheet() {
-    const p = state.data?.profile || {};
-    return sheetShell('Admission Session', `
-      <p class="pp-fine">আসন্ন admission session-এর সাল (যেমন: 2026)।</p>
-      <label class="pp-field"><span>Session year</span>
-        <input id="pp-session-year" type="text" inputmode="numeric" maxlength="4" value="${esc(p.admissionSession || '')}" placeholder="2026">
-      </label>
-      <p class="pp-fine" data-role="sheet-error" hidden></p>
-      <div class="pp-sheet-actions">
-        <button class="pp-btn-primary" data-role="sheet-save-session" type="button">সংরক্ষণ করো</button>
-        ${p.admissionSession ? '<button class="pp-btn-ghost pp-danger" data-role="sheet-clear-session" type="button">মুছে ফেলো</button>' : ''}
-        <button class="pp-btn-ghost" data-role="sheet-close" type="button">বাতিল</button>
-      </div>`);
-  }
-
-  function goalSheet() {
-    const p = state.data?.profile || {};
-    return sheetShell('Academic Goal', `
-      <p class="pp-fine">Specific লক্ষ্য লেখো — public profile-তে (public করলে) দেখাবে।</p>
-      <label class="pp-field"><span>তোমার academic goal <em>(সর্বোচ্চ ১৬০)</em></span>
-        <textarea id="pp-goal-text" rows="3" maxlength="160" placeholder="যেমন: 2026-এ BUET CSE-তে ভর্তি হবো">${esc(p.academicGoal || '')}</textarea>
-      </label>
-      <p class="pp-fine" data-role="sheet-error" hidden></p>
-      <div class="pp-sheet-actions">
-        <button class="pp-btn-primary" data-role="sheet-save-goal" type="button">Goal সেট করো</button>
-        ${p.academicGoal ? '<button class="pp-btn-ghost pp-danger" data-role="sheet-clear-goal" type="button">Goal মুছে ফেলো</button>' : ''}
-        <button class="pp-btn-ghost" data-role="sheet-close" type="button">বাতিল</button>
-      </div>`);
-  }
-
-  function subjectsSheet() {
-    const p = state.data?.profile || {};
-    const subjects = Array.isArray(p.subjects) ? p.subjects : [];
-    return sheetShell('Preferred Subjects', `
-      <div class="pp-chips">
-        ${subjects.map((s) => `<span class="pp-chip">${esc(s)}<button class="pp-chip-x" data-role="sheet-del-subject" data-value="${esc(s)}" type="button" aria-label="মুছে ফেলো">×</button></span>`).join('') || '<p class="pp-fine">এখনো কোনো subject নেই।</p>'}
-      </div>
-      ${subjects.length < 8 ? `
-      <div class="pp-2col">
-        <label class="pp-field"><span>Subject</span>
-          <input id="pp-subject-name" type="text" maxlength="40" placeholder="যেমন: Physics">
+        ${d.targets.length < 5 ? `
+        <div class="pp-acad-addrow">
+          <input id="pp-acad-tname" type="text" maxlength="120" placeholder="ইউনিভার্সিটি / কলেজ" aria-label="Target name">
+          <input id="pp-acad-tunit" type="text" maxlength="20" placeholder="Unit (optional)" aria-label="Unit">
+          <button class="pp-btn-secondary" data-role="acad-add-target" type="button">+ Add</button>
+        </div>` : '<p class="pp-fine">সর্বোচ্চ 5টা target রাখা যায়।</p>'}
+      </section>
+      <section class="pp-card pp-acad-sec">
+        <h2>📅 Admission Session</h2>
+        <label class="pp-field"><span>Session year</span>
+          <div class="pp-select-wrap"><select id="pp-acad-session" aria-label="Admission session year"><option value="">— Select —</option>${yearOpts.join('')}</select><svg aria-hidden="true" viewBox="0 0 12 8"><path d="M1 1.8 6 6.6 11 1.8"/></svg></div>
         </label>
-        <button class="pp-btn-secondary" data-role="sheet-add-subject" type="button">+ যোগ করো</button>
-      </div>` : '<p class="pp-fine">সর্বোচ্চ 8টা subject রাখা যায়।</p>'}
-      <p class="pp-fine" data-role="sheet-error" hidden></p>
-      <div class="pp-sheet-actions">
-        <button class="pp-btn-primary" data-role="sheet-save-subjects" type="button">সংরক্ষণ করো</button>
-        <button class="pp-btn-ghost" data-role="sheet-close" type="button">বাতিল</button>
-      </div>`);
+      </section>
+      <section class="pp-card pp-acad-sec">
+        <h2>🚀 Academic Goal</h2>
+        <label class="pp-field"><span>তোমার goal <em>(সর্বোচ্চ ১৬০)</em></span>
+          <textarea id="pp-acad-goal" rows="3" maxlength="160" placeholder="যেমন: 2026-এ BUET CSE-তে ভর্তি হবো">${esc(d.goal)}</textarea>
+        </label>
+        <p class="pp-fine pp-right"><span data-role="acad-goal-count">${d.goal.length}</span>/160</p>
+      </section>
+      <section class="pp-card pp-acad-sec">
+        <h2>🧪 Preferred Subjects</h2>
+        <div class="pp-acad-chips">
+          ${d.subjects.map((x) => chip(esc(x), 'acad-del-subject', ` data-value="${esc(x)}"`)).join('') || '<p class="pp-fine">এখনো কোনো subject নেই।</p>'}
+        </div>
+        ${d.subjects.length < 8 ? `
+        <div class="pp-acad-addrow">
+          <input id="pp-acad-subject" type="text" maxlength="40" placeholder="যেমন: Physics" aria-label="Subject">
+          <button class="pp-btn-secondary" data-role="acad-add-subject" type="button">+ Add</button>
+        </div>` : '<p class="pp-fine">সর্বোচ্চ 8টা subject রাখা যায়।</p>'}
+      </section>
+      <p class="pp-fine pp-acad-err" data-role="acad-error" hidden></p>
+      <button class="pp-btn-primary pp-acad-save" data-role="acad-save" type="button">Save Changes</button>`;
+  }
+
+  function acadErr(msg) {
+    const el = $('[data-role="acad-error"]');
+    if (el) { el.textContent = msg; el.hidden = false; }
+  }
+
+  // Multi-field save: one PATCH with only the changed fields (single source of truth).
+  function saveAcademicPage() {
+    if (state.busy) return; // double-tap guard
+    const d = state.acad;
+    const p = state.data?.profile || {};
+    const fields = {};
+    const targets = d.targets
+      .filter((t) => t && String(t.name).trim())
+      .slice(0, 5)
+      .map((t) => ({ name: String(t.name).trim().replace(/\s+/g, ' ').slice(0, 120), unit: String(t.unit || '').trim().replace(/\s+/g, ' ').slice(0, 20), year: String(t.year || '').trim().slice(0, 10) }))
+      .filter((t) => t.name.length >= 2);
+    const session = String(d.session || '').trim();
+    const goal = String(d.goal || '').trim();
+    const subjects = d.subjects.map((x) => String(x).trim().replace(/\s+/g, ' ').slice(0, 40)).filter(Boolean).slice(0, 8);
+    const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+    if (!same(targets, Array.isArray(p.targets) ? p.targets.filter((t) => t && t.name) : [])) fields.targets = targets;
+    if (session !== String(p.admissionSession || '')) fields.admissionSession = session;
+    if (goal !== String(p.academicGoal || '')) fields.academicGoal = goal;
+    if (!same(subjects, Array.isArray(p.subjects) ? p.subjects : [])) fields.subjects = subjects;
+    const btn = $('[data-role="acad-save"]');
+    if (Object.keys(fields).length === 0) {
+      if (btn) { btn.disabled = true; btn.classList.add('pp-save-ok'); btn.textContent = '✓ সব already saved'; }
+      toast('কোনো পরিবর্তন নেই।');
+      return;
+    }
+    savePatch(fields, () => {
+      state.view = 'profile';
+      renderProfilePage();
+    });
+  }
+
+  function academicViewMarkup() {
+    return `
+      <div class="pp-wrap">
+        ${academicPageMarkup()}
+        <div data-role="profile-toast" class="pp-toast" aria-live="polite"></div>
+        <div data-role="sheet-host"></div>
+      </div>`;
   }
 
   function journeySheet() {
@@ -745,11 +792,7 @@
     if (!host) return;
     const type = state.sheet;
     state.sheet = null;
-    if (type === 'target') host.innerHTML = targetSheet();
-    else if (type === 'session') host.innerHTML = sessionSheet();
-    else if (type === 'goal') host.innerHTML = goalSheet();
-    else if (type === 'subjects') host.innerHTML = subjectsSheet();
-    else if (type === 'journey') host.innerHTML = journeySheet();
+    if (type === 'journey') host.innerHTML = journeySheet();
     else if (type === 'achv') host.innerHTML = achvSheet();
     else if (type === 'prefs') host.innerHTML = prefsSheet();
     else if (type === 'visibility') host.innerHTML = visibilitySheet();
@@ -911,10 +954,12 @@
       const el = e.target.closest('[data-role]');
       if (!el) return;
       const role = el.dataset.role;
-      if (role === 'open-target') state.sheet = 'target';
-      else if (role === 'open-session') state.sheet = 'session';
-      else if (role === 'open-goal') state.sheet = 'goal';
-      else if (role === 'open-subjects') state.sheet = 'subjects';
+      if (role === 'open-target' || role === 'open-session' || role === 'open-goal' || role === 'open-subjects' || role === 'open-academic') {
+        academicDraftInit();
+        state.view = 'academic';
+        renderCurrentView();
+        return;
+      }
       else if (role === 'open-journey-sheet') state.sheet = 'journey';
       else if (role === 'open-achv-sheet') state.sheet = 'achv';
       else if (role === 'open-prefs-sheet') state.sheet = 'prefs';
@@ -979,65 +1024,42 @@
         savePatch({ visibility: value }, () => { closeSheet(); renderProfilePage(); });
         return;
       }
-      else if (role === 'sheet-add-target') {
-        const list = sheetTargets();
-        const name = $('#pp-t-name')?.value || '';
-        const unit = $('#pp-t-unit')?.value || '';
-        const year = $('#pp-t-year')?.value || '';
-        if (String(name).trim().length < 2) { sheetErr('ইউনিভার্সিটি/কলেজের নাম দাও (কমপক্ষে ২ অক্ষর)।'); return; }
-        list.push({ name, unit, year });
-        state.sheetTargets = list;
-        renderSheet();
+      else if (role === 'acad-back') {
+        state.view = 'profile';
+        renderProfilePage();
         return;
       }
-      else if (role === 'sheet-del-target') {
-        const list = sheetTargets();
-        list.splice(Number(el.dataset.index), 1);
-        state.sheetTargets = list;
-        renderSheet();
+      else if (role === 'acad-add-target') {
+        const d = state.acad;
+        const name = String($('#pp-acad-tname')?.value || '').trim().replace(/\s+/g, ' ');
+        const unit = String($('#pp-acad-tunit')?.value || '').trim().replace(/\s+/g, ' ');
+        if (name.length < 2) { acadErr('ইউনিভার্সিটি/কলেজের নাম দাও (কমপক্ষে ২ অক্ষর)।'); return; }
+        if (unit.length > 20) { acadErr('Unit সর্বোচ্চ ২০ অক্ষর।'); return; }
+        d.targets.push({ name, unit });
+        renderCurrentView();
         return;
       }
-      else if (role === 'sheet-save-targets') {
-        const list = sheetTargets();
-        savePatch({ targets: list }, () => { closeSheet(); renderProfilePage(); });
+      else if (role === 'acad-del-target') {
+        state.acad.targets.splice(Number(el.dataset.index), 1);
+        renderCurrentView();
         return;
       }
-      else if (role === 'sheet-save-session') {
-        const v = String($('#pp-session-year')?.value || '').trim();
-        if (v && !/^(19|20|21)\d{2}$/.test(v)) { sheetErr('সঠিক 4-digit সাল দাও (যেমন: 2026)।'); return; }
-        savePatch({ admissionSession: v }, () => { closeSheet(); renderProfilePage(); });
+      else if (role === 'acad-add-subject') {
+        const d = state.acad;
+        const v = String($('#pp-acad-subject')?.value || '').trim().replace(/\s+/g, ' ');
+        if (!v) { acadErr('Subject-এর নাম দাও।'); return; }
+        if (d.subjects.some((x) => x.toLowerCase() === v.toLowerCase())) { acadErr('Subjectটা আগেই আছে।'); return; }
+        d.subjects.push(v);
+        renderCurrentView();
         return;
       }
-      else if (role === 'sheet-clear-session') {
-        savePatch({ admissionSession: '' }, () => { closeSheet(); renderProfilePage(); });
+      else if (role === 'acad-del-subject') {
+        state.acad.subjects = state.acad.subjects.filter((x) => x !== el.dataset.value);
+        renderCurrentView();
         return;
       }
-      else if (role === 'sheet-save-goal') {
-        const v = String($('#pp-goal-text')?.value || '').trim();
-        savePatch({ academicGoal: v }, () => { closeSheet(); renderProfilePage(); });
-        return;
-      }
-      else if (role === 'sheet-clear-goal') {
-        savePatch({ academicGoal: '' }, () => { closeSheet(); renderProfilePage(); });
-        return;
-      }
-      else if (role === 'sheet-add-subject') {
-        const v = String($('#pp-subject-name')?.value || '').trim();
-        if (!v) { sheetErr('Subject-এর নাম দাও।'); return; }
-        const list = sheetSubjects();
-        if (!list.includes(v)) list.push(v);
-        state.sheetSubjects = list;
-        renderSheet();
-        return;
-      }
-      else if (role === 'sheet-del-subject') {
-        const list = sheetSubjects().filter((s) => s !== el.dataset.value);
-        state.sheetSubjects = list;
-        renderSheet();
-        return;
-      }
-      else if (role === 'sheet-save-subjects') {
-        savePatch({ subjects: sheetSubjects() }, () => { closeSheet(); renderProfilePage(); });
+      else if (role === 'acad-save') {
+        saveAcademicPage();
         return;
       }
       else if (role === 'edit-save') {
@@ -1050,6 +1072,12 @@
     if (bio) bio.addEventListener('input', () => {
       const c = $('[data-role="bio-count"]');
       if (c) c.textContent = `${bio.value.length}/280`;
+    });
+    // academic goal counter (live)
+    const goal = $('#pp-acad-goal');
+    if (goal) goal.addEventListener('input', () => {
+      const c = $('[data-role="acad-goal-count"]');
+      if (c) c.textContent = String(goal.value.length);
     });
   }
 
@@ -1096,42 +1124,90 @@
     savePatch(fields, () => { state.view = 'profile'; renderProfilePage(); });
   }
 
+  // Save button state machine (master prompt §06):
+  // SAVE CHANGES → SAVING… → SUCCESS ✓ (server confirmed) → re-render
+  //                → FAILED → Try Again (with the real reason)
   function savePatch(fields, onDone) {
-    if (state.busy) return;
+    if (state.busy) return; // double-tap guard — এক tap-এ এক request
     state.busy = true;
-    const errEl = $('[data-role="sheet-error"]');
+    const errEl = $('[data-role="sheet-error"]') || $('[data-role="acad-error"]');
     if (errEl) { errEl.hidden = true; errEl.textContent = ''; }
-    const btn = fields && $('button[data-role="edit-save"]');
-    if (btn) { btn.disabled = true; btn.textContent = 'সংরক্ষণ হচ্ছে…'; }
+    const btn = $('button[data-role="edit-save"]') || $('button[data-role="acad-save"]');
+    const failBtn = (msg) => {
+      if (btn) {
+        btn.classList.remove('pp-save-busy', 'pp-save-ok');
+        btn.classList.add('pp-save-fail');
+        btn.disabled = false;
+        btn.textContent = 'Try Again';
+      }
+      if (errEl && msg) { errEl.hidden = false; errEl.textContent = msg; }
+    };
+    if (btn) { btn.classList.remove('pp-save-fail'); btn.classList.add('pp-save-busy'); btn.disabled = true; btn.textContent = 'Saving…'; }
     patch(fields)
-      .then(() => { toast('সংরক্ষিত হয়েছে ✓'); onDone && onDone(); })
+      .then(() => {
+        // Server confirmed — frontend "success" নয়, real persistence এর পর।
+        if (btn) { btn.classList.remove('pp-save-busy'); btn.classList.add('pp-save-ok'); btn.textContent = 'SUCCESS ✓'; }
+        toast('সংরক্ষিত হয়েছে ✓');
+        window.setTimeout(() => { onDone && onDone(); }, 400);
+      })
       .catch((err) => {
         if (err.status === 409) {
-          if (errEl) { errEl.hidden = false; errEl.textContent = 'এই সময়ে অন্য জায়গা থেকে পরিবর্তন হয়েছে — একবার আরেফ্রেশ করে আবার চেষ্টা করো।'; }
+          failBtn('এই সময়ে অন্য জায়গা থেকে পরিবর্তন হয়েছে — latest version load হচ্ছে…');
           return loadProfile().then(renderProfilePage).catch(() => {});
         }
         if (err.status === 429) {
-          if (errEl) { errEl.hidden = false; errEl.textContent = 'একটু দ্রুত বেশি — এক-দু সেকেন্ড পরে আবার চেষ্টা করো।'; }
+          failBtn('একটু দ্রুত বেশি — এক-দু সেকেন্ড পরে আবার চেষ্টা করো।');
           return;
         }
-        if (errEl) { errEl.hidden = false; errEl.textContent = err.message || 'সংরক্ষণ করা যায়নি'; }
+        failBtn(err.message || 'সংরক্ষণ করা যায়নি — আবার চেষ্টা করো।');
       })
       .finally(() => {
         state.busy = false;
-        const b = $('button[data-role="edit-save"]');
-        if (b) { b.disabled = false; b.textContent = 'Save Changes'; }
+        const b = $('button[data-role="edit-save"]') || $('button[data-role="acad-save"]');
+        if (b && b.classList.contains('pp-save-busy')) { b.classList.remove('pp-save-busy'); b.disabled = false; b.textContent = 'Save Changes'; }
       });
   }
 
   /* ---------------- pages ---------------- */
 
+  // Guest art — code-native person + leaves (reference guest card), zero raster.
+  const GUEST_ART = `
+    <svg viewBox="0 0 120 96" aria-hidden="true" focusable="false">
+      <g fill="none" stroke="#16a34a" stroke-opacity="0.55" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="46" cy="34" r="15"/>
+        <path d="M18 82c2.5-17 13-25 28-25s25.5 8 28 25"/>
+      </g>
+      <g fill="none" stroke="#22c55e" stroke-opacity="0.5" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M88 22c10-8 20-8 26-4-2 10-10 16-20 15-3-4-6-8-6-11z"/>
+        <path d="M90 20c6 6 10 12 12 19"/>
+        <path d="M84 70c6-4 14-5 19-2-2 7-8 11-15 10-2-3-4-6-4-8z"/>
+      </g>
+      <circle cx="96" cy="60" r="2.4" fill="#22c55e" fill-opacity="0.4"/>
+      <circle cx="70" cy="14" r="2" fill="#16a34a" fill-opacity="0.35"/>
+      <circle cx="108" cy="44" r="1.8" fill="#22c55e" fill-opacity="0.4"/>
+    </svg>`;
+
   function guestPrompt() {
+    const benefits = [
+      'Goal অনুযায়ী personalized practice',
+      'Weak point-ভিত্তিক smart recommendations',
+      'Progress + achievements এক জায়গায়',
+      'যেকোনো device-এ synced progress',
+      'Admission roadmap + guidance'
+    ];
     return `
-      <div class="card pp-card pp-guest">
-        <div class="pp-guest-ic" aria-hidden="true">🎓</div>
-        <h2>Profile</h2>
-        <p>তোমার personal academic hub দেখতে Sign In করো — নাম, লক্ষ্য, avatar সব এক জায়গায় থাকবে।</p>
-        <button class="pp-btn-primary" data-role="guest-signin" type="button">Sign In / Log In</button>
+      <div class="card pp-card pp-guest" data-guest-contract="guest-profile-v2">
+        <div class="pp-guest-art" aria-hidden="true">${GUEST_ART}</div>
+        <h2>Guest Profile</h2>
+        <p class="pp-guest-sub">Login করলে তোমার সম্পূর্ণ profile unlock হবে — নাম, লক্ষ্য, progress, সব এক জায়গায়।</p>
+        <div class="pp-guest-actions">
+          <button class="pp-btn-primary" data-role="guest-signin" type="button">Login</button>
+          <button class="pp-btn-outline" data-role="guest-create" type="button">Create Account</button>
+        </div>
+        <div class="pp-guest-benefits">
+          <b>With your profile, you can:</b>
+          <ul>${benefits.map((b) => `<li><span aria-hidden="true">✓</span>${b}</li>`).join('')}</ul>
+        </div>
       </div>`;
   }
 
@@ -1174,6 +1250,7 @@
     };
     if (state.view === 'edit') shell(editViewMarkup());
     else if (state.view === 'avatar') shell(avatarViewMarkup());
+    else if (state.view === 'academic') shell(academicViewMarkup());
     else shell(profileViewMarkup());
     bindPageEvents($('#app'));
     const file = $('[data-role="avatar-file"]');
@@ -1197,6 +1274,11 @@
           ${guestPrompt()}
         </div>`, { topbar: false });
       $('[data-role="guest-signin"]')?.addEventListener('click', () => account.open());
+      // Create Account — same honest account flow, deep-linked to the signup step.
+      $('[data-role="guest-create"]')?.addEventListener('click', () => {
+        account.open();
+        window.setTimeout(() => document.querySelector('[data-role="welcome-signup"]')?.click(), 120);
+      });
       return;
     }
     // No loading screen (owner directive): render the identity space

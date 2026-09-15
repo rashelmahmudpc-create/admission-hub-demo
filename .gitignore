@@ -1,3 +1,6 @@
 node_modules/
 .DS_Store
 .wrangler/
+
+# deploy build artifact (local only)
+dist/

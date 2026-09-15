@@ -205,6 +205,12 @@
                 <p class="ah-field-feedback" id="ah-name-feedback" data-role="name-feedback" aria-live="polite"></p>
               </div>
 
+              <div class="ah-account-field ah-personal-mobile-field" data-mobile-signup-contract="signup-mobile-v1">
+                <label class="ah-account-label" for="ah-signup-mobile">Mobile <small style="opacity:.55;font-weight:500">(optional)</small></label>
+                <div class="ah-personal-input-wrap"><span aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><line x1="10.5" y1="18.5" x2="13.5" y2="18.5"/></svg></span><input class="ah-account-input" id="ah-signup-mobile" name="mobile" type="tel" inputmode="tel" autocomplete="tel" maxlength="16" placeholder="+8801XXXXXXXXX" aria-describedby="ah-mobile-feedback"></div>
+                <p class="ah-field-feedback" id="ah-mobile-feedback" data-role="mobile-feedback" aria-live="polite"></p>
+              </div>
+
               <fieldset class="ah-personal-dob-card" data-dob-contract="premium-dropdown-dob-v2">
                 <legend>Date of birth</legend>
                 <div class="ah-dob-selects">
@@ -964,6 +970,7 @@
   };
 
   const normalizedName = () => $('#ah-signup-name')?.value.trim().replace(/\s+/g, ' ') || '';
+  const normalizedMobile = () => $('#ah-signup-mobile')?.value.trim().replace(/[\s()-]/g, '') || '';
   const validName = value => value.length >= 2 && value.length <= 80 && /^[\p{L}\p{M} .'-]+$/u.test(value) && (value.match(/\p{L}/gu) || []).length >= 2;
   const showFieldFeedback = (role, text, kind = '') => {
     const node = $(`[data-role="${role}"]`);
@@ -1007,6 +1014,10 @@
     const name = normalizedName();
     if (!validName(name)) { showFieldFeedback('name-feedback', 'Please enter at least 2 characters.', 'error'); $('#ah-signup-name')?.focus(); return false; }
     showFieldFeedback('name-feedback', '✓ Looks good — your name is set', 'valid');
+    const mobileVal = normalizedMobile();
+    const mobileOk = !mobileVal || /^\+?[0-9]{8,15}$/.test(mobileVal);
+    showFieldFeedback('mobile-feedback', mobileOk ? (mobileVal ? '✓ Mobile saved to profile' : '') : 'Mobile number not valid.', mobileOk ? (mobileVal ? 'valid' : '') : 'error');
+    if (!mobileOk) { $('#ah-signup-mobile')?.focus(); return false; }
     return validateDob();
   };
 
@@ -1096,6 +1107,7 @@
 
   const collectProfile = () => Object.freeze({
     fullName: normalizedName(),
+    mobile: normalizedMobile(),
     dob: selectedDob(),
     school: Object.freeze({ ...state.institutionSelection.school }),
     higherInstitution: state.institutionSelection.college ? Object.freeze({ ...state.institutionSelection.college }) : null

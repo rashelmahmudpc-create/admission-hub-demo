@@ -212,12 +212,17 @@ export function normalizeOnboardingProfile(value = {}, now = Date.now()) {
   if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day || age < 8 || age > 80) {
     failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
   }
+  // Phase 7B2 — signup now collects mobile too (single source of truth:
+  // signup data must appear in the Profile without a second entry).
+  const mobile = String(value.mobile || '').replace(/[\s()-]/g, '');
+  if (mobile && !/^\+?[0-9]{8,15}$/.test(mobile)) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
   return Object.freeze({
     version: 1,
     fullName,
     dob,
     school: onboardingInstitution(value.school, true),
-    higherInstitution: onboardingInstitution(value.higherInstitution, false)
+    higherInstitution: onboardingInstitution(value.higherInstitution, false),
+    mobile: mobile || ''
   });
 }
 

@@ -104,13 +104,13 @@ test('index.html: Profile tab (6th) wired into bottom nav + router', () => {
 });
 
 test('index.html: profile assets linked with versions', () => {
-  assert.match(HTML, /<link rel="stylesheet" href="\.\/profile-ui\.css\?v=profile-v5">/);
-  assert.match(HTML, /<script defer src="\.\/profile-ui\.js\?v=profile-v5"><\/script>/);
+  assert.match(HTML, /<link rel="stylesheet" href="\.\/profile-ui\.css\?v=profile-v6">/);
+  assert.match(HTML, /<script defer src="\.\/profile-ui\.js\?v=profile-v6"><\/script>/);
 });
 
 test('sw.js caches the profile assets', () => {
-  assert.match(SW, /'\.\/profile-ui\.js\?v=profile-v5',/);
-  assert.match(SW, /'\.\/profile-ui\.css\?v=profile-v5',/);
+  assert.match(SW, /'\.\/profile-ui\.js\?v=profile-v6',/);
+  assert.match(SW, /'\.\/profile-ui\.css\?v=profile-v6',/);
 });
 
 test('_redirects serves /AH-* to the SPA', () => {
@@ -173,12 +173,22 @@ test('V2: stats strip reads real local study data (never faked)', () => {
   assert.match(UI, /'—'/);
 });
 
-test('V2: academic identity persists multi-targets + session + goal + subjects through PATCH', () => {
-  assert.match(UI, /sheet-save-targets/);
-  assert.match(UI, /admissionSession/);
-  assert.match(UI, /academicGoal/);
-  assert.match(UI, /sheet-save-subjects/);
-  assert.match(UI, /\{ targets: list \}/);
+test('V2: Academic Identity — dedicated edit page, multi-field save in one PATCH', () => {
+  assert.match(UI, /acad-save/);
+  assert.match(UI, /acad-add-target/);
+  assert.match(UI, /acad-del-target/);
+  assert.match(UI, /acad-add-subject/);
+  assert.match(UI, /acad-del-subject/);
+  assert.match(UI, /pp-acad-session/);
+  assert.match(UI, /pp-acad-goal/);
+  assert.match(UI, /saveAcademicPage/);
+  assert.match(UI, /academicDraftInit/);
+  assert.match(UI, /open-academic/);
+  // only-changed-fields single PATCH — single source of truth
+  assert.match(UI, /fields\.targets = targets/);
+  assert.match(UI, /fields\.admissionSession = session/);
+  assert.match(UI, /fields\.academicGoal = goal/);
+  assert.match(UI, /fields\.subjects = subjects/);
 });
 
 test('V2: journey + achievements are honest (display-only, no XP, no fake unlock)', () => {
@@ -250,4 +260,97 @@ test('floating account launcher removed; Profile tab is the single account entry
   assert.match(UI, /acct\.open\(\)/);
   // guests still get a Sign In path
   assert.match(UI, /data-role="guest-signin"/);
+});
+
+/* ------------------------------------------------------------------ */
+/* Profile V2 STRICT REBUILD (master prompt) — acceptance tests        */
+/* ------------------------------------------------------------------ */
+
+const INDEX = read('index.html');
+const ACC = read('account-access.js');
+const ENGINE = read('auth-native/core/auth-engine.mjs');
+
+test('7B2: hero is the LIGHT reference design (dark text on mint, code-native wash, emerald edit button)', () => {
+  assert.match(CSS, /\.pp-hero \{[^}]*background: linear-gradient\(160deg, #f2fbf6/);
+  assert.match(CSS, /\.pp-hero \{[^}]*color: #0c3b2a/);
+  assert.match(CSS, /\.pp-hero-edit \{[^}]*background: linear-gradient\(150deg, #16a34a, #15803d\); color: #fff/);
+  assert.match(CSS, /\.pp-hero-avatar \{[^}]*border: 3px solid #16a34a/);
+  // dark-emerald hero gradient is gone
+  assert.doesNotMatch(CSS, /#0f6b4f 0%, #17845f 55%/);
+  // hero wash is code-native SVG (no raster)
+  assert.match(UI, /HERO_WASH/);
+  assert.match(UI, /<svg class="pp-hero-wash"/);
+  assert.doesNotMatch(UI, /pp-hero[^\n]*<img/);
+});
+
+test('7B2: guest profile — no fake identity, Login + Create Account + benefits checklist', () => {
+  assert.match(UI, /data-guest-contract="guest-profile-v2"/);
+  assert.match(UI, /Guest Profile/);
+  assert.match(UI, /data-role="guest-signin"[^>]*>Login</);
+  assert.match(UI, /data-role="guest-create"[^>]*>Create Account</);
+  assert.match(UI, /With your profile, you can:/);
+  const benefits = UI.match(/pp-guest-benefits[\s\S]{0,400}?<ul>/);
+  assert.ok(benefits, 'benefits list present');
+  const list = UI.slice(UI.indexOf('const benefits = ['), UI.indexOf('];', UI.indexOf('const benefits = [')));
+  assert.match(list, /personalized practice/);
+  assert.match(list, /recommendations/);
+  assert.match(list, /Admission roadmap/);
+  // zero fake data: no demo names/avatars/stats anywhere in the profile layer
+  for (const hay of [UI, CSS, INDEX]) {
+    assert.doesNotMatch(hay, /Rasel Ahmed/);
+    assert.doesNotMatch(hay, /12\+ streak/i);
+    assert.doesNotMatch(hay, /245 MCQ/i);
+  }
+});
+
+test('7B2: save button state machine — SAVE → SAVING… → SUCCESS ✓ / FAILED → Try Again, double-tap guard', () => {
+  assert.match(UI, /SAVE CHANGES → SAVING… → SUCCESS/);
+  assert.match(UI, /btn.textContent = 'Saving…'/);
+  assert.match(UI, /btn.textContent = 'SUCCESS ✓'/);
+  assert.match(UI, /btn.textContent = 'Try Again'/);
+  assert.match(UI, /if \(state\.busy\) return; \/\/ double-tap guard/);
+  assert.match(CSS, /\.pp-save-busy/);
+  assert.match(CSS, /\.pp-save-ok/);
+  assert.match(CSS, /\.pp-save-fail/);
+});
+
+test('7B2: Academic Identity is a dedicated edit page (targets/session/goal/subjects + single Save Changes)', () => {
+  assert.match(UI, /function academicPageMarkup/);
+  assert.match(UI, /pp-acad-sec/);
+  assert.match(UI, /Target Universities/);
+  assert.match(UI, /Admission Session/);
+  assert.match(UI, /Academic Goal/);
+  assert.match(UI, /Preferred Subjects/);
+  assert.match(UI, /data-role="acad-save"[^>]*>Save Changes</);
+  assert.match(CSS, /\.pp-acad-sec \{ padding: 16px/);
+});
+
+test('7B2: 16px content padding + app-like scrolling without visible scrollbars', () => {
+  assert.match(CSS, /\.pp-wrap \{ position: relative; padding: 2px 16px 34px/);
+  assert.match(UI, /\.pp-wrap\{max-width:640px;margin:0 auto;padding:2px 16px 34px\}/);
+  assert.match(INDEX, /scrollbar-width:none/);
+  assert.match(INDEX, /::-webkit-scrollbar\{width:0;height:0;display:none;\}/);
+});
+
+test('7B2: achievements are real-data only (incl. Mistake Crusher from mastered mistakes) + honest empty state', () => {
+  assert.match(UI, /mistake-crusher/);
+  assert.match(UI, /m\.mastered === true/);
+  assert.match(UI, /data-role="achievements-empty"/);
+  assert.match(UI, /প্রথম achievement-এর জন্য প্রস্তুত/);
+  assert.doesNotMatch(UI, /Top 10%/); // rankings we cannot compute are never faked
+});
+
+test('7B2: stats show real 0s once data is ready (never stale "—" after boot)', () => {
+  assert.match(UI, /__admissionBootStatus/);
+  assert.match(UI, /x == null \|\| !s\.ready/);
+  assert.match(UI, /data-role="stats-note"/);
+});
+
+test('7B2: signup collects mobile and the server full-save accepts it (one source of truth)', () => {
+  assert.match(ACC, /id="ah-signup-mobile"/);
+  assert.match(ACC, /const normalizedMobile = /);
+  assert.match(ACC, /mobile: normalizedMobile\(\)/);
+  assert.match(ACC, /data-role="mobile-feedback"/);
+  assert.match(ENGINE, /mobile: mobile \|\| ''/);
+  assert.ok(ENGINE.includes('mobile && !/^\\+?[0-9]{8,15}$/.test(mobile)'), 'server mobile validation');
 });

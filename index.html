@@ -147,6 +147,9 @@ body{
 }
 input,textarea,[contenteditable]{-webkit-user-select:text; user-select:text;}
 button{font-family:inherit;}
+/* App-like scrolling: functional scroll, no visible scrollbars (master prompt §30) */
+html,body,#app,.setup-scroll,#examScrollContainer{scrollbar-width:none;-ms-overflow-style:none;}
+html::-webkit-scrollbar,body::-webkit-scrollbar,#app::-webkit-scrollbar,.setup-scroll::-webkit-scrollbar,#examScrollContainer::-webkit-scrollbar{width:0;height:0;display:none;}
 #app{max-width:560px; margin:0 auto; min-height:100%; padding-bottom:calc(82px + var(--safe-b)); overflow-x:hidden;}
 #app.no-nav{padding-bottom:calc(24px + var(--safe-b));}
 /* Keep navigation outside the scrolling app content and locked to the viewport bottom. */
@@ -632,8 +635,8 @@ textarea{min-height:96px}
 })();
 </script>
 <script src="./session-persist.js?v=session-v1"></script>
-<link rel="stylesheet" href="./account-access.css?v=20260916-account-entry-v2">
-<link rel="stylesheet" href="./profile-ui.css?v=profile-v5">
+<link rel="stylesheet" href="./account-access.css?v=20260916-account-entry-v3">
+<link rel="stylesheet" href="./profile-ui.css?v=profile-v6">
 <!-- Signup/Onboarding Assistant বন্ধ; মূল অ্যাপের account-aware AI Assistant চালু আছে। -->
 <style id="ah-boot-min">.ah-boot{width:100%;min-height:100dvh;display:grid;place-content:center;justify-items:center;gap:9px;color:#17221d;background:#f1faf6}.ah-boot-mark{display:grid;place-items:center;width:56px;height:56px;border-radius:17px;background:#0f6b4f;color:#fff;font-size:26px;box-shadow:0 12px 28px rgba(15,107,79,.30)}.ah-boot b{font-size:19px;font-weight:800;letter-spacing:.01em}.ah-boot i{font-style:normal;font-size:12px;color:#5e7168;animation:ahBootPulse 1.15s ease-in-out infinite}@keyframes ahBootPulse{0%,100%{opacity:.55}50%{opacity:1}}@media(prefers-reduced-motion:reduce){.ah-boot i{animation:none}}</style>
 </head>
@@ -643,7 +646,7 @@ textarea{min-height:96px}
 <div id="toast" class="toast"></div>
 <div id="modalRoot"></div>
 <script defer src="./institutions-bd.js?v=bd-institutions-v1"></script>
-<script defer src="./account-access.js?v=20260916-account-entry-v2"></script>
+<script defer src="./account-access.js?v=20260916-account-entry-v3"></script>
 <script>
 (function installAdmissionSafety(){
   'use strict';
@@ -4753,15 +4756,15 @@ window.__admissionBootPromise.catch(error => console.error('[Admission Hub] boot
     // Do not reload on controllerchange: iOS standalone clients can enter a blank-screen reload loop.
     // The updated worker takes control now; the current document remains usable and the next launch uses the new shell.
     try{
-      const expectedSwVersion = 'v258-profile-v2-20260916';
+      const expectedSwVersion = 'v259-profile-v6-20260916';
       // register() on the same scope performs an in-place update. Never unregister
       // the active iOS worker first: that discards the instant offline shell.
-      const registration=await navigator.serviceWorker.register('./sw.js?v=v258-profile-v2-20260916',{scope:'./',updateViaCache:'none'});
+      const registration=await navigator.serviceWorker.register('./sw.js?v=v259-profile-v6-20260916',{scope:'./',updateViaCache:'none'});
       await registration.update().catch(()=>{});
       // Purge every old app-shell cache (any build id ≠ current). This guarantees
       // stale pre-retirement application shells can never be served from cache again.
       try {
-        const cur = 'admission-hub-shell-v258-profile-v2-20260916';
+        const cur = 'admission-hub-shell-v259-profile-v6-20260916';
         const names = await caches.keys();
         for (const name of names) {
           if (name.startsWith('admission-hub-shell-') && name !== cur) await caches.delete(name).catch(()=>{});
@@ -4896,7 +4899,7 @@ window.__admissionBootPromise.catch(error => console.error('[Admission Hub] boot
 </script>
 <!-- First-interaction modules execute before optional/heavy tools. -->
 <script defer src="./dashboard-v2.js?v=dash2f11-profile-tap"></script>
-<script defer src="./profile-ui.js?v=profile-v5"></script>
+<script defer src="./profile-ui.js?v=profile-v6"></script>
 <script defer src="./ai-agent-chat.js?v=agent-f1-ui-chatv15-identity"></script>
 <script defer src="qbank-redesign.js?v=practice15"></script>
 <script defer src="urgent-fix.js?v=practice13"></script>

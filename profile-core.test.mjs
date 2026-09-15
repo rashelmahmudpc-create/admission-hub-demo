@@ -152,6 +152,50 @@ test('sqlite: onboarding accounts (profile already saved) are NOT re-provisioned
   assert.equal(result.completion, 30); // V2 weights: name 15 + dob 10 + school 5
 });
 
+test('Phase 7B2: SIGNUP continuity — name+mobile+dob+school+college saved at signup appear in Profile and survive logout/login', async () => {
+  const state = makeState();
+  const email = 'newstudent@example.com';
+  const subject = 'sub-new-student';
+  const session = await login(state, email, subject);
+  // The exact shape the signup flow sends (account-access collectProfile):
+  await state.engine.saveProfile({
+    sessionToken: session.sessionToken, email, subject,
+    profile: {
+      fullName: 'Nadia Akter',
+      mobile: '+8801712345678',
+      dob: '2007-11-03',
+      school: { id: 'manual', name: 'Model High School', district: "Cox's Bazar" },
+      higherInstitution: { id: 'manual', name: 'City College', district: 'Chittagong' }
+    }
+  }, state.context);
+  // PROFILE LOAD — same data, no re-entry
+  const first = await state.engine.getProfileV2(profileInput(session, email, subject), state.context);
+  assert.equal(first.profile.fullName, 'Nadia Akter');
+  assert.equal(first.profile.mobile, '+8801712345678');
+  assert.equal(first.profile.dob, '2007-11-03');
+  assert.equal(first.profile.school.name, 'Model High School');
+  assert.equal(first.profile.higherInstitution.name, 'City College');
+  // RELOAD / LOGOUT-LOGIN survival — the data lives in the server, not the UI
+  const session2 = await login(state, email, subject);
+  const second = await state.engine.getProfileV2(profileInput(session2, email, subject), state.context);
+  assert.equal(second.profile.fullName, 'Nadia Akter');
+  assert.equal(second.profile.mobile, '+8801712345678');
+  assert.equal(second.profile.dob, '2007-11-03');
+  assert.equal(second.profile.school.name, 'Model High School');
+  assert.equal(second.profile.higherInstitution.district, 'Chittagong');
+});
+
+test('Phase 7B2: legacy blank profile stays honestly blank (no fake data injection)', async () => {
+  const state = makeState();
+  const email = 'legacy@example.com';
+  const subject = 'sub-legacy';
+  const session = await login(state, email, subject);
+  const result = await state.engine.getProfileV2(profileInput(session, email, subject), state.context);
+  assert.ok(!result.profile.fullName); // provisioned empty row — nothing invented
+  assert.ok(!result.profile.mobile);
+  assert.ok(result.completion < 100);
+});
+
 // ---------------------------------------------------------------------------
 // 2 — Public ID (blueprint §14: unique, permanent, non-sensitive, display-only)
 // ---------------------------------------------------------------------------

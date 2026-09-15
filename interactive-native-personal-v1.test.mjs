@@ -9,8 +9,8 @@ const HTML = read('index.html');
 const SW = read('sw.js');
 const RELEASE = read('.github/workflows/telegram-auth-canary-activate.yml');
 const BUNDLE_GUARD = read('.github/workflows/cf-pages.yml');
-const UI_VERSION = '20260916-account-entry-v2';
-const SHELL_VERSION = 'v258-profile-v2-20260916';
+const UI_VERSION = '20260916-account-entry-v3';
+const SHELL_VERSION = 'v259-profile-v6-20260916';
 
 const signupStart = JS.indexOf('<form class="ah-account-view ah-signup-view"');
 const signupEnd = JS.indexOf('<div class="ah-account-view ah-created-view"', signupStart);
@@ -64,7 +64,7 @@ test('name and all DOB selectors stay combined on Personal without collecting Em
   assert.doesNotMatch(personal, /id="ah-signup-email"/);
   assert.match(security, /id="ah-signup-email"/);
   assert.match(JS, /const order = \['personal', 'school', 'college', 'security'\]/);
-  assert.match(JS, /const validatePersonal = \(\) => \{[\s\S]{0,500}return validateDob\(\)/);
+  assert.match(JS, /const validatePersonal = \(\) => \{[\s\S]{0,700}return validateDob\(\)/);
   assert.match(JS, /const validateSecurity = \(\) => \{[\s\S]{0,350}সঠিক Email address/);
 });
 

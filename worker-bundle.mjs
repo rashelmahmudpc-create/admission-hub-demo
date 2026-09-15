@@ -4165,12 +4165,15 @@ function normalizeOnboardingProfile(value = {}, now = Date.now()) {
   if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day || age < 8 || age > 80) {
     failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
   }
+  const mobile = String(value.mobile || "").replace(/[\s()-]/g, "");
+  if (mobile && !/^\+?[0-9]{8,15}$/.test(mobile)) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
   return Object.freeze({
     version: 1,
     fullName,
     dob,
     school: onboardingInstitution(value.school, true),
-    higherInstitution: onboardingInstitution(value.higherInstitution, false)
+    higherInstitution: onboardingInstitution(value.higherInstitution, false),
+    mobile: mobile || ""
   });
 }
 var validChallengeId = (value) => {
@@ -4186,17 +4189,6 @@ var AVATAR_MIME_MAGIC = Object.freeze({
 var WEBP_MAGIC_OFFSET8 = 1346520407;
 var AVATAR_MAX_BYTES = 2 * 1024 * 1024;
 var AVATAR_MIN_BYTES = 64;
-// Calendar year from a stored timestamp (ms epoch, s epoch, or YYYYMMDD
-// compact date). The old raw-slice produced fake "1789"-style years.
-function joinedYearOf(ts) {
-  const t = Number(ts);
-  if (!Number.isFinite(t) || t <= 0) return null;
-  if (t >= 10000000 && t <= 99999999) return Math.floor(t / 10000); // YYYYMMDD
-  const ms = t < 1e12 ? t * 1000 : t;
-  const y = new Date(ms).getFullYear();
-  return y >= 1990 && y <= 2100 ? y : null;
-}
-
 function normalizeProfilePatch(value = {}) {
   if (!value || typeof value !== "object" || Array.isArray(value)) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
   const fields = /* @__PURE__ */ Object.create(null);
@@ -4232,6 +4224,48 @@ function normalizeProfilePatch(value = {}) {
     } else if (key === "visibility") {
       if (!["private", "limited", "public"].includes(raw)) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
       fields.visibility = raw;
+    } else if (key === "admissionSession") {
+      const v = cleanProfileText(raw, 4);
+      if (v && !/^(19|20|21)\d{2}$/.test(v)) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+      fields.admissionSession = v;
+    } else if (key === "academicGoal") {
+      const v = cleanProfileText(raw, 160);
+      if (v.length > 160 || /[\r\n\u0000<>]/.test(v)) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+      fields.academicGoal = v;
+    } else if (key === "subjects") {
+      if (raw === null) {
+        fields.subjects = [];
+        continue;
+      }
+      if (!Array.isArray(raw)) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+      if (raw.length > 8) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+      const list = [];
+      for (const item of raw) {
+        const sv = cleanProfileText(item, 40);
+        if (!sv || /[\r\n\u0000<>]/.test(sv)) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+        if (!list.includes(sv)) list.push(sv);
+      }
+      if (list.length > 8) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+      fields.subjects = list;
+    } else if (key === "targets") {
+      if (raw === null) {
+        fields.targets = [];
+        continue;
+      }
+      if (!Array.isArray(raw)) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+      if (raw.length > 5) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+      const list = [];
+      for (const t of raw) {
+        if (!t || typeof t !== "object" || Array.isArray(t)) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+        const name = cleanProfileText(t.name, 120);
+        const unit = cleanProfileText(t.unit, 20);
+        const year = cleanProfileText(t.year, 10);
+        if (name.length < 2 || name.length > 120 || unit.length > 20 || year.length > 10 || /[\r\n\u0000<>]/.test(name) || /[\r\n\u0000<>]/.test(unit) || /[\r\n\u0000<>]/.test(year)) {
+          failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+        }
+        list.push(Object.freeze({ name, unit, year }));
+      }
+      fields.targets = list;
     } else {
       failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
     }
@@ -7984,6 +8018,14 @@ function summarizeIdentityHealth(result) {
 // auth-native/storage/sqlite-auth-repository.mjs
 var DAY_MS = 24 * 60 * 60 * 1e3;
 var EVENT_RETENTION_MS = 90 * DAY_MS;
+function joinedYearOf(ts) {
+  const t = Number(ts);
+  if (!Number.isFinite(t) || t <= 0) return null;
+  if (t >= 1e7 && t <= 99999999) return Math.floor(t / 1e4);
+  const ms = t < 1e12 ? t * 1e3 : t;
+  const y = new Date(ms).getFullYear();
+  return y >= 1990 && y <= 2100 ? y : null;
+}
 var SqliteAuthRepository = class _SqliteAuthRepository {
   constructor(storage) {
     if (!storage?.sql || typeof storage.sql.exec !== "function") throw new TypeError("SQLite Durable Object storage is required.");
@@ -8649,7 +8691,6 @@ var SqliteAuthRepository = class _SqliteAuthRepository {
       return [];
     }
   }
-
   #profileForUser(userId) {
     const row = this.#one(
       `SELECT profile_version AS version,full_name AS fullName,date_of_birth AS dob,
@@ -9144,9 +9185,6 @@ var SqliteAuthRepository = class _SqliteAuthRepository {
   #profileCompletion(profile, { avatarPresent = false } = {}) {
     if (!profile) return 0;
     let score = 0;
-    // Phase 7B (V2, owner-approved weights; sums to 100):
-    // name 15 · dob 10 · mobile 10 · school 5 · higher 5 · targets 15 ·
-    // session 5 · subjects 10 · goal 15 · bio 5 · avatar 10
     if (profile.fullName && profile.fullName.length >= 2) score += 15;
     if (/^\d{4}-\d{2}-\d{2}$/.test(String(profile.dob || ""))) score += 10;
     if (profile.mobile) score += 10;
@@ -9228,11 +9266,7 @@ var SqliteAuthRepository = class _SqliteAuthRepository {
       visibility
     };
     if (visibility !== "public") return { profile: base, subjectRef: row.subjectRef || null };
-    // Phase 7B (V2, owner-approved allowlist): public = all targets +
-    // admission session + academic goal + joined year + bio + completion.
-    // Never: email, mobile, DOB, school/higher details, subjects, progress.
-    const targets = this.#parseTargets(row.targets).slice(0, 5)
-      .map((t) => Object.freeze({ name: t.name, unit: t.unit || "", year: t.year || "" }));
+    const targets = this.#parseTargets(row.targets).slice(0, 5).map((t) => Object.freeze({ name: t.name, unit: t.unit || "", year: t.year || "" }));
     const target = targets[0] || null;
     return {
       profile: {

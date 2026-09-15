@@ -14,7 +14,7 @@
   --pp-line: rgba(20, 35, 29, 0.10);
 }
 
-.pp-wrap { max-width: 520px; margin: 0 auto; padding: 2px 10px 34px; }
+.pp-wrap { position: relative; padding: 2px 16px 34px; max-width: 640px; margin: 0 auto; }
 .pp-head { display: flex; align-items: flex-start; justify-content: space-between; margin: 18px 2px 16px; }
 .pp-head h1 { font-size: 24px; margin: 0 0 2px; }
 .pp-head .muted { font-size: 12.5px; }
@@ -36,21 +36,24 @@
 .pp-card-edit:active { opacity: 0.8; }
 
 /* ---------------- identity hero (compact, left-aligned) ---------------- */
-.pp-hero { text-align: left; padding: 18px 16px 16px; border-radius: 20px; margin-bottom: 10px; background: linear-gradient(150deg, #0f6b4f 0%, #17845f 55%, #2a9d72 100%); color: #fff; box-shadow: 0 2px 8px rgba(15, 107, 79, 0.18); }
-.pp-hero-row { display: flex; align-items: center; gap: 14px; }
-.pp-hero-avatar { position: relative; width: 72px; height: 72px; flex: none; border-radius: 50%; overflow: visible; display: inline-flex; align-items: center; justify-content: center; border: 2.5px solid rgba(255, 255, 255, 0.85); background: #eef6f1; padding: 0; cursor: pointer; box-shadow: 0 4px 14px rgba(8, 40, 30, 0.25); }
-.pp-cam-badge { position: absolute; right: -2px; bottom: -2px; width: 24px; height: 24px; border-radius: 50%; background: #fff; border: 1.5px solid rgba(15, 107, 79, 0.25); display: flex; align-items: center; justify-content: center; font-size: 12px; }
-.pp-hero-idblock { min-width: 0; flex: 1; }
-.pp-hero-name { font-size: 19px; font-weight: 800; display: flex; align-items: center; gap: 6px; }
-.pp-verified { display: inline-flex; width: 18px; height: 18px; border-radius: 50%; background: #7ce0b3; color: #0b5640; font-size: 11px; font-weight: 800; align-items: center; justify-content: center; flex: none; }
-.pp-hero-chip { display: inline-flex; align-items: center; gap: 7px; margin-top: 7px; padding: 4px 11px; border-radius: 999px; background: rgba(255, 255, 255, 0.16); border: none; color: #fff; font-size: 12.5px; cursor: pointer; }
-.pp-hero-chip span { font-size: 9.5px; font-weight: 700; letter-spacing: 1px; opacity: 0.75; }
-.pp-hero-chip b { font-weight: 700; letter-spacing: 0.5px; }
-.pp-hero-chip i { font-style: normal; font-size: 11px; opacity: 0.8; }
-.pp-hero-line { font-size: 12.5px; opacity: 0.92; margin-top: 7px; font-weight: 600; }
-.pp-hero-bio { font-size: 12.5px; opacity: 0.85; margin-top: 5px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.pp-hero-edit { margin: 14px auto 0; display: block; width: auto; padding: 9px 20px; font-size: 13.5px; border-radius: 999px; background: #fff; color: var(--pp-emerald-deep); }
-.pp-greeting { font-size: 13px; text-align: center; opacity: 0.75; margin: 2px 0 14px; }
+/* Reference hero — LIGHT mint card, dark text, emerald accents, SVG mountain wash */
+.pp-hero { position: relative; overflow: hidden; text-align: left; padding: 20px 18px 16px; border-radius: 22px; margin-bottom: 12px; background: linear-gradient(160deg, #f2fbf6 0%, #e4f6ec 48%, #d5f0e2 100%); color: #0c3b2a; border: 1px solid rgba(21, 128, 61, 0.14); box-shadow: 0 2px 10px rgba(15, 107, 79, 0.08); }
+.pp-hero-wash { position: absolute; right: 0; bottom: 0; width: 100%; height: 58%; pointer-events: none; }
+.pp-hero-row { position: relative; display: flex; align-items: center; gap: 14px; }
+.pp-hero-avatar { position: relative; width: 72px; height: 72px; flex: none; border-radius: 50%; overflow: visible; display: inline-flex; align-items: center; justify-content: center; border: 3px solid #16a34a; background: #eef6f1; padding: 0; cursor: pointer; box-shadow: 0 0 0 3px #f2fbf6, 0 4px 14px rgba(8, 40, 30, 0.18); }
+.pp-cam-badge { position: absolute; right: -2px; bottom: -2px; width: 24px; height: 24px; border-radius: 50%; background: #fff; border: 1.5px solid rgba(22, 163, 74, 0.4); display: flex; align-items: center; justify-content: center; font-size: 12px; }
+.pp-hero-idblock { min-width: 0; flex: 1; position: relative; }
+.pp-hero-name { font-size: 19px; font-weight: 800; color: #0c3b2a; display: flex; align-items: center; gap: 6px; }
+.pp-verified { display: inline-flex; width: 18px; height: 18px; border-radius: 50%; background: #16a34a; color: #fff; font-size: 11px; font-weight: 800; align-items: center; justify-content: center; flex: none; }
+.pp-hero-chip { display: inline-flex; align-items: center; gap: 7px; margin-top: 8px; padding: 4px 11px; border-radius: 999px; background: rgba(255, 255, 255, 0.85); border: 1px solid rgba(22, 163, 74, 0.3); color: #0b5640; font-size: 12.5px; cursor: pointer; }
+.pp-hero-chip span { font-size: 9.5px; font-weight: 700; letter-spacing: 1px; color: #15803d; }
+.pp-hero-chip b { font-weight: 700; letter-spacing: 0.5px; color: #0c3b2a; }
+.pp-hero-chip i { font-style: normal; font-size: 11px; color: #15803d; }
+.pp-hero-line { font-size: 12.5px; color: #166534; margin-top: 8px; font-weight: 650; }
+.pp-hero-bio { font-size: 12.5px; color: #14532d; opacity: 0.88; margin-top: 5px; line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.pp-hero-edit { position: relative; margin: 16px auto 0; display: block; width: 100%; max-width: 320px; padding: 12px 20px; font-size: 14px; font-weight: 750; border-radius: 14px; background: linear-gradient(150deg, #16a34a, #15803d); color: #fff; box-shadow: 0 6px 16px rgba(21, 128, 61, 0.28); }
+.pp-hero-edit:active { transform: scale(0.985); }
+.pp-greeting { font-size: 13px; text-align: center; color: #4b7a63; margin: 2px 0 14px; }
 
 /* ---------------- stats strip (real data only) ---------------- */
 .pp-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; margin: 2px 0 12px; background: #fff; border: 1px solid var(--pp-line); border-radius: 18px; padding: 12px 0; cursor: pointer; }
@@ -252,3 +255,56 @@
 @media (prefers-reduced-motion: reduce) {
   .pp-sheet, .pp-skel, .pp-meter i, .pp-switch, .pp-switch i { animation: none; transition: none; }
 }
+
+/* ---------------- v6: guest card (reference panel 5) ---------------- */
+.pp-guest { padding: 28px 20px 24px; }
+.pp-guest-art { width: 132px; margin: 0 auto 10px; }
+.pp-guest-art svg { width: 100%; height: auto; display: block; }
+.pp-guest h2 { font-size: 21px; font-weight: 800; margin: 0 0 8px; color: #0c3b2a; }
+.pp-guest-sub { font-size: 13.5px; color: #43685a; line-height: 1.6; margin: 0 0 18px; }
+.pp-guest-actions { display: flex; gap: 10px; }
+.pp-guest-actions .pp-btn-primary { flex: 1; border-radius: 14px; padding: 12px 10px; }
+.pp-btn-outline { flex: 1; background: #fff; color: #15803d; border: 1.8px solid #16a34a; border-radius: 14px; padding: 12px 10px; font-weight: 750; font-size: 14px; cursor: pointer; }
+.pp-btn-outline:active { background: #f2fbf6; }
+.pp-guest-benefits { margin-top: 18px; text-align: left; background: #f4faf6; border: 1px solid rgba(22, 163, 74, 0.16); border-radius: 14px; padding: 14px 14px 12px; }
+.pp-guest-benefits b { display: block; font-size: 12.5px; font-weight: 750; color: #0b5640; margin-bottom: 8px; }
+.pp-guest-benefits ul { list-style: none; margin: 0; padding: 0; }
+.pp-guest-benefits li { display: flex; gap: 8px; align-items: flex-start; font-size: 12.5px; color: #2c5747; line-height: 1.45; padding: 4px 0; }
+.pp-guest-benefits li span { color: #16a34a; font-weight: 800; flex: none; }
+
+/* ---------------- v6: academic identity page (reference panel 3) ---------------- */
+.pp-topbar { display: flex; align-items: center; gap: 10px; padding: 10px 0 14px; }
+.pp-topbar-back { width: 40px; height: 40px; border-radius: 12px; font-size: 18px; font-weight: 700; }
+.pp-topbar-title { font-size: 18px; font-weight: 800; color: #0c3b2a; }
+.pp-topbar-spacer { flex: 1; }
+.pp-acad-sec { padding: 16px; margin-bottom: 12px; }
+.pp-acad-sec h2 { font-size: 14.5px; font-weight: 800; color: #0c3b2a; margin: 0 0 10px; }
+.pp-acad-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.pp-chip { display: inline-flex; align-items: center; gap: 6px; background: var(--pp-emerald-soft); border: 1px solid rgba(22, 163, 74, 0.2); color: var(--pp-emerald-deep); border-radius: 999px; padding: 7px 12px; font-size: 12.5px; font-weight: 700; }
+.pp-chip em { font-style: normal; font-weight: 600; opacity: 0.65; }
+.pp-chip-lg { padding: 8px 13px; font-size: 13px; }
+.pp-chip-x { border: none; background: rgba(21, 128, 61, 0.12); color: var(--pp-emerald-deep); width: 20px; height: 20px; border-radius: 50%; font-size: 13px; font-weight: 800; line-height: 1; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+.pp-chip-x:active { background: rgba(21, 128, 61, 0.22); }
+.pp-acad-addrow { display: flex; gap: 8px; align-items: stretch; }
+.pp-acad-addrow input { flex: 1; min-width: 0; box-sizing: border-box; border: 1.5px solid var(--pp-line); border-radius: 12px; padding: 10px 12px; font: inherit; font-size: 14px; background: #f6f9f7; }
+.pp-acad-addrow input:focus { outline: none; border-color: var(--pp-emerald); background: #fff; }
+.pp-acad-addrow .pp-btn-secondary { flex: none; border-radius: 12px; padding: 10px 14px; }
+.pp-select-wrap { position: relative; }
+.pp-select-wrap select { width: 100%; box-sizing: border-box; appearance: none; -webkit-appearance: none; border: 1.5px solid var(--pp-line); border-radius: 12px; padding: 11px 34px 11px 12px; font: inherit; font-size: 14.5px; background: #f6f9f7; color: #0c3b2a; }
+.pp-select-wrap select:focus { outline: none; border-color: var(--pp-emerald); background: #fff; }
+.pp-select-wrap svg { position: absolute; right: 13px; top: 50%; transform: translateY(-50%); width: 12px; height: 8px; fill: none; stroke: #43685a; stroke-width: 2; stroke-linecap: round; pointer-events: none; }
+.pp-acad-err { color: #c2362f; font-weight: 700; margin: 2px 0 10px; }
+.pp-right { text-align: right; margin: 6px 0 0; }
+.pp-acad-save { margin: 4px 0 18px; border-radius: 14px; padding: 13px 18px; font-size: 14.5px; }
+
+/* ---------------- v6: save state machine ---------------- */
+.pp-btn-primary.pp-save-busy { opacity: 0.75; cursor: wait; }
+.pp-btn-primary.pp-save-ok { background: linear-gradient(135deg, #16a34a, #15803d); }
+.pp-btn-primary.pp-save-fail { background: linear-gradient(135deg, #e05252, #c2362f); }
+
+/* ---------------- v6: stats note + achievements ---------------- */
+.pp-stats-note { text-align: center; font-size: 11.5px; font-weight: 700; color: #166534; margin: -4px 0 12px; }
+.pp-ach-empty { font-size: 12px; font-weight: 700; color: #2c5747; background: #f4faf6; border: 1px dashed rgba(22, 163, 74, 0.35); border-radius: 12px; padding: 10px 12px; margin: 0 0 10px; line-height: 1.5; }
+.pp-achv-cell[data-id="mistake-crusher"] { background: #fdf3d7; }
+.pp-achv-cell.off { background: #eef2ef; opacity: 0.75; }
+.pp-achv-cell.off small { color: #6b8578; }
