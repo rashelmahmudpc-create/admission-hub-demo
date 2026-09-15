@@ -6,6 +6,7 @@ import { VerificationOrchestrator } from '../verification/orchestrator.mjs';
 import { createConfiguredVerificationProviders } from '../verification/providers.mjs';
 import { dispatchSecurityNotifications } from '../core/security-notifications.mjs';
 import { SqliteVerificationRepository } from '../verification/sqlite-verification-repository.mjs';
+import { D1ProfileStore } from '../storage/d1-profile-repository.mjs';
 
 const JSON_HEADERS = Object.freeze({
   'Content-Type': 'application/json; charset=utf-8',
@@ -19,9 +20,9 @@ const response = (status, body, extraHeaders = {}) => new Response(JSON.stringif
   headers: { ...JSON_HEADERS, ...extraHeaders }
 });
 
-async function readJson(request) {
+async function readJson(request, maxBytes = 32_768) {
   const raw = await request.text();
-  if (!raw || raw.length > 32_768) throw new NativeAuthError(AUTH_ERROR_CODES.INVALID_INPUT);
+  if (!raw || raw.length > maxBytes) throw new NativeAuthError(AUTH_ERROR_CODES.INVALID_INPUT);
   try { return JSON.parse(raw); } catch { throw new NativeAuthError(AUTH_ERROR_CODES.INVALID_INPUT); }
 }
 
@@ -37,7 +38,10 @@ export class AdmissionAuthAuthority {
       this.engine = new CloudflareNativeAuthEngine({
         repository: this.repository,
         hmacSecret: env.AUTH_HMAC_SECRET,
-        securityConfigRaw: env.SECURITY_CONFIG_JSON
+        securityConfigRaw: env.SECURITY_CONFIG_JSON,
+        // Phase 7 — avatar store (D1 binding PROFILE_DB; absent until the
+        // binding is added at publish time — avatar routes degrade to 503).
+        avatarStore: new D1ProfileStore(env.PROFILE_DB || null)
       });
       const persistedVerificationConfig = await this.verificationRepository.getRuntimeConfig();
       this.verification = new VerificationOrchestrator({
@@ -116,7 +120,8 @@ export class AdmissionAuthAuthority {
         return response(200, { ok: true, ...(await this.engine.ping()) });
       }
       if (request.method !== 'POST') return response(405, { ok: false, error: { code: 'METHOD_NOT_ALLOWED' } }, { Allow: 'POST' });
-      const body = await readJson(request);
+      // Phase 7 — avatar uploads are base64 JSON (≤ ~2.8 MB for 2 MB images).
+      const body = await readJson(request, url.pathname === '/internal/avatar/save' ? 3_500_000 : 32_768);
       if (url.pathname === '/internal/firebase/rate') {
         const result = await this.engine.consumeFirebaseOperation(body.input, body.context);
         await this.#scheduleExpiry();
@@ -164,6 +169,31 @@ export class AdmissionAuthAuthority {
       }
       if (url.pathname === '/internal/profile/get') {
         const result = await this.engine.getProfile(body.input, body.context);
+        return response(200, { ok: true, result });
+      }
+      // Phase 7 — Profile & Personal Identity.
+      if (url.pathname === '/internal/profile/get-v2') {
+        const result = await this.engine.getProfileV2(body.input, body.context);
+        return response(200, { ok: true, result });
+      }
+      if (url.pathname === '/internal/profile/patch') {
+        const result = await this.engine.saveProfilePatch(body.input, body.context);
+        return response(200, { ok: true, result });
+      }
+      if (url.pathname === '/internal/avatar/save') {
+        const result = await this.engine.saveAvatar(body.input, body.context);
+        return response(200, { ok: true, result });
+      }
+      if (url.pathname === '/internal/avatar/delete') {
+        const result = await this.engine.deleteAvatar(body.input, body.context);
+        return response(200, { ok: true, result });
+      }
+      if (url.pathname === '/internal/avatar/get') {
+        const result = await this.engine.getAvatarData(body.input, body.context);
+        return response(200, { ok: true, result });
+      }
+      if (url.pathname === '/internal/public-profile/get') {
+        const result = await this.engine.getPublicProfile(body.input || {});
         return response(200, { ok: true, result });
       }
       if (url.pathname === '/internal/account/state') {

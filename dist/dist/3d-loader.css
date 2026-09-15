@@ -1,0 +1,70 @@
+/* ============================================================
+   ADMISSION HUB — 3D Loading System
+   Pure CSS 3D emerald loader (no images, no JS libs)
+   ============================================================ */
+
+/* ---------- core loader ---------- */
+.ah3d{position:relative; width:76px; height:76px; perspective:320px; display:block;}
+.ah3d .ring{position:absolute; inset:0; border-radius:50%;}
+.ah3d .r1{border:3px solid transparent; border-top-color:#1e8e5a; border-right-color:#1e8e5a;
+  animation:ah3dSpin 1.1s linear infinite;}
+.ah3d .r2{inset:10px; border:2.5px solid transparent; border-bottom-color:#2dd48a; border-left-color:#2dd48a;
+  animation:ah3dSpin 1.5s linear infinite reverse;}
+.ah3d .r3{inset:22px; border:2px solid transparent; border-top-color:#c9f2dc; border-right-color:#c9f2dc;
+  animation:ah3dSpin .9s linear infinite;}
+
+/* 3D core cube */
+.ah3d .cube{position:absolute; left:50%; top:50%; width:22px; height:22px; margin:-11px 0 0 -11px;
+  transform-style:preserve-3d; animation:ah3dTumble 3.2s ease-in-out infinite;}
+.ah3d .cube i{position:absolute; inset:0; background:linear-gradient(145deg,#1e8e5a,#0f6b4f);
+  border:1px solid rgba(255,255,255,.35); border-radius:3px; box-shadow:inset 0 0 12px rgba(0,0,0,.18);}
+.ah3d .cube .f1{transform:translateZ(11px);}
+.ah3d .cube .f2{transform:rotateY(90deg) translateZ(11px);}
+.ah3d .cube .f3{transform:rotateY(180deg) translateZ(11px);}
+.ah3d .cube .f4{transform:rotateY(-90deg) translateZ(11px);}
+.ah3d .cube .f5{transform:rotateX(90deg) translateZ(11px);}
+.ah3d .cube .f6{transform:rotateX(-90deg) translateZ(11px);}
+@keyframes ah3dTumble{0%,100%{transform:rotateX(-18deg) rotateY(0) rotateZ(0);}50%{transform:rotateX(14deg) rotateY(180deg) rotateZ(24deg);}}
+
+/* floating dots */
+.ah3d .dot{position:absolute; width:7px; height:7px; border-radius:50%; background:#2dd48a;
+  box-shadow:0 0 10px 2px rgba(46,212,138,.55); animation:ah3dBob 1.6s ease-in-out infinite;}
+.ah3d .dot.d1{left:4px; top:14px; animation-delay:.2s;}
+.ah3d .dot.d2{right:4px; top:22px; animation-delay:.6s;}
+.ah3d .dot.d3{left:10px; bottom:6px; animation-delay:1s;}
+.ah3d .dot.d4{right:12px; bottom:4px; animation-delay:1.3s;}
+@keyframes ah3dBob{0%,100%{transform:translateY(0); opacity:.7;}50%{transform:translateY(-8px); opacity:1;}}
+
+/* progress shimmer bar */
+.ah3d-bar{width:min(220px,70vw); height:7px; border-radius:99px; background:#e5eee8; overflow:hidden; margin-top:14px;}
+.ah3d-bar i{display:block; height:100%; width:38%; border-radius:99px;
+  background:linear-gradient(90deg,#1e8e5a,#2dd48a,#c9f2dc);
+  animation:ah3dSlide 1.3s ease-in-out infinite;}
+@keyframes ah3dSlide{0%{transform:translateX(-110%);}100%{transform:translateX(300%);}}
+
+/* ---------- integrate with app boot loading ---------- */
+.app-loading .app-loading-mark{width:auto; height:auto; background:transparent!important; box-shadow:none!important; font-size:0!important;}
+.app-loading .app-loading-mark .ah3d{transform:scale(1);}
+#app>.app-loading{padding-top:calc(28px + env(safe-area-inset-top,0px));}
+
+@keyframes ah3dSpin{0%{transform:rotateZ(0);}100%{transform:rotateZ(360deg);}}
+
+/* ---------- full-screen 3D logo splash (startup → dashboard) ---------- */
+.ah3d-lg{transform:scale(1.25);}
+.ah-splash{
+  position:fixed; inset:0; z-index:4000; display:grid; place-items:center;
+  background:
+    radial-gradient(700px 420px at 80% -10%, rgba(46,212,138,.16), transparent 60%),
+    radial-gradient(600px 380px at -10% 110%, rgba(15,107,79,.12), transparent 55%),
+    linear-gradient(160deg,#ffffff, #f2f7f3);
+  opacity:0; visibility:hidden; transition:opacity .35s ease, visibility .35s;
+}
+.ah-splash.show{opacity:1; visibility:visible;}
+.ah-splash-in{display:flex; flex-direction:column; align-items:center; gap:10px; text-align:center; padding:24px;}
+.ah-splash-t{font-size:15px; font-weight:800; letter-spacing:.34em; color:#0f6b4f; margin:0;}
+.ah-splash-s{font-size:13px; color:#6b7370; margin:0;}
+
+/* reduced motion */
+@media (prefers-reduced-motion: reduce){
+  .ah3d .ring,.ah3d .cube,.ah3d .dot,.ah3d-bar i{animation-duration:3s!important;}
+}

@@ -18,6 +18,7 @@ export class MemoryAuthRepository {
     this.passkeyTickets = new Map();
     this.accountVerificationTickets = new Map();
     this.profiles = new Map();
+    this.publicIdentities = new Map();
     this.accountStates = new Map();
     this.trustedDevices = new Map();
     this.securityChallenges = new Map();
@@ -287,6 +288,142 @@ export class MemoryAuthRepository {
     const session = this.#canonicalSession(input);
     if (session.error) return session;
     return { profile: copy(this.profiles.get(session.user.id) || null) };
+  }
+
+  // Phase 7 — mirrors SqliteAuthRepository profile API (same behavior,
+  // in-memory storage).
+  #withDefaults(profile, now) {
+    return {
+      mobile: '',
+      bio: '',
+      targets: [],
+      visibility: 'private',
+      ...copy(profile || {}),
+      createdAt: now,
+      updatedAt: now
+    };
+  }
+
+  async #derivePublicId(userId, attempt) {
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`ah-public-id-v1|${userId}|${attempt}`));
+    const bytes = new Uint8Array(digest).subarray(0, 4);
+    const alphabet = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+    let value = ((bytes[0] << 24) | (bytes[1] << 16) | (bytes[2] << 8) | bytes[3]) >>> 0;
+    let out = '';
+    for (let i = 0; i < 6; i += 1) { out += alphabet[value % 31]; value = Math.floor(value / 31); }
+    return `AH-${out}`;
+  }
+
+  async #ensurePublicIdentity(userId, now) {
+    const existing = this.publicIdentities.get(userId);
+    if (existing) return existing;
+    let attempt = 0;
+    for (;;) {
+      attempt += 1;
+      const candidate = await this.#derivePublicId(userId, attempt - 1);
+      const clash = [...this.publicIdentities.entries()].find(([, id]) => id === candidate);
+      if (clash && clash[0] !== userId) continue;
+      this.publicIdentities.set(userId, candidate);
+      return candidate;
+    }
+  }
+
+  #provisionProfile(userId, now) {
+    if (this.profiles.get(userId)) return null;
+    const profile = this.#withDefaults({ fullName: '', dob: '', school: { id: '', name: '', district: '' } }, now);
+    this.profiles.set(userId, profile);
+    this.events.push({ eventType: 'profile-provisioned', userId, occurredAt: now });
+    return copy(profile);
+  }
+
+  #profileCompletion(profile, { avatarPresent = false } = {}) {
+    if (!profile) return 0;
+    let score = 0;
+    if (profile.fullName && String(profile.fullName).length >= 2) score += 25;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(String(profile.dob || ''))) score += 15;
+    if (profile.mobile) score += 15;
+    if (profile.school && profile.school.name) score += 10;
+    if (profile.higherInstitution && profile.higherInstitution.name) score += 10;
+    if (Array.isArray(profile.targets) && profile.targets.length > 0 && profile.targets[0]?.name) score += 15;
+    if (avatarPresent) score += 10;
+    return Math.min(100, score);
+  }
+
+  async getProfileV2(input) {
+    const session = this.#canonicalSession(input);
+    if (session.error) return session;
+    const provisioned = this.#provisionProfile(session.user.id, input.now);
+    const profile = provisioned || this.profiles.get(session.user.id);
+    const publicId = await this.#ensurePublicIdentity(session.user.id, input.now);
+    const avatarPresent = input.avatarPresent === true;
+    const user = this.users.get(session.user.id);
+    return {
+      profile: copy(profile) || null,
+      publicId,
+      completion: this.#profileCompletion(profile, { avatarPresent }),
+      avatarPresent,
+      joinedYear: user ? Number(String(user.createdAt).slice(0, 4)) : null,
+      lastLoginAt: user?.lastLoginAt || null
+    };
+  }
+
+  async saveProfilePatch(input) {
+    const session = this.#canonicalSession(input);
+    if (session.error) return session;
+    const provisioned = this.#provisionProfile(session.user.id, input.now);
+    const current = provisioned || this.profiles.get(session.user.id);
+    const expect = input.expectVersion === undefined || input.expectVersion === null
+      ? null
+      : Number(input.expectVersion);
+    if (expect !== null && Number.isFinite(expect) && expect !== current.version) {
+      return { error: AUTH_ERROR_CODES.PROFILE_VERSION_CONFLICT, currentVersion: current.version };
+    }
+    const next = { ...copy(current), ...copy(input.fields), version: current.version + 1, updatedAt: input.now };
+    this.profiles.set(session.user.id, next);
+    const changed = Object.keys(input.fields || {});
+    this.events.push({
+      eventType: changed.includes('visibility') ? 'profile-visibility-changed' : 'profile-patched',
+      userId: session.user.id,
+      occurredAt: input.now
+    });
+    return { saved: true, profile: copy(this.profiles.get(session.user.id)) };
+  }
+
+  async getPublicProfile(input) {
+    const entry = [...this.publicIdentities.entries()].find(([, id]) => id === input.publicId);
+    if (!entry) return { error: AUTH_ERROR_CODES.PUBLIC_PROFILE_NOT_FOUND };
+    const user = this.users.get(entry[0]);
+    const accountState = this.accountStates.get(entry[0]);
+    // Phase 6 fact: suspension lives in the account state, deactivation in
+    // auth_users.status — both must be active for a public surface.
+    if (!user || user.status !== 'active' || (accountState?.status && accountState.status !== 'active')) {
+      return { error: AUTH_ERROR_CODES.PUBLIC_PROFILE_NOT_FOUND };
+    }
+    const profile = this.profiles.get(entry[0]);
+    if (!profile) return { error: AUTH_ERROR_CODES.PUBLIC_PROFILE_NOT_FOUND };
+    const visibility = ['private', 'limited', 'public'].includes(profile.visibility) ? profile.visibility : 'private';
+    if (visibility === 'private') return { error: AUTH_ERROR_CODES.PUBLIC_PROFILE_NOT_FOUND };
+    const subjectRef = [...this.externalIdentities.entries()]
+      .find(([key, value]) => key.startsWith('firebase:') && value?.userId === entry[0])?.[0]
+      ?.slice('firebase:'.length) || null;
+    const base = {
+      publicId: input.publicId,
+      displayName: profile.fullName || 'Admission Student',
+      avatarPresent: false,
+      visibility
+    };
+    if (visibility !== 'public') return { profile: base, subjectRef };
+    const target = Array.isArray(profile.targets) && profile.targets[0] ? profile.targets[0] : null;
+    return {
+      profile: {
+        ...base,
+        target: target ? { name: target.name, unit: target.unit || '', year: target.year || '' } : null,
+        joinedYear: Number(String(user.createdAt).slice(0, 4)) || null,
+        bio: profile.bio || '',
+        completion: this.#profileCompletion(profile, { avatarPresent: false })
+      },
+      subjectRef
+    };
   }
 
   async beginPasskeyRegistration(input) {

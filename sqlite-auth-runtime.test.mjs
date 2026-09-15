@@ -406,7 +406,7 @@ test('SQLite schema 5 upgrades a populated pre-Telegram verification table idemp
   assert.equal(fixture.database.prepare("SELECT value FROM auth_meta WHERE key='schema_version'").get().value, '5');
 });
 
-test('SQLite schema v6 upgrades an existing v5 database and stays idempotent', async t => {
+test('SQLite schema v7 upgrades an existing v5 database and stays idempotent', async t => {
   const fixture = storageFixture();
   t.after(() => fixture.database.close());
   // Pre-existing v5 deployment: events table without the Phase 6 columns.
@@ -414,6 +414,11 @@ test('SQLite schema v6 upgrades an existing v5 database and stays idempotent', a
   fixture.database.exec("INSERT INTO auth_meta(key,value) VALUES('schema_version','5')");
   fixture.database.exec('CREATE TABLE auth_security_events(event_id INTEGER PRIMARY KEY AUTOINCREMENT, event_type TEXT NOT NULL, subject_ref TEXT, user_id TEXT, occurred_at INTEGER NOT NULL)');
   fixture.database.exec("INSERT INTO auth_security_events(event_type,subject_ref,user_id,occurred_at) VALUES('firebase-login','old-subject','usr_old',1800000000000)");
+  // Pre-existing v5 profile row must survive the Phase 7 additive migration.
+  fixture.database.exec('CREATE TABLE auth_users(user_id TEXT PRIMARY KEY, email_ref TEXT NOT NULL UNIQUE, email_mask TEXT NOT NULL, status TEXT NOT NULL, created_at INTEGER NOT NULL, last_login_at INTEGER NOT NULL)');
+  fixture.database.exec("INSERT INTO auth_users VALUES('usr_old','ref_old','u***@example.com','active',1800000000000,1800000000000)");
+  fixture.database.exec('CREATE TABLE auth_profiles(user_id TEXT PRIMARY KEY, profile_version INTEGER NOT NULL, full_name TEXT NOT NULL, date_of_birth TEXT NOT NULL, school_id TEXT NOT NULL, school_name TEXT NOT NULL, school_district TEXT NOT NULL, higher_id TEXT, higher_name TEXT, higher_district TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)');
+  fixture.database.exec("INSERT INTO auth_profiles VALUES('usr_old',3,'Old Student','2008-01-01','s1','Old School','Dhaka',NULL,NULL,NULL,1800000000000,1800000000000)");
 
   const repository = new SqliteAuthRepository(fixture.storage);
   repository.migrate();
@@ -425,12 +430,20 @@ test('SQLite schema v6 upgrades an existing v5 database and stays idempotent', a
     'SELECT event_type AS eventType, device_ref AS deviceRef, purpose AS purpose, policy_version AS policyVersion FROM auth_security_events WHERE subject_ref=?'
   ).get('old-subject');
   assert.deepEqual(preserved, { eventType: 'firebase-login', deviceRef: null, purpose: null, policyVersion: null });
+  // Phase 7 additive columns + public identity table, old row preserved.
+  const profileColumns = new Set(fixture.database.prepare('PRAGMA table_info(auth_profiles)').all().map(row => row.name));
+  for (const column of ['mobile', 'bio', 'targets', 'visibility']) assert.ok(profileColumns.has(column), column);
+  assert.ok(fixture.database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='auth_public_identities'").get());
+  const preservedProfile = fixture.database.prepare(
+    'SELECT full_name AS fullName, profile_version AS version, visibility FROM auth_profiles WHERE user_id=?'
+  ).get('usr_old');
+  assert.deepEqual(preservedProfile, { fullName: 'Old Student', version: 3, visibility: 'private' });
 
   // Second migrate (next DO activation) must not re-apply the ALTERs.
   repository.migrate();
   const ping = await repository.ping();
   assert.equal(ping.ok, true);
-  assert.equal(ping.schema, 6);
+  assert.equal(ping.schema, 7);
 
   const accepted = await repository.consumeLimits({
     limits: [{ scope: 'login', key: 'ip-ref', windowMs: 900_000, limit: 12 }],

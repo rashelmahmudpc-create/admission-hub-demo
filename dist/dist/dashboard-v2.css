@@ -1,0 +1,100 @@
+/* ============================================================
+   Dashboard v2 — ছবি-অনুযায়ী ডিজাইন (P11, additive)
+   শুধু ড্যাশবোর্ড-পৃষ্ঠার শৈলী; অন্য পৃষ্ঠায় প্রভাব নেই
+   (সব ক্লাস .dv2- প্রিফিক্সড)।
+   ============================================================ */
+.dv2-root{display:flex;flex-direction:column;gap:14px;padding:0 0 14px}
+.dv2-card{background:#fff;border:1px solid #e3ece7;border-radius:18px;padding:14px 15px;box-shadow:0 6px 18px rgba(15,107,79,.05)}
+.dv2-row{display:flex;align-items:center;gap:10px}
+.dv2-between{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.dv2-muted{color:#5f7168;font-size:12px}
+.dv2-title{font-size:15px;font-weight:800;color:#16241c}
+.dv2-kicker{font-size:10px;letter-spacing:.08em;font-weight:800;color:#0f6b4f;text-transform:uppercase}
+
+/* ── Header ── */
+.dv2-header{display:flex;align-items:center;gap:11px;padding:14px 4px 2px}
+.dv2-avatar{width:46px;height:46px;border-radius:50%;background:linear-gradient(135deg,#0f6b4f,#14a06f);color:#fff;display:grid;place-items:center;font-weight:800;font-size:17px;flex-shrink:0;box-shadow:0 8px 18px rgba(15,107,79,.25)}
+.dv2-hello b{font-size:17px;font-weight:850;color:#16241c}
+.dv2-hello .dv2-muted{margin-top:2px}
+.dv2-bell{margin-left:auto;width:40px;height:40px;border-radius:13px;background:#fff;border:1px solid #e3ece7;display:grid;place-items:center;font-size:18px;box-shadow:0 6px 14px rgba(15,107,79,.06)}
+.dv2-bell-c{position:relative}
+.dv2-bell-c::after{content:'';position:absolute;top:9px;right:9px;width:7px;height:7px;border-radius:50%;background:#e5484d;border:2px solid #fff}
+
+/* ── Mission card ── */
+.dv2-mission{background:linear-gradient(135deg,#0c5138 0%,#0f6b4f 45%,#128a63 100%);color:#fff;border:0;border-radius:20px;padding:16px 16px 14px;box-shadow:0 14px 30px rgba(12,81,56,.35);position:relative;overflow:hidden}
+.dv2-mission::after{content:'';position:absolute;right:-40px;top:-46px;width:170px;height:170px;border-radius:50%;background:rgba(255,255,255,.07)}
+.dv2-mission-kicker{font-size:10px;letter-spacing:.1em;font-weight:800;opacity:.85;text-transform:uppercase}
+.dv2-mission-title{font-size:19px;font-weight:850;margin-top:3px}
+.dv2-mission-num{font-size:32px;font-weight:900;letter-spacing:-.02em;margin-top:8px}
+.dv2-mission-num span{font-size:14px;font-weight:600;opacity:.8}
+.dv2-mission-bar{height:7px;border-radius:99px;background:rgba(255,255,255,.22);margin-top:10px;overflow:hidden}
+.dv2-mission-bar>div{height:100%;border-radius:99px;background:#fff;transition:width .5s}
+.dv2-mission-sub{display:flex;gap:7px;margin-top:12px;flex-wrap:wrap}
+.dv2-chip{background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.25);color:#fff;font-size:11px;font-weight:700;padding:5px 11px;border-radius:99px}
+.dv2-mission-cta{margin-top:13px;display:flex;align-items:center;gap:8px}
+.dv2-btn{background:#fff;color:#0f6b4f;font-weight:850;font-size:13.5px;border:0;border-radius:13px;padding:11px 18px;flex:1;text-align:center;box-shadow:0 6px 16px rgba(0,0,0,.14);cursor:pointer}
+.dv2-btn.ghost{background:rgba(255,255,255,.14);color:#fff;box-shadow:none;flex:0 0 auto;padding:11px 14px}
+.dv2-star{position:absolute;top:14px;right:16px;color:#ffd76a;font-size:15px;letter-spacing:1px;z-index:2}
+.dv2-mission-foot{display:flex;align-items:center;gap:6px;margin-top:10px;font-size:11.5px;color:#cfe8dd;font-weight:600}
+
+/* ── Streak ── */
+.dv2-streak-head{display:flex;align-items:center;gap:10px}
+.dv2-streak-ic{width:38px;height:38px;border-radius:12px;background:#fff3df;display:grid;place-items:center;font-size:19px}
+.dv2-days{display:flex;gap:8px;margin-top:12px}
+.dv2-day{flex:1;text-align:center;font-size:9.5px;color:#8a9c93;font-weight:700}
+.dv2-day i{display:block;width:26px;height:26px;margin:0 auto 4px;border-radius:50%;background:#eef4f1;color:#a9b8b0;font-style:normal;font-size:11px;display:grid;place-items:center}
+.dv2-day.on i{background:linear-gradient(135deg,#0f6b4f,#14a06f);color:#fff;box-shadow:0 5px 12px rgba(15,107,79,.3)}
+.dv2-day.today i{outline:2px solid #ffd76a;outline-offset:2px}
+.dv2-streak-badge{margin-top:12px;background:#fff7e8;border:1px dashed #f2cf8e;border-radius:12px;padding:8px 11px;font-size:12px;color:#8a5a12;font-weight:700}
+
+/* ── Performance ring+stats ── */
+.dv2-perf{display:flex;gap:14px;align-items:center}
+.dv2-ring{width:78px;height:78px;border-radius:50%;background:conic-gradient(#0f6b4f calc(var(--p,0)*1%),#e7f0eb 0);display:grid;place-items:center;flex-shrink:0}
+.dv2-ring>div{width:60px;height:60px;border-radius:50%;background:#fff;display:grid;place-items:center;text-align:center}
+.dv2-ring b{font-size:15px;font-weight:900;color:#16241c;display:block;line-height:1.1}
+.dv2-ring small{font-size:8.5px;color:#5f7168;font-weight:700}
+.dv2-perf-stats{flex:1;display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.dv2-ps{background:#f6faf8;border:1px solid #e7efeb;border-radius:12px;padding:8px 6px;text-align:center}
+.dv2-ps b{display:block;font-size:16px;font-weight:850;color:#16241c}
+.dv2-ps span{font-size:9px;color:#5f7168;font-weight:700}
+.dv2-perf-foot{margin-top:11px;font-size:11.5px;color:#0f6b4f;font-weight:700;background:#eef7f2;border-radius:10px;padding:7px 10px}
+
+/* ── Smart insight ── */
+.dv2-insight{background:linear-gradient(135deg,#f0faf5,#e3f3ec);border-color:#cfe6da}
+.dv2-insight-head{display:flex;align-items:center;gap:9px}
+.dv2-insight-ic{width:36px;height:36px;border-radius:11px;background:#0f6b4f;color:#fff;display:grid;place-items:center;font-size:17px}
+.dv2-ai-tag{margin-left:auto;font-size:9.5px;font-weight:850;color:#0f6b4f;background:#dff0e7;padding:4px 9px;border-radius:99px}
+.dv2-insight p{margin:10px 0 0;font-size:13px;line-height:1.65;color:#24352c}
+
+/* ── Bar rows (weakness, goal) ── */
+.dv2-bar-row{margin-top:10px}
+.dv2-bar-row .dv2-between{font-size:12.5px;font-weight:700;color:#24352c}
+.dv2-bar{height:8px;border-radius:99px;background:#eef4f1;margin-top:6px;overflow:hidden}
+.dv2-bar>div{height:100%;border-radius:99px;background:linear-gradient(90deg,#0f6b4f,#14a06f)}
+.dv2-bar>div.red{background:linear-gradient(90deg,#c8373d,#e5484d)}
+.dv2-bar>div.orange{background:linear-gradient(90deg,#d97a12,#f0a32e)}
+
+/* ── Tools grid ── */
+.dv2-tools{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-top:11px}
+.dv2-tool{background:#f6faf8;border:1px solid #e7efeb;border-radius:14px;padding:11px 6px;text-align:center;cursor:pointer;transition:transform .12s}
+.dv2-tool:active{transform:scale(.96)}
+.dv2-tool .ic{font-size:20px;display:block}
+.dv2-tool span{display:block;font-size:10.5px;font-weight:800;color:#24352c;margin-top:5px}
+
+/* ── Graph (SVG line) ── */
+.dv2-graph{margin-top:10px}
+.dv2-graph svg{width:100%;height:86px;display:block}
+.dv2-graph-x{display:flex;justify-content:space-between;font-size:9px;color:#8a9c93;font-weight:700;margin-top:4px}
+.dv2-graph-x span{flex:1;text-align:center}
+
+/* ── Roadmap checklist ── */
+.dv2-check{display:flex;align-items:center;gap:9px;padding:8px 0;border-bottom:1px dashed #e3ece7;font-size:12.5px;color:#2c3f35;font-weight:650}
+.dv2-check:last-child{border-bottom:0}
+.dv2-check input{width:17px;height:17px;accent-color:#0f6b4f;flex-shrink:0}
+
+/* ── Bottom nav (ছবির ৬-ট্যাব) ── */
+.bottomnav{background:#fff;border-top:1px solid #e3ece7;box-shadow:0 -8px 24px rgba(15,107,79,.06);display:flex;justify-content:space-around;padding:8px 4px calc(8px + env(safe-area-inset-bottom,0px));position:sticky;bottom:0;z-index:50}
+.bottomnav .navbtn{background:none;border:0;display:flex;flex-direction:column;align-items:center;gap:3px;font-size:10px;font-weight:800;color:#7d8f86;padding:4px 8px;border-radius:12px;min-width:0}
+.bottomnav .navbtn .ic{font-size:19px;line-height:1}
+.bottomnav .navbtn.active{color:#0f6b4f;background:#eef7f2}
+@media(min-width:720px){.dv2-tools{grid-template-columns:repeat(4,1fr)}}

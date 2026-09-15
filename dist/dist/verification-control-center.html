@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="bn">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow,noarchive">
+  <title>Verification Control Center · Admission Hub</title>
+  <style>
+    :root{color-scheme:light;--ink:#17362e;--muted:#61736e;--line:#dce8e4;--green:#14745a;--soft:#eff8f4;--red:#973c2b}*{box-sizing:border-box}body{margin:0;background:#f3f7f5;color:var(--ink);font-family:system-ui,-apple-system,"Noto Sans Bengali",sans-serif}.shell{width:min(1120px,calc(100% - 28px));margin:30px auto}.head,.panel,.provider{background:#fff;border:1px solid var(--line);border-radius:18px;box-shadow:0 10px 30px rgba(23,54,46,.06)}.head{padding:22px}.head h1{margin:0;font-size:26px}.head p{margin:8px 0 0;color:var(--muted);line-height:1.6}.auth{display:grid;grid-template-columns:minmax(220px,1fr) auto;gap:10px;margin-top:18px}.auth input,.field input{width:100%;height:44px;border:1.5px solid #cbdad5;border-radius:11px;padding:0 12px;font:inherit}.button{min-height:44px;border:0;border-radius:11px;padding:0 16px;background:var(--green);color:#fff;font-weight:800;cursor:pointer}.button.secondary{background:#fff;color:var(--green);border:1.5px solid #b9d1c9}.button:disabled{opacity:.55;cursor:not-allowed}.notice{margin:15px 0 0;padding:11px 13px;border-radius:11px;background:var(--soft);color:#285d4e;font-size:13px;line-height:1.55}.notice.error{background:#fff0ed;color:var(--red)}main[hidden]{display:none}.toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:22px 0 12px}.toolbar h2{margin:0;font-size:20px}.badge{display:inline-flex;padding:6px 10px;border-radius:99px;background:#e8f7f1;color:#176148;font-size:12px;font-weight:800}.badge.off{background:#f2f2f2;color:#6b7471}.panel{padding:18px;margin-top:14px}.panel h3{margin:0 0 13px;font-size:16px}.policy{display:grid;grid-template-columns:repeat(4,minmax(120px,1fr));gap:12px}.field label{display:block;margin:0 0 6px;color:var(--muted);font-size:11px;font-weight:800}.provider-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px}.provider{padding:16px}.provider-top{display:flex;justify-content:space-between;gap:12px}.provider h3{margin:0;font-size:16px}.provider small{color:var(--muted)}.toggle{display:flex;align-items:center;gap:7px;font-size:12px;font-weight:800}.metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:13px}.metric{padding:9px;border-radius:10px;background:#f5f9f7}.metric b,.metric span{display:block}.metric b{font-size:14px}.metric span{margin-top:3px;color:var(--muted);font-size:10px}.provider-fields{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}.events{width:100%;border-collapse:collapse;font-size:12px}.events th,.events td{padding:9px 7px;border-bottom:1px solid #edf2f0;text-align:left;vertical-align:top}.events th{color:var(--muted)}.empty{color:var(--muted);text-align:center}.footer-actions{position:sticky;bottom:10px;display:flex;justify-content:flex-end;gap:10px;margin-top:16px;padding:12px;border:1px solid var(--line);border-radius:14px;background:rgba(255,255,255,.94);backdrop-filter:blur(10px)}@media(max-width:760px){.policy,.provider-grid{grid-template-columns:1fr}.auth{grid-template-columns:1fr}.metrics{grid-template-columns:repeat(2,1fr)}.events-wrap{overflow:auto}.shell{margin-top:14px}}
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header class="head">
+      <h1>Verification Control Center</h1>
+      <p>Provider enablement, priority, quota, reset, circuit, success/failure rate ও latency-এর নিরাপদ অবস্থা। এখানে কোনো provider secret দেখানো বা সম্পাদনা করা হয় না।</p>
+      <div class="auth">
+        <input id="admin-key" type="password" autocomplete="off" placeholder="Admin access token (এই পেজে সংরক্ষণ হবে না)" aria-label="Admin access token">
+        <button class="button" id="connect" type="button">নিরাপদভাবে খুলুন</button>
+      </div>
+      <p class="notice" id="notice">সার্ভারের existing admin token শুধু এই অনুরোধের header-এ যাবে; localStorage, sessionStorage বা log-এ রাখা হবে না।</p>
+    </header>
+
+    <main id="main" hidden>
+      <div class="toolbar"><h2>Orchestrator অবস্থা</h2><span class="badge off" id="deployment-state">Deployment gate: বন্ধ</span><span class="badge off" id="global-state">বন্ধ</span></div>
+      <section class="panel">
+        <h3>নিরাপদ policy</h3>
+        <label class="toggle"><input id="global-enabled" type="checkbox"> Generic backup verification চালু</label>
+        <div class="policy" id="policy"></div>
+      </section>
+      <section class="panel">
+        <h3>Provider priority ও quota</h3>
+        <div class="provider-grid" id="providers"></div>
+      </section>
+      <section class="panel">
+        <h3>সাম্প্রতিক নিরাপদ ঘটনা</h3>
+        <div class="events-wrap"><table class="events"><thead><tr><th>সময়</th><th>Attempt</th><th>Provider</th><th>Channel</th><th>Outcome</th><th>Reason</th><th>Latency</th></tr></thead><tbody id="events"></tbody></table></div>
+      </section>
+      <div class="footer-actions"><button class="button secondary" id="refresh" type="button">Refresh</button><button class="button" id="save" type="button">Policy সংরক্ষণ</button></div>
+    </main>
+  </div>
+<script>
+(() => {
+  'use strict';
+  const API='/api/auth/v1/admin/verification';
+  const key=document.querySelector('#admin-key');
+  const main=document.querySelector('#main');
+  const notice=document.querySelector('#notice');
+  const providersNode=document.querySelector('#providers');
+  const policyNode=document.querySelector('#policy');
+  const eventsNode=document.querySelector('#events');
+  let token='';
+  let current=null;
+  const policyFields=[
+    ['codeTtlSeconds','কোডের মেয়াদ (সেকেন্ড)',60,600],['maxAttempts','সর্বোচ্চ চেষ্টা',1,5],
+    ['resendCooldownSeconds','Resend cooldown',30,600],['lockoutSeconds','Lockout সময়',60,86400],
+    ['maxProviderRetries','Provider retry',0,2],['circuitFailureThreshold','Circuit threshold',1,10],
+    ['circuitCooldownSeconds','Circuit cooldown',30,3600],['lowQuotaRatio','Low quota ratio',0,1]
+  ];
+  const setNotice=(text,error=false)=>{notice.textContent=text;notice.classList.toggle('error',error)};
+  const request=async(path,options={})=>{
+    const response=await fetch(API+path,{method:options.method||'GET',credentials:'same-origin',headers:{'X-AH-Admin-Token':token,...(options.body?{'Content-Type':'application/json'}:{})},...(options.body?{body:JSON.stringify(options.body)}:{})});
+    let data={};try{data=await response.json()}catch(_){}
+    if(!response.ok)throw new Error(data?.error?.message||'অনুমতি বা server response পাওয়া যায়নি।');
+    return data;
+  };
+  const numberInput=(value,min,max)=>{const n=Number(value);return Number.isFinite(n)?Math.max(min,Math.min(max,n)):min};
+  const metric=(value,label)=>{const box=document.createElement('div');box.className='metric';const strong=document.createElement('b');strong.textContent=String(value);const small=document.createElement('span');small.textContent=label;box.append(strong,small);return box};
+  const render=()=>{
+    document.querySelector('#global-enabled').checked=current.runtimeEnabled===true;
+    const gate=document.querySelector('#deployment-state');const active=current.activation==='enabled';gate.textContent='Deployment gate: '+(active?'চালু':'বন্ধ');gate.classList.toggle('off',!active);
+    const badge=document.querySelector('#global-state');badge.textContent=current.enabled?'কার্যকরভাবে চালু':'কার্যকরভাবে বন্ধ';badge.classList.toggle('off',!current.enabled);
+    policyNode.textContent='';
+    policyFields.forEach(([name,label,min,max])=>{const wrap=document.createElement('div');wrap.className='field';const l=document.createElement('label');l.htmlFor='policy-'+name;l.textContent=label;const input=document.createElement('input');input.id='policy-'+name;input.dataset.policy=name;input.type='number';input.min=String(min);input.max=String(max);input.step=name==='lowQuotaRatio'?'0.01':'1';input.value=String(current.policy?.[name]??min);wrap.append(l,input);policyNode.append(wrap)});
+    providersNode.textContent='';
+    (current.providers||[]).forEach(row=>{const card=document.createElement('article');card.className='provider';card.dataset.provider=row.id;const top=document.createElement('div');top.className='provider-top';const title=document.createElement('div');const h=document.createElement('h3');h.textContent=row.id;const channel=document.createElement('small');channel.textContent=row.channel+' · '+(row.configured?'configured':'not configured');title.append(h,channel);const toggle=document.createElement('label');toggle.className='toggle';const check=document.createElement('input');check.type='checkbox';check.dataset.field='enabled';check.checked=row.enabled;toggle.append(check,document.createTextNode('চালু'));top.append(title,toggle);const metrics=document.createElement('div');metrics.className='metrics';const reset=row.quota?.local?.resetAt?new Date(row.quota.local.resetAt).toLocaleString('bn-BD'):'—';metrics.append(metric(row.quota?.local?.used??0,'আজ ব্যবহার'),metric(row.quota?.local?.remaining??0,'বাকি'),metric(reset,'Reset'),metric(row.health?.circuit||'closed','Circuit'),metric(Math.round((row.health?.successRate||0)*100)+'%','Success'),metric((row.health?.latencyMs||0)+' ms','Latency'),metric(row.health?.failureCount||0,'Failures'),metric(row.health?.lastReason||'NONE','শেষ কারণ'));const fields=document.createElement('div');fields.className='provider-fields';[['priority','Priority',row.priority,1,10000],['dailyQuota','Daily quota',row.quota?.local?.limit||0,0,10000000]].forEach(([name,label,value,min,max])=>{const wrap=document.createElement('div');wrap.className='field';const l=document.createElement('label');l.textContent=label;const input=document.createElement('input');input.type='number';input.dataset.field=name;input.min=String(min);input.max=String(max);input.value=String(value);wrap.append(l,input);fields.append(wrap)});card.append(top,metrics,fields);providersNode.append(card)});
+    eventsNode.textContent='';const events=current.recentEvents||[];if(!events.length){const tr=document.createElement('tr');const td=document.createElement('td');td.colSpan=7;td.className='empty';td.textContent='কোনো ঘটনা নেই';tr.append(td);eventsNode.append(tr)}else events.slice().reverse().forEach(row=>{const tr=document.createElement('tr');[row.occurredAt?new Date(row.occurredAt).toLocaleString('bn-BD'):'—',row.attemptId||'—',row.providerId||'—',row.channel||'—',row.outcome||'—',row.reason||'—',(row.latencyMs||0)+' ms'].forEach(value=>{const td=document.createElement('td');td.textContent=String(value);tr.append(td)});eventsNode.append(tr)});
+  };
+  const load=async()=>{current=await request('/status');main.hidden=false;render();setNotice('Sanitized live status লোড হয়েছে। কোনো provider secret browser-এ আসেনি।')};
+  document.querySelector('#connect').addEventListener('click',async()=>{token=key.value;key.value='';if(token.length<20)return setNotice('সঠিক admin token দিন।',true);try{await load()}catch(error){token='';main.hidden=true;setNotice(error.message,true)}});
+  document.querySelector('#refresh').addEventListener('click',async()=>{try{await load()}catch(error){setNotice(error.message,true)}});
+  document.querySelector('#save').addEventListener('click',async()=>{try{const policy={};policyFields.forEach(([name,,min,max])=>{const input=document.querySelector('[data-policy="'+name+'"]');policy[name]=numberInput(input.value,min,max)});const providers=[...providersNode.querySelectorAll('[data-provider]')].map(card=>({id:card.dataset.provider,enabled:card.querySelector('[data-field="enabled"]').checked,priority:numberInput(card.querySelector('[data-field="priority"]').value,1,10000),dailyQuota:numberInput(card.querySelector('[data-field="dailyQuota"]').value,0,10000000)}));current=await request('/config',{method:'POST',body:{config:{enabled:document.querySelector('#global-enabled').checked,policy,providers}}});render();setNotice('Policy নিরাপদভাবে সংরক্ষণ হয়েছে। Configured নয় এমন provider চালু হবে না।')}catch(error){setNotice(error.message,true)}});
+  window.addEventListener('pagehide',()=>{token='';key.value=''});
+})();
+</script>
+</body>
+</html>

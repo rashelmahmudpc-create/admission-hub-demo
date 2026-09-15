@@ -74,12 +74,12 @@ const deviceCookie = token => `${AUTH_DEVICE_COOKIE}=${encodeURIComponent(token)
 const verificationCookie = (token, maxAge = 15 * 60) => secureCookie(AUTH_VERIFICATION_COOKIE, token, maxAge);
 const clearAuthCookies = () => [sessionCookie('', 0), firebaseCookie('', 0), verificationCookie('', 0)];
 
-async function readJson(request) {
+async function readJson(request, maxBytes = MAX_BODY_BYTES) {
   if (!String(request.headers.get('Content-Type') || '').toLowerCase().startsWith('application/json')) {
     throw new NativeAuthError(AUTH_ERROR_CODES.INVALID_INPUT);
   }
   const declared = Number(request.headers.get('Content-Length') || 0);
-  if (declared > MAX_BODY_BYTES || !request.body) throw new NativeAuthError(AUTH_ERROR_CODES.INVALID_INPUT);
+  if (declared > maxBytes || !request.body) throw new NativeAuthError(AUTH_ERROR_CODES.INVALID_INPUT);
   const reader = request.body.getReader();
   const decoder = new TextDecoder();
   let raw = '';
@@ -88,7 +88,7 @@ async function readJson(request) {
     const { done, value } = await reader.read();
     if (done) break;
     size += value.byteLength;
-    if (size > MAX_BODY_BYTES) {
+    if (size > maxBytes) {
       await reader.cancel();
       throw new NativeAuthError(AUTH_ERROR_CODES.INVALID_INPUT);
     }
@@ -1067,12 +1067,14 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         });
       }
 
+      // Phase 7 — profile response is additive: `profile` keeps the legacy
+      // shape; publicId/completion/avatar/context are new read-only fields.
       if (request.method === 'GET' && url.pathname === `${AUTH_API_PREFIX}/profile`) {
         if (!provider.configured) throw new NativeAuthError(AUTH_ERROR_CODES.NOT_CONFIGURED);
         const current = await firebaseReadySession({
           provider, jar, env, context, allowTelegram: telegramVerificationRequested(env, url)
         });
-        const result = await callAuthority(env, '/internal/profile/get', {
+        const result = await callAuthority(env, '/internal/profile/get-v2', {
           input: {
             sessionToken: current.sessionToken,
             email: current.user.email,
@@ -1080,9 +1082,128 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           },
           context
         });
-        return json(request, 200, { ok: true, profile: result?.profile || null }, {
+        return json(request, 200, {
+          ok: true,
+          profile: result?.profile || null,
+          publicId: result?.publicId || null,
+          completion: Number(result?.completion || 0),
+          avatar: result?.avatar || { present: false },
+          avatarUrl: result?.avatarUrl || null,
+          joinedYear: result?.joinedYear || null,
+          context: result?.context || null
+        }, {
           'Set-Cookie': sessionCookies(current.session, current.refreshed.refreshToken, context)
         });
+      }
+
+      if (request.method === 'POST' && url.pathname === `${AUTH_API_PREFIX}/profile/patch`) {
+        if (!provider.configured) throw new NativeAuthError(AUTH_ERROR_CODES.NOT_CONFIGURED);
+        const body = await readJson(request);
+        const current = await firebaseReadySession({
+          provider, jar, env, context, allowTelegram: telegramVerificationRequested(env, url)
+        });
+        await callAuthority(env, '/internal/firebase/rate', {
+          input: { operation: 'profile-patch', email: current.user.email }, context
+        });
+        const result = await callAuthority(env, '/internal/profile/patch', {
+          input: {
+            sessionToken: current.sessionToken,
+            email: current.user.email,
+            subject: current.user.subject,
+            fields: body?.fields,
+            expectVersion: body?.expectVersion
+          },
+          context
+        });
+        return json(request, 200, { ok: true, saved: result?.saved === true, profile: result?.profile || null }, {
+          'Set-Cookie': sessionCookies(current.session, current.refreshed.refreshToken, context)
+        });
+      }
+
+      // Phase 7 — avatar upload (base64 JSON; server validates MIME +
+      // magic bytes + size; client filename is never trusted).
+      if (request.method === 'POST' && url.pathname === `${AUTH_API_PREFIX}/profile/avatar`) {
+        if (!provider.configured) throw new NativeAuthError(AUTH_ERROR_CODES.NOT_CONFIGURED);
+        const body = await readJson(request, 3_500_000);
+        const current = await firebaseReadySession({
+          provider, jar, env, context, allowTelegram: telegramVerificationRequested(env, url)
+        });
+        await callAuthority(env, '/internal/firebase/rate', {
+          input: { operation: 'avatar-write', email: current.user.email }, context
+        });
+        const result = await callAuthority(env, '/internal/avatar/save', {
+          input: {
+            sessionToken: current.sessionToken,
+            email: current.user.email,
+            subject: current.user.subject,
+            data: body?.data,
+            mime: body?.mime
+          },
+          context
+        });
+        return json(request, 200, { ok: true, saved: result?.saved === true }, {
+          'Set-Cookie': sessionCookies(current.session, current.refreshed.refreshToken, context)
+        });
+      }
+
+      if (request.method === 'DELETE' && url.pathname === `${AUTH_API_PREFIX}/profile/avatar`) {
+        if (!provider.configured) throw new NativeAuthError(AUTH_ERROR_CODES.NOT_CONFIGURED);
+        const current = await firebaseReadySession({
+          provider, jar, env, context, allowTelegram: telegramVerificationRequested(env, url)
+        });
+        await callAuthority(env, '/internal/firebase/rate', {
+          input: { operation: 'avatar-write', email: current.user.email }, context
+        });
+        const result = await callAuthority(env, '/internal/avatar/delete', {
+          input: {
+            sessionToken: current.sessionToken,
+            email: current.user.email,
+            subject: current.user.subject
+          },
+          context
+        });
+        return json(request, 200, { ok: true, deleted: result?.deleted === true }, {
+          'Set-Cookie': sessionCookies(current.session, current.refreshed.refreshToken, context)
+        });
+      }
+
+      if (request.method === 'GET' && url.pathname === `${AUTH_API_PREFIX}/profile/avatar`) {
+        if (!provider.configured) throw new NativeAuthError(AUTH_ERROR_CODES.NOT_CONFIGURED);
+        const current = await firebaseReadySession({
+          provider, jar, env, context, allowTelegram: telegramVerificationRequested(env, url)
+        });
+        const result = await callAuthority(env, '/internal/avatar/get', {
+          input: {
+            sessionToken: current.sessionToken,
+            email: current.user.email,
+            subject: current.user.subject
+          },
+          context
+        });
+        if (!result?.present) return json(request, 404, { ok: false, error: { code: 'AVATAR_NOT_FOUND' } });
+        const bytes = Uint8Array.from(atob(result.data), char => char.charCodeAt(0));
+        return new Response(bytes, {
+          status: 200,
+          headers: new Headers({
+            'Content-Type': result.mime,
+            'Content-Length': String(bytes.byteLength),
+            'Cache-Control': 'private, max-age=3600, no-store=0',
+            ...corsHeaders(request)
+          })
+        });
+      }
+
+      // Phase 7 — public-safe profile projection (unauthenticated,
+      // rate-limited). Private profiles never surface.
+      if (request.method === 'GET' && url.pathname.startsWith('/api/public/profile/')) {
+        const publicId = decodeURIComponent(url.pathname.slice('/api/public/profile/'.length));
+        await callAuthority(env, '/internal/firebase/rate', {
+          input: { operation: 'public-profile-read' }, context
+        });
+        const result = await callAuthority(env, '/internal/public-profile/get', {
+          input: { publicId }
+        });
+        return json(request, 200, { ok: true, profile: result?.profile || null });
       }
       if (request.method === 'GET' && url.pathname === `${AUTH_API_PREFIX}/account`) {
         if (!provider.configured) throw new NativeAuthError(AUTH_ERROR_CODES.NOT_CONFIGURED);

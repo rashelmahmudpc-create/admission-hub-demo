@@ -231,7 +231,23 @@ export class SqliteAuthRepository {
     // challenges reuse the existing ticket flow; NULL = legacy verification).
     const ticketColumns = new Set(this.#rows('PRAGMA table_info(auth_account_verification_tickets)').map(row => row.name));
     if (!ticketColumns.has('purpose')) this.sql.exec('ALTER TABLE auth_account_verification_tickets ADD COLUMN purpose TEXT');
-    this.sql.exec("INSERT INTO auth_meta(key,value) VALUES('schema_version','6') ON CONFLICT(key) DO UPDATE SET value=excluded.value");
+    // Phase 7 — schema v7: profile personalization fields (blueprint §2, §3,
+    // §12, §14, §21). Additive only — the protected Phase 3 core columns and
+    // write path (setAccountState & friends) are untouched.
+    const profileColumns = new Set(this.#rows('PRAGMA table_info(auth_profiles)').map(row => row.name));
+    if (!profileColumns.has('mobile')) this.sql.exec('ALTER TABLE auth_profiles ADD COLUMN mobile TEXT');
+    if (!profileColumns.has('bio')) this.sql.exec('ALTER TABLE auth_profiles ADD COLUMN bio TEXT');
+    if (!profileColumns.has('targets')) this.sql.exec("ALTER TABLE auth_profiles ADD COLUMN targets TEXT DEFAULT '[]'");
+    if (!profileColumns.has('visibility')) this.sql.exec("ALTER TABLE auth_profiles ADD COLUMN visibility TEXT NOT NULL DEFAULT 'private'");
+    this.sql.exec(
+      `CREATE TABLE IF NOT EXISTS auth_public_identities (
+        user_id TEXT PRIMARY KEY,
+        public_id TEXT NOT NULL UNIQUE,
+        created_at INTEGER NOT NULL,
+        FOREIGN KEY(user_id) REFERENCES auth_users(user_id)
+      )`
+    );
+    this.sql.exec("INSERT INTO auth_meta(key,value) VALUES('schema_version','7') ON CONFLICT(key) DO UPDATE SET value=excluded.value");
   }
 
   // Phase 6 — device trust lifecycle (§5-§7). Refs are opaque HMAC values;
@@ -632,22 +648,37 @@ export class SqliteAuthRepository {
     });
   }
 
+  #parseTargets(raw) {
+    try {
+      const value = JSON.parse(String(raw || '[]'));
+      return Array.isArray(value) ? value : [];
+    } catch {
+      return [];
+    }
+  }
+
   #profileForUser(userId) {
     const row = this.#one(
       `SELECT profile_version AS version,full_name AS fullName,date_of_birth AS dob,
         school_id AS schoolId,school_name AS schoolName,school_district AS schoolDistrict,
         higher_id AS higherId,higher_name AS higherName,higher_district AS higherDistrict,
+        mobile AS mobile,bio AS bio,targets AS targets,visibility AS visibility,
         created_at AS createdAt,updated_at AS updatedAt
        FROM auth_profiles WHERE user_id=?`,
       userId
     );
     if (!row) return null;
+    const visibility = ['private', 'limited', 'public'].includes(row.visibility) ? row.visibility : 'private';
     return {
       version: Number(row.version || 1),
       fullName: row.fullName,
       dob: row.dob,
       school: { id: row.schoolId, name: row.schoolName, district: row.schoolDistrict || '' },
       higherInstitution: row.higherId ? { id: row.higherId, name: row.higherName, district: row.higherDistrict || '' } : null,
+      mobile: row.mobile || '',
+      bio: row.bio || '',
+      targets: this.#parseTargets(row.targets),
+      visibility,
       createdAt: Number(row.createdAt),
       updatedAt: Number(row.updatedAt)
     };
@@ -655,19 +686,23 @@ export class SqliteAuthRepository {
 
   #writeProfile(userId, profile, now) {
     const higher = profile.higherInstitution || null;
+    const targets = JSON.stringify(Array.isArray(profile.targets) ? profile.targets : []);
+    const visibility = ['private', 'limited', 'public'].includes(profile.visibility) ? profile.visibility : 'private';
     this.sql.exec(
       `INSERT INTO auth_profiles(
         user_id,profile_version,full_name,date_of_birth,school_id,school_name,school_district,
-        higher_id,higher_name,higher_district,created_at,updated_at
-      ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
+        higher_id,higher_name,higher_district,mobile,bio,targets,visibility,created_at,updated_at
+      ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
       ON CONFLICT(user_id) DO UPDATE SET
         profile_version=excluded.profile_version,full_name=excluded.full_name,date_of_birth=excluded.date_of_birth,
         school_id=excluded.school_id,school_name=excluded.school_name,school_district=excluded.school_district,
         higher_id=excluded.higher_id,higher_name=excluded.higher_name,higher_district=excluded.higher_district,
+        mobile=excluded.mobile,bio=excluded.bio,targets=excluded.targets,visibility=excluded.visibility,
         updated_at=excluded.updated_at`,
-      userId, Number(profile.version || 1), profile.fullName, profile.dob,
-      profile.school.id, profile.school.name, profile.school.district || '',
-      higher?.id || null, higher?.name || null, higher?.district || null, now, now
+      userId, Number(profile.version || 1), profile.fullName || '', profile.dob || '',
+      profile.school?.id || '', profile.school?.name || '', profile.school?.district || '',
+      higher?.id || null, higher?.name || null, higher?.district || null,
+      profile.mobile || '', profile.bio || '', targets, visibility, now, now
     );
     return this.#profileForUser(userId);
   }
@@ -998,6 +1033,164 @@ export class SqliteAuthRepository {
     const session = this.#canonicalSession(input);
     if (session.error) return session;
     return { profile: this.#profileForUser(session.user.id) };
+  }
+
+  // ---------------------------------------------------------------------
+  // Phase 7 — Profile & Personal Identity (blueprint §3-§4, §14, §21, §25)
+  // Profile is a consumer of the protected Identity Core: everything below
+  // derives the user from the verified session and never rewrites
+  // identity/auth fields.
+  // ---------------------------------------------------------------------
+
+  // Deterministic, permanent, non-sensitive public display ID (blueprint §14).
+  // 31-char alphabet (no ambiguous 0/O/1/I/L glyphs); 6 digits ≈ 887M
+  // combinations. Rare deterministic collisions retry with a salt.
+  static PUBLIC_ID_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+
+  async #derivePublicId(userId, attempt = 0) {
+    const { crypto } = globalThis;
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`ah-public-id-v1|${userId}|${attempt}`));
+    const bytes = new Uint8Array(digest).subarray(0, 4);
+    const alphabet = SqliteAuthRepository.PUBLIC_ID_ALPHABET;
+    let value = ((bytes[0] << 24) | (bytes[1] << 16) | (bytes[2] << 8) | bytes[3]) >>> 0;
+    let out = '';
+    for (let i = 0; i < 6; i += 1) {
+      out += alphabet[value % 31];
+      value = Math.floor(value / 31);
+    }
+    return `AH-${out}`;
+  }
+
+  async #ensurePublicIdentity(userId, now) {
+    const existing = this.#one('SELECT public_id AS publicId FROM auth_public_identities WHERE user_id=?', userId);
+    if (existing) return existing.publicId;
+    let attempt = 0;
+    for (;;) {
+      attempt += 1;
+      const candidate = await this.#derivePublicId(userId, attempt - 1);
+      const clash = this.#one('SELECT user_id AS userId FROM auth_public_identities WHERE public_id=?', candidate);
+      if (clash && clash.userId !== userId) continue; // deterministic collision — retry
+      this.sql.exec('INSERT INTO auth_public_identities(user_id,public_id,created_at) VALUES(?,?,?)', userId, candidate, now);
+      return candidate;
+    }
+  }
+
+  // Blueprint §4 — profile provisioning must never fail a login. Creates a
+  // neutral, editable placeholder row for accounts that reached a verified
+  // session without an onboarding row (legacy/abandoned-onboarding edge).
+  #provisionProfile(userId, now) {
+    if (this.#profileForUser(userId)) return null;
+    this.sql.exec(
+      `INSERT INTO auth_profiles(
+        user_id,profile_version,full_name,date_of_birth,school_id,school_name,school_district,
+        higher_id,higher_name,higher_district,mobile,bio,targets,visibility,created_at,updated_at
+      ) VALUES(?,1,'','','','','',NULL,NULL,NULL,'','','[]','private',?,?)`,
+      userId, now, now
+    );
+    this.#event('profile-provisioned', null, userId, now);
+    return this.#profileForUser(userId);
+  }
+
+  // Blueprint §6 — weighted, display-only completion (never blocks access).
+  #profileCompletion(profile, { avatarPresent = false } = {}) {
+    if (!profile) return 0;
+    let score = 0;
+    if (profile.fullName && profile.fullName.length >= 2) score += 25;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(String(profile.dob || ''))) score += 15;
+    if (profile.mobile) score += 15;
+    if (profile.school && profile.school.name) score += 10;
+    if (profile.higherInstitution && profile.higherInstitution.name) score += 10;
+    if (Array.isArray(profile.targets) && profile.targets.length > 0 && profile.targets[0]?.name) score += 15;
+    if (avatarPresent) score += 10;
+    return Math.min(100, score);
+  }
+
+  async getProfileV2(input) {
+    const session = this.#canonicalSession(input);
+    if (session.error) return session;
+    const provisioned = this.#provisionProfile(session.user.id, input.now);
+    const profile = provisioned || this.#profileForUser(session.user.id);
+    const publicId = await this.#ensurePublicIdentity(session.user.id, input.now);
+    const avatarPresent = input.avatarPresent === true;
+    const account = this.#one('SELECT created_at AS createdAt,last_login_at AS lastLoginAt FROM auth_users WHERE user_id=?', session.user.id);
+    return {
+      profile,
+      publicId,
+      completion: this.#profileCompletion(profile, { avatarPresent }),
+      avatarPresent,
+      joinedYear: account ? Number(String(account.createdAt).slice(0, 4)) : null,
+      lastLoginAt: account ? Number(account.lastLoginAt) : null
+    };
+  }
+
+  // Blueprint §27/§28 — PATCH semantics: only provided fields change;
+  // optimistic concurrency via profile_version (client sends expectVersion).
+  async saveProfilePatch(input) {
+    return this.#transaction(() => {
+      const session = this.#canonicalSession(input);
+      if (session.error) return session;
+      const provisioned = this.#provisionProfile(session.user.id, input.now);
+      const current = provisioned || this.#profileForUser(session.user.id);
+      const expect = input.expectVersion === undefined || input.expectVersion === null
+        ? null
+        : Number(input.expectVersion);
+      if (expect !== null && Number.isFinite(expect) && expect !== current.version) {
+        return { error: AUTH_ERROR_CODES.PROFILE_VERSION_CONFLICT, currentVersion: current.version };
+      }
+      const next = {
+        ...current,
+        version: current.version + 1,
+        ...input.fields,
+        updatedAt: input.now
+      };
+      this.#writeProfile(session.user.id, next, input.now);
+      const changed = Object.keys(input.fields);
+      this.#event(changed.includes('visibility') ? 'profile-visibility-changed' : 'profile-patched', input.subjectRef, session.user.id, input.now);
+      return { saved: true, profile: this.#profileForUser(session.user.id) };
+    });
+  }
+
+  // Blueprint §22 — public-safe projection. Private profiles never surface;
+  // limited = name + ID + avatar; public = + target + joined year + bio.
+  // Never includes email, mobile, DOB, school details or internal refs.
+  async getPublicProfile(input) {
+    // Phase 6 fact: suspension lives in auth_account_state (auth_users.status
+    // is the deactivation path) — both must be active for a public surface.
+    const row = this.#one(
+      `SELECT p.user_id AS userId,p.full_name AS fullName,p.bio AS bio,p.targets AS targets,p.visibility AS visibility,
+        u.created_at AS createdAt,
+        (SELECT subject_ref FROM auth_external_identities WHERE user_id=p.user_id AND provider='firebase' LIMIT 1) AS subjectRef
+       FROM auth_profiles p
+       JOIN auth_users u ON u.user_id=p.user_id
+       JOIN auth_public_identities x ON x.user_id=p.user_id
+       LEFT JOIN auth_account_state st ON st.user_id=p.user_id
+       WHERE x.public_id=? AND u.status='active' AND COALESCE(st.status,'active')='active'`,
+      input.publicId
+    );
+    if (!row) return { error: AUTH_ERROR_CODES.PUBLIC_PROFILE_NOT_FOUND };
+    const visibility = ['private', 'limited', 'public'].includes(row.visibility) ? row.visibility : 'private';
+    if (visibility === 'private') return { error: AUTH_ERROR_CODES.PUBLIC_PROFILE_NOT_FOUND };
+    const publicId = this.#one('SELECT public_id AS publicId FROM auth_public_identities WHERE user_id=?', row.userId);
+    const profile = this.#profileForUser(row.userId);
+    const base = {
+      publicId: publicId?.publicId,
+      displayName: row.fullName || 'Admission Student',
+      avatarPresent: false,
+      visibility
+    };
+    if (visibility !== 'public') return { profile: base, subjectRef: row.subjectRef || null };
+    const targets = this.#parseTargets(row.targets);
+    const target = targets[0] || null;
+    return {
+      profile: {
+        ...base,
+        target: target ? { name: target.name, unit: target.unit || '', year: target.year || '' } : null,
+        joinedYear: Number(String(row.createdAt).slice(0, 4)) || null,
+        bio: row.bio || '',
+        completion: this.#profileCompletion(profile, { avatarPresent: false })
+      },
+      subjectRef: row.subjectRef || null
+    };
   }
 
   async beginPasskeyRegistration(input) {

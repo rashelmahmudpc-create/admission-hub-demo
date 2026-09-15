@@ -106,6 +106,24 @@ const FIREBASE_OPERATION_LIMITS = Object.freeze({
     Object.freeze({ scope: 'firebase-profile-device-day', source: 'device', limit: 60, windowMs: 24 * 60 * 60 * 1000 }),
     Object.freeze({ scope: 'firebase-profile-ip-hour', source: 'ip', limit: 300, windowMs: 60 * 60 * 1000 }),
     Object.freeze({ scope: 'firebase-profile-global-minute', source: 'global', limit: 1000, windowMs: 60 * 1000 })
+  ]),
+  // Phase 7 — profile patch + avatar + public reads.
+  'profile-patch': Object.freeze([
+    Object.freeze({ scope: 'firebase-profile-email-day', source: 'email', limit: 30, windowMs: 24 * 60 * 60 * 1000 }),
+    Object.freeze({ scope: 'firebase-profile-device-day', source: 'device', limit: 60, windowMs: 24 * 60 * 60 * 1000 }),
+    Object.freeze({ scope: 'firebase-profile-ip-hour', source: 'ip', limit: 300, windowMs: 60 * 60 * 1000 }),
+    Object.freeze({ scope: 'firebase-profile-global-minute', source: 'global', limit: 1000, windowMs: 60 * 1000 })
+  ]),
+  'avatar-write': Object.freeze([
+    Object.freeze({ scope: 'firebase-avatar-email-day', source: 'email', limit: 10, windowMs: 24 * 60 * 60 * 1000 }),
+    Object.freeze({ scope: 'firebase-avatar-device-day', source: 'device', limit: 20, windowMs: 24 * 60 * 60 * 1000 }),
+    Object.freeze({ scope: 'firebase-avatar-ip-hour', source: 'ip', limit: 60, windowMs: 60 * 60 * 1000 }),
+    Object.freeze({ scope: 'firebase-avatar-global-minute', source: 'global', limit: 100, windowMs: 60 * 1000 })
+  ]),
+  'public-profile-read': Object.freeze([
+    Object.freeze({ scope: 'firebase-publicprofile-ip-15m', source: 'ip', limit: 60, windowMs: 15 * 60 * 1000 }),
+    Object.freeze({ scope: 'firebase-publicprofile-device-15m', source: 'device', limit: 30, windowMs: 15 * 60 * 1000 }),
+    Object.freeze({ scope: 'firebase-publicprofile-global-minute', source: 'global', limit: 600, windowMs: 60 * 1000 })
   ])
 });
 
@@ -209,9 +227,65 @@ const validChallengeId = value => {
   return challengeId;
 };
 
+// Phase 7 — avatar upload validation (blueprint §11). Magic-byte checks are
+// done server-side after base64 decode; client filenames are never trusted.
+const AVATAR_MIME_MAGIC = Object.freeze({
+  'image/jpeg': Object.freeze([0xff, 0xd8, 0xff]),
+  'image/png': Object.freeze([0x89, 0x50, 0x4e, 0x47]),
+  'image/webp': Object.freeze([0x52, 0x49, 0x46, 0x46])
+});
+const WEBP_MAGIC_OFFSET8 = 0x50424557; // "WEBP" little-endian
+const AVATAR_MAX_BYTES = 2 * 1024 * 1024;
+const AVATAR_MIN_BYTES = 64;
+
+export function normalizeProfilePatch(value = {}) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+  const fields = Object.create(null);
+  let touched = false;
+  for (const [key, raw] of Object.entries(value)) {
+    if (raw === undefined) continue;
+    touched = true;
+    if (key === 'fullName') {
+      const name = cleanProfileText(raw, 80);
+      if (name.length < 2 || name.length > 80 || !/^[\p{L}\p{M} .'-]+$/u.test(name)) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+      fields.fullName = name;
+    } else if (key === 'mobile') {
+      const mobile = String(raw || '').replace(/[\s()-]/g, '');
+      if (!/^\+?[0-9]{8,15}$/.test(mobile)) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+      fields.mobile = mobile;
+    } else if (key === 'bio') {
+      const bio = String(raw || '').normalize('NFKC').replace(/\s+/g, ' ').trim().slice(0, 281);
+      if (bio.length > 280 || /[\r\n\u0000]/.test(bio)) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+      fields.bio = bio;
+    } else if (key === 'target') {
+      if (raw === null) { fields.targets = []; continue; }
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+      const name = cleanProfileText(raw.name, 120);
+      const unit = cleanProfileText(raw.unit, 20);
+      const year = cleanProfileText(raw.year, 10);
+      if (name.length < 2 || name.length > 120 || unit.length > 20 || year.length > 10
+        || /[\r\n\u0000<>]/.test(name) || /[\r\n\u0000<>]/.test(unit) || /[\r\n\u0000<>]/.test(year)) {
+        failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+      }
+      fields.targets = [Object.freeze({ name, unit, year })];
+    } else if (key === 'visibility') {
+      if (!['private', 'limited', 'public'].includes(raw)) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+      fields.visibility = raw;
+    } else {
+      failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+    }
+  }
+  if (!touched) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+  return Object.freeze(fields);
+}
+
 export class CloudflareNativeAuthEngine {
-  constructor({ repository, hmacSecret, now = () => Date.now(), cryptoImpl = globalThis.crypto, passkeyRpId = PASSKEY_RP_ID, passkeyOrigins = [`https://${PASSKEY_RP_ID}`], securityConfigRaw = '' } = {}) {
+  constructor({ repository, hmacSecret, now = () => Date.now(), cryptoImpl = globalThis.crypto, passkeyRpId = PASSKEY_RP_ID, passkeyOrigins = [`https://${PASSKEY_RP_ID}`], securityConfigRaw = '', avatarStore = null } = {}) {
     this.repository = assertRepository(repository);
+    // Phase 7 — provider-agnostic avatar store (D1ProfileStore); avatar
+    // objects are keyed by the canonical firebase subject ref (the provider
+    // set is frozen at ['firebase'] by the Identity Core protection contract).
+    this.avatarStore = avatarStore || null;
     this.hmac = new AuthHmac(hmacSecret, cryptoImpl);
     this.vault = new AuthSecretVault(hmacSecret, cryptoImpl);
     this.now = now;
@@ -660,6 +734,186 @@ export class CloudflareNativeAuthEngine {
       now: Number(this.now())
     }));
     return Object.freeze({ profile: result.profile || null });
+  }
+
+  // -------------------------------------------------------------------
+  // Phase 7 — Profile & Personal Identity (blueprint §3-§36)
+  // The profile is a consumer of the protected Identity/Session/Security
+  // cores: every operation below starts from the verified session
+  // (#firebaseIdentity) and never rewrites identity or auth fields.
+  // -------------------------------------------------------------------
+
+  #bufferToBase64(buffer) {
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) {
+      binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    }
+    return btoa(binary);
+  }
+
+  // High-dynamic blueprint §01/§04/§05/§13/§14 — deterministic rule table.
+  // No AI, no behavioral inference; only real account/profile state.
+  profileContext({ profile = null, completion = 0, lastLoginAt = null, now = Date.now() }) {
+    const DAY_MS = 86_400_000;
+    const createdAt = profile?.createdAt ? Number(profile.createdAt) : null;
+    const hasTarget = Array.isArray(profile?.targets) && profile.targets.length > 0 && Boolean(profile.targets[0]?.name);
+    const ageDays = createdAt ? (now - createdAt) / DAY_MS : Number.POSITIVE_INFINITY;
+    const gapDays = lastLoginAt ? (now - Number(lastLoginAt)) / DAY_MS : Number.POSITIVE_INFINITY;
+    let context = 'DEFAULT';
+    let greeting = 'আগে থেকেই চলো';
+    if (!profile || Number(completion) < 60) {
+      context = 'PROFILE_INCOMPLETE';
+      greeting = 'তোমার প্রোফাইলটা পূরণ করে নাও';
+    } else if (ageDays < 7) {
+      context = 'NEW_USER';
+      greeting = 'Admission Hub-এ স্বাগতম!';
+    } else if (hasTarget) {
+      context = 'GOAL_SET';
+      greeting = 'লক্ষ্যে অগ্রসর হও';
+    } else if (gapDays > 14) {
+      context = 'RETURNING';
+      greeting = 'ফিরে আসায় ভালো লাগলো!';
+    }
+    const sectionOrder = Object.freeze({
+      PROFILE_INCOMPLETE: Object.freeze(['identity', 'completion', 'academic', 'security']),
+      NEW_USER: Object.freeze(['identity', 'completion', 'academic', 'security']),
+      GOAL_SET: Object.freeze(['identity', 'goal', 'academic', 'stats']),
+      RETURNING: Object.freeze(['identity', 'goal', 'stats', 'academic']),
+      DEFAULT: Object.freeze(['identity', 'academic', 'completion', 'security'])
+    }[context]);
+    return Object.freeze({
+      context,
+      greeting,
+      sectionOrder,
+      freshness: 'LIVE',
+      computedAt: now
+    });
+  }
+
+  async getProfileV2(input = {}, requestContext = {}) {
+    const identity = await this.#firebaseIdentity(input, requestContext, AUTH_ERROR_CODES.SESSION_INVALID);
+    let avatar = { present: false };
+    if (this.avatarStore?.available?.()) {
+      try { avatar = await this.avatarStore.getAvatarMeta(identity.subjectRef); } catch { avatar = { present: false }; }
+    }
+    const result = errorFromRepository(await this.repository.getProfileV2({
+      sessionRef: identity.sessionRef,
+      subjectRef: identity.subjectRef,
+      emailRef: identity.refs.emailRef,
+      now: Number(this.now()),
+      avatarPresent: avatar.present === true
+    }));
+    return Object.freeze({
+      profile: result.profile || null,
+      publicId: result.publicId,
+      completion: Number(result.completion || 0),
+      avatar: avatar.present === true
+        ? Object.freeze({ present: true, mime: avatar.mime, bytes: Number(avatar.bytes), updatedAt: Number(avatar.updatedAt) })
+        : Object.freeze({ present: false }),
+      avatarUrl: avatar.present === true ? '/api/auth/v1/profile/avatar' : null,
+      joinedYear: result.joinedYear || null,
+      context: this.profileContext({
+        profile: result.profile,
+        completion: result.completion,
+        lastLoginAt: result.lastLoginAt,
+        now: Number(this.now())
+      })
+    });
+  }
+
+  async saveProfilePatch(input = {}, requestContext = {}) {
+    const fields = normalizeProfilePatch(input.fields);
+    const identity = await this.#firebaseIdentity(input, requestContext, AUTH_ERROR_CODES.SESSION_INVALID);
+    const result = errorFromRepository(await this.repository.saveProfilePatch({
+      sessionRef: identity.sessionRef,
+      subjectRef: identity.subjectRef,
+      emailRef: identity.refs.emailRef,
+      fields,
+      expectVersion: input.expectVersion === undefined || input.expectVersion === null ? null : Number(input.expectVersion),
+      now: Number(this.now())
+    }));
+    return Object.freeze({ saved: result.saved === true, profile: result.profile || null });
+  }
+
+  #validateAvatar(bytes, mime) {
+    const magic = AVATAR_MIME_MAGIC[mime];
+    if (!magic) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+    if (bytes.byteLength < AVATAR_MIN_BYTES || bytes.byteLength > AVATAR_MAX_BYTES) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+    for (let i = 0; i < magic.length; i += 1) {
+      if (bytes[i] !== magic[i]) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+    }
+    if (mime === 'image/webp' && (bytes[8] | bytes[9] << 8 | bytes[10] << 16 | bytes[11] << 24) !== WEBP_MAGIC_OFFSET8) {
+      failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+    }
+    return bytes.byteLength;
+  }
+
+  async saveAvatar(input = {}, requestContext = {}) {
+    if (!this.avatarStore?.available?.()) failAuth(AUTH_ERROR_CODES.STORAGE_UNAVAILABLE);
+    const mime = String(input.mime || '');
+    let bytes;
+    try {
+      bytes = Uint8Array.from(atob(String(input.data || '')), char => char.charCodeAt(0));
+    } catch {
+      failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+    }
+    const size = this.#validateAvatar(bytes, mime);
+    const identity = await this.#firebaseIdentity(input, requestContext, AUTH_ERROR_CODES.SESSION_INVALID);
+    const now = Number(this.now());
+    await this.avatarStore.saveAvatar({ userId: identity.subjectRef, data: bytes, mime, now });
+    await this.repository.recordSecurityEvent({
+      eventType: 'profile-avatar-changed',
+      subjectRef: identity.subjectRef,
+      userId: null,
+      now,
+      purpose: null,
+      policyVersion: null
+    });
+    return Object.freeze({ saved: true, mime, bytes: size });
+  }
+
+  async deleteAvatar(input = {}, requestContext = {}) {
+    if (!this.avatarStore?.available?.()) failAuth(AUTH_ERROR_CODES.STORAGE_UNAVAILABLE);
+    const identity = await this.#firebaseIdentity(input, requestContext, AUTH_ERROR_CODES.SESSION_INVALID);
+    await this.avatarStore.deleteAvatar(identity.subjectRef);
+    await this.repository.recordSecurityEvent({
+      eventType: 'profile-avatar-removed',
+      subjectRef: identity.subjectRef,
+      userId: null,
+      now: Number(this.now()),
+      purpose: null,
+      policyVersion: null
+    });
+    return Object.freeze({ deleted: true });
+  }
+
+  async getAvatarData(input = {}, requestContext = {}) {
+    if (!this.avatarStore?.available?.()) return Object.freeze({ present: false });
+    const identity = await this.#firebaseIdentity(input, requestContext, AUTH_ERROR_CODES.SESSION_INVALID);
+    const avatar = await this.avatarStore.getAvatar(identity.subjectRef);
+    if (!avatar?.present) return Object.freeze({ present: false });
+    return Object.freeze({
+      present: true,
+      mime: avatar.mime,
+      bytes: Number(avatar.bytes),
+      data: this.#bufferToBase64(avatar.data)
+    });
+  }
+
+  async getPublicProfile(input = {}) {
+    const publicId = String(input.publicId || '').trim();
+    if (!/^AH-[A-Z2-9]{6}$/.test(publicId)) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+    const result = errorFromRepository(await this.repository.getPublicProfile({
+      publicId,
+      now: Number(this.now())
+    }));
+    let avatarPresent = false;
+    if (result.subjectRef && this.avatarStore?.available?.()) {
+      try { avatarPresent = (await this.avatarStore.getAvatarMeta(result.subjectRef)).present === true; } catch { avatarPresent = false; }
+    }
+    const profile = { ...result.profile, avatarPresent };
+    return Object.freeze({ profile: Object.freeze(profile) });
   }
 
   async beginPasskeyRegistration(input = {}, requestContext = {}) {
