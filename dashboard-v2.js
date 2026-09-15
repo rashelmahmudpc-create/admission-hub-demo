@@ -171,8 +171,13 @@
     const unfinished = (C().exams || []).find((e) => e.status === 'running');
     const firstS = (C().subjects || []).slice(0, 3);
 
+    const avatarLetter = escv((C().user && C().user.name ? C().user.name : 'S').trim().slice(0, 1).toUpperCase());
+    // Phase 7 — uploaded avatar (user data) replaces the letter once present.
+    const avatarInner = (typeof window.__ahHasAvatar === 'function' && window.__ahHasAvatar())
+      ? '<img class="dv2-avatar-img" src="/api/auth/v1/profile/avatar" alt="" onerror="this.remove()">' + avatarLetter
+      : avatarLetter;
     const header = '<div class="dv2-header">' +
-      '<div class="dv2-avatar">' + escv((C().user && C().user.name ? C().user.name : 'S').trim().slice(0, 1).toUpperCase()) + '</div>' +
+      '<div class="dv2-avatar">' + avatarInner + '</div>' +
       '<div class="dv2-hello"><b>' + escv((C().user && C().user.name) || 'শুভ শুভ - Scholar') + '</b>' +
       '<div class="dv2-muted">' + new Intl.DateTimeFormat('bn-BD', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(new Date()) + '</div></div>' +
       '<button class="dv2-bell dv2-bell-c" onclick="navigate(\'history\')" aria-label="নোটিফিকেশন">🔔</button></div>';

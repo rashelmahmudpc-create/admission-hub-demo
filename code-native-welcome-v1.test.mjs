@@ -119,7 +119,9 @@ test('custom Guest Dashboard is absent and Guest returns to the ordinary app rou
   for (const source of [DASH_JS, DASH_CSS, NAV_JS, HTML]) assert.doesNotMatch(source, /reference-guest-v2|data-guest-nav|dv2-guest|ah-guest-dashboard/);
   assert.match(JS, /rememberEntry\('guest'\);[\s\S]{0,120}close\(\);\s*navigateDashboard\(\);\s*notify\(\)/);
   assert.match(HTML, /const NAV_TABS=\[[\s\S]*key:'dashboard'[\s\S]*key:'question-bank'[\s\S]*key:'exam'[\s\S]*key:'ai'[\s\S]*key:'history'/);
-  assert.doesNotMatch(HTML, /key:'profile'/);
+  // Phase 7 (owner-approved): the Profile tab is the real signed-in profile,
+  // not a custom guest dashboard — guest-dashboard markers above still absent.
+  assert.match(HTML, /\{key:'profile', icon:'👤', label:'Profile'\}/);
 });
 
 test('code-native assets and service-worker release markers are synchronized', () => {

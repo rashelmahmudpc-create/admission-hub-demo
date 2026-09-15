@@ -573,6 +573,7 @@ textarea{min-height:96px}
 </script>
 <script src="./session-persist.js?v=session-v1"></script>
 <link rel="stylesheet" href="./account-access.css?v=20260915-session-engine-v1">
+<link rel="stylesheet" href="./profile-ui.css?v=profile-v1">
 <!-- Signup/Onboarding Assistant বন্ধ; মূল অ্যাপের account-aware AI Assistant চালু আছে। -->
 <style id="ah-boot-min">.ah-boot{width:100%;min-height:100dvh;display:grid;place-content:center;justify-items:center;gap:9px;color:#17221d;background:#f1faf6}.ah-boot-mark{display:grid;place-items:center;width:56px;height:56px;border-radius:17px;background:#0f6b4f;color:#fff;font-size:26px;box-shadow:0 12px 28px rgba(15,107,79,.30)}.ah-boot b{font-size:19px;font-weight:800;letter-spacing:.01em}.ah-boot i{font-style:normal;font-size:12px;color:#5e7168;animation:ahBootPulse 1.15s ease-in-out infinite}@keyframes ahBootPulse{0%,100%{opacity:.55}50%{opacity:1}}@media(prefers-reduced-motion:reduce){.ah-boot i{animation:none}}</style>
 </head>
@@ -1026,6 +1027,7 @@ const NAV_TABS=[
   {key:'exam', icon:'📝', label:'Exam'},
   {key:'ai', icon:'🤖', label:'AI'},
   {key:'history', icon:'📋', label:'History'},
+  {key:'profile', icon:'👤', label:'Profile'},
 ];
 
 function baseTab(path){
@@ -1038,6 +1040,7 @@ function baseTab(path){
   if(path.startsWith('study-hub/quick-notes')) return 'study-hub/quick-notes';
   if(path.startsWith('progress/plan')) return 'dashboard';
   if(path.startsWith('progress')) return 'dashboard';
+  if(path.startsWith('profile')) return 'profile'; /* Phase 7 — Profile tab */
   return 'dashboard';
 }
 
@@ -1105,6 +1108,13 @@ function confirmModal(title, body, onYes, yesLabel, danger){
 function render(){
   if(window.__admissionBootStatus==='loading') return renderStartupLoading();
   if(window.__admissionBootStatus==='failed') return;
+  /* Phase 7 — pretty public profile URL: /AH-XXXXXX (path-based; _redirects serves the SPA). */
+  const ppMatch=String(location.pathname||'').match(/^\/(AH-[A-Z2-9]{6})\/?$/i);
+  if(ppMatch){
+    const pid=ppMatch[1].toUpperCase();
+    if(window.renderPublicProfilePage) return window.renderPublicProfilePage(pid);
+    return renderShell('<div class="empty" style="padding:64px 20px;text-align:center"><b>Public profile খোলা হচ্ছে…</b></div>',{topbar:false,hideNav:true});
+  }
   const p=Router.path;
   if(p==='routine-parser' && window.Routine90Parser?.render) return window.Routine90Parser.render();
   if(p==='progress/plan'){
@@ -1129,6 +1139,7 @@ function render(){
   if(p.startsWith('history/')) return renderHistoryDetail(p.split('/')[1]);
   if(p==='mistakes') return renderMistakes();
   if(p==='progress') return renderProgress();
+  if(p==='profile') return (window.renderProfilePage ? window.renderProfilePage() : renderDashboard()); /* Phase 7 */
   if(p==='settings') return renderDashboard();
   if(p==='dictionary'||p==='question-bank/settings') return renderLazyToolFallback(p);
   renderDashboard();
@@ -4825,6 +4836,7 @@ window.__admissionBootPromise.catch(error => console.error('[Admission Hub] boot
 </script>
 <!-- First-interaction modules execute before optional/heavy tools. -->
 <script defer src="./dashboard-v2.js?v=dash2f10-main-ai"></script>
+<script defer src="./profile-ui.js?v=profile-v1"></script>
 <script defer src="./ai-agent-chat.js?v=agent-f1-ui-chatv15-identity"></script>
 <script defer src="qbank-redesign.js?v=practice15"></script>
 <script defer src="urgent-fix.js?v=practice13"></script>

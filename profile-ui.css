@@ -1,0 +1,111 @@
+/* ============================================================
+   PROFILE UI — v1 (Phase 7, 2026-09-15)
+   Premium · personal · academic · zero-raster · 320px safe
+   ============================================================ */
+
+.pp-wrap { max-width: 520px; margin: 0 auto; padding: 4px 14px 40px; }
+.pp-head { display: flex; align-items: flex-start; justify-content: space-between; margin: 18px 2px 16px; }
+.pp-head h1 { font-size: 24px; margin: 0 0 2px; }
+.pp-head .muted { font-size: 12.5px; }
+
+.pp-card { padding: 16px; margin: 0 0 12px; }
+.pp-kicker { font-size: 10.5px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; opacity: 0.55; margin-bottom: 6px; }
+.pp-value { font-size: 15px; font-weight: 600; line-height: 1.45; word-break: break-word; }
+.pp-value.pp-empty { opacity: 0.6; font-weight: 500; }
+.pp-hint { font-size: 12.5px; opacity: 0.72; margin: 10px 0 0; line-height: 1.5; }
+.pp-fine { font-size: 12px; opacity: 0.6; margin: 8px 0 0; line-height: 1.45; }
+.pp-fine[hidden] { display: none; }
+.pp-row-between { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.pp-arrow { font-size: 18px; opacity: 0.4; flex: none; }
+.pp-tap { width: 100%; text-align: left; display: flex; align-items: center; justify-content: space-between; gap: 12px; border: none; background: inherit; font: inherit; color: inherit; cursor: pointer; }
+.pp-tap:active { opacity: 0.85; }
+
+/* identity hero */
+.pp-hero { text-align: center; padding: 26px 16px 20px; border-radius: 20px; margin-bottom: 12px; background: linear-gradient(160deg, rgba(76, 122, 248, 0.10), rgba(76, 122, 248, 0.03)); }
+.pp-hero-avatar { width: 92px; height: 92px; margin: 0 auto 12px; border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center; background: #eef1f7; box-shadow: 0 6px 20px rgba(20, 30, 60, 0.10); }
+.pp-avatar-img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.pp-avatar-svg { display: block; width: 100%; height: 100%; }
+.pp-avatar-svg svg { width: 100%; height: 100%; display: block; }
+.pp-hero-name { font-size: 20px; font-weight: 800; }
+.pp-hero-id { display: inline-flex; align-items: center; gap: 8px; margin-top: 8px; padding: 6px 12px; border-radius: 999px; background: rgba(76, 122, 248, 0.10); font-size: 13px; }
+.pp-hero-id span { font-size: 10px; font-weight: 700; letter-spacing: 1px; opacity: 0.6; }
+.pp-hero-id b { font-weight: 700; letter-spacing: 0.4px; }
+.pp-hero-meta { font-size: 12.5px; opacity: 0.7; margin-top: 8px; }
+.pp-greeting { font-size: 13px; text-align: center; opacity: 0.75; margin: 2px 0 14px; }
+
+/* completion */
+.pp-big { font-size: 22px; font-weight: 800; }
+.pp-band { font-size: 12.5px; font-weight: 600; opacity: 0.65; }
+.pp-meter { width: 44%; height: 8px; border-radius: 99px; background: rgba(76, 122, 248, 0.12); overflow: hidden; flex: none; }
+.pp-meter i { display: block; height: 100%; border-radius: 99px; background: linear-gradient(90deg, #4c7af8, #7c5cf0); transition: width 400ms ease; }
+
+/* public link */
+.pp-public-link { margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(20, 30, 60, 0.08); display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.pp-public-link code { font-size: 12px; word-break: break-all; opacity: 0.8; }
+
+/* buttons */
+.pp-btn-primary { background: linear-gradient(135deg, #4c7af8, #6a5df0); color: #fff; border: none; border-radius: 12px; padding: 12px 18px; font-weight: 700; font-size: 14px; cursor: pointer; width: 100%; }
+.pp-btn-primary:active { opacity: 0.9; }
+.pp-btn-secondary { background: rgba(76, 122, 248, 0.10); color: #3457d5; border: none; border-radius: 10px; padding: 9px 14px; font-weight: 700; font-size: 13px; cursor: pointer; }
+.pp-btn-ghost { background: transparent; color: inherit; border: none; border-radius: 10px; padding: 9px 14px; font-weight: 600; font-size: 13px; cursor: pointer; opacity: 0.75; }
+.pp-btn-ghost.pp-danger { color: #d43f3f; opacity: 0.9; }
+.pp-iconbtn { background: rgba(76, 122, 248, 0.10); border: none; border-radius: 10px; width: 38px; height: 38px; font-size: 16px; cursor: pointer; flex: none; }
+.pp-iconbtn:active { opacity: 0.8; }
+
+/* avatar actions */
+.pp-avatar-actions { display: flex; gap: 10px; flex-wrap: wrap; margin: 4px 0 16px; }
+.pp-avatar-actions input[type="file"] { display: none; }
+
+/* bottom sheet */
+.pp-sheet-backdrop { position: fixed; inset: 0; background: rgba(10, 14, 26, 0.45); z-index: 900; display: flex; align-items: flex-end; justify-content: center; animation: ppFade 160ms ease; }
+.pp-sheet { width: 100%; max-width: 520px; background: #fff; border-radius: 22px 22px 0 0; padding: 18px 18px calc(22px + env(safe-area-inset-bottom)); max-height: 82vh; overflow-y: auto; animation: ppSlide 200ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+@keyframes ppFade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes ppSlide { from { transform: translateY(28px); opacity: 0.4; } to { transform: none; opacity: 1; } }
+.pp-sheet-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+.pp-sheet-head h3 { margin: 0; font-size: 17px; }
+.pp-sheet-head .pp-iconbtn { color: inherit; font-size: 20px; }
+.pp-sheet-body .pp-field { display: block; margin-bottom: 14px; }
+.pp-field span { display: block; font-size: 12.5px; font-weight: 700; margin-bottom: 6px; opacity: 0.8; }
+.pp-field em { font-style: normal; font-weight: 500; opacity: 0.55; }
+.pp-field input, .pp-field textarea { width: 100%; box-sizing: border-box; border: 1.5px solid rgba(20, 30, 60, 0.14); border-radius: 12px; padding: 11px 12px; font: inherit; font-size: 14.5px; background: #f7f8fb; }
+.pp-field input:focus, .pp-field textarea:focus { outline: none; border-color: #4c7af8; background: #fff; }
+.pp-field textarea { resize: vertical; min-height: 70px; }
+.pp-sheet-actions { display: flex; gap: 10px; margin-top: 16px; align-items: center; flex-wrap: wrap; }
+.pp-sheet-actions .pp-btn-primary { flex: 1; }
+
+/* visibility options */
+.pp-vlist { display: flex; flex-direction: column; gap: 8px; }
+.pp-vopt { display: flex; gap: 10px; align-items: flex-start; text-align: left; width: 100%; border: 1.5px solid rgba(20, 30, 60, 0.12); background: #fff; border-radius: 14px; padding: 12px; font: inherit; cursor: pointer; }
+.pp-vopt.on { border-color: #4c7af8; background: rgba(76, 122, 248, 0.06); }
+.pp-vradio { color: #4c7af8; flex: none; }
+.pp-vopt b { display: block; font-size: 14px; }
+.pp-vopt small { display: block; font-size: 12px; opacity: 0.65; margin-top: 2px; line-height: 1.4; }
+
+/* toast */
+.pp-toast { position: fixed; left: 50%; bottom: calc(74px + env(safe-area-inset-bottom)); transform: translateX(-50%); background: #141a2e; color: #fff; font-size: 13px; font-weight: 600; padding: 11px 18px; border-radius: 999px; box-shadow: 0 8px 24px rgba(10, 14, 26, 0.28); opacity: 0; pointer-events: none; transition: opacity 220ms ease; z-index: 950; max-width: 88vw; text-align: center; }
+.pp-toast:not(:empty) { opacity: 1; }
+.pp-toast.pp-toast-error { background: #b3261e; }
+
+/* skeleton */
+.pp-skel { height: 120px; border-radius: 18px; margin-bottom: 12px; background: linear-gradient(100deg, #eef1f7 40%, #f7f9fd 50%, #eef1f7 60%); background-size: 200% 100%; animation: ppShimmer 1.3s infinite; }
+@keyframes ppShimmer { to { background-position: -200% 0; } }
+
+/* guest + fallback */
+.pp-guest { text-align: center; padding: 34px 20px; margin-top: 8px; }
+.pp-guest h2 { margin: 10px 0 8px; }
+.pp-guest p { font-size: 13.5px; opacity: 0.75; line-height: 1.55; margin: 0 0 18px; }
+.pp-guest-ic { font-size: 34px; }
+.pp-fallback { padding: 26px 18px; text-align: center; }
+.pp-fallback p { font-size: 13.5px; opacity: 0.8; line-height: 1.55; margin: 0 0 14px; }
+
+/* public profile page */
+.pp-public-wrap { padding-bottom: 56px; }
+.pp-avatar-lg { width: 100px; height: 100px; }
+.pp-hero-avatar:has(.pp-avatar-lg) { width: 100px; height: 100px; }
+.pp-hero-avatar .pp-avatar-svg + .pp-avatar-lg { display: none; }
+.pp-public-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 18px; flex-wrap: wrap; }
+.pp-public-foot span { font-size: 12.5px; font-weight: 700; opacity: 0.6; }
+
+@media (prefers-reduced-motion: reduce) {
+  .pp-sheet, .pp-skel, .pp-meter i { animation: none; transition: none; }
+}
