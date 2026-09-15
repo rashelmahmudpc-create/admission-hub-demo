@@ -174,7 +174,7 @@ async function fillGuidedProfile(app, email) {
 
 async function openSignupTelegram(app) {
   await waitFor(() => app.calls.some(call => call.path.includes('/config?telegramCanary=1')));
-  app.document.querySelector('.ah-account-launcher').click();
+  app.window.AdmissionAccount.open();
   app.document.querySelector('[data-role="show-signup"]').click();
   await fillGuidedProfile(app, 'student@example.com');
   app.document.querySelector('#ah-signup-password').value = 'StrongPassword!9';
@@ -241,7 +241,7 @@ test('mobile-first signup presents Verify with Telegram, START link, OTP box, ch
 test('signup sends no verification message until the student chooses Email or Telegram', async () => {
   const app = setup();
   await waitFor(() => app.calls.some(call => call.path.includes('/config?telegramCanary=1')));
-  app.document.querySelector('.ah-account-launcher').click();
+  app.window.AdmissionAccount.open();
   app.document.querySelector('[data-role="show-signup"]').click();
   await fillGuidedProfile(app, 'choice@example.com');
   app.document.querySelector('#ah-signup-password').value = 'StrongPassword!9';
@@ -270,7 +270,7 @@ test('signup sends no verification message until the student chooses Email or Te
 test('existing unverified login offers the Telegram alternative without creating a frontend session', async () => {
   const app = setup();
   await waitFor(() => app.calls.some(call => call.path.includes('/config?telegramCanary=1')));
-  app.document.querySelector('.ah-account-launcher').click();
+  app.window.AdmissionAccount.open();
   app.document.querySelector('#ah-login-email').value = 'student@example.com';
   app.document.querySelector('#ah-login-password').value = 'StrongPassword!9';
   app.document.querySelector('[data-view="login"]').dispatchEvent(new app.window.Event('submit', { bubbles: true, cancelable: true }));
@@ -336,7 +336,7 @@ test('refresh and reopen recover both pre-START links and post-START code-entry 
       interaction: interaction(token)
     } });
     await waitFor(() => app.calls.some(call => call.path.includes('/telegram/verification/pending')));
-    app.document.querySelector('.ah-account-launcher').click();
+    app.window.AdmissionAccount.open();
     await waitFor(() => app.document.querySelector('[data-view="telegram"]').hidden === false);
     assert.equal(new URL(app.document.querySelector('[data-role="telegram-link"]').href).searchParams.get('start'), token);
     assert.equal(app.window.localStorage.length, 0);
@@ -353,7 +353,7 @@ test('refresh and reopen recover both pre-START links and post-START code-entry 
       codeSent: true
     } });
     await waitFor(() => app.calls.some(call => call.path.includes('/telegram/verification/pending')));
-    app.document.querySelector('.ah-account-launcher').click();
+    app.window.AdmissionAccount.open();
     await waitFor(() => app.document.querySelector('[data-view="telegram"]').hidden === false);
     assert.equal(app.document.querySelector('[data-role="telegram-link"]').hidden, true);
     assert.match(app.document.querySelector('[data-role="telegram-status"]').textContent, /কোড পাঠানো হয়েছে/);

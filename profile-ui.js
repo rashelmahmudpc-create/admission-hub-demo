@@ -22,6 +22,9 @@
 
   const $ = (sel, root) => (root || document).querySelector(sel);
   const bnNum = (n) => Number(n || 0).toLocaleString('bn-BD');
+  // Years are shown in Bengali digits WITHOUT a thousands separator
+  // ("২০৬ সাল" — not "২,০২৬").
+  const bnYear = (y) => String(y || '').replace(/[0-9]/g, (d) => '০১২৩৪৫৬৭৮৯'[d]);
 
   const state = {
     data: null,        // last GET /profile v2 payload
@@ -150,7 +153,7 @@
   function identityCard() {
     const d = state.data || {};
     const p = d.profile || {};
-    const joined = d.joinedYear ? `${bnNum(d.joinedYear)} সাল থেকে` : '';
+    const joined = d.joinedYear ? `${bnYear(d.joinedYear)} সাল থেকে` : '';
     return `
       <div class="pp-hero" data-profile-contract="profile-identity-v1">
         <div class="pp-hero-avatar">${avatarMarkup()}</div>
@@ -191,6 +194,20 @@
           <div class="pp-value ${rows.length ? '' : 'pp-empty'}">${rows.length
             ? rows.map(([k, v]) => `${esc(k)}: ${esc(v)}`).join(' · ')
             : 'নাম, মোবাইল, bio এখানে থাকবে'}</div>
+        </div>
+        <span class="pp-arrow" aria-hidden="true">→</span>
+      </button>`;
+  }
+
+  // The floating account launcher pill was removed from the app shell
+  // (owner directive). The Profile tab is now the single account entry
+  // point — this card keeps Security/Passkey/Devices/Log Out reachable.
+  function accountCard() {
+    return `
+      <button class="card pp-card pp-tap" data-role="open-account" data-account-card-contract="profile-account-entry-v1" type="button">
+        <div>
+          <div class="pp-kicker">ACCOUNT</div>
+          <div class="pp-value">Security · Passkey · Device · Log Out</div>
         </div>
         <span class="pp-arrow" aria-hidden="true">→</span>
       </button>`;
@@ -253,6 +270,7 @@
     if (!seen.has('identity')) parts.unshift(identityCard());
     if (!seen.has('academic') && !seen.has('goal')) parts.splice(1, 0, targetCard());
     parts.push(detailsCard());
+    parts.push(accountCard());
     return parts.join('');
   }
 
@@ -457,6 +475,11 @@
         else if (typeof window.render === 'function') { location.hash = 'exam'; window.render(); }
         return;
       }
+      else if (role === 'open-account') {
+        const acct = window.AdmissionAccount;
+        if (acct && typeof acct.open === 'function') acct.open();
+        return;
+      }
       else if (role === 'pick-visibility') {
         const value = el.dataset.value;
         savePatch({ visibility: value }, () => { closeSheet(); renderProfilePage(); });
@@ -625,7 +648,7 @@
               <div class="pp-hero-name">${esc(p.displayName)}</div>
               <div class="pp-hero-id"><span>AH-ID</span><b>${esc(p.publicId)}</b></div>
               ${p.target?.name ? `<div class="pp-hero-meta">🎯 ${esc(p.target.name)}${p.target.unit ? ` · ${esc(p.target.unit)}` : ''}</div>` : ''}
-              ${p.joinedYear ? `<div class="pp-hero-meta">${bnNum(p.joinedYear)} সাল থেকে Admission Hub-এ</div>` : ''}
+              ${p.joinedYear ? `<div class="pp-hero-meta">${bnYear(p.joinedYear)} সাল থেকে Admission Hub-এ</div>` : ''}
             </div>
             ${p.bio ? `<div class="card pp-card"><div class="pp-kicker">BIO</div><div class="pp-value">${esc(p.bio)}</div></div>` : ''}
             <div class="card pp-card">

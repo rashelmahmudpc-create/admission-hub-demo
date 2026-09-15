@@ -94,10 +94,10 @@ function setup({ loginVerified = false, resendMode = 'sent' } = {}) {
 
 test('signup UI collects Email and Password, clears passwords, and waits for standard verification', async () => {
   const app = setup();
-  await waitFor(() => app.document.querySelector('.ah-account-launcher'));
+  await waitFor(() => app.document.querySelector('#ah-account-page'));
   await waitFor(() => app.calls.some(call => call.path.endsWith('/config')));
   await sleep(0);
-  app.document.querySelector('.ah-account-launcher').click();
+  app.window.AdmissionAccount.open();
   app.document.querySelector('[data-role="show-signup"]').click();
   await fillGuidedProfile(app);
   app.document.querySelector('#ah-signup-password').value = 'Secure-password-44';
@@ -128,10 +128,10 @@ test('UI blocks unverified login and exposes verified state only after server-co
   const app = setup();
   let latestAuth = null;
   app.window.addEventListener('admissionhub:authchange', event => { latestAuth = event.detail; });
-  await waitFor(() => app.document.querySelector('.ah-account-launcher'));
+  await waitFor(() => app.document.querySelector('#ah-account-page'));
   await waitFor(() => app.calls.some(call => call.path.endsWith('/config')));
   await sleep(0);
-  app.document.querySelector('.ah-account-launcher').click();
+  app.window.AdmissionAccount.open();
   app.document.querySelector('#ah-login-email').value = 'student@example.com';
   app.document.querySelector('#ah-login-password').value = 'Secure-password-44';
   app.document.querySelector('[data-view="login"]').dispatchEvent(new app.window.Event('submit', { bubbles: true, cancelable: true }));
@@ -147,16 +147,15 @@ test('UI blocks unverified login and exposes verified state only after server-co
   assert.equal(app.window.AdmissionAccount.isVerified(), true);
   assert.equal(latestAuth.authenticated, true);
   assert.equal(latestAuth.emailVerified, true);
-  assert.equal(app.document.querySelector('.ah-account-launcher').dataset.authenticated, 'true');
   app.dom.window.close();
 });
 
 test('resend UI enforces Retry-After countdown, blocks repeated submit, and clears the password', async () => {
   const app = setup({ resendMode: 'rate-limited' });
-  await waitFor(() => app.document.querySelector('.ah-account-launcher'));
+  await waitFor(() => app.document.querySelector('#ah-account-page'));
   await waitFor(() => app.calls.some(call => call.path.endsWith('/config')));
   await sleep(0);
-  app.document.querySelector('.ah-account-launcher').click();
+  app.window.AdmissionAccount.open();
   app.document.querySelector('#ah-login-email').value = 'student@example.com';
   app.document.querySelector('#ah-login-password').value = 'Secure-password-44';
   app.document.querySelector('[data-view="login"]').dispatchEvent(new app.window.Event('submit', { bubbles: true, cancelable: true }));
@@ -180,10 +179,10 @@ test('resend UI enforces Retry-After countdown, blocks repeated submit, and clea
 
 test('resend UI handles an already-verified account without creating a frontend session', async () => {
   const app = setup({ resendMode: 'already-verified' });
-  await waitFor(() => app.document.querySelector('.ah-account-launcher'));
+  await waitFor(() => app.document.querySelector('#ah-account-page'));
   await waitFor(() => app.calls.some(call => call.path.endsWith('/config')));
   await sleep(0);
-  app.document.querySelector('.ah-account-launcher').click();
+  app.window.AdmissionAccount.open();
   app.document.querySelector('#ah-login-email').value = 'student@example.com';
   app.document.querySelector('#ah-login-password').value = 'Secure-password-44';
   app.document.querySelector('[data-view="login"]').dispatchEvent(new app.window.Event('submit', { bubbles: true, cancelable: true }));
@@ -196,6 +195,5 @@ test('resend UI handles an already-verified account without creating a frontend 
 
   assert.match(app.document.querySelector('[data-role="message"]').textContent, /ইতিমধ্যে যাচাইকৃত/);
   assert.equal(app.window.AdmissionAccount.isVerified(), false);
-  assert.equal(app.document.querySelector('.ah-account-launcher').dataset.authenticated, 'false');
   app.dom.window.close();
 });

@@ -194,7 +194,7 @@ test('first entry has exactly four paths; Guest goes directly to Dashboard and i
   await waitFor(() => returning.calls.some(call => call.path.includes('/session')));
   await wait(30);
   assert.equal(returning.document.querySelector('.ah-account-page').hidden, true);
-  returning.document.querySelector('.ah-account-launcher').click();
+  returning.window.AdmissionAccount.open();
   assert.equal(returning.document.querySelector('[data-view="login"]').hidden, false);
   assert.equal(returning.document.querySelector('[data-view="welcome"]').hidden, true);
   returning.dom.window.close();

@@ -104,13 +104,13 @@ test('index.html: Profile tab (6th) wired into bottom nav + router', () => {
 });
 
 test('index.html: profile assets linked with versions', () => {
-  assert.match(HTML, /<link rel="stylesheet" href="\.\/profile-ui\.css\?v=profile-v2">/);
-  assert.match(HTML, /<script defer src="\.\/profile-ui\.js\?v=profile-v2"><\/script>/);
+  assert.match(HTML, /<link rel="stylesheet" href="\.\/profile-ui\.css\?v=profile-v3">/);
+  assert.match(HTML, /<script defer src="\.\/profile-ui\.js\?v=profile-v3"><\/script>/);
 });
 
 test('sw.js caches the profile assets', () => {
-  assert.match(SW, /'\.\/profile-ui\.js\?v=profile-v2',/);
-  assert.match(SW, /'\.\/profile-ui\.css\?v=profile-v2',/);
+  assert.match(SW, /'\.\/profile-ui\.js\?v=profile-v3',/);
+  assert.match(SW, /'\.\/profile-ui\.css\?v=profile-v3',/);
 });
 
 test('_redirects serves /AH-* to the SPA', () => {
@@ -139,4 +139,17 @@ test('profile css: bottom sheet, toast, skeleton, 320px-safe wrap', () => {
 
 test('profile chrome is code-native: no raster art classes in CSS', () => {
   assert.doesNotMatch(CSS, /url\(\s*["']?\.\/.*\.(png|jpe?g|webp)/i);
+});
+
+test('floating account launcher removed; Profile tab is the single account entry point', () => {
+  const ACC = read('account-access.js');
+  // the launcher element is never attached to the document body
+  assert.doesNotMatch(ACC, /document\.body\.append\(launcher/);
+  assert.match(ACC, /document\.body\.append\(pageHost\)/);
+  // the profile page carries the account entry card + public API opener
+  assert.match(UI, /data-account-card-contract="profile-account-entry-v1"/);
+  assert.match(UI, /role === 'open-account'/);
+  assert.match(UI, /acct\.open\(\)/);
+  // guests still get a Sign In path
+  assert.match(UI, /data-role="guest-signin"/);
 });

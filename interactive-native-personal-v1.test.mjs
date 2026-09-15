@@ -9,7 +9,7 @@ const HTML = read('index.html');
 const SW = read('sw.js');
 const RELEASE = read('.github/workflows/telegram-auth-canary-activate.yml');
 const BUNDLE_GUARD = read('.github/workflows/cf-pages.yml');
-const UI_VERSION = '20260915-session-engine-v1';
+const UI_VERSION = '20260916-account-entry-v2';
 const SHELL_VERSION = 'v257-profile-core-20260915';
 
 const signupStart = JS.indexOf('<form class="ah-account-view ah-signup-view"');

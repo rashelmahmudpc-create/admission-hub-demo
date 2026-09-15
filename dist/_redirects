@@ -1,4 +1,0 @@
-# Phase 7 — pretty public profile URLs.
-# /AH-XXXXXX is served by the SPA, which detects the pathname and renders
-# the public profile page (see render() in index.html + profile-ui.js).
-/AH-* / 200

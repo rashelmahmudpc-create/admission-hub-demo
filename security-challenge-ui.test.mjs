@@ -108,9 +108,9 @@ function setup({ trusted = false } = {}) {
 }
 
 const login = async app => {
-  await waitFor(() => app.document.querySelector('.ah-account-launcher'));
+  await waitFor(() => app.document.querySelector('#ah-account-page'));
   await sleep(0);
-  app.document.querySelector('.ah-account-launcher').click();
+  app.window.AdmissionAccount.open();
   await waitFor(() => app.document.querySelector('[data-view="login"]') && !app.document.querySelector('[data-view="login"]').hidden);
   app.document.querySelector('#ah-login-email').value = 'student@example.com';
   app.document.querySelector('#ah-login-password').value = 'Secure-password-44';

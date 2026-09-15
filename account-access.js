@@ -2205,7 +2205,12 @@
     if (state.initialized || !document.body) return;
     state.initialized = true;
     setupAuthSync();
-    document.body.append(launcher, pageHost);
+    // Phase 7 hotfix (owner directive): the floating account launcher pill is
+    // removed from every page. The Profile tab (my-profile) is the single
+    // account entry point — guests see Sign In, signed-in users see the
+    // Account card. The element is still created so state tracking
+    // (dataset.authenticated) and focus fallbacks keep working.
+    document.body.append(pageHost);
     launcher.addEventListener('click', open);
     $('.ah-account-close').addEventListener('click', dismiss);
     const welcomeLanguage = $('[data-role="welcome-language"]');

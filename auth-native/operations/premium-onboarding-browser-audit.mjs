@@ -403,7 +403,7 @@ try {
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(100);
   assert.equal(await page.locator('.ah-account-page').isVisible(), false, 'returning account entry repeated Welcome');
-  await page.locator('.ah-account-launcher').click();
+  await page.evaluate(() => window.AdmissionAccount.open());
   await page.locator('[data-view="signed"]').waitFor({ state: 'visible' });
 
   const duplicateIds = await page.evaluate(() => {
@@ -445,7 +445,7 @@ try {
   await guestPage.reload({ waitUntil: 'domcontentloaded' });
   await guestPage.waitForTimeout(100);
   assert.equal(await guestPage.locator('.ah-account-page').isVisible(), false, 'returning Guest entry repeated Welcome');
-  await guestPage.locator('.ah-account-launcher').click();
+  await guestPage.evaluate(() => window.AdmissionAccount.open());
   await guestPage.locator('[data-view="login"]').waitFor({ state: 'visible' });
   await guestPage.locator('[data-role="close"]').click();
 

@@ -114,7 +114,7 @@ test('Google is capability-gated, uses Firebase endpoint, and keeps tokens out o
   const clientId = '123456789012-exampleclientidentifier.apps.googleusercontent.com';
   const app = setup({ methods: { google: { available: true, clientId } } });
   await waitFor(() => app.document.querySelector('[data-role="google-button"] button'));
-  app.document.querySelector('.ah-account-launcher').click();
+  app.window.AdmissionAccount.open();
   const idToken = `google-id-${'x'.repeat(32)}`;
   app.googleCredential(idToken);
   await waitFor(() => app.calls.some(call => call.path.endsWith('/google')));
@@ -174,7 +174,7 @@ test('Telegram canary forwards the exact opt-in query to config, request, and ve
   });
   await waitFor(() => app.calls.some(call => call.path.endsWith('/config?telegramCanary=1')));
   await waitFor(() => app.document.querySelector('[data-role="backup-start"]')?.hidden === false);
-  app.document.querySelector('.ah-account-launcher').click();
+  app.window.AdmissionAccount.open();
   app.document.querySelector('[data-role="backup-start"]').click();
   await waitFor(() => app.calls.some(call => call.path.endsWith('/backup/request?telegramCanary=1')));
   await waitFor(() => app.document.querySelector('[data-view="backup"]').hidden === false);
@@ -205,7 +205,7 @@ test('Passkey login converts WebAuthn binary fields and authenticates only after
     }
   });
   await waitFor(() => app.document.querySelector('[data-role="passkey-login"]')?.hidden === false);
-  app.document.querySelector('.ah-account-launcher').click();
+  app.window.AdmissionAccount.open();
   app.document.querySelector('[data-role="passkey-login"]').click();
   await waitFor(() => app.calls.some(call => call.path.endsWith('/passkey/authentication/finish')));
   assert.equal(requestedOptions.publicKey.challenge.byteLength, 32);
@@ -235,7 +235,7 @@ test('signed user can enroll and remove an optional Passkey without changing Fir
     }
   });
   await waitFor(() => app.calls.some(call => call.path.endsWith('/passkey/status')));
-  app.document.querySelector('.ah-account-launcher').click();
+  app.window.AdmissionAccount.open();
   await waitFor(() => app.document.querySelector('[data-role="passkey-add"]')?.hidden === false);
   app.document.querySelector('[data-role="passkey-add"]').click();
   await waitFor(() => app.calls.some(call => call.path.endsWith('/passkey/registration/finish')));
@@ -264,7 +264,7 @@ test('successful verification offers optional Passkey setup and Skip never block
     }
   });
   await waitFor(() => app.document.querySelector('[data-role="google-button"] button'));
-  app.document.querySelector('.ah-account-launcher').click();
+  app.window.AdmissionAccount.open();
   app.googleCredential(`google-id-${'p'.repeat(32)}`);
   await waitFor(() => app.document.querySelector('[data-view="security-setup"]').hidden === false);
   assert.match(app.document.querySelector('[data-view="security-setup"]').textContent, /Create Passkey/);
@@ -283,7 +283,7 @@ test('successful verification offers optional Passkey setup and Skip never block
     }
   });
   await waitFor(() => skipped.document.querySelector('[data-role="google-button"] button'));
-  skipped.document.querySelector('.ah-account-launcher').click();
+  skipped.window.AdmissionAccount.open();
   skipped.googleCredential(`google-id-${'s'.repeat(32)}`);
   await waitFor(() => skipped.document.querySelector('[data-view="security-setup"]').hidden === false);
   skipped.document.querySelector('[data-role="setup-skip"]').click();
@@ -300,7 +300,7 @@ test('generic backup UX is hidden when unavailable and contains no provider-spec
 
   const enabled = setup({ signed: true, methods: { backup: { available: true, genericFlow: true } } });
   await waitFor(() => enabled.document.querySelector('[data-role="backup-start"]')?.hidden === false);
-  enabled.document.querySelector('.ah-account-launcher').click();
+  enabled.window.AdmissionAccount.open();
   enabled.document.querySelector('[data-role="backup-start"]').click();
   await waitFor(() => enabled.document.querySelector('[data-view="backup"]').hidden === false);
   enabled.document.querySelector('#ah-backup-code').value = '123456';
@@ -317,7 +317,7 @@ test('generic backup UX is hidden when unavailable and contains no provider-spec
 test('generic backup accepts a server-requested phone input without exposing an internal provider name', async () => {
   const app = setup({ signed: true, methods: { backup: { available: true, genericFlow: true, contactInput: 'required' } } });
   await waitFor(() => app.document.querySelector('[data-role="backup-start"]')?.hidden === false);
-  app.document.querySelector('.ah-account-launcher').click();
+  app.window.AdmissionAccount.open();
   app.document.querySelector('[data-role="backup-start"]').click();
   await waitFor(() => app.document.querySelector('[data-view="backup-prepare"]').hidden === false);
   app.document.querySelector('#ah-backup-contact').value = '+8801700000000';
@@ -341,7 +341,7 @@ test('Telegram interaction requires the bot OTP and sends no link token back for
   };
   const app = setup({ signed: true, methods: { backup: { available: true, genericFlow: true } }, backupInteraction: interaction });
   await waitFor(() => app.document.querySelector('[data-role="backup-start"]')?.hidden === false);
-  app.document.querySelector('.ah-account-launcher').click();
+  app.window.AdmissionAccount.open();
   app.document.querySelector('[data-role="backup-start"]').click();
   await waitFor(() => app.document.querySelector('[data-view="backup"]').hidden === false);
   assert.equal(app.document.querySelector('[data-role="backup-link"]').href, interaction.url);
