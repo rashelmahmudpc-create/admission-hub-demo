@@ -1,0 +1,18 @@
+User-agent: *
+Allow: /
+
+# Internal tooling, previews and server-side sources: never index.
+Disallow: /verification-control-center
+Disallow: /verification-control-center.html
+Disallow: /splash-preview
+Disallow: /splash-preview.html
+Disallow: /ai-performance-analysis-live.html
+Disallow: /docs/
+Disallow: /AGENT_RESUME/
+Disallow: /auth/
+Disallow: /auth-native/
+Disallow: /email-gateway/
+Disallow: /internal/
+Disallow: /api/
+
+Sitemap: https://admissionhub.pages.dev/sitemap.xml

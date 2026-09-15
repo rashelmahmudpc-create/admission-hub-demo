@@ -15,6 +15,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
       - name: Build the sanitized public bundle without publishing
         run: |
           set -eu
@@ -28,6 +31,40 @@ jobs:
           ! grep -Eiq '<(img|picture|source|canvas|video|object|embed)([[:space:]>])' dist/account-access.js
           ! grep -Eiq 'background(-image)?[[:space:]]*:[^;]*url\(' dist/account-access.css
           du -sh dist
+
+      - name: Guard SEO artifacts, meta tags and public/404 routing
+        run: |
+          set -eu
+          # Crawler files must ship and must not be the SPA shell.
+          for f in robots.txt sitemap.xml favicon.ico og-image.png apple-touch-icon.png; do
+            test -s "dist/$f"
+          done
+          head -c 200 dist/robots.txt | grep -Fq 'User-agent:'
+          ! head -c 200 dist/robots.txt | grep -Fq '<!DOCTYPE'
+          head -c 200 dist/sitemap.xml | grep -Fq '<urlset'
+          head -c 200 dist/sitemap.xml | grep -Fq 'https://admissionhub.pages.dev/'
+
+          # Root page must carry its own title, canonical, OG and JSON-LD.
+          grep -Fq '<title>Admission Hub' dist/index.html
+          grep -Fq '<link rel="canonical" href="https://admissionhub.pages.dev/">' dist/index.html
+          grep -Fq 'property="og:image" content="https://admissionhub.pages.dev/og-image.png"' dist/index.html
+          grep -Fq 'name="twitter:card" content="summary_large_image"' dist/index.html
+          grep -Fq 'type="application/ld+json"' dist/index.html
+          ! grep -Fq 'A privacy-first admission preparation hub' dist/index.html
+
+          # Every course landing page needs its own canonical and description.
+          for slug in prottoy prottoy-master sandhi somas; do
+            page="dist/courses/$slug/index.html"
+            test -s "$page"
+            grep -Fq "<link rel=\"canonical\" href=\"https://admissionhub.pages.dev/courses/$slug/\">" "$page"
+            grep -Fq 'name="description"' "$page"
+            grep -Fq 'property="og:title"' "$page"
+          done
+
+          # The allowlist worker keeps unknown paths and missing assets at 404.
+          node --test seo-routing.test.mjs
+
+          echo 'SEO artifacts, meta tags and 404 routing are intact.'
 
       - name: Require protected Telegram publication workflow
         run: |
