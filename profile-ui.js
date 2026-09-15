@@ -46,7 +46,15 @@
   /* ---------------- local preferences (local-first, Phase 8 bridge) ---------------- */
 
   const PREFS_KEY = 'ah-profile-prefs-v1';
-  const DEFAULT_PREFS = { language: 'bn', notifications: 'on', appearance: 'light', aiAssistant: 'on', avatarStyle: 0, v: 1 };
+  const DEFAULT_PREFS = { language: 'bn', notifications: 'on', appearance: 'light', aiAssistant: 'on', avatarStyle: 0, avatarGender: 'boy', v: 1 };
+
+  // Avatar pipeline bounds.
+  // Server stores the encoded image as a D1 BLOB, and Cloudflare caps a D1 row
+  // at 2,000,000 bytes — so the OUTPUT is kept well under that. The 5MB figure
+  // is the accepted SOURCE photo size: the cropper re-encodes to AVATAR_OUTPUT
+  // square JPEG, so a big camera photo is fine as long as it has been cropped.
+  const MAX_SOURCE_BYTES = 5 * 1024 * 1024;
+  const AVATAR_OUTPUT = 512;
 
   function loadPrefs() {
     try {
@@ -56,7 +64,8 @@
         notifications: raw.notifications === 'off' ? 'off' : 'on',
         appearance: ['light', 'dark', 'system'].includes(raw.appearance) ? raw.appearance : 'light',
         aiAssistant: raw.aiAssistant === 'off' ? 'off' : 'on',
-        avatarStyle: Number.isInteger(raw.avatarStyle) && raw.avatarStyle >= 0 && raw.avatarStyle <= 5 ? raw.avatarStyle : 0,
+        avatarStyle: Number.isInteger(raw.avatarStyle) && raw.avatarStyle >= 0 && raw.avatarStyle <= 9 ? raw.avatarStyle : 0,
+        avatarGender: raw.avatarGender === 'girl' ? 'girl' : 'boy',
         v: 1
       };
     } catch (_) { return { ...DEFAULT_PREFS }; }
@@ -71,6 +80,7 @@
     sheet: null,       // open sheet type
     busy: false,
     view: 'profile',   // profile | edit | avatar
+    editFocus: '',     // field id to focus after entering the edit page
     prefs: loadPrefs()
   };
 
@@ -210,31 +220,91 @@
 
   /* ---------------- generated avatars (zero-raster) ---------------- */
 
-  function defaultAvatarSvg(name, seed, style = 0) {
-    let hash = 0;
-    const value = String(seed || name || 'a');
-    for (let i = 0; i < value.length; i += 1) hash = (hash * 31 + value.charCodeAt(i)) >>> 0;
-    const hue = (hash + Number(style || 0) * 60) % 360;
-    const letters = String(name || '').trim().split(/\s+/).slice(0, 2)
-      .map((p) => p.charAt(0).toUpperCase()).join('') || 'A';
-    const safe = esc(letters);
-    const s = Number(style || 0);
-    if (s === 1) {
-      return `<svg viewBox="0 0 96 96" role="img" aria-label="Generated avatar"><rect width="96" height="96" rx="48" fill="hsl(${hue},40%,90%)"/><rect width="96" height="96" rx="48" fill="none" stroke="hsl(${hue},38%,58%)" stroke-width="3"/><circle cx="48" cy="38" r="15" fill="hsl(${hue},42%,72%)"/><path d="M18 82c4-16 16-24 30-24s26 8 30 24" fill="hsl(${hue},42%,72%)"/></svg>`;
+  /* ---------------- default avatar system — 20 code-native characters ----------------
+     Owner spec: strong, premium defaults — 10 male + 10 female, zero raster art.
+     Each entry is a spec; `defaultAvatarSvg` renders it to a 96×96 circular SVG. */
+  const AVATAR_SKIN = ['#f3d3b6', '#e8bb92', '#d9a273', '#c68a5c', '#a9713f'];
+  const AVATAR_HAIR = ['#241a12', '#3d2a1a', '#573a24', '#15110d', '#6b4527'];
+
+  const DEFAULT_AVATARS = {
+    boy: [
+      { bg: '#dff3e6', skin: 0, hair: 0, hairStyle: 'short', outfit: ['#16a34a', '#0f7a37'] },
+      { bg: '#e6f0fb', skin: 2, hair: 1, hairStyle: 'curly', outfit: ['#2563eb', '#1d4ed8'] },
+      { bg: '#fdf0dc', skin: 1, hair: 0, hairStyle: 'spiky', outfit: ['#f59e0b', '#d97706'], acc: 'glasses' },
+      { bg: '#eef2f6', skin: 3, hair: 0, hairStyle: 'side', outfit: ['#334155', '#1e293b'] },
+      { bg: '#e8f7ef', skin: 4, hair: 0, hairStyle: 'buzz', outfit: ['#0d9488', '#0f766e'] },
+      { bg: '#f3e8ff', skin: 2, hair: 1, hairStyle: 'wavy', outfit: ['#7c3aed', '#6d28d9'] },
+      { bg: '#ffe9e3', skin: 1, hair: 2, hairStyle: 'cap', outfit: ['#ef4444', '#dc2626'] },
+      { bg: '#e9fbe9', skin: 3, hair: 0, hairStyle: 'afro', outfit: ['#15803d', '#166534'] },
+      { bg: '#e6f7f5', skin: 0, hair: 1, hairStyle: 'side', outfit: ['#0891b2', '#0e7490'], acc: 'glasses' },
+      { bg: '#fef3e2', skin: 2, hair: 3, hairStyle: 'short', outfit: ['#b45309', '#92400e'] }
+    ],
+    girl: [
+      { bg: '#fde8f0', skin: 0, hair: 0, hairStyle: 'long', outfit: ['#db2777', '#be185d'] },
+      { bg: '#e8f7ef', skin: 1, hair: 0, hairStyle: 'hijab', outfit: ['#16a34a', '#15803d'] },
+      { bg: '#f3e8ff', skin: 2, hair: 1, hairStyle: 'ponytail', outfit: ['#8b5cf6', '#7c3aed'] },
+      { bg: '#eef2f6', skin: 3, hair: 0, hairStyle: 'bun', outfit: ['#0f172a', '#334155'] },
+      { bg: '#fff0e6', skin: 1, hair: 2, hairStyle: 'curlyLong', outfit: ['#ea580c', '#c2410c'] },
+      { bg: '#e6f7f5', skin: 0, hair: 3, hairStyle: 'bob', outfit: ['#0d9488', '#0f766e'] },
+      { bg: '#fef3e2', skin: 4, hair: 0, hairStyle: 'braids', outfit: ['#ca8a04', '#a16207'] },
+      { bg: '#e6f0fb', skin: 2, hair: 1, hairStyle: 'wavy', outfit: ['#2563eb', '#1d4ed8'], acc: 'glasses' },
+      { bg: '#f0f7ff', skin: 3, hair: 3, hairStyle: 'hijab', outfit: ['#0891b2', '#0e7490'] },
+      { bg: '#fde8f0', skin: 0, hair: 2, hairStyle: 'ponytail', outfit: ['#be185d', '#9d174d'], acc: 'glasses' }
+    ]
+  };
+
+  function avatarHairBack(style, c) {
+    switch (style) {
+      case 'long': return `<path d="M48 18c-14 0-23 10-23 24v26h10V46c0-9 6-15 13-15s13 6 13 15v22h10V42c0-14-9-24-23-24z" fill="${c}"/>`;
+      case 'wavy': return `<path d="M48 18c-15 0-24 11-24 25v24h11V46c0-10 6-16 13-16s13 6 13 16v21h11V43c0-14-9-25-24-25z" fill="${c}"/>`;
+      case 'braids': return `<path d="M48 18c-14 0-23 10-23 24v28h10V46c0-9 6-15 13-15s13 6 13 15v24h10V42c0-14-9-24-23-24z" fill="${c}"/>`;
+      case 'bob': return `<path d="M48 18c-14 0-23 10-23 24v15h10V44c0-9 6-15 13-15s13 6 13 15v13h10V42c0-14-9-24-23-24z" fill="${c}"/>`;
+      case 'hijab': return `<path d="M48 15c-16 0-26 11-26 27v32h52V42c0-16-10-27-26-27z" fill="${c}"/>`;
+      case 'ponytail': return `<path d="M48 18c-14 0-23 10-23 24v22h10V46c0-9 6-15 13-15s13 6 13 15v18h10V42c0-14-9-24-23-24z" fill="${c}"/><ellipse cx="72" cy="54" rx="7" ry="17" fill="${c}"/>`;
+      case 'curlyLong': return `<circle cx="30" cy="38" r="11" fill="${c}"/><circle cx="66" cy="38" r="11" fill="${c}"/><circle cx="34" cy="25" r="10" fill="${c}"/><circle cx="62" cy="25" r="10" fill="${c}"/><circle cx="48" cy="20" r="12" fill="${c}"/><path d="M27 40v20h8V46c0-9 6-15 13-15s13 6 13 15v14h8V40c0-13-9-22-22-22s-20 9-20 22z" fill="${c}"/>`;
+      case 'afro': return `<circle cx="32" cy="36" r="12" fill="${c}"/><circle cx="64" cy="36" r="12" fill="${c}"/><circle cx="38" cy="23" r="11" fill="${c}"/><circle cx="58" cy="23" r="11" fill="${c}"/><circle cx="48" cy="20" r="12" fill="${c}"/>`;
+      default: return '';
     }
-    if (s === 2) {
-      return `<svg viewBox="0 0 96 96" role="img" aria-label="Generated avatar"><defs><linearGradient id="g${s}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="hsl(${hue},50%,84%)"/><stop offset="1" stop-color="hsl(${(hue + 40) % 360},50%,70%)"/></linearGradient></defs><rect width="96" height="96" rx="48" fill="url(#g${s})"/><text x="48" y="62" font-family="system-ui,-apple-system,sans-serif" font-size="40" font-weight="700" text-anchor="middle" fill="#ffffff" opacity="0.92">${safe}</text></svg>`;
+  }
+
+  const HAIR_CAP = (c) => `<path d="M48 19c-12 0-20 8-20 20 0 2 .3 4 .8 6 1.4-9 4.6-13 8.6-14 3 2 6.4 3 10.6 3s7.6-1 10.6-3c4 1 7.2 5 8.6 14 .5-2 .8-4 .8-6 0-12-8-20-20-20z" fill="${c}"/>`;
+
+  function avatarHairFront(style, c) {
+    switch (style) {
+      case 'curly': return HAIR_CAP(c) + `<circle cx="34" cy="28" r="6" fill="${c}"/><circle cx="62" cy="28" r="6" fill="${c}"/><circle cx="48" cy="23" r="7" fill="${c}"/>`;
+      case 'spiky': return HAIR_CAP(c) + `<path d="M36 25l4-9 4 8 4-10 4 10 4-8 4 9z" fill="${c}"/>`;
+      case 'buzz': return `<path d="M48 22c-11 0-19 7-19 17 0 1 .1 2 .3 3 1.7-7 4.9-10 8.7-11 3 2 6.4 3 10 3s7-1 10-3c3.8 1 7 4 8.7 11 .2-1 .3-2 .3-3 0-10-8-17-19-17z" fill="${c}"/>`;
+      case 'cap': return `<path d="M48 20c-12 0-20 7-20 17v4h40v-4c0-10-8-17-20-17z" fill="#16a34a"/><path d="M26 40h44v5H26z" fill="${c}"/><path d="M48 20c-12 0-20 7-20 17h40c0-10-8-17-20-17z" fill="#15803d"/>`;
+      case 'hijab': return `<path d="M48 15c-13 0-24 9-24 23 0 8 3 14 8 18-3-5-5-11-5-18 0-11 9-18 21-18s21 7 21 18c0 7-2 13-5 18 5-4 8-10 8-18 0-14-11-23-24-23z" fill="${c}"/>`;
+      case 'bun': return HAIR_CAP(c) + `<circle cx="48" cy="15" r="8" fill="${c}"/>`;
+      case 'afro': return `<path d="M48 20c-12 0-20 8-20 19 0 2 .3 4 .8 6 1.4-9 4.6-13 8.6-14 3 2 6.4 3 10.6 3s7.6-1 10.6-3c4 1 7.2 5 8.6 14 .5-2 .8-4 .8-6 0-11-8-19-20-19z" fill="${c}"/>`;
+      default: return HAIR_CAP(c);
     }
-    if (s === 3) {
-      return `<svg viewBox="0 0 96 96" role="img" aria-label="Generated avatar"><rect width="96" height="96" rx="48" fill="hsl(${hue},42%,88%)"/><circle cx="34" cy="42" r="4" fill="hsl(${hue},40%,30%)"/><circle cx="62" cy="42" r="4" fill="hsl(${hue},40%,30%)"/><path d="M32 58q16 12 32 0" stroke="hsl(${hue},40%,30%)" stroke-width="4" fill="none" stroke-linecap="round"/></svg>`;
-    }
-    if (s === 4) {
-      return `<svg viewBox="0 0 96 96" role="img" aria-label="Generated avatar"><rect width="96" height="96" rx="48" fill="hsl(${hue},45%,86%)"/><path d="M48 24L80 40L48 56L16 40Z" fill="hsl(${hue},48%,45%)"/><path d="M30 48v14c0 6 8 10 18 10s18-4 18-10V48" fill="hsl(${hue},45%,58%)"/><line x1="80" y1="40" x2="80" y2="58" stroke="hsl(${hue},48%,38%)" stroke-width="3"/><circle cx="80" cy="62" r="4" fill="hsl(${hue},55%,45%)"/></svg>`;
-    }
-    if (s === 5) {
-      return `<svg viewBox="0 0 96 96" role="img" aria-label="Generated avatar"><rect width="96" height="96" rx="48" fill="hsl(${hue},48%,90%)"/><path d="M48 26l6.5 13.2 14.6 2-10.5 10.3 2.5 14.5L48 59l-13.1 6.9 2.5-14.5L26.9 41.2l14.6-2z" fill="hsl(${hue},55%,55%)"/><text x="48" y="82" font-family="system-ui,-apple-system,sans-serif" font-size="16" font-weight="700" text-anchor="middle" fill="hsl(${hue},45%,35%)">${safe}</text></svg>`;
-    }
-    return `<svg viewBox="0 0 96 96" role="img" aria-label="Generated avatar"><circle cx="48" cy="48" r="46" fill="hsl(${hue},45%,88%)"/><circle cx="48" cy="48" r="46" fill="none" stroke="hsl(${hue},40%,60%)" stroke-width="2"/><text x="48" y="60" font-family="system-ui,-apple-system,sans-serif" font-size="38" font-weight="700" text-anchor="middle" fill="hsl(${hue},45%,32%)">${safe}</text></svg>`;
+  }
+
+  function defaultAvatarSvg(name, seed, style = 0, gender = 'boy') {
+    const set = DEFAULT_AVATARS[gender] || DEFAULT_AVATARS.boy;
+    const idx = Math.abs(Number(style) || 0) % set.length;
+    const spec = set[idx] || set[0];
+    const skin = AVATAR_SKIN[spec.skin % AVATAR_SKIN.length];
+    const hair = AVATAR_HAIR[spec.hair % AVATAR_HAIR.length];
+    const [c1, c2] = spec.outfit;
+    const label = String(name || '').trim() || 'Avatar';
+    return `<svg viewBox="0 0 96 96" role="img" aria-label="${esc(label)} — default avatar" data-avatar-id="${esc(gender)}-${idx}">`
+      + `<circle cx="48" cy="48" r="48" fill="${spec.bg}"/>`
+      + `<circle cx="48" cy="30" r="30" fill="#ffffff" opacity="0.14"/>`
+      + avatarHairBack(spec.hairStyle, hair)
+      + `<path d="M15 96c2-15 15-24 33-24s31 9 33 24z" fill="${c1}"/>`
+      + `<path d="M48 72c-7 0-13 1-18 3 5 4 11 6 18 6s13-2 18-6c-5-2-11-3-18-3z" fill="${c2}"/>`
+      + `<rect x="42" y="55" width="12" height="15" rx="6" fill="${skin}"/>`
+      + `<ellipse cx="48" cy="42" rx="17" ry="19" fill="${skin}"/>`
+      + (spec.acc === 'glasses'
+        ? `<g fill="none" stroke="#22303a" stroke-width="2" opacity="0.85"><circle cx="41" cy="42" r="5.4"/><circle cx="55" cy="42" r="5.4"/><path d="M46.4 42h3.2"/></g>`
+        : '')
+      + `<circle cx="41" cy="42" r="1.9" fill="#1d2b24"/><circle cx="55" cy="42" r="1.9" fill="#1d2b24"/>`
+      + `<path d="M42 50q6 5 12 0" stroke="#8a4b3a" stroke-width="1.8" fill="none" stroke-linecap="round"/>`
+      + avatarHairFront(spec.hairStyle, hair)
+      + `</svg>`;
   }
 
   function avatarMarkup() {
@@ -243,7 +313,7 @@
     if (d.avatar?.present) {
       return `<img class="pp-avatar-img" src="${API}/profile/avatar?ts=${Date.now()}" alt="${esc(name)} এর ছবি">`;
     }
-    return `<span class="pp-avatar-svg" data-avatar-contract="zero-raster-avatar-v1">${defaultAvatarSvg(name, d.publicId || 'ah', state.prefs.avatarStyle)}</span>`;
+    return `<span class="pp-avatar-svg" data-avatar-contract="zero-raster-avatar-v1">${defaultAvatarSvg(name, d.publicId || 'ah', state.prefs.avatarStyle, state.prefs.avatarGender)}</span>`;
   }
 
   // class-free preview for the edit/avatar pages (keeps the classed-image
@@ -254,7 +324,7 @@
     if (d.avatar?.present) {
       return `<img src="${API}/profile/avatar?ts=${Date.now()}" alt="${esc(name)}" style="width:${size}px;height:${size}px;border-radius:50%;object-fit:cover;display:block">`;
     }
-    return `<span style="display:inline-block;width:${size}px;height:${size}px;line-height:0">${defaultAvatarSvg(name, d.publicId || 'ah', state.prefs.avatarStyle)}</span>`;
+    return `<span style="display:inline-block;width:${size}px;height:${size}px;line-height:0">${defaultAvatarSvg(name, d.publicId || 'ah', state.prefs.avatarStyle, state.prefs.avatarGender)}</span>`;
   }
 
   /* ---------------- real local study data (honest, never faked) ---------------- */
@@ -308,31 +378,7 @@
     ];
   }
 
-  /* ---------------- completion (gentle, V2 ring) ---------------- */
-
-  const COMPLETION_LABELS = [
-    ['fullName', 'নাম'], ['dob', 'জন্মের তারিখ'], ['mobile', 'মোবাইল'],
-    ['school', 'স্কুল/কলেজ'], ['higherInstitution', 'উচ্চ শিক্ষা'],
-    ['targets', 'লক্ষ্য (টার্গেট)'], ['admissionSession', 'Admission session'],
-    ['subjects', 'Preferred subjects'], ['academicGoal', 'Academic goal'], ['bio', 'Bio']
-  ];
-
-  function missingItems(profile) {
-    if (!profile) return COMPLETION_LABELS.map((x) => x[1]);
-    const out = [];
-    for (const [key, label] of COMPLETION_LABELS) {
-      const v = profile[key];
-      const has = key === 'targets'
-        ? Array.isArray(v) && v.length > 0 && Boolean(v[0]?.name)
-        : key === 'subjects'
-          ? Array.isArray(v) && v.length > 0
-          : key === 'school' || key === 'higherInstitution'
-            ? Boolean(v?.name)
-            : String(v || '').length > 0;
-      if (!has) out.push(label);
-    }
-    return out;
-  }
+  /* ---------------- completion (animated, V2 ring + actionable checklist) ---------------- */
 
   function completionBand(pct) {
     if (pct >= 90) return 'প্রায় সম্পূর্ণ ✦';
@@ -341,33 +387,67 @@
     return 'নতুন যাত্রা';
   }
 
-  function ringMarkup(pct) {
+  function ringMarkup(pct, animate = false) {
     const r = 26; const c = 2 * Math.PI * r;
-    const off = c * (1 - Math.min(100, Math.max(0, pct)) / 100);
-    return `<span class="pp-ring" aria-hidden="true">
+    const safe = Math.min(100, Math.max(0, Number(pct) || 0));
+    const off = c * (1 - safe / 100);
+    // The ring sweeps from empty to the real value, and the number counts up in
+    // step — purely presentational, the value itself is always the server figure.
+    return `<span class="pp-ring${animate ? ' pp-ring-anim' : ''}" aria-hidden="true" style="--pp-ring-c:${c.toFixed(1)};--pp-ring-off:${off.toFixed(1)}">
       <svg viewBox="0 0 64 64">
         <circle cx="32" cy="32" r="${r}" fill="none" stroke="rgba(15,107,79,.12)" stroke-width="6"/>
-        <circle cx="32" cy="32" r="${r}" fill="none" stroke="#0f6b4f" stroke-width="6" stroke-linecap="round" stroke-dasharray="${c.toFixed(1)}" stroke-dashoffset="${off.toFixed(1)}" transform="rotate(-90 32 32)"/>
+        <circle class="pp-ring-arc" cx="32" cy="32" r="${r}" fill="none" stroke="#0f6b4f" stroke-width="6" stroke-linecap="round" stroke-dasharray="${c.toFixed(1)}" stroke-dashoffset="${animate ? c.toFixed(1) : off.toFixed(1)}" transform="rotate(-90 32 32)"/>
       </svg>
-      <b>${bnNum(pct)}%</b>
+      <b data-pp-countup="${Math.round(safe)}">${bnNum(pct)}%</b>
     </span>`;
   }
 
+  // Human labels for the "what's left" checklist. Each entry names the view and
+  // the field on that view, so a tap lands on the control that fills the gap
+  // instead of bouncing to a page where the field does not exist.
+  const COMPLETION_STEPS = [
+    { key: 'fullName', label: 'নাম যোগ করো', view: 'edit', field: 'pp-edit-name' },
+    { key: 'dob', label: 'জন্মের তারিখ দাও', view: 'edit', field: 'pp-edit-dob' },
+    { key: 'mobile', label: 'মোবাইল নম্বর দাও', view: 'edit', field: 'pp-edit-mobile' },
+    { key: 'school', label: 'স্কুল/কলেজ লেখো', view: 'edit', field: 'pp-edit-school' },
+    { key: 'higherInstitution', label: 'উচ্চ শিক্ষা প্রতিষ্ঠান লেখো', view: 'edit', field: 'pp-edit-higher' },
+    { key: 'bio', label: 'Bio লেখো', view: 'edit', field: 'pp-edit-bio' },
+    { key: 'targets', label: 'লক্ষ্য (টার্গেট) যোগ করো', view: 'academic', field: 'pp-acad-u' },
+    { key: 'admissionSession', label: 'Admission session বাছো', view: 'academic', field: 'pp-acad-session' },
+    { key: 'subjects', label: 'Preferred subjects বাছো', view: 'academic', field: 'pp-acad-subject' },
+    { key: 'academicGoal', label: 'Academic goal লেখো', view: 'academic', field: 'pp-acad-goal' }
+  ];
+
   function completionCard() {
     const pct = Number(state.data?.completion || 0);
-    const missing = missingItems(state.data?.profile);
+    const profile = state.data?.profile;
+    const pending = COMPLETION_STEPS.filter(({ key }) => {
+      const v = profile ? profile[key] : null;
+      if (key === 'targets') return !(Array.isArray(v) && v.length > 0 && Boolean(v[0]?.name));
+      if (key === 'subjects') return !(Array.isArray(v) && v.length > 0);
+      if (key === 'school' || key === 'higherInstitution') return !v?.name;
+      return !(String(v || '').length > 0);
+    });
+    const done = COMPLETION_STEPS.length - pending.length;
     return `
       <div class="card pp-card pp-comp" data-completion-contract="official-completion-v1">
         <div class="pp-comp-row">
-          ${ringMarkup(pct)}
+          ${ringMarkup(pct, true)}
           <div class="pp-comp-info">
             <div class="pp-kicker">PROFILE COMPLETION · ${esc(completionBand(pct))}</div>
-            <p class="pp-hint">${missing.length
-              ? `বাকি: ${missing.slice(0, 3).map(esc).join(', ')}${missing.length > 3 ? '…' : ''} — Profile সম্পূর্ণ করুন।`
+            <div class="pp-comp-bar" aria-hidden="true"><i style="--pp-comp-w:${Math.min(100, Math.max(0, pct))}%"></i></div>
+            <p class="pp-hint">${pending.length
+              ? `${done}/${COMPLETION_STEPS.length} সম্পূর্ণ — নিচের যেটা বাকি, সেটায় চাপ দিলেই সরাসরি সেই ঘরে চলে যাবে।`
               : 'Profile সম্পূর্ণ — ধন্যবাদ।'}</p>
             <button class="pp-comp-cta" data-role="open-edit-page" type="button">Profile সম্পূর্ণ করুন</button>
           </div>
         </div>
+        ${pending.length ? `
+          <ul class="pp-comp-steps">
+            ${pending.map((s) => `<li><button class="pp-comp-step" data-role="comp-fix" data-view="${esc(s.view)}" data-field="${esc(s.field)}" type="button">
+              <span class="pp-comp-step-dot" aria-hidden="true"></span>${esc(s.label)}<span class="pp-comp-step-arrow" aria-hidden="true">›</span>
+            </button></li>`).join('')}
+          </ul>` : ''}
       </div>`;
   }
 
@@ -755,6 +835,14 @@
           <input id="pp-edit-dob" type="date" value="${esc(p.dob || '')}">
           <small class="pp-fine" data-role="dob-preview" ${p.dob ? '' : 'hidden'}>${bnDob(p.dob)}</small>
         </label>
+        <label class="pp-field"><span>স্কুল / কলেজ</span>
+          <input id="pp-edit-school" type="text" maxlength="120" value="${esc(p.school?.name || '')}" placeholder="যেমন: নটর ডেম কলেজ">
+          <input id="pp-edit-school-district" type="text" maxlength="80" value="${esc(p.school?.district || '')}" placeholder="জেলা (optional)" class="pp-field-sub">
+        </label>
+        <label class="pp-field"><span>উচ্চ শিক্ষা প্রতিষ্ঠান</span>
+          <input id="pp-edit-higher" type="text" maxlength="120" value="${esc(p.higherInstitution?.name || '')}" placeholder="যেমন: ঢাকা বিশ্ববিদ্যালয়">
+          <input id="pp-edit-higher-district" type="text" maxlength="80" value="${esc(p.higherInstitution?.district || '')}" placeholder="জেলা (optional)" class="pp-field-sub">
+        </label>
         <label class="pp-field"><span>Bio <em>(optional, সর্বোচ্চ ২৮০)</em></span>
           <textarea id="pp-edit-bio" rows="3" maxlength="280" placeholder="নিজের সম্পর্কে এক লাইন…">${esc(p.bio || '')}</textarea>
           <small class="pp-bio-count" data-role="bio-count">${bioLen}/280</small>
@@ -787,17 +875,22 @@
         <input data-role="avatar-file-capture" type="file" accept="image/*" capture="environment" hidden>
         <div class="pp-av-hint" data-avatar-hint-contract="square-crop-v1">
           <span aria-hidden="true">✅</span>
-          <div><b>Best photo size</b><small>1:1 · সর্বোচ্চ 2MB · JPG, PNG</small></div>
+          <div><b>Best photo size</b><small>ছবি সর্বোচ্চ 5MB · JPG, PNG · ক্রপ করে 1:1 করা হবে</small></div>
         </div>
         ${state.avatarError ? `<p class="pp-fine pp-av-err" role="alert">${esc(state.avatarError)}</p>` : ''}
-        <div class="pp-av-sec">Default Avatars</div>
-        <div class="pp-av-defaults">
-          ${[0, 1, 2, 3, 4, 5].map((st) => `
-            <button class="pp-av-def ${state.prefs.avatarStyle === st ? 'on' : ''}" data-role="pick-default-avatar" data-style="${st}" type="button" aria-label="Default style ${st + 1}">
-              ${defaultAvatarSvg(state.data?.profile?.fullName || 'A', state.data?.publicId || 'ah', st)}
+        <div class="pp-av-sec" data-role="avatar-gender-sec">Default Avatars<small class="pp-av-sec-note">ছেলে / মেয়ে — যেটা তোমার সাথে মেলে</small></div>
+        <div class="pp-av-gender" role="tablist" aria-label="Avatar set">
+          ${['boy', 'girl'].map((g) => `
+            <button class="pp-av-tab ${(state.prefs.avatarGender || 'boy') === g ? 'on' : ''}" data-role="pick-avatar-gender" data-gender="${g}" type="button" role="tab" aria-selected="${(state.prefs.avatarGender || 'boy') === g}">
+              ${g === 'boy' ? '👦 ছেলেদের' : '👧 মেয়েদের'}
             </button>`).join('')}
         </div>
-        <p class="pp-fine">নাম থেকে generated — কোনো ছবি দিতে হবে না।</p>
+        <div class="pp-av-defaults pp-av-defaults-20">
+          ${(DEFAULT_AVATARS[state.prefs.avatarGender || 'boy'] || []).map((_, st) => `
+            <button class="pp-av-def ${state.prefs.avatarStyle === st ? 'on' : ''}" data-role="pick-default-avatar" data-style="${st}" type="button" aria-label="Default avatar ${st + 1}">
+              ${defaultAvatarSvg(state.data?.profile?.fullName || 'A', state.data?.publicId || 'ah', st, state.prefs.avatarGender || 'boy')}
+            </button>`).join('')}
+        </div>
       </div>`;
   }
 
@@ -1199,8 +1292,9 @@
   /* ---------------- avatar actions ---------------- */
 
   /* -------- avatar capture -> CROP MODAL (zoom + pan) -> 512x512 JPEG -> save -------- */
-  const crop = { img: null, url: null, zoom: 1, px: 0, py: 0, drag: null };
-  const CROP_BOX = 160; // display size of the crop circle (matches CSS)
+  const crop = { img: null, url: null, zoom: 1, px: 0, py: 0, drag: null, box: 0, base: 1, pointers: new Map(), pinch: null };
+  const CROP_BOX_FALLBACK = 320; // used when the stage has no layout yet (jsdom)
+  const CROP_ZOOM_MAX = 3;
 
   function openCropModal(file) {
     const url = URL.createObjectURL(file);
@@ -1224,23 +1318,23 @@
   function cropModalMarkup() {
     return `
       <div class="pp-crop-overlay" role="dialog" aria-modal="true" aria-label="Crop avatar">
-        <div class="pp-crop">
+        <div class="pp-crop pp-crop-premium" data-crop-contract="premium-crop-v2">
           <div class="pp-edit-top">
             <button class="pp-iconbtn" data-role="crop-cancel" type="button" aria-label="বাতিল">✕</button>
-            <h2>Crop Avatar</h2>
+            <h2>ছবি ঠিক করো</h2>
             <span></span>
           </div>
           <div class="pp-crop-stage" data-role="crop-stage">
-            <div class="pp-crop-circle">
-              <img data-role="crop-img" alt="" draggable="false">
-            </div>
+            <img data-role="crop-img" alt="" draggable="false">
+            <div class="pp-crop-guides" aria-hidden="true"></div>
+            <div class="pp-crop-mask" aria-hidden="true"></div>
           </div>
           <div class="pp-crop-zoom">
             <button class="pp-iconbtn" data-role="crop-zoom-out" type="button" aria-label="ছোট করো">−</button>
-            <div class="pp-crop-zoomtrack"><div class="pp-crop-zoomdot" data-role="crop-zoomdot"></div></div>
+            <input class="pp-crop-zoomrange" data-role="crop-zoomrange" type="range" min="1" max="${CROP_ZOOM_MAX}" step="0.01" value="1" aria-label="Zoom">
             <button class="pp-iconbtn" data-role="crop-zoom-in" type="button" aria-label="বড় করো">+</button>
           </div>
-          <p class="pp-fine pp-crop-hint">ধরে টানুন · বড় ছোট করুন — ফেস মাঝখানে থাকবে</p>
+          <p class="pp-fine pp-crop-hint">ছবি ধরে টানুন · দুই আঙুলে বা +/− দিয়ে বড়-ছোট করুন</p>
           <div class="pp-crop-actions">
             <button class="pp-btn-ghost" data-role="crop-cancel" type="button">Cancel</button>
             <button class="pp-btn-primary" data-role="crop-save" type="button" data-crop-save-contract="crop-save-v1">✓ Save Avatar</button>
@@ -1249,7 +1343,7 @@
       </div>`;
   }
 
-  function renderCrop() {
+  function mountCrop() {
     let host = document.getElementById('pp-crop-host');
     if (!host) {
       host = document.createElement('div');
@@ -1259,33 +1353,111 @@
     host.innerHTML = cropModalMarkup();
     const imgEl = host.querySelector('[data-role="crop-img"]');
     if (imgEl) imgEl.src = crop.url;
-    applyCropTransform();
+    layoutCrop();
+    bindCropGestures(host);
+  }
+
+  // Size the image so it covers the square stage at zoom 1. Offsets are applied
+  // as pixel left/top (not percentage translates) so pan clamping stays exact.
+  function layoutCrop() {
+    const host = document.getElementById('pp-crop-host');
+    if (!host) return;
     const stage = host.querySelector('[data-role="crop-stage"]');
-    if (stage) {
-      stage.style.touchAction = 'none';
-      stage.addEventListener('pointerdown', (e) => {
+    const imgEl = host.querySelector('[data-role="crop-img"]');
+    const im = crop.img;
+    if (!stage || !imgEl || !im) return;
+    const rect = typeof stage.getBoundingClientRect === 'function' ? stage.getBoundingClientRect() : null;
+    crop.box = (rect && rect.width) ? rect.width : CROP_BOX_FALLBACK;
+    crop.base = Math.max(crop.box / im.naturalWidth, crop.box / im.naturalHeight);
+    const w = im.naturalWidth * crop.base;
+    const h = im.naturalHeight * crop.base;
+    imgEl.style.width = `${w}px`;
+    imgEl.style.height = `${h}px`;
+    imgEl.style.left = `${(crop.box - w) / 2}px`;
+    imgEl.style.top = `${(crop.box - h) / 2}px`;
+    applyCropTransform();
+  }
+
+  function renderCrop() {
+    mountCrop();
+  }
+
+  function bindCropGestures(host) {
+    const stage = host.querySelector('[data-role="crop-stage"]');
+    if (!stage || typeof stage.addEventListener !== 'function') return;
+    stage.style.touchAction = 'none';
+    const pts = crop.pointers;
+
+    const onDown = (e) => {
+      pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      try { stage.setPointerCapture(e.pointerId); } catch (_) { /* jsdom */ }
+      if (pts.size === 1) {
         crop.drag = { x: e.clientX, y: e.clientY, px: crop.px, py: crop.py };
-        try { stage.setPointerCapture(e.pointerId); } catch (_) {}
-      });
-      stage.addEventListener('pointermove', (e) => {
-        if (!crop.drag) return;
-        crop.px = crop.drag.px + (e.clientX - crop.drag.x);
-        crop.py = crop.drag.py + (e.clientY - crop.drag.y);
-        clampCropPan();
-        applyCropTransform();
-      });
-      const end = () => { crop.drag = null; };
-      stage.addEventListener('pointerup', end);
-      stage.addEventListener('pointercancel', end);
+        stage.classList.add('is-dragging');
+      } else if (pts.size === 2) {
+        const [a, b] = [...pts.values()];
+        crop.pinch = { dist: Math.hypot(a.x - b.x, a.y - b.y), zoom: crop.zoom };
+        crop.drag = null;
+      }
+    };
+    const onMove = (e) => {
+      if (!pts.has(e.pointerId)) return;
+      pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pts.size === 2 && crop.pinch) {
+        const [a, b] = [...pts.values()];
+        const dist = Math.hypot(a.x - b.x, a.y - b.y);
+        if (crop.pinch.dist > 0) setCropZoom(crop.pinch.zoom * (dist / crop.pinch.dist));
+        return;
+      }
+      if (!crop.drag) return;
+      crop.px = crop.drag.px + (e.clientX - crop.drag.x);
+      crop.py = crop.drag.py + (e.clientY - crop.drag.y);
+      clampCropPan();
+      applyCropTransform();
+    };
+    const onUp = (e) => {
+      pts.delete(e.pointerId);
+      if (pts.size < 2) crop.pinch = null;
+      if (pts.size === 0) { crop.drag = null; stage.classList.remove('is-dragging'); }
+      else if (pts.size === 1) {
+        const [only] = [...pts.values()];
+        crop.drag = { x: only.x, y: only.y, px: crop.px, py: crop.py };
+      }
+    };
+    stage.addEventListener('pointerdown', onDown);
+    stage.addEventListener('pointermove', onMove);
+    stage.addEventListener('pointerup', onUp);
+    stage.addEventListener('pointercancel', onUp);
+    stage.addEventListener('pointerleave', onUp);
+
+    const range = host.querySelector('[data-role="crop-zoomrange"]');
+    if (range && typeof range.addEventListener === 'function') {
+      range.addEventListener('input', () => setCropZoom(Number(range.value)));
     }
+    // wheel zoom for desktop pointers
+    stage.addEventListener('wheel', (e) => {
+      if (!e.deltaY) return;
+      if (typeof e.preventDefault === 'function') e.preventDefault();
+      setCropZoom(crop.zoom + (e.deltaY < 0 ? 0.1 : -0.1));
+    }, { passive: false });
+  }
+
+  function setCropZoom(next) {
+    crop.zoom = Math.min(CROP_ZOOM_MAX, Math.max(1, Number(next) || 1));
+    clampCropPan();
+    applyCropTransform();
+    const host = document.getElementById('pp-crop-host');
+    const range = host && host.querySelector('[data-role="crop-zoomrange"]');
+    if (range) range.value = String(crop.zoom);
   }
 
   function clampCropPan() {
     const im = crop.img;
     if (!im) return;
-    const base = Math.max(CROP_BOX / im.naturalWidth, CROP_BOX / im.naturalHeight) * crop.zoom;
-    const maxX = Math.max(0, (im.naturalWidth * base - CROP_BOX) / 2);
-    const maxY = Math.max(0, (im.naturalHeight * base - CROP_BOX) / 2);
+    const w = im.naturalWidth * crop.base * crop.zoom;
+    const h = im.naturalHeight * crop.base * crop.zoom;
+    const maxX = Math.max(0, (w - crop.box) / 2);
+    const maxY = Math.max(0, (h - crop.box) / 2);
     crop.px = Math.min(maxX, Math.max(-maxX, crop.px));
     crop.py = Math.min(maxY, Math.max(-maxY, crop.py));
   }
@@ -1295,8 +1467,6 @@
     if (!host) return;
     const imgEl = host.querySelector('[data-role="crop-img"]');
     if (imgEl) imgEl.style.transform = `translate(${crop.px}px, ${crop.py}px) scale(${crop.zoom})`;
-    const dot = host.querySelector('[data-role="crop-zoomdot"]');
-    if (dot) dot.style.left = `${((crop.zoom - 1) / 2) * 100}%`;
   }
 
   function closeCrop() {
@@ -1305,8 +1475,27 @@
     crop.zoom = 1;
     crop.px = 0;
     crop.py = 0;
+    crop.pinch = null;
+    crop.pointers.clear();
+    crop.drag = null;
     const host = document.getElementById('pp-crop-host');
     if (host) host.innerHTML = '';
+  }
+
+  // Source-image rectangle currently visible through the square stage.
+  // layoutCrop centres the element in the stage and the transform scales about
+  // that same centre, so the visible window starts this far into the source.
+  function cropSourceRect() {
+    const im = crop.img;
+    if (!im) return null;
+    const box = crop.box || CROP_BOX_FALLBACK;
+    const srcPerDisplay = 1 / (crop.base * crop.zoom);
+    return {
+      sx: im.naturalWidth / 2 - (box / 2 + crop.px) * srcPerDisplay,
+      sy: im.naturalHeight / 2 - (box / 2 + crop.py) * srcPerDisplay,
+      sw: box * srcPerDisplay,
+      sh: box * srcPerDisplay
+    };
   }
 
   async function saveCrop() {
@@ -1314,16 +1503,14 @@
     if (!im) return;
     state.avatarBusy = true;
     try {
+      const rect = cropSourceRect();
       const canvas = document.createElement('canvas');
-      canvas.width = 512;
-      canvas.height = 512;
+      canvas.width = AVATAR_OUTPUT;
+      canvas.height = AVATAR_OUTPUT;
       const ctx = canvas.getContext('2d');
-      const scale = Math.max(512 / im.naturalWidth, 512 / im.naturalHeight) * crop.zoom;
-      const dx = (512 - im.naturalWidth * scale) / 2 + crop.px * (512 / CROP_BOX);
-      const dy = (512 - im.naturalHeight * scale) / 2 + crop.py * (512 / CROP_BOX);
       ctx.fillStyle = '#eef3ef';
-      ctx.fillRect(0, 0, 512, 512);
-      ctx.drawImage(im, dx, dy, im.naturalWidth * scale, im.naturalHeight * scale);
+      ctx.fillRect(0, 0, AVATAR_OUTPUT, AVATAR_OUTPUT);
+      ctx.drawImage(im, rect.sx, rect.sy, rect.sw, rect.sh, 0, 0, AVATAR_OUTPUT, AVATAR_OUTPUT);
       const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
       const b64 = dataUrl.split(',')[1];
       closeCrop();
@@ -1372,7 +1559,14 @@
     input.value = '';
     if (!file) return;
     if (!/^image\//.test(file.type || '')) { state.avatarError = 'File type support করে না — JPG/PNG দিন।'; renderCurrentView(); return; }
-    if (file.size > 2_000_000) { state.avatarError = 'ছবিটা 2MB-এর বেশি — ছোট ছবি ব্যবহার করুন।'; renderCurrentView(); return; }
+    // No pre-crop byte gate: the crop step re-encodes to a bounded 1:1 JPEG, so
+    // a large camera photo must reach the cropper (owner report: >2MB silently
+    // refused before cropping). Only guard against absurd inputs.
+    if (file.size > MAX_SOURCE_BYTES) {
+      state.avatarError = `ছবিটা অনেক বড় (${Math.round(file.size / 1e6)}MB) — ${Math.round(MAX_SOURCE_BYTES / 1e6)}MB-এর নিচের ছবি দিন।`;
+      renderCurrentView();
+      return;
+    }
     openCropModal(file);
   }
 
@@ -1432,13 +1626,26 @@
         if (m) m.remove();
         return;
       }
-      else if (role === 'open-journey-sheet') state.sheet = 'journey';
-      else if (role === 'open-achv-sheet') state.sheet = 'achv';
-      else if (role === 'open-prefs-sheet') state.sheet = 'prefs';
-      else if (role === 'open-visibility') state.sheet = 'visibility';
+      // These set the sheet then return immediately — without the explicit
+      // render the click did nothing visible (owner bug: "ক্লিক করলে কিছু আসে না").
+      else if (role === 'open-journey-sheet' || role === 'open-achv-sheet' || role === 'open-visibility' || role === 'pref-language' || role === 'pref-appearance') {
+        state.sheet = role === 'open-journey-sheet' ? 'journey'
+          : role === 'open-achv-sheet' ? 'achv'
+            : role === 'open-visibility' ? 'visibility' : 'prefs';
+        renderCurrentView();
+        return;
+      }
       else if (role === 'open-privacy-page') { state.view = 'privacy'; renderCurrentView(); return; }
       else if (role === 'sheet-close' || role === 'sheet-backdrop') { closeSheet(); return; }
       else if (role === 'open-edit-page') { state.view = 'edit'; renderCurrentView(); return; }
+      else if (role === 'comp-fix') {
+        // Land on the view that actually owns the missing field, focused, so the
+        // tap takes the student straight to the thing they have to fill in.
+        state.view = el.dataset.view === 'academic' ? 'academic' : 'edit';
+        state.editFocus = el.dataset.field || '';
+        renderCurrentView();
+        return;
+      }
       else if (role === 'open-avatar-page') { state.view = 'avatar'; renderCurrentView(); return; }
       else if (role === 'back-profile') { state.view = 'profile'; renderCurrentView(); return; }
       else if (role === 'av-capture-open') {
@@ -1447,10 +1654,17 @@
         return;
       }
       else if (role === 'crop-cancel') { closeCrop(); return; }
-      else if (role === 'crop-zoom-in') { crop.zoom = Math.min(3, crop.zoom + 0.25); clampCropPan(); applyCropTransform(); return; }
-      else if (role === 'crop-zoom-out') { crop.zoom = Math.max(1, crop.zoom - 0.25); clampCropPan(); applyCropTransform(); return; }
+      else if (role === 'crop-zoom-in') { setCropZoom(crop.zoom + 0.25); return; }
+      else if (role === 'crop-zoom-out') { setCropZoom(crop.zoom - 0.25); return; }
       else if (role === 'crop-save') { saveCrop(); return; }
       else if (role === 'avatar-remove') { onAvatarRemove(); return; }
+      else if (role === 'pick-avatar-gender') {
+        state.prefs.avatarGender = el.dataset.gender === 'girl' ? 'girl' : 'boy';
+        state.prefs.avatarStyle = 0;
+        savePrefs(state.prefs);
+        renderCurrentView();
+        return;
+      }
       else if (role === 'pick-default-avatar') {
         state.prefs.avatarStyle = Number(el.dataset.style) || 0;
         savePrefs(state.prefs);
@@ -1458,8 +1672,6 @@
         toast('Default avatar সেভ হয়েছে ✓');
         return;
       }
-      else if (role === 'pref-language') { state.sheet = 'prefs'; }
-      else if (role === 'pref-appearance') { state.sheet = 'prefs'; }
       else if (role === 'pref-notifications') {
         state.prefs.notifications = state.prefs.notifications === 'on' ? 'off' : 'on';
         savePrefs(state.prefs); renderCurrentView(); toast('Notifications setting সেভ হয়েছে ✓');
@@ -1741,6 +1953,22 @@
       if (bio.length > 280) { sheetErr('Bio সর্বোচ্চ ২৮০ অক্ষর হতে পারে।'); return; }
       fields.bio = bio;
     }
+    // school / higherInstitution are objects on the server ({ id, name, district }
+    // — id is server-owned). They carry 5 points each, so without an editable
+    // field here the completion score could never reach 100.
+    const inst = (nameId, districtId, current) => {
+      const name = String($(`#${nameId}`)?.value || '').trim();
+      const district = String($(`#${districtId}`)?.value || '').trim();
+      if (name === (current?.name || '') && district === (current?.district || '')) return undefined;
+      if (name && name.length < 2) { sheetErr('প্রতিষ্ঠানের নাম কমপক্ষে ২ অক্ষরের হতে হবে।'); return null; }
+      return name ? { name, district } : null;
+    };
+    const school = inst('pp-edit-school', 'pp-edit-school-district', p.school);
+    if (school === null && String($('#pp-edit-school')?.value || '').trim()) return;
+    if (school !== undefined) fields.school = school;
+    const higher = inst('pp-edit-higher', 'pp-edit-higher-district', p.higherInstitution);
+    if (higher === null && String($('#pp-edit-higher')?.value || '').trim()) return;
+    if (higher !== undefined) fields.higherInstitution = higher;
     if (!Object.keys(fields).length) { sheetErr('কিছু না পরিবর্তন করলে সংরক্ষণ করা যাবে না।'); return; }
     savePatch(fields, () => { state.view = 'profile'; state.showSuccessModal = true; renderProfilePage(); });
   }
@@ -1909,6 +2137,52 @@
       });
       refreshEditDirty();
     }
+    focusRequestedField();
+    renderSheet();
+    if (state.view === 'profile') playCompletionIntro();
+  }
+
+  // A completion-card tap deep-links into the form. Run the focus after the view
+  // has been swapped in (edit and academic both own missing fields).
+  function focusRequestedField() {
+    const id = state.editFocus;
+    if (!id) return;
+    state.editFocus = '';
+    const target = document.getElementById(id);
+    if (!target) return;
+    if (typeof target.focus === 'function') target.focus();
+    if (typeof target.scrollIntoView === 'function') target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }
+
+  // Sweep the ring and count the percentage up on first paint of the profile
+  // home. Values come straight from the server payload; only the reveal is
+  // animated, and the final frame is always the true number.
+  function playCompletionIntro() {
+    const ring = document.querySelector('.pp-ring-anim');
+    if (!ring) return;
+    const rand = typeof requestAnimationFrame === 'function'
+      ? requestAnimationFrame
+      : (fn) => setTimeout(fn, 16);
+    rand(() => {
+      ring.classList.add('go');
+      const arc = ring.querySelector('.pp-ring-arc');
+      const off = ring.style.getPropertyValue('--pp-ring-off');
+      if (arc && off) arc.style.strokeDashoffset = off;
+      const bar = document.querySelector('.pp-comp-bar i');
+      if (bar) rand(() => { bar.style.width = bar.style.getPropertyValue('--pp-comp-w') || '0%'; });
+      const counter = ring.querySelector('[data-pp-countup]');
+      if (counter) {
+        const to = Number(counter.getAttribute('data-pp-countup')) || 0;
+        const start = Date.now();
+        const step = () => {
+          const t = Math.min(1, (Date.now() - start) / 900);
+          const eased = 1 - (1 - t) ** 3;
+          counter.textContent = `${bnNum(Math.round(to * eased))}%`;
+          if (t < 1) rand(step);
+        };
+        step();
+      }
+    });
   }
 
   // Reference brand row (top of the Profile home) — code-native leaf mark.
@@ -1994,6 +2268,7 @@
     if (gate === 'loading') {
       // AUTH_LOADING: skeleton only — never a guest fallback, never stale data.
       shell(profileSkeleton(), { topbar: false });
+      bindPageEvents($('#app'));
       return;
     }
     if (gate === 'guest') {
@@ -2003,6 +2278,7 @@
           ${brandHeader()}
           ${guestPrompt()}
         </div>`, { topbar: false });
+      bindPageEvents($('#app'));
       // Continue with Google — account sheet welcome view (Google One Tap first control).
       $('[data-role="guest-google"]')?.addEventListener('click', () => account.open());
       $('[data-role="guest-signin"]')?.addEventListener('click', () => {
@@ -2053,6 +2329,7 @@
             </div>
           </div>`);
         $('[data-role="retry-profile"]')?.addEventListener('click', () => window.renderProfilePage());
+        bindPageEvents($('#app'));
       });
   };
 
@@ -2082,7 +2359,7 @@
         const allTargets = Array.isArray(p.targets) && p.targets.length ? p.targets : (p.target ? [p.target] : []);
         const avatar = p.avatarPresent
           ? `<img class="pp-avatar-img pp-avatar-lg" src="/api/public/profile/${encodeURIComponent(safeId)}/avatar?ts=${Date.now()}" alt="${esc(p.displayName)} এর ছবি">`
-          : defaultAvatarSvg(p.displayName, safeId);
+          : defaultAvatarSvg(p.displayName, safeId, Number(p.avatarStyle) || 0, p.avatarGender === 'girl' ? 'girl' : 'boy');
         wrap(`
           <div class="pp-wrap pp-public-wrap" data-public-contract="public-safe-profile-v1">
             <div class="pp-hero" style="margin-top:12px">

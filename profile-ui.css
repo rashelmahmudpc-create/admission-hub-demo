@@ -76,6 +76,17 @@
 .pp-comp-info { min-width: 0; flex: 1; }
 .pp-comp-cta { margin-top: 8px; border: none; background: none; color: var(--pp-emerald); font-weight: 800; font-size: 13px; cursor: pointer; padding: 0; }
 .pp-comp-cta:active { opacity: 0.8; }
+.pp-comp-bar { height: 6px; border-radius: 3px; background: rgba(15, 107, 79, 0.12); margin: 9px 0 2px; overflow: hidden; }
+.pp-comp-bar i { display: block; height: 100%; width: 0; border-radius: 3px; background: linear-gradient(90deg, #34d399, #0f6b4f); transition: width 0.9s cubic-bezier(0.22, 1, 0.36, 1); }
+.pp-ring-anim .pp-ring-arc { transition: stroke-dashoffset 0.95s cubic-bezier(0.22, 1, 0.36, 1); }
+.pp-comp-steps { list-style: none; margin: 14px 0 0; padding: 0; display: grid; gap: 6px; }
+.pp-comp-step { width: 100%; display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 13px; border: 1px solid rgba(20, 35, 29, 0.1); background: #fbfefc; font: inherit; font-size: 13px; font-weight: 650; color: #14231d; text-align: left; cursor: pointer; transition: background 0.16s ease, border-color 0.16s ease, transform 0.16s ease; }
+.pp-comp-step:hover { background: #f2fbf6; border-color: rgba(22, 163, 74, 0.35); }
+.pp-comp-step:active { transform: scale(0.99); }
+.pp-comp-step-dot { flex: none; width: 9px; height: 9px; border-radius: 50%; border: 2px solid var(--pp-emerald); opacity: 0.65; }
+.pp-comp-step-arrow { margin-left: auto; color: var(--pp-emerald); font-weight: 800; opacity: 0.7; }
+[data-theme="dark"] .pp-comp-step { background: #16211c; border-color: rgba(255, 255, 255, 0.12); color: #e6f2ec; }
+[data-theme="dark"] .pp-comp-bar { background: rgba(255, 255, 255, 0.14); }
 .pp-meter { width: 44%; height: 8px; border-radius: 99px; background: rgba(15, 107, 79, 0.12); overflow: hidden; flex: none; }
 .pp-meter i { display: block; height: 100%; border-radius: 99px; background: linear-gradient(90deg, #0f6b4f, #2a9d72); transition: width 400ms ease; }
 
@@ -169,6 +180,7 @@
 .pp-sheet-body .pp-field { display: block; margin-bottom: 14px; }
 .pp-field span { display: block; font-size: 12.5px; font-weight: 700; margin-bottom: 6px; opacity: 0.8; }
 .pp-field em { font-style: normal; font-weight: 500; opacity: 0.55; }
+.pp-field .pp-field-sub { margin-top: 6px; font-size: 13px; }
 .pp-field input, .pp-field textarea { width: 100%; box-sizing: border-box; border: 1.5px solid var(--pp-line); border-radius: 12px; padding: 11px 12px; font: inherit; font-size: 14.5px; background: var(--pp-input); color: inherit; }
 .pp-field input:focus, .pp-field textarea:focus { outline: none; border-color: var(--pp-emerald); background: #fff; }
 .pp-field textarea { resize: vertical; min-height: 70px; }
@@ -219,9 +231,16 @@
 .pp-av-preview { display: flex; justify-content: center; margin: 6px 0 16px; line-height: 0; }
 .pp-av-preview svg { border-radius: 50%; display: block; }
 .pp-av-defaults { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 6px; }
-.pp-av-def { border: 2.5px solid transparent; background: none; border-radius: 50%; padding: 3px; cursor: pointer; line-height: 0; }
+.pp-av-defaults-20 { grid-template-columns: repeat(5, 1fr); gap: 8px; }
+.pp-av-def { border: 2.5px solid transparent; background: none; border-radius: 50%; padding: 3px; cursor: pointer; line-height: 0; transition: transform 0.16s ease, border-color 0.16s ease; }
+.pp-av-def:hover { transform: translateY(-2px); }
+.pp-av-def:active { transform: scale(0.94); }
 .pp-av-def svg { width: 100%; height: 100%; display: block; border-radius: 50%; }
 .pp-av-def.on { border-color: var(--pp-emerald); }
+.pp-av-sec-note { display: block; text-transform: none; letter-spacing: 0; font-weight: 600; font-size: 11px; color: #7b9a8c; margin-top: 3px; }
+.pp-av-gender { display: flex; gap: 8px; margin-bottom: 12px; }
+.pp-av-tab { flex: 1; padding: 9px 12px; border-radius: 12px; border: 1.5px solid rgba(20, 35, 29, 0.14); background: #fff; font: inherit; font-size: 13px; font-weight: 700; color: #4b6a5c; cursor: pointer; transition: all 0.16s ease; }
+.pp-av-tab.on { border-color: var(--pp-emerald); background: #eaf7f0; color: #0b5640; }
 
 /* avatar actions (legacy, still referenced by dashboard flow) */
 .pp-avatar-actions { display: flex; gap: 10px; flex-wrap: wrap; margin: 4px 0 16px; }
@@ -408,7 +427,34 @@
 .pp-crop-stage { display: flex; justify-content: center; margin: 6px 0 4px; }
 .pp-crop-circle { width: 160px; height: 160px; border-radius: 50%; overflow: hidden; position: relative; background: #eef3ef; box-shadow: inset 0 0 0 2px rgba(22, 163, 74, 0.25); }
 .pp-crop-circle img { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; transform-origin: center center; pointer-events: none; user-select: none; -webkit-user-drag: none; }
+
+/* Premium crop (owner spec: Facebook/Instagram-quality) — a large square stage
+   dimmed outside a circular mask, with a rule-of-thirds overlay and a live
+   handle. Pinch/drag to zoom and reposition; the saved output is 1:1. */
+.pp-crop-overlay { position: fixed; inset: 0; z-index: 90; display: flex; align-items: center; justify-content: center; background: rgba(6, 20, 14, 0.72); backdrop-filter: blur(3px); padding: 16px; }
+.pp-crop { width: 100%; max-width: 420px; background: #fff; border-radius: 24px; padding: 16px 16px 18px; box-shadow: 0 18px 48px rgba(4, 22, 14, 0.42); animation: ppCropIn 0.24s cubic-bezier(0.22, 1, 0.36, 1); }
+@keyframes ppCropIn { from { opacity: 0; transform: translateY(14px) scale(0.97); } to { opacity: 1; transform: none; } }
+.pp-crop-premium .pp-crop-stage { position: relative; width: 100%; aspect-ratio: 1 / 1; max-width: 340px; margin: 4px auto 12px; border-radius: 18px; overflow: hidden; background: #0d1b14; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14); touch-action: none; cursor: grab; }
+.pp-crop-premium .pp-crop-stage:active { cursor: grabbing; }
+.pp-crop-premium .pp-crop-stage img { position: absolute; top: 50%; left: 50%; width: auto; height: auto; object-fit: unset; transform-origin: center center; pointer-events: none; user-select: none; -webkit-user-drag: none; will-change: transform; }
+.pp-crop-guides { position: absolute; inset: 0; pointer-events: none;
+  background-image:
+    linear-gradient(to right, rgba(255,255,255,0.34) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255,255,255,0.34) 1px, transparent 1px);
+  background-size: 33.333% 33.333%;
+  background-position: -1px -1px;
+  opacity: 0;
+  transition: opacity 0.18s ease; }
+.pp-crop-premium .pp-crop-stage.is-dragging .pp-crop-guides,
+.pp-crop-premium .pp-crop-stage:hover .pp-crop-guides { opacity: 1; }
+.pp-crop-mask { position: absolute; inset: 0; pointer-events: none; border-radius: 50%;
+  box-shadow: 0 0 0 9999px rgba(6, 20, 14, 0.5);
+  outline: 2px solid rgba(255, 255, 255, 0.9);
+  outline-offset: -2px; }
 .pp-crop-zoom { display: flex; align-items: center; gap: 12px; margin: 14px 4px 4px; }
+.pp-crop-zoomrange { flex: 1; -webkit-appearance: none; appearance: none; height: 6px; border-radius: 3px; background: #e4ece8; outline: none; }
+.pp-crop-zoomrange::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 22px; height: 22px; border-radius: 50%; background: var(--pp-emerald, #16a34a); border: 3px solid #fff; box-shadow: 0 1px 5px rgba(10, 60, 40, 0.4); cursor: pointer; }
+.pp-crop-zoomrange::-moz-range-thumb { width: 18px; height: 18px; border-radius: 50%; background: var(--pp-emerald, #16a34a); border: 3px solid #fff; cursor: pointer; }
 .pp-crop-zoomtrack { position: relative; flex: 1; height: 6px; border-radius: 3px; background: #e4ece8; }
 .pp-crop-zoomdot { position: absolute; top: 50%; left: 0; width: 18px; height: 18px; border-radius: 50%; background: var(--pp-emerald, #16a34a); transform: translate(-50%, -50%); box-shadow: 0 1px 4px rgba(10, 60, 40, 0.4); transition: left 0.12s ease; }
 .pp-crop-hint { text-align: center; margin: 8px 0 14px; }

@@ -1,5 +1,5 @@
 const CACHE_PREFIX = 'admission-hub-shell-';
-const BUILD_ID = 'v264-cleancache-20260916';
+const BUILD_ID = 'v266-profile-v11-20260915';
 const CACHE_NAME = `${CACHE_PREFIX}${BUILD_ID}`;
 const VERSION_HEADER = 'X-Admission-Hub-Build';
 const DOCUMENT_NETWORK_TIMEOUT_MS = 2500;
@@ -23,8 +23,8 @@ const APP_SHELL = [
   './institutions-bd.js?v=bd-institutions-v2',
   './account-access.js?v=20260916-account-entry-v5',
   './academic-catalog.js?v=acad-cat-v2',
-  './profile-ui.js?v=profile-v10',
-  './profile-ui.css?v=profile-v10',
+  './profile-ui.js?v=profile-v11',
+  './profile-ui.css?v=profile-v11',
   './data-protection.js?v=dp-v3-fastboot',
   './dashboard-v2.js?v=dash2f12-clean',
   './ai-agent-chat.js?v=agent-f1-ui-chatv17-clean',
@@ -36,7 +36,7 @@ const APP_SHELL = [
 // A truncated/corrupt download is NEVER written to the shell cache.
 const ASSET_DIGESTS = {
 /* sw-manifest:start */
-  "./index.html": "e54c69f5f2b86bc2c2d5a6294139c39404c00c3e3da3fab7d13e4a72d5d5791a",
+  "./index.html": "d5d46f7b41f641f2e2831e426b3b23132717905996dc6bcb8e506a2db606dceb",
   "./manifest.json": "11a85ae594fc629b11605daeda3f9afe4ef95215a55a29f9cc423314bfb275a4",
   "./manifest.webmanifest": "5be476009a140eabd088bd972bd4d345b9c4f4a055cd6e4f08774b9cb4afaf52",
   "./dashboard-v2.css?v=dash2f11-clean": "0c20c3a97ec99ca00690f3dce037f44a00fe3fa917a9b2f1f19b11acc02cda9f",
@@ -46,8 +46,8 @@ const ASSET_DIGESTS = {
   "./institutions-bd.js?v=bd-institutions-v2": "602c5549515e8207ad152b948ca9b8fe3ad0fbe429afb56380e4e21b662f779d",
   "./account-access.js?v=20260916-account-entry-v5": "3253207302525eec177e576019785909a601bfd848e9ff206f5d72f7e25a3389",
   "./academic-catalog.js?v=acad-cat-v2": "598c5fb79050ec9729fed6d6749675e85888f1d1b2f8836dbc509b56b18e4c43",
-  "./profile-ui.js?v=profile-v10": "9da44807c1203a99b8f47dff81d003cb162a604677a0f6a64dddbd7d1a922d81",
-  "./profile-ui.css?v=profile-v10": "52a534455e8ecc448b641b36a7f2c2f86c4cc72f054345b6dd404e57cf77f07b",
+  "./profile-ui.js?v=profile-v11": "54c7c42d363fb7306539c983f3bbee612b1641d584b4ff9e0868daa12bbb4754",
+  "./profile-ui.css?v=profile-v11": "cf77d9ff315e3b7d327d518eabab36c6818973ad942296da75214799675b932c",
   "./data-protection.js?v=dp-v3-fastboot": "359dc907ade4bcb3a6a722385969ebb6af47f7e436e6cdf2cce0dd6b7343723d",
   "./dashboard-v2.js?v=dash2f12-clean": "fe480f999c5d19c380752c8ceed5603dc9a31be2c5cf254cd45e23e233fb45f4",
   "./ai-agent-chat.js?v=agent-f1-ui-chatv17-clean": "9c177d878cbd0cdb7b74617f545cb41ce790041c492c7cbb2368230c277de544",

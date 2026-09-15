@@ -695,6 +695,10 @@ textarea{min-height:96px}
     try {
       message = String(message == null ? '' : message).slice(0, 400);
       const full = kind + ': ' + message;
+      if (!full.trim()) return;
+      // One failure often surfaces as both an 'error' event and a matching
+      // 'unhandledrejection'. Show it once, not twice.
+      if (pill && pill.dataset.full === full && Date.now() - (pill._at || 0) < 5000) return;
       try { sessionStorage.setItem('ah-last-crash', full); } catch (_) {}
       const mount = () => {
         try {
@@ -708,6 +712,7 @@ textarea{min-height:96px}
             document.body.appendChild(pill);
           }
           pill.dataset.full = full;
+          pill._at = Date.now();
           pill.textContent = '⚠️ ' + full.slice(0, 150);
           clearTimeout(pill._t);
           pill._t = setTimeout(() => { try { if (pill) { pill.remove(); pill = null; } } catch (_) {} }, 14000);
@@ -719,19 +724,29 @@ textarea{min-height:96px}
   window.addEventListener('error', (e) => {
     if (!e || !(e.message || e.error)) return;
     const msg = String(e.message || '');
+    // A frame or task cancelled by navigation ("the user aborted a request",
+    // an aborted rAF/task) is benign noise, not an app defect. Showing it as a
+    // red pill trains the owner to ignore the pill entirely.
+    if (/abort|interrupted|the operation was aborted|Script error/i.test(msg) && !e.filename) return;
     // A parse error on a .js asset has two very different causes:
     //   1. the download was truncated (flaky network) — a reload really fixes it
     //   2. the file itself has a syntax defect — refreshing never fixes it
     // Distinguish them by re-fetching the asset and parsing the server's copy.
     // Never tell the user "incomplete file, refresh" for a genuine code defect.
-    if (e.filename && /Unexpected (EOF|end of input)|Unexpected token/i.test(msg) && /\.js(\?|$)/i.test(e.filename)) {
+    // Only a SYNCHRONOUS parse failure carries a usable filename AND a column.
+    // An async error surfaced by a promise can inherit the page URL as its
+    // filename; treating that as a truncated asset once triggered a reload loop.
+    if (e.filename && e.colno && e.lineno && /Unexpected (EOF|end of input)|Unexpected token/i.test(msg) && /\.js(\?|$)/i.test(e.filename)) {
       const src = String(e.filename);
       const fname = src.split('/').pop().split('?')[0];
       fetch(src, { cache: 'no-store' })
         .then((r) => r.text())
         .then((text) => {
+          // An empty body is a truncated download, never a code defect — the
+          // SyntaxError came straight from the parse, so there is nothing to parse.
           let serverCopyOk = true;
-          if (!/^\s*(import|export)\s/m.test(text)) {
+          if (!text.trim()) serverCopyOk = true;
+          else if (!/^\s*(import|export)\s/m.test(text)) {
             try { new Function(text); } catch (_) { serverCopyOk = false; }
           }
           if (!serverCopyOk) {
@@ -764,13 +779,25 @@ textarea{min-height:96px}
     show('Error', e.message || (e.error && e.error.message) || '');
     trace('err', e.message || '');
   });
-  window.addEventListener('unhandledrejection', (e) => { const r = e && e.reason; if (r) { show('Crash', (r && r.message) || String(r)); trace('reject', (r && r.message) || String(r)); } });
+  window.addEventListener('unhandledrejection', (e) => {
+    const r = e && e.reason;
+    if (!r) return;
+    const rmsg = String((r && r.message) || r);
+    // Aborted fetches and navigation-cancelled work reject by design — they are
+    // not crashes. Reporting them as red pills hides the real defects.
+    if (r && (r.name === 'AbortError' || /abort|interrupted|cancelled|canceled/i.test(rmsg))) {
+      trace('reject-benign', rmsg);
+      return;
+    }
+    show('Crash', rmsg);
+    trace('reject', rmsg);
+  });
   window.addEventListener('hashchange', () => trace('route', location.hash));
 })();
 </script>
 <script src="./session-persist.js?v=session-v2"></script>
 <link rel="stylesheet" href="./account-access.css?v=20260916-account-entry-v5">
-<link rel="stylesheet" href="./profile-ui.css?v=profile-v10">
+<link rel="stylesheet" href="./profile-ui.css?v=profile-v11">
 <!-- Signup/Onboarding Assistant বন্ধ; মূল অ্যাপের account-aware AI Assistant চালু আছে। -->
 <style id="ah-boot-min">.ah-boot{width:100%;min-height:100dvh;display:grid;place-content:center;justify-items:center;gap:9px;color:#17221d;background:#f1faf6}.ah-boot-mark{display:grid;place-items:center;width:56px;height:56px;border-radius:17px;background:#0f6b4f;color:#fff;font-size:26px;box-shadow:0 12px 28px rgba(15,107,79,.30)}.ah-boot b{font-size:19px;font-weight:800;letter-spacing:.01em}.ah-boot i{font-style:normal;font-size:12px;color:#5e7168;animation:ahBootPulse 1.15s ease-in-out infinite}@keyframes ahBootPulse{0%,100%{opacity:.55}50%{opacity:1}}@media(prefers-reduced-motion:reduce){.ah-boot i{animation:none}}</style>
 </head>
@@ -4890,15 +4917,15 @@ window.__admissionBootPromise.catch(error => console.error('[Admission Hub] boot
     // Do not reload on controllerchange: iOS standalone clients can enter a blank-screen reload loop.
     // The updated worker takes control now; the current document remains usable and the next launch uses the new shell.
     try{
-      const expectedSwVersion = 'v264-cleancache-20260916';
+      const expectedSwVersion = 'v266-profile-v11-20260915';
       // register() on the same scope performs an in-place update. Never unregister
       // the active iOS worker first: that discards the instant offline shell.
-      const registration=await navigator.serviceWorker.register('./sw.js?v=v264-cleancache-20260916',{scope:'./',updateViaCache:'none'});
+      const registration=await navigator.serviceWorker.register('./sw.js?v=v266-profile-v11-20260915',{scope:'./',updateViaCache:'none'});
       await registration.update().catch(()=>{});
       // Purge every old app-shell cache (any build id ≠ current). This guarantees
       // stale pre-retirement application shells can never be served from cache again.
       try {
-        const cur = 'admission-hub-shell-v264-cleancache-20260916';
+        const cur = 'admission-hub-shell-v266-profile-v11-20260915';
         const names = await caches.keys();
         for (const name of names) {
           if (name.startsWith('admission-hub-shell-') && name !== cur) await caches.delete(name).catch(()=>{});
@@ -5034,7 +5061,7 @@ window.__admissionBootPromise.catch(error => console.error('[Admission Hub] boot
 <!-- First-interaction modules execute before optional/heavy tools. -->
 <script defer src="./dashboard-v2.js?v=dash2f12-clean"></script>
 <script defer src="./academic-catalog.js?v=acad-cat-v2"></script>
-<script defer src="./profile-ui.js?v=profile-v10"></script>
+<script defer src="./profile-ui.js?v=profile-v11"></script>
 <script defer src="./ai-agent-chat.js?v=agent-f1-ui-chatv17-clean"></script>
 <script defer src="qbank-redesign.js?v=practice15"></script>
 <script defer src="urgent-fix.js?v=practice13"></script>

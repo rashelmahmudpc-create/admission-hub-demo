@@ -61,7 +61,9 @@ test('avatar pipeline: native camera/gallery -> crop (zoom+pan) -> 512 JPEG -> s
   assert.match(UI, /data-crop-save-contract="crop-save-v1"/);
   assert.match(UI, /crop-zoom-in/);
   assert.match(UI, /crop-zoom-out/);
-  assert.match(UI, /2_000_000/);
+  // 5MB source ceiling; the encoded 512px output stays under D1's 2MB row cap
+  assert.match(UI, /MAX_SOURCE_BYTES = 5 \* 1024 \* 1024/);
+  assert.match(UI, /AVATAR_OUTPUT/);
   assert.match(UI, /profile\/avatar/);
   assert.match(UI, /method: 'DELETE'/);
 });
@@ -108,16 +110,16 @@ test('index.html: Profile tab (6th) wired into bottom nav + router', () => {
 });
 
 test('index.html: profile assets linked with versions (v262)', () => {
-  assert.match(HTML, /<link rel="stylesheet" href="\.\/profile-ui\.css\?v=profile-v10">/);
+  assert.match(HTML, /<link rel="stylesheet" href="\.\/profile-ui\.css\?v=profile-v11">/);
   assert.match(HTML, /<script defer src="\.\/academic-catalog\.js\?v=acad-cat-v2"><\/script>/);
-  assert.match(HTML, /<script defer src="\.\/profile-ui\.js\?v=profile-v10"><\/script>/);
+  assert.match(HTML, /<script defer src="\.\/profile-ui\.js\?v=profile-v11"><\/script>/);
 });
 
 test('sw.js caches the profile assets (v262)', () => {
-  assert.match(SW, /const BUILD_ID = 'v264-cleancache-20260916';/);
+  assert.match(SW, /const BUILD_ID = 'v266-profile-v11-20260915';/);
   assert.match(SW, /'\.\/academic-catalog\.js\?v=acad-cat-v2',/);
-  assert.match(SW, /'\.\/profile-ui\.js\?v=profile-v10',/);
-  assert.match(SW, /'\.\/profile-ui\.css\?v=profile-v10',/);
+  assert.match(SW, /'\.\/profile-ui\.js\?v=profile-v11',/);
+  assert.match(SW, /'\.\/profile-ui\.css\?v=profile-v11',/);
 });
 
 test('v262: academic catalog engine — official per-university+session units (no generic A/B/C/D)', () => {
@@ -309,12 +311,13 @@ test('V2: edit page validates before patching; avatar page = single screen (Take
   assert.match(UI, /pp-edit-name/);
   assert.match(UI, /pp-edit-dob/);
   assert.match(UI, /pp-edit-bio/);
-  assert.doesNotMatch(UI, /av-tab/);
   assert.match(UI, /pick-default-avatar/);
   assert.match(UI, /av-capture-open/);
   assert.match(UI, /Take Photo/);
   assert.match(UI, /Choose from Gallery/);
-  // six generated default avatar styles, zero raster
+  // two gender tabs (male/female) over 10 strong defaults each, zero raster
+  assert.match(UI, /pick-avatar-gender/);
+  assert.match(UI, /avatarGender/);
   assert.match(UI, /defaultAvatarSvg\(state\.data\?\.profile\?\.fullName/);
 });
 
@@ -510,12 +513,20 @@ test('7B3: PHASE J — per-section error boundary (one broken section never blan
   assert.match(CSS, /\.pp-section-error/);
 });
 
-test('7B3: avatar circular everywhere + crop modal (zoom/pan) -> 512x512', () => {
+test('7B3: avatar circular everywhere + premium crop (pinch/pan) -> 512x512', () => {
   assert.match(CSS, /\.pp-avatar-img \{[^}]*border-radius: 50%/);
-  assert.match(CSS, /\.pp-crop-circle img \{[^}]*object-fit: cover/s);
+  // premium stage: square, touch-driven, with rule-of-thirds guides + circular mask
+  assert.match(CSS, /\.pp-crop-premium \.pp-crop-stage \{[^}]*aspect-ratio: 1 \/ 1/s);
+  assert.match(CSS, /\.pp-crop-premium \.pp-crop-stage \{[^}]*touch-action: none/s);
+  assert.match(CSS, /\.pp-crop-guides \{/);
+  assert.match(CSS, /\.pp-crop-mask \{/);
+  assert.match(CSS, /\.pp-crop-zoomrange::-webkit-slider-thumb/);
   assert.match(UI, /\.pp-avatar-img\{[^}]*border-radius:50%\}/);
-  assert.match(UI, /canvas\.width = 512/);
+  assert.match(UI, /canvas\.width = AVATAR_OUTPUT/);
   assert.match(UI, /clampCropPan/);
+  assert.match(UI, /setCropZoom/);
+  assert.match(UI, /crop\.pointers/, 'pinch zoom must track active pointers');
+  assert.match(UI, /data-crop-contract="premium-crop-v2"/);
   assert.match(UI, /data-avatar-hint-contract="square-crop-v1"/);
 });
 
@@ -588,8 +599,8 @@ test('v263: truncated-script self-heal (owner bug: "SyntaxError: Unexpected EOF"
 test('v264: poisoned-cache fix — asset re-pin, no-store SW fetch, digest-verified precache', () => {
   // New cache keys for every shell asset (device HTTP/SW caches held a
   // truncated copy from the network-blip window — new URL = clean fetch).
-  assert.match(HTML, /profile-ui\.js\?v=profile-v10/);
-  assert.match(HTML, /profile-ui\.css\?v=profile-v10/);
+  assert.match(HTML, /profile-ui\.js\?v=profile-v11/);
+  assert.match(HTML, /profile-ui\.css\?v=profile-v11/);
   assert.match(HTML, /academic-catalog\.js\?v=acad-cat-v2/);
   assert.match(HTML, /dashboard-v2\.js\?v=dash2f12-clean/);
   assert.match(HTML, /session-persist\.js\?v=session-v2/);
