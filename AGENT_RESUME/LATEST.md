@@ -1,43 +1,43 @@
-# LATEST — Phase 5 (Session & Recovery) COMPLETE
+# LATEST — Phase 5 COMPLETE · Phase 6 plan prepared (STOP for approval)
 
 **Updated:** 2026-09-15 (Asia/Dhaka) · Agent: **Arena Agent Mode**
 
 ## STATUS
 
-- **PHASE 5 COMPLETE** — all 4 chunks done, deployed, live-verified.
-- **Commit:** `e61560d` (Chunks 2-4) on top of `9678c4a` (Chunk 1) — main.
-- **Deploy:** protected publish run **34892826370** — ✅ success.
-- **Live marker:** `v255-session-engine-20260915` /
-  `?v=20260915-session-engine-v1` on BOTH hosts:
-  - `admissionhub.pages.dev` ✅
-  - `sheikhrashel47-stack.github.io/admission-hub-demo/` ✅
-- **CI:** all 6 guards green (native-auth guard 34892820174 ✅).
-- **Tests:** local `test:production-auth` all green — 62 + 108 + 4 + 261
-  (test:native-auth now includes 6 session API + 16 chaos tests).
+- **PHASE 5 COMPLETE** — deployed (publish run 34892826370 ✅), live on both
+  hosts (`v255-session-engine-20260915`), all guards green.
+  Report: `docs/PHASE5-FINAL-REPORT.md`.
+- **PHASE 6 (Security, Device Trust & Risk Engine)** — blueprint received
+  from owner (2026-09-15). Recon + existing-security audit + threat map
+  done. Execution plan prepared:
+  **`docs/PHASE6-SECURITY-EXECUTION-PLAN.md`** (5 chunks, ~58 new tests).
+- **NO Phase 6 code written yet** — STOP at plan-approval gate
+  (blueprint §40).
 
-## DELIVERED (Phase 5)
+## PHASE 6 PLAN SUMMARY (details in the plan doc)
 
-- Server: `POST /session/logout-all` (multi-device revoke, audited) +
-  `session-refreshed` telemetry (explicit `/session` only, no tokens).
-- Client: session state machine (`data-session-state`), single-flight
-  refresh coordinator, bounded network retries (network ≠ logout),
-  terminal 401/403 clears session state only, recovery-before-retry
-  (one refresh + one retry, no loops), near-expiry schedule.
-- Multi-tab sync via BroadcastChannel only (zero browser storage);
-  deep-link anchor restore after re-login.
-- Remember-me: explicit `remember:false` → 7-day session
-  (`REMEMBER_OFF_TTL_MS`); default 30-day; refreshes extend full TTL.
-- "সব device থেকে Log Out" button (2-step arm) in the signed view.
-- `session-recovery-chaos.test.mjs` (16 tests) — `npm run test:session`
-  now 22 tests; wired into guard paths + CODEOWNERS.
-- `docs/SESSION-CORE-PROTECTION.md` — 11 frozen invariants.
-- Phase 5 final report: `docs/PHASE5-FINAL-REPORT.md`.
+- Security engine **inside the existing auth DO** (one authority, no new
+  network hop on the login path).
+- Central frozen security config + policy version
+  (`security-policy-v1`) — all thresholds in one place.
+- Risk levels LOW→CRITICAL, conservative combination (no single-signal
+  accusation; no auto-suspension; no permanent lockout — escalating
+  cooldown + step-up instead).
+- Device trust registry (30-day trust after successful verification;
+  revoke current/individual/all).
+- Generic purpose-bound single-use challenge engine; v1 methods: email
+  OTP + Telegram OTP + passkey (TOTP later via method registry).
+- Step-up on sensitive actions (logout-all, password change, future
+  email change).
+- Security history (no location), notification boundary (dry-run),
+  token-protected admin foundation.
+- Chunks: 1) config+policy+ledger · 2) risk+device trust · 3) challenge+
+  step-up (client UI) · 4) history+notifications+admin · 5) chaos+
+  takeover+regression+deploy+report.
 
 ## STOP
 
-- **Phase gate:** Phase 6 শুরু করতে মালিকের explicit approval দরকার
-  (10-phase roadmap-এর mandatory gate)।
-- Protected Session Core এখন invariants অনুযায়ী change control-এ আছে
-  (`docs/SESSION-CORE-PROTECTION.md`) — session core বদলাতে হলে change
-  control flow মেনে চলা + owner approval।
-- Phase 3 (identity) + Phase 4 (login/signup) untouched & protected.
+- **Phase 6 implementation শুরু হবে না** — মালিকের explicit plan approval
+  দরকার (+ plan-এর Q1: new-device challenge-once + trust — recommendation
+  দেওয়া আছে)।
+- Phase 5/4/3 invariants intact — Phase 6 replace করবে না, extend করবে।
