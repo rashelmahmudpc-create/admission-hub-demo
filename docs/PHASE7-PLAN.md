@@ -180,14 +180,42 @@ outputs: { context, greeting, sectionOrder[], moments[], completion }
 
 ---
 
-## 5. Storage: Cloudflare R2
+## 5. Storage: Cloudflare D1 (free, no card) + growth path
 
-- New binding in `wrangler.toml`: `AVATAR_BUCKET` (R2).
-- **Bucket:** `admissionhub-avatars` (new; created via CF API or owner
-  dashboard — see open questions).
-- Owner-supplied R2 S3 key pair noted for fallback; **primary path =
-  worker R2 binding** (simpler, no long-lived S3 secrets in repo).
-- R2 costs ~$0 read/write; bucket is private (no public listing).
+**Decision (owner's scale target: 1–5M users, no card available):**
+
+- **Avatar storage = Cloudflare D1** (SQLite, same CF account, no new
+  vendor, no card). New database `admission-profile` with binding
+  `PROFILE_DB`:
+  - `avatars(user_id TEXT PRIMARY KEY, data BLOB, mime TEXT,
+    bytes INTEGER, updated_at INTEGER)`
+  - Free tier (verified 2026): **5 GB storage**, 5M row reads/day,
+    100K row writes/day → ~200–250K avatars at ~20–25 KB each
+    (client-side downscale to ≤ 512 px + server re-check).
+- **Provider-agnostic storage interface** (blueprint §9):
+  `AvatarStore` interface with `put/get/delete`; Phase 7 ships the
+  `D1AvatarStore` implementation; swapping to R2/MinIO later = new
+  implementation + one-time blob copy, no API/UI change.
+- **Core DB stays on the existing DO SQLite** (Phases 3–6 protected
+  core; data volume tiny). No DB migration in Phase 7.
+- **Token requirement:** the CF API token needs **D1: Edit** added
+  (current token: Workers Edit + Pages Edit — D1 scope missing,
+  verified via API probe). Owner recreates token at publish time with
+  Workers Edit + Pages Edit + D1 Edit.
+
+**Growth roadmap (will be written up as `docs/SCALING-PLAN.md` in
+Chunk 5 — honest numbers for the 1–5M user dream):**
+
+| Stage | Storage | Cost |
+|---|---|---|
+| 0 → ~50K users | Current stack + D1 avatars | **$0, no card** |
+| → ~250K users | Avatars migrate to R2 (10 GB free, then $0.015/GB, **$0 egress** — the decisive saver vs S3 at scale) | ~$1–5/mo (card then) |
+| → 1–5M users | R2 + D1/Turso (5 GB free, open-source libSQL) or Neon (open-source Postgres, 0.5 GB/project × 100, no card) for heavier user data + Workers paid plan | ~$10–20/mo total |
+| Self-host option | MinIO (open-source S3) + Postgres on a $5 VPS, if ever desired | ~$5–10/mo |
+
+Open-source verified (2026): Turso free 5 GB + 500M reads/mo;
+Neon free 0.5 GB/project × 100 projects (no card); Supabase free
+500 MB (too small); R2 free 10 GB + free egress.
 
 ---
 
@@ -196,10 +224,10 @@ outputs: { context, greeting, sectionOrder[], moments[], completion }
 | Chunk | Scope | New tests (target) |
 |---|---|---|
 | **1 — Profile core** | Migration runner + schema_version; new columns; provisioning on first session; PATCH save + optimistic versioning; completion engine; validators; audit events; GET /profile v2 response | `profile-core.test.mjs` ~30 |
-| **2 — Avatar system** | R2 binding (wrangler + tests with mock); upload/replace/delete pipeline; validation + abuse (fake MIME, oversized, path-traversal filename); deterministic SVG default; serving routes + cache headers | `profile-avatar.test.mjs` ~18 |
+| **2 — Avatar system** | D1 database + binding (wrangler + tests with mock); upload/replace/delete pipeline; validation + abuse (fake MIME, oversized, path-traversal filename); deterministic SVG default; serving routes + cache headers | `profile-avatar.test.mjs` ~18 |
 | **3 — Public identity + privacy** | AH-ID generation + table; public projection endpoint (rate-limited); visibility rules; cross-user/unauthorized/leak tests; public preview data contract | `profile-public.test.mjs` ~20 |
 | **4 — Dynamic experience + UI** | Context engine (rule table) + tests; `profile-ui.js` (identity card, bottom sheets, public preview, completion meter, empty/skeleton states, avatar edit); index.html nav + shell marker + sw.js asset list; dashboard avatar upgrade | `profile-dynamic.test.mjs` ~20 + UI assertions |
-| **5 — Protection + release** | `docs/PROFILE-CORE-PROTECTION.md` (frozen invariants + AGENT PROFILE RULE); guard workflow paths + CODEOWNERS; v257 bump (sw.js, index.html, test markers, publish workflow verify); full regression (identity/session/auth/email/security + new suites) | regression all green |
+| **5 — Protection + release** | `docs/PROFILE-CORE-PROTECTION.md` (frozen invariants + AGENT PROFILE RULE); `docs/SCALING-PLAN.md` (growth roadmap, §5 above); guard workflow paths + CODEOWNERS; v257 bump (sw.js, index.html, test markers, publish workflow verify); full regression (identity/session/auth/email/security + new suites) | regression all green |
 
 **Test registration:** add the 4 new files to `test:native-auth`
 (package.json) — CI (guard + publish) picks them up automatically.
@@ -230,14 +258,15 @@ outputs: { context, greeting, sectionOrder[], moments[], completion }
 ## 8. Publish (manual, same proven v256 procedure)
 
 GitHub Actions/Pages remain disabled at account level (support pending).
-Manual protected publish (owner-authorized): local pre-gates → capture
-rollback anchor → `wrangler deploy` (worker) → build sanitized dist →
-`wrangler pages deploy` (branch main) → run the workflow's own live
-verification script against admissionhub.pages.dev (+ new v257 marker
-checks) → cleanup. Telegram canary step skipped (no Telegram changes in
-v257; webhook untouched). **Requirement:** the CF API token must also
-have **Object Storage (R2): Read/Edit** for the new bucket binding
-(owner recreates/extends token — see open questions).
+Manual protected publish (owner-authorized): create D1 database
+`admission-profile` (dashboard or API) → local pre-gates → capture
+rollback anchor → `wrangler deploy` (worker + new D1 binding) → build
+sanitized dist → `wrangler pages deploy` (branch main) → run the
+workflow's own live verification script against admissionhub.pages.dev
+(+ new v257 marker checks) → cleanup. Telegram canary step skipped (no
+Telegram changes in v257; webhook untouched). **Requirement:** the CF
+API token needs **D1: Edit** (owner recreates token with Workers Edit +
+Pages Edit + D1 Edit — verified the current token lacks D1 scope).
 
 ---
 
@@ -265,10 +294,10 @@ leak ✓ · protected publish + live verify ✓.
 
 ## 11. Open questions for owner (answer at approval)
 
-1. **R2 bucket:** create new bucket `admissionhub-avatars` — OK? And the
-   CF token needs R2 permission added (recreate token with *Object
-   Storage (R2): Edit* alongside Workers Edit + Pages Edit) — you'll
-   paste the new token at publish time.
+1. **Avatar storage:** Cloudflare **D1** (free 5 GB, no card, ~200–250K
+   avatars) — OK? Token will need D1 Edit added (recreate with Workers
+   Edit + Pages Edit + D1 Edit; paste new token at publish time).
+   Growth path: R2/MinIO migration documented in SCALING-PLAN.md.
 2. **Public profile URL:** `admissionhub.pages.dev/u/AH-XXXXXX` — OK?
 3. **Default avatar:** generated SVG (initials + deterministic color),
    zero-raster — OK? (matches owner zero-raster rule)
