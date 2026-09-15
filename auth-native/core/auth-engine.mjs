@@ -271,6 +271,43 @@ export function normalizeProfilePatch(value = {}) {
     } else if (key === 'visibility') {
       if (!['private', 'limited', 'public'].includes(raw)) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
       fields.visibility = raw;
+    } else if (key === 'admissionSession') {
+      const v = cleanProfileText(raw, 4);
+      if (v && !/^(19|20|21)\d{2}$/.test(v)) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+      fields.admissionSession = v;
+    } else if (key === 'academicGoal') {
+      const v = cleanProfileText(raw, 160);
+      if (v.length > 160 || /[\r\n\u0000<>]/.test(v)) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+      fields.academicGoal = v;
+    } else if (key === 'subjects') {
+      if (raw === null) { fields.subjects = []; continue; }
+      if (!Array.isArray(raw)) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+      if (raw.length > 8) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+      const list = [];
+      for (const item of raw) {
+        const sv = cleanProfileText(item, 40);
+        if (!sv || /[\r\n\u0000<>]/.test(sv)) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+        if (!list.includes(sv)) list.push(sv);
+      }
+      if (list.length > 8) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+      fields.subjects = list;
+    } else if (key === 'targets') {
+      if (raw === null) { fields.targets = []; continue; }
+      if (!Array.isArray(raw)) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+      if (raw.length > 5) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+      const list = [];
+      for (const t of raw) {
+        if (!t || typeof t !== 'object' || Array.isArray(t)) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+        const name = cleanProfileText(t.name, 120);
+        const unit = cleanProfileText(t.unit, 20);
+        const year = cleanProfileText(t.year, 10);
+        if (name.length < 2 || name.length > 120 || unit.length > 20 || year.length > 10
+          || /[\r\n\u0000<>]/.test(name) || /[\r\n\u0000<>]/.test(unit) || /[\r\n\u0000<>]/.test(year)) {
+          failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+        }
+        list.push(Object.freeze({ name, unit, year }));
+      }
+      fields.targets = list;
     } else {
       failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
     }

@@ -8004,6 +8004,9 @@ var SqliteAuthRepository = class _SqliteAuthRepository {
         higher_id TEXT,
         higher_name TEXT,
         higher_district TEXT,
+        admission_session TEXT NOT NULL DEFAULT '',
+        academic_goal TEXT NOT NULL DEFAULT '',
+        subjects TEXT NOT NULL DEFAULT '[]',
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL,
         FOREIGN KEY(user_id) REFERENCES auth_users(user_id)
@@ -8195,6 +8198,9 @@ var SqliteAuthRepository = class _SqliteAuthRepository {
     if (!profileColumns.has("bio")) this.sql.exec("ALTER TABLE auth_profiles ADD COLUMN bio TEXT");
     if (!profileColumns.has("targets")) this.sql.exec("ALTER TABLE auth_profiles ADD COLUMN targets TEXT DEFAULT '[]'");
     if (!profileColumns.has("visibility")) this.sql.exec("ALTER TABLE auth_profiles ADD COLUMN visibility TEXT NOT NULL DEFAULT 'private'");
+    if (!profileColumns.has("admission_session")) this.sql.exec("ALTER TABLE auth_profiles ADD COLUMN admission_session TEXT NOT NULL DEFAULT ''");
+    if (!profileColumns.has("academic_goal")) this.sql.exec("ALTER TABLE auth_profiles ADD COLUMN academic_goal TEXT NOT NULL DEFAULT ''");
+    if (!profileColumns.has("subjects")) this.sql.exec("ALTER TABLE auth_profiles ADD COLUMN subjects TEXT NOT NULL DEFAULT '[]'");
     this.sql.exec(
       `CREATE TABLE IF NOT EXISTS auth_public_identities (
         user_id TEXT PRIMARY KEY,
@@ -8623,12 +8629,23 @@ var SqliteAuthRepository = class _SqliteAuthRepository {
       return [];
     }
   }
+  #parseSubjects(raw) {
+    try {
+      const value = JSON.parse(String(raw || "[]"));
+      if (!Array.isArray(value)) return [];
+      return value.filter((x) => typeof x === "string" && x.length > 0).slice(0, 8);
+    } catch {
+      return [];
+    }
+  }
+
   #profileForUser(userId) {
     const row = this.#one(
       `SELECT profile_version AS version,full_name AS fullName,date_of_birth AS dob,
         school_id AS schoolId,school_name AS schoolName,school_district AS schoolDistrict,
         higher_id AS higherId,higher_name AS higherName,higher_district AS higherDistrict,
         mobile AS mobile,bio AS bio,targets AS targets,visibility AS visibility,
+        admission_session AS admissionSession,academic_goal AS academicGoal,subjects AS subjectsRaw,
         created_at AS createdAt,updated_at AS updatedAt
        FROM auth_profiles WHERE user_id=?`,
       userId
@@ -8644,6 +8661,9 @@ var SqliteAuthRepository = class _SqliteAuthRepository {
       mobile: row.mobile || "",
       bio: row.bio || "",
       targets: this.#parseTargets(row.targets),
+      admissionSession: row.admissionSession || "",
+      academicGoal: row.academicGoal || "",
+      subjects: this.#parseSubjects(row.subjectsRaw),
       visibility,
       createdAt: Number(row.createdAt),
       updatedAt: Number(row.updatedAt)
@@ -8652,17 +8672,20 @@ var SqliteAuthRepository = class _SqliteAuthRepository {
   #writeProfile(userId, profile, now) {
     const higher = profile.higherInstitution || null;
     const targets = JSON.stringify(Array.isArray(profile.targets) ? profile.targets : []);
+    const subjects = JSON.stringify(Array.isArray(profile.subjects) ? profile.subjects : []);
     const visibility = ["private", "limited", "public"].includes(profile.visibility) ? profile.visibility : "private";
     this.sql.exec(
       `INSERT INTO auth_profiles(
         user_id,profile_version,full_name,date_of_birth,school_id,school_name,school_district,
-        higher_id,higher_name,higher_district,mobile,bio,targets,visibility,created_at,updated_at
-      ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        higher_id,higher_name,higher_district,mobile,bio,targets,visibility,
+        admission_session,academic_goal,subjects,created_at,updated_at
+      ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
       ON CONFLICT(user_id) DO UPDATE SET
         profile_version=excluded.profile_version,full_name=excluded.full_name,date_of_birth=excluded.date_of_birth,
         school_id=excluded.school_id,school_name=excluded.school_name,school_district=excluded.school_district,
         higher_id=excluded.higher_id,higher_name=excluded.higher_name,higher_district=excluded.higher_district,
         mobile=excluded.mobile,bio=excluded.bio,targets=excluded.targets,visibility=excluded.visibility,
+        admission_session=excluded.admission_session,academic_goal=excluded.academic_goal,subjects=excluded.subjects,
         updated_at=excluded.updated_at`,
       userId,
       Number(profile.version || 1),
@@ -8678,6 +8701,9 @@ var SqliteAuthRepository = class _SqliteAuthRepository {
       profile.bio || "",
       targets,
       visibility,
+      profile.admissionSession || "",
+      profile.academicGoal || "",
+      subjects,
       now,
       now
     );
@@ -9107,12 +9133,19 @@ var SqliteAuthRepository = class _SqliteAuthRepository {
   #profileCompletion(profile, { avatarPresent = false } = {}) {
     if (!profile) return 0;
     let score = 0;
-    if (profile.fullName && profile.fullName.length >= 2) score += 25;
-    if (/^\d{4}-\d{2}-\d{2}$/.test(String(profile.dob || ""))) score += 15;
-    if (profile.mobile) score += 15;
-    if (profile.school && profile.school.name) score += 10;
-    if (profile.higherInstitution && profile.higherInstitution.name) score += 10;
+    // Phase 7B (V2, owner-approved weights; sums to 100):
+    // name 15 · dob 10 · mobile 10 · school 5 · higher 5 · targets 15 ·
+    // session 5 · subjects 10 · goal 15 · bio 5 · avatar 10
+    if (profile.fullName && profile.fullName.length >= 2) score += 15;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(String(profile.dob || ""))) score += 10;
+    if (profile.mobile) score += 10;
+    if (profile.school && profile.school.name) score += 5;
+    if (profile.higherInstitution && profile.higherInstitution.name) score += 5;
     if (Array.isArray(profile.targets) && profile.targets.length > 0 && profile.targets[0]?.name) score += 15;
+    if (profile.admissionSession) score += 5;
+    if (Array.isArray(profile.subjects) && profile.subjects.length > 0) score += 10;
+    if (profile.academicGoal) score += 15;
+    if (profile.bio) score += 5;
     if (avatarPresent) score += 10;
     return Math.min(100, score);
   }
@@ -9184,12 +9217,19 @@ var SqliteAuthRepository = class _SqliteAuthRepository {
       visibility
     };
     if (visibility !== "public") return { profile: base, subjectRef: row.subjectRef || null };
-    const targets = this.#parseTargets(row.targets);
+    // Phase 7B (V2, owner-approved allowlist): public = all targets +
+    // admission session + academic goal + joined year + bio + completion.
+    // Never: email, mobile, DOB, school/higher details, subjects, progress.
+    const targets = this.#parseTargets(row.targets).slice(0, 5)
+      .map((t) => Object.freeze({ name: t.name, unit: t.unit || "", year: t.year || "" }));
     const target = targets[0] || null;
     return {
       profile: {
         ...base,
+        targets: Object.freeze(targets),
         target: target ? { name: target.name, unit: target.unit || "", year: target.year || "" } : null,
+        admissionSession: profile.admissionSession || null,
+        goal: profile.academicGoal || null,
         joinedYear: Number(String(row.createdAt).slice(0, 4)) || null,
         bio: row.bio || "",
         completion: this.#profileCompletion(profile, { avatarPresent: false })

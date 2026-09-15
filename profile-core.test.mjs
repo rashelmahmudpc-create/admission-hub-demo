@@ -149,7 +149,7 @@ test('sqlite: onboarding accounts (profile already saved) are NOT re-provisioned
   const result = await state.engine.getProfileV2(profileInput(session, email, subject), state.context);
   assert.equal(result.profile.fullName, 'Rafiq Islam');
   assert.equal(eventsOf(state, 'profile-provisioned').length, 0);
-  assert.ok(result.completion >= 40);
+  assert.equal(result.completion, 30); // V2 weights: name 15 + dob 10 + school 5
 });
 
 // ---------------------------------------------------------------------------
@@ -402,16 +402,16 @@ test('sqlite: completion is a weighted, display-only percentage', async () => {
     }
   }, state.context);
   view = await state.engine.getProfileV2(profileInput(session, email, subject), state.context);
-  assert.equal(view.completion, 50); // name 25 + dob 15 + school 10
+  assert.equal(view.completion, 30); // V2 weights: name 15 + dob 10 + school 5
   await state.engine.saveProfilePatch({ ...profileInput(session, email, subject), fields: { mobile: '+8801812345678' } }, state.context);
   view = await state.engine.getProfileV2(profileInput(session, email, subject), state.context);
-  assert.equal(view.completion, 65);
+  assert.equal(view.completion, 40); // + mobile 10
   await state.engine.saveProfilePatch({
     ...profileInput(session, email, subject),
     fields: { target: { name: 'BUET', unit: 'CSE', year: '2027' } }
   }, state.context);
   view = await state.engine.getProfileV2(profileInput(session, email, subject), state.context);
-  assert.equal(view.completion, 80);
+  assert.equal(view.completion, 55); // + targets 15
 });
 
 // ---------------------------------------------------------------------------
@@ -687,6 +687,8 @@ test('context: NEW_USER for a fresh complete profile, GOAL_SET once a target exi
     }
   }, state.context);
   await state.engine.saveProfilePatch({ ...profileInput(session, email, subject), fields: { mobile: '+8801612345678' } }, state.context);
+  // V2 weights: 35 + mobile 10 + goal 15 = 60 (crosses the >=60 context bar)
+  await state.engine.saveProfilePatch({ ...profileInput(session, email, subject), fields: { academicGoal: 'Join DU Econ' } }, state.context);
   let view = await state.engine.getProfileV2(profileInput(session, email, subject), state.context);
   assert.equal(view.context.context, 'NEW_USER');
   assert.equal(view.context.freshness, 'LIVE');
@@ -714,6 +716,9 @@ test('context: RETURNING after a 15-day gap; PROFILE_INCOMPLETE wins over everyt
     }
   }, state.context);
   await state.engine.saveProfilePatch({ ...profileInput(session, email, subject), fields: { mobile: '+8801512345678' } }, state.context);
+  // V2 weights: keep completion >=60 after the target is cleared below
+  // (30 base + mobile 10 + subjects 10 + goal 15 = 65)
+  await state.engine.saveProfilePatch({ ...profileInput(session, email, subject), fields: { subjects: ['Physics'], academicGoal: 'Join KU' } }, state.context);
   state.advance(8 * DAY); // past the 7-day new-user window
   await state.engine.saveProfilePatch({ ...profileInput(session, email, subject), fields: { target: { name: 'KU', unit: 'B Unit', year: '2026' } } }, state.context);
   let view = await state.engine.getProfileV2(profileInput(session, email, subject), state.context);
