@@ -1,39 +1,42 @@
-# LATEST — Phase 6 COMPLETE (code) · publish PENDING (Actions disabled)
+# LATEST — PHASE 6 COMPLETE & LIVE ✅
 
 **Updated:** 2026-09-15 (Asia/Dhaka) · Agent: **Arena Agent Mode**
 
 ## STATUS
 
-- **PHASE 6 (Security, Device Trust & Risk Engine) — code + tests
-  COMPLETE**, all commits pushed to `main`:
-  - `9f00cf3` Chunk 1 — central security config + risk policy
-  - `3fc8860` Chunk 2 — risk engine on /login + device trust lifecycle
-  - `eb64e9a` Chunk 3 — challenge engine + step-up (server + client UI)
-  - `377ae00` Chunk 4 — security history, notifications, admin foundation
-  - `a6d1554` Chunk 5 — chaos suite (14; caught + fixed a real sqlite bug)
-  - `efb238e` v256 bump + `docs/SECURITY-CORE-PROTECTION.md` + guard/CODEOWNERS
-- **All suites green at `efb238e`:** native-auth **332/332** (incl. 56 new
-  security tests), identity 36, session 22, auth 62, email 108+4, exact
-  bundle check exit 0.
-- **Report:** `docs/PHASE6-FINAL-REPORT.md`.
+- **PHASE 6 (Security, Device Trust & Risk Engine) — COMPLETE & LIVE.**
+  `v256-security-core-20260915` is serving on
+  **https://admissionhub.pages.dev** (Pages deployment `b9237110`),
+  worker `admission-gk` version `3b1b4c97-9f84-4cd2-a6cc-5db5a3245458`
+  (rollback anchor: `6c5ba2f2-443b-45e4-88ec-90a959f746f7`).
+- Commits: `9f00cf3` → `3fc8860` → `eb64e9a` → `377ae00` → `a6d1554`
+  → `efb238e` (+ docs commit).
+- Publish was **manual** (Cloudflare API, owner-authorized): GitHub
+  disabled **Actions AND Pages** at the account level ("Actions has been
+  disabled for this user"; github.io demo → "Site not found"). All
+  workflow pre-gates passed locally; the workflow's own live-verification
+  script ran unmodified against the live host: PASS. Telegram canary
+  activated (webhook already correct), transient secret deleted,
+  activation route closed (403).
+- Documented exception: `verify-google-browser-origin.mjs` not re-run in
+  the sandbox (no root for Chromium system libs) — justified: Phase 6
+  diff touches zero Google files; live google config still `READY`.
+- **Demo host** `sheikhrashel47-stack.github.io/admission-hub-demo/`
+  still 404 until GitHub re-enables Pages (support ticket path). Will
+  serve v256 automatically after re-enable (legacy branch-based build).
+- **Report:** `docs/PHASE6-FINAL-REPORT.md` (deploy section updated).
 
-## BLOCKED — protected publish (needs owner action)
+## NEXT (owner, when ready)
 
-- GitHub **Actions is currently disabled on the account** — API returns
-  "Actions has been disabled for this user" (dispatch 422). It was working
-  during Phase 5 (v255 publish run 34892826370).
-- **Owner action:** re-enable Actions (GitHub → Settings → Actions →
-  General workflow permissions), then I (or the owner) trigger the
-  protected publish: `telegram-auth-canary-activate.yml` with
-  `confirmation = PUBLISH_TELEGRAM_OTP`.
-- After publish: verify live marker `v256-security-core-20260915` on both
-  hosts (admissionhub.pages.dev + sheikhrashel47-stack.github.io demo) and
-  the API contract (anon 401 on `/security/*`, 403 no-token on
-  `/admin/security/*`).
+1. GitHub Support ticket to re-enable Actions + Pages on the account
+   (message draft in chat history). Then: the `native-auth-guard.yml`
+   push guard and the protected publish workflow work again; demo host
+   revives automatically.
+2. Phase 7 planning (roadmap gate) — start only on owner approval.
 
 ## BEFORE (still true)
 
-- **PHASE 5 COMPLETE** — live on both hosts (`v255-session-engine-20260915`),
-  all guards green. Report: `docs/PHASE5-FINAL-REPORT.md`.
+- **PHASE 5 COMPLETE** — was live on both hosts
+  (`v255-session-engine-20260915`). Report: `docs/PHASE5-FINAL-REPORT.md`.
 - Phases 1-4 COMPLETE (v252 line). Reports: `docs/PHASE3-*`,
   `docs/PHASE4-FINAL-REPORT.md`.

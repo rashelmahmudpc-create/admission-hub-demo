@@ -5,10 +5,34 @@
 (Chunk 3) → `377ae00` (Chunk 4) → `a6d1554` (Chunk 5 chaos) → `efb238e`
 (v256 bump + protection contract + guard wiring)
 **Version:** `v256-security-core-20260915` (sw.js + index.html markers)
-**Deploy:** PENDING — GitHub Actions is currently disabled on the account
-("Actions has been disabled for this user"). The protected publish
-(`PUBLISH_TELEGRAM_OTP`) is ready to trigger the moment Actions is
-re-enabled; every pre-publish check already passes locally at `efb238e`.
+**Deploy:** **LIVE** — `v256-security-core-20260915` published
+2026-09-15 via a **manual protected publish** (Cloudflare API, executed by
+the agent at the owner's explicit instruction because GitHub disabled
+Actions **and** Pages at the account level: "Actions has been disabled for
+this user", demo host returning "Site not found").
+- Worker `admission-gk`: prev `6c5ba2f2-443b-45e4-88ec-90a959f746f7` →
+  new **`3b1b4c97-9f84-4cd2-a6cc-5db5a3245458`** (rollback anchor kept).
+- Cloudflare Pages project `admissionhub` (branch `main`): deployment
+  **`b9237110`** → https://admissionhub.pages.dev.
+- Telegram canary: activated on attempt 1
+  (`webhookChanged=false` — webhook already at the correct endpoint),
+  transient proof secret deleted afterwards, activation route verified
+  closed (HTTP 403).
+- Every workflow pre-gate passed before deploy: `check:worker-bundle`,
+  `test:production-auth` 37/37, `account-retirement` 30/30;
+  `verify-telegram-bindings` READY; Firebase worker binding PASS.
+- The workflow's own 137-line live verification script (release marker,
+  config contracts, zero-raster, protected generic-backup isolation,
+  cache-safe assets) ran **unmodified against the live host: PASS**.
+- One exception, documented: `verify-google-browser-origin.mjs` could not
+  run in the publish sandbox (headless Chromium needs system libraries;
+  sandbox is non-root). It is unrelated to v256: the Phase 6 diff touches
+  **zero** Google-related files, the live config still reports
+  `google: available, READY` with the unchanged client ID, and the same
+  origin was browser-verified during the Phase 5 publish.
+- Demo host `sheikhrashel47-stack.github.io/admission-hub-demo/` remains
+  404 while GitHub has the account's Pages disabled (legacy branch-based
+  build); it will serve v256 automatically once GitHub re-enables Pages.
 
 ---
 
@@ -129,13 +153,13 @@ New tests in Phase 6: **56** (13+1 / 15 / 14+4 / 10 / 14).
 - [x] P3+P4+P5 regression pass (identity/session/auth/email green)
 - [x] No critical issue open (the one found — sqlite challenge INSERT —
       fixed + regression-tested)
-- [ ] **Protected publish + live verify** — BLOCKED: GitHub Actions is
-      disabled on the account. Re-enable (Settings → Actions), then
-      trigger `PUBLISH_TELEGRAM_OTP`; verify marker
-      `v256-security-core-20260915` on both hosts
-      (admissionhub.pages.dev + github.io demo) + API contract
-      (`/session` 401, `/security/*` 401 anon, `/admin/security/*` 403
-      no-token).
+- [x] **Protected publish + live verify** — DONE (manual, owner-authorized):
+      all pre-gates green, worker + Pages deployed, full live verification
+      script PASS on admissionhub.pages.dev (marker
+      `v256-security-core-20260915`, config contracts, zero-raster,
+      protected isolation), canary activated + cleaned up (route 403).
+      github.io demo host blocked only by GitHub's account-level Pages
+      disable — serves v256 automatically after re-enable.
 
 ## 4. Explicit non-goals honoured (no TOTP, no live mass notifications,
 no auto-suspension, no email-change flow, no location capture, no new
