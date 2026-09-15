@@ -2031,7 +2031,7 @@
     }
     if (state.data) {
       shell(profileViewMarkup(), { topbar: false });
-      bindPageEvents($('#app));
+      bindPageEvents($('#app'));
     }
     bindOnlineFlush();
     Promise.all([loadProfile(), loadAiPrefs()])

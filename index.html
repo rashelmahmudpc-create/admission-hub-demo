@@ -719,35 +719,47 @@ textarea{min-height:96px}
   window.addEventListener('error', (e) => {
     if (!e || !(e.message || e.error)) return;
     const msg = String(e.message || '');
-    // SELF-HEAL (owner bug): a script file arriving TRUNCATED over a flaky
-    // network makes the engine report a parse error — iOS Safari:
-    // "SyntaxError: Unexpected EOF", Chrome: "Unexpected end of input".
-    // The bad copy may sit in the shell cache — delete it, then reload once
-    // (guarded per minute so a dead link can't loop reloads).
+    // A parse error on a .js asset has two very different causes:
+    //   1. the download was truncated (flaky network) — a reload really fixes it
+    //   2. the file itself has a syntax defect — refreshing never fixes it
+    // Distinguish them by re-fetching the asset and parsing the server's copy.
+    // Never tell the user "incomplete file, refresh" for a genuine code defect.
     if (e.filename && /Unexpected (EOF|end of input)|Unexpected token/i.test(msg) && /\.js(\?|$)/i.test(e.filename)) {
-      const fname = String(e.filename).split('/').pop().split('?')[0];
-      try {
-        const key = 'ah-script-reload';
-        const last = Number(sessionStorage.getItem(key) || 0);
-        if (Date.now() - last > 60000) {
-          sessionStorage.setItem(key, String(Date.now()));
-          trace('selfheal-reload', e.filename);
-          (async () => {
-            try {
-              const keys = await caches.keys();
-              for (const k of keys) {
-                const c = await caches.open(k);
-                await c.delete(new Request(String(e.filename), { method: 'GET' }));
-              }
-            } catch (_) {}
-            location.reload();
-          })();
-          return;
-        }
-        show('Error', 'ইন্টারনেট সংযোগে সমস্যা — ' + fname + ' অসম্পূর্ণ এসেছে। নিচে রিফ্রেশ করলে ঠিক হয়ে যাবে। (' + msg + ')');
-        trace('err-truncated', e.filename);
-        return;
-      } catch (_) { /* fall through to normal error surfacing */ }
+      const src = String(e.filename);
+      const fname = src.split('/').pop().split('?')[0];
+      fetch(src, { cache: 'no-store' })
+        .then((r) => r.text())
+        .then((text) => {
+          let serverCopyOk = true;
+          if (!/^\s*(import|export)\s/m.test(text)) {
+            try { new Function(text); } catch (_) { serverCopyOk = false; }
+          }
+          if (!serverCopyOk) {
+            trace('err-script-defect', src);
+            show('Error', 'স্ক্রিপ্টে সমস্যা আছে — ' + fname + '। রিফ্রেশ করলে ঠিক হবে না; এটা আমাদের দিক থেকে ঠিক করতে হবে। (' + msg + ')');
+            return;
+          }
+          try {
+            const key = 'ah-script-reload';
+            const last = Number(sessionStorage.getItem(key) || 0);
+            if (Date.now() - last > 60000) {
+              sessionStorage.setItem(key, String(Date.now()));
+              trace('selfheal-reload', src);
+              location.reload();
+              return;
+            }
+            trace('err-truncated', src);
+            show('Error', 'নেটওয়ার্ক থেকে ফাইল অসম্পূর্ণ এসেছে — ' + fname + '। আরেকবার রিফ্রেশ করলে ঠিক হবে।');
+          } catch (_) {
+            show('Error', msg);
+            trace('err', msg);
+          }
+        })
+        .catch(() => {
+          show('Error', msg || (e.error && e.error.message) || '');
+          trace('err', msg);
+        });
+      return;
     }
     show('Error', e.message || (e.error && e.error.message) || '');
     trace('err', e.message || '');

@@ -600,8 +600,18 @@ test('v264: poisoned-cache fix — asset re-pin, no-store SW fetch, digest-verif
   assert.match(SW, /sw-manifest:end/);
   assert.match(SW, /blob\.digest\('SHA-256'\)/);
   assert.match(SW, /hex !== expected/);
-  // Self-heal clears the poisoned shell-cache entry before the reload and
-  // names the file in the fallback message (diagnosable next time)
-  assert.match(HTML, /c\.delete\(new Request\(String\(e\.filename\)/);
-  assert.match(HTML, /fname \+ ' অসম্পূর্ণ এসেছে/);
+});
+
+test('v265: parse-error pill never tells the user to refresh a real code defect', () => {
+  // A parse error on a .js asset has two causes: a truncated download (a
+  // reload really fixes it) or a syntax defect in the file (a reload never
+  // fixes it). The handler must re-fetch and parse the server copy to tell
+  // them apart, instead of blaming the network and telling the user to refresh.
+  assert.match(HTML, /err-script-defect/);
+  assert.match(HTML, /new Function\(text\)/);
+  assert.match(HTML, /cache: 'no-store'/);
+  // the defect branch must NOT claim the file was incomplete or that a
+  // refresh will fix it
+  assert.doesNotMatch(HTML, /fname \+ ' অসম্পূর্ণ এসেছে/);
+  assert.doesNotMatch(HTML, /ইন্টারনেট সংযোগে সমস্যা — ' \+ fname/);
 });
