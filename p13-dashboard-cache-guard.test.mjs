@@ -17,7 +17,7 @@ t('১. C() ৩-স্তর-রেজলভার (window.CACHE → typeof CACH
 t('২. কোনো আনগার্ডেড C().settings.X অ্যাক্সেস নেই (সব নাল-সেফ বা &&-গার্ডেড)', !/(?<!\&\& )C\(\)\.settings\.[A-Za-z]/.test(V2) && !V2.includes('C().settings.dailyTarget') && V2.includes('(C().settings || {}).dailyTarget'));
 t('৩. goal(): ফাঁকা-ফলব্যাকে DB-লেখা নিষেধ (if (S && window.dbPut))', V2.includes('if (S && window.dbPut) window.dbPut(\'settings\', s)'));
 t('৪. renderV2 try/catch → পুরনো-ড্যাশবোর্ড-ফলব্যাক (কখনো ক্র্যাশ নয়)', V2.includes("console.warn('[dv2] build পতন") && /catch \(e\) \{[\s\S]{0,200}if \(typeof previous === 'function'\) previous\(\);/.test(V2));
-t('৫. ভার্সন-অখণ্ডতা: dashboard-v2.js ?v=dash2f10-main-ai (index+sw) + current BUILD_ID', H.includes('<script defer src="./dashboard-v2.js?v=dash2f12-clean"></script>') && SW.includes("'./dashboard-v2.js?v=dash2f12-clean'") && SW.includes("const BUILD_ID = 'v268-lang-theme-20260915'") && H.includes('sw.js?v=v268-lang-theme-20260915') && H.includes("const expectedSwVersion = 'v268-lang-theme-20260915'") && !H.includes('v196-gfix'));
+t('৫. ভার্সন-অখণ্ডতা: dashboard-v2.js ?v=dash2f10-main-ai (index+sw) + current BUILD_ID', H.includes('<script defer src="./dashboard-v2.js?v=dash2f12-clean"></script>') && SW.includes("'./dashboard-v2.js?v=dash2f12-clean'") && SW.includes("const BUILD_ID = 'v269-lang-coverage-20260915'") && H.includes('sw.js?v=v269-lang-coverage-20260915') && H.includes("const expectedSwVersion = 'v269-lang-coverage-20260915'") && !H.includes('v196-gfix'));
 
 /* ── ২. রানটাইম (jsdom): আসল সিনারিওতে আর কোনো ক্র্যাশ নেই ── */
 function runtimeCase(name, setup) {
