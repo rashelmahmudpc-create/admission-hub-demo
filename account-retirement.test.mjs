@@ -85,11 +85,12 @@ await test('production HTML does not load or mount retired account/onboarding UI
 await test('Google identity client is not unconditionally loaded in HTML', !H.includes('accounts.google.com') && !H.includes('openid email profile'));
 
 const navBlock = (H.match(/const NAV_TABS=\[[\s\S]*?\];/) || [''])[0];
-await test('retired Profile stays removed while the main-app AI and four study tabs remain',
-  ['dashboard', 'question-bank', 'exam', 'ai', 'history'].every(key => navBlock.includes(`key:'${key}'`)) &&
-  !navBlock.includes("key:'profile'") && (navBlock.match(/\{key:/g) || []).length === 5);
+await test('retired Profile stays removed while the four core tabs remain (AI → floating JUJU, History → Exam)',
+  ['dashboard', 'question-bank', 'exam', 'my-profile'].every(key => navBlock.includes(`key:'${key}'`)) &&
+  !navBlock.includes("key:'ai'") && !navBlock.includes("key:'history'") &&
+  !navBlock.includes("key:'profile'") && (navBlock.match(/\{key:/g) || []).length === 4);
 await test('core route dispatch remains available',
-  ["p==='dashboard'", "p==='question-bank'", "p==='exam'", "p==='ai'", "p==='history'"].every(marker => H.includes(marker)));
+  ["p==='dashboard'", "p==='question-bank'", "p==='exam'", "p==='ai'", "p==='history'", "p==='exam/history'"].every(marker => H.includes(marker)));
 await test('retired Profile/account hashes only redirect to Dashboard',
   !H.includes("path.startsWith('profile')") && H.includes("const retiredAccountRoute = p === 'profile'") &&
   H.includes('if (retiredAccountRoute) return true') && H.includes("Router.path = 'dashboard'") && !H.includes('Authentication'));
@@ -107,10 +108,10 @@ await test('content hydration is public and account-independent',
   !/AHAuth|ahPubToken|authHeaders|Authorization/.test(CLOUD));
 
 await test('service-worker build and HTML registration are synchronized',
-  SW.includes("const BUILD_ID = 'v272-nojs-landing-20260916'") &&
-  H.includes("const expectedSwVersion = 'v272-nojs-landing-20260916'") &&
-  H.includes('sw.js?v=v272-nojs-landing-20260916') &&
-  H.includes('admission-hub-shell-v272-nojs-landing-20260916'));
+  SW.includes("const BUILD_ID = 'v273-nav4-juju-20260916'") &&
+  H.includes("const expectedSwVersion = 'v273-nav4-juju-20260916'") &&
+  H.includes('sw.js?v=v273-nav4-juju-20260916') &&
+  H.includes('admission-hub-shell-v273-nav4-juju-20260916'));
 await test('service-worker shell cannot cache retired assets', retiredMarkers.every(marker => !SW.includes(marker)));
 await test('premium account and institution assets use synchronized cache-busting versions',
   ['account-access.css?v=20260916-account-entry-v6', 'account-access.js?v=20260916-account-entry-v6', 'institutions-bd.js?v=bd-institutions-v2']

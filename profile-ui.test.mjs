@@ -93,9 +93,10 @@ test('index.html: Profile tab (6th) wired into bottom nav + router', () => {
   assert.ok(navStart > 0);
   assert.match(nav, /key:'my-profile', icon:'👤', label:'Profile'/);
   // order: after history
-  assert.ok(nav.indexOf("key:'history'") < nav.indexOf("key:'my-profile'"));
+  // History এখন Exam-এর ভিতরে — bottom nav-এ শুধু ৪টি core tab।
+  assert.ok(!nav.slice(0, nav.indexOf('];')).includes("key:'history'"));
   const entries = nav.slice(0, nav.indexOf('];')).match(/key:'/g) || [];
-  assert.equal(entries.length, 6);
+  assert.equal(entries.length, 4);
   // baseTab highlights the profile tab
   assert.match(HTML, /if\(path==='my-profile'\) return 'my-profile'/);
   // hash route dispatch
@@ -116,7 +117,7 @@ test('index.html: profile assets linked with versions (v262)', () => {
 });
 
 test('sw.js caches the profile assets (v262)', () => {
-  assert.match(SW, /const BUILD_ID = 'v272-nojs-landing-20260916';/);
+  assert.match(SW, /const BUILD_ID = 'v273-nav4-juju-20260916';/);
   assert.match(SW, /'\.\/academic-catalog\.js\?v=acad-cat-v2',/);
   assert.match(SW, /'\.\/profile-ui\.js\?v=profile-v15-nonotif',/);
   assert.match(SW, /'\.\/profile-ui\.css\?v=profile-v14-tap',/);

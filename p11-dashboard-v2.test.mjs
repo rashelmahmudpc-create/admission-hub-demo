@@ -11,8 +11,8 @@ const CSS = readFileSync('dashboard-v2.css', 'utf8');
 t('dashboard-v2.js defer-লোড (?v=dash2)', H.includes('<script defer src="./dashboard-v2.js?v=dash2f13-theme"></script>'));
 t('dashboard-v2.css link (?v=dash2)', H.includes('<link rel="stylesheet" href="./dashboard-v2.css?v=dash2f13-theme">'));
 t('sw APP_SHELL-এ dashboard-v2 (js+css)', SW.includes("'./dashboard-v2.js?v=dash2f13-theme'") && SW.includes("'./dashboard-v2.css?v=dash2f13-theme'"));
-t('sw BUILD_ID v272-nojs-landing-20260916', SW.includes("const BUILD_ID = 'v272-nojs-landing-20260916'"));
-t('index sw-marker v195', H.includes('sw.js?v=v272-nojs-landing-20260916'));
+t('sw BUILD_ID v273-nav4-juju-20260916', SW.includes("const BUILD_ID = 'v273-nav4-juju-20260916'"));
+t('index sw-marker v195', H.includes('sw.js?v=v273-nav4-juju-20260916'));
 
 /* ২ — ১৪ মডিউল (ছবির প্রতিটি সেকশন) */
 t('১ Personal Header (avatar+তারিখ+🔔)', V2.includes('dv2-header') && V2.includes('Intl.DateTimeFormat') && V2.includes('dv2-bell'));
@@ -27,8 +27,8 @@ t('৯ Weakness Radar (Topic-wise Accuracy + রঙিন বার)', V2.includ
 t('১০ Admission Goal (বিশ্ববিদ্যালয় + Days Left + ⚙-বদল)', V2.includes('Admission Goal') && V2.includes('Days Left') && V2.includes('dv2EditGoal') && V2.includes('Rajshahi University'));
 t('১১ 90-Day Roadmap (Day X/90 + checklist + Full Plan)', V2.includes('90-Day Roadmap') && V2.includes('Day ') && V2.includes('Study Checklist') && V2.includes('progress/plan'));
 t('১২ Study Tools (Notes/Vocabulary/Dictionary/More — Problem Solver বাদ)', V2.includes('Study Tools') && V2.includes('Notes') && V2.includes("navigate(\\'notes\\')") && V2.includes("navigate(\\'vocabulary-master\\')") && !V2.includes('Problem Solver'));
-t('১৩ Bottom Nav ৫ core tabs (Home/Bank/Exam/AI/History; Profile retired)', /NAV_TABS=.*key:'dashboard'.*key:'question-bank'.*key:'exam'.*key:'ai'.*key:'history'/s.test(H) && !H.includes("key:'profile'") && !H.includes("key:'ai-chat'"));
-t('১৪ মূল অ্যাপের AI Assistant script/nav/dashboard/direct route চালু', H.includes('ai-agent-chat.js?v=agent-f1-ui-chatv18-fresh') && H.includes("key:'ai'") && H.includes("if(p==='ai'){ if(window.renderAiAgentPage)") && V2.includes("navigate('ai')") && V2.includes("navigate(\\'ai\\')"));
+t('১৩ Bottom Nav 4 core tabs (Home/Bank/Exam/Profile; AI → floating JUJU, History → Exam-এর ভিতরে)', (() => { const nav = (H.match(/const NAV_TABS=\[[\s\S]*?\];/) || [''])[0]; return /key:'dashboard'[\s\S]*key:'question-bank'[\s\S]*key:'exam'[\s\S]*key:'my-profile'/.test(nav) && !nav.includes("key:'ai'") && !nav.includes("key:'history'") && (nav.match(/\{key:/g) || []).length === 4; })() && !H.includes("key:'profile'") && !H.includes("key:'ai-chat'"));
+t('১৪ মূল অ্যাপের AI Assistant script/floating-JUJU/dashboard/direct route চালু', H.includes('ai-agent-chat.js?v=agent-f1-ui-chatv18-fresh') && H.includes('juju-floating.js?v=juju-fab-v1') && H.includes("if(p==='ai'){ if(window.renderAiAgentPage)") && V2.includes("navigate('ai')") && V2.includes("navigate(\\'ai\\')"));
 t('পুরনো-ড্যাশ-সম্পূর্ণ-বিলুপ্ত (মালিক-নির্দেশ ২০২৬-০৯-০৭): renderV2-এ previous()/intel-ক্যাপচার-নেই + dv2Cleanup-পরিচ্ছন্নতা', !V2.includes('data-dv2-phase5') && !V2.includes('intel = el.outerHTML') && V2.includes('function dv2Cleanup') && V2.includes('[data-phase5-dashboard],[data-phase34-dashboard]') && !/previous\(\);[\s\S]{0,300}data-phase5-dashboard/.test(V2));
 
 /* ৩ — ডেটা-সততা: CACHE-ভিত্তিক, কোনো ফেক সংখ্যা নয় */

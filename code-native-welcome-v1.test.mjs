@@ -13,7 +13,7 @@ const SW = read('sw.js');
 const PAGES_GUARD = read('.github/workflows/cf-pages.yml');
 const RELEASE_WORKFLOW = read('.github/workflows/telegram-auth-canary-activate.yml');
 const UI_VERSION = '20260916-account-entry-v6';
-const SHELL_VERSION = 'v272-nojs-landing-20260916';
+const SHELL_VERSION = 'v273-nav4-juju-20260916';
 
 const between = (source, start, end) => {
   const from = source.indexOf(start);
@@ -110,7 +110,10 @@ test('Signup Assistant is removed while the ordinary app AI remains available', 
   assert.doesNotMatch(CSS, /\.ah-guide|\.ah-assistant-hint/);
   assert.match(HTML, /ai-agent-chat\.js\?v=agent-f1-ui-chatv18-fresh/);
   assert.match(SW, /ai-agent-chat\.js\?v=agent-f1-ui-chatv18-fresh/);
-  assert.match(HTML, /\{key:'ai', icon:'🤖', label:'AI'\}/);
+  // bottom-nav AI tab সরানো হয়েছে — AI এখন floating JUJU বাটন + সরাসরি /ai রুট।
+  assert.doesNotMatch(HTML, /\{key:'ai'/);
+  assert.match(HTML, /juju-floating\.js\?v=juju-fab-v1/);
+  assert.match(SW, /juju-floating\.js\?v=juju-fab-v1/);
   assert.match(HTML, /if\(p==='ai'\)\{ if\(window\.renderAiAgentPage\)/);
   assert.match(DASH_JS, /navigate\((?:\\?'|")ai/);
 });
@@ -118,7 +121,11 @@ test('Signup Assistant is removed while the ordinary app AI remains available', 
 test('custom Guest Dashboard is absent and Guest returns to the ordinary app route', () => {
   for (const source of [DASH_JS, DASH_CSS, NAV_JS, HTML]) assert.doesNotMatch(source, /reference-guest-v2|data-guest-nav|dv2-guest|ah-guest-dashboard/);
   assert.match(JS, /rememberEntry\('guest'\);[\s\S]{0,120}close\(\);\s*navigateDashboard\(\);\s*notify\(\)/);
-  assert.match(HTML, /const NAV_TABS=\[[\s\S]*key:'dashboard'[\s\S]*key:'question-bank'[\s\S]*key:'exam'[\s\S]*key:'ai'[\s\S]*key:'history'/);
+  const navBlock = (HTML.match(/const NAV_TABS=\[[\s\S]*?\];/) || [''])[0];
+  assert.match(navBlock, /key:'dashboard'[\s\S]*key:'question-bank'[\s\S]*key:'exam'[\s\S]*key:'my-profile'/);
+  // AI আর History bottom tab নয়: AI → floating JUJU, History → Exam-এর ভিতরে।
+  assert.doesNotMatch(navBlock, /key:'ai'/);
+  assert.doesNotMatch(navBlock, /key:'history'/);
   // Phase 7 (owner-approved): the Profile tab is the real signed-in profile,
   // not a custom guest dashboard — guest-dashboard markers above still absent.
   assert.match(HTML, /\{key:'my-profile', icon:'👤', label:'Profile'\}/);
