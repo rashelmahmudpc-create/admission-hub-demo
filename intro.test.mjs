@@ -28,7 +28,20 @@ t('৮. reduced-motion গার্ড (মোশন-সংবেদনশীল
 t('৯. পুরনো ইনলাইন-3D-splash আর নেই (v178-nosplash; ahfs-scene = 0)', !doc.querySelector('.ahfs-scene') && !html.includes('ahfs-scene'));
 t('১০. app-id + #app রুট exist', !!doc.getElementById('app'));
 t('১১. externl-স্ক্রিপ্ট-না-থাকলেও শেল রেন্ডার (static-first প্রমাণ)', !!doc.getElementById('app').querySelector('#ahSplash'));
-t('১২. current account-retired service-worker marker', html.includes('sw.js?v=v271-lang-dashboard-memory-20260916'));
+t('১২. current account-retired service-worker marker', html.includes('sw.js?v=v272-nojs-landing-20260916'));
+
+// নো-JS ফলব্যাক: বডিতে আগে শুধু লোডিং-স্প্ল্যাশ ছিল, তাই স্ক্রিপ্ট-চালু-না-থাকা
+// ক্রলার মাত্র ৮৪ অক্ষর পড়ত — অথচ প্রতিটি কোর্স-ল্যান্ডিং পেজ সম্পূর্ণ প্রিরেন্ডারড।
+const nojs = [...doc.querySelectorAll('body noscript')]
+  .map(n => n.textContent.replace(/\s+/g, ' ').trim()).join(' ');
+t('১৩. নো-JS ফলব্যাক ক্রলার-পাঠ্য কনটেন্ট দেয় (৮৪ অক্ষরের স্প্ল্যাশ নয়)', nojs.length > 300);
+t('১৪. নো-JS ফলব্যাক ব্র্যান্ড-শিরোনাম ও সারমর্ম দেয়',
+  /Admission Hub/.test(nojs) && /ভর্তি প্রস্তুতি/.test(nojs));
+t('১৫. নো-JS ফলব্যাক প্রতিটি কোর্স-ল্যান্ডিং পেজে লিংক করে',
+  ['prottoy', 'prottoy-master', 'sandhi', 'somas'].every(s => html.includes(`href="/courses/${s}/"`)));
+t('১৬. নো-JS ফলব্যাক বডিতেই থাকে (হেডের ফন্ট-ফলব্যাক অটুট)', doc.querySelectorAll('body noscript').length === 1);
+t('১৭. নো-JS ব্লকের স্টাইল হেডে (স্পেক-সম্মত, রানটাইমে নিষ্ক্রিয়)',
+  !!doc.getElementById('ah-nojs-min'));
 
 console.log(`\nINTRO-BOOTSHELL: ${pass} pass / ${fail} fail`);
 if (fail) process.exit(1);

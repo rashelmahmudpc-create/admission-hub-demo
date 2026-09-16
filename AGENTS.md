@@ -29,6 +29,16 @@ advanced-mode Pages worker that proxies `/api/*` and gates asset serving.
 - `_worker.js` converts Pages' catch-all 200 HTML fallback into a real 404 for
   unknown paths and missing assets, while keeping `/`, `/courses/*`,
   `/AH-[A-Z2-9]{6}` and hash routes at 200.
+- The root `<body>` is an app shell, so without JS it exposes only the loading
+  splash (84 characters) while every course landing page is fully prerendered.
+  A `<noscript>` block after `#modalRoot` carries the real pitch and links to
+  the course pages; `intro.test.mjs` guards it. Keep that markup *inside*
+  `<noscript>` — the splash, `body.app-booting` and `#app` are a tested boot
+  contract (tests ১–১১), and the engine/`renderShell` replace `#app`'s innerHTML
+  wholesale, so prerendered copy placed there would simply be thrown away.
+  Its `<style id="ah-nojs-min">` sits in `<head>` next to `ah-boot-min` because
+  `<style>` is only valid there; JS-on browsers ignore it as nothing then
+  matches `.ah-nojs`.
 
 ## Testing
 

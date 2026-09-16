@@ -816,12 +816,36 @@ textarea{min-height:96px}
 <link rel="stylesheet" href="./profile-ui.css?v=profile-v14-tap">
 <!-- Signup/Onboarding Assistant বন্ধ; মূল অ্যাপের account-aware AI Assistant চালু আছে। -->
 <style id="ah-boot-min">.ah-boot{width:100%;min-height:100dvh;display:grid;place-content:center;justify-items:center;gap:9px;color:#17221d;background:#f1faf6}.ah-boot-mark{display:grid;place-items:center;width:56px;height:56px;border-radius:17px;background:#0f6b4f;color:#fff;font-size:26px;box-shadow:0 12px 28px rgba(15,107,79,.30)}.ah-boot b{font-size:19px;font-weight:800;letter-spacing:.01em}.ah-boot i{font-style:normal;font-size:12px;color:#5e7168;animation:ahBootPulse 1.15s ease-in-out infinite}@keyframes ahBootPulse{0%,100%{opacity:.55}50%{opacity:1}}@media(prefers-reduced-motion:reduce){.ah-boot i{animation:none}}</style>
+<style id="ah-nojs-min">.ah-nojs{max-width:640px;margin:0 auto;padding:28px 20px 48px;font-family:'Noto Sans Bengali',-apple-system,'Segoe UI',Roboto,sans-serif;line-height:1.75;color:#17221d;background:#f1faf6}.ah-nojs h1{font-size:24px;line-height:1.4;margin:0 0 10px}.ah-nojs h2{font-size:17px;margin:26px 0 8px}.ah-nojs p{margin:0 0 12px}.ah-nojs ul{margin:0;padding-left:20px}.ah-nojs li{margin:4px 0}.ah-nojs a{color:#0f6b4f;text-decoration:underline}</style>
 </head>
 <body class="app-booting">
 <div id="app"><main class="app-loading" id="ahSplash" role="status"><div class="ah-boot"><span class="ah-boot-mark">✦</span><b>Admission Hub</b><i>লোড হচ্ছে…</i></div></main></div>
 <div id="navRoot" aria-label="Primary navigation"></div>
 <div id="toast" class="toast"></div>
 <div id="modalRoot"></div>
+<noscript>
+<main class="ah-nojs" aria-label="Admission Hub">
+<h1>Admission Hub — ভর্তি প্রস্তুতি, প্রশ্নব্যাংক ও বিজ্ঞপ্তি</h1>
+<p>বাংলাদেশের বিশ্ববিদ্যালয়, মেডিকেল ও গুচ্ছ ভর্তি পরীক্ষার প্রস্তুতি এক জায়গায় — বিজ্ঞপ্তি, ভিজ্যুয়াল কোর্স, প্রশ্নব্যাংক, মডেল টেস্ট ও অগ্রগতির হিসাব।</p>
+<h2>যা যা পাবেন</h2>
+<ul>
+<li>বিশ্ববিদ্যালয়, মেডিকেল ও গুচ্ছ ভর্তির বিজ্ঞপ্তি এক জায়গায়</li>
+<li>বাংলা ব্যাকরণ ও সাধারণ জ্ঞানের ভিজ্যুয়াল কোর্স</li>
+<li>বিষয়ভিত্তিক প্রশ্নব্যাংক ও মডেল টেস্ট</li>
+<li>ভুল-বিশ্লেষণ, দুর্বল টপিকের তালিকা ও অগ্রগতির গ্রাফ</li>
+<li>ভর্তি প্রস্তুতির জন্য AI সহায়ক</li>
+</ul>
+<h2>ভিজ্যুয়াল কোর্স</h2>
+<ul>
+<li><a href="/courses/prottoy/">প্রত্যয় — Visual Admission Master Guide</a></li>
+<li><a href="/courses/somas/">সমাস — University Admission Master Guide</a></li>
+<li><a href="/courses/sandhi/">সন্ধি — University Admission Master Guide</a></li>
+<li><a href="/courses/prottoy-master/">প্রত্যয় • Interactive Master Guide</a></li>
+</ul>
+<h2>শুরু করুন</h2>
+<p>পুরো অ্যাপটি চালাতে ব্রাউজারে JavaScript চালু রাখুন। তারপর <a href="/">Admission Hub</a> খুলে বিনামূল্যে শুরু করুন — অগ্রগতি আপনার নিজের ডিভাইসেই সংরক্ষিত থাকে।</p>
+</main>
+</noscript>
 <script defer src="./institutions-bd.js?v=bd-institutions-v2"></script>
 <script defer src="./language-engine.js?v=lang-v3-dashboard"></script>
 <script defer src="./account-access.js?v=20260916-account-entry-v6"></script>
@@ -4943,15 +4967,15 @@ window.__admissionBootPromise.catch(error => console.error('[Admission Hub] boot
     // Do not reload on controllerchange: iOS standalone clients can enter a blank-screen reload loop.
     // The updated worker takes control now; the current document remains usable and the next launch uses the new shell.
     try{
-      const expectedSwVersion = 'v271-lang-dashboard-memory-20260916';
+      const expectedSwVersion = 'v272-nojs-landing-20260916';
       // register() on the same scope performs an in-place update. Never unregister
       // the active iOS worker first: that discards the instant offline shell.
-      const registration=await navigator.serviceWorker.register('./sw.js?v=v271-lang-dashboard-memory-20260916',{scope:'./',updateViaCache:'none'});
+      const registration=await navigator.serviceWorker.register('./sw.js?v=v272-nojs-landing-20260916',{scope:'./',updateViaCache:'none'});
       await registration.update().catch(()=>{});
       // Purge every old app-shell cache (any build id ≠ current). This guarantees
       // stale pre-retirement application shells can never be served from cache again.
       try {
-        const cur = 'admission-hub-shell-v271-lang-dashboard-memory-20260916';
+        const cur = 'admission-hub-shell-v272-nojs-landing-20260916';
         const names = await caches.keys();
         for (const name of names) {
           if (name.startsWith('admission-hub-shell-') && name !== cur) await caches.delete(name).catch(()=>{});
@@ -4990,7 +5014,7 @@ window.__admissionBootPromise.catch(error => console.error('[Admission Hub] boot
       document.body.classList.remove('app-booting');
       if(typeof window.__admissionRequestFinalRender==='function') window.__admissionRequestFinalRender({force:true});
       if(hasUsableScreen(app)) return;
-      const quick='<section class="card" data-admission-usable="true" style="margin-top:18px;padding:20px"><span class="pill">ADMISSION HUB</span><h1 style="font-size:24px;margin:14px 0 6px">আজকের প্রস্তুতি শুরু করো</h1><p class="muted" style="margin:0 0 18px">Question Bank, Exam, AI ও Progress—সব টুল এক জায়গায়।</p><div class="grid2"><button class="btn" onclick="navigate(\'question-bank\')">📚 Question Bank</button><button class="btn secondary" onclick="navigate(\'exam\')">📝 Exam</button><button class="btn secondary" onclick="navigate(\'ai\')">🤖 AI</button><button class="btn ghost" onclick="navigate(\'progress\')">📊 Progress</button></div></section>';
+      const quick='<section class="card" data-admission-usable="true" style="margin-top:18px;padding:20px"><span class="pill">ADMISSION HUB</span><h1 style="font-size:24px;margin:14px 0 6px">আজকের প্রস্তুতি শুরু করো</h1><p class="muted" style="margin:0 0 18px">Question Bank, Exam, AI ও Progress—সব টুল এক জায়গায়।</p><div class="grid2"><button class="btn" onclick="navigate(\'question-bank\')">📚 Question Bank</button><button class="btn secondary" onclick="navigate(\'exam\')">📝 Exam</button><button class="btn secondary" onclick="navigate(\'ai\')">🤖 AI</button><button class="btn ghost" onclick="navigate(\'progress\')">📊 Progress</button></div></section>';
       if(typeof renderShell==='function') renderShell(quick,{title:'Dashboard'});
       else app.innerHTML='<main class="page">'+quick+'</main>';
     }catch(error){console.warn('[Admission Hub] Fast usable shell skipped.',error);}
