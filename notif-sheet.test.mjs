@@ -112,7 +112,7 @@ test('router: #notifications route + script tags + SW pin (round 8 pins)', () =>
   assert.match(INDEX, /notification-inbox\.js\?v=notif-inbox-v6/);
   assert.match(INDEX, /notification-hub\.js\?v=notify-v119/);
   assert.match(INDEX, /notification-fcm\.js\?v=fcm-p1-v9/);
-  assert.match(INDEX, /profile-ui\.js\?v=profile-v16-clean/);
+  assert.match(INDEX, /profile-ui\.js\?v=profile-v17-uni-tap/);
   assert.match(SW, /notification-inbox\.js\?v=notif-inbox-v6/);
   assert.match(SW, /dashboard-v2\.js\?v=dash2f15-inbox/);
 })

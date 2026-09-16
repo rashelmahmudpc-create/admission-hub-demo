@@ -1106,17 +1106,29 @@
   // `blur` on the input BEFORE `click` reaches the option, so a handler that
   // emptied `innerHTML` here deleted the button mid-gesture and the pick never
   // landed. Hiding only, and deferring the clear, keeps the click alive.
-  function closeUniSuggestions() {
-    const box = $('#pp-acad-ulist');
-    if (box) box.hidden = true;
-    const inputEl = $('#pp-acad-u');
-    if (inputEl) inputEl.setAttribute('aria-expanded', 'false');
-    state.acad.suggestOpen = false;
-    clearTimeout(state.acad.suggestClearTimer);
-    state.acad.suggestClearTimer = setTimeout(() => {
-      const live = $('#pp-acad-ulist');
-      if (live && live.hidden) live.innerHTML = '';
-    }, 250);
+  function closeUniSuggestions(opts = {}) {
+    const hide = () => {
+      const box = $('#pp-acad-ulist');
+      if (box) box.hidden = true;
+      const inputEl = $('#pp-acad-u');
+      if (inputEl) inputEl.setAttribute('aria-expanded', 'false');
+      state.acad.suggestOpen = false;
+      clearTimeout(state.acad.suggestClearTimer);
+      state.acad.suggestClearTimer = setTimeout(() => {
+        const live = $('#pp-acad-ulist');
+        if (live && live.hidden) live.innerHTML = '';
+      }, 250);
+    };
+    if (opts.grace) {
+      // Tapping an option blurs the input before the pointerdown/click lands
+      // (tap delay on real phones). Closing instantly swallowed the tap, so the
+      // university never reached the box. Give the gesture a moment to land.
+      clearTimeout(state.acad.suggestHideTimer);
+      state.acad.suggestHideTimer = setTimeout(hide, 180);
+      return;
+    }
+    clearTimeout(state.acad.suggestHideTimer);
+    hide();
   }
 
   function acadErr(msg) {
@@ -1866,6 +1878,9 @@
       return;
     }
     else if (role === 'acad-pick-uni') {
+      // The pointerdown path below already consumed this gesture; the trailing
+      // click must not re-run it against a re-rendered list.
+      if (Date.now() - Number(state.acad.pickedAt || 0) < 500) return;
       const d = state.acad;
       const cat = acadCat();
       d.pendingUni = String(el.dataset.uni || '');
@@ -1874,6 +1889,7 @@
       // Reflect the official catalog name in the box so the student sees exactly
       // what will be saved, and typed text can never silently diverge from it.
       d.pendingUniName = u ? u.name : d.pendingUniName;
+      state.acad.pickedAt = Date.now();
       closeUniSuggestions();
       renderCurrentView();
       return;
@@ -1947,6 +1963,20 @@
         if (!el) return;
         handleRole(el, event);
       });
+      // A phone tap fires pointerdown BEFORE the input's blur. Waiting for the
+      // click meant the list was already hidden/cleared, so picking a suggestion
+      // did nothing (owner bug). Acting on pointerdown makes the pick land while
+      // the option is still on screen.
+      const pickFromPointer = (event) => {
+        if (event.pointerType === 'mouse' && event.button !== 0) return;
+        const el = event.target.closest?.('[data-role="acad-pick-uni"]');
+        if (!el || !root.contains(el)) return;
+        handleRole(el, event);
+      };
+      root.addEventListener('pointerdown', pickFromPointer);
+      root.addEventListener('touchstart', (event) => {
+        if (event.target.closest?.('[data-role="acad-pick-uni"]')) pickFromPointer(event);
+      }, { passive: true });
     }
   // Per-element listeners run on EVERY render — the nodes are new each time,
   // so a once-per-root binding would orphan them (counter/UX regression).
@@ -1994,7 +2024,7 @@
     // Typing is already mirrored into the draft on every keystroke, so a
     // re-render reproduces the box exactly. Blur/outside-click only hides the
     // open list — it must never discard the text or the picked university.
-    uniInput.addEventListener('blur', () => closeUniSuggestions());
+    uniInput.addEventListener('blur', () => closeUniSuggestions({ grace: true }));
   }
   if (!document.documentElement.dataset.ppUniOutside) {
     document.documentElement.dataset.ppUniOutside = '1';

@@ -111,17 +111,33 @@ test('index.html: Profile tab (6th) wired into bottom nav + router', () => {
 });
 
 test('index.html: profile assets linked with versions (v262)', () => {
-  assert.match(HTML, /<link rel="stylesheet" href="\.\/profile-ui\.css\?v=profile-v14-tap">/);
+  assert.match(HTML, /<link rel="stylesheet" href="\.\/profile-ui\.css\?v=profile-v15-uni-tap">/);
   assert.match(HTML, /<script defer src="\.\/academic-catalog\.js\?v=acad-cat-v2"><\/script>/);
-  assert.match(HTML, /<script defer src="\.\/profile-ui\.js\?v=profile-v16-clean"><\/script>/);
+  assert.match(HTML, /<script defer src="\.\/profile-ui\.js\?v=profile-v17-uni-tap"><\/script>/);
 });
 
 test('sw.js caches the profile assets (v262)', () => {
 
   assert.match(SW, /const BUILD_ID = 'v280-global-notif-20260917';/);
   assert.match(SW, /'\.\/academic-catalog\.js\?v=acad-cat-v2',/);
-  assert.match(SW, /'\.\/profile-ui\.js\?v=profile-v16-clean',/);
-  assert.match(SW, /'\.\/profile-ui\.css\?v=profile-v14-tap',/);
+  assert.match(SW, /'\.\/profile-ui\.js\?v=profile-v17-uni-tap',/);
+  assert.match(SW, /'\.\/profile-ui\.css\?v=profile-v15-uni-tap',/);
+});
+
+test('every versioned shell asset is pinned identically in index.html and sw.js', () => {
+  // index.html and sw.js both carry the cache token for each shell asset. When
+  // one is bumped and the other is not, the service worker precaches a URL the
+  // page never requests (and vice versa), so the old file keeps being served
+  // from cache. Nothing else compares the two lists, so pin them here.
+  const versionsOf = (src, name) =>
+    new Set([...src.matchAll(new RegExp(name + '\\?v=([a-z0-9-]+)', 'g'))].map(m => m[1]));
+  for (const name of ['profile-ui\\.js', 'profile-ui\\.css', 'academic-catalog\\.js', 'dashboard-v2\\.js', 'session-persist\\.js']) {
+    const inHtml = versionsOf(HTML, name);
+    const inSw = versionsOf(SW, name);
+    assert.equal(inHtml.size, 1, `${name} must carry exactly one version in index.html, saw ${[...inHtml]}`);
+    assert.equal(inSw.size, 1, `${name} must carry exactly one version in sw.js, saw ${[...inSw]}`);
+    assert.deepEqual([...inSw], [...inHtml], `${name} version differs between index.html and sw.js`);
+  }
 });
 
 test('v262: academic catalog engine — official per-university+session units (no generic A/B/C/D)', () => {
@@ -611,8 +627,8 @@ test('v263: truncated-script self-heal (owner bug: "SyntaxError: Unexpected EOF"
 test('v264: poisoned-cache fix — asset re-pin, no-store SW fetch, digest-verified precache', () => {
   // New cache keys for every shell asset (device HTTP/SW caches held a
   // truncated copy from the network-blip window — new URL = clean fetch).
-  assert.match(HTML, /profile-ui\.js\?v=profile-v16-clean/);
-  assert.match(HTML, /profile-ui\.css\?v=profile-v14-tap/);
+  assert.match(HTML, /profile-ui\.js\?v=profile-v17-uni-tap/);
+  assert.match(HTML, /profile-ui\.css\?v=profile-v15-uni-tap/);
   assert.match(HTML, /academic-catalog\.js\?v=acad-cat-v2/);
   assert.match(HTML, /dashboard-v2\.js\?v=dash2f15-inbox/);
   assert.match(HTML, /session-persist\.js\?v=session-v2/);
