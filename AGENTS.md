@@ -52,11 +52,37 @@ advanced-mode Pages worker that proxies `/api/*` and gates asset serving.
   the shell version asserted across many `*.test.mjs` files. Bump the `SW shell`
   and `profile-vNN` markers together, then run `node scripts/sw-manifest.mjs` to
   regenerate `ASSET_DIGESTS` in `sw.js`, or the SW precache rejects the shell.
+  The `BUILD_ID` literal also lives in
+  `.github/workflows/telegram-auth-canary-activate.yml`, which verifies the
+  deployed shell; a partial bump fails `interactive-native-personal-v1.test.mjs`.
+- User-facing copy is Bengali by default and English is applied at runtime by
+  `language-engine.js`, not by per-module conditionals. Modules keep writing
+  Bengali; the engine rewrites text nodes plus `placeholder`/`aria-label`/`title`
+  on `ah:lang` and on DOM insertion. Add new copy to its `DICT`.
+  - Bengali must be NFC-normalised before dictionary lookup: য় is either U+09DF
+    or য + ়, and the two look identical. A naive comparison silently misses
+    entries — this cost 36 account strings when first written.
+  - `language-engine.test.mjs` fails when the account or profile UI renders a
+    Bengali string the table lacks, so the guard catches untranslated copy added
+    later.
+- The language and appearance engines each keep their own `localStorage` key
+  (`ahLang`, `ah-appearance`) while `profile-ui.js` keeps the synced preference
+  in `ah-profile-prefs-v1`. Only the profile picker writes both, so boot
+  reconciles them (`reconcilePreferencesAtBoot`). Direction matters: with no
+  preference saved the engine key is the real choice and seeds the preference,
+  otherwise first run overwrites the user with defaults.
 
 ## Deployment access
 
 - `wrangler pages deploy dist --project-name admissionhub --branch main` with
   `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` is the working deploy path.
+  In sessions where neither variable is injected (verify with
+  `echo ${CLOUDFLARE_API_TOKEN:+SET}` before blaming wrangler — it reports only
+  "necessary to set a CLOUDFLARE_API_TOKEN"), defer the deploy.
+- GitHub Actions dispatch is unavailable on this repo: the API returns
+  `422 Actions has been disabled for this user`, so the manual
+  `workflow_dispatch` publish cannot be triggered with the PAT either. A session
+  with no wrangler credentials therefore cannot publish, only commit and push.
 - The GitHub PAT in the remote URL can stop working mid-session even though
   pushes succeeded earlier (reflog shows prior `update by push`). A 404 from
   `api.github.com/repos/<owner>/<repo>` while the token itself is valid means
