@@ -347,6 +347,13 @@
 .pp-acad-subj input { width: 15px; height: 15px; accent-color: var(--pp-emerald); flex: none; margin: 0; }
 .pp-acad-subj:has(input:checked) { border-color: var(--pp-emerald); background: var(--pp-emerald-soft); }
 .pp-acad-otherchips { margin-top: 4px; }
+/* Goal presets: tappable chips above the goal box. */
+.pp-goal-presets { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 14px; }
+.pp-goal-preset { border: 1.5px solid var(--pp-line); background: #f6f9f7; color: #0c3b2a; border-radius: 999px; padding: 8px 14px; font: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; box-sizing: border-box; min-height: 36px; }
+.pp-goal-preset:hover { border-color: var(--pp-emerald); }
+.pp-goal-preset.is-on { border-color: var(--pp-emerald); background: var(--pp-emerald-soft); color: var(--pp-emerald-deep); }
+[data-theme="dark"] .pp-goal-preset { background: #16241d; border-color: var(--pp-line); color: var(--pp-ink); }
+[data-theme="dark"] .pp-goal-preset.is-on { border-color: var(--pp-emerald); background: #16241d; color: #6ee7b7; }
 
 /* ---------------- v6: save state machine ---------------- */
 .pp-btn-primary.pp-save-busy { opacity: 0.75; cursor: wait; }

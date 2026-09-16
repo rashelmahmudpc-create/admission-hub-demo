@@ -107,6 +107,20 @@
   // PHASE I — no request may hang forever: controlled timeout, ONE retry,
   // then a clean error the UI can turn into "Retry".
   const API_TIMEOUT_MS = 8000;
+
+  // One-tap starting points for the goal box. Owner complaint: the field was a
+  // blank textarea, so most students left it empty. These are the common
+  // Bangladeshi admission tracks; the textarea stays editable for anything else.
+  const ACAD_GOAL_PRESETS = [
+    'Dhaka University A Unit',
+    'Dhaka University B Unit',
+    'BUET Engineering',
+    'Medical Admission (MBBS)',
+    'CKRUET Engineering',
+    'Jahangirnagar University A Unit',
+    'Agricultural (Krishi) Admission',
+    'CUET Engineering'
+  ];
   async function api(path, opts = {}) {
     let lastErr = null;
     for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -1049,6 +1063,9 @@
       </section>
       <section class="pp-card pp-acad-sec">
         <h2>🚀 Academic Goal</h2>
+        <div class="pp-goal-presets" data-role="acad-goal-presets">
+          ${ACAD_GOAL_PRESETS.map((g) => `<button class="pp-goal-preset${String(d.goal) === g ? ' is-on' : ''}" data-role="acad-goal-preset" data-value="${esc(g)}" type="button">${esc(g)}</button>`).join('')}
+        </div>
         <label class="pp-field"><span>তোমার goal <em>(সর্বোচ্চ ১৬০)</em></span>
           <textarea id="pp-acad-goal" rows="3" maxlength="160" placeholder="যেমন: 2026-এ CU CSE-তে ভর্তি হবো">${esc(d.goal)}</textarea>
         </label>
@@ -1087,12 +1104,21 @@
     state.acad.suggestOpen = true;
   }
 
+  // Hide the list without destroying its nodes. A tap on an option fires
+  // `blur` on the input BEFORE `click` reaches the option, so a handler that
+  // emptied `innerHTML` here deleted the button mid-gesture and the pick never
+  // landed. Hiding only, and deferring the clear, keeps the click alive.
   function closeUniSuggestions() {
     const box = $('#pp-acad-ulist');
-    if (box) { box.hidden = true; box.innerHTML = ''; }
+    if (box) box.hidden = true;
     const inputEl = $('#pp-acad-u');
     if (inputEl) inputEl.setAttribute('aria-expanded', 'false');
     state.acad.suggestOpen = false;
+    clearTimeout(state.acad.suggestClearTimer);
+    state.acad.suggestClearTimer = setTimeout(() => {
+      const live = $('#pp-acad-ulist');
+      if (live && live.hidden) live.innerHTML = '';
+    }, 250);
   }
 
   function acadErr(msg) {
@@ -1830,6 +1856,17 @@
       renderCurrentView();
       return;
     }
+    else if (role === 'acad-goal-preset') {
+      const d = state.acad;
+      const value = String(el.dataset.value || '');
+      // Tapping the active preset clears it, so a mis-tap is reversible
+      // without the keyboard.
+      d.goal = d.goal === value ? '' : value;
+      const box = $('#pp-acad-goal');
+      if (box) box.value = d.goal;
+      renderCurrentView();
+      return;
+    }
     else if (role === 'acad-pick-uni') {
       const d = state.acad;
       const cat = acadCat();
@@ -1912,8 +1949,15 @@
   });
   const goal = $('#pp-acad-goal');
   if (goal) goal.addEventListener('input', () => {
+    // The draft is the save source. Updating only the counter left `d.goal`
+    // stale, so Save saw "no change" and the typed goal never reached the
+    // server (owner bug: manual goal silently not updating).
+    state.acad.goal = goal.value;
     const c = $('[data-role="acad-goal-count"]');
     if (c) c.textContent = String(goal.value.length);
+    for (const b of document.querySelectorAll('[data-role="acad-goal-preset"]')) {
+      b.classList.toggle('is-on', b.dataset.value === goal.value);
+    }
   });
   // Academic page — the session SELECT must reach the draft on every change
   // (owner bug: stale select => false "কোনো পরিবর্তন নেই" + fake already-saved).

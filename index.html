@@ -5,7 +5,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Admission Hub — ভর্তি প্রস্তুতি, প্রশ্নব্যাংক ও বিজ্ঞপ্তি</title>
-<link rel="stylesheet" href="./dashboard-v2.css?v=dash2f11-clean">
+<link rel="stylesheet" href="./dashboard-v2.css?v=dash2f13-theme">
 
 <link rel="manifest" href="manifest.json">
 <link rel="alternate" type="application/manifest+json" href="manifest.webmanifest">
@@ -175,14 +175,17 @@
   --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 /* Launch-shell rule: first paint is a stable mint shell. The data-backed route
-   replaces it immediately when ready; a normal usable shell has a hard deadline. */
-html{background:#faf9f6;}
-html,body,#app{background-color:#faf9f6;}
-body.app-booting,body.app-booting #app{background:#faf9f6!important;color:#1a1d1b!important;}
-#app>.app-loading{min-height:100dvh;display:grid;place-content:center;justify-items:center;gap:9px;padding:calc(24px + env(safe-area-inset-top,0px)) 24px 24px;color:#1a1d1b;background:#faf9f6;text-align:center;opacity:1;}
-#app>.app-loading .app-loading-mark{display:grid;place-items:center;width:48px;height:48px;border-radius:15px;background:#0f6b4f;color:#fff;font-size:25px;box-shadow:0 10px 24px rgba(15,107,79,.18);}
+   replaces it immediately when ready; a normal usable shell has a hard deadline.
+   These read the tokens, not literals: a literal here repainted the whole shell
+   light after the owner chose Dark or Premium Green. The two `!important`
+   booting rules mirror `--bg`/`--text` so they vary with the theme too. */
+html{background:var(--bg);}
+html,body,#app{background-color:var(--bg);}
+body.app-booting,body.app-booting #app{background:var(--bg)!important;color:var(--text)!important;}
+#app>.app-loading{min-height:100dvh;display:grid;place-content:center;justify-items:center;gap:9px;padding:calc(24px + env(safe-area-inset-top,0px)) 24px 24px;color:var(--text);background:var(--bg);text-align:center;opacity:1;}
+#app>.app-loading .app-loading-mark{display:grid;place-items:center;width:48px;height:48px;border-radius:15px;background:var(--emerald);color:#fff;font-size:25px;box-shadow:0 10px 24px rgba(15,107,79,.18);}
 #app>.app-loading b{font-size:15px;letter-spacing:-.01em;}
-#app>.app-loading span{font-size:12px;color:#6b7370;}
+#app>.app-loading span{font-size:12px;color:var(--sub);}
 [data-theme="dark"]{
   --emerald:#22c55e;
   --emerald-d:#16a34a;
@@ -797,7 +800,7 @@ textarea{min-height:96px}
 </script>
 <script src="./session-persist.js?v=session-v2"></script>
 <link rel="stylesheet" href="./account-access.css?v=20260916-account-entry-v5">
-<link rel="stylesheet" href="./profile-ui.css?v=profile-v13">
+<link rel="stylesheet" href="./profile-ui.css?v=profile-v14-tap">
 <!-- Signup/Onboarding Assistant বন্ধ; মূল অ্যাপের account-aware AI Assistant চালু আছে। -->
 <style id="ah-boot-min">.ah-boot{width:100%;min-height:100dvh;display:grid;place-content:center;justify-items:center;gap:9px;color:#17221d;background:#f1faf6}.ah-boot-mark{display:grid;place-items:center;width:56px;height:56px;border-radius:17px;background:#0f6b4f;color:#fff;font-size:26px;box-shadow:0 12px 28px rgba(15,107,79,.30)}.ah-boot b{font-size:19px;font-weight:800;letter-spacing:.01em}.ah-boot i{font-style:normal;font-size:12px;color:#5e7168;animation:ahBootPulse 1.15s ease-in-out infinite}@keyframes ahBootPulse{0%,100%{opacity:.55}50%{opacity:1}}@media(prefers-reduced-motion:reduce){.ah-boot i{animation:none}}</style>
 </head>
@@ -807,7 +810,7 @@ textarea{min-height:96px}
 <div id="toast" class="toast"></div>
 <div id="modalRoot"></div>
 <script defer src="./institutions-bd.js?v=bd-institutions-v2"></script>
-<script defer src="./language-engine.js?v=lang-v1"></script>
+<script defer src="./language-engine.js?v=lang-v2-coverage"></script>
 <script defer src="./account-access.js?v=20260916-account-entry-v5"></script>
 <script>
 (function installAdmissionSafety(){
@@ -4258,17 +4261,26 @@ function resetAll(){
 }
 
 /* ================= BOOT ================= */
-function applyTheme(){
-  const theme=(CACHE.settings && CACHE.settings.theme) || 'light';
-  if(theme==='light') document.documentElement.removeAttribute('data-theme');
-  else document.documentElement.setAttribute('data-theme', theme);
-}
-async function setTheme(theme){
-  CACHE.settings.theme=theme;
-  await dbPut('settings',CACHE.settings);
-  applyTheme();
-  render();
-}
+  /* The global appearance engine (`AhAppearance`, key `ah-appearance`) owns the
+     theme. These legacy `setTheme`/`applyTheme` helpers predate it and read a
+     second, independent source (`CACHE.settings.theme`, IndexedDB), whose
+     default is 'light'. Left unbridged they fought the engine: boot painted
+     light, then any profile render re-applied the owner's choice, so users saw
+     the theme land on "some cards" and not the app. Delegate to the engine
+     instead of writing the attribute from two places. */
+  function applyTheme(){
+    if(window.AhAppearance){ window.AhAppearance.apply(); return; }
+    const theme=(CACHE.settings && CACHE.settings.theme) || 'light';
+    if(theme==='light') document.documentElement.removeAttribute('data-theme');
+    else document.documentElement.setAttribute('data-theme', theme);
+  }
+  async function setTheme(theme){
+    CACHE.settings.theme=theme;
+    if(window.AhAppearance) window.AhAppearance.set(theme);
+    await dbPut('settings',CACHE.settings);
+    applyTheme();
+    render();
+  }
 /* ---------------- read-only startup diagnostics ----------------
  * These legacy names remain available for compatibility, but startup must never
  * delete, re-home, merge, or rewrite a user's subject, topic, or question. */
@@ -4918,15 +4930,15 @@ window.__admissionBootPromise.catch(error => console.error('[Admission Hub] boot
     // Do not reload on controllerchange: iOS standalone clients can enter a blank-screen reload loop.
     // The updated worker takes control now; the current document remains usable and the next launch uses the new shell.
     try{
-      const expectedSwVersion = 'v269-lang-coverage-20260915';
+      const expectedSwVersion = 'v270-uni-tap-theme-goal-20260915';
       // register() on the same scope performs an in-place update. Never unregister
       // the active iOS worker first: that discards the instant offline shell.
-      const registration=await navigator.serviceWorker.register('./sw.js?v=v269-lang-coverage-20260915',{scope:'./',updateViaCache:'none'});
+      const registration=await navigator.serviceWorker.register('./sw.js?v=v270-uni-tap-theme-goal-20260915',{scope:'./',updateViaCache:'none'});
       await registration.update().catch(()=>{});
       // Purge every old app-shell cache (any build id ≠ current). This guarantees
       // stale pre-retirement application shells can never be served from cache again.
       try {
-        const cur = 'admission-hub-shell-v269-lang-coverage-20260915';
+        const cur = 'admission-hub-shell-v270-uni-tap-theme-goal-20260915';
         const names = await caches.keys();
         for (const name of names) {
           if (name.startsWith('admission-hub-shell-') && name !== cur) await caches.delete(name).catch(()=>{});
@@ -5060,9 +5072,9 @@ window.__admissionBootPromise.catch(error => console.error('[Admission Hub] boot
 })();
 </script>
 <!-- First-interaction modules execute before optional/heavy tools. -->
-<script defer src="./dashboard-v2.js?v=dash2f12-clean"></script>
+<script defer src="./dashboard-v2.js?v=dash2f13-theme"></script>
 <script defer src="./academic-catalog.js?v=acad-cat-v2"></script>
-<script defer src="./profile-ui.js?v=profile-v13"></script>
+<script defer src="./profile-ui.js?v=profile-v14-tap"></script>
 <script defer src="./ai-agent-chat.js?v=agent-f1-ui-chatv17-clean"></script>
 <script defer src="qbank-redesign.js?v=practice15"></script>
 <script defer src="urgent-fix.js?v=practice13"></script>

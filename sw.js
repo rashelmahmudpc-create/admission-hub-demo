@@ -1,5 +1,5 @@
 const CACHE_PREFIX = 'admission-hub-shell-';
-const BUILD_ID = 'v269-lang-coverage-20260915';
+const BUILD_ID = 'v270-uni-tap-theme-goal-20260915';
 const CACHE_NAME = `${CACHE_PREFIX}${BUILD_ID}`;
 const VERSION_HEADER = 'X-Admission-Hub-Build';
 const DOCUMENT_NETWORK_TIMEOUT_MS = 2500;
@@ -16,18 +16,18 @@ const APP_SHELL = [
   './index.html',
   './manifest.json',
   './manifest.webmanifest',
-  './dashboard-v2.css?v=dash2f11-clean',
+  './dashboard-v2.css?v=dash2f13-theme',
   './3d-loader.css?v=3d-v2',
   './session-persist.js?v=session-v2',
   './account-access.css?v=20260916-account-entry-v5',
   './institutions-bd.js?v=bd-institutions-v2',
-  './language-engine.js?v=lang-v1',
+  './language-engine.js?v=lang-v2-coverage',
   './account-access.js?v=20260916-account-entry-v5',
   './academic-catalog.js?v=acad-cat-v2',
-  './profile-ui.js?v=profile-v13',
-  './profile-ui.css?v=profile-v13',
+  './profile-ui.js?v=profile-v14-tap',
+  './profile-ui.css?v=profile-v14-tap',
   './data-protection.js?v=dp-v3-fastboot',
-  './dashboard-v2.js?v=dash2f12-clean',
+  './dashboard-v2.js?v=dash2f13-theme',
   './ai-agent-chat.js?v=agent-f1-ui-chatv17-clean',
   './icons/icon-192.png',
   './icons/icon-512.png'
@@ -37,21 +37,21 @@ const APP_SHELL = [
 // A truncated/corrupt download is NEVER written to the shell cache.
 const ASSET_DIGESTS = {
 /* sw-manifest:start */
-  "./index.html": "044a6676b22dd6cb2565e0776ba4cf1762e6198407e52a59abdf4e3700c51679",
+  "./index.html": "cd5ba4ac10c1c8b2cb45042de9fe96f16a4fc3295cac445da979d48286ae1728",
   "./manifest.json": "11a85ae594fc629b11605daeda3f9afe4ef95215a55a29f9cc423314bfb275a4",
   "./manifest.webmanifest": "5be476009a140eabd088bd972bd4d345b9c4f4a055cd6e4f08774b9cb4afaf52",
-  "./dashboard-v2.css?v=dash2f11-clean": "0c20c3a97ec99ca00690f3dce037f44a00fe3fa917a9b2f1f19b11acc02cda9f",
+  "./dashboard-v2.css?v=dash2f13-theme": "4f4c9295b487b8186fd45c006a96a43bcaf896a1a5b871f506a05874a8e00c99",
   "./3d-loader.css?v=3d-v2": "43ca21b0a41be5d223c317fd63582f19ff6ffab5d010639ef26349464550da63",
   "./session-persist.js?v=session-v2": "99f3d1f49f6d5714fd25f1c12b2aa978ca97a009d6caba9a690a0442d082593c",
   "./account-access.css?v=20260916-account-entry-v5": "c28dd7c2adc90cfb80ad61998172a68905f2a4d28dc8ac704d5f493b3d5028cd",
   "./institutions-bd.js?v=bd-institutions-v2": "602c5549515e8207ad152b948ca9b8fe3ad0fbe429afb56380e4e21b662f779d",
-  "./language-engine.js?v=lang-v1": "adc2db14463126c2c03a08a1f58d196bf98d5136e716468d4b6b4379157ac2e4",
+  "./language-engine.js?v=lang-v2-coverage": "c115954050aebd66849b5ab703b1266db7aaa220fe1d75bbc700eeecab934bb9",
   "./account-access.js?v=20260916-account-entry-v5": "a76a8119d48dcdb6a9fb7b054672e038c3b3a66ff5fa25708db08a442387711f",
   "./academic-catalog.js?v=acad-cat-v2": "75e7b80663d41330658c948ad1d4829d49f5c9abed581350582cfeace06d5b32",
-  "./profile-ui.js?v=profile-v13": "7ef05bb519209f3e4b8d1a4eb9687c7c96375f0a0e26b0c9ae4efd13440b88be",
-  "./profile-ui.css?v=profile-v13": "fb40904f866cfb0158f0d49cb3c578aebcd42c26b326dc057df4e0a7039cd70e",
+  "./profile-ui.js?v=profile-v14-tap": "c0b0a7d5cebfb07601c0d16095a64e6e72c2912c060840d5b6fd0dd9348889b5",
+  "./profile-ui.css?v=profile-v14-tap": "4332520cd9c584787eaba055a32b46e52cb132f00122207c74ffb42594e909aa",
   "./data-protection.js?v=dp-v3-fastboot": "359dc907ade4bcb3a6a722385969ebb6af47f7e436e6cdf2cce0dd6b7343723d",
-  "./dashboard-v2.js?v=dash2f12-clean": "fe480f999c5d19c380752c8ceed5603dc9a31be2c5cf254cd45e23e233fb45f4",
+  "./dashboard-v2.js?v=dash2f13-theme": "fe480f999c5d19c380752c8ceed5603dc9a31be2c5cf254cd45e23e233fb45f4",
   "./ai-agent-chat.js?v=agent-f1-ui-chatv17-clean": "9c177d878cbd0cdb7b74617f545cb41ce790041c492c7cbb2368230c277de544",
   "./icons/icon-192.png": "777ce5566fbeff0f2e384c787c8dde4f47d7c869e455c6e577a503decd4f1683",
   "./icons/icon-512.png": "86459109582f82b1d891a3e5a82723fefd21a3c65e9d0d22ab4dae33bb540520",
