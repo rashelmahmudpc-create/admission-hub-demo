@@ -79,11 +79,11 @@ test('inbox: full-screen page, All/Unread tabs, back to dashboard, dual language
 
 test('router: #notifications route + script tag + SW pin', () => {
   assert.match(INDEX, /p==='notifications' && window\.renderNotificationsInbox/);
-  assert.match(INDEX, /notification-inbox\.js\?v=notif-inbox-v1/);
-  assert.match(INDEX, /notification-hub\.js\?v=notify-v113/);
+  assert.match(INDEX, /notification-inbox\.js\?v=notif-inbox-v2/);
+  assert.match(INDEX, /notification-hub\.js\?v=notify-v114/);
   assert.match(INDEX, /notification-fcm\.js\?v=fcm-p1-v2/);
   assert.match(INDEX, /profile-ui\.js\?v=profile-v15-nonotif/);
-  assert.match(SW, /notification-inbox\.js\?v=notif-inbox-v1/);
+  assert.match(SW, /notification-inbox\.js\?v=notif-inbox-v2/);
   assert.match(SW, /dashboard-v2\.js\?v=dash2f15-inbox/);
 });
 
@@ -103,4 +103,17 @@ test('iOS fix: permission ask runs before any network await (hub + fcm)', () => 
 test('profile: Notifications row removed from Preferences (owner: সরিয়ে নাও)', () => {
   assert.ok(!PROFILE.includes("row('🔔', 'Notifications'"), 'no Notifications row in profile');
   assert.ok(!PROFILE.includes('pref-notifications') || !/row\('🔔'/.test(PROFILE), 'no row with pref-notifications role');
+});
+
+test('iOS Home-Screen guidance (Apple: Push API only in installed PWA)', () => {
+  assert.match(HUB, /const isIOS = \(\) =>/, 'hub detects iOS');
+  assert.match(HUB, /iosInstallBody/, 'sheet has the Home-Screen instructions');
+  assert.ok(HUB.includes("bn: 'iPhone-এ ওয়েব পুশ শুধু Home Screen-এ"), 'bn instruction');
+  assert.ok(HUB.includes("en: 'On iPhone, web push works only when the app is on your Home Screen."), 'en instruction');
+  assert.match(HUB, /toastShort\(isIOS\(\) \? sheetT\('iosToast'\) : sheetT\('blocked'\)\)/, 'unsupported-on-iOS → helpful toast, not "blocked"');
+  assert.match(HUB, /s\.permission === 'unsupported'/, 'sheet row handles the unsupported state');
+  assert.match(INBOX, /isIOSDevice\(\)/, 'inbox detects iOS');
+  assert.match(INBOX, /nif-pushbar-ios/, 'inbox shows the iOS install banner');
+  assert.ok(INBOX.includes("en: '📱 On iPhone, push needs the app on your Home Screen:"), 'inbox banner en');
+  assert.ok(INBOX.includes("bn: '📱 iPhone-এ push পেতে:"), 'inbox banner bn');
 });

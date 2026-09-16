@@ -308,7 +308,10 @@
     offDone: { bn: 'Push বন্ধ হয়েছে', en: 'Push turned off' },
     needPermission: { bn: 'ব্রাউজারে অনুমতি দিতে হবে', en: 'Browser permission is needed' },
     retry: { bn: 'এবার চলেছে না — আবার চেষ্টা করুন', en: 'Could not enable — please try again' },
-    working: { bn: 'চালু হচ্ছে…', en: 'Turning on…' }
+    working: { bn: 'চালু হচ্ছে…', en: 'Turning on…' },
+    iosInstallBody: { bn: 'iPhone-এ ওয়েব পুশ শুধু Home Screen-এ অ্যাপ যোগ করলেই চলে। করবেন: (১) Safari-র Share (⬆) বাটন → "Add to Home Screen" — (২) Home Screen থেকে অ্যাপটি খুলুন — (৩) আবার এখানে এসে Turn on চাপুন।', en: 'On iPhone, web push works only when the app is on your Home Screen. Do this: (1) Safari Share (⬆) → "Add to Home Screen" — (2) open the app from your Home Screen — (3) come back and tap Turn on.' },
+    iosToast: { bn: 'iPhone: আগে Home Screen-এ যোগ করুন', en: 'iPhone: add to Home Screen first' },
+    notSupported: { bn: 'এই ডিভাইসে push supported নয়', en: 'Push is not supported on this device' }
   };
   const sheetT = key => {
     let lang = 'bn';
@@ -316,6 +319,12 @@
     const entry = SHEET_I18N[key];
     return (entry && entry[lang]) || (entry && entry.bn) || key;
   };
+  /* Apple's rule (2026): the Push API exists ONLY in a Home-Screen-installed
+   * web app on iOS — never in a Safari tab. So 'unsupported' on iOS means
+   * "not installed yet", which is fixable — guide the user instead of
+   * showing "blocked in settings" (owner confusion 2026-09-17). */
+  const isIOS = () => { try { return /iPhone|iPad|iPod/i.test(navigator.userAgent || ''); } catch (_) { return false; } };
+  const isStandalone = () => { try { return navigator.standalone === true || matchMedia('(display-mode: standalone)').matches; } catch (_) { return false; } };
   const fcmSheetRow = (s) => {
     const pad = 'padding:14px 0;border-bottom:1px solid var(--line);';
     if (!s.fcmConfigured) {
@@ -325,6 +334,16 @@
     if (s.permission === 'denied') {
       return `<div style="${pad}"><div style="font-size:14px;font-weight:700">${sheetT('pushTitle')}</div>
         <div style="font-size:12.5px;margin-top:6px;color:var(--red);line-height:1.5">${sheetT('blocked')}</div></div>`;
+    }
+    if (s.permission === 'unsupported') {
+      // iOS Safari tab (not installed): explain the Home Screen requirement.
+      if (isIOS()) {
+        return `<div style="${pad}"><div style="font-size:14px;font-weight:700">${sheetT('pushTitle')}</div>
+          <div style="font-size:12.5px;margin-top:6px;line-height:1.6">${sheetT('iosInstallBody')}</div>
+          <button class="btn sm" style="margin-top:12px" data-sheet-fcm-btn onclick="NotificationHub.fcmSheetToggle()">${sheetT('enable')}</button></div>`;
+      }
+      return `<div style="${pad}"><div style="font-size:14px;font-weight:700">${sheetT('pushTitle')}</div>
+        <div style="font-size:12.5px;margin-top:6px;opacity:.7;line-height:1.5">${sheetT('notSupported')}</div></div>`;
     }
     if (s.registered) {
       return `<div style="${pad}display:flex;align-items:center;justify-content:space-between;gap:10px">
@@ -365,7 +384,7 @@
    * before any status/config fetch. AhFcm.enable() was fixed the same way. */
   const doPushToggle = async (rerender) => {
     try {
-      if (typeof Notification === 'undefined') { toastShort(sheetT('blocked')); return; }
+      if (typeof Notification === 'undefined') { toastShort(isIOS() ? sheetT('iosToast') : sheetT('blocked')); return; }
       if (Notification.permission === 'default') {
         const ask = await Notification.requestPermission();
         if (ask !== 'granted') {
