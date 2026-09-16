@@ -254,7 +254,7 @@
         <span id="ahNotifBadge" style="display:none;position:absolute;top:-6px;right:-10px;background:var(--red);color:#fff;border-radius:99px;font-size:10px;font-weight:800;padding:1px 5px"></span>
       </div>
       <div id="ahNotifCopy" style="flex:1;min-width:0;font-size:13px;line-height:1.45"></div>
-      <button class="iconbtn" style="flex:0 0 auto" title="Notification settings" onclick="NotificationHub.openSettings()">⚙️</button>
+      <button class="iconbtn" style="flex:0 0 auto" title="Notification settings" onclick="NotificationHub.openSheet()">⚙️</button>
     </div>`;
   const hydrateDashboard = async () => {
     try {
@@ -287,6 +287,94 @@
   };
   const escapeHtml = value => String(value).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
   const toggleRow = (label, key, prefs) => `<div style="display:flex;align-items:center;gap:10px;padding:7px 0"><span style="flex:1;font-size:13px">${label}</span><button class="chip ${prefs.cats[key] ? 'active' : ''}" onclick="NotificationHub.toggleCat('${key}')">${prefs.cats[key] ? 'ON' : 'OFF'}</button></div>`;
+  // ── Compact notifications sheet (owner directive 2026-09-16) ─────────────
+  // Small bottom sheet, minimal options, visible close, official concise FCM
+  // copy, DUAL LANGUAGE: bn + en written, only the user's active language is
+  // rendered (AhI18n) — both languages never shown at the same time.
+  const SHEET_I18N = {
+    title: { bn: 'নোটিফিকেশন', en: 'Notifications' },
+    close: { bn: 'বন্ধ করুন', en: 'Close' },
+    closeAria: { bn: 'বন্ধ করুন', en: 'Close' },
+    pushTitle: { bn: 'Push নোটিফিকেশন', en: 'Push notifications' },
+    pushBody: { bn: 'আপনার ফোনে নোটিফিকেশন চালু করুন', en: 'Turn on notifications on your phone' },
+    enable: { bn: 'চালু করুন', en: 'Turn on' },
+    disable: { bn: 'বন্ধ করুন', en: 'Turn off' },
+    on: { bn: 'চালু', en: 'On' },
+    off: { bn: 'বন্ধ', en: 'Off' },
+    master: { bn: 'সব নোটিফিকেশন', en: 'All notifications' },
+    settingUp: { bn: 'নোটিফিকেশন সেটআপ চলছে', en: 'Notification setup in progress' },
+    blocked: { bn: 'ব্রাউজারে নোটিফিকেশন বন্ধ আছে — সাইট সেটিংস থেকে চালু করুন', en: 'Notifications are blocked in your browser — enable them in site settings' },
+    onDone: { bn: 'Push চালু হয়েছে ✓', en: 'Push turned on ✓' },
+    offDone: { bn: 'Push বন্ধ হয়েছে', en: 'Push turned off' },
+    needPermission: { bn: 'ব্রাউজারে অনুমতি দিতে হবে', en: 'Browser permission is needed' },
+    retry: { bn: 'এবার চলেছে না — আবার চেষ্টা করুন', en: 'Could not enable — please try again' }
+  };
+  const sheetT = key => {
+    let lang = 'bn';
+    try { lang = window.AhI18n ? window.AhI18n.get() : 'bn'; } catch (_) {}
+    const entry = SHEET_I18N[key];
+    return (entry && entry[lang]) || (entry && entry.bn) || key;
+  };
+  const fcmSheetRow = (s) => {
+    const pad = 'padding:14px 0;border-bottom:1px solid var(--line);';
+    if (!s.fcmConfigured) {
+      return `<div style="${pad}"><div style="font-size:14px;font-weight:700">${sheetT('pushTitle')}</div>
+        <div style="font-size:12.5px;opacity:.7;margin-top:6px;line-height:1.5">${sheetT('settingUp')}</div></div>`;
+    }
+    if (s.permission === 'denied') {
+      return `<div style="${pad}"><div style="font-size:14px;font-weight:700">${sheetT('pushTitle')}</div>
+        <div style="font-size:12.5px;margin-top:6px;color:var(--red);line-height:1.5">${sheetT('blocked')}</div></div>`;
+    }
+    if (s.registered) {
+      return `<div style="${pad}display:flex;align-items:center;justify-content:space-between;gap:10px">
+        <div><div style="font-size:14px;font-weight:700">${sheetT('pushTitle')}</div>
+        <div style="font-size:12.5px;margin-top:4px;color:var(--green);font-weight:600">✓ ${sheetT('on')}</div></div>
+        <button class="btn ghost sm" style="flex:0 0 auto" onclick="NotificationHub.fcmSheetToggle()">${sheetT('disable')}</button></div>`;
+    }
+    return `<div style="${pad}"><div style="font-size:14px;font-weight:700">${sheetT('pushTitle')}</div>
+      <div style="font-size:13px;margin-top:6px;line-height:1.55">${sheetT('pushBody')}</div>
+      <button class="btn sm" style="margin-top:12px" onclick="NotificationHub.fcmSheetToggle()">${sheetT('enable')}</button></div>`;
+  };
+  const openSheet = async () => {
+    const prefs = await getPrefs();
+    let fcm = { fcmConfigured: false, registered: false, permission: 'unsupported', devices: 0 };
+    try { if (window.AhFcm && typeof window.AhFcm.status === 'function') fcm = await window.AhFcm.status(); } catch (_) {}
+    openModal(`<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+        <h3 style="margin:0">${sheetT('title')}</h3>
+        <button class="iconbtn" style="flex:0 0 auto" onclick="closeModal()" aria-label="${sheetT('closeAria')}">✕</button>
+      </div>
+      ${fcmSheetRow(fcm)}
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 0">
+        <span style="font-size:14px">${sheetT('master')}</span>
+        <button class="chip ${prefs.master ? 'active' : ''}" onclick="NotificationHub.toggleMasterSheet()">${sheetT(prefs.master ? 'on' : 'off')}</button>
+      </div>
+      <button class="btn" style="width:100%;margin-top:14px" onclick="closeModal()">${sheetT('close')}</button>`);
+    try { if (window.AhI18n && window.AhI18n.apply) window.AhI18n.apply(document.getElementById('modalRoot')); } catch (_) {}
+  };
+  const toggleMasterSheet = async () => {
+    const prefs = await getPrefs();
+    prefs.master = !prefs.master;
+    await savePrefs(prefs);
+    await openSheet();
+  };
+  const fcmSheetToggle = async () => {
+    try {
+      if (!window.AhFcm || !window.AhFcm.enable) { toastShort(sheetT('settingUp')); return; }
+      const s = await window.AhFcm.status();
+      if (!s.fcmConfigured) { toastShort(sheetT('settingUp')); return; }
+      if (s.registered) {
+        await window.AhFcm.disable();
+        toastShort(sheetT('offDone'));
+      } else {
+        const r = await window.AhFcm.enable();
+        if (r === 'granted') toastShort(sheetT('onDone'));
+        else if (r === 'denied' || r === 'unsupported') toastShort(sheetT('needPermission'));
+        else toastShort(sheetT('retry'));
+      }
+    } catch (_) { toastShort(sheetT('retry')); }
+    await openSheet();
+  };
+
   const openSettings = async () => {
     const prefs = await getPrefs();
     const soon = Object.entries(CAT_SOON).filter(([, v]) => v).map(([k]) => CAT_LABEL[k]).join(' · ');
@@ -342,7 +430,7 @@
   if (typeof document !== 'undefined') boot();
 
   window.NotificationHub = {
-    dashboardHtml, hydrateDashboard, mountDashboardCard, openCenter, openSettings, markAllRead, maybeResubscribe,
+    dashboardHtml, hydrateDashboard, mountDashboardCard, openCenter, openSettings, openSheet, fcmSheetToggle, toggleMasterSheet, markAllRead, maybeResubscribe,
     promptEnable, dismissPrompt, enablePush, disablePush, testNow,
     toggleMaster, toggleCat, setQuiet, setCap, saveEndpoint,
     evaluate, syncState,

@@ -133,6 +133,23 @@ passes, and the
 owner confirms — only then may the next phase begin. It extends (never
 replaces) the existing Telegram channel + `NotificationHub` in-app system.
 
+## Dual-language UI rule (owner mandate, 2026-09-16 — permanent)
+
+Every piece of NEW UI text (buttons, rows, toasts, sheet/modal copy) must be
+written in BOTH Bengali and English, and only the user's active language is
+rendered — both languages must NEVER be visible at the same time.
+
+Mechanics (the global i18n engine, index.html):
+- Static markup: elements carry `data-bn` + `data-en` (placeholders:
+  `data-ph-bn`/`data-ph-en`, aria: `data-aria-bn`/`data-aria-en`); the
+  engine's `apply()` picks the active language.
+- Dynamically rendered HTML: after inserting it, call
+  `window.AhI18n.apply(container)`; or pick the language yourself with
+  `window.AhI18n.get()` (returns `'bn'` default / `'en'`) and render one.
+- Copy style: official, short, polished (casual/tutorial tone is banned).
+Reference implementation: `openSheet()` in `notification-hub.js`
+(`SHEET_I18N` table + `sheetT()` helper).
+
 ## Deployment access
 
 - `wrangler pages deploy dist --project-name admissionhub --branch main` with
