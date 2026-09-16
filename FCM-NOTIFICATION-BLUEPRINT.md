@@ -1,10 +1,30 @@
 # FCM + Cloudflare Smart Notification System — 5-Phase Blueprint
 
-**Status: LOCKED — not started.** Owner instruction (2026-09-16): do not begin
-implementation until a phase is explicitly released. This document is the
-single source of truth for all agents. Work proceeds strictly
-phase-by-phase: a phase is complete only when its Output/acceptance
+**Status: Phase 1 IN PROGRESS** (released by owner 2026-09-16, "Ok start").
+This document is the single source of truth for all agents. Work proceeds
+strictly phase-by-phase: a phase is complete only when its Output/acceptance
 criteria are met on production, then the next phase starts.
+
+Phase 1 implementation notes (as built):
+- Backend = new module `fcm-notification.mjs` inside the `admission-gk`
+  worker (same origin as the app → session cookie auth, no CORS dance).
+  Routes: `/api/notifications/{config,status,register-token,
+  unregister-token,devices,preferences,test}` +
+  `/internal/notifications/health`.
+- Storage = D1 `PROFILE_DB` (`fcm_devices` + `notification_settings`),
+  KV `GK_KV` for rate limits. Max 12 devices/user, 10 registrations/hour,
+  5 tests/10min.
+- Frontend = `notification-fcm.js` (lazy Firebase SDK — never on boot;
+  idle-time token refresh; foreground delivery via SW postMessage) +
+  `sw.js` v108 dual-mode push handler (FCM + legacy admission-notify) with
+  deep-link click routing. Settings modal gains an FCM row; hidden dev
+  test center at `#notif-dev`.
+- Legacy path (Telegram + admission-notify VAPID push) untouched — stays
+  as the backup channel.
+- Pending owner action: Firebase project enablements + service-account
+  key → worker secrets (FIREBASE_PROJECT_ID / FIREBASE_CLIENT_EMAIL /
+  FIREBASE_PRIVATE_KEY + public web config vars). Until then the system
+  reports `fcmConfigured: false` and degrades gracefully.
 
 ## Platform decision (owner, 2026-09-16)
 
@@ -387,10 +407,11 @@ pointlessly as users grow.
 
 ## Open items (only one remains)
 
-1. ~~Database~~ → **Decided: Cloudflare Durable Objects SQLite.**
-2. **Firebase project** — owner to create (free, no card, ~10 min);
-   service-account key → Cloudflare Worker secrets. Steps provided when
-   Phase 1 is released.
+1. ~~Database~~ → **Decided: Cloudflare (D1 `PROFILE_DB` — same DB as profiles).**
+2. **Firebase project** — owner to create/enable (free, no card, ~10 min),
+   then hand over: service-account key (JSON) + web app config
+   (apiKey, projectId, messagingSenderId, appId, vapidKey). These go to
+   Cloudflare Worker secrets on `admission-gk`. Steps provided.
 3. ~~Vercel plan~~ → **Decided: no Vercel; Cloudflare Workers free tier.**
 4. **Telegram channel** — kept as backup (recommended; confirm at
    Phase 2 start).

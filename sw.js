@@ -29,6 +29,7 @@ const APP_SHELL = [
   './data-protection.js?v=dp-v3-fastboot',
   './dashboard-v2.js?v=dash2f13-theme',
   './ai-agent-chat.js?v=agent-f1-ui-chatv18-fresh',
+  './notification-fcm.js?v=fcm-p1-v1',
   './icons/icon-192.png',
   './icons/icon-512.png'
 ];
@@ -37,7 +38,7 @@ const APP_SHELL = [
 // A truncated/corrupt download is NEVER written to the shell cache.
 const ASSET_DIGESTS = {
 /* sw-manifest:start */
-  "./index.html": "50f68cb832d7e4b5681d0a7e250ff12da3f423d26446f8bdc61565d66b2c80e7",
+  "./index.html": "e866d8bf2ed3fa1f4454fcdc88fd816256cb9845fbbdb12cffba9a15c595aecb",
   "./manifest.json": "11a85ae594fc629b11605daeda3f9afe4ef95215a55a29f9cc423314bfb275a4",
   "./manifest.webmanifest": "5be476009a140eabd088bd972bd4d345b9c4f4a055cd6e4f08774b9cb4afaf52",
   "./dashboard-v2.css?v=dash2f13-theme": "4f4c9295b487b8186fd45c006a96a43bcaf896a1a5b871f506a05874a8e00c99",
@@ -53,6 +54,7 @@ const ASSET_DIGESTS = {
   "./data-protection.js?v=dp-v3-fastboot": "359dc907ade4bcb3a6a722385969ebb6af47f7e436e6cdf2cce0dd6b7343723d",
   "./dashboard-v2.js?v=dash2f13-theme": "fe480f999c5d19c380752c8ceed5603dc9a31be2c5cf254cd45e23e233fb45f4",
   "./ai-agent-chat.js?v=agent-f1-ui-chatv18-fresh": "36a11f8d5dec5a5bf1b8fa86db06b9a34e01ad27c931f37aadbffe6e6f4930e5",
+  "./notification-fcm.js?v=fcm-p1-v1": "f131fc8ef11de5f574f23e70e4e482c914cc1dd00b8bae6b386ca7c51614e768",
   "./icons/icon-192.png": "777ce5566fbeff0f2e384c787c8dde4f47d7c869e455c6e577a503decd4f1683",
   "./icons/icon-512.png": "86459109582f82b1d891a3e5a82723fefd21a3c65e9d0d22ab4dae33bb540520",
 /* sw-manifest:end */
@@ -216,17 +218,55 @@ self.addEventListener('fetch', event => {
   })());
 });
 
-// v107 — Web Push display + notification click routing
+// v108 — Web Push display + notification click routing.
+// Handles BOTH delivery paths without double-firing:
+//   1) FCM (Phase 1, fcm-notification.mjs) — payload: { "0":"gcm", notification:{title,body}, data:{link,src} }
+//      Foreground: the focused page shows an in-app toast (postMessage), no system notification.
+//      Background: system notification; click deep-links to the app route.
+//   2) Legacy admission-notify VAPID push (v107) — payload: { title, body, tag, url } — unchanged behavior.
+const isFcmPayload = data => Boolean(data && typeof data === 'object' && (data['0'] === 'gcm' || data.notification));
+
 self.addEventListener('push', (event) => {
   let data = {};
   try { data = event.data.json(); } catch (_) {}
+  if (isFcmPayload(data)) {
+    const title = String((data.notification && data.notification.title) || 'Admission Hub');
+    const body = String((data.notification && data.notification.body) || '');
+    const link = String((data.data && data.data.link) || 'dashboard');
+    const fcmData = { link, src: 'fcm' };
+    event.waitUntil(
+      self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+        const focused = list.find((client) => client.visibilityState === 'visible');
+        if (focused) {
+          // Foreground — the page renders it in-app (single delivery, no system popup).
+          try { focused.postMessage({ ah: 'fcm', title, body, data: fcmData }); } catch (_) {}
+          return;
+        }
+        return self.registration.showNotification(title, {
+          body, tag: 'ah-fcm', renotify: true, icon: './icons/icon-192.png', badge: './icons/icon-192.png',
+          data: fcmData
+        });
+      })
+    );
+    return;
+  }
+  // Legacy v107 path (admission-notify worker) — behavior preserved.
   event.waitUntil(self.registration.showNotification(String(data.title || 'Admission Hub 🔔'), {
     body: String(data.body || ''), tag: String(data.tag || 'admission-hub'), renotify: true, data: { url: data.url || './' }
   }));
 });
+
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const url = (event.notification.data && event.notification.data.url) || './';
+  const nd = event.notification.data || {};
+  let url;
+  if (nd.src === 'fcm') {
+    // Deep link: hash route (e.g. dashboard / my-profile / notifications).
+    const route = String(nd.link || 'dashboard').replace(/^#?\/?/, '');
+    url = `./#${route}`;
+  } else {
+    url = nd.url || './';
+  }
   event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
     for (const client of list) { if ('focus' in client) { try { client.navigate(url); } catch (_) {} return client.focus(); } }
     return self.clients.openWindow(url);

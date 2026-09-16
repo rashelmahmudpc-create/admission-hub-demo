@@ -291,11 +291,12 @@
     const prefs = await getPrefs();
     const soon = Object.entries(CAT_SOON).filter(([, v]) => v).map(([k]) => CAT_LABEL[k]).join(' · ');
     const perm = typeof Notification !== 'undefined' ? Notification.permission : 'unsupported';
+    const fcmRow = '<div id="ahFcmRow" style="padding:10px 0;border-bottom:1px solid var(--line);font-size:12px;color:var(--sub)">📡 FCM Push — checking…</div>';
     const pushRow = !pushReady() ? '<div style="padding:9px 0;border-bottom:1px solid var(--line);font-size:12px;color:var(--sub)">📱 এই device-এ web push নেই — Telegram-এ notification যাবে ✈️</div>'
       : perm === 'granted' ? `<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)"><span style="flex:1;font-size:13px">📱 iPhone push</span><span class="chip active" style="pointer-events:none">চালু ✓</span></div>`
       : perm === 'denied' ? '<div style="padding:9px 0;border-bottom:1px solid var(--line);font-size:12px;color:var(--red)">⚠️ Push অনুমতি ব্লকড — iOS Settings → Safari/Home-অ্যাপ → Notifications থেকে চালু করো</div>'
       : `<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)"><span style="flex:1;font-size:13px">📱 iPhone push</span><button class="btn sm" onclick="NotificationHub.enablePush().then(() => NotificationHub.openSettings())">চালু করি</button></div>`;
-    openModal(`<h3>⚙️ Notifications</h3>${pushRow}
+    openModal(`<h3>⚙️ Notifications</h3>${fcmRow}${pushRow}
       <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)"><span style="flex:1;font-weight:700">Master Notification</span><button class="chip ${prefs.master ? 'active' : ''}" onclick="NotificationHub.toggleMaster()">${prefs.master ? 'ON' : 'OFF'}</button></div>
       ${Object.keys(DEFAULT_PREFS.cats).map(key => toggleRow(CAT_LABEL[key] + (CAT_SOON[key] ? ' <span style="color:var(--sub);font-size:10px">(শীঘ্রই)</span>' : ''), key, prefs)).join('')}
       <label class="flabel" style="margin-top:10px">Quiet hours (এই সময়ে কিছু আসবে না)</label>
@@ -309,6 +310,13 @@
         <button class="btn ghost sm" onclick="closeModal()">Close</button>
       </div>
       <small style="display:block;margin-top:10px;color:var(--sub);font-size:11px;line-height:1.5">Telegram (✈️ @myadmihubbot) + iPhone push দুটোতেই যায়। Active থাকলে অ্যাপের ভেতরেই দেখায় — push বিরক্ত করে না।</small>`);
+    // FCM row hydrates async (config fetch) — replace the placeholder when ready.
+    try {
+      window.AhFcm?.settingsRow?.().then(html => {
+        const el = document.getElementById('ahFcmRow');
+        if (el) el.outerHTML = html;
+      }).catch(() => {});
+    } catch (_) {}
   };
   const toggleMaster = async () => { const prefs = await getPrefs(); prefs.master = !prefs.master; await savePrefs(prefs); openSettings(); toastShort(prefs.master ? 'Notification চালু' : 'Notification বন্ধ'); };
   const toggleCat = async key => { const prefs = await getPrefs(); prefs.cats[key] = !prefs.cats[key]; await savePrefs(prefs); openSettings(); };

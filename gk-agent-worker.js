@@ -2,6 +2,7 @@
 import pubHandler, { publishGlobal } from './public-worker.js';
 import { handleInternalEmailRequest } from './email-gateway/worker/handler.mjs';
 import { createNativeAuthHandler } from './auth-native/worker/public-auth-handler.mjs';
+import { handleFcmNotificationRequest } from './fcm-notification.mjs';
 export { EmailGatewayCoordinator } from './email-gateway/worker/email-coordinator.mjs';
 export { AdmissionAuthAuthority } from './auth-native/worker/auth-authority-do.mjs';
 
@@ -434,6 +435,9 @@ export default {
     if (authResponse) return authResponse;
     const emailResponse = await handleInternalEmailRequest(request, env, ctx);
     if (emailResponse) return emailResponse;
+    // Phase 1 — FCM notification foundation (owns /api/notifications/* + /internal/notifications/health).
+    const fcmResponse = await handleFcmNotificationRequest(request, env, ctx);
+    if (fcmResponse) return fcmResponse;
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors(request) });
 
     // Public product API: content, Firebase-session-aware or ephemeral-guest AI,
