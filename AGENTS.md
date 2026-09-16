@@ -32,7 +32,7 @@ advanced-mode Pages worker that proxies `/api/*` and gates asset serving.
 
 ## Testing
 
-- `node --test seo-routing.test.mjs` — routing/404 contract.
+- `node --test seo-routing.test.mjs` ÔÇö routing/404 contract.
 - Baseline failures unrelated to SEO: `account-retirement.test.mjs`,
   `p18-legacy-dashboard-kill.test.mjs`, `startup-ai-regression.test.mjs`.
   Compare against `git worktree add /tmp/base origin/main` before blaming a change.
@@ -46,7 +46,7 @@ advanced-mode Pages worker that proxies `/api/*` and gates asset serving.
   allow-list in `loadPrefs()` (`profile-ui.js`) and the modes accepted by the
   global `AhAppearance` engine (`index.html`). Adding a mode in only one place
   makes the saved value silently reset on reload while the engine keeps
-  rendering it — the v267 `green`/Premium Green bug.
+  rendering it ÔÇö the v267 `green`/Premium Green bug.
 - Any change to a versioned asset requires a coordinated bump: the `?v=` query
   in `index.html`, `BUILD_ID` + `expectedSwVersion` in `index.html`/`sw.js`, and
   the shell version asserted across many `*.test.mjs` files. Bump the `SW shell`
@@ -59,13 +59,13 @@ advanced-mode Pages worker that proxies `/api/*` and gates asset serving.
   `language-engine.js`, not by per-module conditionals. Modules keep writing
   Bengali; the engine rewrites text nodes plus `placeholder`/`aria-label`/`title`
   on `ah:lang` and on DOM insertion. Add new copy to its `DICT`.
-  - Bengali must be NFC-normalised before dictionary lookup: য় is either U+09DF
-    or য + ়, and the two look identical. A naive comparison silently misses
-    entries — this cost 36 account strings when first written.
+  - Bengali must be NFC-normalised before dictionary lookup: Óª»Óª╝ is either U+09DF
+    or Óª» + Óª╝, and the two look identical. A naive comparison silently misses
+    entries ÔÇö this cost 36 account strings when first written.
   - `language-engine.test.mjs` fails when the account or profile UI renders a
     Bengali string the table lacks, so the guard catches untranslated copy added
     later. The scan reads plain JS string literals too, not only markup: copy in
-    a `row('🌐', 'Language', ...)` call or a toast is never inside a tag, and
+    a `row('­ƒîÉ', 'Language', ...)` call or a toast is never inside a tag, and
     scanning markup alone is what let ~230 strings ship untranslated.
   - `language-coverage-runtime.test.mjs` boots the real modules with the engine
     in English mode and fails on any Bengali text node or attribute still on
@@ -74,8 +74,8 @@ advanced-mode Pages worker that proxies `/api/*` and gates asset serving.
   - Strings that embed a live number (resend timers, passkey totals, the
     multi-device logout notice) cannot have a fixed key, so `RULES` matches them
     by shape. `translateSegment` additionally translates one segment of a
-    `·`-joined string, a Bengali date (`১১ এপ্রিল, ২০০৭`) and digit-only runs.
-    Bengali digits are U+09E6–U+09EF and are outside `\d`, so a bare `\d` pattern
+    `┬À`-joined string, a Bengali date (`ÓººÓºº ÓªÅÓª¬ÓºìÓª░Óª┐Óª▓, Óº¿ÓºªÓºªÓº¡`) and digit-only runs.
+    Bengali digits are U+09E6ÔÇôU+09EF and are outside `\d`, so a bare `\d` pattern
     silently fails on them.
   - The engine writes node values, so it must distinguish its own output from a
     module's later rewrite. `lastOut` holds what the engine wrote; when the node
@@ -88,13 +88,23 @@ advanced-mode Pages worker that proxies `/api/*` and gates asset serving.
   reconciles them (`reconcilePreferencesAtBoot`). Direction matters: with no
   preference saved the engine key is the real choice and seeds the preference,
   otherwise first run overwrites the user with defaults.
+  - `AhI18n.set` now mirrors the choice into an existing `ah-profile-prefs-v1`
+    record (it does not create one). Without this the welcome picker — the first
+    language control a visitor meets — moved `ahLang` alone, and boot reconcile
+    then read the stale saved preference and snapped the app back to Bengali.
+  - Never persist the choice from `account-access.js`: `native-auth-protection`
+    scans that file for the browser storage globals and fails the build if any
+    appear, comments included. Persistence stays in the engines.
+  - A runtime test that seeds English *before* boot cannot see a picker that
+    fails to store the choice. `language-coverage-runtime.test.mjs` boots in
+    Bengali and drives the real `<select>` for this reason; keep it that way.
 
 ## Deployment access
 
 - `wrangler pages deploy dist --project-name admissionhub --branch main` with
   `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` is the working deploy path.
   In sessions where neither variable is injected (verify with
-  `echo ${CLOUDFLARE_API_TOKEN:+SET}` before blaming wrangler — it reports only
+  `echo ${CLOUDFLARE_API_TOKEN:+SET}` before blaming wrangler ÔÇö it reports only
   "necessary to set a CLOUDFLARE_API_TOKEN"), defer the deploy.
 - GitHub Actions dispatch is unavailable on this repo: the API returns
   `422 Actions has been disabled for this user`, so the manual
@@ -103,6 +113,6 @@ advanced-mode Pages worker that proxies `/api/*` and gates asset serving.
 - The GitHub PAT in the remote URL can stop working mid-session even though
   pushes succeeded earlier (reflog shows prior `update by push`). A 404 from
   `api.github.com/repos/<owner>/<repo>` while the token itself is valid means
-  the repo is gone/renamed or the token's account lost access — it is not a
+  the repo is gone/renamed or the token's account lost access ÔÇö it is not a
   push-format problem. Confirm with `GET /user` (token identity) before
   retrying; the deployed site can still ship via wrangler without GitHub.
