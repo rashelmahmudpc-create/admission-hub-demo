@@ -13,6 +13,7 @@
 
   const API = '/api/notifications';
   const SDK_BASE = 'https://www.gstatic.com/firebasejs/10.12.2';
+  const SDK_LOCAL = './sdk'; /* self-hosted copy on our own domain (Cloudflare stack); gstatic is the fallback */
   const LS_STATE = 'ahFcmState';
   const SDK_TIMEOUT_MS = 25000;
 
@@ -50,14 +51,20 @@
     document.head.appendChild(s);
   });
 
-  /* Lazy Firebase SDK (compat build) — loaded at most once, only on demand. */
+  /* Lazy Firebase SDK (compat build) — loaded at most once, only on demand.
+   * Self-hosted copy on our own domain first (owner's whole-stack-on-Cloudflare
+   * rule + faster than gstatic on mobile); gstatic is the fallback. */
+  const tryLoadSdk = async (base) => {
+    if (typeof firebase !== 'undefined' && firebase.messaging) return window.firebase;
+    await loadScript(`${base}/firebase-app-compat.js`);
+    await loadScript(`${base}/firebase-messaging-compat.js`);
+    return window.firebase;
+  };
   const loadSdk = () => {
     if (!sdkPromise) {
       sdkPromise = (async () => {
-        if (typeof firebase !== 'undefined' && firebase.messaging) return window.firebase;
-        await loadScript(`${SDK_BASE}/firebase-app-compat.js`);
-        await loadScript(`${SDK_BASE}/firebase-messaging-compat.js`);
-        return window.firebase;
+        try { return await tryLoadSdk(SDK_LOCAL); }
+        catch (_) { return await tryLoadSdk(SDK_BASE); }
       })();
       sdkPromise.catch(() => { sdkPromise = null; });
     }

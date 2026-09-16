@@ -316,6 +316,8 @@
     errSdk: { bn: 'Push SDK লোড হয়নি — ইন্টারনেট চেক করে আবার চেষ্টা করুন', en: 'Push SDK failed to load — check internet and retry' },
     errToken: { bn: 'Device token তৈরি হয়নি — Home Screen থেকে খোলা থাকলেও আবার চেষ্টা করুন', en: 'Device token failed — open from Home Screen and retry' },
     errRegister: { bn: 'সার্ভারে register ব্যর্থ — আবার চেষ্টা করুন', en: 'Server registration failed — try again' },
+    errRate: { bn: 'বেশিবার চেষ্টা হয়েছে — ১ ঘণ্টা পর আবার চেষ্টা করুন', en: 'Too many attempts — please try again in an hour' },
+    errLogin: { bn: 'Login session সমস্যা — আবার login করে চেষ্টা করুন', en: 'Login session issue — log in again, then retry' },
     lastErrLabel: { bn: 'সর্বশেষ সমস্যা', en: 'Last error' }
   };
   const sheetT = key => {
@@ -419,6 +421,8 @@
         else if (r === 'config-failed') toastShort(sheetT('errConfig'));
         else if (r === 'sdk-failed') toastShort(sheetT('errSdk'));
         else if (r === 'token-failed') toastShort(sheetT('errToken'));
+        else if (r === 'register-429') toastShort(sheetT('errRate') + ' (register-429)');
+        else if (r === 'register-401') toastShort(sheetT('errLogin') + ' (register-401)');
         else if (String(r).startsWith('register-')) toastShort(sheetT('errRegister') + ' (' + r + ')');
         else toastShort(sheetT('retry') + ' (' + r + ')');
       }

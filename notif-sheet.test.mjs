@@ -80,8 +80,8 @@ test('inbox: full-screen page, All/Unread tabs, back to dashboard, dual language
 test('router: #notifications route + script tag + SW pin', () => {
   assert.match(INDEX, /p==='notifications' && window\.renderNotificationsInbox/);
   assert.match(INDEX, /notification-inbox\.js\?v=notif-inbox-v2/);
-  assert.match(INDEX, /notification-hub\.js\?v=notify-v115/);
-  assert.match(INDEX, /notification-fcm\.js\?v=fcm-p1-v3/);
+  assert.match(INDEX, /notification-hub\.js\?v=notify-v116/);
+  assert.match(INDEX, /notification-fcm\.js\?v=fcm-p1-v4/);
   assert.match(INDEX, /profile-ui\.js\?v=profile-v15-nonotif/);
   assert.match(SW, /notification-inbox\.js\?v=notif-inbox-v2/);
   assert.match(SW, /dashboard-v2\.js\?v=dash2f15-inbox/);
@@ -115,6 +115,16 @@ test('enable() failures are specific, not a vague "try again" (2026-09-17)', () 
   assert.match(HUB, /r === 'sdk-failed'\) toastShort\(sheetT\('errSdk'\)\)/);
   assert.match(HUB, /String\(r\)\.startsWith\('register-'\)/);
   assert.ok(HUB.includes("bn: 'সর্বশেষ সমস্যা'") && HUB.includes("en: 'Last error'"), 'sheet shows last error code');
+});
+
+test('Firebase SDK self-hosted (Cloudflare stack) with gstatic fallback', () => {
+  assert.match(FCM, /const SDK_LOCAL = '.\/sdk'/);
+  assert.match(FCM, /try \{ return await tryLoadSdk\(SDK_LOCAL\); \}/);
+  assert.match(FCM, /catch \(_\) \{ return await tryLoadSdk\(SDK_BASE\); \}/);
+  assert.ok(HUB.includes("bn: 'বেশিবার চেষ্টা হয়েছে — ১ ঘণ্টা পর আবার চেষ্টা করুন'"), '429 toast bn');
+  assert.ok(HUB.includes("bn: 'Login session সমস্যা — আবার login করে চেষ্টা করুন'"), '401 toast bn');
+  assert.match(HUB, /r === 'register-429'\) toastShort\(sheetT\('errRate'\)/);
+  assert.match(HUB, /r === 'register-401'\) toastShort\(sheetT\('errLogin'\)/);
 });
 
 test('iOS Home-Screen guidance (Apple: Push API only in installed PWA)', () => {
