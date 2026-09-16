@@ -14,7 +14,7 @@
   const API = '/api/notifications';
   const SDK_BASE = 'https://www.gstatic.com/firebasejs/10.12.2';
   const LS_STATE = 'ahFcmState';
-  const SDK_TIMEOUT_MS = 12000;
+  const SDK_TIMEOUT_MS = 25000;
 
   let sdkPromise = null;
   let configCache = null;
@@ -64,11 +64,25 @@
     return sdkPromise;
   };
 
+  /* Returns null when the config fetch itself failed (network) so callers
+   * can distinguish "server unreachable" from "FCM not configured". */
   const getConfig = async () => {
     if (configCache) return configCache;
     const out = await boundedFetch('/config');
-    if (out.ok && out.data.ok) configCache = out.data;
-    return configCache || { fcmConfigured: false, webConfig: null };
+    if (out.ok && out.data.ok) { configCache = out.data; return configCache; }
+    return null;
+  };
+
+  /* Last enable() outcome — surfaced in the UI so the owner can report the
+   * exact failure code instead of a vague "try again" (2026-09-17). */
+  const setErr = (code) => {
+    try {
+      if (code == null) localStorage.removeItem('ahFcmLastErr');
+      else localStorage.setItem('ahFcmLastErr', JSON.stringify({ code: String(code), at: Date.now() }));
+    } catch (_) {}
+  };
+  const lastErr = () => {
+    try { return JSON.parse(localStorage.getItem('ahFcmLastErr') || 'null'); } catch (_) { return null; }
   };
 
   const initMessaging = async (cfg) => {
@@ -114,6 +128,8 @@
 
   /* User taps Enable → browser permission → FCM token → register on server.
    * Returns: 'granted' | 'denied' | 'unsupported' | 'not-configured' | 'error' */
+  /* Returns: 'granted' | 'denied' | 'unsupported' | 'config-failed' |
+   * 'not-configured' | 'sdk-failed' | 'token-failed' | 'register-<http>' | 'error' */
   const enable = async () => {
     /* iOS Safari: requestPermission() must run while the tap's transient
      * activation is still live — BEFORE any network await (owner bug
@@ -123,21 +139,29 @@
         const ask = await Notification.requestPermission();
         if (ask !== 'granted') return ask;
       }
-    } catch (_) { return 'error'; }
+    } catch (_) { setErr('prompt-error'); return 'error'; }
     const cfg = await getConfig();
-    if (!cfg.fcmConfigured || !cfg.webConfig) return 'not-configured';
+    if (!cfg) { setErr('config-failed'); return 'config-failed'; }
+    if (!cfg.fcmConfigured || !cfg.webConfig) { setErr('not-configured'); return 'not-configured'; }
     try {
-      if (permission() !== 'granted') return permission() === 'denied' ? 'denied' : 'unsupported';
-      const messaging = await initMessaging(cfg.webConfig);
-      const token = await messaging.getToken();
-      if (!token) return 'error';
-      const out = await registerToken(token);
-      if (out.ok) {
-        stateSet({ enabled: true, at: Date.now() });
-        return 'granted';
+      if (permission() !== 'granted') {
+        const p = permission();
+        if (p === 'denied') return 'denied';
+        setErr(p); return 'unsupported';
       }
-      return out.status === 401 ? 'error' : 'error';
+      let messaging;
+      try { messaging = await initMessaging(cfg.webConfig); }
+      catch (_) { setErr('sdk-failed'); return 'sdk-failed'; }
+      let token;
+      try { token = await messaging.getToken(); }
+      catch (_) { setErr('token-failed'); return 'token-failed'; }
+      if (!token) { setErr('token-empty'); return 'token-failed'; }
+      const out = await registerToken(token);
+      if (out.ok) { setErr(null); stateSet({ enabled: true, at: Date.now() }); return 'granted'; }
+      setErr('register-' + out.status);
+      return 'register-' + out.status;
     } catch (_) {
+      setErr('error');
       return 'error';
     }
   };
@@ -147,7 +171,7 @@
     stateSet({ enabled: false, at: Date.now() });
     try {
       const cfg = await getConfig();
-      if (cfg.fcmConfigured && cfg.webConfig) {
+      if (cfg && cfg.fcmConfigured && cfg.webConfig) {
         const messaging = await initMessaging(cfg.webConfig);
         const token = await messaging.getToken();
         if (token) {
@@ -170,7 +194,7 @@
     const st = stateGet();
     if (!st.enabled) return;
     const cfg = await getConfig();
-    if (!cfg.fcmConfigured || !cfg.webConfig) { stateSet({ enabled: false }); return; }
+    if (!cfg || !cfg.fcmConfigured || !cfg.webConfig) { stateSet({ enabled: false }); return; }
     try {
       const messaging = await initMessaging(cfg.webConfig);
       if (permission() !== 'granted') { stateSet({ enabled: false }); return; }
@@ -197,12 +221,12 @@
     const cfg = await getConfig();
     const st = stateGet();
     let devices = 0;
-    if (cfg.fcmConfigured) {
+    if (cfg && cfg.fcmConfigured) {
       const out = await boundedFetch('/status');
       if (out.ok && out.data.ok) devices = Number(out.data.devices || 0);
     }
     return {
-      fcmConfigured: Boolean(cfg.fcmConfigured),
+      fcmConfigured: Boolean(cfg && cfg.fcmConfigured),
       permission: permission(),
       registered: Boolean(st.enabled),
       devices
@@ -302,6 +326,6 @@
   window.AhFcm = {
     status, enable, disable, refresh: refreshIfEnabled,
     settingsRow, devPanel,
-    _state: stateGet, _config: getConfig
+    _state: stateGet, _config: getConfig, lastErr
   };
 })();

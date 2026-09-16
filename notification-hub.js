@@ -311,7 +311,12 @@
     working: { bn: 'চালু হচ্ছে…', en: 'Turning on…' },
     iosInstallBody: { bn: 'iPhone-এ ওয়েব পুশ শুধু Home Screen-এ অ্যাপ যোগ করলেই চলে। করবেন: (১) Safari-র Share (⬆) বাটন → "Add to Home Screen" — (২) Home Screen থেকে অ্যাপটি খুলুন — (৩) আবার এখানে এসে Turn on চাপুন।', en: 'On iPhone, web push works only when the app is on your Home Screen. Do this: (1) Safari Share (⬆) → "Add to Home Screen" — (2) open the app from your Home Screen — (3) come back and tap Turn on.' },
     iosToast: { bn: 'iPhone: আগে Home Screen-এ যোগ করুন', en: 'iPhone: add to Home Screen first' },
-    notSupported: { bn: 'এই ডিভাইসে push supported নয়', en: 'Push is not supported on this device' }
+    notSupported: { bn: 'এই ডিভাইসে push supported নয়', en: 'Push is not supported on this device' },
+    errConfig: { bn: 'সার্ভার সেটিংস আসছে না — ইন্টারনেট চেক করে আবার চেষ্টা করুন', en: 'Server settings not loading — check internet and retry' },
+    errSdk: { bn: 'Push SDK লোড হয়নি — ইন্টারনেট চেক করে আবার চেষ্টা করুন', en: 'Push SDK failed to load — check internet and retry' },
+    errToken: { bn: 'Device token তৈরি হয়নি — Home Screen থেকে খোলা থাকলেও আবার চেষ্টা করুন', en: 'Device token failed — open from Home Screen and retry' },
+    errRegister: { bn: 'সার্ভারে register ব্যর্থ — আবার চেষ্টা করুন', en: 'Server registration failed — try again' },
+    lastErrLabel: { bn: 'সর্বশেষ সমস্যা', en: 'Last error' }
   };
   const sheetT = key => {
     let lang = 'bn';
@@ -351,8 +356,15 @@
         <div style="font-size:12.5px;margin-top:4px;color:var(--green);font-weight:600">✓ ${sheetT('on')}</div></div>
         <button class="btn ghost sm" style="flex:0 0 auto" data-sheet-fcm-btn onclick="NotificationHub.fcmSheetToggle()">${sheetT('disable')}</button></div>`;
     }
+    const last = (() => {
+      try {
+        const e = window.AhFcm && window.AhFcm.lastErr ? window.AhFcm.lastErr() : null;
+        return e && e.code ? `${sheetT('lastErrLabel')}: ${e.code}` : '';
+      } catch (_) { return ''; }
+    })();
     return `<div style="${pad}"><div style="font-size:14px;font-weight:700">${sheetT('pushTitle')}</div>
       <div style="font-size:13px;margin-top:6px;line-height:1.55">${sheetT('pushBody')}</div>
+      ${last ? `<div style="font-size:11.5px;margin-top:6px;color:var(--red);font-family:ui-monospace,monospace">${last}</div>` : ''}
       <button class="btn sm" style="margin-top:12px" data-sheet-fcm-btn onclick="NotificationHub.fcmSheetToggle()">${sheetT('enable')}</button></div>`;
   };
   const openSheet = async () => {
@@ -404,7 +416,11 @@
         const r = await window.AhFcm.enable();
         if (r === 'granted') toastShort(sheetT('onDone'));
         else if (r === 'denied' || r === 'unsupported') toastShort(sheetT('needPermission'));
-        else toastShort(sheetT('retry'));
+        else if (r === 'config-failed') toastShort(sheetT('errConfig'));
+        else if (r === 'sdk-failed') toastShort(sheetT('errSdk'));
+        else if (r === 'token-failed') toastShort(sheetT('errToken'));
+        else if (String(r).startsWith('register-')) toastShort(sheetT('errRegister') + ' (' + r + ')');
+        else toastShort(sheetT('retry') + ' (' + r + ')');
       }
     } catch (_) { toastShort(sheetT('retry')); }
     if (rerender) rerender();

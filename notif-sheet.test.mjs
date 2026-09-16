@@ -80,8 +80,8 @@ test('inbox: full-screen page, All/Unread tabs, back to dashboard, dual language
 test('router: #notifications route + script tag + SW pin', () => {
   assert.match(INDEX, /p==='notifications' && window\.renderNotificationsInbox/);
   assert.match(INDEX, /notification-inbox\.js\?v=notif-inbox-v2/);
-  assert.match(INDEX, /notification-hub\.js\?v=notify-v114/);
-  assert.match(INDEX, /notification-fcm\.js\?v=fcm-p1-v2/);
+  assert.match(INDEX, /notification-hub\.js\?v=notify-v115/);
+  assert.match(INDEX, /notification-fcm\.js\?v=fcm-p1-v3/);
   assert.match(INDEX, /profile-ui\.js\?v=profile-v15-nonotif/);
   assert.match(SW, /notification-inbox\.js\?v=notif-inbox-v2/);
   assert.match(SW, /dashboard-v2\.js\?v=dash2f15-inbox/);
@@ -103,6 +103,18 @@ test('iOS fix: permission ask runs before any network await (hub + fcm)', () => 
 test('profile: Notifications row removed from Preferences (owner: সরিয়ে নাও)', () => {
   assert.ok(!PROFILE.includes("row('🔔', 'Notifications'"), 'no Notifications row in profile');
   assert.ok(!PROFILE.includes('pref-notifications') || !/row\('🔔'/.test(PROFILE), 'no row with pref-notifications role');
+});
+
+test('enable() failures are specific, not a vague "try again" (2026-09-17)', () => {
+  assert.match(FCM, /setErr\('config-failed'\); return 'config-failed'/);
+  assert.match(FCM, /setErr\('sdk-failed'\); return 'sdk-failed'/);
+  assert.match(FCM, /setErr\('token-failed'\); return 'token-failed'/);
+  assert.match(FCM, /setErr\('register-' \+ out\.status\)/);
+  assert.match(FCM, /_state: stateGet, _config: getConfig, lastErr/, 'lastErr exported for UI');
+  assert.match(HUB, /r === 'config-failed'\) toastShort\(sheetT\('errConfig'\)\)/);
+  assert.match(HUB, /r === 'sdk-failed'\) toastShort\(sheetT\('errSdk'\)\)/);
+  assert.match(HUB, /String\(r\)\.startsWith\('register-'\)/);
+  assert.ok(HUB.includes("bn: 'সর্বশেষ সমস্যা'") && HUB.includes("en: 'Last error'"), 'sheet shows last error code');
 });
 
 test('iOS Home-Screen guidance (Apple: Push API only in installed PWA)', () => {
