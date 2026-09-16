@@ -123,11 +123,11 @@ advanced-mode Pages worker that proxies `/api/*` and gates asset serving.
 the FCM + Cloudflare smart notification system (Foundation → Global
 topics → Personalized → Events/Automation/Analytics → AI/Scale/Hardening).
 Owner decisions: NO Vercel — backend = Cloudflare Worker + D1 `PROFILE_DB`;
-Telegram stays backup. **Phase 1 was released by the owner (2026-09-16)
-and its code is committed (`21392e2`, gate 659/0) but NOT deployed** —
-deploy waits on the owner's Firebase setup + a Cloudflare API token.
-Do NOT start Phase 2 work before Phase 1 is deployed and the owner
-confirmed its completion. Phases are gated: a phase is done only when its
+Telegram stays backup. **Phase 1 is DEPLOYED to production (Pages 70220493,
+admission-gk 1406fb48)** and awaiting the owner's on-device confirmation
+(enable FCM push → receive test notification).
+Do NOT start Phase 2 work before the owner confirms Phase 1 works on a
+real device. Phases are gated: a phase is done only when its
 Output is verified on production, tests are added and green, the full gate
 passes, and the
 owner confirms — only then may the next phase begin. It extends (never

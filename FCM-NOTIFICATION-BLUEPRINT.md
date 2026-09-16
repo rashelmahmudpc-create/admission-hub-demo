@@ -1,9 +1,19 @@
 # FCM + Cloudflare Smart Notification System — 5-Phase Blueprint
 
-**Status: Phase 1 IN PROGRESS** (released by owner 2026-09-16, "Ok start").
-This document is the single source of truth for all agents. Work proceeds
-strictly phase-by-phase: a phase is complete only when its Output/acceptance
-criteria are met on production, then the next phase starts.
+**Status: Phase 1 DEPLOYED to production (2026-09-16 ~16:50 UTC).**
+Awaiting the owner's on-device confirmation (enable FCM push → receive a
+test notification). This document is the single source of truth for all
+agents. Work proceeds strictly phase-by-phase: a phase is complete only
+when its Output/acceptance criteria are met on production, then the next
+phase starts.
+
+Production coordinates:
+- Pages: deployment **70220493** (admissionhub, branch main)
+- Worker: `admission-gk` version `1406fb48-2c83-49c0-8072-610224790292`
+- Verified live: `/api/notifications/config` → `fcmConfigured:true` +
+  webConfig; `/api/notifications/status` (no cookie) → `auth-required`;
+  `/internal/notifications/health` → `{fcmConfigured, d1, authAuthority,
+  kv} all true`.
 
 Phase 1 implementation notes (as built):
 - Backend = new module `fcm-notification.mjs` inside the `admission-gk`
@@ -23,10 +33,7 @@ Phase 1 implementation notes (as built):
   as the backup channel.
 - **Build status (2026-09-16):** all Phase 1 code committed (`21392e2`),
   gate **659/0** (incl. 12 new FCM contract tests), `node --check` clean on
-  every touched file, bundle deterministic. Production deploy DEFERRED:
-  the session environment had no Cloudflare API token (repo convention:
-  defer rather than guess). Dist is staged. Deploy = 2 wrangler commands
-  once a token + the Firebase secrets are available.
+  every touched file, bundle deterministic.
 - **Firebase credentials VERIFIED (2026-09-16):** project
   `admission-hub-fcm` (sender 298090335130). Service-account JWT → OAuth
   token → FCM `messages:send` all confirmed live from the sandbox.
@@ -36,9 +43,8 @@ Phase 1 implementation notes (as built):
   `jwt-bearer` is rejected) — the worker uses the URN, covered by test.
   No custom VAPID key configured — FCM's default web-push VAPID applies
   (the web config the owner provided has no vapidKey field).
-- Pending owner action: a Cloudflare API token (cfat_…) in the session
-  environment, then the staged deploy runs (6 secrets + worker + Pages +
-  verification).
+- Owner on-device check: open the app → notification settings → enable
+  FCM push → receive the test notification (grants Phase 1 completion).
 - Pending owner action: Firebase project enablements + service-account
   key → worker secrets (FIREBASE_PROJECT_ID / FIREBASE_CLIENT_EMAIL /
   FIREBASE_PRIVATE_KEY + public web config vars). Until then the system
