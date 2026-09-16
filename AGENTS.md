@@ -117,6 +117,17 @@ advanced-mode Pages worker that proxies `/api/*` and gates asset serving.
   empty and the populated data states: the two branches render different
   sentences, and a state-blind audit misses half of them.
 
+## FCM notification system (LOCKED blueprint — not started)
+
+`FCM-NOTIFICATION-BLUEPRINT.md` is the owner-locked 5-phase blueprint for the
+FCM + Vercel smart notification system (Foundation → Global topics →
+Personalized → Events/Automation/Analytics → AI/Scale/Hardening). Owner
+instruction: do NOT start implementation until a phase is explicitly
+released. Phases are gated: a phase is done only when its Output is verified
+on production, tests are added and green, the full gate passes, and the
+owner confirms — only then may the next phase begin. It extends (never
+replaces) the existing Telegram channel + `NotificationHub` in-app system.
+
 ## Deployment access
 
 - `wrangler pages deploy dist --project-name admissionhub --branch main` with
