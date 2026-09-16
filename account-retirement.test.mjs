@@ -107,10 +107,10 @@ await test('content hydration is public and account-independent',
   !/AHAuth|ahPubToken|authHeaders|Authorization/.test(CLOUD));
 
 await test('service-worker build and HTML registration are synchronized',
-  SW.includes("const BUILD_ID = 'v270-uni-tap-theme-goal-20260915'") &&
-  H.includes("const expectedSwVersion = 'v270-uni-tap-theme-goal-20260915'") &&
-  H.includes('sw.js?v=v270-uni-tap-theme-goal-20260915') &&
-  H.includes('admission-hub-shell-v270-uni-tap-theme-goal-20260915'));
+  SW.includes("const BUILD_ID = 'v271-lang-dashboard-memory-20260916'") &&
+  H.includes("const expectedSwVersion = 'v271-lang-dashboard-memory-20260916'") &&
+  H.includes('sw.js?v=v271-lang-dashboard-memory-20260916') &&
+  H.includes('admission-hub-shell-v271-lang-dashboard-memory-20260916'));
 await test('service-worker shell cannot cache retired assets', retiredMarkers.every(marker => !SW.includes(marker)));
 await test('premium account and institution assets use synchronized cache-busting versions',
   ['account-access.css?v=20260916-account-entry-v6', 'account-access.js?v=20260916-account-entry-v6', 'institutions-bd.js?v=bd-institutions-v2']
@@ -122,8 +122,8 @@ await test('premium Auth UI/server contract and curated-manual institution polic
   AUTH_HANDLER.includes("version: 'premium-onboarding-v1'") &&
   INSTITUTIONS.includes("coverage: 'curated-starter-index'") && INSTITUTIONS.includes("mode: 'manual'"));
 await test('main-app AI client is versioned in the public shell while prior shells are still purged',
-  SW.includes('ai-agent-chat.js?v=agent-f1-ui-chatv17-clean') &&
-  H.includes('ai-agent-chat.js?v=agent-f1-ui-chatv17-clean') &&
+  SW.includes('ai-agent-chat.js?v=agent-f1-ui-chatv18-fresh') &&
+  H.includes('ai-agent-chat.js?v=agent-f1-ui-chatv18-fresh') &&
   H.includes("name.startsWith('admission-hub-shell-')") && SW.includes('.filter(key => key !== CACHE_NAME)'));
 
 const forbiddenWorkerRoutes = retiredRoutes.filter(route => !route.startsWith('/api/admin/'));

@@ -823,7 +823,7 @@ textarea{min-height:96px}
 <div id="toast" class="toast"></div>
 <div id="modalRoot"></div>
 <script defer src="./institutions-bd.js?v=bd-institutions-v2"></script>
-<script defer src="./language-engine.js?v=lang-v2-coverage"></script>
+<script defer src="./language-engine.js?v=lang-v3-dashboard"></script>
 <script defer src="./account-access.js?v=20260916-account-entry-v6"></script>
 <script>
 (function installAdmissionSafety(){
@@ -4943,15 +4943,15 @@ window.__admissionBootPromise.catch(error => console.error('[Admission Hub] boot
     // Do not reload on controllerchange: iOS standalone clients can enter a blank-screen reload loop.
     // The updated worker takes control now; the current document remains usable and the next launch uses the new shell.
     try{
-      const expectedSwVersion = 'v270-uni-tap-theme-goal-20260915';
+      const expectedSwVersion = 'v271-lang-dashboard-memory-20260916';
       // register() on the same scope performs an in-place update. Never unregister
       // the active iOS worker first: that discards the instant offline shell.
-      const registration=await navigator.serviceWorker.register('./sw.js?v=v270-uni-tap-theme-goal-20260915',{scope:'./',updateViaCache:'none'});
+      const registration=await navigator.serviceWorker.register('./sw.js?v=v271-lang-dashboard-memory-20260916',{scope:'./',updateViaCache:'none'});
       await registration.update().catch(()=>{});
       // Purge every old app-shell cache (any build id ≠ current). This guarantees
       // stale pre-retirement application shells can never be served from cache again.
       try {
-        const cur = 'admission-hub-shell-v270-uni-tap-theme-goal-20260915';
+        const cur = 'admission-hub-shell-v271-lang-dashboard-memory-20260916';
         const names = await caches.keys();
         for (const name of names) {
           if (name.startsWith('admission-hub-shell-') && name !== cur) await caches.delete(name).catch(()=>{});
@@ -5088,7 +5088,7 @@ window.__admissionBootPromise.catch(error => console.error('[Admission Hub] boot
 <script defer src="./dashboard-v2.js?v=dash2f13-theme"></script>
 <script defer src="./academic-catalog.js?v=acad-cat-v2"></script>
 <script defer src="./profile-ui.js?v=profile-v14-tap"></script>
-<script defer src="./ai-agent-chat.js?v=agent-f1-ui-chatv17-clean"></script>
+<script defer src="./ai-agent-chat.js?v=agent-f1-ui-chatv18-fresh"></script>
 <script defer src="qbank-redesign.js?v=practice15"></script>
 <script defer src="urgent-fix.js?v=practice13"></script>
 <script defer src="phase12-ui.js?v=nav-resume-router-v11-main-ai"></script>

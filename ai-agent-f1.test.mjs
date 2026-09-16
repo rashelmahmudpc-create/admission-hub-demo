@@ -302,5 +302,48 @@ t('৩৯. SystemPrompt: STUDENT PREFERENCES block — lang/tone/len directive',
     && [...store2.keys()].some(k => k.startsWith('airl:uid_pref_off:')));
 }
 
+{
+  // A fresh conversation ("New Chat") sends a single message. The server used
+  // to treat any thread shorter than 3 messages as a continuation and prepend
+  // the stored chatmem — so "হাই" was answered with whatever topic the user had
+  // talked about days ago. The client now marks the first message of a fresh
+  // thread so the server can skip memory for it.
+  await new Promise((r) => setTimeout(r, 100));
+  const { env, store } = stubEnv();
+  const stale = JSON.stringify([
+    { role: 'user', content: 'VOICE CHANGE এর নিয়ম বলো' },
+    { role: 'assistant', content: 'Voice change এর নিয়ম হলো…' }
+  ]);
+  store.set('chatmem:uid_fresh', stale);
+  let captured = '';
+  const restore = fakeFetch({ 'streamGenerateContent': (url, init) => { captured = String(init.body || ''); return sseRes(gChunk('হ্যালো! কীভাবে সাহায্য করি?')); } });
+  const r = await A.agentChat(new Request('https://x/api/ai/chat', { method: 'POST', body: JSON.stringify({
+    messages: [{ role: 'user', content: 'হাই' }], fresh: true
+  }) }), env, 'uid_fresh');
+  restore();
+  const body = await r.text();
+  const sent = JSON.parse(captured);
+  const sentText = JSON.stringify(sent.contents || sent.messages || '');
+  t('৪২. agentChat: fresh-thread greeting never inherits stale chatmem',
+    r.status === 200 && body.includes('হ্যালো')
+    && !sentText.includes('VOICE CHANGE') && !sentText.includes('Voice change'));
+  t('৪৩. agentChat: the internal fresh-marker is stripped before the provider call',
+    !sentText.includes('fresh'));
+
+  // A genuine continuation keeps working: without the fresh flag, a short
+  // thread still receives the stored memory.
+  const { env: env3, store: store3 } = stubEnv();
+  store3.set('chatmem:uid_follow', JSON.stringify([{ role: 'user', content: 'দ্বিঘাত সমীকরণ শেখাও' }]));
+  let captured3 = '';
+  const restore3 = fakeFetch({ 'streamGenerateContent': (url, init) => { captured3 = String(init.body || ''); return sseRes(gChunk('ঠিক আছে')); } });
+  const r3 = await A.agentChat(new Request('https://x/api/ai/chat', { method: 'POST', body: JSON.stringify({
+    messages: [{ role: 'user', content: 'আরেকটা উদাহরণ দাও' }]
+  }) }), env3, 'uid_follow');
+  restore3();
+  await r3.text();
+  t('৪৪. agentChat: a continuation without the fresh flag still receives stored memory',
+    JSON.stringify(JSON.parse(captured3).contents).includes('দ্বিঘাত সমীকরণ'));
+}
+
 console.log(`\n🤖 AGENT-CORE-F1: ${pass} pass / ${fail} fail`);
 process.exit(fail ? 1 : 0);

@@ -1546,8 +1546,14 @@
     return hist.slice(-MAX_HISTORY);
   }
   async function callStream(userText, image) {
-    const hist = history().concat([{ role: 'user', content: userText, ...(image ? { image } : {}) }]);
-    const payload = { messages: hist, context: { stats: localStats(), examMode: null } };
+    const prior = history();
+    const hist = prior.concat([{ role: 'user', content: userText, ...(image ? { image } : {}) }]);
+    /* No prior turns means this is the opening message of a brand-new thread
+       ("New Chat", or the first message after a reload with an empty session).
+       Flag it so the server does not answer it from the stored cross-session
+       memory — that is what made "হাই" reply with an old, unrelated topic. */
+    const fresh = prior.length === 0;
+    const payload = { messages: hist, fresh, context: { stats: localStats(), examMode: null } };
     const ctrl = new AbortController();
     activeReq = ctrl;
     const r = await fetch('/api/ai/chat', {

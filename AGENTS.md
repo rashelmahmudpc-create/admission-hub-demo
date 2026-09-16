@@ -98,6 +98,14 @@ advanced-mode Pages worker that proxies `/api/*` and gates asset serving.
   - A runtime test that seeds English *before* boot cannot see a picker that
     fails to store the choice. `language-coverage-runtime.test.mjs` boots in
     Bengali and drives the real `<select>` for this reason; keep it that way.
+- `Intl.DateTimeFormat('bn', {weekday:'short'})` renders `বুধ`, `বৃহস্পতি` — short
+  forms that are *not* the dictionary's `বুধবার`/`বৃহস্পতিবার`, so the dashboard
+  weekly dots stayed Bengali even though the table looked complete. Match the
+  exact form the formatter emits, not the word you expect it to.
+- The dashboard builds most of its copy around a live count (`🎯 আজ আর 58টি প্রশ্ন
+  বাকি`), so `DICT` can never hold those — they belong in `RULES`. Audit both the
+  empty and the populated data states: the two branches render different
+  sentences, and a state-blind audit misses half of them.
 
 ## Deployment access
 

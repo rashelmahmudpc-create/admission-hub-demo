@@ -77,7 +77,7 @@ export function validateChatReq(body) {
     msgs.push({ role, content: content.trim(), image });
   }
   if (total > 20000) return { ok: false, code: 'context_too_long', message: 'বার্তার মোট আকার খুব বড়।' };
-  return { ok: true, messages: msgs };
+  return { ok: true, messages: msgs, fresh: body.fresh === true };
 }
 
 const ONBOARDING_ACTIONS = new Set([
@@ -460,8 +460,14 @@ export async function agentChat(request, env, uid, opts = {}) {
       mem = Array.isArray(parsedMem) ? parsedMem : [];
     } catch (_) { mem = []; }
   }
+  /* A short thread is normally a continuation, so stored memory gets prepended.
+     But "New Chat" opens an empty thread and its first message is short too —
+     it matched that branch, so a greeting was answered with whatever topic the
+     user had discussed days earlier. The client flags the first message of a
+     fresh thread and that flag suppresses memory entirely. */
+  const freshThread = v.fresh === true;
   let msgs = v.messages.slice();
-  if (msgs.length < 3 && mem.length) msgs = mem.concat(msgs);
+  if (!freshThread && msgs.length < 3 && mem.length) msgs = mem.concat(msgs);
   if (msgs.length > 16) {
     const summary = summarizeTo(msgs);
     if (memoryOn) await putKv(env.PUB_KV, 'chatmemsum:' + sendCtx.uid, summary);
@@ -470,7 +476,9 @@ export async function agentChat(request, env, uid, opts = {}) {
   msgs = msgs.slice(-24);
 
   const systemPrompt = buildSystemPrompt({ stats, examMode, quiz: quizMode, onboarding, prefs: aiPrefs });
-  let summaryText = memoryOn ? await getKv(env.PUB_KV, 'chatmemsum:' + sendCtx.uid) : '';
+  /* The rolling summary carries older topics too, so it is suppressed with
+     memory — otherwise the stale subject leaks back through the system prompt. */
+  let summaryText = memoryOn && !freshThread ? await getKv(env.PUB_KV, 'chatmemsum:' + sendCtx.uid) : '';
   const sys = summaryText ? systemPrompt + '\n\n' + String(summaryText) : systemPrompt;
 
   const hasImage = msgs.some(m => m.image);

@@ -18,6 +18,7 @@ const ENGINE = read('language-engine.js');
 const UI = read('profile-ui.js');
 const AUTH = read('account-access.js');
 const INSTITUTIONS = read('institutions-bd.js');
+const DASHBOARD = read('dashboard-v2.js');
 
 /* The global AhI18n engine is an inline <script> in index.html. Lift the exact
    block rather than re-implementing it: the welcome picker calls `AhI18n.set`,
@@ -194,4 +195,83 @@ test('merely opening the account shell does not overwrite the stored language', 
   assert.equal(window.localStorage.getItem('ahLang'), 'en', 'boot reset a stored English choice back to Bengali');
   const picker = window.document.querySelector('[data-role="welcome-language"]');
   if (picker) assert.equal(picker.value, 'en', 'the picker did not reflect the stored language');
+});
+
+
+/* Dashboard v2 builds its markup from live counters, so several sentences are a
+   fixed frame around a number. Those can never match a dictionary key and were
+   slipping through as Bengali in English mode. Both data states are booted:
+   the empty-state branch and the populated one render different copy. */
+function bootDashboard(cache, language = 'en') {
+  const dom = new JSDOM('<!doctype html><html lang="bn"><body><main id="app"></main></body></html>', {
+    url: 'https://admissionhub.pages.dev/#dashboard',
+    runScripts: 'dangerously',
+    pretendToBeVisual: true
+  });
+  const { window } = dom;
+  window.localStorage.setItem('ahLang', language);
+  window.open = () => ({ closed: false });
+  window.CACHE = cache;
+  window.toast = () => {};
+  window.navigate = () => {};
+  window.topicName = (t) => t;
+  window.openModal = () => {};
+  window.closeModal = () => {};
+  window.Router = { path: 'dashboard' };
+  window.eval(I18N);
+  window.eval(ENGINE);
+  window.eval(DASHBOARD);
+  window.renderDashboard();
+  return window;
+}
+
+const EMPTY_CACHE = { dailyStats: [], examResults: [], exams: [], subjects: [], settings: {}, activityLogs: [] };
+
+const populatedCache = () => {
+  const ago = (o) => Date.now() - o * 86400000;
+  return {
+    dailyStats: [
+      { date: ago(0), questions: 42, correct: 30, wrong: 12, time: 90000 },
+      { date: ago(1), questions: 88, correct: 70, wrong: 18 },
+      { date: ago(5), questions: 60, correct: 45, wrong: 15 }
+    ],
+    examResults: [
+      { id: 'e1', status: 'done', topics: ['সন্ধি'], total: 20, correct: 8, wrong: 12, date: ago(1) }
+    ],
+    exams: [{ id: 'run', status: 'running' }],
+    subjects: [{ id: 's1', name: 'বাংলা', icon: '📘' }],
+    settings: {
+      dailyTarget: 100,
+      dailyGoal: { university: 'RU', unit: 'A', examDate: new Date(ago(-91)).toISOString().slice(0, 10) }
+    },
+    activityLogs: [], planDays: [], plans: []
+  };
+};
+
+test('the dashboard shows no Bengali in English mode (empty account)', async () => {
+  const window = bootDashboard(EMPTY_CACHE);
+  await sleep(120);
+  assert.deepEqual(untranslated(window), [], 'these strings stayed Bengali on an empty dashboard');
+});
+
+test('the dashboard shows no Bengali in English mode (active account)', async () => {
+  const window = bootDashboard(populatedCache());
+  await sleep(120);
+  assert.deepEqual(untranslated(window), [], 'these strings stayed Bengali on a populated dashboard');
+});
+
+test('switching the dashboard back to Bengali restores the original wording', async () => {
+  const window = bootDashboard(populatedCache(), 'bn');
+  await sleep(120);
+  const app = window.document.getElementById('app');
+  const bengali = app.textContent.replace(/\s+/g, ' ').trim();
+
+  window.localStorage.setItem('ahLang', 'en');
+  window.AhLanguage.apply(app);
+  assert.equal(BENGALI.test(app.textContent), false, 'Bengali survived the switch to English');
+
+  window.localStorage.setItem('ahLang', 'bn');
+  window.AhLanguage.apply(app);
+  assert.equal(app.textContent.replace(/\s+/g, ' ').trim(), bengali,
+    'the original Bengali wording was not restored byte-for-byte');
 });

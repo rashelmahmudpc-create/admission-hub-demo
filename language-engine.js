@@ -637,6 +637,15 @@
     'বৃহস্পতিবার': 'Thursday',
     'শুক্রবার': 'Friday',
     'শনিবার': 'Saturday',
+    /* Dashboard weekly dots and the header date use Intl.DateTimeFormat('bn',
+       {weekday:'short'}), which yields «বুধ», «বৃহস্পতি» — different words from
+       the full names above, so they need their own entries. */
+    'রবি': 'Sun', 'সোম': 'Mon', 'মঙ্গল': 'Tue', 'বুধ': 'Wed',
+    'বৃহস্পতি': 'Thu', 'শুক্র': 'Fri', 'শনি': 'Sat',
+    'নোটিফিকেশন': 'Notifications',
+    'সাপ্তাহিক অগ্রগতি': 'Weekly progress',
+    'পরীক্ষা-দিন পর্যন্ত (সেট করা তারিখ অনুযায়ী)': 'Until the exam day (based on the date you set)',
+    'এখনো আজকের কোনো ডেটা নেই — একটি মক-টেস্ট দিয়ে শুরু করো, তারপর এখানে তোমার দুর্বলতা ও অগ্রগতির বাস্তব-বিশ্লেষণ দেখাবে।': 'No data for today yet — start with a mock test and your real weakness and progress analysis will appear here.',
     'জানুয়ারি': 'January',
     'ফেব্রুয়ারি': 'February',
     'মার্চ': 'March',
@@ -754,6 +763,48 @@
     {
       re: /^([0-9০-৯]+)\/([0-9০-৯]+) সম্পূর্ণ — নিচের যেটা বাকি, সেটায় চাপ দিলেই সরাসরি সেই ঘরে চলে যাবে।$/,
       en: (m) => `${toEnDigits(m[1])}/${toEnDigits(m[2])} complete — tap what is left below to jump straight there.`
+    },
+    /* Dashboard v2 copy: each of these is a fixed sentence wrapped around a
+       number the student earned or typed, so no table key can ever match it. */
+    {
+      re: /^🎯 আজ আর ([0-9০-৯][0-9০-৯,]*)টি প্রশ্ন বাকি — চালিয়ে যাও!$/,
+      en: (m) => `🎯 ${toEnDigits(m[1])} more questions today — keep going!`
+    },
+    {
+      re: /^🔥 মাত্র ([0-9০-৯][0-9০-৯,]*) দিন = 10 Day Badge$/,
+      en: (m) => `🔥 Only ${toEnDigits(m[1])} days to the 10-Day Badge`
+    },
+    {
+      re: /^গত ৭ দিনে মোট ([0-9০-৯][0-9০-৯,]*)টি প্রশ্ন সমাধান হয়েছে \(সত্যিকারের সংরক্ষিত ডেটা\)।$/,
+      en: (m) => `${toEnDigits(m[1])} questions answered in the last 7 days (real saved data).`
+    },
+    {
+      re: /^সাপ্তাহিক-লক্ষ্য-অনুযায়ী প্রস্তুতি \(গত ৭ দিন\) — লক্ষ্য: প্রতি-সপ্তাহে ([0-9০-৯][0-9০-৯,]*) প্রশ্ন$/,
+      en: (m) => `Weekly-goal progress (last 7 days) — target: ${toEnDigits(m[1])} questions per week`
+    },
+    {
+      re: /^📈 আজকের সঠিকতা ([0-9০-৯][0-9০-৯,]*%|—) · পরীক্ষা-সংখ্যা ([0-9০-৯][0-9০-৯,]*)$/,
+      en: (m) => `📈 Today's accuracy ${m[1] === '—' ? '—' : toEnDigits(m[1])} · Exams ${toEnDigits(m[2])}`
+    },
+    {
+      /* The long header date, e.g. «বুধবার, ১৬ সেপ্টেম্বর, ২০২৬». The weekday and
+         month are looked up in the same dictionary the rest of this file uses,
+         so the two never drift apart. */
+      re: /^([\u0980-\u09FF]+), ([0-9০-৯]+)\s+([\u0980-\u09FF]+), ([0-9০-৯]+)$/,
+      en: (m) => `${NORM_DICT[norm(m[1])] || m[1]}, ${toEnDigits(m[2])} ${NORM_DICT[norm(m[3])] || m[3]}, ${toEnDigits(m[4])}`
+    },
+    {
+      /* Study-insight sentence: a count, an accuracy, one of two follow-ups and
+         an optional streak clause. The weakest-topic name is the student's own
+         content, so it is carried through unchanged rather than translated. */
+      re: /^আজ ([0-9০-৯][0-9০-৯,]*)টি প্রশ্ন করেছ — (?:সঠিকতা ([0-9০-৯][0-9০-৯,]*)%|কোনো উত্তরের স্কোর-রেকর্ড নেই)। (?:(?:তোমার দুর্বলতম টপিক: "(.+?)" \(([0-9০-৯][0-9০-৯,]*)% সঠিক\) — আজ এটা রিভিশন করো।)|(?:এখনো যথেষ্ট টপিক-ডেটা নেই — আরো পরীক্ষা দিলে দুর্বলতা-রাডার ভরাট হবে।))(?: 🔥 ([0-9০-৯][0-9০-৯,]*) দিনের ধারাবাহিকতা চমৎকার!)?$/,
+      en: (m) => {
+        const head = `Today you answered ${toEnDigits(m[1])} questions — ${m[2] ? 'accuracy ' + toEnDigits(m[2]) + '%' : 'no scored answers yet'}.`;
+        const body = m[3]
+          ? ` Your weakest topic: “${m[3]}” (${toEnDigits(m[4])}% correct) — revise it today.`
+          : ' Not enough topic data yet — take more exams and your weakness radar fills in.';
+        return head + body + (m[5] ? ` 🔥 ${toEnDigits(m[5])} days in a row — excellent!` : '');
+      }
     }
   ];
 

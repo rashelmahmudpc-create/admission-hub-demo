@@ -54,7 +54,7 @@ function validateChatReq(body) {
     msgs.push({ role, content: content.trim(), image });
   }
   if (total > 2e4) return { ok: false, code: "context_too_long", message: "বার্তার মোট আকার খুব বড়।" };
-  return { ok: true, messages: msgs };
+  return { ok: true, messages: msgs, fresh: body.fresh === true };
 }
 var ONBOARDING_ACTIONS = /* @__PURE__ */ new Set([
   "focus-name",
@@ -435,8 +435,9 @@ async function agentChat(request, env, uid, opts = {}) {
       mem = [];
     }
   }
+  const freshThread = v.fresh === true;
   let msgs = v.messages.slice();
-  if (msgs.length < 3 && mem.length) msgs = mem.concat(msgs);
+  if (!freshThread && msgs.length < 3 && mem.length) msgs = mem.concat(msgs);
   if (msgs.length > 16) {
     const summary = summarizeTo(msgs);
     if (memoryOn) await putKv(env.PUB_KV, "chatmemsum:" + sendCtx.uid, summary);
@@ -444,7 +445,7 @@ async function agentChat(request, env, uid, opts = {}) {
   }
   msgs = msgs.slice(-24);
   const systemPrompt = buildSystemPrompt({ stats, examMode, quiz: quizMode, onboarding, prefs: aiPrefs });
-  let summaryText = memoryOn ? await getKv(env.PUB_KV, "chatmemsum:" + sendCtx.uid) : "";
+  let summaryText = memoryOn && !freshThread ? await getKv(env.PUB_KV, "chatmemsum:" + sendCtx.uid) : "";
   const sys = summaryText ? systemPrompt + "\n\n" + String(summaryText) : systemPrompt;
   const hasImage = msgs.some((m) => m.image);
   const partsOf = (m) => {

@@ -1,5 +1,5 @@
 const CACHE_PREFIX = 'admission-hub-shell-';
-const BUILD_ID = 'v270-uni-tap-theme-goal-20260915';
+const BUILD_ID = 'v271-lang-dashboard-memory-20260916';
 const CACHE_NAME = `${CACHE_PREFIX}${BUILD_ID}`;
 const VERSION_HEADER = 'X-Admission-Hub-Build';
 const DOCUMENT_NETWORK_TIMEOUT_MS = 2500;
@@ -21,14 +21,14 @@ const APP_SHELL = [
   './session-persist.js?v=session-v2',
   './account-access.css?v=20260916-account-entry-v6',
   './institutions-bd.js?v=bd-institutions-v2',
-  './language-engine.js?v=lang-v2-coverage',
+  './language-engine.js?v=lang-v3-dashboard',
   './account-access.js?v=20260916-account-entry-v6',
   './academic-catalog.js?v=acad-cat-v2',
   './profile-ui.js?v=profile-v14-tap',
   './profile-ui.css?v=profile-v14-tap',
   './data-protection.js?v=dp-v3-fastboot',
   './dashboard-v2.js?v=dash2f13-theme',
-  './ai-agent-chat.js?v=agent-f1-ui-chatv17-clean',
+  './ai-agent-chat.js?v=agent-f1-ui-chatv18-fresh',
   './icons/icon-192.png',
   './icons/icon-512.png'
 ];
@@ -37,7 +37,7 @@ const APP_SHELL = [
 // A truncated/corrupt download is NEVER written to the shell cache.
 const ASSET_DIGESTS = {
 /* sw-manifest:start */
-  "./index.html": "72ebbff518f51ccd54fd22d3d8acaa46aec031f656e6f71ecb65ee2e613b76f5",
+  "./index.html": "103e722812a346b07245722ccd9fde431cbba6fa5be2d198ce421f3a6ac62136",
   "./manifest.json": "11a85ae594fc629b11605daeda3f9afe4ef95215a55a29f9cc423314bfb275a4",
   "./manifest.webmanifest": "5be476009a140eabd088bd972bd4d345b9c4f4a055cd6e4f08774b9cb4afaf52",
   "./dashboard-v2.css?v=dash2f13-theme": "4f4c9295b487b8186fd45c006a96a43bcaf896a1a5b871f506a05874a8e00c99",
@@ -45,14 +45,14 @@ const ASSET_DIGESTS = {
   "./session-persist.js?v=session-v2": "99f3d1f49f6d5714fd25f1c12b2aa978ca97a009d6caba9a690a0442d082593c",
   "./account-access.css?v=20260916-account-entry-v6": "c28dd7c2adc90cfb80ad61998172a68905f2a4d28dc8ac704d5f493b3d5028cd",
   "./institutions-bd.js?v=bd-institutions-v2": "602c5549515e8207ad152b948ca9b8fe3ad0fbe429afb56380e4e21b662f779d",
-  "./language-engine.js?v=lang-v2-coverage": "c115954050aebd66849b5ab703b1266db7aaa220fe1d75bbc700eeecab934bb9",
+  "./language-engine.js?v=lang-v3-dashboard": "c991b812440083f1671f0f4a0bc3b13602b4d5c8ce73dccf3f0774201e1b5c24",
   "./account-access.js?v=20260916-account-entry-v6": "7aa958904d97c800ac823183e5d1f383f45cf90a296a0e7b97f42637c3700048",
   "./academic-catalog.js?v=acad-cat-v2": "75e7b80663d41330658c948ad1d4829d49f5c9abed581350582cfeace06d5b32",
   "./profile-ui.js?v=profile-v14-tap": "c0b0a7d5cebfb07601c0d16095a64e6e72c2912c060840d5b6fd0dd9348889b5",
   "./profile-ui.css?v=profile-v14-tap": "4332520cd9c584787eaba055a32b46e52cb132f00122207c74ffb42594e909aa",
   "./data-protection.js?v=dp-v3-fastboot": "359dc907ade4bcb3a6a722385969ebb6af47f7e436e6cdf2cce0dd6b7343723d",
   "./dashboard-v2.js?v=dash2f13-theme": "fe480f999c5d19c380752c8ceed5603dc9a31be2c5cf254cd45e23e233fb45f4",
-  "./ai-agent-chat.js?v=agent-f1-ui-chatv17-clean": "9c177d878cbd0cdb7b74617f545cb41ce790041c492c7cbb2368230c277de544",
+  "./ai-agent-chat.js?v=agent-f1-ui-chatv18-fresh": "36a11f8d5dec5a5bf1b8fa86db06b9a34e01ad27c931f37aadbffe6e6f4930e5",
   "./icons/icon-192.png": "777ce5566fbeff0f2e384c787c8dde4f47d7c869e455c6e577a503decd4f1683",
   "./icons/icon-512.png": "86459109582f82b1d891a3e5a82723fefd21a3c65e9d0d22ab4dae33bb540520",
 /* sw-manifest:end */
