@@ -29,8 +29,8 @@ const APP_SHELL = [
   './data-protection.js?v=dp-v3-fastboot',
   './dashboard-v2.js?v=dash2f15-inbox',
   './ai-agent-chat.js?v=agent-f1-ui-chatv18-fresh',
-  './notification-fcm.js?v=fcm-p1-v4',
-  './notification-inbox.js?v=notif-inbox-v2',
+  './notification-fcm.js?v=fcm-p1-v5',
+  './notification-inbox.js?v=notif-inbox-v3',
   './icons/icon-192.png',
   './icons/icon-512.png'
 ];
@@ -39,7 +39,7 @@ const APP_SHELL = [
 // A truncated/corrupt download is NEVER written to the shell cache.
 const ASSET_DIGESTS = {
 /* sw-manifest:start */
-  "./index.html": "789f2f30944fd5daeda3c88725d228c5bdfafa99013f44654de235bb242417c9",
+  "./index.html": "8c74d7968b1687a4ada2513e992d4e2b3642162b2b3ddb3a6d1204eccc6df373",
   "./manifest.json": "11a85ae594fc629b11605daeda3f9afe4ef95215a55a29f9cc423314bfb275a4",
   "./manifest.webmanifest": "5be476009a140eabd088bd972bd4d345b9c4f4a055cd6e4f08774b9cb4afaf52",
   "./dashboard-v2.css?v=dash2f13-theme": "4f4c9295b487b8186fd45c006a96a43bcaf896a1a5b871f506a05874a8e00c99",
@@ -55,8 +55,8 @@ const ASSET_DIGESTS = {
   "./data-protection.js?v=dp-v3-fastboot": "359dc907ade4bcb3a6a722385969ebb6af47f7e436e6cdf2cce0dd6b7343723d",
   "./dashboard-v2.js?v=dash2f15-inbox": "bea4ccad52b85c482d3fef5a7f2b2eec54dcdb125597a22411c4839b81783a49",
   "./ai-agent-chat.js?v=agent-f1-ui-chatv18-fresh": "36a11f8d5dec5a5bf1b8fa86db06b9a34e01ad27c931f37aadbffe6e6f4930e5",
-  "./notification-fcm.js?v=fcm-p1-v4": "17eb696b358601cc694cc73b90571ee1b3f822e05368ec23a07d56e2b347c71c",
-  "./notification-inbox.js?v=notif-inbox-v2": "f83383f9144fc149655899e659bc395800e6e16a9e8ee85d0b8822c67968e717",
+  "./notification-fcm.js?v=fcm-p1-v5": "4d911a84285305dfbf2426e88796c037e790c268f449d9f48105efe0344f1aae",
+  "./notification-inbox.js?v=notif-inbox-v3": "1dcfe40d859bda7b781e2c680f8c22e9fb8b64fd488a6c504c8c4cd10ff54756",
   "./icons/icon-192.png": "777ce5566fbeff0f2e384c787c8dde4f47d7c869e455c6e577a503decd4f1683",
   "./icons/icon-512.png": "86459109582f82b1d891a3e5a82723fefd21a3c65e9d0d22ab4dae33bb540520",
 /* sw-manifest:end */

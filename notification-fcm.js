@@ -133,6 +133,17 @@
     return out;
   };
 
+  /* Self-service test push to the user's OWN devices — no admin token
+   * (owner: টোকেনের ঝামেলা চাই না). Server rate-limits 3/hour. */
+  const selfTest = async () => {
+    const out = await boundedFetch('/self-test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    });
+    return out;
+  };
+
   /* User taps Enable → browser permission → FCM token → register on server.
    * Returns: 'granted' | 'denied' | 'unsupported' | 'not-configured' | 'error' */
   /* Returns: 'granted' | 'denied' | 'unsupported' | 'config-failed' |
@@ -333,6 +344,6 @@
   window.AhFcm = {
     status, enable, disable, refresh: refreshIfEnabled,
     settingsRow, devPanel,
-    _state: stateGet, _config: getConfig, lastErr
+    _state: stateGet, _config: getConfig, lastErr, selfTest
   };
 })();

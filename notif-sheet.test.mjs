@@ -47,6 +47,7 @@ test('sheet options are minimal (categories/quiet-hours/cap not in the sheet)', 
 /* ── Round 2 (owner directive 2026-09-17): full-screen inbox + one-time prompt + iOS fix ── */
 
 const INBOX = readFileSync('notification-inbox.js', 'utf8');
+const WORKER_SRC = readFileSync('fcm-notification.mjs', 'utf8');
 const PROFILE = readFileSync('profile-ui.js', 'utf8');
 const INDEX = readFileSync('index.html', 'utf8');
 const SW = readFileSync('sw.js', 'utf8');
@@ -79,11 +80,11 @@ test('inbox: full-screen page, All/Unread tabs, back to dashboard, dual language
 
 test('router: #notifications route + script tag + SW pin', () => {
   assert.match(INDEX, /p==='notifications' && window\.renderNotificationsInbox/);
-  assert.match(INDEX, /notification-inbox\.js\?v=notif-inbox-v2/);
-  assert.match(INDEX, /notification-hub\.js\?v=notify-v116/);
-  assert.match(INDEX, /notification-fcm\.js\?v=fcm-p1-v4/);
+  assert.match(INDEX, /notification-inbox\.js\?v=notif-inbox-v3/);
+  assert.match(INDEX, /notification-hub\.js\?v=notify-v117/);
+  assert.match(INDEX, /notification-fcm\.js\?v=fcm-p1-v5/);
   assert.match(INDEX, /profile-ui\.js\?v=profile-v15-nonotif/);
-  assert.match(SW, /notification-inbox\.js\?v=notif-inbox-v2/);
+  assert.match(SW, /notification-inbox\.js\?v=notif-inbox-v3/);
   assert.match(SW, /dashboard-v2\.js\?v=dash2f15-inbox/);
 });
 
@@ -115,6 +116,18 @@ test('enable() failures are specific, not a vague "try again" (2026-09-17)', () 
   assert.match(HUB, /r === 'sdk-failed'\) toastShort\(sheetT\('errSdk'\)\)/);
   assert.match(HUB, /String\(r\)\.startsWith\('register-'\)/);
   assert.ok(HUB.includes("bn: 'সর্বশেষ সমস্যা'") && HUB.includes("en: 'Last error'"), 'sheet shows last error code');
+});
+
+test('self-service test push: no admin token, user-facing button (owner: ঝামেলা না)', () => {
+  assert.match(FCM, /const selfTest = async/, 'AhFcm.selfTest client');
+  assert.match(FCM, /_state: stateGet, _config: getConfig, lastErr, selfTest/);
+  assert.match(HUB, /const sendSelfTest = async/);
+  assert.match(HUB, /NotificationHub\.sendSelfTest\(\)/, 'sheet test button');
+  assert.match(INBOX, /__nifTest\(\)/, 'inbox test button');
+  assert.match(INBOX, /nif-statusbar/, 'registered status bar in inbox');
+  assert.ok(HUB.includes("bn: 'টেস্ট push পাঠানো হয়েছে ✓'") && HUB.includes("en: 'Test push sent ✓'"), 'result toast dual language');
+  assert.match(WORKER_SRC, /'\/api\/notifications\/self-test'/, 'worker endpoint');
+  assert.match(WORKER_SRC, /FCM_WELCOME_PUSH !== 'off'/, 'welcome push on registration');
 });
 
 test('Firebase SDK self-hosted (Cloudflare stack) with gstatic fallback', () => {

@@ -318,7 +318,12 @@
     errRegister: { bn: 'সার্ভারে register ব্যর্থ — আবার চেষ্টা করুন', en: 'Server registration failed — try again' },
     errRate: { bn: 'বেশিবার চেষ্টা হয়েছে — ১ ঘণ্টা পর আবার চেষ্টা করুন', en: 'Too many attempts — please try again in an hour' },
     errLogin: { bn: 'Login session সমস্যা — আবার login করে চেষ্টা করুন', en: 'Login session issue — log in again, then retry' },
-    lastErrLabel: { bn: 'সর্বশেষ সমস্যা', en: 'Last error' }
+    lastErrLabel: { bn: 'সর্বশেষ সমস্যা', en: 'Last error' },
+    testPush: { bn: 'টেস্ট push', en: 'Test push' },
+    testSent: { bn: 'টেস্ট push পাঠানো হয়েছে ✓', en: 'Test push sent ✓' },
+    testRate: { bn: 'বেশিবার পাঠানো হয়েছে — ১ ঘণ্টা পর আবার চেষ্টা করুন', en: 'Too many tests — try again in an hour' },
+    testNoDevice: { bn: 'কোনো device নেই — আগে Turn on করুন', en: 'No device registered — turn on push first' },
+    testFailed: { bn: 'টেস্ট পাঠানো যায়নি — আবার চেষ্টা করুন', en: 'Test could not be sent — try again' }
   };
   const sheetT = key => {
     let lang = 'bn';
@@ -353,10 +358,12 @@
         <div style="font-size:12.5px;margin-top:6px;opacity:.7;line-height:1.5">${sheetT('notSupported')}</div></div>`;
     }
     if (s.registered) {
-      return `<div style="${pad}display:flex;align-items:center;justify-content:space-between;gap:10px">
+      return `<div style="${pad}display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
         <div><div style="font-size:14px;font-weight:700">${sheetT('pushTitle')}</div>
-        <div style="font-size:12.5px;margin-top:4px;color:var(--green);font-weight:600">✓ ${sheetT('on')}</div></div>
-        <button class="btn ghost sm" style="flex:0 0 auto" data-sheet-fcm-btn onclick="NotificationHub.fcmSheetToggle()">${sheetT('disable')}</button></div>`;
+        <div style="font-size:12.5px;margin-top:4px;color:var(--green);font-weight:600">✓ ${sheetT('on')}${s.devices ? ` · ${s.devices} device` : ''}</div></div>
+        <div style="display:flex;gap:8px;flex:0 0 auto">
+          <button class="btn ghost sm" onclick="NotificationHub.sendSelfTest()">${sheetT('testPush')}</button>
+          <button class="btn ghost sm" style="flex:0 0 auto" data-sheet-fcm-btn onclick="NotificationHub.fcmSheetToggle()">${sheetT('disable')}</button></div></div>`;
     }
     const last = (() => {
       try {
@@ -442,6 +449,18 @@
       document.querySelectorAll('[data-sheet-fcm-btn]').forEach(b => { b.disabled = true; b.textContent = busy; });
     } catch (_) {}
     await doPushToggle(openSheet);
+  };
+  /* Self-service test push — no admin token, only the user's own devices
+   * (server-side, rate-limited 3/hour). */
+  const sendSelfTest = async () => {
+    try {
+      if (!window.AhFcm || !window.AhFcm.selfTest) { toastShort(sheetT('testFailed')); return; }
+      const out = await window.AhFcm.selfTest();
+      if (out.ok && out.data && out.data.total > 0) toastShort(`${sheetT('testSent')} (${out.data.sent}/${out.data.total})`);
+      else if (out.status === 429) toastShort(sheetT('testRate'));
+      else if (out.status === 404) toastShort(sheetT('testNoDevice'));
+      else toastShort(sheetT('testFailed'));
+    } catch (_) { toastShort(sheetT('testFailed')); }
   };
   /* Inbox push banner toggle — same gesture-safe core, re-renders the inbox. */
   const inboxPushToggle = async () => {
@@ -533,7 +552,7 @@
   if (typeof document !== 'undefined') boot();
 
   window.NotificationHub = {
-    dashboardHtml, hydrateDashboard, mountDashboardCard, openCenter, openSettings, openSheet, fcmSheetToggle, toggleMasterSheet, markAllRead, markOneRead, bellTap, inboxPushToggle, maybeResubscribe,
+    dashboardHtml, hydrateDashboard, mountDashboardCard, openCenter, openSettings, openSheet, fcmSheetToggle, toggleMasterSheet, markAllRead, markOneRead, bellTap, inboxPushToggle, sendSelfTest, maybeResubscribe,
     promptEnable, dismissPrompt, enablePush, disablePush, testNow,
     toggleMaster, toggleCat, setQuiet, setCap, saveEndpoint,
     evaluate, syncState,
