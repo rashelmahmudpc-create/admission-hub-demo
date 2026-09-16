@@ -35,7 +35,8 @@
     'নিরাপদ ও সহজেই account-এ প্রবেশ করো।': 'Sign in safely and easily.',
     'নিরাপদ ও সহজে account-এ প্রবেশ করো।': 'Sign in safely and easily.',
     'ভাষা বেছে নাও': 'Choose language',
-    'বাংলা': 'বাংলা',
+    'বাংলা': 'Bangla',
+    'ভাষা বেছে নাও': 'Choose language',
     'আপনার লক্ষ্য, আপনার অধিকার': 'Your goal, your right',
     'আপনার লক্ষ্যের পথে,': 'On the way to your goal,',
     'প্রথম ধাপটা আজ থেকেই।': 'take the first step today.',
@@ -81,6 +82,8 @@
     'একটি সংখ্যা': 'One number',
     'আগে থেকেই account আছে?': 'Already have an account?',
     'Account তৈরির পরে Email অথবা Telegram—একটি বাস্তব verification method বেছে নেবে। তার আগে কিছু পাঠানো হবে না।': 'After signup you will choose a real verification method — email or Telegram. Nothing is sent before that.',
+    'Sign Up-এর পর Email অথবা Telegram—একটি method বেছে নেবে। বেছে নেওয়ার আগে কিছু পাঠানো হবে না।': 'After signing up you will choose one method — email or Telegram. Nothing is sent before you pick.',
+    'Sign Up-এর পর Email verification link পাঠানো হবে। Link-এ click করলেই verification সম্পন্ন হবে।': 'After signing up we will send an email verification link. One click on it completes verification.',
     'তোমার account তৈরি হয়েছে — প্রোফাইলের তথ্যও সংরক্ষিত।': 'Your account is created — your profile details are saved too.',
     'তোমার প্রোফাইল': 'Your profile',
     'এই তথ্যই তোমার admission profile': 'This is your admission profile',
@@ -276,7 +279,245 @@
     'অন্য subject (manual)': 'Another subject (manual)',
     'ছোট করো': 'Zoom out',
     'বড় করো': 'Zoom in',
-    'Public profile লোড হচ্ছে': 'Loading public profile'
+    'Public profile লোড হচ্ছে': 'Loading public profile',
+    '👦 ছেলেদের': '👦 Boys',
+    '👧 মেয়েদের': '👧 Girls',
+    'অফলাইন — পরিবর্তনগুলো PENDING_SYNC-এ রাখা হয়েছে; নেট ফিরলে নিজেই save হবে।': 'Offline — changes are kept as PENDING_SYNC and save themselves when the network returns.',
+    'অপেক্ষা করুন…': 'Please wait…',
+    'নতুন Email পাঠানো হয়নি। নিচের resend option দিয়ে সত্যিকারের link চাইতে পারো।': 'No new email was sent right now. Use the resend option below to request a real link.',
+    'Telegram তোমার Telegram account-এর নিয়ন্ত্রণ নিশ্চিত করেছে; Email মালিকানা দাবি করা হয়নি।': 'Telegram has confirmed control of your Telegram account; no email ownership is claimed.',
+    'অ্যাকাউন্ট খুলুন': 'Open account',
+    'যাচাইয়ের ইমেইল আবার পাঠান': 'Resend verification email',
+    'প্রয়োজনে এখন আবার পাঠাতে পারেন।': 'You can resend it now if needed.',
+    'নিরাপদ Telegram সংযোগ তৈরি হচ্ছে…': 'Setting up a secure Telegram connection…',
+    'Telegram-এ কোড পাঠানো হয়েছে। সর্বশেষ ৬ সংখ্যার কোডটি লিখুন।': 'A code was sent to Telegram. Enter the latest 6-digit code.',
+    'Bot-এ START চাপুন, তারপর পাওয়া কোডটি এখানে লিখুন।': 'Tap START in the bot, then enter the code you receive.',
+    'কোডটি নিরাপদভাবে যাচাই হচ্ছে…': 'Verifying the code securely…',
+    'কোডটি সঠিক নয়—Telegram-এর সর্বশেষ ৬ সংখ্যার কোড লিখুন।': 'That code is not correct — enter the latest 6-digit Telegram code.',
+    'এই কোডের সময় শেষ। নিচে “নতুন কোড নিন” চাপুন।': 'This code has expired. Tap “Get a new code” below.',
+    'অনেকবার ভুল কোড দেওয়া হয়েছে। নিরাপত্তার জন্য সাময়িকভাবে বন্ধ আছে।': 'Too many wrong codes. This is paused for your security.',
+    'এই Telegram accountটি অন্য Admission Hub account-এর সঙ্গে আগে থেকেই যুক্ত।': 'This Telegram account is already linked to another Admission Hub account.',
+    'Telegram যাচাই এখন সাময়িকভাবে পাওয়া যাচ্ছে না। ইমেইল ব্যবহার করুন।': 'Telegram verification is temporarily unavailable. Use email.',
+    'Telegram account যাচাই সফল হয়েছে।': 'Telegram account verified successfully.',
+    'নতুন কোড নিন': 'Get a new code',
+    'Official Telegram Bot খুলুন': 'Open the official Telegram bot',
+    'এই ডিভাইসে দ্রুত প্রবেশ চালু করতে পারেন। Passkey বাধ্যতামূলক নয়।': 'You can turn on quick sign-in for this device. A passkey is optional.',
+    'সরান': 'Remove',
+    'নিরাপত্তার তথ্য': 'Security',
+    'Admission Hub-এর নতুন সংস্করণ এসেছে—পেজটি একবার refresh করে আবার চেষ্টা করো।': 'A new version of Admission Hub is out — refresh the page once and try again.',
+    'Email বা Password সঠিক নয়। আবার দেখে লিখো।': 'Email or password is incorrect. Check it and try again.',
+    'এই Email-এ account আছে—Log In করো।': 'An account already exists for this email — log in.',
+    'Account verification এখনো শেষ হয়নি।': 'Account verification is not finished yet.',
+    'কমপক্ষে ৮ অক্ষরের একটু শক্তিশালী Password দাও।': 'Use a slightly stronger password of at least 8 characters.',
+    'অনেকবার চেষ্টা হয়েছে—একটু অপেক্ষা করে আবার চেষ্টা করো।': 'Too many attempts — wait a moment and try again.',
+    'Verification এখন শুরু করা যাচ্ছে না। কিছু পাঠানো হয়নি—একটু পরে আবার চেষ্টা করো।': 'Verification cannot start right now. Nothing was sent — try again shortly.',
+    'Telegram verification এখন পাওয়া যাচ্ছে না—Email ব্যবহার করো।': 'Telegram verification is unavailable — use email.',
+    'নিরাপদ প্রবেশের সময় শেষ হয়েছে—আবার Log In করো।': 'Your secure sign-in expired — log in again.',
+    'এই device-এ Passkey এখন পাওয়া যাচ্ছে না—অন্য পথ ব্যবহার করো।': 'A passkey is not available on this device — use another method.',
+    'এই পরিচয়টি অন্য account-এর সঙ্গে যুক্ত। নিরাপত্তার জন্য প্রবেশ বন্ধ রাখা হয়েছে।': 'This identity is linked to another account. Sign-in is blocked for security.',
+    'কোডটি সঠিক নয়—আবার লিখে দেখো।': 'That code is not correct — try typing it again.',
+    'Verificationটি সঠিক নয় বা সময় শেষ—আবার চেষ্টা করো।': 'The verification is wrong or expired — try again.',
+    'ইন্টারনেট সংযোগ পাওয়া যাচ্ছে না—সংযোগ ঠিক হলে আবার চেষ্টা করো।': 'No internet connection — try again once you are back online.',
+    'সাময়িক সমস্যা হয়েছে—একটু পরে আবার চেষ্টা করো।': 'Something went wrong temporarily — try again shortly.',
+    'বিশ্ববিদ্যালয়': 'University',
+    'স্কুল': 'School',
+    'কলেজ': 'College',
+    'স্কুল ও কলেজ': 'School & college',
+    'নিজের লেখা ব্যবহার করুন': 'Use your own text',
+    'আরও কিছু অক্ষর দাও': 'Add a few more characters',
+    'শুরু হয়েছে': 'Started',
+    'মোটামুটি': 'Fair',
+    'ভালো': 'Good',
+    'শক্তিশালী': 'Strong',
+    'খুব শক্তিশালী': 'Very strong',
+    'কমপক্ষে ৮ অক্ষর ব্যবহার করো': 'Use at least 8 characters',
+    '✓ দুইটি Password মিলেছে': '✓ Passwords match',
+    'Password দুইটি মিলছে না': 'Passwords do not match',
+    'তোমার School-এর নাম লিখো।': 'Type your school name.',
+    'Suggestion থেকে School বেছে নাও, অথবা নিজের লেখা ব্যবহার করো।': 'Pick a school from the suggestions, or use your own text.',
+    'Suggestion থেকে College/University বেছে নাও, অথবা নিজের লেখা ব্যবহার করো।': 'Pick a college/university from the suggestions, or use your own text.',
+    'সঠিক Email address লিখো।': 'Enter a valid email address.',
+    'কমপক্ষে ৮ অক্ষরের Password দাও।': 'Use a password of at least 8 characters.',
+    'Password-এ অন্তত একটি বড় English অক্ষর দাও।': 'Include at least one uppercase English letter.',
+    'Password-এ অন্তত একটি সংখ্যা দাও।': 'Include at least one number.',
+    'Password দুইটি মিলছে না।': 'Passwords do not match.',
+    '• Profile details পরে সম্পূর্ণ করা যাবে': '• Profile details can be completed later',
+    'এখন পড়ছ না': 'Not studying right now',
+    'পেছনে যান': 'Go back',
+    'তোমার Email-এ': 'To your email',
+    'তোমার Telegram account-এর নিয়ন্ত্রণ নিশ্চিত হয়েছে। এটি Email মালিকানার দাবি নয়।': 'Control of your Telegram account is confirmed. This is not a claim of email ownership.',
+    'তোমার Email এবং Admission Hub account নিরাপদভাবে যাচাই হয়েছে।': 'Your email and Admission Hub account were verified securely.',
+    'তোমার Admission Hub account নিরাপদভাবে যাচাই হয়েছে।': 'Your Admission Hub account was verified securely.',
+    'যাচাইকৃত account': 'Verified account',
+    'যাচাইকৃত Email': 'Verified email',
+    'তোমার একই account নিরাপদে সক্রিয় আছে।': 'Your same account is safely active.',
+    'Official Telegram bot-এ START চাপুন, তারপর পাওয়া ৬ সংখ্যার কোড লিখুন।': 'Tap START in the official Telegram bot, then enter the 6-digit code you receive.',
+    'Official Telegram bot-এ START চাপুন, তারপর পাওয়া ৬ সংখ্যার code নিচে লিখুন।': 'Tap START in the official Telegram bot, then enter the 6-digit code below.',
+    'Official Telegram bot খুলে START চাপুন, তারপর পাওয়া ৬ সংখ্যার কোড লিখুন।': 'Open the official Telegram bot, tap START, then enter the 6-digit code.',
+    'তোমার verification-এ ৬ সংখ্যার code পাঠানো হয়েছে—কোডটি নিচে লিখুন।': 'A 6-digit code was sent for your verification — enter it below.',
+    'নিরাপদ যাচাই কোডটি লিখুন।': 'Enter the secure verification code.',
+    'Telegram কোড যাচাই করুন': 'Verify Telegram code',
+    'যাচাই করুন': 'Verify',
+    'সেবাটি সময়মতো সাড়া দেয়নি—আবার চেষ্টা করুন।': 'The service did not respond in time — try again.',
+    'ইন্টারনেট সংযোগ পাওয়া যাচ্ছে না।': 'No internet connection.',
+    'Admission Hub অনুরোধটি শেষ করতে পারেনি।': 'Admission Hub could not finish the request.',
+    'Session যাচাই চলছে—একটু অপেক্ষা করো…': 'Checking your session — one moment…',
+    'যাচাইকৃত অ্যাকাউন্ট সক্রিয়': 'Verified account active',
+    'সক্রিয়': 'Active',
+    'Passkey অনুরোধটি বাতিল বা সময় শেষ হয়েছে—চাইলে আবার চেষ্টা করো।': 'The passkey request was cancelled or timed out — try again if you like.',
+    'এই browser বা ঠিকানায় Passkey নিরাপদভাবে ব্যবহার করা যাচ্ছে না।': 'A passkey cannot be used safely on this browser or address.',
+    'এই Passkeyটি আগে থেকেই যুক্ত আছে।': 'This passkey is already added.',
+    'এই browser বা ডিভাইসে Passkey পাওয়া যাচ্ছে না।': 'No passkey is available on this browser or device.',
+    'Passkey দিয়ে তোমার একই account-এ প্রবেশ হয়েছে।': 'You signed in to the same account with a passkey.',
+    'এই browser বা ডিভাইসে Passkey যোগ করা যাচ্ছে না।': 'A passkey cannot be added on this browser or device.',
+    'Passkey নিরাপদভাবে যুক্ত হয়েছে।': 'Passkey added securely.',
+    'Passkey যোগ করা যায়নি।': 'Could not add the passkey.',
+    'Passkey সরানো হয়েছে। অন্য লগইন পদ্ধতি চালু থাকবে।': 'Passkey removed. Other sign-in methods still work.',
+    'Google সাইন-ইন সম্পন্ন হয়নি—ইমেইল দিয়ে চেষ্টা করুন।': 'Google sign-in did not complete — try with email.',
+    'Google দিয়ে তোমার একই account-এ প্রবেশ হয়েছে।': 'You signed in to the same account with Google.',
+    'Google popup এই browser-এ খোলা যায়নি—Passkey বা Email ব্যবহার করো।': 'The Google popup could not open in this browser — use a passkey or email.',
+    'Google popup এখন পাওয়া যাচ্ছে না—ইমেইল লগইন ব্যবহার করুন।': 'The Google popup is unavailable — use email login.',
+    'Google অনুমতি পাওয়া যায়নি।': 'Google permission was not granted.',
+    'Google popup বন্ধ বা block হয়েছে—আবার চেষ্টা করুন।': 'The Google popup was closed or blocked — try again.',
+    'Google অনুমতির সময় শেষ হয়েছে—আবার চেষ্টা করুন।': 'Google permission timed out — try again.',
+    'Google popup খোলা যায়নি—browser popup অনুমতি দিন।': 'The Google popup could not open — allow popups in your browser.',
+    'Google বা Passkey দিয়ে দ্রুত প্রবেশ করো। চাইলে Email ও Password-ও ব্যবহার করতে পারো।': 'Sign in fast with Google or a passkey. You can also use email and password.',
+    'Google দিয়ে দ্রুত প্রবেশ করো। চাইলে Email ও Password-ও ব্যবহার করতে পারো।': 'Sign in fast with Google. You can also use email and password.',
+    'Email ও Password দিয়ে নিরাপদে প্রবেশ করো।': 'Sign in securely with email and password.',
+    'Google দিয়ে প্রবেশ এখন পাওয়া যাচ্ছে না': 'Google sign-in is unavailable right now',
+    'সব device থেকে লগ আউট হয়ে গেছে।': 'Logged out of all devices.',
+    'অন্য tab থেকে লগ আউট হয়েছে।': 'Logged out from another tab.',
+    'code-এর সময় শেষ হয়ে গেছে—বাতিল করে আবার চেষ্টা করুন।': 'The code expired — cancel and try again.',
+    'গুরুত্বপূর্ণ কাজটি নিশ্চিত করতে একটি fresh verification পাঠানো হচ্ছে…': 'Sending a fresh verification to confirm this important action…',
+    'টি active session)। এখানে পুনরায় লগইন করতে হবে।': 'active sessions). You need to log in again here.',
+    'সেশনটি আগে থেকেই শেষ হয়ে গেছে।': 'The session had already ended.',
+    'এই device trusted হয়েছে—৩০ দিনের মধ্যে extra verification লাগবে না।': 'This device is now trusted — no extra verification for 30 days.',
+    'Account service এখন প্রস্তুত নয়—Guest হিসেবে Dashboard ব্যবহার করতে পারো।': 'The account service is not ready yet — you can use the dashboard as a guest.',
+    'কাজটি শেষ হতে একটু সময় দাও।': 'Give it a moment to finish.',
+    'Real account শুধু admissionhub.pages.dev সাইটে খোলা যায়।': 'Real accounts can only be created on admissionhub.pages.dev.',
+    'Email verification নিশ্চিত হয়েছে।': 'Email verification confirmed.',
+    'Verification এখনো শেষ হয়নি। Email-এর link খুলে ফিরে এসে আবার Check করো।': 'Verification is not finished. Open the email link, come back and tap Check again.',
+    'Inbox নতুন tab-এ খোলা যায়নি—তোমার Email app খুলে verification link দেখো।': 'The inbox could not open in a new tab — open your email app to find the verification link.',
+    'Telegram যাচাই এখন পাওয়া যাচ্ছে না।': 'Telegram verification is unavailable right now.',
+    'যাচাই কোড পাঠানো হয়েছে।': 'Verification code sent.',
+    'Password লুকান': 'Hide password',
+    'এই Email-এ অ্যাকাউন্ট থাকলে reset link পাঠানোর অনুরোধ নেওয়া হয়েছে। কিছুক্ষণ পর Inbox, Spam ও Promotions দেখো।': 'If an account exists for this email, a reset link has been requested. Check Inbox, Spam and Promotions shortly.',
+    'Passkey এখন যোগ করা হয়নি—অন্য Log In পথগুলো চালু আছে।': 'No passkey added yet — the other login methods still work.',
+    'Account তৈরি হয়ে থাকতে পারে, কিন্তু কোনো verification message পাঠানো হয়নি। একটু পরে এই Email দিয়ে Log In করে method বেছে নাও।': 'The account may exist, but no verification message was sent. Log in with this email shortly and choose a method.',
+    'সঠিক ইমেইল ঠিকানা লিখুন।': 'Enter a valid email address.',
+    'পাসওয়ার্ডটি সঠিকভাবে লিখুন।': 'Enter the password correctly.',
+    'যাচাইকৃত অ্যাকাউন্টে লগইন হয়েছে।': 'Signed in to a verified account.',
+    'এই অ্যাকাউন্টটি এখনো যাচাইকৃত নয়। Gmail/ইমেইল অথবা Telegram—একটি পদ্ধতি বেছে নিন।': 'This account is not verified yet. Choose one method — Gmail/email or Telegram.',
+    'অ্যাকাউন্ট যাচাই সম্পন্ন হয়নি।': 'Account verification was not completed.',
+    'Account verification বাকি। এই মুহূর্তে নতুন Email পাঠানো হয়নি—resend option ব্যবহার করতে পারো।': 'Verification is pending. No new email was sent right now — you can use the resend option.',
+    'আগের অ্যাকাউন্টের ইমেইল ও পাসওয়ার্ড লিখুন।': 'Enter the email and password of your existing account.',
+    'Google আগের account-এ নিরাপদে যুক্ত হয়েছে।': 'Google was linked securely to your existing account.',
+    'অন্য যাচাই পদ্ধতি বেছে নিতে পারেন।': 'You can choose another verification method.',
+    'Email link দিয়েও একই account verify করতে পারো।': 'You can also verify the same account with the email link.',
+    'Telegram-এর ৬ সংখ্যার কোড লিখুন।': 'Enter the 6-digit Telegram code.',
+    'Telegram account verification সফল। তোমার Admission Hub account সক্রিয় হয়েছে।': 'Telegram account verification succeeded. Your Admission Hub account is active.',
+    'নতুন একবারের Telegram লিংক তৈরি হয়েছে। Bot খুলে START চাপুন।': 'A new one-time Telegram link is ready. Open the bot and tap START.',
+    'ইমেইল ও পাসওয়ার্ড সঠিকভাবে লিখুন।': 'Enter the email and password correctly.',
+    'ইমেইল ইতিমধ্যে যাচাইকৃত—এখন লগইন করুন।': 'The email is already verified — log in now.',
+    'নতুন verification Email পাঠানো হয়েছে।': 'A new verification email was sent.',
+    '(প্রয়োজন)': '(required)',
+    '(ঐচ্ছিক)': '(optional)',
+    'আন্তর্জাতিক ফরম্যাটে মোবাইল নম্বর লিখুন।': 'Enter the mobile number in international format.',
+    'মোবাইল নম্বর +8801XXXXXXXXX ফরম্যাটে লিখুন।': 'Enter the mobile number in +8801XXXXXXXXX format.',
+    '৬ সংখ্যার কোড লিখুন।': 'Enter the 6-digit code.',
+    '৬ সংখ্যার code লিখুন।': 'Enter the 6-digit code.',
+    'বিকল্প verification সফল হয়েছে। তোমার একই account চালু আছে।': 'Alternative verification succeeded. Your same account is active.',
+    'নিরাপদভাবে লগ আউট হয়েছে।': 'Logged out securely.',
+    'নিশ্চিত করো—সব device বন্ধ হবে': 'Confirm — all devices will be signed out',
+    'Password বদলানো শেষ করে থাকলে নতুন Password দিয়ে Log In করো।': 'Once you finish changing the password, log in with the new one.',
+    'Email-এর link খোলা হয়েছে। নিশ্চিত ফল দেখতে Check আবার চাপতে পারো।': 'The email link opened. Tap Check again to see the confirmed result.',
+    'এই কাজটি account-এর জন্য। Guest হিসেবেই পড়াশোনা চালাতে পারো, অথবা সুবিধাটি ব্যবহার করতে Sign Up/Log In করো।': 'This action needs an account. Keep studying as a guest, or sign up / log in to use it.',
+    'এই কাজের জন্য আগে Sign Up বা Log In করো।': 'Sign up or log in first for this action.',
+    'সমস্যা হয়েছে': 'Something went wrong',
+    'প্রথম mock test complete করুন': 'Complete your first mock test',
+    'মোট 100 MCQ complete করুন': 'Complete 100 MCQs in total',
+    'মোট 500 MCQ complete করুন': 'Complete 500 MCQs in total',
+    '7 দিনের practice streak বানান': 'Build a 7-day practice streak',
+    '5টা mistake master করুন': 'Master 5 mistakes',
+    'Admission Hub-এ জয়েন': 'Join Admission Hub',
+    'প্রথম practice/flash session': 'First practice / flash session',
+    'প্রথম mock test': 'First mock test',
+    'প্রথম achievement unlock': 'Unlock your first achievement',
+    'প্রায় সম্পূর্ণ ✦': 'Almost complete ✦',
+    'ভালো পথে': 'On track',
+    'শুরু হয়ে গেছে': 'Already started',
+    'নতুন যাত্রা': 'New journey',
+    'নাম যোগ করো': 'Add your name',
+    'জন্মের তারিখ দাও': 'Add your date of birth',
+    'মোবাইল নম্বর দাও': 'Add your mobile number',
+    'স্কুল/কলেজ লেখো': 'Add your school/college',
+    'উচ্চ শিক্ষা প্রতিষ্ঠান লেখো': 'Add your higher institution',
+    'Bio লেখো': 'Add a bio',
+    'লক্ষ্য (টার্গেট) যোগ করো': 'Add your target',
+    'Admission session বাছো': 'Choose your admission session',
+    'Preferred subjects বাছো': 'Choose preferred subjects',
+    'Academic goal লেখো': 'Add your academic goal',
+    'Profile সম্পূর্ণ — ধন্যবাদ।': 'Profile complete — thank you.',
+    'ট্যাপ করে কপি করো': 'Tap to copy',
+    'আগে থেকেই চলো': 'Welcome back',
+    'Session যোগ করো': 'Add a session',
+    'Set a goal — specific লক্ষ্য': 'Set a goal — be specific',
+    'কোন subject পছন্দ?': 'Which subjects do you like?',
+    'বাংলা+English': 'Bangla + English',
+    'বাংলা + English': 'Bangla + English',
+    'বাংলা (Bengali)': 'Bangla (Bengali)',
+    'তোমার public তথ্য অন্যরা দেখতে পাবে': 'Others can see your public information',
+    'Public নয় — কেউ দেখতে পাবে না': 'Not public — nobody can see it',
+    '✓ সব already saved': '✓ Everything is already saved',
+    'কোনো পরিবর্তন নেই।': 'No changes.',
+    'ডিফল্ট — সব পেজে প্রয়োগ হয়': 'Default — applies to every page',
+    'সব পেজে প্রয়োগ হয়': 'Applies to every page',
+    'ডিফল্ট থিম': 'Default theme',
+    'রাতের মোড': 'Night mode',
+    'Device-এর সাথে মানানসই': 'Matches your device',
+    'Save হয়েছে ✓ — পরের chat-এই প্রয়োগ হবে।': 'Saved ✓ — it applies to your next chat.',
+    'Save fail — আবার চেষ্টা করো।': 'Save failed — try again.',
+    'Save fail — আবার চেষ্টা করুন।': 'Save failed — try again.',
+    'কোনো public profile নেই — সব গোপন': 'No public profile — everything stays private',
+    'নাম, AH-ID আর ছবি public-এ (leaderboard-style)': 'Name, AH-ID and photo go public (leaderboard style)',
+    'নাম, ছবি, সব লক্ষ্য, session, goal, bio আর completion public-এ': 'Name, photo, all targets, sessions, goals, bio and completion go public',
+    'ছবিটা পড়া যায়নি — অন্য ছবি দিয়ে দেখুন।': 'The image could not be read — try another one.',
+    'টাইম আউট — ইন্টারনেট চেক করে আবার চেষ্টা করুন।': 'Timed out — check your internet and try again.',
+    'ছবিটা 2MB-এর বেশি — ছোট ছবি ব্যবহার করুন।': 'The image is over 2MB — use a smaller one.',
+    'Avatar সরানো হয়েছে — generated avatar ফিরেছে': 'Avatar removed — back to the generated avatar',
+    'Avatar সরাতে সমস্যা': 'Could not remove the avatar',
+    'File type support করে না — JPG/PNG দিন।': 'That file type is not supported — use JPG/PNG.',
+    'Preferences সেভ হয়েছে ✓': 'Preferences saved ✓',
+    'Default avatar সেভ হয়েছে ✓': 'Default avatar saved ✓',
+    'Notifications setting সেভ হয়েছে ✓': 'Notifications setting saved ✓',
+    'Language সেভ হয়েছে ✓': 'Language saved ✓',
+    'Appearance সেভ হয়েছে ✓': 'Appearance saved ✓',
+    'AH-ID কপি হয়েছে': 'AH-ID copied',
+    'Public লিংক কপি হয়েছে': 'Public link copied',
+    'কপি করা যায়নি — লিংকটি নিজে কপি করো:': 'Could not copy — copy the link yourself:',
+    'ইউনিভার্সিটির নাম দাও (কমপক্ষে ২ অক্ষর)।': 'Enter the university name (at least 2 characters).',
+    'নামটি বড় হয়ে গেছে।': 'That name is too long.',
+    'Unit সর্বোচ্চ ২০ অক্ষর।': 'Unit can be at most 20 characters.',
+    'এই target আগেই আছে।': 'That target is already added.',
+    'Subject-এর নাম দাও।': 'Enter the subject name.',
+    'Subject-এর নাম 40 অক্ষরের বেশি হতে পারে না।': 'Subject name cannot exceed 40 characters.',
+    'Subjectটা আগেই আছে।': 'That subject is already added.',
+    'Notification center এখনো ready নয়।': 'The notification center is not ready yet.',
+    'নাম কমপক্ষে ২ অক্ষরের হতে হবে।': 'The name must be at least 2 characters.',
+    'সঠিক মোবাইল নম্বর দাও (যেমন: +8801XXXXXXXXX)।': 'Enter a valid mobile number (e.g. +8801XXXXXXXXX).',
+    'Bio সর্বোচ্চ ২৮০ অক্ষর হতে পারে।': 'Bio can be at most 280 characters.',
+    'সঠিক তারিখ দাও।': 'Enter a valid date.',
+    'প্রতিষ্ঠানের নাম কমপক্ষে ২ অক্ষরের হতে হবে।': 'The institution name must be at least 2 characters.',
+    'কিছু না পরিবর্তন করলে সংরক্ষণ করা যাবে না।': 'Nothing can be saved if nothing changed.',
+    'সংরক্ষিত হয়েছে ✓': 'Saved ✓',
+    'এই সময়ে অন্য জায়গা থেকে পরিবর্তন হয়েছে — latest version load হচ্ছে…': 'Changed elsewhere at the same time — loading the latest version…',
+    'একটু দ্রুত বেশি — এক-দু সেকেন্ড পরে আবার চেষ্টা করো।': 'A bit too fast — try again in a second or two.',
+    'সংরক্ষণ করা যায়নি — আবার চেষ্টা করো।': 'Could not save — try again.',
+    'সব progress save হবে': 'All progress will be saved',
+    'Exam history সব device-এ': 'Exam history on every device',
+    'Leaderboard ও rewards': 'Leaderboard and rewards',
+    'AI তোমার জন্য personalized': 'AI personalized for you',
+    'Public Profile toggle': 'Public profile toggle',
   };
 
   /* Bengali digits, so numbers inside a translated string stay consistent. */
@@ -302,6 +543,68 @@
      Bengali restores the exact original text and attributes. */
   const original = new WeakMap();
 
+  /* A handful of strings carry a live count the user typed or earned, so no
+     fixed key can match them. These rules keep the sentence structure and
+     reuse the dictionary's own wording, which is why they live here rather
+     than as more table entries with hand-written duplicates. */
+  const RULES = [
+    {
+      re: /^আবার পাঠানো যাবে \(([0-9০-৯][0-9০-৯,]*)\s*সেকেন্ড\)$/,
+      en: (m) => `You can resend in (${m[1]} sec)`
+    },
+    {
+      re: /^নিরাপত্তার জন্য ([0-9০-৯][0-9০-৯,]*)\s*সেকেন্ড পর আবার পাঠাতে পারবেন।$/,
+      en: (m) => `For your security you can resend in ${m[1]} seconds.`
+    },
+    {
+      re: /^নতুন কোড \(([0-9০-৯][0-9০-৯,]*)\s*সেকেন্ড পর\)$/,
+      en: (m) => `New code (in ${m[1]} sec)`
+    },
+    {
+      re: /^([0-9০-৯][0-9০-৯,]*)টি Passkey যুক্ত আছে। Passkey কখনো বাধ্যতামূলক নয়।$/,
+      en: (m) => `${m[1]} passkeys are added. A passkey is never required.`
+    },
+    {
+      re: /^সব device থেকে লগ আউট হয়েছে \(([0-9০-৯][0-9০-৯,]*)টি active session\)। এখানে পুনরায় লগইন করতে হবে।$/,
+      en: (m) => `Logged out of all devices (${m[1]} active sessions). Log in again here.`
+    },
+    {
+      re: /^([0-9০-৯]+)\/([0-9০-৯]+) সম্পূর্ণ — নিচের যেটা বাকি, সেটায় চাপ দিলেই সরাসরি সেই ঘরে চলে যাবে।$/,
+      en: (m) => `${toEnDigits(m[1])}/${toEnDigits(m[2])} complete — tap what is left below to jump straight there.`
+    }
+  ];
+
+  /* Bengali letters and signs, but not the digits (U+09E6–U+09EF), so a run
+     that only carries numbers can be converted without translating words. */
+  const BN_LETTER = /[\u0980-\u09E5\u09F0-\u0A00]/;
+  const BN_MONTHS = {
+    'জানুয়ারি': 'January', 'ফেব্রুয়ারি': 'February', 'মার্চ': 'March', 'এপ্রিল': 'April',
+    'মে': 'May', 'জুন': 'June', 'জুলাই': 'July', 'আগস্ট': 'August', 'সেপ্টেম্বর': 'September',
+    'অক্টোবর': 'October', 'নভেম্বর': 'November', 'ডিসেম্বর': 'December',
+    'জানু': 'Jan', 'ফেব': 'Feb', 'এপ্রি': 'Apr', 'জুল': 'Jul', 'আগ': 'Aug',
+    'সেপ': 'Sep', 'অক্টো': 'Oct', 'নভে': 'Nov', 'ডিসে': 'Dec'
+  };
+
+  /* Rendered strings are often a sentence plus a value — "PROFILE COMPLETION ·
+     ভালো পথে", an achievement line, a year in Bengali digits. Translating each
+     segment on its own keeps the surrounding numbers and separators exactly as
+     the module built them. */
+  const translateSegment = (segment) => {
+    const hit = NORM_DICT[norm(segment)];
+    if (hit) return toEnDigits(hit);
+    const date = segment.match(/^([0-9০-৯]+)\s+([\u0980-\u09FF]+),?\s+([0-9০-৯]+)$/);
+    if (date && BN_MONTHS[date[2]]) {
+      return `${toEnDigits(date[1])} ${BN_MONTHS[date[2]]} ${toEnDigits(date[3])}`;
+    }
+    if (/[০-৯]/.test(segment) && !BN_LETTER.test(segment)) return toEnDigits(segment);
+    return null;
+  };
+
+  const applySegments = (text) => {
+    const joined = text.split(' · ').map((part) => translateSegment(part) ?? part).join(' · ');
+    return joined === text ? null : joined;
+  };
+
   const translate = (text) => {
     const direct = NORM_DICT[norm(text)];
     if (direct) return direct;
@@ -309,11 +612,56 @@
     if (!trimmed) return text;
     const hit = NORM_DICT[norm(trimmed)];
     if (hit) return text.replace(trimmed, toEnDigits(hit));
+    for (const rule of RULES) {
+      const m = trimmed.match(rule.re);
+      if (m) return text.replace(trimmed, toEnDigits(rule.en(m)));
+    }
+    const single = translateSegment(trimmed);
+    if (single != null) return text.replace(trimmed, single);
+    const segments = applySegments(trimmed);
+    if (segments != null) return text.replace(trimmed, segments);
     return null;
+  };
+
+  /* The engine both reads and writes node values, so it has to tell its own
+     output apart from a module's rewrite. `lastOut` holds what we wrote; when
+     the node no longer matches it, the module (a timer, a count-up, a toast)
+     has replaced the text and that new value is the source to translate —
+     without this, a live number would be pinned to the first value seen. */
+  const lastOut = new WeakMap();
+
+  const translateTextNode = (el, lang) => {
+    const cur = el.nodeValue;
+    const known = original.get(el);
+    let src = known;
+    if (known === undefined || (lastOut.has(el) && cur !== lastOut.get(el))) {
+      src = cur;
+      original.set(el, src);
+    }
+    if (lang === 'en') {
+      const out = translate(src);
+      if (out != null) {
+        if (cur !== out) el.nodeValue = out;
+        lastOut.set(el, out);
+      } else {
+        lastOut.set(el, cur);
+      }
+    } else if (cur !== src) {
+      el.nodeValue = src;
+      lastOut.set(el, src);
+    }
   };
 
   const walk = (root, lang) => {
     if (!root) return;
+    // A MutationObserver hands us the changed node itself, and for a live
+    // sentence that is a bare text node with no element root to walk.
+    if (root.nodeType === 3) {
+      if (root.parentElement && SKIP_TAGS.has(root.parentElement.tagName)) return;
+      translateTextNode(root, lang);
+      return;
+    }
+    if (root.nodeType === 4) return;
     const nodes = [];
     const push = (n) => nodes.push(n);
     if (root.nodeType === 1 || root.nodeType === 9 || root.nodeType === 11) {
@@ -326,14 +674,7 @@
       if (el.nodeType === 4) continue;
       if (el.nodeType === 3) {
         if (el.parentElement && SKIP_TAGS.has(el.parentElement.tagName)) continue;
-        if (!original.has(el)) original.set(el, el.nodeValue);
-        const src = original.get(el);
-        if (lang === 'en') {
-          const out = translate(src);
-          if (out != null && el.nodeValue !== out) el.nodeValue = out;
-        } else if (el.nodeValue !== src) {
-          el.nodeValue = src;
-        }
+        translateTextNode(el, lang);
         continue;
       }
       if (el.nodeType !== 1) continue;

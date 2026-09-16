@@ -64,7 +64,24 @@ advanced-mode Pages worker that proxies `/api/*` and gates asset serving.
     entries — this cost 36 account strings when first written.
   - `language-engine.test.mjs` fails when the account or profile UI renders a
     Bengali string the table lacks, so the guard catches untranslated copy added
-    later.
+    later. The scan reads plain JS string literals too, not only markup: copy in
+    a `row('🌐', 'Language', ...)` call or a toast is never inside a tag, and
+    scanning markup alone is what let ~230 strings ship untranslated.
+  - `language-coverage-runtime.test.mjs` boots the real modules with the engine
+    in English mode and fails on any Bengali text node or attribute still on
+    screen. Keep both: the static scan catches a missing key, the runtime one
+    catches a key that exists but never reaches the DOM.
+  - Strings that embed a live number (resend timers, passkey totals, the
+    multi-device logout notice) cannot have a fixed key, so `RULES` matches them
+    by shape. `translateSegment` additionally translates one segment of a
+    `·`-joined string, a Bengali date (`১১ এপ্রিল, ২০০৭`) and digit-only runs.
+    Bengali digits are U+09E6–U+09EF and are outside `\d`, so a bare `\d` pattern
+    silently fails on them.
+  - The engine writes node values, so it must distinguish its own output from a
+    module's later rewrite. `lastOut` holds what the engine wrote; when the node
+    no longer matches it, that new value is the source to translate. Without
+    this, a count-up animation is frozen at its first frame and keeps the
+    Bengali digits it started with.
 - The language and appearance engines each keep their own `localStorage` key
   (`ahLang`, `ah-appearance`) while `profile-ui.js` keeps the synced preference
   in `ah-profile-prefs-v1`. Only the profile picker writes both, so boot

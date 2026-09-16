@@ -1,5 +1,5 @@
 const CACHE_PREFIX = 'admission-hub-shell-';
-const BUILD_ID = 'v268-lang-theme-20260915';
+const BUILD_ID = 'v269-lang-coverage-20260915';
 const CACHE_NAME = `${CACHE_PREFIX}${BUILD_ID}`;
 const VERSION_HEADER = 'X-Admission-Hub-Build';
 const DOCUMENT_NETWORK_TIMEOUT_MS = 2500;
@@ -45,7 +45,7 @@ const ASSET_DIGESTS = {
   "./session-persist.js?v=session-v2": "99f3d1f49f6d5714fd25f1c12b2aa978ca97a009d6caba9a690a0442d082593c",
   "./account-access.css?v=20260916-account-entry-v5": "c28dd7c2adc90cfb80ad61998172a68905f2a4d28dc8ac704d5f493b3d5028cd",
   "./institutions-bd.js?v=bd-institutions-v2": "602c5549515e8207ad152b948ca9b8fe3ad0fbe429afb56380e4e21b662f779d",
-  "./language-engine.js?v=lang-v1": "0dedc84bbf23e2ec580f1e23aeb623e44208d02afe09234a4ded177d22e633d3",
+  "./language-engine.js?v=lang-v1": "adc2db14463126c2c03a08a1f58d196bf98d5136e716468d4b6b4379157ac2e4",
   "./account-access.js?v=20260916-account-entry-v5": "a76a8119d48dcdb6a9fb7b054672e038c3b3a66ff5fa25708db08a442387711f",
   "./academic-catalog.js?v=acad-cat-v2": "75e7b80663d41330658c948ad1d4829d49f5c9abed581350582cfeace06d5b32",
   "./profile-ui.js?v=profile-v13": "7ef05bb519209f3e4b8d1a4eb9687c7c96375f0a0e26b0c9ae4efd13440b88be",

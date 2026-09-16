@@ -109,6 +109,8 @@ test('the table covers every string the account and profile UI render today', ()
   // otherwise the reported bug is only partly fixed.
   const nfc = (v) => v.normalize('NFC');
   const table = nfc(ENGINE);
+  // Counts are handled by the engine's rule layer instead of a fixed key.
+  const ruled = (s) => /[0-9০-৯]/.test(s);
   const collect = (source) => {
     const seen = new Set();
     // The scan runs over raw source, so a ternary whose two branches are both
@@ -116,12 +118,39 @@ test('the table covers every string the account and profile UI render today', ()
     // operator itself; real copy never does.
     const add = (v) => {
       const t = v.replace(/\s+/g, ' ').trim();
-      if (t && !t.includes("' : ") && !t.includes('" : ')) seen.add(nfc(t));
+      if (!t || !/[\u0980-\u09FF]/.test(t)) return;
+      if (t.includes("' : ") || t.includes('" : ')) return;
+      seen.add(nfc(t));
     };
     for (const m of source.matchAll(/>([^<>{}]*[\u0980-\u09FF][^<>{}]*)</g)) add(m[1]);
     for (const m of source.matchAll(/(?:placeholder|aria-label)="([^"]*[\u0980-\u09FF][^"]*)"/g)) add(m[1]);
-    return [...seen].filter((s) => s && !table.includes(`'${s}'`));
+    // Copy held in plain JS literals — e.g. a settings row's `label:` or a
+    // toast — is never inside markup, so the tag scan above cannot see it.
+    // Two shapes are excluded because a fixed key cannot own them:
+    //   • attribute values (data-bn / data-en), which AhI18n renders
+    //   • `+`-concatenated fragments, whose runtime value is the whole join
+    //     and is covered by the engine's rule layer instead
+    const body = source.replace(/^\s*\/\*[\s\S]*?\*\//gm, '').replace(/^\s*\/\/.*$/gm, '');
+    for (const m of body.matchAll(/'([^'\\\n]*)'|"([^"\\\n]*)"/g)) {
+      const value = m[1] ?? m[2] ?? '';
+      if (!/[\u0980-\u09FF]/.test(value)) continue;
+      const before = body.slice(0, m.index).replace(/\s+$/, '');
+      if (before.endsWith('=')) continue;
+      const after = body.slice(m.index + m[0].length).replace(/^\s+/, '');
+      if (before.endsWith('+') || after.startsWith('+')) continue;
+      // Markup inside the literal becomes separate text nodes at runtime, so
+      // each run of text is its own key — not the literal as a whole.
+      for (const piece of value.split(/<[^>]*>/)) add(piece);
+    }
+    return [...seen].filter((s) => s && !table.includes(`'${s}'`) && !ruled(s));
   };
   assert.deepEqual(collect(AUTH), [], 'account-flow strings would stay Bengali in English mode');
   assert.deepEqual(collect(PROFILE), [], 'profile strings would stay Bengali in English mode');
+});
+
+test('counts inside a rendered sentence still translate', async () => {
+  // Resend timers, passkey totals and the multi-device logout notice embed a
+  // live number, so no fixed table key can match them.
+  const dom = await setup({ body: '<p>নিরাপত্তার জন্য ৪৫ সেকেন্ড পর আবার পাঠাতে পারবেন।</p>' });
+  assert.equal(text(dom), 'For your security you can resend in 45 seconds.');
 });
