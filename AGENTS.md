@@ -119,10 +119,12 @@ advanced-mode Pages worker that proxies `/api/*` and gates asset serving.
 
 ## FCM notification system (LOCKED blueprint — not started)
 
-`FCM-NOTIFICATION-BLUEPRINT.md` is the owner-locked 5-phase blueprint for the
-FCM + Vercel smart notification system (Foundation → Global topics →
-Personalized → Events/Automation/Analytics → AI/Scale/Hardening). Owner
-instruction: do NOT start implementation until a phase is explicitly
+`FCM-NOTIFICATION-BLUEPRINT.md` is the owner-locked 5-phase blueprint for
+the FCM + Cloudflare smart notification system (Foundation → Global
+topics → Personalized → Events/Automation/Analytics → AI/Scale/Hardening).
+Owner decisions: NO Vercel — backend = Cloudflare Worker + Durable
+Objects DB; Telegram stays backup. Only open item: owner creates the free
+Firebase project. Do NOT start implementation until a phase is explicitly
 released. Phases are gated: a phase is done only when its Output is verified
 on production, tests are added and green, the full gate passes, and the
 owner confirms — only then may the next phase begin. It extends (never
