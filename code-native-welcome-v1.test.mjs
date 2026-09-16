@@ -12,8 +12,8 @@ const HTML = read('index.html');
 const SW = read('sw.js');
 const PAGES_GUARD = read('.github/workflows/cf-pages.yml');
 const RELEASE_WORKFLOW = read('.github/workflows/telegram-auth-canary-activate.yml');
-const UI_VERSION = '20260916-account-entry-v5';
-const SHELL_VERSION = 'v269-lang-coverage-20260915';
+const UI_VERSION = '20260916-account-entry-v6';
+const SHELL_VERSION = 'v270-uni-tap-theme-goal-20260915';
 
 const between = (source, start, end) => {
   const from = source.indexOf(start);
@@ -125,7 +125,7 @@ test('custom Guest Dashboard is absent and Guest returns to the ordinary app rou
 });
 
 test('code-native assets and service-worker release markers are synchronized', () => {
-  for (const asset of [`account-access.css?v=${UI_VERSION}`, `account-access.js?v=${UI_VERSION}`, 'dashboard-v2.css?v=dash2f11-clean', 'dashboard-v2.js?v=dash2f12-clean']) {
+  for (const asset of [`account-access.css?v=${UI_VERSION}`, `account-access.js?v=${UI_VERSION}`, 'dashboard-v2.css?v=dash2f13-theme', 'dashboard-v2.js?v=dash2f13-theme']) {
     assert.ok(HTML.includes(asset), asset);
     assert.ok(SW.includes(asset), asset);
   }
@@ -133,7 +133,7 @@ test('code-native assets and service-worker release markers are synchronized', (
   assert.match(HTML, new RegExp(`expectedSwVersion = '${SHELL_VERSION}'`));
   assert.match(HTML, new RegExp(`sw\\.js\\?v=${SHELL_VERSION}`));
   assert.ok(HTML.indexOf('institutions-bd.js?v=bd-institutions-v2') < HTML.indexOf(`account-access.js?v=${UI_VERSION}`));
-  assert.ok(HTML.indexOf(`account-access.js?v=${UI_VERSION}`) < HTML.indexOf('dashboard-v2.js?v=dash2f12-clean'));
+  assert.ok(HTML.indexOf(`account-access.js?v=${UI_VERSION}`) < HTML.indexOf('dashboard-v2.js?v=dash2f13-theme'));
 });
 
 test('protected publication remains the only release path for code-native entry v1', () => {

@@ -17,7 +17,7 @@ const bootBlock = (H.match(/async function boot\(\)\{[\s\S]*?\n\}/) || [''])[0];
 const coordinator = (H.match(/const startFinalRender = \(options\) => \{[\s\S]*?else modulesParsed\(\);/) || [''])[0];
 const appShellBlock = (SW.match(/const APP_SHELL = \[[\s\S]*?\n\];/) || [''])[0];
 const shellAssets = [...appShellBlock.matchAll(/^\s*['"]\.\/[^'"]+['"],?$/gm)].length;
-const dashboardTag = H.indexOf('./dashboard-v2.js?v=dash2f12-clean');
+const dashboardTag = H.indexOf('./dashboard-v2.js?v=dash2f13-theme');
 const firstOptionalTag = H.indexOf('qbank-redesign.js?v=practice15');
 
 /* Startup deadline and race fix */
@@ -50,7 +50,7 @@ test('১১. protection snapshot runs as idle post-boot work',
 
 /* PWA lifecycle */
 test('১২. build/cache/static-Welcome and main-app AI versions are synchronized',
-  SW.includes("const BUILD_ID = 'v269-lang-coverage-20260915'") && H.includes("const expectedSwVersion = 'v269-lang-coverage-20260915'") && H.includes('sw.js?v=v269-lang-coverage-20260915') && H.includes('account-access.js?v=20260916-account-entry-v5') && SW.includes('account-access.js?v=20260916-account-entry-v5') && H.includes('ai-agent-chat.js?v=agent-f1-ui-chatv17-clean') && SW.includes('ai-agent-chat.js?v=agent-f1-ui-chatv17-clean'));
+  SW.includes("const BUILD_ID = 'v270-uni-tap-theme-goal-20260915'") && H.includes("const expectedSwVersion = 'v270-uni-tap-theme-goal-20260915'") && H.includes('sw.js?v=v270-uni-tap-theme-goal-20260915') && H.includes('account-access.js?v=20260916-account-entry-v6') && SW.includes('account-access.js?v=20260916-account-entry-v6') && H.includes('ai-agent-chat.js?v=agent-f1-ui-chatv17-clean') && SW.includes('ai-agent-chat.js?v=agent-f1-ui-chatv17-clean'));
 test('১৩. service-worker activation never navigates or reloads open clients',
   !SW.includes('c.navigate(c.url)') && !SW.includes("self.clients.matchAll({ type: 'window', includeUncontrolled: true });\n      for"));
 test('১৪. installed PWA document is bounded network-first with fast offline fallback',

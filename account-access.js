@@ -454,8 +454,32 @@
   `;
 
   const $ = selector => pageHost.querySelector(selector);
-  const setWelcomeLanguage = language => {
+
+  /* The welcome picker is the first language control a visitor meets, but it
+     only swapped the data-bn/data-en copy inside this page: it never wrote
+     `ahLang`, never told the engines, and never touched the synced preference.
+     Choosing English looked right until the next view rendered, and
+     profile-ui's boot reconcile then restored Bengali because a saved
+     preference outranks the engine key. Write the choice to both stores. */
+  const LANG_KEY = 'ahLang';
+  const PREFS_KEY = 'ah-profile-prefs-v1';
+  const storedLanguage = () => {
+    try { return localStorage.getItem(LANG_KEY) === 'en' ? 'en' : 'bn'; } catch (_) { return 'bn'; }
+  };
+  const persistLanguage = selected => {
+    try {
+      if (window.AhI18n) window.AhI18n.set(selected);
+      else localStorage.setItem(LANG_KEY, selected);
+    } catch (_) { try { localStorage.setItem(LANG_KEY, selected); } catch (_) {} }
+    try {
+      const prefs = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}');
+      localStorage.setItem(PREFS_KEY, JSON.stringify({ ...prefs, language: selected, v: 1, updatedAt: Date.now() }));
+    } catch (_) {}
+  };
+
+  const setWelcomeLanguage = (language, { persist = true } = {}) => {
     const selected = language === 'en' ? 'en' : 'bn';
+    if (persist) persistLanguage(selected);
     const heading = $('#ah-welcome-heading');
     if (heading) {
       const lines = String(heading.dataset[selected] || heading.dataset.bn || '').split('|');
@@ -2252,8 +2276,12 @@
     $('.ah-account-close').addEventListener('click', dismiss);
     const welcomeLanguage = $('[data-role="welcome-language"]');
     if (welcomeLanguage) {
+      // Reflect the stored choice, then only persist on a real user change.
+      // The boot call must not write, or opening the page would stamp the
+      // default over a language the user already chose elsewhere.
+      welcomeLanguage.value = storedLanguage();
       welcomeLanguage.addEventListener('change', () => setWelcomeLanguage(welcomeLanguage.value));
-      setWelcomeLanguage(welcomeLanguage.value);
+      setWelcomeLanguage(welcomeLanguage.value, { persist: false });
     }
     setupDobDropdowns();
     setupInstitutionSearch('school');

@@ -19,6 +19,18 @@ const UI = read('profile-ui.js');
 const AUTH = read('account-access.js');
 const INSTITUTIONS = read('institutions-bd.js');
 
+/* The global AhI18n engine is an inline <script> in index.html. Lift the exact
+   block rather than re-implementing it: the welcome picker calls `AhI18n.set`,
+   so a stand-in would let a broken contract pass. */
+const I18N = (() => {
+  const html = read('index.html');
+  const start = html.indexOf('/* ADMISSION HUB — Global i18n Engine');
+  const marker = html.indexOf('window.AhI18n', start);
+  const end = html.indexOf('})();', marker);
+  assert.ok(start >= 0 && marker > start && end > marker, 'AhI18n engine block not found in index.html');
+  return html.slice(start, end + 5);
+})();
+
 const BENGALI = /[\u0980-\u09FF]/;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -77,14 +89,14 @@ function bootProfile() {
   return window;
 }
 
-function bootAuth() {
+function bootAuth({ language = 'en' } = {}) {
   const dom = new JSDOM('<!doctype html><html lang="bn"><body><main id="app"></main></body></html>', {
     url: 'https://admissionhub.pages.dev/',
     runScripts: 'dangerously',
     pretendToBeVisual: true
   });
   const { window } = dom;
-  window.localStorage.setItem('ahLang', 'en');
+  window.localStorage.setItem('ahLang', language);
   window.open = () => ({ closed: false });
   window.PublicKeyCredential = undefined;
   window.fetch = async (url) => {
@@ -103,6 +115,7 @@ function bootAuth() {
     if (path.endsWith('/profile')) return reply(200, { profile: null });
     return reply(404, { error: { code: 'NOT_FOUND' } });
   };
+  window.eval(I18N);
   window.eval(ENGINE);
   window.eval(INSTITUTIONS);
   window.eval(AUTH);
@@ -139,4 +152,40 @@ test('the account shell shows no Bengali once English is chosen', async () => {
   await sleep(400);
   const missed = untranslated(window);
   assert.deepEqual(missed, [], 'these strings stayed Bengali in the account flow');
+});
+
+/* The welcome picker is the first language control a visitor meets and the one
+   the owner used. Its handler only rewrote the copy inside its own page: it
+   never wrote `ahLang` and never told either engine, so the next view rendered
+   Bengali again. Every other test seeds English before boot, which is exactly
+   why the hole survived. Boot in Bengali and drive the real <select>. */
+test('the welcome picker stores the language and translates the first screen', async () => {
+  const window = bootAuth({ language: 'bn' });
+  await sleep(400);
+
+  const picker = window.document.querySelector('[data-role="welcome-language"]');
+  assert.ok(picker, 'no [data-role="welcome-language"] control found');
+  assert.equal(picker.value, 'bn', 'the picker should open on the stored language');
+
+  picker.value = 'en';
+  picker.dispatchEvent(new window.Event('change', { bubbles: true }));
+  await sleep(300);
+
+  assert.equal(window.localStorage.getItem('ahLang'), 'en',
+    'the welcome picker did not store the choice, so a reload loses it');
+  const prefs = JSON.parse(window.localStorage.getItem('ah-profile-prefs-v1') || '{}');
+  assert.equal(prefs.language, 'en',
+    'the synced preference still disagrees and boot reconcile would restore Bengali');
+
+  assert.deepEqual(untranslated(window), [], 'these strings stayed Bengali after choosing English');
+});
+
+/* The flip side of the same bug: opening the page must not overwrite a choice
+   the user already made. */
+test('merely opening the account shell does not overwrite the stored language', async () => {
+  const window = bootAuth({ language: 'en' });
+  await sleep(400);
+  assert.equal(window.localStorage.getItem('ahLang'), 'en', 'boot reset a stored English choice back to Bengali');
+  const picker = window.document.querySelector('[data-role="welcome-language"]');
+  if (picker) assert.equal(picker.value, 'en', 'the picker did not reflect the stored language');
 });

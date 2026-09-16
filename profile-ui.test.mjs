@@ -116,7 +116,7 @@ test('index.html: profile assets linked with versions (v262)', () => {
 });
 
 test('sw.js caches the profile assets (v262)', () => {
-  assert.match(SW, /const BUILD_ID = 'v269-lang-coverage-20260915';/);
+  assert.match(SW, /const BUILD_ID = 'v270-uni-tap-theme-goal-20260915';/);
   assert.match(SW, /'\.\/academic-catalog\.js\?v=acad-cat-v2',/);
   assert.match(SW, /'\.\/profile-ui\.js\?v=profile-v13',/);
   assert.match(SW, /'\.\/profile-ui\.css\?v=profile-v13',/);
@@ -612,7 +612,7 @@ test('v264: poisoned-cache fix — asset re-pin, no-store SW fetch, digest-verif
   assert.match(HTML, /profile-ui\.js\?v=profile-v13/);
   assert.match(HTML, /profile-ui\.css\?v=profile-v13/);
   assert.match(HTML, /academic-catalog\.js\?v=acad-cat-v2/);
-  assert.match(HTML, /dashboard-v2\.js\?v=dash2f12-clean/);
+  assert.match(HTML, /dashboard-v2\.js\?v=dash2f13-theme/);
   assert.match(HTML, /session-persist\.js\?v=session-v2/);
   // SW runtime asset fetches never consult the browser HTTP cache
   assert.match(SW, /fetch\(request, \{ cache: 'no-store', signal: controller\.signal \}\)/);
