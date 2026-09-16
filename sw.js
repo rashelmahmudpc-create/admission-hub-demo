@@ -1,5 +1,5 @@
 const CACHE_PREFIX = 'admission-hub-shell-';
-const BUILD_ID = 'v273-nav4-juju-20260916';
+const BUILD_ID = 'v274-ai-in-dashboard-20260916';
 const CACHE_NAME = `${CACHE_PREFIX}${BUILD_ID}`;
 const VERSION_HEADER = 'X-Admission-Hub-Build';
 const DOCUMENT_NETWORK_TIMEOUT_MS = 2500;
@@ -31,7 +31,6 @@ const APP_SHELL = [
   './ai-agent-chat.js?v=agent-f1-ui-chatv18-fresh',
   './notification-fcm.js?v=fcm-p1-v2',
   './notification-inbox.js?v=notif-inbox-v1',
-  './juju-floating.js?v=juju-fab-v1',
   './icons/icon-192.png',
   './icons/icon-512.png'
 ];
@@ -40,7 +39,7 @@ const APP_SHELL = [
 // A truncated/corrupt download is NEVER written to the shell cache.
 const ASSET_DIGESTS = {
 /* sw-manifest:start */
-  "./index.html": "d9472d9ee987acdbf7d737f84ec082a2c3ce2b161b259f7149164e10327d1556",
+  "./index.html": "ab62a52c6efeeb9234d12019afae3f1b2adcbab5d926a6877f74f514d1d1f50f",
   "./manifest.json": "11a85ae594fc629b11605daeda3f9afe4ef95215a55a29f9cc423314bfb275a4",
   "./manifest.webmanifest": "5be476009a140eabd088bd972bd4d345b9c4f4a055cd6e4f08774b9cb4afaf52",
   "./dashboard-v2.css?v=dash2f13-theme": "4f4c9295b487b8186fd45c006a96a43bcaf896a1a5b871f506a05874a8e00c99",
@@ -58,7 +57,6 @@ const ASSET_DIGESTS = {
   "./ai-agent-chat.js?v=agent-f1-ui-chatv18-fresh": "36a11f8d5dec5a5bf1b8fa86db06b9a34e01ad27c931f37aadbffe6e6f4930e5",
   "./notification-fcm.js?v=fcm-p1-v2": "0e469cfd99ddc552275b427de90192df22a856bc7e5ffbf8d37b55253c139df0",
   "./notification-inbox.js?v=notif-inbox-v1": "8fb248b661e090f0880f45d7a08718bf062a5e20edd67d6ffac5e81735d0e09c",
-  "./juju-floating.js?v=juju-fab-v1": "d0ce531ffc389300ee01ecfce124645e3be0c4cb7ab86422d740fb38d67e9d31",
   "./icons/icon-192.png": "777ce5566fbeff0f2e384c787c8dde4f47d7c869e455c6e577a503decd4f1683",
   "./icons/icon-512.png": "86459109582f82b1d891a3e5a82723fefd21a3c65e9d0d22ab4dae33bb540520",
 /* sw-manifest:end */

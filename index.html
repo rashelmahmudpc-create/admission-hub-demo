@@ -4980,15 +4980,15 @@ window.__admissionBootPromise.catch(error => console.error('[Admission Hub] boot
     // Do not reload on controllerchange: iOS standalone clients can enter a blank-screen reload loop.
     // The updated worker takes control now; the current document remains usable and the next launch uses the new shell.
     try{
-      const expectedSwVersion = 'v273-nav4-juju-20260916';
+      const expectedSwVersion = 'v274-ai-in-dashboard-20260916';
       // register() on the same scope performs an in-place update. Never unregister
       // the active iOS worker first: that discards the instant offline shell.
-      const registration=await navigator.serviceWorker.register('./sw.js?v=v273-nav4-juju-20260916',{scope:'./',updateViaCache:'none'});
+      const registration=await navigator.serviceWorker.register('./sw.js?v=v274-ai-in-dashboard-20260916',{scope:'./',updateViaCache:'none'});
       await registration.update().catch(()=>{});
       // Purge every old app-shell cache (any build id ≠ current). This guarantees
       // stale pre-retirement application shells can never be served from cache again.
       try {
-        const cur = 'admission-hub-shell-v273-nav4-juju-20260916';
+        const cur = 'admission-hub-shell-v274-ai-in-dashboard-20260916';
         const names = await caches.keys();
         for (const name of names) {
           if (name.startsWith('admission-hub-shell-') && name !== cur) await caches.delete(name).catch(()=>{});
@@ -5431,7 +5431,6 @@ setTimeout(() => { if (location.hash.replace(/^#/, '').split('?')[0] === 'dictio
 <script defer src="./progress-tool.js?v=progress-v6-live-score-ledger-reconcile"></script>
 <script defer src="./mistakes-bank-tool.js?v=mistakes-bank-v1"></script>
 <script defer src="./smart-revision-tool.js?v=smart-revision-v2-safe-session"></script>
-<script defer src="./juju-floating.js?v=juju-fab-v1"></script>
 <script defer src="./source-course-tool.js?v=bangla-only-courses-v23-freshfetch"></script>
 <script defer src="./android-runtime-fix.js?v=and-scroll-v1"></script>
 <script>window.AH_CLOUD_ROLE='public';</script>

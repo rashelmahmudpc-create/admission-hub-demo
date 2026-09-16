@@ -13,7 +13,7 @@ const SW = read('sw.js');
 const PAGES_GUARD = read('.github/workflows/cf-pages.yml');
 const RELEASE_WORKFLOW = read('.github/workflows/telegram-auth-canary-activate.yml');
 const UI_VERSION = '20260916-account-entry-v6';
-const SHELL_VERSION = 'v273-nav4-juju-20260916';
+const SHELL_VERSION = 'v274-ai-in-dashboard-20260916';
 
 const between = (source, start, end) => {
   const from = source.indexOf(start);
@@ -110,10 +110,10 @@ test('Signup Assistant is removed while the ordinary app AI remains available', 
   assert.doesNotMatch(CSS, /\.ah-guide|\.ah-assistant-hint/);
   assert.match(HTML, /ai-agent-chat\.js\?v=agent-f1-ui-chatv18-fresh/);
   assert.match(SW, /ai-agent-chat\.js\?v=agent-f1-ui-chatv18-fresh/);
-  // bottom-nav AI tab সরানো হয়েছে — AI এখন floating JUJU বাটন + সরাসরি /ai রুট।
+  // bottom-nav AI tab সরানো হয়েছে — AI এখন dashboard-এর Command Center + সরাসরি /ai রুট।
   assert.doesNotMatch(HTML, /\{key:'ai'/);
-  assert.match(HTML, /juju-floating\.js\?v=juju-fab-v1/);
-  assert.match(SW, /juju-floating\.js\?v=juju-fab-v1/);
+  assert.doesNotMatch(HTML, /juju-floating\.js/);
+  assert.doesNotMatch(SW, /juju-floating\.js/);
   assert.match(HTML, /if\(p==='ai'\)\{ if\(window\.renderAiAgentPage\)/);
   assert.match(DASH_JS, /navigate\((?:\\?'|")ai/);
 });
@@ -123,7 +123,7 @@ test('custom Guest Dashboard is absent and Guest returns to the ordinary app rou
   assert.match(JS, /rememberEntry\('guest'\);[\s\S]{0,120}close\(\);\s*navigateDashboard\(\);\s*notify\(\)/);
   const navBlock = (HTML.match(/const NAV_TABS=\[[\s\S]*?\];/) || [''])[0];
   assert.match(navBlock, /key:'dashboard'[\s\S]*key:'question-bank'[\s\S]*key:'exam'[\s\S]*key:'my-profile'/);
-  // AI আর History bottom tab নয়: AI → floating JUJU, History → Exam-এর ভিতরে।
+  // AI আর History bottom tab নয়: AI → dashboard Command Center, History → Exam-এর ভিতরে।
   assert.doesNotMatch(navBlock, /key:'ai'/);
   assert.doesNotMatch(navBlock, /key:'history'/);
   // Phase 7 (owner-approved): the Profile tab is the real signed-in profile,

@@ -28,7 +28,7 @@ t('৮. reduced-motion গার্ড (মোশন-সংবেদনশীল
 t('৯. পুরনো ইনলাইন-3D-splash আর নেই (v178-nosplash; ahfs-scene = 0)', !doc.querySelector('.ahfs-scene') && !html.includes('ahfs-scene'));
 t('১০. app-id + #app রুট exist', !!doc.getElementById('app'));
 t('১১. externl-স্ক্রিপ্ট-না-থাকলেও শেল রেন্ডার (static-first প্রমাণ)', !!doc.getElementById('app').querySelector('#ahSplash'));
-t('১২. current account-retired service-worker marker', html.includes('sw.js?v=v273-nav4-juju-20260916'));
+t('১২. current account-retired service-worker marker', html.includes('sw.js?v=v274-ai-in-dashboard-20260916'));
 
 // নো-JS ফলব্যাক: বডিতে আগে শুধু লোডিং-স্প্ল্যাশ ছিল, তাই স্ক্রিপ্ট-চালু-না-থাকা
 // ক্রলার মাত্র ৮৪ অক্ষর পড়ত — অথচ প্রতিটি কোর্স-ল্যান্ডিং পেজ সম্পূর্ণ প্রিরেন্ডারড।
