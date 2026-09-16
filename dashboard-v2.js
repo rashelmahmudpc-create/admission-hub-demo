@@ -182,7 +182,7 @@
       '<div class="dv2-avatar dv2-avatar-tap" data-role="open-profile" title="Profile" onclick="navigate(\'my-profile\')">' + avatarInner + '</div>' +
       '<div class="dv2-hello"><b>' + escv((C().user && C().user.name) || 'শুভ শুভ - Scholar') + '</b>' +
       '<div class="dv2-muted">' + new Intl.DateTimeFormat('bn-BD', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(new Date()) + '</div></div>' +
-      '<button class="dv2-bell dv2-bell-c" onclick="NotificationHub.openSheet()" aria-label="নোটিফিকেশন">🔔</button></div>';
+      '<button class="dv2-bell dv2-bell-c" onclick="NotificationHub.bellTap()" aria-label="নোটিফিকেশন">🔔</button></div>';
 
     const mission = '<section class="dv2-card dv2-mission">' +
       '<div class="dv2-star">' + star + '</div>' +

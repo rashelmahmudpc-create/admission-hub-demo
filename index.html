@@ -1302,6 +1302,7 @@ function baseTab(path){
   if(path.startsWith('question-bank')||path.startsWith('subject')||path.startsWith('topic')||path.startsWith('question')||path.startsWith('add-question')||path.startsWith('edit-question')) return 'question-bank';
   if(path.startsWith('history')) return 'history';
   if(path.startsWith('notes')) return '';
+  if(path==='notifications') return ''; /* full-screen inbox — no bottom-nav tab (bell entry) */
   if(path.startsWith('study-hub/quick-notes')) return 'study-hub/quick-notes';
   if(path.startsWith('progress/plan')) return 'dashboard';
   if(path.startsWith('progress')) return 'dashboard';
@@ -1387,6 +1388,7 @@ function render(){
     return renderShell('<div class="empty" style="padding:56px 20px;text-align:center"><div style="font-size:32px;margin-bottom:10px">✦</div><b>Opening your 90 Day Planner…</b><div class="muted" style="margin-top:6px">Your saved routine is loading safely.</div></div>',{topbar:false,hideNav:true});
   }
   if(p.startsWith('notes') && window.renderNotesTool) return window.renderNotesTool();
+  if(p==='notifications' && window.renderNotificationsInbox) return window.renderNotificationsInbox();
   if(p==='dictionary' && window.renderDictionaryV2) return window.renderDictionaryV2();
   if(p==='ai'){ if(window.renderAiAgentPage) return window.renderAiAgentPage(); return renderLazyToolFallback(p); }
   if((p==='question-bank'||p.startsWith('question-bank/')) && window.renderQuestionBankV2) return window.renderQuestionBankV2();
@@ -5109,9 +5111,9 @@ window.__admissionBootPromise.catch(error => console.error('[Admission Hub] boot
 })();
 </script>
 <!-- First-interaction modules execute before optional/heavy tools. -->
-<script defer src="./dashboard-v2.js?v=dash2f14-notifsheet"></script>
+<script defer src="./dashboard-v2.js?v=dash2f15-inbox"></script>
 <script defer src="./academic-catalog.js?v=acad-cat-v2"></script>
-<script defer src="./profile-ui.js?v=profile-v14-tap"></script>
+<script defer src="./profile-ui.js?v=profile-v15-nonotif"></script>
 <script defer src="./ai-agent-chat.js?v=agent-f1-ui-chatv18-fresh"></script>
 <script defer src="qbank-redesign.js?v=practice15"></script>
 <script defer src="urgent-fix.js?v=practice13"></script>
@@ -5401,8 +5403,9 @@ setTimeout(() => { if (location.hash.replace(/^#/, '').split('?')[0] === 'dictio
 <script src="./vocabulary-master-tool.js?v=vm-autoimg-v106" defer></script>
 <script src="./vocabulary-pronunciation.js?v=voice-el-v104" defer></script>
 <script src="./vocabulary-elevenlabs.js?v=el-voice-v106" defer></script>
-<script defer src="./notification-hub.js?v=notify-v112"></script>
-<script defer src="./notification-fcm.js?v=fcm-p1-v1"></script>
+<script defer src="./notification-hub.js?v=notify-v113"></script>
+<script defer src="./notification-fcm.js?v=fcm-p1-v2"></script>
+<script defer src="./notification-inbox.js?v=notif-inbox-v1"></script>
 <script src="./memorizing-match-tool.js?v=memorizing-match-v8-stable-cards" defer></script>
 <script src="./question-card-game-visual.js?v=question-card-game-v2-persistent" defer></script>
 <script src="./result-analysis-500.js?v=result-analysis-500-deep-matched-v2" defer></script>

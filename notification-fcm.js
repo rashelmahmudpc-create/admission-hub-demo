@@ -115,13 +115,18 @@
   /* User taps Enable → browser permission → FCM token → register on server.
    * Returns: 'granted' | 'denied' | 'unsupported' | 'not-configured' | 'error' */
   const enable = async () => {
-    const cfg = await getConfig();
-    if (!cfg.fcmConfigured || !cfg.webConfig) return 'not-configured';
+    /* iOS Safari: requestPermission() must run while the tap's transient
+     * activation is still live — BEFORE any network await (owner bug
+     * 2026-09-17: prompt silently never appeared). */
     try {
       if (permission() === 'default') {
         const ask = await Notification.requestPermission();
         if (ask !== 'granted') return ask;
       }
+    } catch (_) { return 'error'; }
+    const cfg = await getConfig();
+    if (!cfg.fcmConfigured || !cfg.webConfig) return 'not-configured';
+    try {
       if (permission() !== 'granted') return permission() === 'denied' ? 'denied' : 'unsupported';
       const messaging = await initMessaging(cfg.webConfig);
       const token = await messaging.getToken();

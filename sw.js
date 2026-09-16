@@ -24,12 +24,13 @@ const APP_SHELL = [
   './language-engine.js?v=lang-v3-dashboard',
   './account-access.js?v=20260916-account-entry-v6',
   './academic-catalog.js?v=acad-cat-v2',
-  './profile-ui.js?v=profile-v14-tap',
+  './profile-ui.js?v=profile-v15-nonotif',
   './profile-ui.css?v=profile-v14-tap',
   './data-protection.js?v=dp-v3-fastboot',
-  './dashboard-v2.js?v=dash2f14-notifsheet',
+  './dashboard-v2.js?v=dash2f15-inbox',
   './ai-agent-chat.js?v=agent-f1-ui-chatv18-fresh',
-  './notification-fcm.js?v=fcm-p1-v1',
+  './notification-fcm.js?v=fcm-p1-v2',
+  './notification-inbox.js?v=notif-inbox-v1',
   './icons/icon-192.png',
   './icons/icon-512.png'
 ];
@@ -38,7 +39,7 @@ const APP_SHELL = [
 // A truncated/corrupt download is NEVER written to the shell cache.
 const ASSET_DIGESTS = {
 /* sw-manifest:start */
-  "./index.html": "0f9f6f5aa014ff7b55f9ccb8a5895656e961b8b49c0a6cffd063da84290d0220",
+  "./index.html": "25507dbbd01b9d6049937b5bcc875ced837999baf81989e325f0226ab59a8619",
   "./manifest.json": "11a85ae594fc629b11605daeda3f9afe4ef95215a55a29f9cc423314bfb275a4",
   "./manifest.webmanifest": "5be476009a140eabd088bd972bd4d345b9c4f4a055cd6e4f08774b9cb4afaf52",
   "./dashboard-v2.css?v=dash2f13-theme": "4f4c9295b487b8186fd45c006a96a43bcaf896a1a5b871f506a05874a8e00c99",
@@ -49,12 +50,13 @@ const ASSET_DIGESTS = {
   "./language-engine.js?v=lang-v3-dashboard": "c991b812440083f1671f0f4a0bc3b13602b4d5c8ce73dccf3f0774201e1b5c24",
   "./account-access.js?v=20260916-account-entry-v6": "7aa958904d97c800ac823183e5d1f383f45cf90a296a0e7b97f42637c3700048",
   "./academic-catalog.js?v=acad-cat-v2": "75e7b80663d41330658c948ad1d4829d49f5c9abed581350582cfeace06d5b32",
-  "./profile-ui.js?v=profile-v14-tap": "c0b0a7d5cebfb07601c0d16095a64e6e72c2912c060840d5b6fd0dd9348889b5",
+  "./profile-ui.js?v=profile-v15-nonotif": "e1ba4f5ffdde9cc53f51eb44fa475d03d2f1ff436becb0880cce1657428e66b7",
   "./profile-ui.css?v=profile-v14-tap": "4332520cd9c584787eaba055a32b46e52cb132f00122207c74ffb42594e909aa",
   "./data-protection.js?v=dp-v3-fastboot": "359dc907ade4bcb3a6a722385969ebb6af47f7e436e6cdf2cce0dd6b7343723d",
-  "./dashboard-v2.js?v=dash2f14-notifsheet": "195f524e6443d8ce57a15116803a52c6021b3f00ffadfb6259bb3858b41d9f17",
+  "./dashboard-v2.js?v=dash2f15-inbox": "bea4ccad52b85c482d3fef5a7f2b2eec54dcdb125597a22411c4839b81783a49",
   "./ai-agent-chat.js?v=agent-f1-ui-chatv18-fresh": "36a11f8d5dec5a5bf1b8fa86db06b9a34e01ad27c931f37aadbffe6e6f4930e5",
-  "./notification-fcm.js?v=fcm-p1-v1": "f131fc8ef11de5f574f23e70e4e482c914cc1dd00b8bae6b386ca7c51614e768",
+  "./notification-fcm.js?v=fcm-p1-v2": "0e469cfd99ddc552275b427de90192df22a856bc7e5ffbf8d37b55253c139df0",
+  "./notification-inbox.js?v=notif-inbox-v1": "8fb248b661e090f0880f45d7a08718bf062a5e20edd67d6ffac5e81735d0e09c",
   "./icons/icon-192.png": "777ce5566fbeff0f2e384c787c8dde4f47d7c869e455c6e577a503decd4f1683",
   "./icons/icon-512.png": "86459109582f82b1d891a3e5a82723fefd21a3c65e9d0d22ab4dae33bb540520",
 /* sw-manifest:end */

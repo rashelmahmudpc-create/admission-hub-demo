@@ -658,7 +658,6 @@
       <div class="card pp-card pp-prefs">
         <div class="pp-card-head"><span class="pp-card-title">Preferences</span><button class="pp-card-edit" data-role="open-prefs-sheet" type="button">Edit</button></div>
         ${row('🌐', 'Language', pf.language === 'en' ? 'English' : 'বাংলা (Bengali)', 'pref-language')}
-        ${row('🔔', 'Notifications', pf.notifications === 'on' ? 'On' : 'Off', 'pref-notifications')}
         ${row('🎨', 'Appearance', pf.appearance === 'dark' ? 'Dark' : pf.appearance === 'system' ? 'System' : pf.appearance === 'green' ? 'Premium Green' : 'Light Mode', 'pref-appearance')}
         ${row('🤖', 'AI Personalization', state.aiPrefs ? aiPrefsSummary(state.aiPrefs) : 'Set your style', 'open-ai-prefs')}
         <p class="pp-fine">Explicit settings — তুমি কী চাও সেটা তুমিই ঠিক করো।</p>
@@ -705,7 +704,6 @@
       </div>
       <div class="card pp-card pp-prefs-page">
         ${row('🌐', 'Language', pf.language === 'en' ? 'English' : 'বাংলা (Bengali)', 'pref-language')}
-        ${row('🔔', 'Notifications', pf.notifications === 'on' ? 'On' : 'Off', 'pref-notifications')}
         ${row('🎨', 'Appearance', pf.appearance === 'dark' ? 'Dark' : pf.appearance === 'system' ? 'System' : pf.appearance === 'green' ? 'Premium Green' : 'Light Mode', 'pref-appearance')}
         ${row('🤖', 'AI Personalization', state.aiPrefs ? aiPrefsSummary(state.aiPrefs) : 'Set your style', 'open-ai-prefs')}
       </div>

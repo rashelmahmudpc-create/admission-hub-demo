@@ -307,7 +307,8 @@
     onDone: { bn: 'Push চালু হয়েছে ✓', en: 'Push turned on ✓' },
     offDone: { bn: 'Push বন্ধ হয়েছে', en: 'Push turned off' },
     needPermission: { bn: 'ব্রাউজারে অনুমতি দিতে হবে', en: 'Browser permission is needed' },
-    retry: { bn: 'এবার চলেছে না — আবার চেষ্টা করুন', en: 'Could not enable — please try again' }
+    retry: { bn: 'এবার চলেছে না — আবার চেষ্টা করুন', en: 'Could not enable — please try again' },
+    working: { bn: 'চালু হচ্ছে…', en: 'Turning on…' }
   };
   const sheetT = key => {
     let lang = 'bn';
@@ -329,11 +330,11 @@
       return `<div style="${pad}display:flex;align-items:center;justify-content:space-between;gap:10px">
         <div><div style="font-size:14px;font-weight:700">${sheetT('pushTitle')}</div>
         <div style="font-size:12.5px;margin-top:4px;color:var(--green);font-weight:600">✓ ${sheetT('on')}</div></div>
-        <button class="btn ghost sm" style="flex:0 0 auto" onclick="NotificationHub.fcmSheetToggle()">${sheetT('disable')}</button></div>`;
+        <button class="btn ghost sm" style="flex:0 0 auto" data-sheet-fcm-btn onclick="NotificationHub.fcmSheetToggle()">${sheetT('disable')}</button></div>`;
     }
     return `<div style="${pad}"><div style="font-size:14px;font-weight:700">${sheetT('pushTitle')}</div>
       <div style="font-size:13px;margin-top:6px;line-height:1.55">${sheetT('pushBody')}</div>
-      <button class="btn sm" style="margin-top:12px" onclick="NotificationHub.fcmSheetToggle()">${sheetT('enable')}</button></div>`;
+      <button class="btn sm" style="margin-top:12px" data-sheet-fcm-btn onclick="NotificationHub.fcmSheetToggle()">${sheetT('enable')}</button></div>`;
   };
   const openSheet = async () => {
     const prefs = await getPrefs();
@@ -357,8 +358,22 @@
     await savePrefs(prefs);
     await openSheet();
   };
-  const fcmSheetToggle = async () => {
+  /* Shared push toggle. Owner bug 2026-09-17: on iOS the prompt never
+   * appeared because the permission ask ran AFTER a network await (the
+   * tap's transient activation was already spent). Fix: when permission is
+   * still 'default', ask FIRST — synchronously at the top of the tap —
+   * before any status/config fetch. AhFcm.enable() was fixed the same way. */
+  const doPushToggle = async (rerender) => {
     try {
+      if (typeof Notification === 'undefined') { toastShort(sheetT('blocked')); return; }
+      if (Notification.permission === 'default') {
+        const ask = await Notification.requestPermission();
+        if (ask !== 'granted') {
+          toastShort(ask === 'denied' ? sheetT('blocked') : sheetT('needPermission'));
+          if (rerender) rerender();
+          return;
+        }
+      }
       if (!window.AhFcm || !window.AhFcm.enable) { toastShort(sheetT('settingUp')); return; }
       const s = await window.AhFcm.status();
       if (!s.fcmConfigured) { toastShort(sheetT('settingUp')); return; }
@@ -366,13 +381,62 @@
         await window.AhFcm.disable();
         toastShort(sheetT('offDone'));
       } else {
+        if (s.permission === 'denied') { toastShort(sheetT('blocked')); return; }
         const r = await window.AhFcm.enable();
         if (r === 'granted') toastShort(sheetT('onDone'));
         else if (r === 'denied' || r === 'unsupported') toastShort(sheetT('needPermission'));
         else toastShort(sheetT('retry'));
       }
     } catch (_) { toastShort(sheetT('retry')); }
-    await openSheet();
+    if (rerender) rerender();
+  };
+  const fcmSheetToggle = async () => {
+    // Button feedback so the tap visibly does something (owner complaint).
+    // NOTE: sync-only checks here — any network await before the permission
+    // ask would spend the iOS tap's transient activation again.
+    let busy = sheetT('working');
+    try {
+      const st = window.AhFcm && window.AhFcm._state ? window.AhFcm._state() : null;
+      if (st && st.enabled && typeof Notification !== 'undefined' && Notification.permission === 'granted') busy = sheetT('off');
+    } catch (_) {}
+    try {
+      document.querySelectorAll('[data-sheet-fcm-btn]').forEach(b => { b.disabled = true; b.textContent = busy; });
+    } catch (_) {}
+    await doPushToggle(openSheet);
+  };
+  /* Inbox push banner toggle — same gesture-safe core, re-renders the inbox. */
+  const inboxPushToggle = async () => {
+    const reInbox = () => { try { if (typeof window.render === 'function') window.render(); } catch (_) {} };
+    await doPushToggle(reInbox);
+  };
+  /* Dashboard 🔔 bell (owner directive 2026-09-17):
+   *  - push registered        → straight to the full-screen inbox
+   *  - not registered + prompt never shown → enable sheet ONCE
+   *  - afterwards              → straight to the inbox */
+  const goInbox = () => {
+    try {
+      if (location.hash === '#notifications') { if (typeof window.render === 'function') window.render(); return; }
+    } catch (_) {}
+    location.hash = 'notifications';
+  };
+  const bellTap = async () => {
+    let registered = false;
+    try { const s = window.AhFcm ? await window.AhFcm.status() : null; registered = Boolean(s && s.registered); } catch (_) {}
+    if (registered) { goInbox(); return; }
+    let shown = false;
+    try { shown = localStorage.getItem('ahNotifPromptShown') === '1'; } catch (_) {}
+    if (!shown) {
+      try { localStorage.setItem('ahNotifPromptShown', '1'); } catch (_) {}
+      openSheet();
+    } else {
+      goInbox();
+    }
+  };
+  const markOneRead = async (id) => {
+    const rows = await logRows();
+    const row = rows.find(r => r.id === id);
+    if (row && !row.readAt) await logRow({ ...row, readAt: Date.now(), status: row.status === 'sent' ? 'opened' : row.status });
+    hydrateDashboard();
   };
 
   const openSettings = async () => {
@@ -430,7 +494,7 @@
   if (typeof document !== 'undefined') boot();
 
   window.NotificationHub = {
-    dashboardHtml, hydrateDashboard, mountDashboardCard, openCenter, openSettings, openSheet, fcmSheetToggle, toggleMasterSheet, markAllRead, maybeResubscribe,
+    dashboardHtml, hydrateDashboard, mountDashboardCard, openCenter, openSettings, openSheet, fcmSheetToggle, toggleMasterSheet, markAllRead, markOneRead, bellTap, inboxPushToggle, maybeResubscribe,
     promptEnable, dismissPrompt, enablePush, disablePush, testNow,
     toggleMaster, toggleCat, setQuiet, setCap, saveEndpoint,
     evaluate, syncState,
