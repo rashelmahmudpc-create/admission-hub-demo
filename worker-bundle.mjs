@@ -4247,7 +4247,7 @@ var AVATAR_MIME_MAGIC = Object.freeze({
 var WEBP_MAGIC_OFFSET8 = 1346520407;
 var AVATAR_MAX_BYTES = 2 * 1024 * 1024;
 var AVATAR_MIN_BYTES = 64;
-function normalizeProfilePatch(value = {}) {
+function normalizeProfilePatch(value = {}, now = Date.now()) {
   if (!value || typeof value !== "object" || Array.isArray(value)) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
   const fields = /* @__PURE__ */ Object.create(null);
   let touched = false;
@@ -4270,9 +4270,17 @@ function normalizeProfilePatch(value = {}) {
       const v = String(raw || "").trim();
       if (v && !/^\d{4}-\d{2}-\d{2}$/.test(v)) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
       if (v) {
-        const y = Number(v.slice(0, 4));
+        const match = v.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        const year = Number(match[1]);
+        const month = Number(match[2]);
+        const day = Number(match[3]);
         const parsed = /* @__PURE__ */ new Date(`${v}T00:00:00Z`);
-        if (!Number.isFinite(parsed.getTime()) || y < 1940 || y > 2020) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+        const today = new Date(Number(now));
+        let age = today.getUTCFullYear() - year;
+        const beforeBirthday = today.getUTCMonth() < month - 1 || today.getUTCMonth() === month - 1 && today.getUTCDate() < day;
+        if (beforeBirthday) age -= 1;
+        const validDate = parsed.getUTCFullYear() === year && parsed.getUTCMonth() === month - 1 && parsed.getUTCDate() === day;
+        if (!Number.isFinite(parsed.getTime()) || !validDate || age < 8 || age > 80) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
       }
       fields.dob = v;
     } else if (key === "school" || key === "higherInstitution") {
@@ -4857,7 +4865,7 @@ var CloudflareNativeAuthEngine = class {
     });
   }
   async saveProfilePatch(input = {}, requestContext = {}) {
-    const fields = normalizeProfilePatch(input.fields);
+    const fields = normalizeProfilePatch(input.fields, Number(this.now()));
     const identity = await this.#firebaseIdentity(input, requestContext, AUTH_ERROR_CODES.SESSION_INVALID);
     const result = errorFromRepository(await this.repository.saveProfilePatch({
       sessionRef: identity.sessionRef,
@@ -6072,6 +6080,7 @@ var __telegramSecurityTest = Object.freeze({ WEBHOOK_CONTEXT, safeRootSecret, ba
 
 // auth-native/worker/public-auth-handler.mjs
 var AUTH_API_PREFIX = "/api/auth/v1";
+var PUBLIC_PROFILE_PREFIX = "/api/public/profile/";
 var AUTH_SESSION_COOKIE = "__Host-ah_session";
 var AUTH_FIREBASE_COOKIE = "__Host-ah_firebase";
 var AUTH_DEVICE_COOKIE = "__Host-ah_device";
@@ -6466,7 +6475,8 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
   const publicConfigCache = /* @__PURE__ */ new WeakMap();
   return async function handleNativeAuthRequest(request, env) {
     const url = new URL(request.url);
-    if (!url.pathname.startsWith(`${AUTH_API_PREFIX}/`) && url.pathname !== AUTH_API_PREFIX) return null;
+    const isPublicProfileRoute = url.pathname.startsWith(PUBLIC_PROFILE_PREFIX);
+    if (!url.pathname.startsWith(`${AUTH_API_PREFIX}/`) && url.pathname !== AUTH_API_PREFIX && !isPublicProfileRoute) return null;
     const origin = request.headers.get("Origin") || "";
     const telegramOperation = request.method === "POST" && [
       `${AUTH_API_PREFIX}/telegram/webhook`,
@@ -7414,8 +7424,8 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           })
         });
       }
-      if (request.method === "GET" && url.pathname.startsWith("/api/public/profile/")) {
-        const suffix = decodeURIComponent(url.pathname.slice("/api/public/profile/".length));
+      if (request.method === "GET" && url.pathname.startsWith(PUBLIC_PROFILE_PREFIX)) {
+        const suffix = decodeURIComponent(url.pathname.slice(PUBLIC_PROFILE_PREFIX.length));
         const isAvatar = suffix.endsWith("/avatar");
         const publicId = isAvatar ? suffix.slice(0, -"/avatar".length) : suffix;
         await callAuthority(env, "/internal/firebase/rate", {

@@ -90,3 +90,49 @@ test('groupLabel is human-readable and unit-scoped', () => {
   assert.match(cat.groupLabel('cu', '2025-26', 'B'), /Business|Commerce/);
   assert.equal(cat.groupLabel('cu', '2025-26', 'NOPE'), '');
 });
+
+// ---------------------------------------------------------------------------
+// T3 — university suggestions must name the right institution.
+// Two entries carried a different university's identity, so a student typing
+// "SUST" or "Barishal" was offered a name that does not exist:
+//   su — name "Shahjalal University", Bengali aliases spelling Shersapur
+//   bu — name "Bangladesh University", aliases belonging to Barishal
+// These assertions pin each id to its real institution.
+// ---------------------------------------------------------------------------
+
+test('T3: SUST and Barishal entries name their own institution', () => {
+  const sust = cat.getUniversity('su');
+  assert.equal(sust.name, 'Shahjalal University of Science and Technology');
+  assert.ok(sust.aliases.includes('SUST'), 'SUST acronym must be searchable');
+  // the Bengali alias must transliterate Shahjalal, not another university
+  assert.ok(sust.aliases.some(a => a.includes('শাহজালাল')), 'Bengali alias must say শাহজালাল');
+  assert.ok(!sust.aliases.some(a => a.includes('শেরপুর')), 'Sherpur is not SUST');
+
+  const barishal = cat.getUniversity('bu');
+  assert.equal(barishal.name, 'University of Barishal');
+  assert.ok(barishal.aliases.some(a => a.includes('বরিশাল')), 'Bengali alias must say বরিশাল');
+  assert.ok(!barishal.aliases.some(a => a.includes('বাংলাদেশ বিশ্ববিদ্যালয়')),
+    'Barishal must not claim the name Bangladesh University');
+});
+
+test('T3: typing each acronym reaches the matching university first', () => {
+  for (const [query, id] of [['SUST', 'su'], ['SU', 'su'], ['BU', 'bu'], ['BUET', 'buet'], ['IUT', 'iut']]) {
+    const top = cat.searchUniversities(query, 1)[0];
+    assert.ok(top, `"${query}" must return a suggestion`);
+    assert.equal(top.university.id, id, `"${query}" must resolve to ${id}, got ${top.university.id}`);
+  }
+});
+
+test('T3: every university has a distinct, non-empty official name', () => {
+  const names = new Map();
+  for (const q of ['a', 'u', 'i', 'e', 'o', 'ব']) {
+    for (const hit of cat.searchUniversities(q, 50)) names.set(hit.university.id, hit.university.name);
+  }
+  assert.ok(names.size >= 9, `expected the full catalog, saw ${names.size}`);
+  const seen = new Set();
+  for (const [id, name] of names) {
+    assert.ok(name && name.trim().length > 2, `${id} needs a real name, got ${JSON.stringify(name)}`);
+    assert.ok(!seen.has(name), `duplicate official name ${JSON.stringify(name)}`);
+    seen.add(name);
+  }
+});

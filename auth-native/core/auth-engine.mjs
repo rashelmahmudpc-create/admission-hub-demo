@@ -243,7 +243,7 @@ const WEBP_MAGIC_OFFSET8 = 0x50424557; // "WEBP" little-endian
 const AVATAR_MAX_BYTES = 2 * 1024 * 1024;
 const AVATAR_MIN_BYTES = 64;
 
-export function normalizeProfilePatch(value = {}) {
+export function normalizeProfilePatch(value = {}, now = Date.now()) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
   const fields = Object.create(null);
   let touched = false;
@@ -267,9 +267,19 @@ export function normalizeProfilePatch(value = {}) {
       const v = String(raw || '').trim();
       if (v && !/^\d{4}-\d{2}-\d{2}$/.test(v)) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
       if (v) {
-        const y = Number(v.slice(0, 4));
+        // Same age window as signup (8–80). A fixed year ceiling drifted out of
+        // sync with the calendar and rejected legitimate young students.
+        const match = v.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        const year = Number(match[1]);
+        const month = Number(match[2]);
+        const day = Number(match[3]);
         const parsed = new Date(`${v}T00:00:00Z`);
-        if (!Number.isFinite(parsed.getTime()) || y < 1940 || y > 2020) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+        const today = new Date(Number(now));
+        let age = today.getUTCFullYear() - year;
+        const beforeBirthday = today.getUTCMonth() < month - 1 || (today.getUTCMonth() === month - 1 && today.getUTCDate() < day);
+        if (beforeBirthday) age -= 1;
+        const validDate = parsed.getUTCFullYear() === year && parsed.getUTCMonth() === month - 1 && parsed.getUTCDate() === day;
+        if (!Number.isFinite(parsed.getTime()) || !validDate || age < 8 || age > 80) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
       }
       fields.dob = v;
     } else if (key === 'school' || key === 'higherInstitution') {
@@ -886,7 +896,7 @@ export class CloudflareNativeAuthEngine {
   }
 
   async saveProfilePatch(input = {}, requestContext = {}) {
-    const fields = normalizeProfilePatch(input.fields);
+    const fields = normalizeProfilePatch(input.fields, Number(this.now()));
     const identity = await this.#firebaseIdentity(input, requestContext, AUTH_ERROR_CODES.SESSION_INVALID);
     const result = errorFromRepository(await this.repository.saveProfilePatch({
       sessionRef: identity.sessionRef,

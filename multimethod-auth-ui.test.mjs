@@ -22,13 +22,18 @@ async function waitFor(predicate, timeout = 1000) {
 const bytes = (...values) => Uint8Array.of(...values).buffer;
 const challenge = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
 
-function setup({ methods = {}, signed = false, passkeyCredentials = null, backupInteraction = null, pageUrl = 'https://admissionhub.pages.dev/' } = {}) {
+function setup({ methods = {}, signed = false, passkeyCredentials = null, backupInteraction = null, pageUrl = 'https://admissionhub.pages.dev/', accountCreated = true, existingPasskeys = 0 } = {}) {
   const dom = new JSDOM('<!doctype html><html><head></head><body></body></html>', {
     url: pageUrl,
     runScripts: 'dangerously',
     pretendToBeVisual: true
   });
   const calls = [];
+  // The account's own credential list — the only thing that may decide whether
+  // the passkey prompt is offered again.
+  const credentials = existingPasskeys
+    ? Array.from({ length: existingPasskeys }, (_, i) => ({ id: `credential-${i}`, createdAt: Date.now(), synced: false }))
+    : [];
   let googleCallback = null;
   let tokenCallback = null;
   dom.window.google = {
@@ -78,7 +83,11 @@ function setup({ methods = {}, signed = false, passkeyCredentials = null, backup
         : reply(401, { error: { code: 'SESSION_INVALID', message: 'সেশন নেই।' } });
     }
     if (path.endsWith('/google/link')) return reply(200, { authenticated: true, emailVerified: true, user: { id: 'usr-ui', emailMasked: 'u***@example.com' } });
-    if (path.endsWith('/google')) return reply(200, { authenticated: true, emailVerified: true, user: { id: 'usr-ui', emailMasked: 'u***@example.com' } });
+    // `created` is the server's own once-per-account signal: only the round-trip
+    // that brought the account into existence carries it. Mirrors authSuccess in
+    // auth-native/worker/public-auth-handler.mjs.
+    const sessionBody = { authenticated: true, created: accountCreated, emailVerified: true, user: { id: 'usr-ui', emailMasked: 'u***@example.com' } };
+    if (path.endsWith('/google')) return reply(200, sessionBody);
     if (path.endsWith('/passkey/authentication/begin')) return reply(200, {
       challengeId: 'passkey-challenge-login',
       options: { challenge, rpId: 'admissionhub.pages.dev', timeout: 120000, userVerification: 'required', allowCredentials: [] }
@@ -94,8 +103,11 @@ function setup({ methods = {}, signed = false, passkeyCredentials = null, backup
         excludeCredentials: []
       }
     });
-    if (path.endsWith('/passkey/registration/finish')) return reply(200, { registered: true, credentialCount: 1 });
-    if (path.endsWith('/passkey/status')) return reply(200, { count: 1, credentials: [{ id: 'credential-ui', createdAt: Date.now(), synced: false }] });
+    if (path.endsWith('/passkey/registration/finish')) {
+      credentials.push({ id: 'credential-ui', createdAt: Date.now(), synced: false });
+      return reply(200, { registered: true, credentialCount: credentials.length });
+    }
+    if (path.endsWith('/passkey/status')) return reply(200, { count: credentials.length, credentials: credentials.slice() });
     if (path.endsWith('/passkey/remove')) return reply(200, { removed: true, credentialCount: 0 });
     if (path.includes('/backup/request')) return reply(202, {
       accepted: true,
@@ -243,6 +255,59 @@ test('signed user can enroll and remove an optional Passkey without changing Fir
   assert.equal(finish.body.response.rawId, 'FRY');
   assert.deepEqual(finish.body.response.transports, ['internal']);
   assert.equal(app.window.AdmissionAccount.getSession().user.id, 'usr-ui');
+  app.dom.window.close();
+});
+
+
+test('a returning account is never asked to add a passkey again', async () => {
+  const clientId = '123456789012-exampleclientidentifier.apps.googleusercontent.com';
+  const app = setup({
+    methods: { google: { available: true, clientId }, passkey: { available: true } },
+    // An account that already exists — so `created` is false — and already owns
+    // a passkey. The owner's report: "বারবার নতুন লগইন করার সময় পাস key যুক্ত
+    // করতে বলে কেনো ১ বার বলবে ১ টা একাউন্ট এ".
+    accountCreated: false,
+    existingPasskeys: 1,
+    passkeyCredentials: {
+      async get() { throw new Error('not used'); },
+      async create() { throw new Error('must not be called for an account that owns a passkey'); }
+    }
+  });
+  await waitFor(() => app.document.querySelector('[data-role="google-button"] button'));
+  app.window.AdmissionAccount.open();
+  app.googleCredential(`google-id-${'r'.repeat(32)}`);
+  await waitFor(() => app.document.querySelector('[data-view="signed"]').hidden === false);
+
+  assert.equal(app.document.querySelector('[data-view="security-setup"]').hidden, true,
+    'a returning account must not be asked to add another passkey');
+  assert.equal(app.calls.some(call => call.path.endsWith('/passkey/registration/begin')), false);
+  app.dom.window.close();
+});
+
+
+test('a returning account that skipped a passkey is not asked again on login', async () => {
+  const clientId = '123456789012-exampleclientidentifier.apps.googleusercontent.com';
+  const app = setup({
+    methods: { google: { available: true, clientId }, passkey: { available: true } },
+    // Existing account, no passkey yet: the student tapped "পরে করব" earlier or
+    // simply never enrolled. The offer belongs to signup — it must not return on
+    // every later login. Adding one stays available on demand from the account
+    // panel, which keeps the prompt reachable without nagging.
+    accountCreated: false,
+    existingPasskeys: 0,
+    passkeyCredentials: {
+      async get() { throw new Error('not used'); },
+      async create() { throw new Error('must not be called implicitly on login'); }
+    }
+  });
+  await waitFor(() => app.document.querySelector('[data-role="google-button"] button'));
+  app.window.AdmissionAccount.open();
+  app.googleCredential(`google-id-${'k'.repeat(32)}`);
+  await waitFor(() => app.document.querySelector('[data-view="signed"]').hidden === false);
+
+  assert.equal(app.document.querySelector('[data-view="security-setup"]').hidden, true,
+    'the passkey offer must not reappear on every returning login');
+  assert.equal(app.calls.some(call => call.path.endsWith('/passkey/registration/begin')), false);
   app.dom.window.close();
 });
 

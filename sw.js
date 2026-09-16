@@ -1,5 +1,5 @@
 const CACHE_PREFIX = 'admission-hub-shell-';
-const BUILD_ID = 'v267-profile-v12-20260915';
+const BUILD_ID = 'v268-lang-theme-20260915';
 const CACHE_NAME = `${CACHE_PREFIX}${BUILD_ID}`;
 const VERSION_HEADER = 'X-Admission-Hub-Build';
 const DOCUMENT_NETWORK_TIMEOUT_MS = 2500;
@@ -21,10 +21,11 @@ const APP_SHELL = [
   './session-persist.js?v=session-v2',
   './account-access.css?v=20260916-account-entry-v5',
   './institutions-bd.js?v=bd-institutions-v2',
+  './language-engine.js?v=lang-v1',
   './account-access.js?v=20260916-account-entry-v5',
   './academic-catalog.js?v=acad-cat-v2',
-  './profile-ui.js?v=profile-v12',
-  './profile-ui.css?v=profile-v12',
+  './profile-ui.js?v=profile-v13',
+  './profile-ui.css?v=profile-v13',
   './data-protection.js?v=dp-v3-fastboot',
   './dashboard-v2.js?v=dash2f12-clean',
   './ai-agent-chat.js?v=agent-f1-ui-chatv17-clean',
@@ -36,18 +37,19 @@ const APP_SHELL = [
 // A truncated/corrupt download is NEVER written to the shell cache.
 const ASSET_DIGESTS = {
 /* sw-manifest:start */
-  "./index.html": "33f7c2bfdd99d83673cb05e0f51b3b5168459c0b48cd5b3ceff7dc8e27fea78c",
+  "./index.html": "e7e56ba90a0bba31865f05853c2730037f9dcf481f7710d1e1a17b41e7123614",
   "./manifest.json": "11a85ae594fc629b11605daeda3f9afe4ef95215a55a29f9cc423314bfb275a4",
   "./manifest.webmanifest": "5be476009a140eabd088bd972bd4d345b9c4f4a055cd6e4f08774b9cb4afaf52",
   "./dashboard-v2.css?v=dash2f11-clean": "0c20c3a97ec99ca00690f3dce037f44a00fe3fa917a9b2f1f19b11acc02cda9f",
   "./3d-loader.css?v=3d-v2": "43ca21b0a41be5d223c317fd63582f19ff6ffab5d010639ef26349464550da63",
   "./session-persist.js?v=session-v2": "99f3d1f49f6d5714fd25f1c12b2aa978ca97a009d6caba9a690a0442d082593c",
-  "./account-access.css?v=20260916-account-entry-v5": "250cf804428c240f31132872485aa8d5984f2f489ea8fb30038aa3884ec58913",
+  "./account-access.css?v=20260916-account-entry-v5": "c28dd7c2adc90cfb80ad61998172a68905f2a4d28dc8ac704d5f493b3d5028cd",
   "./institutions-bd.js?v=bd-institutions-v2": "602c5549515e8207ad152b948ca9b8fe3ad0fbe429afb56380e4e21b662f779d",
-  "./account-access.js?v=20260916-account-entry-v5": "3253207302525eec177e576019785909a601bfd848e9ff206f5d72f7e25a3389",
-  "./academic-catalog.js?v=acad-cat-v2": "598c5fb79050ec9729fed6d6749675e85888f1d1b2f8836dbc509b56b18e4c43",
-  "./profile-ui.js?v=profile-v12": "0ae68f62e527455c34649b23cf0dd6ce91b6957c2849049cc9d723beedd3ea16",
-  "./profile-ui.css?v=profile-v12": "cf77d9ff315e3b7d327d518eabab36c6818973ad942296da75214799675b932c",
+  "./language-engine.js?v=lang-v1": "0dedc84bbf23e2ec580f1e23aeb623e44208d02afe09234a4ded177d22e633d3",
+  "./account-access.js?v=20260916-account-entry-v5": "a76a8119d48dcdb6a9fb7b054672e038c3b3a66ff5fa25708db08a442387711f",
+  "./academic-catalog.js?v=acad-cat-v2": "75e7b80663d41330658c948ad1d4829d49f5c9abed581350582cfeace06d5b32",
+  "./profile-ui.js?v=profile-v13": "7ef05bb519209f3e4b8d1a4eb9687c7c96375f0a0e26b0c9ae4efd13440b88be",
+  "./profile-ui.css?v=profile-v13": "fb40904f866cfb0158f0d49cb3c578aebcd42c26b326dc057df4e0a7039cd70e",
   "./data-protection.js?v=dp-v3-fastboot": "359dc907ade4bcb3a6a722385969ebb6af47f7e436e6cdf2cce0dd6b7343723d",
   "./dashboard-v2.js?v=dash2f12-clean": "fe480f999c5d19c380752c8ceed5603dc9a31be2c5cf254cd45e23e233fb45f4",
   "./ai-agent-chat.js?v=agent-f1-ui-chatv17-clean": "9c177d878cbd0cdb7b74617f545cb41ce790041c492c7cbb2368230c277de544",

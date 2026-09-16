@@ -1128,9 +1128,18 @@
         state.profileSynced = result?.saved === true;
         if (state.profileSynced) {
           document.dispatchEvent(new CustomEvent('admissionhub:profile-ready', { detail: state.pendingProfile }));
+        } else if (pending) {
+          state.profilePendingAttempted = false;
         }
         return state.profileSynced;
-      } catch (_) { return false; }
+      } catch (_) {
+        // A failed write must not burn the one-shot guard. The signup details
+        // live only in memory, so a transient failure here would otherwise
+        // strand them forever; a later verification step has to be able to
+        // retry. The in-flight promise above still blocks duplicate writes.
+        if (pending) state.profilePendingAttempted = false;
+        return false;
+      }
       finally { state.profileSyncPromise = null; }
     })();
     return state.profileSyncPromise;
@@ -1428,8 +1437,12 @@
     return friendlyError(error);
   };
 
-  const establishSession = (result, text, { offerPasskey = true } = {}) => {
+  const establishSession = async (result, text, { offerPasskey = true } = {}) => {
     const onboarding = state.signupJourney || pendingSignup();
+    // "Once per account" is decided by the server, not by guesswork: `created`
+    // is true only on the round-trip that brought the account into existence.
+    const brandNewAccount = result?.created === true;
+    const mayOfferPasskey = offerPasskey && (brandNewAccount || Boolean(onboarding));
     state.session = result;
     state.verification = null;
     state.telegram = null;
@@ -1441,7 +1454,13 @@
     broadcastAuthEvent('login');
     rememberEntry('account');
     updateLauncher();
-    const showSetup = offerPasskey && state.capabilities.passkey.enrollmentAvailable && passkeyBrowserReady();
+    // The account's own credential list decides the prompt — the global
+    // "enrollment available" capability cannot. This await is what makes the
+    // decision reliable: the view is chosen only after the list is known.
+    if (mayOfferPasskey) await refreshPasskeyStatus();
+    const ownsPasskey = state.passkeys.length > 0;
+    const showSetup = mayOfferPasskey && !ownsPasskey
+      && state.capabilities.passkey.enrollmentAvailable && passkeyBrowserReady();
     if (onboarding) {
       state.verificationLabel = result?.emailVerified === true ? 'Email' : result?.telegramVerified === true ? 'Telegram' : 'Account';
       state.afterVerified = showSetup ? 'security-setup' : 'success';
@@ -1453,8 +1472,10 @@
     }
     if (onboarding) message();
     else message(text, 'success');
-    refreshPasskeyStatus();
-    if (!onboarding) syncPendingProfile();
+    if (!onboarding) {
+      refreshPasskeyStatus();
+      syncPendingProfile();
+    }
     restoreReturnDestination();
   };
 
@@ -1486,7 +1507,7 @@
         method: 'POST',
         body: { challengeId: begin.challengeId, response: assertionPayload(credential) }
       });
-      establishSession(result, 'Passkey দিয়ে তোমার একই account-এ প্রবেশ হয়েছে।', { offerPasskey: false });
+      await establishSession(result, 'Passkey দিয়ে তোমার একই account-এ প্রবেশ হয়েছে।', { offerPasskey: false });
     } catch (error) { message(passkeyErrorMessage(error), 'error'); }
     finally { setBusy(false); }
   };
@@ -1530,7 +1551,7 @@
     setBusy(true);
     try {
       const result = await api('/google', { method: 'POST', body: { idToken: credential } });
-      establishSession(result, 'Google দিয়ে তোমার একই account-এ প্রবেশ হয়েছে।');
+      await establishSession(result, 'Google দিয়ে তোমার একই account-এ প্রবেশ হয়েছে।');
     } catch (error) {
       if (error.code === 'ACCOUNT_LINK_REQUIRED') showView('google-link');
       message(friendlyError(error), 'error');
@@ -2099,7 +2120,7 @@
     try {
       const result = await api('/account-verification/email/status', { method: 'POST', body: {} });
       if (result?.authenticated === true && result?.emailVerified === true) {
-        establishSession(result, 'Email verification নিশ্চিত হয়েছে।', { offerPasskey: true });
+        await establishSession(result, 'Email verification নিশ্চিত হয়েছে।', { offerPasskey: true });
         return true;
       }
       state.verification = {
@@ -2137,7 +2158,7 @@
       const result = await api('/account-verification/email/status', { method: 'POST', body: {} });
       if (result?.authenticated === true && result?.emailVerified === true) {
         state.signupJourney = state.signupJourney || pendingSignup();
-        establishSession(result, 'Email verification নিশ্চিত হয়েছে।', { offerPasskey: true });
+        await establishSession(result, 'Email verification নিশ্চিত হয়েছে।', { offerPasskey: true });
         return true;
       }
       if (!silent) message('Verification এখনো শেষ হয়নি। Email-এর link খুলে ফিরে এসে আবার Check করো।', 'info');
@@ -2437,7 +2458,7 @@
       try {
         const result = await api('/login', { method: 'POST', body: { email, password, remember: $('#ah-login-remember')?.checked === true } });
         if (result.authenticated === true) {
-          establishSession(result, 'যাচাইকৃত অ্যাকাউন্টে লগইন হয়েছে।');
+          await establishSession(result, 'যাচাইকৃত অ্যাকাউন্টে লগইন হয়েছে।');
         } else if (result.verification?.selectionRequired === true) {
           state.verification = {
             email,
@@ -2474,7 +2495,7 @@
       setBusy(true);
       try {
         const result = await linkGoogle(email, password);
-        establishSession(result, 'Google আগের account-এ নিরাপদে যুক্ত হয়েছে।');
+        await establishSession(result, 'Google আগের account-এ নিরাপদে যুক্ত হয়েছে।');
       } catch (error) { message(friendlyError(error), 'error'); }
       finally { $('#ah-link-password').value = ''; setBusy(false); }
     });
@@ -2510,7 +2531,7 @@
           body: { attemptId: state.telegram.attemptId, code }
         });
         renderTelegramState('success');
-        establishSession(result, 'Telegram account verification সফল। তোমার Admission Hub account সক্রিয় হয়েছে।');
+        await establishSession(result, 'Telegram account verification সফল। তোমার Admission Hub account সক্রিয় হয়েছে।');
       } catch (error) {
         $('#ah-telegram-code').value = '';
         renderTelegramDigits();
@@ -2660,6 +2681,10 @@
       setBusy(true);
       setSessionState('LOGGING_OUT');
       try {
+        // Signup details live only in memory until a write lands. Flush them
+        // while the session is still valid — after logout the token is gone and
+        // the data would be lost for good.
+        await syncPendingProfile({ pending: true });
         await api('/session/logout', { method: 'POST', body: {} });
         clearAuthLocalState();
         setSessionState('UNAUTHENTICATED');

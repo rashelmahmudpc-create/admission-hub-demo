@@ -556,3 +556,92 @@
 [data-theme="dark"] .pp-card-head { border-color: var(--pp-line); }
 [data-theme="dark"] .pp-journey-track .pp-jm small { color: var(--pp-fine); }
 [data-theme="dark"] .pp-comp .pp-ring circle { stroke: #22352d; }
+/* ============================================================
+   POLISH PASS (owner report)
+   1. Completion checklist must read as part of the card, not as
+      loose rows escaping below it.
+   2. Inputs/buttons: consistent radius, height and focus ring across
+      profile, academic and edit surfaces.
+   3. Suggestion dropdown sits above surrounding cards and scrolls on
+      short screens.
+   ============================================================ */
+
+/* 1 — completion card containment */
+.card.pp-comp {
+  border-radius: 18px;
+  padding: 18px;
+  overflow: hidden;
+  position: relative;
+  box-shadow: 0 2px 10px rgba(15, 107, 79, 0.06);
+}
+.pp-comp .pp-comp-row { align-items: flex-start; }
+.pp-comp .pp-comp-steps {
+  margin: 14px -18px -18px;
+  padding: 12px 18px 14px;
+  gap: 8px;
+  border-top: 1px solid var(--pp-line);
+  background: var(--pp-soft);
+  list-style: none;
+}
+.pp-comp .pp-comp-steps li { margin: 0; }
+.pp-comp .pp-comp-step {
+  border-radius: 12px;
+  border: 1px solid var(--pp-line);
+  background: var(--pp-card);
+  padding: 11px 12px;
+  font-weight: 700;
+  min-height: 44px;
+  box-sizing: border-box;
+}
+.pp-comp .pp-comp-step:hover { border-color: rgba(22, 163, 74, 0.4); background: var(--pp-emerald-soft); }
+.pp-comp .pp-comp-cta { min-height: 40px; padding: 0; }
+
+/* 2 — unified control sizing */
+.pp-field input,
+.pp-field textarea,
+.pp-edit .pp-field input,
+.pp-edit .pp-field textarea,
+.pp-acad-addrow input,
+.pp-acad-addrow-multi select,
+.pp-select-wrap select,
+.pp-acad-sec input,
+.pp-acad-sec select {
+  min-height: 46px;
+  border-radius: 13px;
+  font-size: 15px;
+  transition: border-color 0.16s ease, background 0.16s ease, box-shadow 0.16s ease;
+}
+.pp-field textarea,
+.pp-edit .pp-field textarea { min-height: 96px; padding: 12px; }
+.pp-field input:focus,
+.pp-field textarea:focus,
+.pp-edit .pp-field input:focus,
+.pp-edit .pp-field textarea:focus,
+.pp-acad-addrow input:focus,
+.pp-acad-addrow-multi select:focus,
+.pp-select-wrap select:focus {
+  border-color: var(--pp-emerald);
+  box-shadow: 0 0 0 3px rgba(15, 107, 79, 0.14);
+}
+.pp-btn-primary,
+.pp-btn-secondary,
+.pp-btn-ghost { border-radius: 13px; min-height: 44px; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; gap: 8px; transition: transform 0.14s ease, box-shadow 0.16s ease, background 0.16s ease; }
+.pp-btn-primary:not(:disabled):hover { box-shadow: 0 6px 18px rgba(15, 107, 79, 0.22); }
+.pp-btn-primary:not(:disabled):active,
+.pp-btn-secondary:active,
+.pp-btn-ghost:active { transform: translateY(1px); }
+.pp-acad-addrow .pp-btn-secondary,
+.pp-acad-addrow-multi .pp-btn-secondary { min-height: 46px; border-radius: 13px; }
+.pp-card-edit { min-height: 32px; display: inline-flex; align-items: center; }
+
+/* 3 — suggestion list layering */
+.pp-acad-ulist { max-height: 264px; overflow-y: auto; overscroll-behavior: contain; }
+.pp-acad-ulist[hidden] { display: none; }
+
+[data-theme="dark"] .card.pp-comp { background: var(--pp-card); }
+[data-theme="dark"] .pp-comp .pp-comp-steps { background: #16211c; border-top-color: var(--pp-line); }
+[data-theme="dark"] .pp-comp .pp-comp-step { background: #1b2721; border-color: rgba(255, 255, 255, 0.12); color: #e6f2ec; }
+[data-theme="dark"] .pp-field input:focus,
+[data-theme="dark"] .pp-field textarea:focus,
+[data-theme="dark"] .pp-acad-addrow input:focus,
+[data-theme="dark"] .pp-acad-addrow-multi select:focus { box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.18); }

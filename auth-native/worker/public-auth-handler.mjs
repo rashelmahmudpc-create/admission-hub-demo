@@ -6,6 +6,10 @@ import { verificationConfig } from '../verification/config.mjs';
 import { resolveTelegramWebhookSecret, validTelegramWebhookSecret } from '../verification/telegram-security.mjs';
 
 export const AUTH_API_PREFIX = '/api/auth/v1';
+// Phase 7 public-safe profile projection — deliberately unauthenticated and
+// therefore outside the auth prefix. Shared as the constant the route gate,
+// the CORS check and the route itself all read, so they cannot drift apart.
+export const PUBLIC_PROFILE_PREFIX = '/api/public/profile/';
 export const AUTH_SESSION_COOKIE = '__Host-ah_session';
 export const AUTH_FIREBASE_COOKIE = '__Host-ah_firebase';
 export const AUTH_DEVICE_COOKIE = '__Host-ah_device';
@@ -387,7 +391,12 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
   const publicConfigCache = new WeakMap();
   return async function handleNativeAuthRequest(request, env) {
     const url = new URL(request.url);
-    if (!url.pathname.startsWith(`${AUTH_API_PREFIX}/`) && url.pathname !== AUTH_API_PREFIX) return null;
+    // The public-safe profile projection lives further down in this handler but
+    // sits OUTSIDE the /api/auth/v1 prefix. Gating on the auth prefix alone made
+    // it unreachable: the request fell through to the product API, which
+    // answered {"error":"not-found"} — every shared public profile 404'd.
+    const isPublicProfileRoute = url.pathname.startsWith(PUBLIC_PROFILE_PREFIX);
+    if (!url.pathname.startsWith(`${AUTH_API_PREFIX}/`) && url.pathname !== AUTH_API_PREFIX && !isPublicProfileRoute) return null;
     const origin = request.headers.get('Origin') || '';
     const telegramOperation = request.method === 'POST' && [
       `${AUTH_API_PREFIX}/telegram/webhook`,
@@ -1259,8 +1268,8 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
 
       // Phase 7 — public-safe profile projection (unauthenticated,
       // rate-limited). Private profiles never surface.
-      if (request.method === 'GET' && url.pathname.startsWith('/api/public/profile/')) {
-        const suffix = decodeURIComponent(url.pathname.slice('/api/public/profile/'.length));
+      if (request.method === 'GET' && url.pathname.startsWith(PUBLIC_PROFILE_PREFIX)) {
+        const suffix = decodeURIComponent(url.pathname.slice(PUBLIC_PROFILE_PREFIX.length));
         const isAvatar = suffix.endsWith('/avatar');
         const publicId = isAvatar ? suffix.slice(0, -'/avatar'.length) : suffix;
         await callAuthority(env, '/internal/firebase/rate', {

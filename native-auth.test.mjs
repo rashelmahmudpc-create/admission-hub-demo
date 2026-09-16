@@ -815,3 +815,91 @@ test('malformed Firebase verification acceptance fails closed without an authent
   assert.equal(app.state.repository.snapshot().users.length, 0);
   assert.equal(app.state.repository.snapshot().sessions.length, 0);
 });
+
+// ---------------------------------------------------------------------------
+// Public-safe profile HTTP route. The route lived outside the /api/auth/v1
+// prefix while the handler's entry gate only admitted that prefix, so every
+// shared profile link fell through to the product API and 404'd with
+// {"error":"not-found"} — the handler's own route was unreachable dead code.
+// ---------------------------------------------------------------------------
+
+const publicProfileRequest = publicId => new Request(`https://worker.example/api/public/profile/${publicId}`, {
+  headers: { Origin: 'https://admissionhub.pages.dev' }
+});
+
+const publishPublicProfile = async app => {
+  app.env.VERIFICATION_AUTH_ACTIVATION = 'enabled';
+  const email = 'shared.profile@example.com';
+  const signup = await app.handler(apiRequest(`${AUTH_API_PREFIX}/signup`, {
+    method: 'POST', body: { email, password: 'StrongPassword!9' }
+  }), app.env, {});
+  const cookies = [extractCookiePair(signup, '__Host-ah_verification'), extractCookiePair(signup, '__Host-ah_device')]
+    .filter(Boolean).join('; ');
+  const deviceCookie = extractCookiePair(signup, '__Host-ah_device');
+  await app.handler(apiRequest(`${AUTH_API_PREFIX}/profile/pending`, {
+    method: 'POST', cookie: cookies,
+    body: { fullName: 'Shared Student', dob: '2007-05-12', school: null, higherInstitution: null }
+  }), app.env, {});
+  app.firebase.users.get(email).emailVerified = true;
+  await app.handler(apiRequest(`${AUTH_API_PREFIX}/account-verification/email/start`, {
+    method: 'POST', cookie: cookies, body: {}
+  }), app.env, {});
+  const verified = await app.handler(apiRequest(`${AUTH_API_PREFIX}/account-verification/email/status`, {
+    method: 'POST', cookie: cookies, body: {}
+  }), app.env, {});
+  const sessionCookie = [
+    extractCookiePair(verified, '__Host-ah_session'),
+    extractCookiePair(verified, '__Host-ah_firebase'),
+    deviceCookie
+  ].filter(Boolean).join('; ');
+  assert.ok(sessionCookie, 'verification must establish a session');
+  const profile = await app.handler(apiRequest(`${AUTH_API_PREFIX}/profile`, { cookie: sessionCookie }), app.env, {});
+  // publicId is a sibling of profile on the read model, not nested inside it
+  const publicId = (await profile.json()).publicId;
+  assert.ok(publicId, 'publishing a profile must yield a public ID');
+  return { publicId, sessionCookie };
+};
+
+test('GET /api/public/profile/:id is routed to the native handler, not the product API', async () => {
+  const app = handlerSetup();
+  const { publicId, sessionCookie } = await publishPublicProfile(app);
+  const patched = await app.handler(apiRequest(`${AUTH_API_PREFIX}/profile/patch`, {
+    method: 'POST',
+    cookie: sessionCookie,
+    body: { fields: { visibility: 'public', bio: 'future engineer' } }
+  }), app.env, {});
+  assert.equal(patched.status, 200);
+  const response = await app.handler(publicProfileRequest(publicId), app.env, {});
+  assert.ok(response, 'the public profile route must be handled, not skipped');
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.ok, true);
+  assert.equal(body.profile.publicId, publicId);
+  assert.equal(body.profile.visibility, 'public');
+  assert.equal(body.profile.bio, 'future engineer');
+  // the true public-safe allowlist: never email/mobile/DOB/school
+  assert.equal(body.profile.email, undefined);
+  assert.equal(body.profile.mobile, undefined);
+  assert.equal(body.profile.dob, undefined);
+  assert.equal(body.profile.school, undefined);
+});
+
+test('GET /api/public/profile/:id answers an unknown ID without leaking a profile', async () => {
+  const app = handlerSetup();
+  const response = await app.handler(publicProfileRequest('AH-ZZZZZZ'), app.env, {});
+  // Fail-closed: an unknown ID is a hard not-found, never an empty profile body
+  // that a caller could mistake for "no data set yet".
+  assert.equal(response.status, 404);
+  const body = await response.json();
+  assert.equal(body.ok, false);
+  assert.equal(body.error.code, 'PUBLIC_PROFILE_NOT_FOUND');
+  assert.equal(body.profile, undefined);
+});
+
+test('unrelated /api/public paths are still not claimed by the native handler', async () => {
+  const app = handlerSetup();
+  const response = await app.handler(new Request('https://worker.example/api/public/other', {
+    headers: { Origin: 'https://admissionhub.pages.dev' }
+  }), app.env, {});
+  assert.equal(response, null, 'only the profile prefix belongs to the native handler');
+});

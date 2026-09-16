@@ -30,6 +30,20 @@
   // typo-proof mapping, all ten digits guaranteed.
   const BN_DIGITS = Array.from({ length: 10 }, (_, i) => String.fromCharCode(0x09E6 + i));
   const bnYear = (y) => String(y == null ? '' : y).replace(/[0-9]/g, (d) => BN_DIGITS[d]);
+  // Server contract: admissionSession is a single 4-digit year (YYYY), max 4
+  // chars. The catalog speaks session ranges ('2025-26') — storing that raw made
+  // the whole /profile/patch fail validation, so no academic field ever saved.
+  // Session ids start in a year, so the leading year is the canonical value.
+  const canonicalYear = (v) => {
+    const m = String(v == null ? '' : v).match(/\d{4}/);
+    return m ? m[0] : '';
+  };
+  // Display: '2025' → '2025-26' so the admission session range stays readable.
+  const sessionLabel = (y) => {
+    const c = canonicalYear(y);
+    if (!c) return '';
+    return /-/.test(String(y)) ? String(y) : `${c}-${String((Number(c) + 1) % 100).padStart(2, '0')}`;
+  };
   const bnDate = (ts) => {
     if (!ts) return '';
     try { return new Intl.DateTimeFormat('bn-BD', { month: 'short', year: 'numeric' }).format(new Date(ts)); }
@@ -500,7 +514,7 @@
   function identityCard() {
     const d = state.data || {};
     const p = d.profile || {};
-    const year = p.admissionSession || d.joinedYear || '';
+    const year = p.admissionSession ? sessionLabel(p.admissionSession) : (d.joinedYear || '');
     return `
       <style>${CRITICAL_CSS}</style>
       <div class="pp-hero" data-profile-contract="profile-identity-v1">
@@ -557,7 +571,7 @@
       <div class="card pp-card pp-academic">
         <div class="pp-card-head"><span class="pp-card-title">Academic Identity</span><button class="pp-card-edit" data-role="open-academic" type="button">Edit</button></div>
         ${row('🎯', 'TARGET UNIVERSITIES', targets.map((t) => `${t.name}${t.unit ? ` (${t.unit})` : ''}`).join(', ') || 'Add target universities', 'open-academic', 'Add target universities')}
-        ${row('📅', 'ADMISSION SESSION', p.admissionSession ? bnYear(p.admissionSession) : 'Not set', 'open-academic', 'Session যোগ করো')}
+        ${row('📅', 'ADMISSION SESSION', p.admissionSession ? bnYear(sessionLabel(p.admissionSession)) : 'Not set', 'open-academic', 'Session যোগ করো')}
         ${row('🚀', 'ACADEMIC GOAL', p.academicGoal || 'Set a goal', 'open-academic', 'Set a goal — specific লক্ষ্য')}
         ${row('🧪', 'PREFERRED SUBJECTS', Array.isArray(p.subjects) && p.subjects.length ? p.subjects.join(', ') : 'Add subjects', 'open-academic', 'কোন subject পছন্দ?')}
       </div>`;
@@ -916,16 +930,29 @@
      university + session driven, never a generic A/B/C/D assumption.
      The UI selectors below contain NO unit arrays of their own. */
   const acadCat = () => (typeof window.AH_AcademicCatalog === 'object' && window.AH_AcademicCatalog) || null;
+  // The draft stores the server-canonical 4-digit year, but the catalog keys its
+  // units/subjects by session id ('2025-26') — bridge the two here so unit and
+  // subject lists stay correct for the session the student actually picked.
+  const acadSessionId = (cat, year) => {
+    const c = canonicalYear(year);
+    if (!c) return '';
+    const hit = (cat ? cat.listSessions() : []).find((s) => canonicalYear(s.id) === c);
+    return hit ? hit.id : '';
+  };
 
   function academicDraftInit() {
     const p = state.data?.profile || {};
     state.acad = {
       targets: Array.isArray(p.targets) ? p.targets.filter((t) => t && t.name).map((t) => ({ name: String(t.name), unit: String(t.unit || ''), year: String(t.year || '') })) : [],
-      session: String(p.admissionSession || ''),
+      session: canonicalYear(p.admissionSession),
       goal: String(p.academicGoal || ''),
       subjects: Array.isArray(p.subjects) ? p.subjects.map((x) => String(x)).filter(Boolean) : [],
       manual: new Set(Array.isArray(p.subjects) ? p.subjects.map((x) => String(x)).filter(Boolean) : []),
       pendingUni: '',
+      // Typed-but-unpicked text. Kept in the draft so a re-render (session or
+      // unit change) never wipes what the student is still typing — the input
+      // used to be re-emitted empty, so the box appeared to "clear itself".
+      pendingUniName: '',
       pendingUnit: '',
       suggestOpen: false
     };
@@ -937,7 +964,7 @@
     const d = state.acad;
     const cat = acadCat();
     if (!cat || !d.pendingUni || !d.pendingUnit) return;
-    const official = cat.subjectsFor(d.pendingUni, d.session, d.pendingUnit);
+    const official = cat.subjectsFor(d.pendingUni, acadSessionId(cat, d.session), d.pendingUnit);
     if (!official.length) return;
     d.subjects = d.subjects.filter((s) => official.includes(s) || d.manual.has(s));
   }
@@ -955,8 +982,9 @@
     }
     if (!uniId) return { uniId: '', unitId: '', units: [], subjects: [], uniName: '' };
     const u = cat ? cat.getUniversity(uniId) : null;
-    const units = cat && d.session ? cat.unitsFor(uniId, d.session) : [];
-    const subjects = cat && unitId ? cat.subjectsFor(uniId, d.session, unitId) : [];
+    const sessionId = acadSessionId(cat, d.session);
+    const units = cat && sessionId ? cat.unitsFor(uniId, sessionId) : [];
+    const subjects = cat && unitId ? cat.subjectsFor(uniId, sessionId, unitId) : [];
     return { uniId, unitId, units, subjects, uniName: u ? u.name : uniId };
   }
 
@@ -966,7 +994,7 @@
     const cat = acadCat();
     const ctx = acadUnitContext();
     const sessions = cat ? cat.listSessions() : [];
-    const sessionOpts = sessions.map((s) => `<option value="${esc(s.id)}" ${d.session === s.id ? 'selected' : ''}>${esc(s.label)}${s.status === 'provisional' ? ' (provisional)' : ''}</option>`).join('');
+    const sessionOpts = sessions.map((s) => `<option value="${esc(canonicalYear(s.id))}" ${canonicalYear(d.session) === canonicalYear(s.id) ? 'selected' : ''}>${esc(s.label)}${s.status === 'provisional' ? ' (provisional)' : ''}</option>`).join('');
     // extra = attributes for the CHIP SPAN itself (a leaked text arg renders
     // raw markup — contract: no-attribute-leak-v1).
     const chip = (label, xrole, extra) => `<span class="pp-chip pp-chip-lg"${extra || ''}>${label}<button class="pp-chip-x" data-role="${xrole}" type="button" aria-label="মুছে ফেলো">×</button></span>`;
@@ -980,12 +1008,12 @@
     const addRow = d.targets.length < 5 ? `
       <div class="pp-acad-addrow pp-acad-addrow-multi">
         <div class="pp-acad-uni">
-          <input id="pp-acad-u" type="text" maxlength="120" placeholder="ইউনিভার্সিটি লিখো… (যেমন: CU, ঢাকা, BUET)" aria-label="University" autocomplete="off">
-          <div id="pp-acad-ulist" class="pp-acad-ulist" hidden></div>
+          <input id="pp-acad-u" type="text" maxlength="120" value="${esc(d.pendingUniName || '')}" placeholder="ইউনিভার্সিটি লিখো… (যেমন: CU, ঢাকা, BUET)" aria-label="University" autocomplete="off" role="combobox" aria-expanded="${d.suggestOpen ? 'true' : 'false'}" aria-controls="pp-acad-ulist">
+          <div id="pp-acad-ulist" class="pp-acad-ulist" role="listbox" hidden></div>
         </div>
         <select id="pp-acad-unit" ${ctx.units.length ? '' : 'disabled'} aria-label="Unit">
           <option value="">Unit —</option>
-          ${ctx.units.map((u) => `<option value="${esc(u.id)}" ${ctx.unitId === u.id ? 'selected' : ''}>${esc(u.id)} — ${esc(cat.groupLabel(ctx.uniId, d.session, u.id))}</option>`).join('')}
+          ${ctx.units.map((u) => `<option value="${esc(u.id)}" ${ctx.unitId === u.id ? 'selected' : ''}>${esc(u.id)} — ${esc(cat.groupLabel(ctx.uniId, acadSessionId(cat, d.session), u.id))}</option>`).join('')}
         </select>
         <input id="pp-acad-year" type="text" maxlength="10" placeholder="Year (optional)" aria-label="Year">
         <button class="pp-btn-secondary" data-role="acad-add-target" type="button">+ Add</button>
@@ -993,7 +1021,7 @@
       <p class="pp-fine" data-acad-catalog-contract="catalog-driven-units-v1">Unit ও subject নির্ভর করে নির্বাচিত university + session-এর official catalog-এর ওপর।</p>` : '<p class="pp-fine">সর্বোচ্চ 5টা target রাখা যায়।</p>';
     const subjChecked = (s) => d.subjects.some((x) => x.toLowerCase() === s.toLowerCase());
     const officialBlock = ctx.subjects.length
-      ? `<p class="pp-fine">Official subjects — <b>${esc(ctx.uniName)} · ${esc(ctx.unitId)} · ${esc(d.session || '—')}</b>:</p>
+      ? `<p class="pp-fine">Official subjects — <b>${esc(ctx.uniName)} · ${esc(ctx.unitId)} · ${esc(sessionLabel(d.session) || '—')}</b>:</p>
         <div class="pp-acad-subjgrid" data-role="acad-subjgrid">
           ${ctx.subjects.map((s) => `<label class="pp-acad-subj"><input type="checkbox" class="pp-acad-subjbox" value="${esc(s)}" ${subjChecked(s) ? 'checked' : ''}><span>${esc(s)}</span></label>`).join('')}
         </div>`
@@ -1048,11 +1076,23 @@
     if (!box) return;
     const cat = acadCat();
     const q = String(input?.value || '').trim();
-    if (!cat || !q) { box.hidden = true; box.innerHTML = ''; return; }
+    state.acad.pendingUniName = q;
+    const inputEl = input || $('#pp-acad-u');
+    if (inputEl) inputEl.setAttribute('aria-expanded', q && cat && cat.searchUniversities(q, 5).length ? 'true' : 'false');
+    if (!cat || !q) { box.hidden = true; box.innerHTML = ''; state.acad.suggestOpen = false; return; }
     const hits = cat.searchUniversities(q, 5);
-    if (!hits.length) { box.hidden = true; box.innerHTML = ''; return; }
-    box.innerHTML = hits.map((h) => `<button type="button" class="pp-acad-uitem" data-role="acad-pick-uni" data-uni="${esc(h.university.id)}"><b>${esc(h.university.name)}</b><small>${esc((h.university.aliases || []).slice(0, 3).join(' · '))}</small></button>`).join('');
+    if (!hits.length) { box.hidden = true; box.innerHTML = ''; state.acad.suggestOpen = false; return; }
+    box.innerHTML = hits.map((h) => `<button type="button" class="pp-acad-uitem" role="option" data-role="acad-pick-uni" data-uni="${esc(h.university.id)}"><b>${esc(h.university.name)}</b><small>${esc((h.university.aliases || []).slice(0, 3).join(' · '))}</small></button>`).join('');
     box.hidden = false;
+    state.acad.suggestOpen = true;
+  }
+
+  function closeUniSuggestions() {
+    const box = $('#pp-acad-ulist');
+    if (box) { box.hidden = true; box.innerHTML = ''; }
+    const inputEl = $('#pp-acad-u');
+    if (inputEl) inputEl.setAttribute('aria-expanded', 'false');
+    state.acad.suggestOpen = false;
   }
 
   function acadErr(msg) {
@@ -1071,7 +1111,7 @@
       .slice(0, 5)
       .map((t) => ({ name: String(t.name).trim().replace(/\s+/g, ' ').slice(0, 120), unit: String(t.unit || '').trim().replace(/\s+/g, ' ').slice(0, 20), year: String(t.year || '').trim().slice(0, 10) }))
       .filter((t) => t.name.length >= 2);
-    const session = String(d.session || '').trim();
+    const session = canonicalYear(d.session);
     const goal = String(d.goal || '').trim();
     const subjects = d.subjects.map((x) => String(x).trim().replace(/\s+/g, ' ').slice(0, 40)).filter(Boolean).slice(0, 8);
     const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
@@ -1351,6 +1391,17 @@
       document.body.appendChild(host);
     }
     host.innerHTML = cropModalMarkup();
+    // The crop dialog is mounted on document.body, OUTSIDE #app — so the
+    // delegated #app click handler never sees its buttons (owner bug: Save and
+    // Cancel did nothing). Bind on the host itself, once per host element.
+    if (!boundHosts.has(host)) {
+      boundHosts.add(host);
+      host.addEventListener('click', (e) => {
+        const el = e.target.closest('[data-role]');
+        if (!el) return;
+        handleRole(el, e);
+      });
+    }
     const imgEl = host.querySelector('[data-role="crop-img"]');
     if (imgEl) imgEl.src = crop.url;
     layoutCrop();
@@ -1572,253 +1623,286 @@
 
   /* ---------------- events ---------------- */
 
-  function copyText(text) {
-    if (navigator.clipboard?.writeText) return navigator.clipboard.writeText(text);
+  // A clipboard write can be refused (insecure context, permission denied).
+  // Resolving regardless would show "কপি হয়েছে" while the student's clipboard
+  // is still empty, so report whether the copy actually landed.
+  async function copyText(text) {
+    if (navigator.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(text);
+        return true;
+      } catch (_) { /* fall through to the legacy path */ }
+    }
     const ta = document.createElement('textarea');
     ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.cssText = 'position:fixed;top:-1000px;opacity:0';
     document.body.appendChild(ta);
     ta.select();
-    try { document.execCommand('copy'); } catch (_) {}
+    let copied = false;
+    try { copied = document.execCommand('copy') === true; } catch (_) { copied = false; }
     ta.remove();
-    return Promise.resolve();
+    return copied;
   }
 
   // Delegated handlers are bound ONCE per host element — re-renders replace
   // innerHTML (not the host), so a second binding would double-fire every
   // click (duplicate saves, double navigations).
   const boundHosts = new WeakSet();
+  // One dispatcher for every [data-role] control. Bound to #app AND to the
+  // avatar crop dialog, which is mounted on document.body (outside #app) — the
+  // #app-only binding never saw its buttons, so Save/Cancel silently did nothing.
+  function handleRole(el, e) {
+    if (!el) return;
+    const role = el.dataset.role;
+    if (role === 'open-target' || role === 'open-session' || role === 'open-goal' || role === 'open-subjects' || role === 'open-academic') {
+      academicDraftInit();
+      state.view = 'academic';
+      renderCurrentView();
+      return;
+    }
+    else if (role === 'open-prefs-sheet') {
+      state.view = 'prefs';
+      renderCurrentView();
+      return;
+    }
+    else if (role === 'prefs-back') {
+      state.view = 'profile';
+      renderProfilePage();
+      return;
+    }
+    else if (role === 'prefs-save') {
+      savePrefs(state.prefs);
+      toast('Preferences সেভ হয়েছে ✓');
+      return;
+    }
+    else if (role === 'privacy-back') {
+      state.view = 'profile';
+      renderProfilePage();
+      return;
+    }
+    else if (role === 'modal-ok') {
+      const m = document.querySelector('[data-role="modal-backdrop"]');
+      if (m) m.remove();
+      return;
+    }
+    // These set the sheet then return immediately — without the explicit
+    // render the click did nothing visible (owner bug: "ক্লিক করলে কিছু আসে না").
+    else if (role === 'open-journey-sheet' || role === 'open-achv-sheet' || role === 'open-visibility' || role === 'pref-language' || role === 'pref-appearance') {
+      state.sheet = role === 'open-journey-sheet' ? 'journey'
+        : role === 'open-achv-sheet' ? 'achv'
+          : role === 'open-visibility' ? 'visibility' : 'prefs';
+      renderCurrentView();
+      return;
+    }
+    else if (role === 'open-privacy-page') { state.view = 'privacy'; renderCurrentView(); return; }
+    else if (role === 'sheet-close' || role === 'sheet-backdrop') { closeSheet(); return; }
+    else if (role === 'open-edit-page') { state.view = 'edit'; renderCurrentView(); return; }
+    else if (role === 'comp-fix') {
+      // Land on the view that actually owns the missing field, focused, so the
+      // tap takes the student straight to the thing they have to fill in.
+      state.view = el.dataset.view === 'academic' ? 'academic' : 'edit';
+      state.editFocus = el.dataset.field || '';
+      renderCurrentView();
+      return;
+    }
+    else if (role === 'open-avatar-page') { state.view = 'avatar'; renderCurrentView(); return; }
+    else if (role === 'back-profile') { state.view = 'profile'; renderCurrentView(); return; }
+    else if (role === 'av-capture-open') {
+      const cap = $('[data-role="avatar-file-capture"]');
+      if (cap) cap.click();
+      return;
+    }
+    else if (role === 'crop-cancel') { closeCrop(); return; }
+    else if (role === 'crop-zoom-in') { setCropZoom(crop.zoom + 0.25); return; }
+    else if (role === 'crop-zoom-out') { setCropZoom(crop.zoom - 0.25); return; }
+    else if (role === 'crop-save') { saveCrop(); return; }
+    else if (role === 'avatar-remove') { onAvatarRemove(); return; }
+    else if (role === 'pick-avatar-gender') {
+      state.prefs.avatarGender = el.dataset.gender === 'girl' ? 'girl' : 'boy';
+      state.prefs.avatarStyle = 0;
+      savePrefs(state.prefs);
+      renderCurrentView();
+      return;
+    }
+    else if (role === 'pick-default-avatar') {
+      state.prefs.avatarStyle = Number(el.dataset.style) || 0;
+      savePrefs(state.prefs);
+      renderCurrentView();
+      toast('Default avatar সেভ হয়েছে ✓');
+      return;
+    }
+    else if (role === 'pref-notifications') {
+      state.prefs.notifications = state.prefs.notifications === 'on' ? 'off' : 'on';
+      savePrefs(state.prefs); renderCurrentView(); toast('Notifications setting সেভ হয়েছে ✓');
+      return;
+    }
+    else if (role === 'pick-language') {
+      if (el.disabled) return;
+      state.prefs.language = el.dataset.value;
+      savePrefs(state.prefs);
+      try { if (window.AhI18n) window.AhI18n.set(el.dataset.value); } catch (_) {}
+      closeSheet(); renderCurrentView(); toast('Language সেভ হয়েছে ✓');
+      return;
+    }
+    else if (role === 'pick-appearance') {
+      if (el.disabled) return;
+      state.prefs.appearance = el.dataset.value;
+      savePrefs(state.prefs);
+      try { if (window.AhAppearance) window.AhAppearance.set(el.dataset.value); } catch (_) {}
+      closeSheet(); renderCurrentView(); toast('Appearance সেভ হয়েছে ✓');
+      return;
+    }
+    else if (role === 'open-ai-prefs') {
+      if (!state.aiPrefs) { loadAiPrefs().then(() => { state.sheet = 'aiprefs'; renderCurrentView(); }); }
+      else { state.sheet = 'aiprefs'; renderCurrentView(); }
+      return;
+    }
+    else if (role === 'pick-ai-style' || role === 'pick-ai-tone' || role === 'pick-ai-len') {
+      if (!state.aiPrefs) state.aiPrefs = { ...AI_PREFS_DEFAULT };
+      const key = role === 'pick-ai-style' ? 'langStyle' : role === 'pick-ai-tone' ? 'tone' : 'responseLen';
+      state.aiPrefs[key] = el.dataset.value;
+      refreshAiPrefsSheet();
+      saveAiPrefs();
+      return;
+    }
+    else if (role === 'toggle-ai-memory') {
+      if (!state.aiPrefs) state.aiPrefs = { ...AI_PREFS_DEFAULT };
+      state.aiPrefs.memory = !state.aiPrefs.memory;
+      refreshAiPrefsSheet();
+      saveAiPrefs();
+      return;
+    }
+    else if (role === 'copy-public-id') { copyText(state.data?.publicId || '').then(() => toast('AH-ID কপি হয়েছে')); return; }
+    else if (role === 'copy-public-link') {
+      const link = `${location.origin}/${state.data?.publicId || ''}`;
+      copyText(link).then((copied) => {
+        if (copied) toast('Public লিংক কপি হয়েছে');
+        else toast('কপি করা যায়নি — লিংকটি নিজে কপি করো: ' + link, true);
+      });
+      return;
+    }
+    else if (role === 'go-exam') {
+      if (typeof window.navigate === 'function') window.navigate('exam');
+      else if (typeof window.render === 'function') { location.hash = 'exam'; window.render(); }
+      return;
+    }
+    else if (role === 'open-account') {
+      const acct = window.AdmissionAccount;
+      if (acct && typeof acct.open === 'function') acct.open();
+      return;
+    }
+    else if (role === 'toggle-public') {
+      const current = state.data?.profile?.visibility || 'private';
+      savePatch({ visibility: current === 'public' ? 'private' : 'public' }, () => renderProfilePage());
+      return;
+    }
+    else if (role === 'pick-visibility') {
+      const value = el.dataset.value;
+      savePatch({ visibility: value }, () => { closeSheet(); renderProfilePage(); });
+      return;
+    }
+    else if (role === 'acad-back') {
+      state.view = 'profile';
+      renderProfilePage();
+      return;
+    }
+    else if (role === 'acad-add-target') {
+      const d = state.acad;
+      const cat = acadCat();
+      const uText = String($('#pp-acad-u')?.value || '').trim().replace(/\s+/g, ' ');
+      let name = uText;
+      if (d.pendingUni && cat) {
+        const u = cat.getUniversity(d.pendingUni);
+        if (u) name = u.name; // official catalog name wins
+      }
+      const unit = String($('#pp-acad-unit')?.value || d.pendingUnit || '').trim().replace(/\s+/g, ' ');
+      const year = String($('#pp-acad-year')?.value || '').trim().replace(/\s+/g, ' ').slice(0, 10);
+      if (name.length < 2) { acadErr('ইউনিভার্সিটির নাম দাও (কমপক্ষে ২ অক্ষর)।'); return; }
+      if (name.length > 120) { acadErr('নামটি বড় হয়ে গেছে।'); return; }
+      if (unit.length > 20) { acadErr('Unit সর্বোচ্চ ২০ অক্ষর।'); return; }
+      if (d.targets.some((t) => t.name.toLowerCase() === name.toLowerCase())) { acadErr('এই target আগেই আছে।'); return; }
+      d.targets.push({ name, unit, year });
+      d.pendingUni = '';
+      d.pendingUniName = '';
+      d.pendingUnit = '';
+      closeUniSuggestions();
+      renderCurrentView();
+      return;
+    }
+    else if (role === 'acad-pick-uni') {
+      const d = state.acad;
+      const cat = acadCat();
+      d.pendingUni = String(el.dataset.uni || '');
+      d.pendingUnit = '';
+      const u = cat ? cat.getUniversity(d.pendingUni) : null;
+      // Reflect the official catalog name in the box so the student sees exactly
+      // what will be saved, and typed text can never silently diverge from it.
+      d.pendingUniName = u ? u.name : d.pendingUniName;
+      closeUniSuggestions();
+      renderCurrentView();
+      return;
+    }
+    else if (role === 'acad-move-target') {
+      const d = state.acad;
+      const i = Number(el.dataset.index);
+      const j = i + Number(el.dataset.dir || 0);
+      if (j < 0 || j >= d.targets.length) return;
+      const t = d.targets.splice(i, 1)[0];
+      d.targets.splice(j, 0, t);
+      renderCurrentView();
+      return;
+    }
+    else if (role === 'acad-del-target') {
+      state.acad.targets.splice(Number(el.dataset.index), 1);
+      renderCurrentView();
+      return;
+    }
+    else if (role === 'acad-add-subject') {
+      const d = state.acad;
+      const v = String($('#pp-acad-subject')?.value || '').trim().replace(/\s+/g, ' ');
+      if (!v) { acadErr('Subject-এর নাম দাও।'); return; }
+      if (v.length > 40) { acadErr('Subject-এর নাম 40 অক্ষরের বেশি হতে পারে না।'); return; }
+      if (d.subjects.some((x) => x.toLowerCase() === v.toLowerCase())) { acadErr('Subjectটা আগেই আছে।'); return; }
+      if (d.subjects.length >= 8) { acadErr('সর্বোচ্চ 8টা subject রাখা যায়।'); return; }
+      d.subjects.push(v);
+      if (d.manual) d.manual.add(v); // manual picks survive unit switches
+      renderCurrentView();
+      return;
+    }
+    else if (role === 'acad-del-subject') {
+      state.acad.subjects = state.acad.subjects.filter((x) => x !== el.dataset.value);
+      renderCurrentView();
+      return;
+    }
+    else if (role === 'brand-bell') {
+      try { window.NotificationHub?.openCenter?.(); } catch (_) { toast('Notification center এখনো ready নয়।'); }
+      return;
+    }
+    else if (role === 'brand-account') {
+      window.AdmissionAccount?.open();
+      return;
+    }
+    else if (role === 'acad-save') {
+      saveAcademicPage();
+      return;
+    }
+    else if (role === 'edit-save') {
+      saveEditPage();
+      return;
+    }
+  }
+
   function bindPageEvents(root) {
     if (!root) return;
     if (!boundHosts.has(root)) {
       boundHosts.add(root);
-      root.addEventListener('click', (e) => {
-      const el = e.target.closest('[data-role]');
-      if (!el) return;
-      const role = el.dataset.role;
-      if (role === 'open-target' || role === 'open-session' || role === 'open-goal' || role === 'open-subjects' || role === 'open-academic') {
-        academicDraftInit();
-        state.view = 'academic';
-        renderCurrentView();
-        return;
-      }
-      else if (role === 'open-prefs-sheet') {
-        state.view = 'prefs';
-        renderCurrentView();
-        return;
-      }
-      else if (role === 'prefs-back') {
-        state.view = 'profile';
-        renderProfilePage();
-        return;
-      }
-      else if (role === 'prefs-save') {
-        savePrefs(state.prefs);
-        toast('Preferences সেভ হয়েছে ✓');
-        return;
-      }
-      else if (role === 'privacy-back') {
-        state.view = 'profile';
-        renderProfilePage();
-        return;
-      }
-      else if (role === 'modal-ok') {
-        const m = document.querySelector('[data-role="modal-backdrop"]');
-        if (m) m.remove();
-        return;
-      }
-      // These set the sheet then return immediately — without the explicit
-      // render the click did nothing visible (owner bug: "ক্লিক করলে কিছু আসে না").
-      else if (role === 'open-journey-sheet' || role === 'open-achv-sheet' || role === 'open-visibility' || role === 'pref-language' || role === 'pref-appearance') {
-        state.sheet = role === 'open-journey-sheet' ? 'journey'
-          : role === 'open-achv-sheet' ? 'achv'
-            : role === 'open-visibility' ? 'visibility' : 'prefs';
-        renderCurrentView();
-        return;
-      }
-      else if (role === 'open-privacy-page') { state.view = 'privacy'; renderCurrentView(); return; }
-      else if (role === 'sheet-close' || role === 'sheet-backdrop') { closeSheet(); return; }
-      else if (role === 'open-edit-page') { state.view = 'edit'; renderCurrentView(); return; }
-      else if (role === 'comp-fix') {
-        // Land on the view that actually owns the missing field, focused, so the
-        // tap takes the student straight to the thing they have to fill in.
-        state.view = el.dataset.view === 'academic' ? 'academic' : 'edit';
-        state.editFocus = el.dataset.field || '';
-        renderCurrentView();
-        return;
-      }
-      else if (role === 'open-avatar-page') { state.view = 'avatar'; renderCurrentView(); return; }
-      else if (role === 'back-profile') { state.view = 'profile'; renderCurrentView(); return; }
-      else if (role === 'av-capture-open') {
-        const cap = $('[data-role="avatar-file-capture"]');
-        if (cap) cap.click();
-        return;
-      }
-      else if (role === 'crop-cancel') { closeCrop(); return; }
-      else if (role === 'crop-zoom-in') { setCropZoom(crop.zoom + 0.25); return; }
-      else if (role === 'crop-zoom-out') { setCropZoom(crop.zoom - 0.25); return; }
-      else if (role === 'crop-save') { saveCrop(); return; }
-      else if (role === 'avatar-remove') { onAvatarRemove(); return; }
-      else if (role === 'pick-avatar-gender') {
-        state.prefs.avatarGender = el.dataset.gender === 'girl' ? 'girl' : 'boy';
-        state.prefs.avatarStyle = 0;
-        savePrefs(state.prefs);
-        renderCurrentView();
-        return;
-      }
-      else if (role === 'pick-default-avatar') {
-        state.prefs.avatarStyle = Number(el.dataset.style) || 0;
-        savePrefs(state.prefs);
-        renderCurrentView();
-        toast('Default avatar সেভ হয়েছে ✓');
-        return;
-      }
-      else if (role === 'pref-notifications') {
-        state.prefs.notifications = state.prefs.notifications === 'on' ? 'off' : 'on';
-        savePrefs(state.prefs); renderCurrentView(); toast('Notifications setting সেভ হয়েছে ✓');
-        return;
-      }
-      else if (role === 'pick-language') {
-        if (el.disabled) return;
-        state.prefs.language = el.dataset.value;
-        savePrefs(state.prefs);
-        try { if (window.AhI18n) window.AhI18n.set(el.dataset.value); } catch (_) {}
-        closeSheet(); renderCurrentView(); toast('Language সেভ হয়েছে ✓');
-        return;
-      }
-      else if (role === 'pick-appearance') {
-        if (el.disabled) return;
-        state.prefs.appearance = el.dataset.value;
-        savePrefs(state.prefs);
-        try { if (window.AhAppearance) window.AhAppearance.set(el.dataset.value); } catch (_) {}
-        closeSheet(); renderCurrentView(); toast('Appearance সেভ হয়েছে ✓');
-        return;
-      }
-      else if (role === 'open-ai-prefs') {
-        if (!state.aiPrefs) { loadAiPrefs().then(() => { state.sheet = 'aiprefs'; renderCurrentView(); }); }
-        else { state.sheet = 'aiprefs'; renderCurrentView(); }
-        return;
-      }
-      else if (role === 'pick-ai-style' || role === 'pick-ai-tone' || role === 'pick-ai-len') {
-        if (!state.aiPrefs) state.aiPrefs = { ...AI_PREFS_DEFAULT };
-        const key = role === 'pick-ai-style' ? 'langStyle' : role === 'pick-ai-tone' ? 'tone' : 'responseLen';
-        state.aiPrefs[key] = el.dataset.value;
-        refreshAiPrefsSheet();
-        saveAiPrefs();
-        return;
-      }
-      else if (role === 'toggle-ai-memory') {
-        if (!state.aiPrefs) state.aiPrefs = { ...AI_PREFS_DEFAULT };
-        state.aiPrefs.memory = !state.aiPrefs.memory;
-        refreshAiPrefsSheet();
-        saveAiPrefs();
-        return;
-      }
-      else if (role === 'copy-public-id') { copyText(state.data?.publicId || '').then(() => toast('AH-ID কপি হয়েছে')); return; }
-      else if (role === 'copy-public-link') { copyText(`${location.origin}/${state.data?.publicId || ''}`).then(() => toast('Public লিংক কপি হয়েছে')); return; }
-      else if (role === 'go-exam') {
-        if (typeof window.navigate === 'function') window.navigate('exam');
-        else if (typeof window.render === 'function') { location.hash = 'exam'; window.render(); }
-        return;
-      }
-      else if (role === 'open-account') {
-        const acct = window.AdmissionAccount;
-        if (acct && typeof acct.open === 'function') acct.open();
-        return;
-      }
-      else if (role === 'toggle-public') {
-        const current = state.data?.profile?.visibility || 'private';
-        savePatch({ visibility: current === 'public' ? 'private' : 'public' }, () => renderProfilePage());
-        return;
-      }
-      else if (role === 'pick-visibility') {
-        const value = el.dataset.value;
-        savePatch({ visibility: value }, () => { closeSheet(); renderProfilePage(); });
-        return;
-      }
-      else if (role === 'acad-back') {
-        state.view = 'profile';
-        renderProfilePage();
-        return;
-      }
-      else if (role === 'acad-add-target') {
-        const d = state.acad;
-        const cat = acadCat();
-        const uText = String($('#pp-acad-u')?.value || '').trim().replace(/\s+/g, ' ');
-        let name = uText;
-        if (d.pendingUni && cat) {
-          const u = cat.getUniversity(d.pendingUni);
-          if (u) name = u.name; // official catalog name wins
-        }
-        const unit = String($('#pp-acad-unit')?.value || d.pendingUnit || '').trim().replace(/\s+/g, ' ');
-        const year = String($('#pp-acad-year')?.value || '').trim().replace(/\s+/g, ' ').slice(0, 10);
-        if (name.length < 2) { acadErr('ইউনিভার্সিটির নাম দাও (কমপক্ষে ২ অক্ষর)।'); return; }
-        if (name.length > 120) { acadErr('নামটি বড় হয়ে গেছে।'); return; }
-        if (unit.length > 20) { acadErr('Unit সর্বোচ্চ ২০ অক্ষর।'); return; }
-        if (d.targets.some((t) => t.name.toLowerCase() === name.toLowerCase())) { acadErr('এই target আগেই আছে।'); return; }
-        d.targets.push({ name, unit, year });
-        d.pendingUni = '';
-        d.pendingUnit = '';
-        renderCurrentView();
-        return;
-      }
-      else if (role === 'acad-pick-uni') {
-        const d = state.acad;
-        d.pendingUni = String(el.dataset.uni || '');
-        d.pendingUnit = '';
-        d.suggestOpen = false;
-        renderCurrentView();
-        return;
-      }
-      else if (role === 'acad-move-target') {
-        const d = state.acad;
-        const i = Number(el.dataset.index);
-        const j = i + Number(el.dataset.dir || 0);
-        if (j < 0 || j >= d.targets.length) return;
-        const t = d.targets.splice(i, 1)[0];
-        d.targets.splice(j, 0, t);
-        renderCurrentView();
-        return;
-      }
-      else if (role === 'acad-del-target') {
-        state.acad.targets.splice(Number(el.dataset.index), 1);
-        renderCurrentView();
-        return;
-      }
-      else if (role === 'acad-add-subject') {
-        const d = state.acad;
-        const v = String($('#pp-acad-subject')?.value || '').trim().replace(/\s+/g, ' ');
-        if (!v) { acadErr('Subject-এর নাম দাও।'); return; }
-        if (v.length > 40) { acadErr('Subject-এর নাম 40 অক্ষরের বেশি হতে পারে না।'); return; }
-        if (d.subjects.some((x) => x.toLowerCase() === v.toLowerCase())) { acadErr('Subjectটা আগেই আছে।'); return; }
-        if (d.subjects.length >= 8) { acadErr('সর্বোচ্চ 8টা subject রাখা যায়।'); return; }
-        d.subjects.push(v);
-        if (d.manual) d.manual.add(v); // manual picks survive unit switches
-        renderCurrentView();
-        return;
-      }
-      else if (role === 'acad-del-subject') {
-        state.acad.subjects = state.acad.subjects.filter((x) => x !== el.dataset.value);
-        renderCurrentView();
-        return;
-      }
-      else if (role === 'brand-bell') {
-        try { window.NotificationHub?.openCenter?.(); } catch (_) { toast('Notification center এখনো ready নয়।'); }
-        return;
-      }
-      else if (role === 'brand-account') {
-        window.AdmissionAccount?.open();
-        return;
-      }
-      else if (role === 'acad-save') {
-        saveAcademicPage();
-        return;
-      }
-      else if (role === 'edit-save') {
-        saveEditPage();
-        return;
-      }
-    });
-  }
+      root.addEventListener('click', (event) => {
+        const el = event.target.closest('[data-role]');
+        if (!el) return;
+        handleRole(el, event);
+      });
+    }
   // Per-element listeners run on EVERY render — the nodes are new each time,
   // so a once-per-root binding would orphan them (counter/UX regression).
   const bio = $('#pp-edit-bio');
@@ -1836,10 +1920,10 @@
   const sessSel = $('#pp-acad-session');
   if (sessSel) sessSel.addEventListener('change', () => {
     const d = state.acad;
-    d.session = String(sessSel.value || '').trim();
+    d.session = canonicalYear(sessSel.value);
     const cat = acadCat();
     if (d.pendingUni && d.pendingUnit && cat) {
-      const ok = cat.unitsFor(d.pendingUni, d.session).some((u) => u.id === d.pendingUnit);
+      const ok = cat.unitsFor(d.pendingUni, acadSessionId(cat, d.session)).some((u) => u.id === d.pendingUnit);
       if (!ok) d.pendingUnit = '';
       acadInvalidateSubjects();
     }
@@ -1853,7 +1937,20 @@
     renderCurrentView();
   });
   const uniInput = $('#pp-acad-u');
-  if (uniInput) uniInput.addEventListener('input', () => updateUniSuggestions(uniInput));
+  if (uniInput) {
+    uniInput.addEventListener('input', () => updateUniSuggestions(uniInput));
+    // Typing is already mirrored into the draft on every keystroke, so a
+    // re-render reproduces the box exactly. Blur/outside-click only hides the
+    // open list — it must never discard the text or the picked university.
+    uniInput.addEventListener('blur', () => closeUniSuggestions());
+  }
+  if (!document.documentElement.dataset.ppUniOutside) {
+    document.documentElement.dataset.ppUniOutside = '1';
+    document.addEventListener('click', (e) => {
+      if (!e.target?.closest || e.target.closest('.pp-acad-uni')) return;
+      if (state?.acad?.suggestOpen) closeUniSuggestions();
+    });
+  }
   // Official subject checkboxes — toggle the draft, re-render chip/counter row.
   const subjBoxes = Array.from(document.querySelectorAll('.pp-acad-subjbox'));
   if (subjBoxes.length) subjBoxes.forEach((box) => box.addEventListener('change', () => {
@@ -2367,7 +2464,7 @@
               <div class="pp-hero-name">${esc(p.displayName)}</div>
               <div class="pp-hero-id"><span>AH-ID</span><b>${esc(p.publicId)}</b></div>
               ${allTargets.map((t) => `<div class="pp-hero-meta">🎯 ${esc(t.name)}${t.unit ? ` · ${esc(t.unit)}` : ''}${t.year ? ` · ${esc(bnYear(t.year))}` : ''}</div>`).join('')}
-              ${p.admissionSession ? `<div class="pp-hero-meta">📅 Admission Session · ${esc(bnYear(p.admissionSession))}</div>` : ''}
+              ${p.admissionSession ? `<div class="pp-hero-meta">📅 Admission Session · ${esc(bnYear(sessionLabel(p.admissionSession)))}</div>` : ''}
               ${p.goal ? `<div class="pp-hero-meta">🚀 ${esc(p.goal)}</div>` : ''}
               ${p.joinedYear ? `<div class="pp-hero-meta">${bnYear(p.joinedYear)} সাল থেকে Admission Hub-এ</div>` : ''}
             </div>
@@ -2392,4 +2489,43 @@
         wrap('<div class="empty" style="padding:64px 20px;text-align:center"><div style="font-size:34px">⚠️</div><b>Profile লোড করা যায়নি</b><p class="muted" style="margin-top:8px">একটু পরে আবার চেষ্টা করো।</p></div>');
       });
   };
+  /* ---- boot: make the saved preference and the engines agree ----
+     The Appearance and Language pickers write both the engine key and the
+     synced preference, but only the picker runs on the device that changed it.
+     A synced account or a fresh install can arrive with the preference present
+     and the engine key missing, which left the stored setting disagreeing with
+     what the user sees. Reconcile once at boot.
+
+     Direction matters: when no preference has ever been saved, the engine key
+     holds the only real choice (the global picker may have set it), so seed the
+     preference from the engine instead of overwriting the user with defaults. */
+  function reconcilePreferencesAtBoot() {
+    let saved = null;
+    try { saved = localStorage.getItem(PREFS_KEY); } catch (_) {}
+    if (saved == null) {
+      try {
+        const pf = loadPrefs();
+        pf.appearance = window.AhAppearance ? window.AhAppearance.get() : pf.appearance;
+        pf.language = window.AhI18n ? window.AhI18n.get() : pf.language;
+        savePrefs(pf);
+      } catch (_) {}
+      return;
+    }
+    const pf = loadPrefs();
+    try {
+      if (window.AhAppearance) {
+        if (window.AhAppearance.get() !== pf.appearance) window.AhAppearance.set(pf.appearance);
+        else window.AhAppearance.apply();
+      }
+    } catch (_) {}
+    try {
+      if (window.AhI18n) {
+        if (window.AhI18n.get() !== pf.language) window.AhI18n.set(pf.language);
+        else window.AhI18n.apply();
+      }
+    } catch (_) {}
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', reconcilePreferencesAtBoot);
+  else reconcilePreferencesAtBoot();
 })();

@@ -16,7 +16,7 @@ t('১. renderV2-এ previous() / intel-ক্যাপচার সম্পূ
 t('২. dv2Cleanup বিদ্যমান (একাধিক .page-সরানো)', V2.includes('function dv2Cleanup') && V2.includes("const pages = Array.from(app.querySelectorAll('.page'))") && V2.includes('if (p !== keep) p.remove();'));
 t('৩. পুরনো-ড্যাশ-মার্কার-শূন্যকরণ-তালিকা (phase5/phase34/comparison/quicklinks/gk/old-dash)', V2.includes('[data-phase5-dashboard],[data-phase34-dashboard],[data-dashboard-comparison],[data-phase5-quicklinks],.daily-gk-teaser,.p3-dashboard-v3,.dashboard-v2,.p3-dashboard'));
 t('৪. cleanup রেন্ডার-শেষে-ও-ফলব্যাক-পথে-উভয়ই (dv2Cleanup ২-কল)', (V2.match(/dv2Cleanup\(\);/g) || []).length >= 2);
-t('৫. ভার্সন: dashboard-v2.js ?v=dash2f10-main-ai (index+sw) + current BUILD_ID', H.includes('dashboard-v2.js?v=dash2f12-clean') && SW.includes("'./dashboard-v2.js?v=dash2f12-clean'") && SW.includes("const BUILD_ID = 'v267-profile-v12-20260915'") && H.includes('sw.js?v=v267-profile-v12-20260915'));
+t('৫. ভার্সন: dashboard-v2.js ?v=dash2f10-main-ai (index+sw) + current BUILD_ID', H.includes('dashboard-v2.js?v=dash2f12-clean') && SW.includes("'./dashboard-v2.js?v=dash2f12-clean'") && SW.includes("const BUILD_ID = 'v268-lang-theme-20260915'") && H.includes('sw.js?v=v268-lang-theme-20260915'));
 
 /* ── ২. রানটাইম: পুরনো-রেন্ডার-চেইন-হুবহু + append-mode-renderShell → এক-পেজ ── */
 t('৬. রানটাইম: previous-চেইন-দ্বৈত-বানালেও dv2-র-পর #app-এ ঠিক-একটি .page + শুধু dv2', (async () => {

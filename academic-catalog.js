@@ -53,8 +53,8 @@
     { id: 'cu', name: 'University of Chittagong', aliases: ['CU', 'চট্টগ্রাম বিশ্ববিদ্যালয়', 'চট্টিগ্রাম', 'চট্টগ্রাম', 'Chittagong', 'Chittagong U'], units: sameForAllSessions(UNITS.cu) },
     { id: 'ku', name: 'Khulna University', aliases: ['KU', 'খুলনা বিশ্ববিদ্যালয়', 'খুলনা', 'Khulna'], units: sameForAllSessions(UNITS.ku) },
     { id: 'ju', name: 'Jagannath University', aliases: ['JU', 'জগন্নাথ বিশ্ববিদ্যালয়', 'জগন্নাথ', 'Jagannath'], units: sameForAllSessions(UNITS.ju) },
-    { id: 'su', name: 'Shahjalal University', aliases: ['SU', 'শেরপুর বিশ্ববিদ্যালয়', 'শেরপুর', 'Sylhet', 'Sherpur'], units: sameForAllSessions(UNITS.su) },
-    { id: 'bu', name: 'Bangladesh University', aliases: ['BU', 'বাংলাদেশ বিশ্ববিদ্যালয়', 'বরিশাল', 'Barishal', 'Barisal'], units: sameForAllSessions(UNITS.bu) },
+    { id: 'su', name: 'Shahjalal University of Science and Technology', aliases: ['SUST', 'শাহজালাল বিজ্ঞান ও প্রযুক্তি বিশ্ববিদ্যালয়', 'শাহজালাল', 'Sylhet', 'সিলেট'], units: sameForAllSessions(UNITS.su) },
+    { id: 'bu', name: 'University of Barishal', aliases: ['BU', 'বরিশাল বিশ্ববিদ্যালয়', 'বরিশাল', 'Barishal', 'Barisal'], units: sameForAllSessions(UNITS.bu) },
     { id: 'buet', name: 'BUET', aliases: ['বুয়েট', 'BUET', 'Bangladesh University of Engineering and Technology'], units: sameForAllSessions(UNITS.buet) },
     { id: 'iut', name: 'IUT', aliases: ['ইউটিউ', 'IUT', 'Islamic University of Technology'], units: sameForAllSessions(UNITS.iut) }
   ];

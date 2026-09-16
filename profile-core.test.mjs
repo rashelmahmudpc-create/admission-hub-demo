@@ -883,3 +883,217 @@ test('memory repo: avatar save/delete + completion credit mirror SQLite', async 
   const v3 = await state.engine.getProfileV2(profileInput(session, email, subject), state.context);
   assert.equal(v3.completion, v1.completion);
 });
+
+// ---------------------------------------------------------------------------
+// Academic persistence — owner bug: "profile data does not survive logout"
+// The UI sent the catalog session label ('2025-26'); the server validates
+// /^(19|20|21)\d{2}$/, so the ENTIRE academic patch was rejected with
+// INVALID_INPUT and nothing (targets/session/goal/subjects) was stored.
+// ---------------------------------------------------------------------------
+
+test('academic: full patch with the canonical year persists across a re-read', async () => {
+  const state = makeState();
+  const email = 'acad@example.com';
+  const subject = 'sub-acad-1';
+  const session = await login(state, email, subject);
+  const base = profileInput(session, email, subject);
+  const fields = {
+    targets: [{ name: 'University of Dhaka', unit: 'A', year: '2026' }],
+    admissionSession: '2025',
+    academicGoal: '2026-এ DU CSE-তে ভর্তি হবো',
+    subjects: ['Physics', 'Chemistry', 'Higher Math']
+  };
+  const saved = await state.engine.saveProfilePatch({ ...base, fields }, state.context);
+  assert.equal(saved.saved, true);
+
+  const reread = await state.engine.getProfileV2(base, state.context);
+  assert.equal(reread.profile.admissionSession, '2025');
+  assert.equal(reread.profile.academicGoal, fields.academicGoal);
+  assert.deepEqual(reread.profile.subjects, fields.subjects);
+  assert.equal(reread.profile.targets.length, 1);
+  assert.equal(reread.profile.targets[0].name, 'University of Dhaka');
+  assert.ok(reread.completion > 0);
+});
+
+test('academic: catalog session label is rejected, so the UI must canonicalize it', async () => {
+  const state = makeState();
+  const email = 'acad2@example.com';
+  const subject = 'sub-acad-2';
+  const session = await login(state, email, subject);
+  await assert.rejects(
+    state.engine.saveProfilePatch(
+      { ...profileInput(session, email, subject), fields: { admissionSession: '2025-26' } },
+      state.context
+    ),
+    error => error.code === AUTH_ERROR_CODES.INVALID_INPUT
+  );
+});
+
+test('academic: an unrelated patch never wipes the saved session/goal', async () => {
+  const state = makeState();
+  const email = 'acad3@example.com';
+  const subject = 'sub-acad-3';
+  const session = await login(state, email, subject);
+  const base = profileInput(session, email, subject);
+  await state.engine.saveProfilePatch({ ...base, fields: { admissionSession: '2025', academicGoal: 'Goal A' } }, state.context);
+  await state.engine.saveProfilePatch({ ...base, fields: { academicGoal: 'Goal B' } }, state.context);
+  const reread = await state.engine.getProfileV2(base, state.context);
+  assert.equal(reread.profile.academicGoal, 'Goal B');
+  assert.equal(reread.profile.admissionSession, '2025');
+});
+
+// ---------------------------------------------------------------------------
+// DOB window — the patch path hardcoded `y > 2020`, so every student younger
+// than the calendar drift allowed had their date of birth silently rejected,
+// while the signup path had already accepted it (8–80 window).
+// ---------------------------------------------------------------------------
+
+test('dob: a young student (within the 8–80 window) can save their date of birth', async () => {
+  const state = makeState();
+  const email = 'young@example.com';
+  const subject = 'sub-young-1';
+  // The fixed `y > 2020` ceiling only bit once the calendar moved past it, so
+  // move the clock first: born 2022, now ~2032 (age 9, inside the 8–80 window).
+  state.advance(5 * 365 * 24 * 60 * 60 * 1000);
+  const session = await login(state, email, subject);
+  const base = profileInput(session, email, subject);
+  const saved = await state.engine.saveProfilePatch({ ...base, fields: { dob: '2022-05-12' } }, state.context);
+  assert.equal(saved.saved, true);
+  const reread = await state.engine.getProfileV2(base, state.context);
+  assert.equal(reread.profile.dob, '2022-05-12');
+  assert.ok(reread.completion >= 10, 'dob must earn completion credit');
+});
+
+test('dob: an implausible age is still refused', async () => {
+  const state = makeState();
+  const email = 'old@example.com';
+  const subject = 'sub-old-1';
+  const session = await login(state, email, subject);
+  const base = profileInput(session, email, subject);
+  await assert.rejects(
+    state.engine.saveProfilePatch({ ...base, fields: { dob: '1900-01-01' } }, state.context),
+    error => error.code === AUTH_ERROR_CODES.INVALID_INPUT
+  );
+  // an impossible calendar date (2021-02-30) must not be normalized into March
+  await assert.rejects(
+    state.engine.saveProfilePatch({ ...base, fields: { dob: '2021-02-30' } }, state.context),
+    error => error.code === AUTH_ERROR_CODES.INVALID_INPUT
+  );
+});
+
+// ---------------------------------------------------------------------------
+// TOP PRIORITY — profile data must survive logout forever (owner spec).
+// Logout revokes the SESSION, never the profile. The auth_profiles row is keyed
+// by user_id and no retention job deletes it; cleanup() only clears sessions,
+// tickets, rate limits and challenges. This asserts the whole lifetime: full
+// logout (+ logout-all), a long clock advance, and a cleanup sweep — then a
+// fresh login on a different device must read every field back unchanged.
+// ---------------------------------------------------------------------------
+
+test('lifetime: every profile field survives logout, logout-all, cleanup and a new-device login', async () => {
+  const state = makeState();
+  const email = 'forever@example.com';
+  const subject = 'sub-forever-1';
+  const session = await login(state, email, subject);
+  const saved = {
+    fullName: 'সাদিয়া রহমান',
+    mobile: '+8801812345678',
+    dob: '2008-02-29',
+    school: { id: 'manual', name: 'Govt. Girls High School', district: 'রংপুর' },
+    higherInstitution: { id: 'manual', name: 'Carmichael College', district: 'Rangpur' }
+  };
+  await state.engine.saveProfile({
+    sessionToken: session.sessionToken, email, subject,
+    profile: {
+      fullName: saved.fullName,
+      mobile: saved.mobile,
+      dob: saved.dob,
+      school: saved.school,
+      higherInstitution: saved.higherInstitution
+    }
+  }, state.context);
+  // academic extras need the canonical 4-digit year (catalog labels are rejected)
+  await state.engine.saveProfilePatch({
+    ...profileInput(session, email, subject),
+    fields: {
+      admissionSession: '2026',
+      academicGoal: 'MBBS-এ ভর্তি হবো',
+      subjects: ['Biology', 'Chemistry', 'Physics'],
+      targets: [{ name: 'Dhaka Medical College', unit: 'MBBS', year: '2026' }],
+      bio: 'কঠোর পরিশ্রমই সাফল্য',
+      visibility: 'limited'
+    }
+  }, state.context);
+
+  // 1 — ordinary logout revokes only the session token
+  assert.equal((await state.engine.revokeSession(session.sessionToken)).revoked, true);
+  await assert.rejects(
+    state.engine.getSession(session.sessionToken),
+    error => error.code === AUTH_ERROR_CODES.SESSION_INVALID
+  );
+
+  // 2 — logout-all closes every session on the account (the repository call
+  // that engine.revokeAllSessions makes once step-up has cleared)
+  const secondSession = await login(state, email, subject);
+  await state.repository.revokeUserSessions({ userId: secondSession.user.id, now: state.now() });
+  await assert.rejects(
+    state.engine.getSession(secondSession.sessionToken),
+    error => error.code === AUTH_ERROR_CODES.SESSION_INVALID
+  );
+
+  // 3 — a long offline gap plus the retention sweep must not touch profiles
+  state.advance(400 * 24 * 60 * 60 * 1000);
+  state.engine.cleanup();
+  const profileRows = state.database.prepare('SELECT COUNT(*) AS n FROM auth_profiles').get().n;
+  assert.equal(profileRows, 1, 'cleanup must never delete the profile row');
+
+  // 4 — fresh login from a brand-new device reads everything back
+  const fresh = await state.engine.establishFirebaseSession(
+    { email, subject, remember: true, verified: true, newDevice: true, securityChallenge: false },
+    { ip: '203.0.113.77', deviceId: 'device-other-9876543210ab', userAgent: 'Mozilla/5.0 (Linux; Android 15) Chrome/141' }
+  );
+  const reread = await state.engine.getProfileV2(profileInput(fresh, email, subject), state.context);
+  assert.equal(reread.profile.fullName, saved.fullName);
+  assert.equal(reread.profile.mobile, saved.mobile);
+  assert.equal(reread.profile.dob, saved.dob);
+  assert.equal(reread.profile.school.name, saved.school.name);
+  assert.equal(reread.profile.school.district, saved.school.district);
+  assert.equal(reread.profile.higherInstitution.name, saved.higherInstitution.name);
+  assert.equal(reread.profile.higherInstitution.district, saved.higherInstitution.district);
+  assert.equal(reread.profile.admissionSession, '2026');
+  assert.equal(reread.profile.academicGoal, 'MBBS-এ ভর্তি হবো');
+  assert.deepEqual(reread.profile.subjects, ['Biology', 'Chemistry', 'Physics']);
+  assert.equal(reread.profile.targets[0].name, 'Dhaka Medical College');
+  assert.equal(reread.profile.bio, 'কঠোর পরিশ্রমই সাফল্য');
+  assert.equal(reread.profile.visibility, 'limited');
+  // every text field above scores: 15+10+10+5+5+15+5+10+15+5 = 95.
+  // The remaining 10 points are the avatar, which this test never uploads.
+  assert.equal(reread.completion, 95);
+});
+
+test('lifetime: an unauthenticated read can never reach a stored profile', async () => {
+  const state = makeState();
+  const email = 'noread@example.com';
+  const subject = 'sub-noread-1';
+  const session = await login(state, email, subject);
+  await state.engine.saveProfile({
+    sessionToken: session.sessionToken, email, subject,
+    profile: {
+      fullName: 'Private Student', dob: '2008-01-01',
+      school: { id: 'manual', name: 'Private School', district: 'Dhaka' },
+      higherInstitution: null
+    }
+  }, state.context);
+  const view = await state.engine.getProfileV2(profileInput(session, email, subject), state.context);
+  await state.engine.revokeSession(session.sessionToken);
+  // revoked session token → no read, and an anonymous caller has no public ID
+  await assert.rejects(
+    state.engine.getProfileV2(profileInput(session, email, subject), state.context),
+    error => error.code === AUTH_ERROR_CODES.SESSION_INVALID
+  );
+  // the profile is still intact for the rightful owner
+  const fresh = await login(state, email, subject);
+  const reread = await state.engine.getProfileV2(profileInput(fresh, email, subject), state.context);
+  assert.equal(reread.publicId, view.publicId);
+  assert.equal(reread.profile.fullName, 'Private Student');
+});
