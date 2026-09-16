@@ -21,6 +21,12 @@ Phase 1 implementation notes (as built):
   test center at `#notif-dev`.
 - Legacy path (Telegram + admission-notify VAPID push) untouched — stays
   as the backup channel.
+- **Build status (2026-09-16):** all Phase 1 code committed (`21392e2`),
+  gate **659/0** (incl. 12 new FCM contract tests), `node --check` clean on
+  every touched file, bundle deterministic. Production deploy DEFERRED:
+  the session environment had no Cloudflare API token (repo convention:
+  defer rather than guess). Dist is staged. Deploy = 2 wrangler commands
+  once a token + the Firebase secrets are available.
 - Pending owner action: Firebase project enablements + service-account
   key → worker secrets (FIREBASE_PROJECT_ID / FIREBASE_CLIENT_EMAIL /
   FIREBASE_PRIVATE_KEY + public web config vars). Until then the system
