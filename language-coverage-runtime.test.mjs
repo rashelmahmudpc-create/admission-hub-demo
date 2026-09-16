@@ -97,6 +97,12 @@ function bootAuth({ language = 'en' } = {}) {
   });
   const { window } = dom;
   window.localStorage.setItem('ahLang', language);
+  // A real visitor has usually opened the profile sheet, which writes the
+  // preference below. Seed it so the boot reconcile is exercised: once saved,
+  // the preference outranks `ahLang` and would quietly restore Bengali.
+  window.localStorage.setItem('ah-profile-prefs-v1', JSON.stringify({
+    language, notifications: 'on', appearance: 'light', aiAssistant: 'on', avatarStyle: 0, avatarGender: 'boy', v: 1
+  }));
   window.open = () => ({ closed: false });
   window.PublicKeyCredential = undefined;
   window.fetch = async (url) => {

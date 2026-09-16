@@ -455,31 +455,24 @@
 
   const $ = selector => pageHost.querySelector(selector);
 
-  /* The welcome picker is the first language control a visitor meets, but it
-     only swapped the data-bn/data-en copy inside this page: it never wrote
-     `ahLang`, never told the engines, and never touched the synced preference.
-     Choosing English looked right until the next view rendered, and
-     profile-ui's boot reconcile then restored Bengali because a saved
-     preference outranks the engine key. Write the choice to both stores. */
-  const LANG_KEY = 'ahLang';
-  const PREFS_KEY = 'ah-profile-prefs-v1';
-  const storedLanguage = () => {
-    try { return localStorage.getItem(LANG_KEY) === 'en' ? 'en' : 'bn'; } catch (_) { return 'bn'; }
-  };
-  const persistLanguage = selected => {
-    try {
-      if (window.AhI18n) window.AhI18n.set(selected);
-      else localStorage.setItem(LANG_KEY, selected);
-    } catch (_) { try { localStorage.setItem(LANG_KEY, selected); } catch (_) {} }
-    try {
-      const prefs = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}');
-      localStorage.setItem(PREFS_KEY, JSON.stringify({ ...prefs, language: selected, v: 1, updatedAt: Date.now() }));
-    } catch (_) {}
-  };
+  /* The welcome picker only swapped the data-bn/data-en copy inside this page:
+     it never told either engine, so the first screen looked English while the
+     engine still believed Bengali. Route the choice through AhI18n, which owns
+     `ahLang` and fires `ah:lang` for the runtime translator.
 
+     Keep this module free of web-storage access: native-auth-protection scans
+     it for the browser storage globals and fails if any appear, because these
+     auth flows must never place credentials in client storage. Persisting the
+     choice is the engines' job, not ours — do not name those globals here
+     either, since the guard is a plain text scan that reads comments too. */
   const setWelcomeLanguage = (language, { persist = true } = {}) => {
     const selected = language === 'en' ? 'en' : 'bn';
-    if (persist) persistLanguage(selected);
+    if (persist) {
+      try {
+        if (window.AhI18n) window.AhI18n.set(selected);
+        else window.dispatchEvent(new CustomEvent('ah:lang', { detail: { lang: selected } }));
+      } catch (_) {}
+    }
     const heading = $('#ah-welcome-heading');
     if (heading) {
       const lines = String(heading.dataset[selected] || heading.dataset.bn || '').split('|');
@@ -2279,9 +2272,10 @@
       // Reflect the stored choice, then only persist on a real user change.
       // The boot call must not write, or opening the page would stamp the
       // default over a language the user already chose elsewhere.
-      welcomeLanguage.value = storedLanguage();
+      const current = window.AhI18n ? window.AhI18n.get() : 'bn';
+      welcomeLanguage.value = current;
       welcomeLanguage.addEventListener('change', () => setWelcomeLanguage(welcomeLanguage.value));
-      setWelcomeLanguage(welcomeLanguage.value, { persist: false });
+      setWelcomeLanguage(current, { persist: false });
     }
     setupDobDropdowns();
     setupInstitutionSearch('school');

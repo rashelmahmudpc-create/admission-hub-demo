@@ -84,6 +84,19 @@
   function set(lang) {
     if (LANGS.indexOf(lang) < 0) lang = 'bn';
     try { localStorage.setItem(KEY, lang); } catch (_) {}
+    /* Keep the profile preference agree, because profile-ui reconciles this
+       key into `ah-profile-prefs-v1` once at boot and only then. A choice made
+       here (the welcome picker is the first control a visitor meets) would
+       otherwise stay unsynced, and a stale saved preference outranks `ahLang`
+       on the next load, silently restoring Bengali. */
+    try {
+      var prefsKey = 'ah-profile-prefs-v1';
+      var prefs = JSON.parse(localStorage.getItem(prefsKey) || 'null');
+      if (prefs && typeof prefs === 'object') {
+        prefs.language = lang;
+        localStorage.setItem(prefsKey, JSON.stringify(prefs));
+      }
+    } catch (_) {}
     apply();
     try { window.dispatchEvent(new CustomEvent('ah:lang', { detail: { lang: lang } })); } catch (_) {}
   }

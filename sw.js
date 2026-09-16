@@ -37,7 +37,7 @@ const APP_SHELL = [
 // A truncated/corrupt download is NEVER written to the shell cache.
 const ASSET_DIGESTS = {
 /* sw-manifest:start */
-  "./index.html": "09183f86777e8eb31b29315b0c22fd51e6afeb878a74b7d62cd16ff27f5dda6e",
+  "./index.html": "72ebbff518f51ccd54fd22d3d8acaa46aec031f656e6f71ecb65ee2e613b76f5",
   "./manifest.json": "11a85ae594fc629b11605daeda3f9afe4ef95215a55a29f9cc423314bfb275a4",
   "./manifest.webmanifest": "5be476009a140eabd088bd972bd4d345b9c4f4a055cd6e4f08774b9cb4afaf52",
   "./dashboard-v2.css?v=dash2f13-theme": "4f4c9295b487b8186fd45c006a96a43bcaf896a1a5b871f506a05874a8e00c99",
@@ -46,7 +46,7 @@ const ASSET_DIGESTS = {
   "./account-access.css?v=20260916-account-entry-v6": "c28dd7c2adc90cfb80ad61998172a68905f2a4d28dc8ac704d5f493b3d5028cd",
   "./institutions-bd.js?v=bd-institutions-v2": "602c5549515e8207ad152b948ca9b8fe3ad0fbe429afb56380e4e21b662f779d",
   "./language-engine.js?v=lang-v2-coverage": "c115954050aebd66849b5ab703b1266db7aaa220fe1d75bbc700eeecab934bb9",
-  "./account-access.js?v=20260916-account-entry-v6": "53b9494d7a52160c237e82165e2454f1e8d403b907bfb839cec1455325cabc74",
+  "./account-access.js?v=20260916-account-entry-v6": "7aa958904d97c800ac823183e5d1f383f45cf90a296a0e7b97f42637c3700048",
   "./academic-catalog.js?v=acad-cat-v2": "75e7b80663d41330658c948ad1d4829d49f5c9abed581350582cfeace06d5b32",
   "./profile-ui.js?v=profile-v14-tap": "c0b0a7d5cebfb07601c0d16095a64e6e72c2912c060840d5b6fd0dd9348889b5",
   "./profile-ui.css?v=profile-v14-tap": "4332520cd9c584787eaba055a32b46e52cb132f00122207c74ffb42594e909aa",
