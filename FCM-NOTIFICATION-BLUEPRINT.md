@@ -27,6 +27,18 @@ Phase 1 implementation notes (as built):
   the session environment had no Cloudflare API token (repo convention:
   defer rather than guess). Dist is staged. Deploy = 2 wrangler commands
   once a token + the Firebase secrets are available.
+- **Firebase credentials VERIFIED (2026-09-16):** project
+  `admission-hub-fcm` (sender 298090335130). Service-account JWT → OAuth
+  token → FCM `messages:send` all confirmed live from the sandbox.
+  Important fix discovered during verification: Google's token endpoint
+  now REQUIRES the full RFC 7523 URN
+  `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer` (the shorthand
+  `jwt-bearer` is rejected) — the worker uses the URN, covered by test.
+  No custom VAPID key configured — FCM's default web-push VAPID applies
+  (the web config the owner provided has no vapidKey field).
+- Pending owner action: a Cloudflare API token (cfat_…) in the session
+  environment, then the staged deploy runs (6 secrets + worker + Pages +
+  verification).
 - Pending owner action: Firebase project enablements + service-account
   key → worker secrets (FIREBASE_PROJECT_ID / FIREBASE_CLIENT_EMAIL /
   FIREBASE_PRIVATE_KEY + public web config vars). Until then the system

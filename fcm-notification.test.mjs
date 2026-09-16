@@ -275,9 +275,11 @@ test('test endpoint requires admin token, devices, and sends via FCM v1', async 
 
   const realFetch = globalThis.fetch;
   const seen = [];
+  let oauthBody = '';
   globalThis.fetch = async (input, init) => {
     const url = String(input);
     if (url.includes('oauth2.googleapis.com')) {
+      oauthBody = String(init?.body || '');
       return Response.json({ access_token: 'fake-oauth-token', expires_in: 3600 });
     }
     if (url.includes('fcm.googleapis.com')) {
@@ -294,6 +296,9 @@ test('test endpoint requires admin token, devices, and sends via FCM v1', async 
     assert.equal(seen[0].auth, 'Bearer fake-oauth-token');
     assert.equal(seen[0].body.message.notification.body, 'hello device');
     assert.equal(seen[0].body.message.data.link, 'dashboard');
+    // Google enforces the full RFC 7523 URN — the shorthand is rejected.
+    assert.match(oauthBody, /grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer/);
+    assert.match(oauthBody, /assertion=eyJhbGciOiJSUzI1NiI/);
   } finally {
     globalThis.fetch = realFetch;
   }

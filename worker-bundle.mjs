@@ -8084,10 +8084,13 @@ async function fcmAccessToken(env) {
     exp: iat + 3600
   })));
   const signature = await crypto.subtle.sign("RSASSA-PKCS1-v1_5", key, new TextEncoder().encode(`${header}.${payload}`));
+  const form = new URLSearchParams();
+  form.set("grant_type", "urn:ietf:params:oauth:grant-type:jwt-bearer");
+  form.set("assertion", `${header}.${payload}.${b64u(signature)}`);
   const res = await fetch(FCM_TOKEN_URL, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: `grant_type=jwt-bearer&assertion=${encodeURIComponent(`${header}.${payload}.${b64u(signature)}`)}`
+    body: form.toString()
   });
   const data = await res.json();
   if (!res.ok || !data?.access_token) throw new Error("fcm-auth-failed");
