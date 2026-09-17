@@ -118,7 +118,7 @@ test('index.html: profile assets linked with versions (v262)', () => {
 
 test('sw.js caches the profile assets (v262)', () => {
 
-  assert.match(SW, /const BUILD_ID = 'v276-fcm-sw-ready-20260917';/);
+  assert.match(SW, /const BUILD_ID = 'v277-fcm-enable-fix-20260917';/);
   assert.match(SW, /'\.\/academic-catalog\.js\?v=acad-cat-v2',/);
   assert.match(SW, /'\.\/profile-ui\.js\?v=profile-v15-nonotif',/);
   assert.match(SW, /'\.\/profile-ui\.css\?v=profile-v14-tap',/);

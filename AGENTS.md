@@ -182,13 +182,45 @@ Reference implementation: `openSheet()` in `notification-hub.js`
      `getToken()`.
 - `vapidKey` is optional: the SDK falls back to its built-in default
   (`BDOU99-h67H...`). An empty `vapidKey` from `/api/notifications/config` is
-  not by itself a failure.
-- A token cannot be obtained inside this sandbox: headless Chromium refuses the
-  Push subscription (`Registration failed - permission denied`) even with
-  `Browser.grantPermissions`. Verify only up to `reg.active === true` here and
-  confirm real delivery on a device.
+  not by itself a failure. It cannot be read from any API either — neither the
+  FCM v1 REST API nor the Firebase Management API exposes the Web Push
+  certificate; it exists only in the Firebase Console, so treat it as
+  Console-only and never block a deploy waiting for it.
+- The compat SDK exposes **no** `useVapidKey()` / `useVapidKeyIfAvailable()`.
+  Verified against the vendored `sdk/firebase-messaging-compat.js` (10.12.2):
+  the string does not appear at all, so any branch calling it is dead code and
+  the configured key silently never applies. The key must be passed as
+  `getToken({ vapidKey })`.
+- A real FCM token IS obtainable in this sandbox — the earlier "impossible here"
+  note was wrong. Headless Chromium refuses push only because Playwright's
+  default context is incognito-like; `launch_persistent_context(dir, ...)` with
+  `permissions: ['notifications']` yields a real token. That is the only way to
+  exercise the whole client path before shipping. To test the page as it is
+  deployed, serve the repo over localhost and `ctx.route()` `/api/notifications/**`
+  through to the real worker; the session cookie is then absent, so expect
+  `register-401` — reaching 401 is success, it proves the token was created and
+  POSTed.
+- `firebase-messaging-sw.js` must not call `onBackgroundMessage` when payloads
+  carry a `notification` block: the SDK already calls `showNotification()`
+  itself, so adding a handler produced two notifications per push.
+- Background FCM display happens on the push-scope worker
+  (`firebase-messaging-sw.js`), not on `sw.js`: an FCM subscription lives on that
+  registration, so the `push` handler in `sw.js` never sees these messages.
+  Likewise `navigator.serviceWorker.ready` resolves to the *shell* worker, so
+  listening only there silently drops every foreground message — attach the
+  `message` listener to every registration instead.
 - Cached FCM state lives under `ahFcmEnabled` / `ahFcmLastErr` in localStorage;
-  read `ahFcmLastErr` first when diagnosing an owner report.
+  read `ahFcmLastErr` first when diagnosing an owner report. It carries a
+  `detail` field with the raw browser/SDK message; without it every distinct
+  failure collapses into one unactionable code.
+- A KV probe is the cheapest proof of whether a device ever registered: an empty
+  `fcm:reg:*` prefix in `GK_KV` means the request never reached the server, so
+  the fault is client-side and no amount of worker/secret checking will help.
+- Two failure modes are pre-existing on `main` and unrelated to FCM work:
+  `p11-dashboard-v2` (2 assertions) and the `dash2f10-main-ai` pins asserted by
+  `p13`/`p16`/`p18`/`p21`/`startup-ai-regression` (the repo carries
+  `dash2f13-theme`). Confirm any of these against a pristine `git worktree add
+  /tmp/base HEAD` before blaming your own change.
 - Bumping `BUILD_ID` requires updating every pin at once: `sw.js`, `index.html`
   (3 spots), the `SHELL_VERSION` const in `interactive-native-personal-v1.test.mjs`,
   *and* the `grep -Fq "const BUILD_ID = ..."` assertion in
