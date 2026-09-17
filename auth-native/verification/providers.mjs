@@ -93,7 +93,16 @@ function appsScriptWebAppUrl(value) {
 
 const validEmailAddress = value => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(value || '')) && String(value).length <= 254;
 
-const OTP_EMAIL_FONT = "'Hind Siliguri','Noto Sans Bengali','SolaimanLipi','Segoe UI',Roboto,Helvetica,Arial,sans-serif";
+// Lock glyph inlined as an SVG data URI. An <img> data URI renders in Gmail,
+// Apple Mail, and Outlook; a character icon would depend on a font the client
+// does not ship. Declared here because it needs to stay on one encoded line.
+const OTP_EMAIL_LOCK_SVG = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiM2YjdiNzciIHN0cm9rZS13aWR0aD0iMS44IiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxyZWN0IHg9IjQuNSIgeT0iMTAuNCIgd2lkdGg9IjE1IiBoZWlnaHQ9IjkuNiIgcng9IjIuMiIvPjxwYXRoIGQ9Ik04IDEwLjRWNy44YTQgNCAwIDAgMSA4IDB2Mi42Ii8+PHBhdGggZD0iTTEyIDE0LjN2Mi40Ii8+PC9zdmc+';
+
+const OTP_EMAIL_FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
+const OTP_EMAIL_MONO = "'SF Mono','Roboto Mono','DejaVu Sans Mono',Menlo,Consolas,'Courier New',monospace";
+const OTP_EMAIL_BRAND = '#12a876';
+const OTP_EMAIL_INK = '#101c19';
+const OTP_EMAIL_MUTED = '#6b7b77';
 
 // Mail clients need an absolute URL, so the logo is served from the public Pages
 // site rather than embedded.
@@ -160,97 +169,87 @@ const otpEmailBody = (code, minutes, recipientName = '') => {
   a { text-decoration: none; }
   @media (max-width: 620px) {
     .ah-pad { padding-left: 20px !important; padding-right: 20px !important; }
-    .ah-otp { font-size: 32px !important; letter-spacing: 7px !important; }
-    .ah-greeting { font-size: 24px !important; }
+    .ah-otp { font-size: 30px !important; letter-spacing: 4px !important; text-indent: 4px !important; }
   }
   @media (prefers-color-scheme: dark) {
-    .ah-shell { background-color: #0b1512 !important; }
-    .ah-card { background-color: #121d1a !important; border-color: #26403a !important; }
-    .ah-head { background-color: #121d1a !important; border-bottom-color: #26403a !important; }
-    .ah-otpcard { background-color: #0e2620 !important; border-color: #2c5a4a !important; }
-    .ah-otp { color: #6fd8b4 !important; }
-    .ah-secbox { background-color: #161f1c !important; border-color: #26403a !important; }
-    .ah-foot { background-color: #0e1815 !important; border-top-color: #26403a !important; }
-    .ah-title { color: #eaf4f0 !important; }
-    .ah-body { color: #c3d3ce !important; }
-    .ah-greeting { color: #ffffff !important; }
-    .ah-muted { color: #93a8a2 !important; }
-    .ah-faint { color: #7d918b !important; }
-    .ah-rule { background-color: #26403a !important; }
+    .ah-shell { background-color: #0c1412 !important; }
+    .ah-card { background-color: #131c1a !important; border-color: #26332f !important; }
+    .ah-divider { background-color: #26332f !important; }
+    .ah-otp { color: #7ad9b8 !important; }
+    .ah-foot { background-color: #101917 !important; border-top-color: #26332f !important; }
+    .ah-heading { color: #f4f8f7 !important; }
+    .ah-body { color: #b7c6c2 !important; }
+    .ah-muted { color: #8b9c98 !important; }
+    .ah-faint { color: #7c8783 !important; }
+    .ah-foot-title { color: #dfe8e5 !important; }
   }
 </style>
 </head>
-<body style="margin:0;padding:0;background-color:#f3f7f6;">
-<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:#f3f7f6;font-size:1px;line-height:1px;">আপনার Admission Hub যাচাইকরণ কোড: ${safeCode} — ${safeMinutes} মিনিটের জন্য কার্যকর।&#8203;&#8203;&#8203;&#8203;&#8203;&#8203;&#8203;&#8203;&#8203;&#8203;&#8203;&#8203;</div>
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="ah-shell" style="width:100%;background-color:#f3f7f6;font-family:${OTP_EMAIL_FONT};">
-<tr><td align="center" class="ah-pad" style="padding:32px 12px;">
+<body style="margin:0;padding:0;background-color:#f7f8f8;">
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:#f7f8f8;font-size:1px;line-height:1px;">আপনার Admission Hub যাচাইকরণ কোড: ${safeCode} — ${safeMinutes} মিনিটের জন্য কার্যকর।&#8203;&#8203;&#8203;&#8203;&#8203;&#8203;&#8203;&#8203;&#8203;&#8203;&#8203;&#8203;</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="ah-shell" bgcolor="#f7f8f8" style="width:100%;background-color:#f7f8f8;font-family:${OTP_EMAIL_FONT};">
+<tr><td align="center" class="ah-pad" style="padding:28px 12px;">
 
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="ah-card" style="width:100%;max-width:620px;background-color:#ffffff;border:1px solid #e2eee9;border-radius:24px;overflow:hidden;box-shadow:0 10px 35px rgba(20,70,55,0.08);">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="ah-card" bgcolor="#ffffff" style="width:100%;max-width:560px;background-color:#ffffff;border:1px solid #e8ebea;border-radius:16px;overflow:hidden;box-shadow:0 1px 3px rgba(16,28,25,0.05);">
 
-<tr><td class="ah-head" style="padding:26px 32px 22px;background-color:#f7fbfa;border-bottom:1px solid #e5efeb;">
+<tr><td class="ah-head" bgcolor="#0f8f68" style="padding:22px 28px;background-color:#0f8f68;background-image:linear-gradient(135deg,#12a876 0%,#0f8f68 58%,#0d7f5e 100%);">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
 <td style="vertical-align:middle;">
 <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
-<td style="width:46px;padding-right:12px;vertical-align:middle;">
-<img src="${OTP_EMAIL_LOGO_URL}" width="46" height="46" alt="Admission Hub" style="display:block;width:46px;height:46px;border:0;border-radius:14px;outline:none;text-decoration:none;">
+<td style="width:38px;padding-right:12px;vertical-align:middle;">
+<img src="${OTP_EMAIL_LOGO_URL}" width="38" height="38" alt="Admission Hub" style="display:block;width:38px;height:38px;border:0;border-radius:10px;outline:none;text-decoration:none;">
 </td>
 <td style="vertical-align:middle;">
-<span class="ah-title" style="display:block;font-family:${OTP_EMAIL_FONT};font-size:22px;line-height:1.2;font-weight:700;letter-spacing:-0.3px;color:#172b3a;">Admission Hub</span>
-<span class="ah-muted" style="display:block;margin-top:4px;font-family:${OTP_EMAIL_FONT};font-size:12px;line-height:1.5;color:#70817d;">${OTP_EMAIL_TAGLINE}</span>
+<span style="display:block;font-family:${OTP_EMAIL_FONT};font-size:16px;line-height:1.3;font-weight:600;letter-spacing:-0.2px;color:#ffffff;">Admission Hub</span>
+<span style="display:block;margin-top:2px;font-family:${OTP_EMAIL_FONT};font-size:12px;line-height:1.4;font-weight:400;color:#d8f2e8;">ইমেইল যাচাইকরণ</span>
 </td>
 </tr></table>
-</td>
-<td align="right" style="vertical-align:middle;white-space:nowrap;">
-<span style="display:inline-block;padding:7px 13px;background-color:#e9faf4;border-radius:999px;font-family:${OTP_EMAIL_FONT};font-size:11.5px;line-height:1;font-weight:700;color:#078c68;">ইমেইল যাচাইকরণ</span>
 </td>
 </tr></table>
 </td></tr>
 
-<tr><td style="height:4px;background-color:#12a876;background-image:linear-gradient(90deg,#12a876 0%,#0b9a70 55%,#0f8a63 100%);font-size:0;line-height:0;">&nbsp;</td></tr>
-
-<tr><td class="ah-pad" style="padding:36px 32px 0;">
-<p class="ah-greeting" style="margin:0;font-family:${OTP_EMAIL_FONT};font-size:27px;line-height:1.4;font-weight:700;color:#172b3a;">${greeting}</p>
-<p class="ah-body" style="margin:12px 0 0;font-family:${OTP_EMAIL_FONT};font-size:16.5px;line-height:1.8;color:#566b72;">আপনার ইমেইল ঠিকানাটি যাচাই করতে নিচের OTP কোডটি ব্যবহার করুন।</p>
+<tr><td class="ah-pad" style="padding:34px 28px 0;">
+<p class="ah-heading" style="margin:0;font-family:${OTP_EMAIL_FONT};font-size:20px;line-height:1.45;font-weight:600;letter-spacing:-0.2px;color:${OTP_EMAIL_INK};">${greeting}</p>
+<p class="ah-body" style="margin:10px 0 0;font-family:${OTP_EMAIL_FONT};font-size:15px;line-height:1.7;font-weight:400;color:#48534f;">আপনার ইমেইল ঠিকানাটি যাচাই করতে নিচের কোডটি ব্যবহার করুন।</p>
 </td></tr>
 
-<tr><td class="ah-pad" style="padding:28px 32px 0;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="ah-otpcard" style="width:100%;background-color:#f2fdf9;background-image:linear-gradient(135deg,#effcf8 0%,#f7fffc 100%);border:1px solid #c7eee1;border-radius:20px;">
-<tr><td align="center" style="padding:24px 16px 26px;">
-<span class="ah-muted" style="display:block;margin-bottom:14px;font-family:${OTP_EMAIL_FONT};font-size:11.5px;line-height:1;font-weight:700;letter-spacing:1.6px;color:#0a9b72;text-transform:uppercase;">যাচাইকরণ কোড</span>
-<span class="ah-otp" style="display:block;font-family:'Courier New',Courier,monospace;font-size:38px;line-height:1;font-weight:800;letter-spacing:9px;text-indent:9px;color:#075f49;">${safeCode}</span>
-</td></tr>
-</table>
+<tr><td class="ah-pad" align="center" style="padding:30px 28px 0;">
+<p class="ah-label" style="margin:0 0 14px;font-family:${OTP_EMAIL_FONT};font-size:11px;line-height:1;font-weight:600;letter-spacing:1px;color:${OTP_EMAIL_MUTED};text-transform:uppercase;">যাচাইকরণ কোড</p>
+<p class="ah-otp" style="margin:0;font-family:${OTP_EMAIL_MONO};font-size:40px;line-height:1.1;font-weight:700;letter-spacing:6px;text-indent:6px;color:${OTP_EMAIL_INK};">${safeCode}</p>
+<p class="ah-muted" style="margin:16px 0 0;font-family:${OTP_EMAIL_FONT};font-size:13px;line-height:1.6;font-weight:400;color:${OTP_EMAIL_MUTED};">এই কোডটি ${safeMinutes} মিনিট পর্যন্ত কার্যকর থাকবে।</p>
 </td></tr>
 
-<tr><td class="ah-pad" align="center" style="padding:18px 32px 0;">
-<p class="ah-muted" style="margin:0;font-family:${OTP_EMAIL_FONT};font-size:14px;line-height:1.7;color:#687b7d;">এই কোডটি <strong style="color:#07966e;font-weight:700;">${safeMinutes} মিনিট</strong> পর্যন্ত কার্যকর থাকবে।</p>
+<tr><td class="ah-pad" style="padding:30px 28px 0;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td class="ah-divider" style="height:1px;background-color:#eaecec;font-size:0;line-height:0;">&nbsp;</td></tr></table>
 </td></tr>
 
-<tr><td class="ah-pad" style="padding:28px 32px 0;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="ah-secbox" style="width:100%;background-color:#f7faf9;border:1px solid #e3ece9;border-radius:16px;">
-<tr><td style="padding:18px 20px;">
-<p class="ah-body" style="margin:0;font-family:${OTP_EMAIL_FONT};font-size:13.5px;line-height:1.8;color:#53666a;"><strong style="color:#087d5d;font-weight:700;">নিরাপত্তা নির্দেশনা</strong><br>এই কোডটি কারও সঙ্গে শেয়ার করবেন না। Admission Hub-এর কোনো কর্মী আপনার OTP চাইবে না।</p>
-</td></tr>
-</table>
-</td></tr>
-
-<tr><td class="ah-pad" style="padding:24px 32px 0;">
-<p class="ah-body" style="margin:0;font-family:${OTP_EMAIL_FONT};font-size:14px;line-height:1.8;color:#708083;">আপনি যদি এই যাচাইকরণ কোডের জন্য অনুরোধ না করে থাকেন, তাহলে এই ইমেইলটি উপেক্ষা করতে পারেন।</p>
-</td></tr>
-
-<tr><td class="ah-pad" style="padding:28px 32px 0;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td class="ah-rule" style="height:1px;background-color:#e6eeeb;font-size:0;line-height:0;">&nbsp;</td></tr></table>
+<tr><td class="ah-pad" style="padding:24px 28px 0;">
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr>
+<td width="26" valign="top" style="width:26px;padding:2px 0 0;">
+<img src="${OTP_EMAIL_LOCK_SVG}" width="16" height="16" alt="" style="display:block;width:16px;height:16px;border:0;outline:none;text-decoration:none;">
+</td>
+<td valign="top">
+<p class="ah-muted" style="margin:0;font-family:${OTP_EMAIL_FONT};font-size:12.5px;line-height:1.65;font-weight:400;color:${OTP_EMAIL_MUTED};">এই কোডটি কারও সঙ্গে শেয়ার করবেন না। Admission Hub-এর কোনো কর্মী আপনার OTP চাইবে না।</p>
+</td>
+</tr></table>
 </td></tr>
 
-<tr><td class="ah-pad" style="padding:24px 32px 32px;">
-<p class="ah-body" style="margin:0;font-family:${OTP_EMAIL_FONT};font-size:14px;line-height:1.8;color:#708083;">শুভেচ্ছান্তে,<br><strong style="display:inline-block;margin-top:4px;font-size:17px;font-weight:700;color:#07966e;">Admission Hub Team</strong></p>
+<tr><td class="ah-pad" style="padding:16px 28px 0;">
+<p class="ah-muted" style="margin:0;font-family:${OTP_EMAIL_FONT};font-size:12.5px;line-height:1.65;font-weight:400;color:${OTP_EMAIL_MUTED};">আপনি যদি এই যাচাইকরণ কোডের জন্য অনুরোধ না করে থাকেন, তাহলে এই ইমেইলটি উপেক্ষা করতে পারেন।</p>
 </td></tr>
 
-<tr><td class="ah-foot" style="padding:22px 32px;background-color:#f7faf9;border-top:1px solid #e6eeeb;">
-<p style="margin:0;font-family:${OTP_EMAIL_FONT};font-size:13px;line-height:1.5;font-weight:700;color:#176d59;">Admission Hub</p>
-<p class="ah-muted" style="margin:5px 0 0;font-family:${OTP_EMAIL_FONT};font-size:12px;line-height:1.6;color:#81908f;">${OTP_EMAIL_TAGLINE}</p>
-<p class="ah-faint" style="margin:14px 0 0;font-family:${OTP_EMAIL_FONT};font-size:11px;line-height:1.6;color:#9aa6a5;">এটি একটি স্বয়ংক্রিয় বার্তা। এই ইমেইলে উত্তর দেওয়ার প্রয়োজন নেই।</p>
-<p class="ah-faint" style="margin:8px 0 0;font-family:${OTP_EMAIL_FONT};font-size:11px;line-height:1.6;color:#a2adab;">&copy; Admission Hub</p>
+<tr><td class="ah-pad" style="padding:28px 28px 0;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td class="ah-divider" style="height:1px;background-color:#eaecec;font-size:0;line-height:0;">&nbsp;</td></tr></table>
+</td></tr>
+
+<tr><td class="ah-pad" style="padding:20px 28px 30px;">
+<p class="ah-muted" style="margin:0;font-family:${OTP_EMAIL_FONT};font-size:12.5px;line-height:1.65;font-weight:400;color:${OTP_EMAIL_MUTED};">শুভেচ্ছান্তে,<br><strong style="display:inline-block;margin-top:3px;font-size:13.5px;font-weight:600;color:${OTP_EMAIL_INK};">Admission Hub Team</strong></p>
+</td></tr>
+
+<tr><td class="ah-foot" bgcolor="#fafbfb" style="padding:18px 28px;background-color:#fafbfb;border-top:1px solid #eff2f1;">
+<p class="ah-foot-title" style="margin:0;font-family:${OTP_EMAIL_FONT};font-size:12px;line-height:1.5;font-weight:600;color:#3f4a47;">Admission Hub</p>
+<p class="ah-muted" style="margin:3px 0 0;font-family:${OTP_EMAIL_FONT};font-size:11px;line-height:1.5;font-weight:400;color:#8b9491;">${OTP_EMAIL_TAGLINE}</p>
+<p class="ah-faint" style="margin:12px 0 0;font-family:${OTP_EMAIL_FONT};font-size:11px;line-height:1.6;font-weight:400;color:#9aa3a0;">এটি একটি স্বয়ংক্রিয় বার্তা। এই ইমেইলে উত্তর দেওয়ার প্রয়োজন নেই।</p>
 </td></tr>
 
 </table>
