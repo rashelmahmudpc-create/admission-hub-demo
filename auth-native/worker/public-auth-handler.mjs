@@ -327,6 +327,17 @@ const telegramVerificationAvailable = async (env, allowed) => {
   } catch { return false; }
 };
 
+const emailOwnershipProven = async ({ env, user, context, allowed }) => {
+  if (!allowed) return false;
+  try {
+    const result = await callAuthority(env, '/internal/verification/ownership/status', {
+      input: { email: user.email, subject: user.subject },
+      context
+    });
+    return result?.proven === true;
+  } catch { return false; }
+};
+
 const firebaseReadySession = async ({ provider, jar, env, context, allowTelegram = false, trackRefresh = false }) => {
   const sessionToken = jar[AUTH_SESSION_COOKIE];
   const refreshToken = jar[AUTH_FIREBASE_COOKIE];
@@ -336,13 +347,18 @@ const firebaseReadySession = async ({ provider, jar, env, context, allowTelegram
   try { refreshed = await provider.refresh(refreshToken); } catch (cause) { throw providerError(cause, 'refresh'); }
   try { user = await provider.lookup(refreshed.idToken); } catch (cause) { throw providerError(cause, 'lookup-session'); }
   assertProviderUser(refreshed, user);
-  const telegramVerified = !user.emailVerified && await telegramVerificationStatus({ env, user, context, allowed: allowTelegram });
-  if (!user.emailVerified && !telegramVerified) throw new NativeAuthError(AUTH_ERROR_CODES.EMAIL_NOT_VERIFIED);
+  // Ownership is proven by an OTP delivered to the address itself, so it unlocks
+  // the session even while Firebase's own emailVerified flag is still false.
+  // Firebase remains the fallback: it either sets that flag or proves ownership too.
+  const ownershipProven = !user.emailVerified && await emailOwnershipProven({ env, user, context, allowed: true });
+  const telegramVerified = !user.emailVerified && !ownershipProven
+    && await telegramVerificationStatus({ env, user, context, allowed: allowTelegram });
+  if (!user.emailVerified && !ownershipProven && !telegramVerified) throw new NativeAuthError(AUTH_ERROR_CODES.EMAIL_NOT_VERIFIED);
   const session = await callAuthority(env, '/internal/firebase/session/get', {
     sessionToken,
     input: { email: user.email, subject: user.subject, ...(trackRefresh ? { trackRefresh: true } : {}) }
   });
-  return Object.freeze({ sessionToken, refreshed, user, session, telegramVerified });
+  return Object.freeze({ sessionToken, refreshed, user, session, telegramVerified, ownershipProven });
 };
 
 const sessionCookies = (established, refreshToken, context) => {
@@ -357,12 +373,14 @@ const sessionCookies = (established, refreshToken, context) => {
 const authSuccess = (request, established, refreshToken, context, verification = {}, extraCookies = []) => {
   const emailVerified = verification.emailVerified !== false;
   const telegramVerified = verification.telegramVerified === true;
+  const emailOwnershipProven = verification.emailOwnershipProven === true;
   return json(request, 200, {
     ok: true,
     authenticated: true,
-    accountVerified: emailVerified || telegramVerified,
+    accountVerified: emailVerified || telegramVerified || emailOwnershipProven,
     emailVerified,
     telegramVerified,
+    emailOwnershipProven,
     created: Boolean(established.created),
     user: established.user,
     // Phase 6 — security decision travels with the session: trustOffer drives
@@ -381,6 +399,10 @@ const verificationPublished = env => env?.VERIFICATION_AUTH_ACTIVATION === 'enab
 const telegramCanaryRequested = (env, url) =>
   verificationEndpointReady(env) && url.searchParams.get('telegramCanary') === '1';
 const telegramVerificationRequested = (env, url) => verificationPublished(env) || telegramCanaryRequested(env, url);
+// Email-ownership rides the same activation switch as the rest of the backup
+// verification family; it needs no separate canary because it is gated by the
+// pre-verification ticket and the provider quota.
+const emailOwnershipRequested = (env, url) => verificationPublished(env) || telegramCanaryRequested(env, url);
 const currentAuthUi = request => request.headers.get('X-AH-Auth-UI') === AUTH_UI_VERSION;
 const telegramActivationAuthorized = (request, env) => {
   const expected = String(env?.TELEGRAM_CANARY_ACTIVATION_SECRET || '');
@@ -546,6 +568,17 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
             };
           } catch { backup = { available: false, availabilityCode: 'STATUS_UNAVAILABLE', genericFlow: true, providerNamesExposed: false }; }
         }
+        const emailOwnership = {
+          available: verificationRequested && backup?.available === true,
+          availabilityCode: verificationRequested
+            ? String(backup?.availabilityCode || 'STATUS_UNAVAILABLE')
+            : verificationEndpointReady(env) ? 'LIVE_E2E_PENDING' : 'NOT_ACTIVATED',
+          verifiesEmailOwnership: true,
+          codeLength: 6,
+          maxAttempts: Number(backup?.maxAttempts || 5),
+          expiresInSeconds: Number(backup?.expiresInSeconds || 300),
+          providerNamesExposed: false
+        };
         const telegramVerification = {
           available: verificationRequested && telegramAvailable,
           availabilityCode: verificationRequested ? String(backup?.availabilityCode || 'STATUS_UNAVAILABLE') : verificationEndpointReady(env) ? 'LIVE_E2E_PENDING' : 'NOT_ACTIVATED',
@@ -582,8 +615,10 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
             providerStatus: availability.providerStatus,
             storage: health.storage,
             accountVerificationRequired: true,
-            emailVerifiedRequired: !telegramVerification.available,
-            emailOwnershipProof: 'firebase-email-verification-only',
+            emailVerifiedRequired: !telegramVerification.available && !emailOwnership.available,
+            emailOwnershipProof: emailOwnership.available
+              ? 'email-otp-or-firebase-email-verification'
+              : 'firebase-email-verification-only',
             methods: {
               google,
               passkey: {
@@ -596,6 +631,7 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
               emailPassword: { available, availabilityCode: available ? 'READY' : availability.code },
               passwordReset: { available, availabilityCode: available ? 'READY' : availability.code },
               profile: { available, version: 1, accountScoped: true, pendingTicketScoped: true },
+              emailOwnership,
               telegramVerification,
               backup: publicBackup
             },
@@ -1003,6 +1039,113 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
             email: user.email,
             subject: user.subject
           },
+          context
+        });
+        return authSuccess(request, established, refreshed.refreshToken, context, {
+          emailVerified: true,
+          telegramVerified: false
+        }, [verificationCookie('', 0)]);
+      }
+
+      if (request.method === 'POST' && url.pathname === `${AUTH_API_PREFIX}/email-ownership/start`) {
+        if (!provider.configured || !emailOwnershipRequested(env, url)) {
+          throw new NativeAuthError(AUTH_ERROR_CODES.BACKUP_UNAVAILABLE);
+        }
+        const verificationTicket = jar[AUTH_VERIFICATION_COOKIE];
+        if (!verificationTicket) throw new NativeAuthError(AUTH_ERROR_CODES.TELEGRAM_VERIFICATION_INVALID);
+        await readJson(request);
+        const material = await callAuthority(env, '/internal/firebase/account-verification/material', {
+          verificationTicket,
+          context
+        });
+        let refreshed;
+        let user;
+        try { refreshed = await provider.refresh(material.refreshToken); } catch (cause) { throw providerError(cause, 'refresh'); }
+        try { user = await provider.lookup(refreshed.idToken); } catch (cause) { throw providerError(cause, 'lookup-session'); }
+        assertProviderUser(refreshed, user);
+        if (user.emailVerified) {
+          return json(request, 200, { ok: true, alreadyVerified: true, authenticated: false });
+        }
+        await callAuthority(env, '/internal/firebase/rate', { input: { operation: 'verification-send', email: user.email }, context });
+        const result = await callAuthority(env, '/internal/verification/ownership/request', {
+          input: {
+            verificationTicket,
+            email: user.email,
+            subject: user.subject
+          },
+          context
+        });
+        return json(request, 202, {
+          ok: true,
+          authenticated: false,
+          ownership: {
+            sent: result?.sent !== false,
+            attemptId: result?.attemptId || '',
+            emailMasked: material.user?.emailMasked || 'আপনার ইমেইলে',
+            resendAfter: Number(result?.resendAfter || FIREBASE_VERIFICATION_RESEND_SECONDS)
+          }
+        }, context.isNewDevice ? { 'Set-Cookie': deviceCookie(context.deviceId) } : {});
+      }
+
+      if (request.method === 'POST' && url.pathname === `${AUTH_API_PREFIX}/email-ownership/verify`) {
+        if (!provider.configured || !emailOwnershipRequested(env, url)) {
+          throw new NativeAuthError(AUTH_ERROR_CODES.BACKUP_UNAVAILABLE);
+        }
+        const verificationTicket = jar[AUTH_VERIFICATION_COOKIE];
+        if (!verificationTicket) throw new NativeAuthError(AUTH_ERROR_CODES.TELEGRAM_VERIFICATION_INVALID);
+        const body = await readJson(request);
+        const code = String(body.code || '').trim();
+        const attemptId = String(body.attemptId || '').trim();
+        if (!/^\d{6}$/.test(code) || !/^[A-Za-z0-9_-]{24,96}$/.test(attemptId)) {
+          throw new NativeAuthError(AUTH_ERROR_CODES.INVALID_INPUT);
+        }
+        const material = await callAuthority(env, '/internal/firebase/account-verification/material', {
+          verificationTicket,
+          context
+        });
+        let refreshed;
+        let user;
+        try { refreshed = await provider.refresh(material.refreshToken); } catch (cause) { throw providerError(cause, 'refresh'); }
+        try { user = await provider.lookup(refreshed.idToken); } catch (cause) { throw providerError(cause, 'lookup-session'); }
+        assertProviderUser(refreshed, user);
+        const verified = await callAuthority(env, '/internal/verification/ownership/verify', {
+          input: { verificationTicket, email: user.email, subject: user.subject, attemptId, code },
+          context
+        });
+        if (verified?.verified !== true || verified?.emailOwnershipProven !== true) {
+          throw new NativeAuthError(AUTH_ERROR_CODES.OTP_INVALID);
+        }
+        const established = await callAuthority(env, '/internal/firebase/account-verification/complete', {
+          input: { verificationTicket, email: user.email, subject: user.subject },
+          context
+        });
+        return authSuccess(request, established, refreshed.refreshToken, context, {
+          emailVerified: false,
+          emailOwnershipProven: true
+        }, [verificationCookie('', 0)]);
+      }
+
+      if (request.method === 'POST' && url.pathname === `${AUTH_API_PREFIX}/email-ownership/status`) {
+        if (!provider.configured || !emailOwnershipRequested(env, url)) {
+          throw new NativeAuthError(AUTH_ERROR_CODES.BACKUP_UNAVAILABLE);
+        }
+        const verificationTicket = jar[AUTH_VERIFICATION_COOKIE];
+        if (!verificationTicket) throw new NativeAuthError(AUTH_ERROR_CODES.TELEGRAM_VERIFICATION_INVALID);
+        await readJson(request);
+        const material = await callAuthority(env, '/internal/firebase/account-verification/material', {
+          verificationTicket,
+          context
+        });
+        let refreshed;
+        let user;
+        try { refreshed = await provider.refresh(material.refreshToken); } catch (cause) { throw providerError(cause, 'refresh'); }
+        try { user = await provider.lookup(refreshed.idToken); } catch (cause) { throw providerError(cause, 'lookup-session'); }
+        assertProviderUser(refreshed, user);
+        if (!user.emailVerified) {
+          return json(request, 200, { ok: true, authenticated: false, emailVerified: false });
+        }
+        const established = await callAuthority(env, '/internal/firebase/account-verification/complete', {
+          input: { verificationTicket, email: user.email, subject: user.subject },
           context
         });
         return authSuccess(request, established, refreshed.refreshToken, context, {

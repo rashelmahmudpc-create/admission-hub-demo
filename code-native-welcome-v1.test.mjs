@@ -93,11 +93,18 @@ test('Welcome is fluid edge-to-edge on mobile and premium responsive on desktop'
 
 test('unsupported verification methods remain truthful and fail closed', () => {
   const methods = between(JS, '<div class="ah-method-stack">', '</div>\n            <p class="ah-account-note">শুধু available');
-  assert.equal((methods.match(/<button class="ah-method-card/g) || []).length, 4);
-  assert.match(methods, /Email OTP নয়/);
+  assert.equal((methods.match(/<button class="ah-method-card/g) || []).length, 5);
   assert.match(methods, /disabled aria-disabled="true"[\s\S]*?<strong>Passkey<\/strong>/);
   assert.match(methods, /WhatsApp[\s\S]*এখন verification পাওয়া যাচ্ছে না/);
   assert.match(methods, /Telegram[\s\S]*real ৬ সংখ্যার code/);
+  // Email OTP proves ownership first; Firebase stays as the last-resort backup.
+  assert.match(methods, /Email OTP[\s\S]*Email মালিকানার প্রমাণ/);
+  const cardOrder = [...methods.matchAll(/data-role="([a-z-]+)"/g)].map(match => match[1]);
+  assert.deepEqual(cardOrder, [
+    'email-ownership-start', 'telegram-verification-start', 'whatsapp-info', 'email-verification-start'
+  ]);
+  assert.ok(methods.indexOf('email-ownership-start') < methods.indexOf('email-verification-start'));
+  assert.ok(methods.indexOf('telegram-verification-start') < methods.indexOf('email-verification-start'));
   const email = between(JS, 'data-role="verification-email-panel"', '<p class="ah-account-switch"><button class="ah-account-link" type="button" data-role="verify-back"');
   assert.equal((email.match(/data-otp-digit/g) || []).length, 0);
   assert.match(email, /Verification link/);

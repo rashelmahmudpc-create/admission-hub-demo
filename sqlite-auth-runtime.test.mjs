@@ -240,7 +240,7 @@ test('SQLite schema 5 executes canonical OTP and Telegram verification lifecycle
   authRepository.migrate();
   const verificationRepository = new SqliteVerificationRepository(fixture.storage);
   verificationRepository.migrate();
-  assert.deepEqual(await authRepository.ping(), { ok: true, storage: 'sqlite-durable-object', schema: 5 });
+  assert.deepEqual(await authRepository.ping(), { ok: true, storage: 'sqlite-durable-object', schema: 6 });
 
   let now = START;
   const engine = new CloudflareNativeAuthEngine({ repository: authRepository, hmacSecret: SECRET, now: () => now });
@@ -306,6 +306,139 @@ test('SQLite schema 5 executes canonical OTP and Telegram verification lifecycle
   assert.equal(persisted.includes('firebase-sqlite-uid'), false);
 });
 
+
+test('SQLite proves email ownership from a pre-verification OTP and survives a resend', async t => {
+  const fixture = storageFixture();
+  t.after(() => fixture.database.close());
+  const authRepository = new SqliteAuthRepository(fixture.storage);
+  authRepository.migrate();
+  const verificationRepository = new SqliteVerificationRepository(fixture.storage);
+  verificationRepository.migrate();
+
+  let now = START;
+  const engine = new CloudflareNativeAuthEngine({ repository: authRepository, hmacSecret: SECRET, now: () => now });
+  const session = await engine.establishFirebaseSession({ email: 'owner@example.com', subject: 'firebase-owner-uid' }, CONTEXT);
+  const otp = new OtpProvider(() => now);
+  const orchestrator = new VerificationOrchestrator({
+    repository: verificationRepository, hmacSecret: SECRET, providers: [otp], activated: true, now: () => now,
+    config: { enabled: true, providers: [{ id: 'otp-a', enabled: true, priority: 1, dailyQuota: 10 }] }
+  });
+  // The pre-verification path supplies the address the worker read from Firebase,
+  // exactly as auth-authority-do does, because Firebase's emailVerified is still false.
+  const trusted = {
+    purpose: 'email-ownership',
+    trustedIdentity: {
+      userId: session.user.id,
+      sessionRef: 'a'.repeat(64),
+      subjectRef: 'b'.repeat(64),
+      emailRef: 'c'.repeat(64),
+      email: 'owner@example.com',
+      recipientName: 'Owner'
+    }
+  };
+  assert.equal((await orchestrator.isEmailOwnershipProven({ purpose: 'email-ownership', trustedIdentity: trusted.trustedIdentity }, CONTEXT)).proven, false);
+
+  const sent = await orchestrator.requestVerification(trusted, CONTEXT);
+  assert.equal(sent.accepted, true);
+  const row = fixture.database.prepare(
+    'SELECT purpose,destination_ref AS destinationRef,provider_id AS providerId FROM auth_verification_challenges WHERE attempt_id=?'
+  ).get(sent.attemptId);
+  assert.equal(row.purpose, 'email-ownership');
+  assert.equal(row.providerId, 'otp-a');
+  // The destination is hashed, and the plaintext address never lands in the table.
+  const stored = JSON.stringify(fixture.database.prepare('SELECT * FROM auth_verification_challenges').all());
+  assert.equal(stored.includes('owner@example.com'), false);
+
+  const verified = await orchestrator.verify({ ...trusted, attemptId: sent.attemptId, code: otp.code }, CONTEXT);
+  assert.equal(verified.verified, true);
+  assert.equal(verified.emailOwnershipProven, true);
+  // Ownership is recorded locally; Firebase's own flag is deliberately untouched.
+  assert.equal(verified.emailVerified, false);
+  assert.equal((await orchestrator.isEmailOwnershipProven({ purpose: 'email-ownership', trustedIdentity: trusted.trustedIdentity }, CONTEXT)).proven, true);
+
+  const link = fixture.database.prepare(
+    'SELECT method,status,provider_id AS providerId,email_ref AS emailRef FROM auth_email_ownership_links WHERE user_id=?'
+  ).get(session.user.id);
+  assert.equal(link.method, 'email-otp');
+  assert.equal(link.status, 'active');
+  assert.equal(link.providerId, 'otp-a');
+  assert.equal(link.emailRef.includes('owner@example.com'), false);
+
+  await verificationRepository.revokeEmailOwnership({ userId: session.user.id, now });
+  assert.equal((await orchestrator.isEmailOwnershipProven({ purpose: 'email-ownership', trustedIdentity: trusted.trustedIdentity }, CONTEXT)).proven, false);
+});
+
+test('SQLite ownership status reads the proven flag over a session without a delivery address', async t => {
+  const fixture = storageFixture();
+  t.after(() => fixture.database.close());
+  const authRepository = new SqliteAuthRepository(fixture.storage);
+  authRepository.migrate();
+  const verificationRepository = new SqliteVerificationRepository(fixture.storage);
+  verificationRepository.migrate();
+
+  const engine = new CloudflareNativeAuthEngine({ repository: authRepository, hmacSecret: SECRET, now: () => START });
+  const session = await engine.establishFirebaseSession({ email: 'status@example.com', subject: 'firebase-status-uid' }, CONTEXT);
+  const orchestrator = new VerificationOrchestrator({
+    repository: verificationRepository, hmacSecret: SECRET, providers: [], activated: true, now: () => START,
+    config: { enabled: true, providers: [] }
+  });
+
+  // Mirrors /internal/verification/ownership/status: a plain session check that
+  // carries no delivery address must still answer instead of demanding one.
+  const query = async () => {
+    const identity = await engine.getFirebaseIdentity({ sessionToken: session.sessionToken, email: 'status@example.com', subject: 'firebase-status-uid' }, CONTEXT);
+    return orchestrator.isEmailOwnershipProven({
+      purpose: 'account-backup',
+      trustedIdentity: {
+        userId: identity.userId, sessionRef: identity.subjectRef, subjectRef: identity.subjectRef, emailRef: identity.emailRef
+      }
+    }, CONTEXT);
+  };
+  assert.deepEqual(await query(), { proven: false, method: null });
+
+  // With the ownership purpose this identity shape is rejected outright, which
+  // is exactly why the status route must not use it.
+  await assert.rejects(
+    () => orchestrator.isEmailOwnershipProven({
+      purpose: 'email-ownership',
+      trustedIdentity: { userId: session.user.id, sessionRef: 'a'.repeat(64), subjectRef: 'b'.repeat(64), emailRef: 'c'.repeat(64) }
+    }, CONTEXT),
+    error => error?.code === AUTH_ERROR_CODES.INVALID_INPUT
+  );
+});
+
+test('SQLite resolves the OTP greeting name from the ticket-bound profile, not client input', async t => {
+  const fixture = storageFixture();
+  t.after(() => fixture.database.close());
+  const authRepository = new SqliteAuthRepository(fixture.storage);
+  authRepository.migrate();
+
+  const now = START;
+  const engine = new CloudflareNativeAuthEngine({ repository: authRepository, hmacSecret: SECRET, now: () => now });
+  const prepared = await engine.beginFirebaseAccountVerification({
+    email: 'greeting@example.com', subject: 'firebase-greeting-uid', refreshToken: `refresh-${'x'.repeat(32)}`
+  }, CONTEXT);
+  await engine.savePendingProfile(prepared.verificationTicket, {
+    fullName: 'মাহমুদ রাসেল', dob: '2007-05-12',
+    school: { id: 's-cox-govt-high', name: 'Cox’s Bazar Government High School', district: 'Cox’s Bazar' },
+    higherInstitution: null
+  }, CONTEXT);
+
+  const resolved = await engine.getFirebaseVerificationRecipientName(prepared.verificationTicket, CONTEXT);
+  assert.equal(resolved.fullName, 'মাহমুদ রাসেল');
+  // A different device, a stale ticket, or a malformed token yields no name at
+  // all: the greeting degrades to the generic form instead of leaking.
+  for (const [label, ticket, context] of [
+    ['other device', prepared.verificationTicket, { ...CONTEXT, deviceId: 'device-other-0123456789abcdef' }],
+    ['malformed token', 'not-a-ticket', CONTEXT]
+  ]) {
+    try {
+      assert.equal((await engine.getFirebaseVerificationRecipientName(ticket, context)).fullName, '', label);
+    } catch (error) {
+      assert.equal(error?.code, AUTH_ERROR_CODES.TELEGRAM_VERIFICATION_INVALID, label);
+    }
+  }
+});
 
 test('SQLite enforces a Firebase-user lockout across replacement backup challenges', async t => {
   const fixture = storageFixture();
@@ -403,7 +536,13 @@ test('SQLite schema 5 upgrades a populated pre-Telegram verification table idemp
     attemptId: 'old-attempt', codeCipher: '', linkTokenMac: '', linkCipher: '',
     providerConfirmed: 0, externalIdentityRef: null
   });
-  assert.equal(fixture.database.prepare("SELECT value FROM auth_meta WHERE key='schema_version'").get().value, '5');
+  assert.equal(fixture.database.prepare("SELECT value FROM auth_meta WHERE key='schema_version'").get().value, '6');
+  // The pre-email-ownership constraint must be rebuilt, not merely version-stamped,
+  // or inserting an `email-ownership` challenge would still fail the CHECK.
+  assert.match(
+    fixture.database.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='auth_verification_challenges'").get().sql,
+    /email-ownership/
+  );
 });
 
 test('SQLite schema v7 upgrades an existing v5 database and stays idempotent', async t => {

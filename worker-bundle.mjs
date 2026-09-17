@@ -4140,6 +4140,7 @@ var requiredRepositoryMethods = Object.freeze([
   "listLinkedIdentities",
   "beginFirebaseAccountVerification",
   "getFirebaseAccountVerification",
+  "getFirebaseVerificationRecipientName",
   "completeFirebaseAccountVerification",
   "getFirebaseIdentity",
   "savePendingProfile",
@@ -4658,6 +4659,20 @@ var CloudflareNativeAuthEngine = class {
       expiresAt: now + ACCOUNT_VERIFICATION_TICKET_TTL_MS,
       user: publicUser(prepared.user)
     });
+  }
+  // Greeting personalisation for the pre-verification OTP. The name is read from
+  // the profile the signup flow already saved, so the client never supplies it.
+  async getFirebaseVerificationRecipientName(verificationTicket, requestContext = {}) {
+    const token = String(verificationTicket || "").trim();
+    if (!/^[A-Za-z0-9_-]{40,96}$/.test(token)) failAuth(AUTH_ERROR_CODES.TELEGRAM_VERIFICATION_INVALID);
+    const context = normalizeContext(requestContext);
+    const refs = await this.#references("account-verification@admissionhub.invalid", context);
+    const result = errorFromRepository(await this.repository.getFirebaseVerificationRecipientName({
+      ticketRef: await this.hmac.hex("session-ref-v1", token),
+      deviceRef: refs.deviceRef,
+      now: Number(this.now())
+    }));
+    return Object.freeze({ fullName: String(result?.fullName || "") });
   }
   async getFirebaseAccountVerification(verificationTicket, input = {}, requestContext = {}) {
     const token = String(verificationTicket || "").trim();
@@ -6413,6 +6428,18 @@ var telegramVerificationAvailable = async (env, allowed) => {
     return false;
   }
 };
+var emailOwnershipProven = async ({ env, user, context, allowed }) => {
+  if (!allowed) return false;
+  try {
+    const result = await callAuthority(env, "/internal/verification/ownership/status", {
+      input: { email: user.email, subject: user.subject },
+      context
+    });
+    return result?.proven === true;
+  } catch {
+    return false;
+  }
+};
 var firebaseReadySession = async ({ provider, jar, env, context, allowTelegram = false, trackRefresh = false }) => {
   const sessionToken = jar[AUTH_SESSION_COOKIE];
   const refreshToken = jar[AUTH_FIREBASE_COOKIE];
@@ -6430,13 +6457,14 @@ var firebaseReadySession = async ({ provider, jar, env, context, allowTelegram =
     throw providerError(cause, "lookup-session");
   }
   assertProviderUser(refreshed, user);
-  const telegramVerified = !user.emailVerified && await telegramVerificationStatus({ env, user, context, allowed: allowTelegram });
-  if (!user.emailVerified && !telegramVerified) throw new NativeAuthError(AUTH_ERROR_CODES.EMAIL_NOT_VERIFIED);
+  const ownershipProven = !user.emailVerified && await emailOwnershipProven({ env, user, context, allowed: true });
+  const telegramVerified = !user.emailVerified && !ownershipProven && await telegramVerificationStatus({ env, user, context, allowed: allowTelegram });
+  if (!user.emailVerified && !ownershipProven && !telegramVerified) throw new NativeAuthError(AUTH_ERROR_CODES.EMAIL_NOT_VERIFIED);
   const session = await callAuthority(env, "/internal/firebase/session/get", {
     sessionToken,
     input: { email: user.email, subject: user.subject, ...trackRefresh ? { trackRefresh: true } : {} }
   });
-  return Object.freeze({ sessionToken, refreshed, user, session, telegramVerified });
+  return Object.freeze({ sessionToken, refreshed, user, session, telegramVerified, ownershipProven });
 };
 var sessionCookies = (established, refreshToken, context) => {
   const maxAge = Math.max(1, Math.min(SESSION_SECONDS, Math.floor((Number(established.sessionExpiresAt || established.expiresAt) - Date.now()) / 1e3)));
@@ -6449,12 +6477,14 @@ var sessionCookies = (established, refreshToken, context) => {
 var authSuccess = (request, established, refreshToken, context, verification = {}, extraCookies = []) => {
   const emailVerified = verification.emailVerified !== false;
   const telegramVerified = verification.telegramVerified === true;
+  const emailOwnershipProven2 = verification.emailOwnershipProven === true;
   return json3(request, 200, {
     ok: true,
     authenticated: true,
-    accountVerified: emailVerified || telegramVerified,
+    accountVerified: emailVerified || telegramVerified || emailOwnershipProven2,
     emailVerified,
     telegramVerified,
+    emailOwnershipProven: emailOwnershipProven2,
     created: Boolean(established.created),
     user: established.user,
     // Phase 6 — security decision travels with the session: trustOffer drives
@@ -6470,6 +6500,7 @@ var verificationEndpointReady = (env) => ["canary", "enabled"].includes(String(e
 var verificationPublished = (env) => env?.VERIFICATION_AUTH_ACTIVATION === "enabled";
 var telegramCanaryRequested = (env, url) => verificationEndpointReady(env) && url.searchParams.get("telegramCanary") === "1";
 var telegramVerificationRequested = (env, url) => verificationPublished(env) || telegramCanaryRequested(env, url);
+var emailOwnershipRequested = (env, url) => verificationPublished(env) || telegramCanaryRequested(env, url);
 var currentAuthUi = (request) => request.headers.get("X-AH-Auth-UI") === AUTH_UI_VERSION;
 var telegramActivationAuthorized = (request, env) => {
   const expected = String(env?.TELEGRAM_CANARY_ACTIVATION_SECRET || "");
@@ -6625,6 +6656,15 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
             backup = { available: false, availabilityCode: "STATUS_UNAVAILABLE", genericFlow: true, providerNamesExposed: false };
           }
         }
+        const emailOwnership = {
+          available: verificationRequested && backup?.available === true,
+          availabilityCode: verificationRequested ? String(backup?.availabilityCode || "STATUS_UNAVAILABLE") : verificationEndpointReady(env) ? "LIVE_E2E_PENDING" : "NOT_ACTIVATED",
+          verifiesEmailOwnership: true,
+          codeLength: 6,
+          maxAttempts: Number(backup?.maxAttempts || 5),
+          expiresInSeconds: Number(backup?.expiresInSeconds || 300),
+          providerNamesExposed: false
+        };
         const telegramVerification = {
           available: verificationRequested && telegramAvailable,
           availabilityCode: verificationRequested ? String(backup?.availabilityCode || "STATUS_UNAVAILABLE") : verificationEndpointReady(env) ? "LIVE_E2E_PENDING" : "NOT_ACTIVATED",
@@ -6661,8 +6701,8 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
             providerStatus: availability.providerStatus,
             storage: health.storage,
             accountVerificationRequired: true,
-            emailVerifiedRequired: !telegramVerification.available,
-            emailOwnershipProof: "firebase-email-verification-only",
+            emailVerifiedRequired: !telegramVerification.available && !emailOwnership.available,
+            emailOwnershipProof: emailOwnership.available ? "email-otp-or-firebase-email-verification" : "firebase-email-verification-only",
             methods: {
               google,
               passkey: {
@@ -6675,6 +6715,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
               emailPassword: { available, availabilityCode: available ? "READY" : availability.code },
               passwordReset: { available, availabilityCode: available ? "READY" : availability.code },
               profile: { available, version: 1, accountScoped: true, pendingTicketScoped: true },
+              emailOwnership,
               telegramVerification,
               backup: publicBackup
             },
@@ -7138,6 +7179,134 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
             email: user.email,
             subject: user.subject
           },
+          context
+        });
+        return authSuccess(request, established, refreshed.refreshToken, context, {
+          emailVerified: true,
+          telegramVerified: false
+        }, [verificationCookie("", 0)]);
+      }
+      if (request.method === "POST" && url.pathname === `${AUTH_API_PREFIX}/email-ownership/start`) {
+        if (!provider.configured || !emailOwnershipRequested(env, url)) {
+          throw new NativeAuthError(AUTH_ERROR_CODES.BACKUP_UNAVAILABLE);
+        }
+        const verificationTicket = jar[AUTH_VERIFICATION_COOKIE];
+        if (!verificationTicket) throw new NativeAuthError(AUTH_ERROR_CODES.TELEGRAM_VERIFICATION_INVALID);
+        await readJson(request);
+        const material = await callAuthority(env, "/internal/firebase/account-verification/material", {
+          verificationTicket,
+          context
+        });
+        let refreshed;
+        let user;
+        try {
+          refreshed = await provider.refresh(material.refreshToken);
+        } catch (cause) {
+          throw providerError(cause, "refresh");
+        }
+        try {
+          user = await provider.lookup(refreshed.idToken);
+        } catch (cause) {
+          throw providerError(cause, "lookup-session");
+        }
+        assertProviderUser(refreshed, user);
+        if (user.emailVerified) {
+          return json3(request, 200, { ok: true, alreadyVerified: true, authenticated: false });
+        }
+        await callAuthority(env, "/internal/firebase/rate", { input: { operation: "verification-send", email: user.email }, context });
+        const result = await callAuthority(env, "/internal/verification/ownership/request", {
+          input: {
+            verificationTicket,
+            email: user.email,
+            subject: user.subject
+          },
+          context
+        });
+        return json3(request, 202, {
+          ok: true,
+          authenticated: false,
+          ownership: {
+            sent: result?.sent !== false,
+            attemptId: result?.attemptId || "",
+            emailMasked: material.user?.emailMasked || "আপনার ইমেইলে",
+            resendAfter: Number(result?.resendAfter || FIREBASE_VERIFICATION_RESEND_SECONDS)
+          }
+        }, context.isNewDevice ? { "Set-Cookie": deviceCookie(context.deviceId) } : {});
+      }
+      if (request.method === "POST" && url.pathname === `${AUTH_API_PREFIX}/email-ownership/verify`) {
+        if (!provider.configured || !emailOwnershipRequested(env, url)) {
+          throw new NativeAuthError(AUTH_ERROR_CODES.BACKUP_UNAVAILABLE);
+        }
+        const verificationTicket = jar[AUTH_VERIFICATION_COOKIE];
+        if (!verificationTicket) throw new NativeAuthError(AUTH_ERROR_CODES.TELEGRAM_VERIFICATION_INVALID);
+        const body = await readJson(request);
+        const code = String(body.code || "").trim();
+        const attemptId = String(body.attemptId || "").trim();
+        if (!/^\d{6}$/.test(code) || !/^[A-Za-z0-9_-]{24,96}$/.test(attemptId)) {
+          throw new NativeAuthError(AUTH_ERROR_CODES.INVALID_INPUT);
+        }
+        const material = await callAuthority(env, "/internal/firebase/account-verification/material", {
+          verificationTicket,
+          context
+        });
+        let refreshed;
+        let user;
+        try {
+          refreshed = await provider.refresh(material.refreshToken);
+        } catch (cause) {
+          throw providerError(cause, "refresh");
+        }
+        try {
+          user = await provider.lookup(refreshed.idToken);
+        } catch (cause) {
+          throw providerError(cause, "lookup-session");
+        }
+        assertProviderUser(refreshed, user);
+        const verified = await callAuthority(env, "/internal/verification/ownership/verify", {
+          input: { verificationTicket, email: user.email, subject: user.subject, attemptId, code },
+          context
+        });
+        if (verified?.verified !== true || verified?.emailOwnershipProven !== true) {
+          throw new NativeAuthError(AUTH_ERROR_CODES.OTP_INVALID);
+        }
+        const established = await callAuthority(env, "/internal/firebase/account-verification/complete", {
+          input: { verificationTicket, email: user.email, subject: user.subject },
+          context
+        });
+        return authSuccess(request, established, refreshed.refreshToken, context, {
+          emailVerified: false,
+          emailOwnershipProven: true
+        }, [verificationCookie("", 0)]);
+      }
+      if (request.method === "POST" && url.pathname === `${AUTH_API_PREFIX}/email-ownership/status`) {
+        if (!provider.configured || !emailOwnershipRequested(env, url)) {
+          throw new NativeAuthError(AUTH_ERROR_CODES.BACKUP_UNAVAILABLE);
+        }
+        const verificationTicket = jar[AUTH_VERIFICATION_COOKIE];
+        if (!verificationTicket) throw new NativeAuthError(AUTH_ERROR_CODES.TELEGRAM_VERIFICATION_INVALID);
+        await readJson(request);
+        const material = await callAuthority(env, "/internal/firebase/account-verification/material", {
+          verificationTicket,
+          context
+        });
+        let refreshed;
+        let user;
+        try {
+          refreshed = await provider.refresh(material.refreshToken);
+        } catch (cause) {
+          throw providerError(cause, "refresh");
+        }
+        try {
+          user = await provider.lookup(refreshed.idToken);
+        } catch (cause) {
+          throw providerError(cause, "lookup-session");
+        }
+        assertProviderUser(refreshed, user);
+        if (!user.emailVerified) {
+          return json3(request, 200, { ok: true, authenticated: false, emailVerified: false });
+        }
+        const established = await callAuthority(env, "/internal/firebase/account-verification/complete", {
+          input: { verificationTicket, email: user.email, subject: user.subject },
           context
         });
         return authSuccess(request, established, refreshed.refreshToken, context, {
@@ -9738,6 +9907,21 @@ var SqliteAuthRepository = class _SqliteAuthRepository {
     if (row.status !== "active") return { error: AUTH_ERROR_CODES.ACCOUNT_DISABLED };
     return { user: row };
   }
+  // Greeting personalisation for the ownership OTP. The pending profile written
+  // during signup already holds the name, so the server resolves it against the
+  // ticket instead of trusting a client-supplied value.
+  async getFirebaseVerificationRecipientName(input) {
+    const row = this.#one(
+      `SELECT p.full_name AS fullName
+       FROM auth_account_verification_tickets t
+       JOIN auth_profiles p ON p.user_id=t.user_id
+       WHERE t.ticket_ref=? AND t.device_ref=? AND t.state='active' AND t.expires_at>?`,
+      input.ticketRef,
+      input.deviceRef,
+      input.now
+    );
+    return { fullName: String(row?.fullName || "") };
+  }
   async savePendingProfile(input) {
     return this.#transaction(() => {
       const row = this.#one(
@@ -10322,7 +10506,7 @@ var SqliteAuthRepository = class _SqliteAuthRepository {
 };
 
 // auth-native/verification/orchestrator.mjs
-var PURPOSES = /* @__PURE__ */ new Set(["account-backup", "sensitive-action"]);
+var PURPOSES = /* @__PURE__ */ new Set(["account-backup", "sensitive-action", "email-ownership"]);
 var HOUR_MS = 60 * 60 * 1e3;
 var SEND_LIMITS = Object.freeze([
   Object.freeze({ scope: "backup-user-hour", source: "user", limit: 5, windowMs: HOUR_MS }),
@@ -10434,19 +10618,26 @@ var VerificationOrchestrator = class {
       if (!validText(userId2, 3, 128) || ![sessionRef2, subjectRef2, emailRef2].every((value) => /^[a-f0-9]{64}$/.test(value))) {
         failAuth(AUTH_ERROR_CODES.SESSION_INVALID);
       }
+      const ownershipEmail = purpose === "email-ownership" ? normalizeAuthEmail(trusted.email) : "";
+      if (purpose === "email-ownership" && !ownershipEmail) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+      const recipientName2 = purpose === "email-ownership" ? cleanRecipientName(trusted.recipientName) : "";
       const [ipRef2, deviceRef2, destinationRef2] = await Promise.all([
         this.hmac.hex("network-ref-v1", context.ip),
         this.hmac.hex("device-ref-v1", context.deviceId),
-        this.hmac.hex("verification-destination-v1", "telegram-account-verification")
+        this.hmac.hex("verification-destination-v1", purpose === "email-ownership" ? `email-ownership:${ownershipEmail}` : "telegram-account-verification")
       ]);
       return Object.freeze({
         sessionToken: "",
         subject: "",
         userId: userId2,
-        email: "",
+        email: ownershipEmail,
         purpose,
-        recipientName: "",
-        destinations: Object.freeze({ otp: "", whatsapp: "", telegram: "user-initiated-link" }),
+        recipientName: recipientName2,
+        destinations: Object.freeze({
+          otp: ownershipEmail,
+          whatsapp: "",
+          telegram: purpose === "email-ownership" ? "" : "user-initiated-link"
+        }),
         context,
         sessionRef: sessionRef2,
         subjectRef: subjectRef2,
@@ -10771,7 +10962,8 @@ var VerificationOrchestrator = class {
       verified: true,
       purpose: verified.purpose,
       userId: identity.userId,
-      ...verified.telegramLinked === true ? { telegramLinked: true, emailVerified: false } : {}
+      ...verified.telegramLinked === true ? { telegramLinked: true, emailVerified: false } : {},
+      ...verified.emailOwnershipProven === true ? { emailOwnershipProven: true, emailVerified: false } : {}
     });
   }
   async pendingVerification(input = {}, requestContext = {}) {
@@ -10811,6 +11003,13 @@ var VerificationOrchestrator = class {
     const identity = await this.#identity(input, requestContext);
     const result = await this.repository.isTelegramLinked({ userId: identity.userId, subjectRef: identity.subjectRef });
     return Object.freeze({ linked: result?.linked === true });
+  }
+  // Read-only counterpart to isTelegramLinked for the email-ownership proof. The
+  // worker calls it with a trusted identity resolved from the Firebase session.
+  async isEmailOwnershipProven(input = {}, requestContext = {}) {
+    const identity = await this.#identity(input, requestContext);
+    const result = await this.repository.isEmailOwnershipProven({ userId: identity.userId, subjectRef: identity.subjectRef });
+    return Object.freeze({ proven: result?.proven === true, method: result?.method || null });
   }
   async confirmTelegramWebhook(input = {}) {
     const linkToken = String(input.linkToken || "").trim();
@@ -11900,7 +12099,7 @@ var SqliteVerificationRepository = class {
         destination_ref TEXT NOT NULL,
         device_ref TEXT NOT NULL,
         ip_ref TEXT NOT NULL,
-        purpose TEXT NOT NULL CHECK(purpose IN ('account-backup','sensitive-action')),
+        purpose TEXT NOT NULL CHECK(purpose IN ('account-backup','sensitive-action','email-ownership')),
         code_mac TEXT NOT NULL,
         code_cipher TEXT NOT NULL DEFAULT '',
         link_token_mac TEXT NOT NULL,
@@ -11937,6 +12136,20 @@ var SqliteVerificationRepository = class {
       )`,
       `CREATE INDEX IF NOT EXISTS auth_telegram_identity_status
        ON auth_telegram_identity_links(status,last_verified_at DESC)`,
+      `CREATE TABLE IF NOT EXISTS auth_email_ownership_links (
+        user_id TEXT PRIMARY KEY,
+        subject_ref TEXT NOT NULL UNIQUE,
+        email_ref TEXT NOT NULL,
+        provider_id TEXT NOT NULL,
+        method TEXT NOT NULL CHECK(method IN ('email-otp')),
+        status TEXT NOT NULL CHECK(status IN ('active','revoked')),
+        proven_at INTEGER NOT NULL,
+        last_verified_at INTEGER NOT NULL,
+        revoked_at INTEGER,
+        FOREIGN KEY(user_id) REFERENCES auth_users(user_id)
+      )`,
+      `CREATE INDEX IF NOT EXISTS auth_email_ownership_status
+       ON auth_email_ownership_links(status,last_verified_at DESC)`,
       `CREATE TABLE IF NOT EXISTS auth_verification_daily_quota (
         provider_id TEXT NOT NULL,
         day_start INTEGER NOT NULL,
@@ -11996,7 +12209,57 @@ var SqliteVerificationRepository = class {
     for (const [column, statement] of additiveColumns) {
       if (!challengeColumns.has(column)) this.sql.exec(statement);
     }
-    this.sql.exec("INSERT INTO auth_meta(key,value) VALUES('schema_version','5') ON CONFLICT(key) DO UPDATE SET value=excluded.value");
+    const challengeDdl = String(this.#one(
+      "SELECT sql FROM sqlite_master WHERE type='table' AND name='auth_verification_challenges'"
+    )?.sql || "");
+    if (challengeDdl && !challengeDdl.includes("email-ownership")) {
+      this.sql.exec("ALTER TABLE auth_verification_challenges RENAME TO auth_verification_challenges_legacy");
+      this.sql.exec(`CREATE TABLE auth_verification_challenges (
+        attempt_id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        session_ref TEXT NOT NULL,
+        subject_ref TEXT NOT NULL,
+        email_ref TEXT NOT NULL,
+        destination_ref TEXT NOT NULL,
+        device_ref TEXT NOT NULL,
+        ip_ref TEXT NOT NULL,
+        purpose TEXT NOT NULL CHECK(purpose IN ('account-backup','sensitive-action','email-ownership')),
+        code_mac TEXT NOT NULL,
+        code_cipher TEXT NOT NULL DEFAULT '',
+        link_token_mac TEXT NOT NULL,
+        link_cipher TEXT NOT NULL DEFAULT '',
+        provider_id TEXT,
+        channel TEXT,
+        verification_mode TEXT,
+        state TEXT NOT NULL CHECK(state IN ('pending','sent','verified','failed','expired','locked','superseded')),
+        attempts INTEGER NOT NULL DEFAULT 0,
+        max_attempts INTEGER NOT NULL,
+        created_at INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL,
+        resend_at INTEGER NOT NULL,
+        sent_at INTEGER,
+        verified_at INTEGER,
+        lockout_until INTEGER NOT NULL DEFAULT 0,
+        provider_confirmed INTEGER NOT NULL DEFAULT 0,
+        external_identity_ref TEXT,
+        FOREIGN KEY(user_id) REFERENCES auth_users(user_id)
+      )`);
+      this.sql.exec(`INSERT INTO auth_verification_challenges(
+        attempt_id,user_id,session_ref,subject_ref,email_ref,destination_ref,device_ref,ip_ref,purpose,
+        code_mac,code_cipher,link_token_mac,link_cipher,provider_id,channel,verification_mode,state,
+        attempts,max_attempts,created_at,expires_at,resend_at,sent_at,verified_at,lockout_until,
+        provider_confirmed,external_identity_ref
+      ) SELECT
+        attempt_id,user_id,session_ref,subject_ref,email_ref,destination_ref,device_ref,ip_ref,purpose,
+        code_mac,code_cipher,link_token_mac,link_cipher,provider_id,channel,verification_mode,state,
+        attempts,max_attempts,created_at,expires_at,resend_at,sent_at,verified_at,lockout_until,
+        provider_confirmed,external_identity_ref
+      FROM auth_verification_challenges_legacy`);
+      this.sql.exec("DROP TABLE auth_verification_challenges_legacy");
+      this.sql.exec("CREATE INDEX IF NOT EXISTS auth_verification_user_purpose ON auth_verification_challenges(user_id,purpose,created_at DESC)");
+      this.sql.exec("CREATE INDEX IF NOT EXISTS auth_verification_expiry ON auth_verification_challenges(expires_at)");
+    }
+    this.sql.exec("INSERT INTO auth_meta(key,value) VALUES('schema_version','6') ON CONFLICT(key) DO UPDATE SET value=excluded.value");
   }
   #rows(statement, ...bindings) {
     return Array.from(this.sql.exec(statement, ...bindings));
@@ -12305,6 +12568,25 @@ var SqliteVerificationRepository = class {
     );
     return { linked: row?.status === "active" };
   }
+  async isEmailOwnershipProven(input) {
+    const row = this.#one(
+      "SELECT status,method FROM auth_email_ownership_links WHERE user_id=? AND subject_ref=?",
+      input.userId,
+      input.subjectRef
+    );
+    return {
+      proven: row?.status === "active",
+      method: row?.status === "active" ? row.method : null
+    };
+  }
+  async revokeEmailOwnership(input) {
+    this.sql.exec(
+      "UPDATE auth_email_ownership_links SET status='revoked',revoked_at=? WHERE user_id=? AND status='active'",
+      input.now,
+      input.userId
+    );
+    return { revoked: true };
+  }
   async failChallenge(input) {
     return this.#transaction(() => {
       const row = this.#one(
@@ -12405,12 +12687,35 @@ var SqliteVerificationRepository = class {
         input.now,
         input.attemptId
       );
+      if (row.purpose === "email-ownership") {
+        const existing = this.#one(
+          "SELECT email_ref AS emailRef,subject_ref AS subjectRef,status FROM auth_email_ownership_links WHERE user_id=?",
+          row.userId
+        );
+        if (existing && (existing.subjectRef !== row.subjectRef || existing.emailRef !== row.emailRef)) {
+          return { error: AUTH_ERROR_CODES.ACCOUNT_CONFLICT };
+        }
+        this.sql.exec(
+          `INSERT INTO auth_email_ownership_links(
+            user_id,subject_ref,email_ref,provider_id,method,status,proven_at,last_verified_at,revoked_at
+          ) VALUES(?,?,?,?,'email-otp','active',?,?,NULL)
+          ON CONFLICT(user_id) DO UPDATE SET
+            status='active',provider_id=excluded.provider_id,last_verified_at=excluded.last_verified_at,revoked_at=NULL`,
+          row.userId,
+          row.subjectRef,
+          row.emailRef,
+          row.providerId || "otp",
+          input.now,
+          input.now
+        );
+      }
       this.#event({ ...row, now: input.now, outcome: "verified", reason: "accepted" });
       return {
         verified: true,
         userId: row.userId,
         purpose: row.purpose,
         telegramLinked: row.providerId === "telegram",
+        emailOwnershipProven: row.purpose === "email-ownership",
         emailVerified: false
       };
     });
@@ -12750,21 +13055,27 @@ var AdmissionAuthAuthority = class {
     });
     return { ...input, userId: session.user.id };
   }
-  async #preverificationIdentity(input = {}, context = {}) {
+  async #preverificationIdentity(input = {}, context = {}, purpose = "account-backup") {
     const material = await this.engine.getFirebaseAccountVerification(
       input.verificationTicket,
       input.email && input.subject ? { email: input.email, subject: input.subject } : {},
       context
     );
+    const recipientName = purpose === "email-ownership" ? (await this.engine.getFirebaseVerificationRecipientName(input.verificationTicket, context)).fullName : "";
     return {
       material,
       verificationInput: {
-        purpose: "account-backup",
+        purpose,
         trustedIdentity: {
           userId: material.userId,
           sessionRef: material.sessionRef,
           subjectRef: material.subjectRef,
-          emailRef: material.emailRef
+          emailRef: material.emailRef,
+          // Only the ownership purpose needs the address itself: it is the delivery
+          // destination for the code. The worker takes it from the Firebase lookup
+          // and getFirebaseAccountVerification has already checked it matches the
+          // ticket, so it never arrives from client input.
+          ...purpose === "email-ownership" ? { email: input.email, recipientName } : {}
         }
       }
     };
@@ -12941,6 +13252,35 @@ var AdmissionAuthAuthority = class {
           code: body.input.code
         }, body.context);
         await this.#scheduleExpiry();
+        return response2(200, { ok: true, result });
+      }
+      if (url.pathname === "/internal/verification/ownership/request") {
+        const prepared = await this.#preverificationIdentity(body.input, body.context, "email-ownership");
+        const result = await this.verification.requestVerification(prepared.verificationInput, body.context);
+        await this.#scheduleExpiry();
+        return response2(200, { ok: true, result });
+      }
+      if (url.pathname === "/internal/verification/ownership/verify") {
+        const prepared = await this.#preverificationIdentity(body.input, body.context, "email-ownership");
+        const result = await this.verification.verify({
+          ...prepared.verificationInput,
+          attemptId: body.input.attemptId,
+          code: body.input.code
+        }, body.context);
+        await this.#scheduleExpiry();
+        return response2(200, { ok: true, result });
+      }
+      if (url.pathname === "/internal/verification/ownership/status") {
+        const identity = await this.engine.getFirebaseIdentity(body.input, body.context);
+        const result = await this.verification.isEmailOwnershipProven({
+          purpose: "account-backup",
+          trustedIdentity: {
+            userId: identity.userId,
+            sessionRef: identity.subjectRef,
+            subjectRef: identity.subjectRef,
+            emailRef: identity.emailRef
+          }
+        }, body.context);
         return response2(200, { ok: true, result });
       }
       if (url.pathname === "/internal/verification/telegram/status") {

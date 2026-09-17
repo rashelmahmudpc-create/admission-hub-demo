@@ -321,6 +321,32 @@ test('Pages excludes server-only Auth source and keeps defensive source block', 
   assert.match(pagesWorker, /\/auth-native\//);
 });
 
+test('release guard literals still match the shipped shell', () => {
+  // The publish workflow greps the deployed bundle for exact literals. Nothing else
+  // guards those pins, so a shell bump used to surface only as a failed production
+  // publish. Every asset version the workflow asserts must exist in the sources it
+  // ships from.
+  const shellFiles = ['index.html', 'account-access.js', 'account-access.css', 'sw.js',
+    'dashboard-v2.js', 'ai-agent-chat.js', 'phase12-ui.js'];
+  const shipped = shellFiles.filter(file => existsSync(resolve(root, file))).map(read).join('\n');
+
+  const versioned = new Set();
+  for (const match of telegramCanaryWorkflow.matchAll(/[A-Za-z0-9._-]+\?v=[A-Za-z0-9._-]+/g)) {
+    versioned.add(match[0]);
+  }
+  assert.ok(versioned.size > 0);
+  assert.deepEqual([...versioned].filter(token => !shipped.includes(token)), []);
+
+  // Bengali copy is compared byte for byte, so the guard must carry the same
+  // Unicode normalization as the client source.
+  const grepNeedles = [...telegramCanaryWorkflow.matchAll(/grep -Fq '([^']+)'/g)].map(match => match[1]);
+  for (const needle of grepNeedles) {
+    if (/[^\x00-\x7f]/.test(needle)) {
+      assert.equal(needle, needle.normalize('NFC'), `guard literal is not NFC: ${JSON.stringify(needle)}`);
+    }
+  }
+});
+
 test('service worker keeps Auth and the privileged control page out of the offline shell', () => {
   assert.match(serviceWorker, /requestUrl\.pathname\.startsWith\('\/api\/auth\/'\)/);
   assert.match(serviceWorker, /requestUrl\.pathname === '\/verification-control-center\.html'/);

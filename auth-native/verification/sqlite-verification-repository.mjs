@@ -24,7 +24,7 @@ export class SqliteVerificationRepository {
         destination_ref TEXT NOT NULL,
         device_ref TEXT NOT NULL,
         ip_ref TEXT NOT NULL,
-        purpose TEXT NOT NULL CHECK(purpose IN ('account-backup','sensitive-action')),
+        purpose TEXT NOT NULL CHECK(purpose IN ('account-backup','sensitive-action','email-ownership')),
         code_mac TEXT NOT NULL,
         code_cipher TEXT NOT NULL DEFAULT '',
         link_token_mac TEXT NOT NULL,
@@ -61,6 +61,20 @@ export class SqliteVerificationRepository {
       )`,
       `CREATE INDEX IF NOT EXISTS auth_telegram_identity_status
        ON auth_telegram_identity_links(status,last_verified_at DESC)`,
+      `CREATE TABLE IF NOT EXISTS auth_email_ownership_links (
+        user_id TEXT PRIMARY KEY,
+        subject_ref TEXT NOT NULL UNIQUE,
+        email_ref TEXT NOT NULL,
+        provider_id TEXT NOT NULL,
+        method TEXT NOT NULL CHECK(method IN ('email-otp')),
+        status TEXT NOT NULL CHECK(status IN ('active','revoked')),
+        proven_at INTEGER NOT NULL,
+        last_verified_at INTEGER NOT NULL,
+        revoked_at INTEGER,
+        FOREIGN KEY(user_id) REFERENCES auth_users(user_id)
+      )`,
+      `CREATE INDEX IF NOT EXISTS auth_email_ownership_status
+       ON auth_email_ownership_links(status,last_verified_at DESC)`,
       `CREATE TABLE IF NOT EXISTS auth_verification_daily_quota (
         provider_id TEXT NOT NULL,
         day_start INTEGER NOT NULL,
@@ -120,7 +134,60 @@ export class SqliteVerificationRepository {
     for (const [column, statement] of additiveColumns) {
       if (!challengeColumns.has(column)) this.sql.exec(statement);
     }
-    this.sql.exec("INSERT INTO auth_meta(key,value) VALUES('schema_version','5') ON CONFLICT(key) DO UPDATE SET value=excluded.value");
+    // SQLite cannot alter a CHECK constraint in place, so a database created before
+    // `email-ownership` existed still rejects that purpose. Rebuild the table once,
+    // detected from the stored DDL, rather than version-stamping the migration.
+    const challengeDdl = String(this.#one(
+      "SELECT sql FROM sqlite_master WHERE type='table' AND name='auth_verification_challenges'"
+    )?.sql || '');
+    if (challengeDdl && !challengeDdl.includes('email-ownership')) {
+      this.sql.exec('ALTER TABLE auth_verification_challenges RENAME TO auth_verification_challenges_legacy');
+      this.sql.exec(`CREATE TABLE auth_verification_challenges (
+        attempt_id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        session_ref TEXT NOT NULL,
+        subject_ref TEXT NOT NULL,
+        email_ref TEXT NOT NULL,
+        destination_ref TEXT NOT NULL,
+        device_ref TEXT NOT NULL,
+        ip_ref TEXT NOT NULL,
+        purpose TEXT NOT NULL CHECK(purpose IN ('account-backup','sensitive-action','email-ownership')),
+        code_mac TEXT NOT NULL,
+        code_cipher TEXT NOT NULL DEFAULT '',
+        link_token_mac TEXT NOT NULL,
+        link_cipher TEXT NOT NULL DEFAULT '',
+        provider_id TEXT,
+        channel TEXT,
+        verification_mode TEXT,
+        state TEXT NOT NULL CHECK(state IN ('pending','sent','verified','failed','expired','locked','superseded')),
+        attempts INTEGER NOT NULL DEFAULT 0,
+        max_attempts INTEGER NOT NULL,
+        created_at INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL,
+        resend_at INTEGER NOT NULL,
+        sent_at INTEGER,
+        verified_at INTEGER,
+        lockout_until INTEGER NOT NULL DEFAULT 0,
+        provider_confirmed INTEGER NOT NULL DEFAULT 0,
+        external_identity_ref TEXT,
+        FOREIGN KEY(user_id) REFERENCES auth_users(user_id)
+      )`);
+      this.sql.exec(`INSERT INTO auth_verification_challenges(
+        attempt_id,user_id,session_ref,subject_ref,email_ref,destination_ref,device_ref,ip_ref,purpose,
+        code_mac,code_cipher,link_token_mac,link_cipher,provider_id,channel,verification_mode,state,
+        attempts,max_attempts,created_at,expires_at,resend_at,sent_at,verified_at,lockout_until,
+        provider_confirmed,external_identity_ref
+      ) SELECT
+        attempt_id,user_id,session_ref,subject_ref,email_ref,destination_ref,device_ref,ip_ref,purpose,
+        code_mac,code_cipher,link_token_mac,link_cipher,provider_id,channel,verification_mode,state,
+        attempts,max_attempts,created_at,expires_at,resend_at,sent_at,verified_at,lockout_until,
+        provider_confirmed,external_identity_ref
+      FROM auth_verification_challenges_legacy`);
+      this.sql.exec('DROP TABLE auth_verification_challenges_legacy');
+      this.sql.exec('CREATE INDEX IF NOT EXISTS auth_verification_user_purpose ON auth_verification_challenges(user_id,purpose,created_at DESC)');
+      this.sql.exec('CREATE INDEX IF NOT EXISTS auth_verification_expiry ON auth_verification_challenges(expires_at)');
+    }
+    this.sql.exec("INSERT INTO auth_meta(key,value) VALUES('schema_version','6') ON CONFLICT(key) DO UPDATE SET value=excluded.value");
   }
 
   #rows(statement, ...bindings) { return Array.from(this.sql.exec(statement, ...bindings)); }
@@ -395,6 +462,25 @@ export class SqliteVerificationRepository {
     return { linked: row?.status === 'active' };
   }
 
+  async isEmailOwnershipProven(input) {
+    const row = this.#one(
+      "SELECT status,method FROM auth_email_ownership_links WHERE user_id=? AND subject_ref=?",
+      input.userId, input.subjectRef
+    );
+    return {
+      proven: row?.status === 'active',
+      method: row?.status === 'active' ? row.method : null
+    };
+  }
+
+  async revokeEmailOwnership(input) {
+    this.sql.exec(
+      "UPDATE auth_email_ownership_links SET status='revoked',revoked_at=? WHERE user_id=? AND status='active'",
+      input.now, input.userId
+    );
+    return { revoked: true };
+  }
+
   async failChallenge(input) {
     return this.#transaction(() => {
       const row = this.#one(
@@ -487,12 +573,33 @@ export class SqliteVerificationRepository {
         "UPDATE auth_verification_challenges SET state='verified',code_mac='',code_cipher='',link_token_mac='',link_cipher='',verified_at=? WHERE attempt_id=? AND state='sent'",
         input.now, input.attemptId
       );
+      // A code delivered to the address itself is proof of ownership of that
+      // address, so record it alongside the challenge. The session gate reads this
+      // when Firebase's own emailVerified flag is still false.
+      if (row.purpose === 'email-ownership') {
+        const existing = this.#one(
+          'SELECT email_ref AS emailRef,subject_ref AS subjectRef,status FROM auth_email_ownership_links WHERE user_id=?',
+          row.userId
+        );
+        if (existing && (existing.subjectRef !== row.subjectRef || existing.emailRef !== row.emailRef)) {
+          return { error: AUTH_ERROR_CODES.ACCOUNT_CONFLICT };
+        }
+        this.sql.exec(
+          `INSERT INTO auth_email_ownership_links(
+            user_id,subject_ref,email_ref,provider_id,method,status,proven_at,last_verified_at,revoked_at
+          ) VALUES(?,?,?,?,'email-otp','active',?,?,NULL)
+          ON CONFLICT(user_id) DO UPDATE SET
+            status='active',provider_id=excluded.provider_id,last_verified_at=excluded.last_verified_at,revoked_at=NULL`,
+          row.userId, row.subjectRef, row.emailRef, row.providerId || 'otp', input.now, input.now
+        );
+      }
       this.#event({ ...row, now: input.now, outcome: 'verified', reason: 'accepted' });
       return {
         verified: true,
         userId: row.userId,
         purpose: row.purpose,
         telegramLinked: row.providerId === 'telegram',
+        emailOwnershipProven: row.purpose === 'email-ownership',
         emailVerified: false
       };
     });

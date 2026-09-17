@@ -15,6 +15,7 @@ export class MemoryVerificationRepository {
     this.events = [];
     this.telegramLinks = new Map();
     this.telegramLinksByExternal = new Map();
+    this.emailOwnership = new Map();
     this.runtimeConfig = null;
   }
 
@@ -194,6 +195,23 @@ export class MemoryVerificationRepository {
     return { linked: Boolean(row && row.status === 'active' && row.subjectRef === input.subjectRef) };
   }
 
+  async isEmailOwnershipProven(input) {
+    const row = this.emailOwnership.get(input.userId);
+    return {
+      proven: Boolean(row && row.status === 'active' && row.subjectRef === input.subjectRef),
+      method: row && row.status === 'active' && row.subjectRef === input.subjectRef ? row.method : null
+    };
+  }
+
+  async revokeEmailOwnership(input) {
+    const row = this.emailOwnership.get(input.userId);
+    if (row && row.status === 'active') {
+      row.status = 'revoked';
+      row.revokedAt = input.now;
+    }
+    return { revoked: true };
+  }
+
   async failChallenge(input) {
     const row = this.challenges.get(input.attemptId);
     if (row && ['pending', 'sent'].includes(row.state)) {
@@ -284,12 +302,30 @@ export class MemoryVerificationRepository {
     row.linkTokenMac = '';
     row.linkCipher = '';
     row.verifiedAt = input.now;
+    if (row.purpose === 'email-ownership') {
+      const existing = this.emailOwnership.get(row.userId);
+      if (existing && (existing.subjectRef !== row.subjectRef || existing.emailRef !== row.emailRef)) {
+        return { error: AUTH_ERROR_CODES.ACCOUNT_CONFLICT };
+      }
+      this.emailOwnership.set(row.userId, {
+        userId: row.userId,
+        subjectRef: row.subjectRef,
+        emailRef: row.emailRef,
+        providerId: row.providerId || 'otp',
+        method: 'email-otp',
+        status: 'active',
+        provenAt: existing?.provenAt || input.now,
+        lastVerifiedAt: input.now,
+        revokedAt: null
+      });
+    }
     this.#event({ ...row, now: input.now, outcome: 'verified', reason: 'accepted' });
     return {
       verified: true,
       userId: row.userId,
       purpose: row.purpose,
       telegramLinked: row.providerId === 'telegram',
+      emailOwnershipProven: row.purpose === 'email-ownership',
       emailVerified: false
     };
   }

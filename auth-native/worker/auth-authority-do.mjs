@@ -92,21 +92,34 @@ export class AdmissionAuthAuthority {
     return { ...input, userId: session.user.id };
   }
 
-  async #preverificationIdentity(input = {}, context = {}) {
+  async #preverificationIdentity(input = {}, context = {}, purpose = 'account-backup') {
     const material = await this.engine.getFirebaseAccountVerification(
       input.verificationTicket,
       input.email && input.subject ? { email: input.email, subject: input.subject } : {},
       context
     );
+    // The greeting name is resolved server-side from the profile saved during
+    // signup: the client cannot carry a Bengali name in a header, and a
+    // client-supplied value is not trustworthy for the email body.
+    const recipientName = purpose === 'email-ownership'
+      ? (await this.engine.getFirebaseVerificationRecipientName(input.verificationTicket, context)).fullName
+      : '';
     return {
       material,
       verificationInput: {
-        purpose: 'account-backup',
+        purpose,
         trustedIdentity: {
           userId: material.userId,
           sessionRef: material.sessionRef,
           subjectRef: material.subjectRef,
-          emailRef: material.emailRef
+          emailRef: material.emailRef,
+          // Only the ownership purpose needs the address itself: it is the delivery
+          // destination for the code. The worker takes it from the Firebase lookup
+          // and getFirebaseAccountVerification has already checked it matches the
+          // ticket, so it never arrives from client input.
+          ...(purpose === 'email-ownership'
+            ? { email: input.email, recipientName }
+            : {})
         }
       }
     };
@@ -288,6 +301,42 @@ export class AdmissionAuthAuthority {
           code: body.input.code
         }, body.context);
         await this.#scheduleExpiry();
+        return response(200, { ok: true, result });
+      }
+      // Email-ownership runs on the pre-verification ticket too, because the point
+      // is to prove the address before Firebase's own emailVerified flag exists.
+      // The only difference from the Telegram pair is the purpose and the address.
+      if (url.pathname === '/internal/verification/ownership/request') {
+        const prepared = await this.#preverificationIdentity(body.input, body.context, 'email-ownership');
+        const result = await this.verification.requestVerification(prepared.verificationInput, body.context);
+        await this.#scheduleExpiry();
+        return response(200, { ok: true, result });
+      }
+      if (url.pathname === '/internal/verification/ownership/verify') {
+        const prepared = await this.#preverificationIdentity(body.input, body.context, 'email-ownership');
+        const result = await this.verification.verify({
+          ...prepared.verificationInput,
+          attemptId: body.input.attemptId,
+          code: body.input.code
+        }, body.context);
+        await this.#scheduleExpiry();
+        return response(200, { ok: true, result });
+      }
+      if (url.pathname === '/internal/verification/ownership/status') {
+        const identity = await this.engine.getFirebaseIdentity(body.input, body.context);
+        // A status read proves nothing and sends nothing, so it uses the session
+        // purpose: the ownership purpose would demand a delivery address that a
+        // plain session query does not have. The flag itself is keyed by the
+        // user and subject, which is all this check needs.
+        const result = await this.verification.isEmailOwnershipProven({
+          purpose: 'account-backup',
+          trustedIdentity: {
+            userId: identity.userId,
+            sessionRef: identity.subjectRef,
+            subjectRef: identity.subjectRef,
+            emailRef: identity.emailRef
+          }
+        }, body.context);
         return response(200, { ok: true, result });
       }
       if (url.pathname === '/internal/verification/telegram/status') {

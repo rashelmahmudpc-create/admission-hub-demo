@@ -273,6 +273,14 @@ export class MemoryAuthRepository {
     return { user: copy(user) };
   }
 
+  // Mirrors SqliteAuthRepository: greeting name comes from the saved profile,
+  // resolved against the verification ticket rather than client input.
+  async getFirebaseVerificationRecipientName(input) {
+    const ticket = this.accountVerificationTickets.get(input.ticketRef);
+    if (!ticket || ticket.deviceRef !== input.deviceRef || ticket.state !== 'active' || ticket.expiresAt <= input.now) return { fullName: '' };
+    return { fullName: String(this.profiles.get(ticket.userId)?.fullName || '') };
+  }
+
   async savePendingProfile(input) {
     const ticket = this.accountVerificationTickets.get(input.ticketRef);
     if (!ticket || ticket.deviceRef !== input.deviceRef || ticket.state !== 'active' || ticket.expiresAt <= input.now) {

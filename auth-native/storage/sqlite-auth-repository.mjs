@@ -1041,6 +1041,20 @@ export class SqliteAuthRepository {
     return { user: row };
   }
 
+  // Greeting personalisation for the ownership OTP. The pending profile written
+  // during signup already holds the name, so the server resolves it against the
+  // ticket instead of trusting a client-supplied value.
+  async getFirebaseVerificationRecipientName(input) {
+    const row = this.#one(
+      `SELECT p.full_name AS fullName
+       FROM auth_account_verification_tickets t
+       JOIN auth_profiles p ON p.user_id=t.user_id
+       WHERE t.ticket_ref=? AND t.device_ref=? AND t.state='active' AND t.expires_at>?`,
+      input.ticketRef, input.deviceRef, input.now
+    );
+    return { fullName: String(row?.fullName || '') };
+  }
+
   async savePendingProfile(input) {
     return this.#transaction(() => {
       const row = this.#one(
