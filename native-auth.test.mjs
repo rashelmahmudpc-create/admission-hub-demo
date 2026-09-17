@@ -582,7 +582,7 @@ test('Telegram canary is exact-query isolated, generic, and cannot leak through 
   assert.equal(app.authority.calls.filter(path => path === '/internal/verification/capabilities').length, 1);
 });
 
-test('approved Telegram publication exposes only the Email-or-Telegram selector while generic backup stays protected', async () => {
+test('approved Telegram publication exposes the Email-or-Telegram selector and the generic backup flow', async () => {
   const capabilities = {
     available: true,
     availabilityCode: 'READY',
@@ -605,8 +605,10 @@ test('approved Telegram publication exposes only the Email-or-Telegram selector 
   assert.equal(auth.emailVerifiedRequired, false);
   assert.equal(auth.methods.passkey.available, false);
   assert.equal(auth.methods.passkey.enrollmentAvailable, true);
-  assert.equal(auth.methods.backup.available, false);
-  assert.equal(auth.methods.backup.availabilityCode, 'LIVE_E2E_PENDING');
+  assert.equal(auth.methods.backup.available, true);
+  assert.equal(auth.methods.backup.availabilityCode, 'READY');
+  assert.equal(auth.methods.backup.providerNamesExposed, false);
+  assert.equal('telegramAvailable' in auth.methods.backup, false);
   const diagnostic = await app.handler(apiRequest(`${AUTH_API_PREFIX}/config?telegramCanary=1`), app.env, {});
   assert.equal((await diagnostic.json()).auth.methods.backup.available, true);
 });

@@ -407,7 +407,7 @@ test('Telegram readiness inventory checks only required binding names and never 
   assert.equal('names' in missing, false);
 });
 
-test('live Firebase lifecycle guard requires public Google and Telegram selector while Passkey login and backup remain unpublished', () => {
+test('live Firebase lifecycle guard requires public Google, Passkey, and the Telegram selector with the generic backup flow', () => {
   const methods = {
     emailPassword: { available: true },
     google: {
@@ -415,16 +415,17 @@ test('live Firebase lifecycle guard requires public Google and Telegram selector
       availabilityCode: 'READY',
       clientId: '123456789012-live-guard.apps.googleusercontent.com'
     },
-    passkey: { available: false, enrollmentAvailable: true },
+    passkey: { available: true, enrollmentAvailable: true },
     telegramVerification: { available: true, availabilityCode: 'READY', verifiesEmailOwnership: false },
-    backup: { available: false, availabilityCode: 'LIVE_E2E_PENDING' }
+    backup: { available: true, availabilityCode: 'READY', providerNamesExposed: false }
   };
   assert.equal(liveAuthMethodsReady(methods), true);
   assert.equal(liveAuthMethodsReady({ ...methods, google: { available: false } }), false);
   assert.equal(liveAuthMethodsReady({ ...methods, telegramVerification: { available: false } }), false);
-  assert.equal(liveAuthMethodsReady({ ...methods, backup: { available: true } }), false);
-  assert.equal(liveAuthMethodsReady({ ...methods, passkey: { available: true, enrollmentAvailable: true } }), true);
+  assert.equal(liveAuthMethodsReady({ ...methods, backup: { available: false } }), false);
+  assert.equal(liveAuthMethodsReady({ ...methods, backup: { available: true, providerNamesExposed: true } }), false);
   assert.equal(liveAuthMethodsReady({ ...methods, passkey: { available: false, enrollmentAvailable: false } }), false);
+  assert.equal(liveAuthMethodsReady({ ...methods, passkey: { available: true, enrollmentAvailable: false } }), false);
 });
 
 test('live Firebase check extracts only a standard verify-email action', () => {

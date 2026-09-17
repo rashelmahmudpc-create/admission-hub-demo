@@ -97,7 +97,9 @@ export function liveAuthMethodsReady(methods = {}) {
     && telegram?.available === true
     && telegram?.availabilityCode === 'READY'
     && telegram?.verifiesEmailOwnership === false
-    && methods?.backup?.available === false;
+    && methods?.backup?.available === true
+    && methods?.backup?.availabilityCode === 'READY'
+    && methods?.backup?.providerNamesExposed === false;
 }
 
 function mimeHeaders(source) {

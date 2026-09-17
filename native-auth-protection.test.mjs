@@ -108,7 +108,7 @@ test('generic backup verification is centralized and bound to the current Fireba
   assert.doesNotMatch(client, /otp-a|otp-b|otp-c|mailjet|brevo|sendgrid/i);
 });
 
-test('Google and the explicit Email-or-Telegram selector are public while Passkey and generic backup stay unpublished', () => {
+test('Google, Passkey, and the explicit Email-or-Telegram selector are public with the generic backup flow', () => {
   assert.match(wrangler, /GOOGLE_AUTH_ACTIVATION = "enabled"/);
   assert.match(wrangler, /PASSKEY_AUTH_ACTIVATION = "enabled"/);
   assert.match(wrangler, /VERIFICATION_AUTH_ACTIVATION = "enabled"/);
@@ -129,7 +129,7 @@ test('Google and the explicit Email-or-Telegram selector are public while Passke
   assert.match(activationWorkflow, /g\?\.available!==true/);
   assert.match(activationWorkflow, /verify-google-browser-origin\.mjs/);
   assert.match(activationWorkflow, /methods\?\.passkey\?\.available!==true/);
-  assert.match(activationWorkflow, /methods\?\.backup\?\.available!==false/);
+  assert.match(activationWorkflow, /methods\?\.backup\?\.available!==true/);
   assert.match(googleBrowserOriginOperation, /waitForSelector\('\.ah-account-page', \{ state: 'attached'/);
   assert.doesNotMatch(googleBrowserOriginOperation, /waitForSelector\('\.ah-account-launcher'/);
   assert.match(googleBrowserOriginOperation, /firstEntryWelcome/);
@@ -145,18 +145,19 @@ test('Google and the explicit Email-or-Telegram selector are public while Passke
   assert.doesNotMatch(googleBrowserOriginOperation, /console\.(?:log|error)|popup\.url\(\)\s*\)/);
   assert.match(liveMailboxOperation, /google\?\.available === true/);
   assert.match(liveMailboxOperation, /google\?\.availabilityCode === 'READY'/);
-  assert.match(liveMailboxOperation, /methods\?\.backup\?\.available === false/);
+  assert.match(liveMailboxOperation, /methods\?\.backup\?\.available === true/);
+  assert.match(liveMailboxOperation, /methods\?\.backup\?\.providerNamesExposed === false/);
   assert.doesNotMatch(liveMailboxOperation, /methods\?\.google\?\.available !== false/);
 });
 
-test('Telegram public publication is protected, value-blind, reversible, and keeps generic backup isolated', () => {
+test('Telegram public publication is protected, value-blind, reversible, and keeps the generic backup flow published', () => {
   assert.match(telegramCanaryWorkflow, /inputs\.confirmation == 'PUBLISH_TELEGRAM_OTP'/);
   assert.match(telegramCanaryWorkflow, /verify-telegram-bindings\.mjs/);
   assert.match(telegramCanaryWorkflow, /TELEGRAM_CANARY_ACTIVATION_SECRET/);
   assert.match(telegramCanaryWorkflow, /secret delete TELEGRAM_CANARY_ACTIVATION_SECRET/);
   assert.match(telegramCanaryWorkflow, /telegram\/canary\/activate/);
   assert.match(telegramCanaryWorkflow, /telegram\/canary\/deactivate/);
-  assert.match(telegramCanaryWorkflow, /backup\?\.availabilityCode!=='LIVE_E2E_PENDING'/);
+  assert.match(telegramCanaryWorkflow, /backup\?\.availabilityCode!=='READY'/);
   assert.match(telegramCanaryWorkflow, /telegramVerification/);
   assert.match(telegramCanaryWorkflow, /codeLength!==6/);
   assert.match(telegramCanaryWorkflow, /maxAttempts!==5/);
