@@ -6227,6 +6227,18 @@ var looksLikeName = (value) => {
   const v = String(value || "").trim();
   return v.length >= 2 && v.length <= 80 && /^[\p{L}\p{M} .'-]+$/u.test(v);
 };
+async function verifiedRecipientName(env, context, current) {
+  try {
+    const profile = await callAuthority(env, "/internal/profile/get-v2", {
+      input: { sessionToken: current.sessionToken, email: current.user.email, subject: current.user.subject },
+      context
+    });
+    const name = String(profile?.profile?.fullName || "").trim();
+    return looksLikeName(name) ? name : "";
+  } catch {
+    return "";
+  }
+}
 async function seedGoogleProfile(env, context, established, googleUser) {
   const sessionToken = String(established?.sessionToken || "");
   const email = String(googleUser?.email || "");
@@ -7622,11 +7634,13 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         const contact = String(body.contact || "").trim();
         if (contact && !/^\+[1-9]\d{7,14}$/.test(contact)) throw new NativeAuthError(AUTH_ERROR_CODES.INVALID_INPUT);
         const current = await firebaseReadySession({ provider, jar, env, context, allowTelegram: telegramVerificationRequested(env, url) });
+        const recipientName = await verifiedRecipientName(env, context, current);
         const result = await callAuthority(env, "/internal/verification/request", {
           input: {
             sessionToken: current.sessionToken,
             email: current.user.email,
             subject: current.user.subject,
+            recipientName,
             purpose: body.purpose === "sensitive-action" ? "sensitive-action" : "account-backup",
             contact,
             allowTelegramLink: true
@@ -10330,6 +10344,7 @@ var SEND_LIMITS = Object.freeze([
   Object.freeze({ scope: "backup-global-minute", source: "global", limit: 120, windowMs: 6e4 })
 ]);
 var validText = (value, min, max) => typeof value === "string" && value.length >= min && value.length <= max && !/[\r\n\u0000]/.test(value);
+var cleanRecipientName = (value) => String(value ?? "").replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 60);
 var reason = (value) => String(value || "UNKNOWN").toUpperCase().replace(/[^A-Z0-9_-]/g, "_").slice(0, 64) || "UNKNOWN";
 var safeInteraction = (value) => {
   if (value?.type !== "telegram-link") return null;
@@ -10443,6 +10458,7 @@ var VerificationOrchestrator = class {
         userId: userId2,
         email: "",
         purpose,
+        recipientName: "",
         destinations: Object.freeze({ otp: "", whatsapp: "", telegram: "user-initiated-link" }),
         context,
         sessionRef: sessionRef2,
@@ -10466,6 +10482,7 @@ var VerificationOrchestrator = class {
     const linkedTelegram = /^[A-Za-z0-9_-]{8,128}$/.test(String(linked.telegram || "")) ? String(linked.telegram) : "";
     const telegram = linkedTelegram || (input?.allowTelegramLink === true ? "user-initiated-link" : "");
     const destinations = Object.freeze({ otp: email, whatsapp, telegram });
+    const recipientName = cleanRecipientName(input?.recipientName);
     const [sessionRef, subjectRef, emailRef, ipRef, deviceRef, destinationRef] = await Promise.all([
       this.hmac.hex("session-ref-v1", sessionToken),
       this.hmac.hex("firebase-subject-v1", subject),
@@ -10474,7 +10491,7 @@ var VerificationOrchestrator = class {
       this.hmac.hex("device-ref-v1", context.deviceId),
       this.hmac.hex("verification-destination-v1", `${email}|${whatsapp}|${telegram}`)
     ]);
-    return Object.freeze({ sessionToken, subject, userId, email, purpose, destinations, context, sessionRef, subjectRef, emailRef, ipRef, deviceRef, destinationRef });
+    return Object.freeze({ sessionToken, subject, userId, email, purpose, recipientName, destinations, context, sessionRef, subjectRef, emailRef, ipRef, deviceRef, destinationRef });
   }
   #limits(identity) {
     return SEND_LIMITS.map((limit) => Object.freeze({
@@ -10596,6 +10613,7 @@ var VerificationOrchestrator = class {
             destination: destinations[entry.channel],
             code,
             linkToken,
+            recipientName: identity.recipientName,
             expiresAt: now + policy.codeTtlSeconds * 1e3,
             signalContext: { origin: identity.context.origin }
           }), entry.timeoutMs);
@@ -11078,11 +11096,155 @@ function appsScriptWebAppUrl(value) {
   }
 }
 var validEmailAddress = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(value || "")) && String(value).length <= 254;
-var otpEmailBody = (code, minutes) => {
-  const text = `Admission Hub verification code: ${code}
+var OTP_EMAIL_FONT = "'Hind Siliguri','Noto Sans Bengali','SolaimanLipi','Segoe UI',Roboto,Helvetica,Arial,sans-serif";
+var OTP_EMAIL_LOGO_URL = "https://admissionhub.pages.dev/icons/email-logo.png";
+var escapeHtml2 = (value) => String(value ?? "").replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]);
+var cleanDisplayName = (value) => String(value ?? "").replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 60);
+var OTP_EMAIL_TAGLINE = "আপনার প্রস্তুতি, আরও গুছিয়ে।";
+var otpEmailBody = (code, minutes, recipientName = "") => {
+  const safeCode = escapeHtml2(code);
+  const safeMinutes = escapeHtml2(minutes);
+  const displayName = cleanDisplayName(recipientName);
+  const greeting = displayName ? `প্রিয় ${escapeHtml2(displayName)},` : "প্রিয় ব্যবহারকারী,";
+  const plainGreeting = displayName ? `প্রিয় ${displayName},` : "প্রিয় ব্যবহারকারী,";
+  const text = [
+    plainGreeting,
+    "",
+    "আপনার ইমেইল ঠিকানাটি যাচাই করতে নিচের OTP কোডটি ব্যবহার করুন।",
+    "",
+    `    ${code}`,
+    "",
+    `এই কোডটি ${minutes} মিনিট পর্যন্ত কার্যকর থাকবে।`,
+    "",
+    "নিরাপত্তা নির্দেশনা",
+    "এই কোডটি কারও সঙ্গে শেয়ার করবেন না। Admission Hub-এর কোনো কর্মী আপনার OTP চাইবে না।",
+    "",
+    "আপনি যদি এই যাচাইকরণ কোডের জন্য অনুরোধ না করে থাকেন, তাহলে এই ইমেইলটি উপেক্ষা করতে পারেন।",
+    "",
+    "শুভেচ্ছান্তে,",
+    "Admission Hub Team",
+    "",
+    "--",
+    "Admission Hub",
+    OTP_EMAIL_TAGLINE,
+    "এটি একটি স্বয়ংক্রিয় বার্তা। এই ইমেইলে উত্তর দেওয়ার প্রয়োজন নেই।"
+  ].join("\n");
+  const html = `<!DOCTYPE html>
+<html lang="bn">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="x-apple-disable-message-reformatting">
+<meta name="format-detection" content="telephone=no,address=no,email=no,date=no">
+<meta name="color-scheme" content="light dark">
+<meta name="supported-color-schemes" content="light dark">
+<title>Admission Hub — ইমেইল যাচাইকরণ</title>
+<style>
+  /* Progressive enhancement only: every rule below duplicates an inline value, so
+     clients that strip <style> (or the whole head) still render the light design. */
+  :root { color-scheme: light dark; supported-color-schemes: light dark; }
+  a { text-decoration: none; }
+  @media (max-width: 620px) {
+    .ah-pad { padding-left: 20px !important; padding-right: 20px !important; }
+    .ah-otp { font-size: 32px !important; letter-spacing: 7px !important; }
+    .ah-greeting { font-size: 24px !important; }
+  }
+  @media (prefers-color-scheme: dark) {
+    .ah-shell { background-color: #0b1512 !important; }
+    .ah-card { background-color: #121d1a !important; border-color: #26403a !important; }
+    .ah-head { background-color: #121d1a !important; border-bottom-color: #26403a !important; }
+    .ah-otpcard { background-color: #0e2620 !important; border-color: #2c5a4a !important; }
+    .ah-otp { color: #6fd8b4 !important; }
+    .ah-secbox { background-color: #161f1c !important; border-color: #26403a !important; }
+    .ah-foot { background-color: #0e1815 !important; border-top-color: #26403a !important; }
+    .ah-title { color: #eaf4f0 !important; }
+    .ah-body { color: #c3d3ce !important; }
+    .ah-greeting { color: #ffffff !important; }
+    .ah-muted { color: #93a8a2 !important; }
+    .ah-faint { color: #7d918b !important; }
+    .ah-rule { background-color: #26403a !important; }
+  }
+</style>
+</head>
+<body style="margin:0;padding:0;background-color:#f3f7f6;">
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:#f3f7f6;font-size:1px;line-height:1px;">আপনার Admission Hub যাচাইকরণ কোড: ${safeCode} — ${safeMinutes} মিনিটের জন্য কার্যকর।&#8203;&#8203;&#8203;&#8203;&#8203;&#8203;&#8203;&#8203;&#8203;&#8203;&#8203;&#8203;</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="ah-shell" style="width:100%;background-color:#f3f7f6;font-family:${OTP_EMAIL_FONT};">
+<tr><td align="center" class="ah-pad" style="padding:32px 12px;">
 
-It expires in ${minutes} minute(s). If you did not request it, ignore this email.`;
-  const html = `<p>Admission Hub verification code:</p><p style="font-size:28px;letter-spacing:6px;font-weight:700">${code}</p><p>It expires in ${minutes} minute(s). If you did not request it, ignore this email.</p>`;
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="ah-card" style="width:100%;max-width:620px;background-color:#ffffff;border:1px solid #e2eee9;border-radius:24px;overflow:hidden;box-shadow:0 10px 35px rgba(20,70,55,0.08);">
+
+<tr><td class="ah-head" style="padding:26px 32px 22px;background-color:#f7fbfa;border-bottom:1px solid #e5efeb;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+<td style="vertical-align:middle;">
+<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+<td style="width:46px;padding-right:12px;vertical-align:middle;">
+<img src="${OTP_EMAIL_LOGO_URL}" width="46" height="46" alt="Admission Hub" style="display:block;width:46px;height:46px;border:0;border-radius:14px;outline:none;text-decoration:none;">
+</td>
+<td style="vertical-align:middle;">
+<span class="ah-title" style="display:block;font-family:${OTP_EMAIL_FONT};font-size:22px;line-height:1.2;font-weight:700;letter-spacing:-0.3px;color:#172b3a;">Admission Hub</span>
+<span class="ah-muted" style="display:block;margin-top:4px;font-family:${OTP_EMAIL_FONT};font-size:12px;line-height:1.5;color:#70817d;">${OTP_EMAIL_TAGLINE}</span>
+</td>
+</tr></table>
+</td>
+<td align="right" style="vertical-align:middle;white-space:nowrap;">
+<span style="display:inline-block;padding:7px 13px;background-color:#e9faf4;border-radius:999px;font-family:${OTP_EMAIL_FONT};font-size:11.5px;line-height:1;font-weight:700;color:#078c68;">ইমেইল যাচাইকরণ</span>
+</td>
+</tr></table>
+</td></tr>
+
+<tr><td style="height:4px;background-color:#12a876;background-image:linear-gradient(90deg,#12a876 0%,#0b9a70 55%,#0f8a63 100%);font-size:0;line-height:0;">&nbsp;</td></tr>
+
+<tr><td class="ah-pad" style="padding:36px 32px 0;">
+<p class="ah-greeting" style="margin:0;font-family:${OTP_EMAIL_FONT};font-size:27px;line-height:1.4;font-weight:700;color:#172b3a;">${greeting}</p>
+<p class="ah-body" style="margin:12px 0 0;font-family:${OTP_EMAIL_FONT};font-size:16.5px;line-height:1.8;color:#566b72;">আপনার ইমেইল ঠিকানাটি যাচাই করতে নিচের OTP কোডটি ব্যবহার করুন।</p>
+</td></tr>
+
+<tr><td class="ah-pad" style="padding:28px 32px 0;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="ah-otpcard" style="width:100%;background-color:#f2fdf9;background-image:linear-gradient(135deg,#effcf8 0%,#f7fffc 100%);border:1px solid #c7eee1;border-radius:20px;">
+<tr><td align="center" style="padding:24px 16px 26px;">
+<span class="ah-muted" style="display:block;margin-bottom:14px;font-family:${OTP_EMAIL_FONT};font-size:11.5px;line-height:1;font-weight:700;letter-spacing:1.6px;color:#0a9b72;text-transform:uppercase;">যাচাইকরণ কোড</span>
+<span class="ah-otp" style="display:block;font-family:'Courier New',Courier,monospace;font-size:38px;line-height:1;font-weight:800;letter-spacing:9px;text-indent:9px;color:#075f49;">${safeCode}</span>
+</td></tr>
+</table>
+</td></tr>
+
+<tr><td class="ah-pad" align="center" style="padding:18px 32px 0;">
+<p class="ah-muted" style="margin:0;font-family:${OTP_EMAIL_FONT};font-size:14px;line-height:1.7;color:#687b7d;">এই কোডটি <strong style="color:#07966e;font-weight:700;">${safeMinutes} মিনিট</strong> পর্যন্ত কার্যকর থাকবে।</p>
+</td></tr>
+
+<tr><td class="ah-pad" style="padding:28px 32px 0;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="ah-secbox" style="width:100%;background-color:#f7faf9;border:1px solid #e3ece9;border-radius:16px;">
+<tr><td style="padding:18px 20px;">
+<p class="ah-body" style="margin:0;font-family:${OTP_EMAIL_FONT};font-size:13.5px;line-height:1.8;color:#53666a;"><strong style="color:#087d5d;font-weight:700;">নিরাপত্তা নির্দেশনা</strong><br>এই কোডটি কারও সঙ্গে শেয়ার করবেন না। Admission Hub-এর কোনো কর্মী আপনার OTP চাইবে না।</p>
+</td></tr>
+</table>
+</td></tr>
+
+<tr><td class="ah-pad" style="padding:24px 32px 0;">
+<p class="ah-body" style="margin:0;font-family:${OTP_EMAIL_FONT};font-size:14px;line-height:1.8;color:#708083;">আপনি যদি এই যাচাইকরণ কোডের জন্য অনুরোধ না করে থাকেন, তাহলে এই ইমেইলটি উপেক্ষা করতে পারেন।</p>
+</td></tr>
+
+<tr><td class="ah-pad" style="padding:28px 32px 0;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td class="ah-rule" style="height:1px;background-color:#e6eeeb;font-size:0;line-height:0;">&nbsp;</td></tr></table>
+</td></tr>
+
+<tr><td class="ah-pad" style="padding:24px 32px 32px;">
+<p class="ah-body" style="margin:0;font-family:${OTP_EMAIL_FONT};font-size:14px;line-height:1.8;color:#708083;">শুভেচ্ছান্তে,<br><strong style="display:inline-block;margin-top:4px;font-size:17px;font-weight:700;color:#07966e;">Admission Hub Team</strong></p>
+</td></tr>
+
+<tr><td class="ah-foot" style="padding:22px 32px;background-color:#f7faf9;border-top:1px solid #e6eeeb;">
+<p style="margin:0;font-family:${OTP_EMAIL_FONT};font-size:13px;line-height:1.5;font-weight:700;color:#176d59;">Admission Hub</p>
+<p class="ah-muted" style="margin:5px 0 0;font-family:${OTP_EMAIL_FONT};font-size:12px;line-height:1.6;color:#81908f;">${OTP_EMAIL_TAGLINE}</p>
+<p class="ah-faint" style="margin:14px 0 0;font-family:${OTP_EMAIL_FONT};font-size:11px;line-height:1.6;color:#9aa6a5;">এটি একটি স্বয়ংক্রিয় বার্তা। এই ইমেইলে উত্তর দেওয়ার প্রয়োজন নেই।</p>
+<p class="ah-faint" style="margin:8px 0 0;font-family:${OTP_EMAIL_FONT};font-size:11px;line-height:1.6;color:#a2adab;">&copy; Admission Hub</p>
+</td></tr>
+
+</table>
+
+</td></tr>
+</table>
+</body>
+</html>`;
   return { text, html };
 };
 var nextUtcMidnight = (now) => (Math.floor(Number(now) / 864e5) + 1) * 864e5;
@@ -11137,14 +11299,14 @@ var BrevoOtpVerificationProvider = class {
     }
     const expiresAt = Number(input.expiresAt || 0);
     const minutes = expiresAt > 0 ? Math.max(1, Math.round((expiresAt - Number(this.now())) / 6e4)) : 5;
-    const { text, html } = otpEmailBody(code, minutes);
+    const { text, html } = otpEmailBody(code, minutes, input.recipientName);
     const payload = await fetchJson(this.fetch, "https://api.brevo.com/v3/smtp/email", {
       method: "POST",
       headers: this.#headers(true),
       body: JSON.stringify({
         sender: { email: this.fromAddress, name: this.fromName },
         to: [{ email: destination }],
-        subject: "Admission Hub — verification code",
+        subject: "Admission Hub — আপনার যাচাইকরণ কোড",
         htmlContent: html,
         textContent: text,
         tags: ["admission-hub-transactional"]
