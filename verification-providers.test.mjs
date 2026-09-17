@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createHmac } from 'node:crypto';
 import {
+  AppsScriptOtpVerificationProvider,
+  BrevoOtpVerificationProvider,
   BridgeOtpVerificationProvider,
   createConfiguredVerificationProviders,
   OfficialWhatsAppVerificationProvider,
@@ -222,4 +225,146 @@ test('Telegram Auth reuses the existing server-only bot binding without copying 
   assert.equal((await telegram.getProviderStatus()).configured, true);
   assert.equal((await telegram.getRemainingQuota()).source, 'internal-safety-cap');
   assert.equal('TG_BOT_TOKEN' in telegram, false);
+});
+
+test('Brevo OTP provider sends through the Brevo API and derives quota from account credits', async () => {
+  const calls = [];
+  const provider = new BrevoOtpVerificationProvider({
+    id: 'otp-a',
+    apiKey: KEY,
+    fromAddress: 'sender@example.com',
+    declaredDailyQuota: 300,
+    fetchImpl: async (url, init) => {
+      calls.push({ url: String(url), init });
+      if (String(url).endsWith('/v3/senders')) return json({ senders: [{ email: 'sender@example.com', active: true }] });
+      if (String(url).endsWith('/v3/account')) return json({ plan: [{ type: 'free', credits: 299, creditsType: 'sendLimit' }] });
+      return json({ messageId: '<202609171120.63980787322@smtp-relay.mailin.fr>' }, 201);
+    }
+  });
+
+  assert.equal((await provider.checkAvailability()).available, true);
+  const quota = await provider.getRemainingQuota();
+  assert.equal(quota.remaining, 299);
+  assert.equal(quota.limit, 300);
+  assert.equal(quota.source, 'brevo-account-credits');
+  assert.ok(quota.resetAt > Date.now());
+
+  await provider.sendVerification({ destination: 'user@example.com', code: '123456', expiresAt: Date.now() + 300_000 });
+  const send = calls.find(call => call.url.endsWith('/v3/smtp/email'));
+  const body = JSON.parse(send.init.body);
+  assert.equal(send.init.headers['api-key'], KEY);
+  assert.equal(body.sender.email, 'sender@example.com');
+  assert.deepEqual(body.to, [{ email: 'user@example.com' }]);
+  assert.match(body.textContent, /123456/);
+  assert.match(body.htmlContent, /123456/);
+  assert.match(body.subject, /verification code/i);
+  assert.equal(calls.every(call => call.init.redirect === 'manual'), true);
+});
+
+test('Brevo OTP provider fails closed when unconfigured and refuses a non-email destination', async () => {
+  const unconfigured = new BrevoOtpVerificationProvider({ id: 'otp-a', declaredDailyQuota: 300 });
+  assert.equal(unconfigured.configured, false);
+  assert.equal((await unconfigured.checkAvailability()).code, 'NOT_CONFIGURED');
+  assert.equal((await unconfigured.getRemainingQuota()).remaining, 0);
+  await assert.rejects(() => unconfigured.sendVerification({ destination: 'user@example.com', code: '123456' }),
+    error => error?.failureClass === VERIFICATION_FAILURE_CLASS.HARD);
+
+  const provider = new BrevoOtpVerificationProvider({
+    id: 'otp-a', apiKey: KEY, fromAddress: 'sender@example.com', declaredDailyQuota: 300,
+    fetchImpl: async () => json({ messageId: 'x' }, 201)
+  });
+  await assert.rejects(() => provider.sendVerification({ destination: '+8801700000000', code: '123456' }),
+    error => error?.failureClass === VERIFICATION_FAILURE_CLASS.USER);
+  await assert.rejects(() => provider.sendVerification({ destination: 'user@example.com', code: '12345' }),
+    error => error?.failureClass === VERIFICATION_FAILURE_CLASS.USER);
+});
+
+test('Brevo reports a sender that is not active instead of claiming readiness', async () => {
+  const provider = new BrevoOtpVerificationProvider({
+    id: 'otp-a', apiKey: KEY, fromAddress: 'sender@example.com', declaredDailyQuota: 300,
+    fetchImpl: async () => json({ senders: [{ email: 'sender@example.com', active: false }] })
+  });
+  const availability = await provider.checkAvailability();
+  assert.equal(availability.available, false);
+  assert.equal(availability.code, 'SENDER_NOT_VERIFIED');
+});
+
+test('Apps Script OTP provider signs its calls and follows the Apps Script redirect', async () => {
+  const calls = [];
+  const secret = 'shared-secret-' + 's'.repeat(32);
+  const provider = new AppsScriptOtpVerificationProvider({
+    id: 'otp-b',
+    webAppUrl: 'https://script.google.com/macros/s/AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcd/exec',
+    sharedSecret: secret,
+    declaredDailyQuota: 100,
+    fetchImpl: async (url, init) => {
+      calls.push({ url: String(url), init });
+      const action = init.method === 'POST' ? JSON.parse(init.body).action : new URL(String(url)).searchParams.get('action');
+      if (action === 'health') return json({ ok: true, ready: true });
+      if (action === 'quota') return json({ ok: true, limit: 100, remaining: 97, resetAt: 1_900_000_000_000 });
+      return json({ ok: true, accepted: true, messageRef: 'gmail-message-ref-1234567890' });
+    }
+  });
+
+  assert.equal(provider.configured, true);
+  assert.equal((await provider.checkAvailability()).code, 'READY');
+  assert.equal((await provider.getRemainingQuota()).source, 'apps-script-mail-quota');
+
+  await provider.sendVerification({ destination: 'user@example.com', code: '654321' });
+  const send = calls.find(call => call.init.method === 'POST');
+  const posted = JSON.parse(send.init.body);
+  assert.equal(posted.action, 'send');
+  assert.equal(posted.destination, 'user@example.com');
+  assert.equal(posted.code, '654321');
+  const expected = createHmac('sha256', secret)
+    .update(['send', posted.timestamp, posted.nonce, posted.destination, posted.code].join('\n'))
+    .digest('base64url');
+  assert.equal(posted.signature, expected);
+  assert.equal(calls.every(call => call.init.redirect === 'follow'), true);
+});
+
+test('Apps Script OTP provider rejects non-Google web app URLs and weak secrets', () => {
+  const base = { id: 'otp-b', declaredDailyQuota: 100 };
+  for (const webAppUrl of [
+    'https://evil.example/macros/s/AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcd/exec',
+    'https://script.google.com/macros/s/short/exec',
+    'http://script.google.com/macros/s/AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcd/exec',
+    'https://script.google.com/macros/s/AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcd/exec?x=1'
+  ]) {
+    assert.equal(new AppsScriptOtpVerificationProvider({ ...base, webAppUrl, sharedSecret: 's'.repeat(40) }).configured, false, webAppUrl);
+  }
+  const validUrl = 'https://script.google.com/macros/s/AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcd/exec';
+  assert.equal(new AppsScriptOtpVerificationProvider({ ...base, webAppUrl: validUrl, sharedSecret: 'short' }).configured, false);
+});
+
+test('OTP slots prefer Brevo and Apps Script and fall back to bridge bindings', async () => {
+  const scriptsUrl = 'https://script.google.com/macros/s/AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcd/exec';
+  const preferred = createConfiguredVerificationProviders({
+    BREVO_API_KEY: KEY,
+    BREVO_FROM_ADDRESS: 'sender@example.com',
+    OTP_A_DAILY_QUOTA: '300',
+    OTP_B_PROVIDER_APPS_SCRIPT_URL: scriptsUrl,
+    OTP_B_PROVIDER_SHARED_SECRET: 'shared-secret-' + 's'.repeat(32),
+    OTP_B_DAILY_QUOTA: '100'
+  });
+  assert.equal(preferred[0] instanceof BrevoOtpVerificationProvider, true);
+  assert.equal(preferred[0].id, 'otp-a');
+  assert.equal(preferred[1] instanceof AppsScriptOtpVerificationProvider, true);
+  assert.equal(preferred[1].id, 'otp-b');
+
+  const bridged = createConfiguredVerificationProviders({
+    OTP_A_PROVIDER_ORIGIN: 'https://otp-bridge.example',
+    OTP_A_PROVIDER_KEY: KEY,
+    OTP_A_DAILY_QUOTA: '200',
+    OTP_B_PROVIDER_ORIGIN: 'https://otp-bridge-two.example',
+    OTP_B_PROVIDER_KEY: KEY,
+    OTP_B_DAILY_QUOTA: '200'
+  });
+  assert.equal(bridged[0].getProviderStatus ? true : false, true);
+  assert.equal(bridged[0].constructor.name, 'BridgeOtpVerificationProvider');
+  assert.equal(bridged[1].constructor.name, 'BridgeOtpVerificationProvider');
+
+  const empty = createConfiguredVerificationProviders({});
+  assert.deepEqual(empty.map(row => row.id), ['otp-a', 'otp-b', 'otp-c', 'whatsapp', 'telegram']);
+  for (const provider of empty) assert.equal((await provider.getProviderStatus()).configured, false);
 });
