@@ -25,8 +25,8 @@ const APP_SHELL = [
   './language-engine.js?v=lang-v3-dashboard',
   './account-access.js?v=20260916-account-entry-v6',
   './academic-catalog.js?v=acad-cat-v2',
-  './profile-ui.js?v=profile-v16-clean',
-  './profile-ui.css?v=profile-v14-tap',
+  './profile-ui.js?v=profile-v17-uni-tap',
+  './profile-ui.css?v=profile-v15-uni-tap',
   './data-protection.js?v=dp-v3-fastboot',
   './dashboard-v2.js?v=dash2f15-inbox',
   './ai-agent-chat.js?v=agent-f1-ui-chatv18-fresh',
@@ -41,7 +41,7 @@ const APP_SHELL = [
 // A truncated/corrupt download is NEVER written to the shell cache.
 const ASSET_DIGESTS = {
 /* sw-manifest:start */
-  "./index.html": "5c0ed6fb09a4e313728eede92752ce21b0afbd6690e66cbcdee769fc0e48056f",
+  "./index.html": "918dadf790ca8b12812607e6f234bf44e7cdc6371e78c89709c56f032b8ce24f",
   "./manifest.json": "11a85ae594fc629b11605daeda3f9afe4ef95215a55a29f9cc423314bfb275a4",
   "./manifest.webmanifest": "5be476009a140eabd088bd972bd4d345b9c4f4a055cd6e4f08774b9cb4afaf52",
   "./dashboard-v2.css?v=dash2f13-theme": "4f4c9295b487b8186fd45c006a96a43bcaf896a1a5b871f506a05874a8e00c99",
@@ -52,8 +52,8 @@ const ASSET_DIGESTS = {
   "./language-engine.js?v=lang-v3-dashboard": "3e8a0e1c7b1e4a68970df0744cb7cdc19bc859372fbc737e79cc52af2d3967e3",
   "./account-access.js?v=20260916-account-entry-v6": "ae89d0b2bc87a3375f7fe38f0bf1d917927f083e62217e56ce4c5e33eb222275",
   "./academic-catalog.js?v=acad-cat-v2": "75e7b80663d41330658c948ad1d4829d49f5c9abed581350582cfeace06d5b32",
-  "./profile-ui.js?v=profile-v16-clean": "527a81af988fb8091a2225f67f07e984e55d59107aca549290e47beafbd9c1fc",
-  "./profile-ui.css?v=profile-v14-tap": "4332520cd9c584787eaba055a32b46e52cb132f00122207c74ffb42594e909aa",
+  "./profile-ui.js?v=profile-v17-uni-tap": "bb341598f5e20bf4b743af9a580ee84adcb5fc0113aaef79ca13478d0d2df9f1",
+  "./profile-ui.css?v=profile-v15-uni-tap": "6408a4b7ac8acf6845cd0148c58377a4953c8ff879d30b2c520eafae0314b98a",
   "./data-protection.js?v=dp-v3-fastboot": "359dc907ade4bcb3a6a722385969ebb6af47f7e436e6cdf2cce0dd6b7343723d",
   "./dashboard-v2.js?v=dash2f15-inbox": "bea4ccad52b85c482d3fef5a7f2b2eec54dcdb125597a22411c4839b81783a49",
   "./ai-agent-chat.js?v=agent-f1-ui-chatv18-fresh": "36a11f8d5dec5a5bf1b8fa86db06b9a34e01ad27c931f37aadbffe6e6f4930e5",

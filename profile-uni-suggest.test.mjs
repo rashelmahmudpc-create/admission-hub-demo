@@ -182,3 +182,103 @@ test('suggestions never offer the same university twice and stay bounded', async
   assert.ok(names.length > 0 && names.length <= 5, `expected 1-5 suggestions, got ${names.length}`);
   assert.equal(new Set(names).size, names.length, 'no duplicate rows');
 });
+
+// A phone fires the input's `blur` BEFORE the tap on the option arrives (the
+// ~300ms tap delay). The old code hid the list on blur and emptied it 250ms
+// later, so the tap landed on a node that was no longer the student's option —
+// the pick was lost and the typed text was saved as a plain manual entry
+// instead of the catalog university (owner bug: "select করলে ইনপুট ফিল্ডে
+// বসছে না"). Proves the pick by checking the OFFICIAL catalog name is what
+// ends up saved, with its unit — a manual fallback could never produce either.
+test('a tap that blurs the input first still lands the catalog university', async () => {
+  const window = boot();
+  await openAcademicPage(window);
+
+  const session = window.document.querySelector('#pp-acad-session');
+  session.value = '2026';
+  session.dispatchEvent(new window.Event('change', { bubbles: true }));
+
+  const input = window.document.querySelector('#pp-acad-u');
+  typeInto(window, input, 'Dhaka'); // typed text is NOT the official name
+  const box = await waitFor(() => {
+    const b = window.document.querySelector('#pp-acad-ulist');
+    return b && !b.hidden && b.querySelector('[data-role="acad-pick-uni"]') ? b : null;
+  }, 'suggestions for "Dhaka"');
+
+  const option = box.querySelector('[data-role="acad-pick-uni"]');
+  const official = option.querySelector('b').textContent;
+  assert.notEqual(official, 'Dhaka', 'fixture must use a query whose official name differs');
+
+  // 1) the input loses focus first, 2) the tap lands afterwards.
+  input.dispatchEvent(new window.Event('blur', { bubbles: false }));
+  option.dispatchEvent(new window.MouseEvent('pointerdown', { bubbles: true, button: 0 }));
+
+  await waitFor(() => {
+    const el = window.document.querySelector('#pp-acad-u');
+    return el && el.value === official;
+  }, 'the official catalog name is what the box shows after the tap');
+
+  // The catalog pick must also have registered a unit — a lost tap would leave
+  // the unit select disabled and fall back to saving the raw typed text.
+  const unit = await waitFor(() => {
+    const u = window.document.querySelector('#pp-acad-unit');
+    return u && !u.disabled && u.options.length > 1 ? u : null;
+  }, 'units resolved from the catalog pick');
+  unit.selectedIndex = 1;
+  unit.dispatchEvent(new window.Event('change', { bubbles: true }));
+
+  clickOn(window, window.document.querySelector('[data-role="acad-add-target"]'));
+  await waitFor(() => window.document.querySelector('.pp-acad-target'), 'target chip added');
+  clickOn(window, window.document.querySelector('[data-role="acad-save"]'));
+
+  const patch = await waitFor(() => window.calls.find(c => c.url.includes('/profile/patch')), 'patch call');
+  const fields = JSON.parse(patch.body).fields;
+  assert.equal(fields.targets[0].name, official, 'the catalog name was saved, not the typed text');
+  assert.ok(fields.targets[0].unit, 'the catalog unit survived the blur-first tap');
+});
+
+test('the pointer tap and the trailing click do not double-apply the pick', async () => {
+  const window = boot();
+  await openAcademicPage(window);
+  typeInto(window, window.document.querySelector('#pp-acad-u'), 'Dhaka');
+
+  const box = await waitFor(() => {
+    const b = window.document.querySelector('#pp-acad-ulist');
+    return b && !b.hidden && b.querySelector('[data-role="acad-pick-uni"]') ? b : null;
+  }, 'suggestions');
+  const option = box.querySelector('[data-role="acad-pick-uni"]');
+  const official = option.querySelector('b').textContent;
+
+  option.dispatchEvent(new window.MouseEvent('pointerdown', { bubbles: true, button: 0 }));
+  option.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+  await sleep(60);
+
+  const el = window.document.querySelector('#pp-acad-u');
+  assert.equal(el.value, official, 'one tap yields exactly the chosen name');
+  assert.equal(window.document.querySelectorAll('#pp-acad-ulist').length, 1, 'list not duplicated');
+});
+
+// Both pointerdown and touchstart are bound so the pick lands on every mobile
+// browser. A real phone can emit touchstart AND pointerdown for one tap — the
+// pick must still be applied exactly once.
+test('touchstart followed by pointerdown applies the pick only once', async () => {
+  const window = boot();
+  await openAcademicPage(window);
+  typeInto(window, window.document.querySelector('#pp-acad-u'), 'Dhaka');
+
+  const box = await waitFor(() => {
+    const b = window.document.querySelector('#pp-acad-ulist');
+    return b && !b.hidden && b.querySelector('[data-role="acad-pick-uni"]') ? b : null;
+  }, 'suggestions');
+  const option = box.querySelector('[data-role="acad-pick-uni"]');
+  const official = option.querySelector('b').textContent;
+
+  option.dispatchEvent(new window.MouseEvent('touchstart', { bubbles: true }));
+  option.dispatchEvent(new window.MouseEvent('pointerdown', { bubbles: true, button: 0 }));
+  await sleep(60);
+
+  const el = window.document.querySelector('#pp-acad-u');
+  assert.equal(el.value, official, 'the picked university is applied');
+  assert.equal(window.document.querySelectorAll('#pp-acad-u').length, 1,
+    'exactly one input remains after both events');
+});
