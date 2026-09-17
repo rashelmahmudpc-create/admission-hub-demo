@@ -134,7 +134,10 @@ async function s3ListTotalBytes(env) {
           Authorization: `AWS4-HMAC-SHA256 Credential=${ak}/${scope}, SignedHeaders=${signedHeaders}, Signature=${signature}`
         }
       });
-      if (!res.ok) return null;
+      if (!res.ok) {
+        console.error('[files] s3 list failed', res.status, (await res.text()).slice(0, 400));
+        return null;
+      }
       const xml = await res.text();
       for (const m of xml.matchAll(/<Size>(\d+)<\/Size>/g)) total += Number(m[1]);
       const nt = xml.match(/<NextContinuationToken>([^<]+)<\/NextContinuationToken>/);
@@ -142,7 +145,8 @@ async function s3ListTotalBytes(env) {
       token = nt[1];
     }
     return total;
-  } catch {
+  } catch (e) {
+    console.error('[files] s3 list error', e?.message || String(e));
     return null;
   }
 }
