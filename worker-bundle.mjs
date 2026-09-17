@@ -7916,7 +7916,7 @@ var FcmStore = class {
   async #ensureTables() {
     if (this.#ready) return;
     await this.#d1.batch([
-      `CREATE TABLE IF NOT EXISTS fcm_devices (
+      this.#d1.prepare(`CREATE TABLE IF NOT EXISTS fcm_devices (
         id TEXT PRIMARY KEY,
         user_id TEXT NOT NULL,
         fcm_token TEXT NOT NULL,
@@ -7927,9 +7927,9 @@ var FcmStore = class {
         updated_at INTEGER NOT NULL,
         last_seen INTEGER NOT NULL,
         is_active INTEGER NOT NULL DEFAULT 1
-      )`,
-      `CREATE INDEX IF NOT EXISTS idx_fcm_devices_user ON fcm_devices(user_id)`,
-      `CREATE TABLE IF NOT EXISTS notification_settings (
+      )`),
+      this.#d1.prepare(`CREATE INDEX IF NOT EXISTS idx_fcm_devices_user ON fcm_devices(user_id)`),
+      this.#d1.prepare(`CREATE TABLE IF NOT EXISTS notification_settings (
         user_id TEXT PRIMARY KEY,
         push_enabled INTEGER NOT NULL DEFAULT 1,
         global_enabled INTEGER NOT NULL DEFAULT 1,
@@ -7939,7 +7939,7 @@ var FcmStore = class {
         quiet_start TEXT NOT NULL DEFAULT '23:00',
         quiet_end TEXT NOT NULL DEFAULT '07:00',
         updated_at INTEGER NOT NULL
-      )`
+      )`)
     ]);
     this.#ready = true;
   }

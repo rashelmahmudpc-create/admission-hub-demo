@@ -102,8 +102,12 @@ class FcmStore {
 
   async #ensureTables() {
     if (this.#ready) return;
+    /* batch() takes D1PreparedStatements, NOT raw SQL strings. Passing strings
+     * threw "D1_ERROR: Malformed input" and aborted the whole sequence, so
+     * fcm_devices was never created and every register-token write failed —
+     * which is why no device could ever receive a push. */
     await this.#d1.batch([
-      `CREATE TABLE IF NOT EXISTS fcm_devices (
+      this.#d1.prepare(`CREATE TABLE IF NOT EXISTS fcm_devices (
         id TEXT PRIMARY KEY,
         user_id TEXT NOT NULL,
         fcm_token TEXT NOT NULL,
@@ -114,9 +118,9 @@ class FcmStore {
         updated_at INTEGER NOT NULL,
         last_seen INTEGER NOT NULL,
         is_active INTEGER NOT NULL DEFAULT 1
-      )`,
-      `CREATE INDEX IF NOT EXISTS idx_fcm_devices_user ON fcm_devices(user_id)`,
-      `CREATE TABLE IF NOT EXISTS notification_settings (
+      )`),
+      this.#d1.prepare(`CREATE INDEX IF NOT EXISTS idx_fcm_devices_user ON fcm_devices(user_id)`),
+      this.#d1.prepare(`CREATE TABLE IF NOT EXISTS notification_settings (
         user_id TEXT PRIMARY KEY,
         push_enabled INTEGER NOT NULL DEFAULT 1,
         global_enabled INTEGER NOT NULL DEFAULT 1,
@@ -126,7 +130,7 @@ class FcmStore {
         quiet_start TEXT NOT NULL DEFAULT '23:00',
         quiet_end TEXT NOT NULL DEFAULT '07:00',
         updated_at INTEGER NOT NULL
-      )`
+      )`)
     ]);
     this.#ready = true;
   }
