@@ -37,6 +37,33 @@ test('dual language rendered via AhI18n (never both at once)', () => {
   assert.match(HUB, /AhI18n\.apply\(document\.getElementById\('modalRoot'\)\)/, 'applies engine to the rendered sheet');
 });
 
+/* Owner bug (2026-09-17): "চালু হয়েছে কিন্তু নোটিফিকেশন দাঁও..." — every push
+ * path reported success yet nothing appeared. The toast that carries BOTH the
+ * self-test result and the foreground push message rendered *behind* the sheet
+ * that triggered it (#modalRoot z-index 2000 vs .toast z-index 100), so the
+ * feedback existed but was invisible. The toast must always outrank the modal
+ * layer, and .toast is the app's only foreground-push display surface. */
+test('toast outranks the modal layer so feedback is never hidden', () => {
+  const H = readFileSync('index.html', 'utf8');
+  const toast = H.match(/\.toast\{[^}]*z-index:\s*(\d+)/);
+  const modal = H.match(/\.modal-bg\{[^}]*z-index:\s*(\d+)/);
+  const modalRoot = H.match(/#modalRoot\{[^}]*z-index:\s*(\d+)/);
+  assert.ok(toast, '.toast carries an explicit z-index');
+  assert.ok(modal, '.modal-bg carries an explicit z-index');
+  assert.ok(modalRoot, '#modalRoot carries an explicit z-index');
+  const toastZ = Number(toast[1]);
+  assert.ok(toastZ > Number(modal[1]), `toast z-index ${toastZ} must exceed .modal-bg ${modal[1]}`);
+  assert.ok(toastZ > Number(modalRoot[1]), `toast z-index ${toastZ} must exceed #modalRoot ${modal[1]}`);
+  // The sheet opens through openModal()/closeModal() → #modalRoot.
+  assert.match(HUB, /openModal\(/, 'the sheet renders inside #modalRoot');
+});
+
+test('foreground push is surfaced through window.toast', () => {
+  const CLIENT = readFileSync('notification-fcm.js', 'utf8');
+  assert.match(CLIENT, /messaging\.onMessage\(/, 'foreground handler attached');
+  assert.match(CLIENT, /window\.toast\?\.\(/, 'foreground payload reaches the toast');
+});
+
 test('sheet options are minimal (categories/quiet-hours/cap not in the sheet)', () => {
   const sheet = HUB.slice(HUB.indexOf('const openSheet'), HUB.indexOf('const toggleMasterSheet'));
   assert.ok(!sheet.includes('CAT_LABEL'), 'no 8-category list in the compact sheet');

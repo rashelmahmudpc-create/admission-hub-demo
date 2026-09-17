@@ -1,6 +1,6 @@
 const CACHE_PREFIX = 'admission-hub-shell-';
 
-const BUILD_ID = 'v277-fcm-enable-fix-20260917';
+const BUILD_ID = 'v278-toast-visible-20260917';
 const CACHE_NAME = `${CACHE_PREFIX}${BUILD_ID}`;
 const VERSION_HEADER = 'X-Admission-Hub-Build';
 const DOCUMENT_NETWORK_TIMEOUT_MS = 2500;
@@ -40,7 +40,7 @@ const APP_SHELL = [
 // A truncated/corrupt download is NEVER written to the shell cache.
 const ASSET_DIGESTS = {
 /* sw-manifest:start */
-  "./index.html": "cb9f357ee0bd22133ebf3c2c0822241544f62c062fefc10248b0300d18b56eb4",
+  "./index.html": "509643670083ed220733cf72c520dcb7259a8c54bc67e230a002e9eb7b034992",
   "./manifest.json": "11a85ae594fc629b11605daeda3f9afe4ef95215a55a29f9cc423314bfb275a4",
   "./manifest.webmanifest": "5be476009a140eabd088bd972bd4d345b9c4f4a055cd6e4f08774b9cb4afaf52",
   "./dashboard-v2.css?v=dash2f13-theme": "4f4c9295b487b8186fd45c006a96a43bcaf896a1a5b871f506a05874a8e00c99",
@@ -266,7 +266,7 @@ self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   const nd = event.notification.data || {};
   let url;
-  if (nd.src === 'fcm') {
+  if (String(nd.src || '').startsWith('fcm')) {
     // Deep link: hash route (e.g. dashboard / my-profile / notifications).
     const route = String(nd.link || 'dashboard').replace(/^#?\/?/, '');
     url = `./#${route}`;

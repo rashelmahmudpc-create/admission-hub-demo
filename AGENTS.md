@@ -247,3 +247,25 @@ Reference implementation: `openSheet()` in `notification-hub.js`
   behaviour) is a throwaway worker bound to the real resource, deployed, curled,
   then `wrangler delete`d. That produced the definitive `batch()` evidence in
   minutes; reading the docs alone would not have.
+- "The server accepted the push" and "the user saw something" are different
+  questions — prove them separately. A live HTTP v1 send returning
+  `projects/<id>/messages/<uuid>` means FCM took the message; it says nothing
+  about display. The v278 report ("enable works, nothing arrives") was entirely
+  the second question: `.toast` carried `z-index:100` while the sheet that
+  triggers the test renders in `#modalRoot` (`z-index:2000`), so every
+  confirmation and every foreground push appeared *behind* the open sheet. When
+  feedback is reported missing, check the z-index of the surface that carries it
+  against the surface that was open at the time.
+- The foreground-push display surface is `.toast` (via `window.toast`). If you
+  add another one, keep it above `#modalRoot`/`.modal-bg` too, and extend the
+  `notif-sheet.test.mjs` z-index assertion rather than adding a parallel check.
+- Payload `src` values are a family, not a single token: the worker sends
+  `fcm-welcome`, `fcm-test` and `fcm-self-test`. Service workers must match the
+  `fcm` *prefix* — an `=== 'fcm'` test silently sends every tapped notification
+  to the default URL. Both `sw.js` and `firebase-messaging-sw.js` handle
+  `notificationclick`, so a routing change belongs in both.
+- `/internal/notifications/*` is matched by exact path in
+  `handleFcmNotificationRequest` (`path === '/internal/notifications/health'`).
+  A new `/internal/...` diagnostic returns `null`, falls through to the app
+  guard, and answers `403 forbidden` — widen the `isInternal` test while the
+  diagnostic exists, and put the exact-path form back when you remove it.
