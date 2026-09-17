@@ -15,7 +15,7 @@ const SERVER_ONLY_ASSETS = new Set([
   '/voice-worker.js', '/notification-worker.js', '/fcm-notification.mjs',
   '/wrangler.toml', '/package.json', '/package-lock.json'
 ]);
-const SERVER_ONLY_PREFIXES = ['/auth/', '/auth-native/', '/email-gateway/', '/docs/', '/AGENT_RESUME/', '/.github/'];
+const SERVER_ONLY_PREFIXES = ['/auth/', '/auth-native/', '/email-gateway/', '/apps-script/', '/docs/', '/AGENT_RESUME/', '/.github/'];
 const isRetiredAsset = pathname => RETIRED_ASSETS.has(pathname) ||
   RETIRED_ASSET_PREFIXES.some(prefix => pathname === prefix || pathname.startsWith(prefix + '/'));
 const isServerOnlyAsset = pathname => SERVER_ONLY_ASSETS.has(pathname) ||

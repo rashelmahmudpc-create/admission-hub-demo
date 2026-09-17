@@ -319,6 +319,10 @@ test('Firebase deployment recovery captures the active version and installs the 
 test('Pages excludes server-only Auth source and keeps defensive source block', () => {
   assert.match(pagesWorkflow, /--exclude='auth-native'/);
   assert.match(pagesWorker, /\/auth-native\//);
+  // The verification mailer is a server-side artifact: it never ships to Pages
+  // and is also refused by the allowlist worker if it is ever uploaded.
+  assert.match(pagesWorkflow, /--exclude='apps-script'/);
+  assert.match(pagesWorker, /\/apps-script\//);
 });
 
 test('release guard literals still match the shipped shell', () => {
