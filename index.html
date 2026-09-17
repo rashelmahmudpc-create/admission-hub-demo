@@ -1286,21 +1286,22 @@ window.addEventListener('hashchange',()=>{
 });
 
 /* ================= APP SHELL ================= */
+/* চারটি core destination: AI এখন floating JUJU, History এখন Exam-এর ভিতরে। */
 const NAV_TABS=[
   {key:'dashboard', icon:'🏠', label:'Home'},
   {key:'question-bank', icon:'📚', label:'Bank'},
   {key:'exam', icon:'📝', label:'Exam'},
-  {key:'ai', icon:'🤖', label:'AI'},
-  {key:'history', icon:'📋', label:'History'},
   {key:'my-profile', icon:'👤', label:'Profile'},
 ];
 
 function baseTab(path){
   if(path.startsWith('ai-chat')) return ''; /* মালিক-নির্দেশ ২০২৬-০৯-০৮: AI চ্যাট-রুট সম্পূর্ণ বাদ — removedRoute-এ redirect */
   if(path.startsWith('smart-formatter')) return 'smart-formatter';
-  if(path.startsWith('exam')) return 'exam';
+  /* History এখন Exam সেকশনের ভিতরে — তাই Exam tab-ই active হয়। */
+  if(path.startsWith('exam')||path.startsWith('history')) return 'exam';
   if(path.startsWith('question-bank')||path.startsWith('subject')||path.startsWith('topic')||path.startsWith('question')||path.startsWith('add-question')||path.startsWith('edit-question')) return 'question-bank';
-  if(path.startsWith('history')) return 'history';
+  /* Mistake Bank ও Smart Revision এখন Bank-এর ভিতরের টুল। */
+  if(path==='mistakes-bank'||path==='smart-revision') return 'question-bank';
   if(path.startsWith('notes')) return '';
   if(path==='notifications') return ''; /* full-screen inbox — no bottom-nav tab (bell entry) */
   if(path.startsWith('study-hub/quick-notes')) return 'study-hub/quick-notes';
@@ -1402,6 +1403,9 @@ function render(){
   if(p==='exam/running') return renderExamRunning();
   if(p==='exam/flash-summary') return renderFlashSummary();
   if(p==='exam/result') return renderExamResult();
+  /* Exam-এর ভিতরের History/Attempts রুট — পুরোনো /history ডিপ-লিংকও অটুট থাকে। */
+  if(p==='exam/history'||p==='exam/attempts') return renderHistory();
+  if(p.startsWith('exam/history/')||p.startsWith('exam/attempts/')) return renderHistoryDetail(p.split('/')[2]);
   if(p==='history') return renderHistory();
   if(p.startsWith('history/')) return renderHistoryDetail(p.split('/')[1]);
   if(p==='mistakes') return renderMistakes();
@@ -2898,6 +2902,7 @@ function renderExamCenter(){
     {id:'mock', icon:'📝', name:'Mock Test', desc:'Real exam simulation — timed, no feedback.'},
     {id:'flash', icon:'⚡', name:'Flash Test', desc:'Instant feedback after each question.'},
     {id:'mistake', icon:'❌', name:'Mistake Test', desc:'Practice only from your Mistake Bank.'},
+    {id:'history', icon:'🕘', name:'My Attempts', desc:'Exam history, scores and full result analysis.', href:'exam/history'},
   ];
 
   const html = `
@@ -2908,7 +2913,13 @@ function renderExamCenter(){
     </div>
 
     <div class="exam-center-grid">
-      ${modes.map(m => `
+      ${modes.map(m => m.href ? `
+        <div class="exam-mode-card" onclick="navigate('${m.href}')">
+          <div class="icon">${m.icon}</div>
+          <div class="name">${m.name}</div>
+          <div class="desc">${m.desc}</div>
+        </div>
+      ` : `
         <div class="exam-mode-card ${ExamSetup.mode===m.id?'active':''}" onclick="selectExamCenterMode('${m.id}')">
           <div class="icon">${m.icon}</div>
           <div class="name">${m.name}</div>
@@ -4409,7 +4420,7 @@ function resumeActiveExam(){
     const base=oldDefaultSettings();
     return Object.assign(base,{theme:base.theme||'light',accent:'emerald',density:'comfortable',cardStyle:'soft',dailyTarget:base.dailyTarget||100,
       animation:base.animation||'on',reducedMotion:false,resultAnimation:true,numberAnimation:true,pageTransition:true,
-      bottomNav:['dashboard','question-bank','exam','history','progress'],hiddenTools:[],dashboardCards:{goal:true,streak:true,performance:true,revision:true,lifetime:true},
+      bottomNav:['dashboard','question-bank','exam','my-profile'],hiddenTools:[],dashboardCards:{goal:true,streak:true,performance:true,revision:true,lifetime:true},
       examDefaults:Object.assign({count:20,duration:20,negative:0,marksPerQ:1,difficulty:'mixed',order:'random',autoSave:true,resume:true,confirmSubmit:true},base.examDefaults||{}),
       qPrefs:Object.assign({showExplanation:true,showDifficulty:true,showTags:true,questionsPerLoad:40,defaultSort:'newest',defaultView:'list'},base.qPrefs||{}),
       feedback:Object.assign({sound:false,visual:true,success:true,error:true},base.feedback||{})});
@@ -4969,15 +4980,17 @@ window.__admissionBootPromise.catch(error => console.error('[Admission Hub] boot
     // Do not reload on controllerchange: iOS standalone clients can enter a blank-screen reload loop.
     // The updated worker takes control now; the current document remains usable and the next launch uses the new shell.
     try{
-      const expectedSwVersion = 'v273-push-fix-20260917';
+
+      const expectedSwVersion = 'v275-nav4-fcm-sw-20260917';
       // register() on the same scope performs an in-place update. Never unregister
       // the active iOS worker first: that discards the instant offline shell.
-      const registration=await navigator.serviceWorker.register('./sw.js?v=v273-push-fix-20260917',{scope:'./',updateViaCache:'none'});
+      const registration=await navigator.serviceWorker.register('./sw.js?v=v275-nav4-fcm-sw-20260917',{scope:'./',updateViaCache:'none'});
       await registration.update().catch(()=>{});
       // Purge every old app-shell cache (any build id ≠ current). This guarantees
       // stale pre-retirement application shells can never be served from cache again.
       try {
-        const cur = 'admission-hub-shell-v273-push-fix-20260917';
+
+        const cur = 'admission-hub-shell-v275-nav4-fcm-sw-20260917';
         const names = await caches.keys();
         for (const name of names) {
           if (name.startsWith('admission-hub-shell-') && name !== cur) await caches.delete(name).catch(()=>{});
