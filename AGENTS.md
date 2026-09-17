@@ -227,3 +227,23 @@ Reference implementation: `openSheet()` in `notification-hub.js`
   `.github/workflows/telegram-auth-canary-activate.yml`. `npm run sw:manifest`
   then rewrites the digests. Miss the workflow file and that test fails only in
   a full-suite run, not when run alone.
+- `D1Database.batch()` takes `D1PreparedStatement`s, never raw SQL strings.
+  Passing strings throws `D1_ERROR: Malformed input: [{}], should be {sql:
+  string, params?: any[]} ...` and aborts the whole sequence. This is how
+  `FcmStore.#ensureTables()` silently prevented every push for a day: the
+  `CREATE TABLE` batch threw, so `fcm_devices` was never created and every
+  register-token write failed. Always wrap DDL in `d1.prepare(...)` before
+  batching it.
+- Corollary: any D1 test double must *reject* raw strings with that same error.
+  A fake that accepts them (`// schema DDL is a no-op here`) turns a
+  production-breaking bug into a green suite — the FCM double did exactly that
+  for the `batch()` mistake above.
+- When a "push never arrives" report reaches you, check the *server* before the
+  client. Absent `fcm_devices` / `notification_settings` tables in production D1
+  mean registration never succeeded, whatever the client logs say. A non-zero
+  `fcm:reg:<user>` counter in `GK_KV` alongside missing tables proves the
+  request reached the worker, authenticated, and then died in the store.
+- The fastest way to settle a Cloudflare-runtime question (D1 semantics, binding
+  behaviour) is a throwaway worker bound to the real resource, deployed, curled,
+  then `wrangler delete`d. That produced the definitive `batch()` evidence in
+  minutes; reading the docs alone would not have.
