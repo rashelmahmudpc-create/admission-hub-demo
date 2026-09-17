@@ -51,7 +51,7 @@ half-finished setup never advertises a channel it cannot deliver.
 ## 4. Verify
 
 ```sh
-curl "https://admission-gk.admissionhub.workers.dev/api/auth/config" | jq '.auth.methods.backup'
+curl "https://admission-gk.admissionhub.workers.dev/api/auth/v1/config" | jq '.auth.methods.backup'
 ```
 
 Expect `available: true` and `availabilityCode: "READY"`. While the secrets are
@@ -83,7 +83,26 @@ path validates the recipient and the 6-digit code before touching `MailApp`.
 - Quotas are **per Google account**, shared with anything else that account sends.
 - Mail goes out **from the personal Gmail address** that owns the script. It is
   not a branded sending domain, so deliverability and professional appearance are
-  both weaker than a real provider. Point `EMAIL_FROM_ADDRESS` at a provider you
-  control if that matters.
+  both weaker than a real provider. `EMAIL_FROM_ADDRESS` does **not** affect this
+  script — it is read only by the `email-gateway` providers. To send from a
+  branded address, activate a gateway provider instead of this script.
 - Google documents these quotas as being for testing and subject to change
   without notice, so keep `otp-b`/`otp-c` in mind as the growth path.
+
+## Choosing the sending account
+
+The script has **no hardcoded sender**: `MailApp.sendEmail` always sends as the
+account that owns the deployment. Changing accounts therefore needs no code
+change — deploy `Code.gs` from the new account and update the two Worker secrets.
+`Script Properties` are per project, so a fresh deployment needs its own
+`SHARED_SECRET` and `DAILY_LIMIT`.
+
+Prefer an account with real sending history. A brand-new Gmail mailbox has no
+reputation, and verification codes sent from it are likely to land in spam until
+it builds one. If the new account is unavoidable, send a handful of messages a
+day at first rather than the full 100.
+
+Stacking several Gmail accounts to multiply the daily quota is **not supported
+today**: only `otp-a` has an Apps Script adapter, while `otp-b`/`otp-c` are
+bridge-only. Adding more accounts would need the same adapter wired into those
+slots first.
