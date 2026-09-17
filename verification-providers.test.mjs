@@ -282,33 +282,51 @@ test('Backup OTP email carries the branded layout, a prominent code, and dark-mo
   assert.match(text, /মাহমুদ রাসেল/);
   assert.match(text, /123456/);
 
-  // Design contract: one container card, no nested boxes, no emoji/font icons.
-  assert.equal(/border[^;"]*dashed/.test(html), false);
-  assert.equal(/border[^;"]*dotted/.test(html), false);
-  assert.match(html, /linear-gradient\(135deg,#12a876/);
-  assert.match(html, /background-color:#0f8f68/);
-  assert.match(html, /'SF Mono','Roboto Mono'/);
-  assert.match(html, /letter-spacing:6px/);
-  assert.match(html, /data:image\/svg\+xml;base64,/);
-  assert.match(html, /-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif/);
+  // Design contract, checked against markup only so the style block cannot
+  // satisfy an assertion that the inline layout should.
+  const markup = html.replace(/<style>[\s\S]*?<\/style>/, '');
+  assert.equal(/border[^;"]*(dashed|dotted)/.test(html), false);
+  assert.match(markup, /linear-gradient\(135deg,#12a876/);
+  assert.match(markup, /background-color:#0f8f68/);
+  assert.match(markup, /'SF Mono','Roboto Mono'/);
+  assert.match(markup, /letter-spacing:6px/);
+  assert.match(markup, /data:image\/svg\+xml;base64,/);
+  assert.match(markup, /-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif/);
   assert.equal(/#fff2d9|#e4a620|#856221/i.test(html), false);
   assert.equal(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(html), false);
   assert.equal(/❓|🔒|✅|⚠/.test(html), false);
 
-  // Exactly one bordered+rounded container: the outer card. Inner sections are
-  // separated by spacing and 1px dividers only.
-  const roundedBoxes = html.match(/border-radius:(\d+)px/g) || [];
-  assert.deepEqual(roundedBoxes, ['border-radius:16px', 'border-radius:10px']);
-  // Only these may set a background: the page shell, the banner, the card, and
-  // the 1px dividers. Anything else would be an inner box.
-  const bgColors = [...new Set(html.match(/background-color:#[0-9a-f]{6}/gi) || [])].sort();
-  assert.deepEqual(bgColors, ['background-color:#0f8f68', 'background-color:#eaecec', 'background-color:#f7f8f8', 'background-color:#ffffff']);
-  // Dividers are hairlines, not tinted blocks.
-  for (const m of html.matchAll(/height:1px;background-color:#eaecec/g)) assert.ok(m);
-  assert.equal((html.match(/background-color:#eaecec/g) || []).length, (html.match(/height:1px;background-color:#eaecec/g) || []).length);
+  // Nothing may outline the message: no border on the card, no shadow.
+  assert.equal(/box-shadow/.test(markup), false);
 
-  const layoutTables = html.match(/<table/g) || [];
-  const presentational = html.match(/<table role="presentation"/g) || [];
+  // Exactly one container opts into max-width, and it requests the responsive
+  // pair rather than a fixed pixel width. Images and icon columns may still be
+  // fixed; layout containers may not.
+  assert.deepEqual(markup.match(/max-width:\d+px/g), ['max-width:600px']);
+  const cardTag = (markup.match(/<table[^>]*class="ah-card"[^>]*>/) || [''])[0];
+  assert.match(cardTag, /width="100%"/);
+  assert.match(cardTag, /max-width:600px/);
+  assert.equal(/(?<!max-)\bwidth:\d+px/.test(cardTag), false);
+  assert.equal(/\bwidth="\d+"/.test(cardTag), false);
+  assert.match(html, /\.ah-shell \{ width: 100% !important; \}/);
+  assert.match(html, /\.ah-card \{ width: 100% !important; max-width: 600px !important; margin: 0 auto !important; \}/);
+
+  // Dark mode must move body, shell, and card to one surface, otherwise the card
+  // floats as a box against the client's own dark chrome.
+  const dark = html.slice(html.indexOf('@media (prefers-color-scheme: dark)'));
+  assert.match(dark, /\.ah-body \{ background-color: #1f1f1f !important; \}/);
+  assert.match(dark, /\.ah-shell \{ background-color: #1f1f1f !important; \}/);
+  assert.match(dark, /\.ah-card \{ background-color: #1f1f1f !important;/);
+
+  // Only these set a background in the markup: the banner, the card surface the
+  // shell already matches, and the hairlines. Anything else is an inner box.
+  const bgColors = [...new Set(markup.match(/background-color:#[0-9a-f]{6}/gi) || [])].sort();
+  assert.deepEqual(bgColors, ['background-color:#0f8f68', 'background-color:#eaecec', 'background-color:#ffffff']);
+  // Every divider is a hairline, not a tinted block.
+  assert.equal((markup.match(/background-color:#eaecec/g) || []).length, (markup.match(/height:1px;background-color:#eaecec/g) || []).length);
+
+  const layoutTables = markup.match(/<table/g) || [];
+  const presentational = markup.match(/<table role="presentation"/g) || [];
   assert.equal(layoutTables.length, presentational.length);
 });
 
