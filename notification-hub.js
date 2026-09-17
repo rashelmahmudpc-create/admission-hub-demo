@@ -568,6 +568,16 @@
     if (row && !row.readAt) await logRow({ ...row, readAt: Date.now(), status: row.status === 'sent' ? 'opened' : row.status });
     hydrateDashboard();
   };
+  /* Round 8b (owner 2026-09-17): let the user wipe the inbox list entirely
+   * (old auto-generated entries left over from before the engine was
+   * switched off). The inbox's "সব মুছে ফেলুন" button calls this. */
+  const clearAllLog = async () => {
+    try {
+      const rows = await logRows();
+      for (const row of rows) await dbDelRaw('notifications', row.id);
+      return true;
+    } catch (_) { return false; }
+  };
 
   const openSettings = async () => {
     const prefs = await getPrefs();
@@ -623,7 +633,7 @@
   if (typeof document !== 'undefined') boot();
 
   window.NotificationHub = {
-    dashboardHtml, hydrateDashboard, mountDashboardCard, openCenter, openSettings, openSheet, openAllowDialog, fcmSheetToggle, toggleMasterSheet, markAllRead, markOneRead, bellTap, goInbox, inboxPushToggle, sendSelfTest, maybeResubscribe,
+    dashboardHtml, hydrateDashboard, mountDashboardCard, openCenter, openSettings, openSheet, openAllowDialog, fcmSheetToggle, toggleMasterSheet, markAllRead, markOneRead, clearAllLog, bellTap, goInbox, inboxPushToggle, sendSelfTest, maybeResubscribe,
     promptEnable, dismissPrompt, enablePush, disablePush, testNow,
     toggleMaster, toggleCat, setQuiet, setCap, saveEndpoint,
     evaluate, syncState,

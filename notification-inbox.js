@@ -17,6 +17,8 @@
     all: { bn: 'সব', en: 'All' },
     unread: { bn: 'অপঠিত', en: 'Unread' },
     markAll: { bn: 'সব পড়া চিহ্নিত করুন', en: 'Mark all as read' },
+    clearAll: { bn: 'সব মুছে ফেলুন', en: 'Clear all' },
+    confirmClear: { bn: 'নিশ্চিত?', en: 'Sure?' },
     emptyAll: { bn: 'এখনো কোনো নোটিফিকেশন নেই', en: 'No notifications yet' },
     emptyAllSub: { bn: 'Study, streak ও admission-এর খবর এখানে আসবে', en: 'Study, streak and admission updates will appear here' },
     emptyUnread: { bn: 'সব পড়া হয়েছে', en: 'You are all caught up' },
@@ -90,6 +92,9 @@
   .nif-title-head{font-size:18px;font-weight:800;color:#0c3b2a;flex:1;}
   .nif-markall{border:none;background:none;color:var(--emerald,#0f6b4f);font-size:13px;font-weight:700;cursor:pointer;padding:8px;border-radius:10px;}
   .nif-markall:active{opacity:.6;}
+  .nif-clear{border:1px solid var(--line,#e3e8e5);background:var(--card,#fff);border-radius:12px;min-width:40px;height:40px;display:grid;place-items:center;font-size:16px;cursor:pointer;padding:0 10px;}
+  .nif-clear:active{transform:scale(.94);}
+  .nif-clear.nif-clear-armed{background:var(--red,#dc2626);border-color:var(--red,#dc2626);color:#fff;font-size:12px;font-weight:800;}
   .nif-tabs{display:flex;gap:6px;background:#e9eeec;border-radius:14px;padding:4px;margin-bottom:14px;}
   .nif-tab{flex:1;border:none;background:none;border-radius:11px;padding:9px 10px;font-size:13.5px;font-weight:700;color:#5c6b64;cursor:pointer;transition:background .18s ease,color .18s ease;}
   .nif-tab.active{background:var(--card,#fff);color:#0c3b2a;box-shadow:0 2px 8px rgba(12,59,42,.10);}
@@ -124,6 +129,7 @@
           <button class="nif-back" onclick="window.__nifBack()" aria-label="${esc(t('back'))}">←</button>
           <div class="nif-title-head">${esc(t('title'))}</div>
           ${unread > 0 ? `<button class="nif-markall" onclick="window.__nifMarkAll()">${esc(t('markAll'))}</button>` : ''}
+          ${all.length > 0 ? `<button class="nif-clear" id="nifClearBtn" onclick="window.__nifClearAll()" title="${esc(t('clearAll'))}" aria-label="${esc(t('clearAll'))}">🗑</button>` : ''}
         </div>
         <div class="nif-tabs" role="tablist">
           <button class="nif-tab ${state.tab === 'all' ? 'active' : ''}" onclick="window.__nifTab('all')">${esc(t('all'))}</button>
@@ -178,6 +184,32 @@
       try { const hub = window.NotificationHub; if (hub && typeof hub.markAllRead === 'function') await hub.markAllRead(); } catch (_) {}
       reRender();
     })();
+  };
+  /* Clear all (two-tap confirm — first tap arms the button for 3s).
+   * Wipes the local notification list; owner 2026-09-17: old auto entries
+   * left over from before the auto engine was switched off must be gone. */
+  let clearArmedAt = 0;
+  window.__nifClearAll = () => {
+    const btn = document.getElementById('nifClearBtn');
+    if (!btn) return;
+    if (Date.now() - clearArmedAt < 3000) {
+      clearArmedAt = 0;
+      btn.classList.remove('nif-clear-armed');
+      (async () => {
+        try { const hub = window.NotificationHub; if (hub && typeof hub.clearAllLog === 'function') await hub.clearAllLog(); } catch (_) {}
+        reRender();
+      })();
+    } else {
+      clearArmedAt = Date.now();
+      btn.textContent = t('confirmClear');
+      btn.classList.add('nif-clear-armed');
+      window.setTimeout(() => {
+        if (!document.getElementById('nifClearBtn')) return;
+        document.getElementById('nifClearBtn').textContent = '🗑';
+        document.getElementById('nifClearBtn').classList.remove('nif-clear-armed');
+        if (Date.now() - clearArmedAt >= 3000) clearArmedAt = 0;
+      }, 3000);
+    }
   };
 
   window.renderNotificationsInbox = function renderNotificationsInbox() {
