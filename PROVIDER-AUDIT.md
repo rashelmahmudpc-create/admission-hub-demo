@@ -77,9 +77,18 @@ Two findings explain the current behaviour:
 - No domain publishes a BIMI record, and no domain is DMARC-enforced, so Gmail
   has nothing to substitute and falls back to the monogram.
 
+### Gravatar does not solve this
+
+Gravatar is sometimes suggested for sender avatars. Gravatar's own support
+documentation states that most popular email services, including Gmail, Outlook,
+and Apple Mail, do not read it. It is consulted by third-party clients such as
+Thunderbird, Spark, and Superhuman. Creating a Gravatar is harmless but will not
+change the avatar in Gmail, so it is not part of this plan.
+
 ### What a BIMI rollout actually requires
 
-All four are needed. Three are DNS work; one is a purchase with a lead time.
+All of the following are needed. All but the certificate are DNS work; the
+certificate is a purchase with a lead time.
 
 | Requirement | Current state |
 | --- | --- |
@@ -96,20 +105,35 @@ is issued by DigiCert or Entrust; a CMC does not need a trademark and shows the
 logo without the blue checkmark. Trademark registration runs 6 to 12 months,
 which is the long pole in any timeline.
 
-DNS observations from the audit:
+### Checking the records
 
-- `admissionhub.com` — SPF present; no DMARC; no BIMI. Nameservers at
-  `bulletproofhost.ca`.
-- `admissionhub.net` — DMARC `p=quarantine`; no BIMI. Nameservers at
-  `domaincontrol.com` (GoDaddy).
-- `admissionhub.app` — DMARC `p=none`; no BIMI. Nameservers at DigitalOcean.
-- `admissionhub.org` — no records resolve.
-- Brevo authenticated domains: 0.
+`auth-native/operations/verify-email-branding.mjs` reports every record above in
+one pass and exits non-zero while a gating requirement is missing:
+
+```
+node auth-native/operations/verify-email-branding.mjs admissionhub.net
+```
+
+Current results:
+
+| Domain | Result |
+| --- | --- |
+| `admissionhub.net` | 3/9 — DMARC enforces at `p=quarantine`; SPF, DKIM, BIMI, and the certificate are missing |
+| `admissionhub.com` | SPF present; no DMARC; no BIMI |
+| `admissionhub.app` | SPF present; DMARC `p=none`; no BIMI |
+| `admissionhub.org` | No records resolve |
+
+The DKIM check probes the `google._domainkey` selector, which is only correct
+for Google-hosted mail, so that line is reported but does not gate the exit code.
+The certificate line likewise reports without gating, because it is a purchase
+rather than a configuration step.
 
 `admissionhub.net` is the closest to BIMI-ready, since its DMARC policy is
 already enforcing. No domain is reachable through the Cloudflare API token
 available here (the zone list is empty), so records must be published wherever
-DNS is actually hosted.
+DNS is actually hosted: `admissionhub.net` is on GoDaddy
+(`domaincontrol.com`), `.app` is on DigitalOcean, `.com` is on
+`bulletproofhost.ca`, and `.org` does not resolve.
 
 ### Sender name versus sender avatar
 
@@ -122,11 +146,22 @@ These are separate and both worth setting deliberately:
 
 ## Email design
 
-The template now has a single container: one rounded card with a subtle shadow,
-a solid brand gradient banner, and the code shown large and centered with no box
-behind it. Sections are separated by spacing and 1px dividers. The security note
-is a lock glyph plus muted text with no card of its own. The lock is an inline
-SVG data URI, so it does not depend on a network request or an icon font.
+The message is deliberately surface-flat. The body, the outer wrapper, and the
+card all paint the same colour, so nothing frames the content as a box:
+
+- Light: all three are `#ffffff`.
+- Dark: all three are `#1f1f1f`, matching the tone Gmail's mobile dark mode uses
+  for its own chrome.
+
+The card carries no border and no shadow, and there are no inner boxes. Sections
+are separated by spacing and 1px hairlines. The code sits large, bold, and
+centered in monospace with nothing behind it. The security note is a lock glyph
+plus muted text with no card of its own, and the lock is an inline SVG data URI,
+so it depends on neither a network request nor an icon font.
+
+Width is fluid rather than fixed: the wrapper is `width:100%` and the card is
+`width:100%; max-width:600px; margin:0 auto`, so a phone gets the full width
+instead of a narrow column.
 
 Rendered output:
 
@@ -136,6 +171,8 @@ Rendered output:
 
 ## Tests
 
-- `verification-providers.test.mjs` — 16/16
+- `verification-providers.test.mjs` — 16/16, including the design contract
+  checked against markup only, so the style block cannot satisfy an assertion
+  that the inline layout should
 - `npm run test:native-auth` — 481/481
 - `npm run check:worker-bundle` — exit 0

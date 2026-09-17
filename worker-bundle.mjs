@@ -11148,30 +11148,39 @@ var otpEmailBody = (code, minutes, recipientName = "") => {
      clients that strip <style> (or the whole head) still render the light design. */
   :root { color-scheme: light dark; supported-color-schemes: light dark; }
   a { text-decoration: none; }
+  /* Fluid on every screen: the shell fills whatever width the client gives it and
+     the card centres itself, so mobile Gmail does not frame it as a narrow box. */
+  .ah-shell { width: 100% !important; }
+  .ah-card { width: 100% !important; max-width: 600px !important; margin: 0 auto !important; }
   @media (max-width: 620px) {
     .ah-pad { padding-left: 20px !important; padding-right: 20px !important; }
     .ah-otp { font-size: 30px !important; letter-spacing: 4px !important; text-indent: 4px !important; }
   }
+  /* Gmail mobile dark mode paints its own chrome around the message. If the body
+     and the shell keep their light colour while the card turns dark, the card
+     reads as a floating box. All three surfaces therefore move together, and the
+     card drops its border and shadow so nothing outlines it. */
   @media (prefers-color-scheme: dark) {
-    .ah-shell { background-color: #0c1412 !important; }
-    .ah-card { background-color: #131c1a !important; border-color: #26332f !important; }
-    .ah-divider { background-color: #26332f !important; }
+    .ah-body { background-color: #1f1f1f !important; }
+    .ah-shell { background-color: #1f1f1f !important; }
+    .ah-card { background-color: #1f1f1f !important; border-color: #1f1f1f !important; box-shadow: none !important; }
+    .ah-divider { background-color: #3a3a3a !important; }
     .ah-otp { color: #7ad9b8 !important; }
-    .ah-foot { border-top-color: #26332f !important; }
+    .ah-foot { border-top-color: #3a3a3a !important; }
     .ah-heading { color: #f4f8f7 !important; }
-    .ah-body { color: #b7c6c2 !important; }
-    .ah-muted { color: #8b9c98 !important; }
-    .ah-faint { color: #7c8783 !important; }
+    .ah-body-text { color: #c8d2cf !important; }
+    .ah-muted { color: #a4b0ad !important; }
+    .ah-faint { color: #8d9995 !important; }
     .ah-foot-title { color: #dfe8e5 !important; }
   }
 </style>
 </head>
-<body style="margin:0;padding:0;background-color:#f7f8f8;">
-<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:#f7f8f8;font-size:1px;line-height:1px;">আপনার Admission Hub যাচাইকরণ কোড: ${safeCode} — ${safeMinutes} মিনিটের জন্য কার্যকর।&#8203;&#8203;&#8203;&#8203;&#8203;&#8203;&#8203;&#8203;&#8203;&#8203;&#8203;&#8203;</div>
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="ah-shell" bgcolor="#f7f8f8" style="width:100%;background-color:#f7f8f8;font-family:${OTP_EMAIL_FONT};">
+<body class="ah-body" style="margin:0;padding:0;width:100%;background-color:#ffffff;">
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:#ffffff;font-size:1px;line-height:1px;">আপনার Admission Hub যাচাইকরণ কোড: ${safeCode} — ${safeMinutes} মিনিটের জন্য কার্যকর।&#8203;&#8203;&#8203;&#8203;&#8203;&#8203;&#8203;&#8203;&#8203;&#8203;&#8203;&#8203;</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="ah-shell" bgcolor="#ffffff" style="width:100%;background-color:#ffffff;font-family:${OTP_EMAIL_FONT};">
 <tr><td align="center" class="ah-pad" style="padding:28px 12px;">
 
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="ah-card" bgcolor="#ffffff" style="width:100%;max-width:560px;background-color:#ffffff;border:1px solid #e8ebea;border-radius:16px;overflow:hidden;box-shadow:0 1px 3px rgba(16,28,25,0.05);">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="ah-card" bgcolor="#ffffff" style="width:100%;max-width:600px;background-color:#ffffff;border-radius:16px;overflow:hidden;">
 
 <tr><td class="ah-head" bgcolor="#0f8f68" style="padding:22px 28px;background-color:#0f8f68;background-image:linear-gradient(135deg,#12a876 0%,#0f8f68 58%,#0d7f5e 100%);">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
@@ -11191,7 +11200,7 @@ var otpEmailBody = (code, minutes, recipientName = "") => {
 
 <tr><td class="ah-pad" style="padding:34px 28px 0;">
 <p class="ah-heading" style="margin:0;font-family:${OTP_EMAIL_FONT};font-size:20px;line-height:1.45;font-weight:600;letter-spacing:-0.2px;color:${OTP_EMAIL_INK};">${greeting}</p>
-<p class="ah-body" style="margin:10px 0 0;font-family:${OTP_EMAIL_FONT};font-size:15px;line-height:1.7;font-weight:400;color:#48534f;">আপনার ইমেইল ঠিকানাটি যাচাই করতে নিচের কোডটি ব্যবহার করুন।</p>
+<p class="ah-body-text" style="margin:10px 0 0;font-family:${OTP_EMAIL_FONT};font-size:15px;line-height:1.7;font-weight:400;color:#48534f;">আপনার ইমেইল ঠিকানাটি যাচাই করতে নিচের কোডটি ব্যবহার করুন।</p>
 </td></tr>
 
 <tr><td class="ah-pad" align="center" style="padding:30px 28px 0;">
