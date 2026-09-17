@@ -369,6 +369,10 @@ const verificationPublished = env => env?.VERIFICATION_AUTH_ACTIVATION === 'enab
 const telegramCanaryRequested = (env, url) =>
   verificationEndpointReady(env) && url.searchParams.get('telegramCanary') === '1';
 const telegramVerificationRequested = (env, url) => verificationPublished(env) || telegramCanaryRequested(env, url);
+// Email OTP rides the generic backup channel, so it stays dark until the operator
+// flips this switch *and* installs the Apps Script bindings: without them the
+// orchestrator reports NO_HEALTHY_PROVIDER and the button stays hidden.
+const emailOtpPublicationEnabled = env => env?.VERIFICATION_EMAIL_OTP_PUBLICATION === 'enabled';
 const currentAuthUi = request => request.headers.get('X-AH-Auth-UI') === AUTH_UI_VERSION;
 const telegramActivationAuthorized = (request, env) => {
   const expected = String(env?.TELEGRAM_CANARY_ACTIVATION_SECRET || '');
@@ -546,7 +550,7 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         };
         const passkeyAvailable = available && health.schema >= 3 && (passkeyPublished(env) || passkeyCanary);
         const passkeyEnrollmentAvailable = available && health.schema >= 3 && passkeyEndpointReady(env);
-        const publicBackup = telegramCanary ? backup : {
+        const publicBackup = (telegramCanary || (emailOtpPublicationEnabled(env) && backup?.available === true)) ? backup : {
           available: false,
           availabilityCode: 'LIVE_E2E_PENDING',
           genericFlow: true,

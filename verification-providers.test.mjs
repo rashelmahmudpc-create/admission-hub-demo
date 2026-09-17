@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createHmac } from 'node:crypto';
 import {
+  AppsScriptOtpVerificationProvider,
   BridgeOtpVerificationProvider,
   createConfiguredVerificationProviders,
   OfficialWhatsAppVerificationProvider,
@@ -10,6 +12,13 @@ import { VERIFICATION_FAILURE_CLASS } from './auth-native/verification/provider-
 
 const json = (body, status = 200) => Response.json(body, { status });
 const KEY = `provider-key-${'k'.repeat(32)}`;
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/exec';
+const APPS_SCRIPT_SECRET = `apps-script-${'s'.repeat(32)}`;
+// Mirrors apps-script/Code.gs signatureFor_: same field order, same base64url.
+const expectedSignature = (secret, action, timestamp, nonce, destination = '', code = '') =>
+  createHmac('sha256', secret)
+    .update([action, timestamp, nonce, destination, code].join('\n'))
+    .digest('base64url');
 
 test('three OTP bridge slots implement the shared contract and fail closed when not securely configured', async () => {
   const providers = createConfiguredVerificationProviders({});
@@ -23,6 +32,107 @@ test('three OTP bridge slots implement the shared contract and fail closed when 
       error => error?.failureClass === VERIFICATION_FAILURE_CLASS.HARD
     );
   }
+});
+
+test('Apps Script OTP adapter signs every call, follows Google\'s 302, and tracks the mail quota', async () => {
+  const calls = [];
+  const provider = new AppsScriptOtpVerificationProvider({
+    id: 'otp-a',
+    webAppUrl: APPS_SCRIPT_URL,
+    sharedSecret: APPS_SCRIPT_SECRET,
+    declaredDailyQuota: 100,
+    now: () => 1_800_000_000_000,
+    fetchImpl: async (url, init) => {
+      calls.push({ url: String(url), init });
+      if (init.method === 'POST') {
+        const body = JSON.parse(String(init.body));
+        assert.equal(body.signature, expectedSignature(APPS_SCRIPT_SECRET, 'send', body.timestamp, body.nonce, body.destination, body.code));
+        return json({ ok: true, accepted: true, messageRef: 'gmail-message-reference-1234567890' });
+      }
+      const parsed = new URL(String(url));
+      const action = parsed.searchParams.get('action');
+      assert.equal(
+        parsed.searchParams.get('signature'),
+        expectedSignature(APPS_SCRIPT_SECRET, action, parsed.searchParams.get('timestamp'), parsed.searchParams.get('nonce'))
+      );
+      if (action === 'quota') return json({ ok: true, remaining: 97, limit: 100, resetAt: 1_800_086_400_000 });
+      return json({ ok: true, ready: true });
+    }
+  });
+
+  assert.equal(provider.configured, true);
+  assert.deepEqual(await provider.checkAvailability(), { available: true, code: 'READY' });
+  assert.deepEqual(await provider.getRemainingQuota(), {
+    remaining: 97, limit: 100, resetAt: 1_800_086_400_000, source: 'apps-script-mail-quota'
+  });
+  assert.deepEqual(
+    await provider.sendVerification({ destination: 'student@example.com', code: '654321' }),
+    { accepted: true }
+  );
+
+  // Apps Script answers with a 302 to googleusercontent.com, so this adapter must
+  // opt into redirect following; the OTP bridge deliberately does the opposite.
+  assert.equal(calls.every(call => call.init.redirect === 'follow'), true);
+  const send = calls.find(call => call.init.method === 'POST');
+  assert.equal(send.url, APPS_SCRIPT_URL);
+  const health = calls.find(call => call.url.includes('action=health'));
+  assert.ok(health);
+  assert.equal(provider.verificationMode, 'local-code');
+  await assert.rejects(
+    () => provider.verifyCode({}),
+    error => error?.code === 'LOCAL_VERIFICATION_ONLY' && error?.failureClass === VERIFICATION_FAILURE_CLASS.USER
+  );
+});
+
+test('Apps Script adapter fails closed on bad input, unusable quota responses, and non-Google origins', async () => {
+  const rejected = new AppsScriptOtpVerificationProvider({
+    id: 'otp-a',
+    webAppUrl: APPS_SCRIPT_URL,
+    sharedSecret: APPS_SCRIPT_SECRET,
+    declaredDailyQuota: 100,
+    fetchImpl: async url => (String(url).includes('action=quota')
+      ? json({ ok: true, remaining: 5, limit: 100, resetAt: 0 })
+      : json({ ok: true, ready: true }))
+  });
+  await assert.rejects(
+    () => rejected.getRemainingQuota(),
+    error => error?.code === 'INVALID_QUOTA_RESPONSE' && error?.failureClass === VERIFICATION_FAILURE_CLASS.HARD
+  );
+
+  const unconfigured = new AppsScriptOtpVerificationProvider({
+    id: 'otp-a',
+    webAppUrl: 'https://evil.example/macros/s/AKfycbxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/exec',
+    sharedSecret: APPS_SCRIPT_SECRET,
+    declaredDailyQuota: 100
+  });
+  assert.equal(unconfigured.configured, false);
+  assert.deepEqual(await unconfigured.checkAvailability(), { available: false, code: 'NOT_CONFIGURED' });
+  await assert.rejects(
+    () => unconfigured.sendVerification({ destination: 'student@example.com', code: '654321' }),
+    error => error?.failureClass === VERIFICATION_FAILURE_CLASS.HARD
+  );
+  assert.equal((await unconfigured.getProviderStatus()).configured, false);
+});
+
+test('otp-a prefers the Apps Script mailer when configured and otherwise falls back to the bridge', () => {
+  const appsScript = createConfiguredVerificationProviders({
+    OTP_A_PROVIDER_APPS_SCRIPT_URL: APPS_SCRIPT_URL,
+    OTP_A_PROVIDER_SHARED_SECRET: APPS_SCRIPT_SECRET,
+    OTP_A_DAILY_QUOTA: '100',
+    OTP_A_PROVIDER_ORIGIN: 'https://otp-bridge.example',
+    OTP_A_PROVIDER_KEY: KEY
+  })[0];
+  assert.equal(appsScript instanceof AppsScriptOtpVerificationProvider, true);
+  assert.equal(appsScript.id, 'otp-a');
+  assert.equal(appsScript.channel, 'otp');
+
+  const fallback = createConfiguredVerificationProviders({
+    OTP_A_PROVIDER_ORIGIN: 'https://otp-bridge.example',
+    OTP_A_PROVIDER_KEY: KEY,
+    OTP_A_DAILY_QUOTA: '100'
+  })[0];
+  assert.equal(fallback instanceof BridgeOtpVerificationProvider, true);
+  assert.equal(fallback.id, 'otp-a');
 });
 
 test('OTP bridge uses bounded HTTPS server calls for health, exact quota, and delivery', async () => {

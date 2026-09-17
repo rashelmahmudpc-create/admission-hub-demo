@@ -1311,7 +1311,7 @@
     code.required = true;
     instruction.textContent = telegram
       ? 'Official Telegram bot-এ START চাপুন, তারপর পাওয়া ৬ সংখ্যার কোড লিখুন।'
-      : 'নিরাপদ যাচাই কোডটি লিখুন।';
+      : 'তোমার Email-এ পাঠানো ৬ সংখ্যার কোডটি লিখুন। না পেলে Spam ফোল্ডারও দেখুন।';
     const verifyLabel = telegram ? 'Telegram কোড যাচাই করুন' : 'যাচাই করুন';
     verify.textContent = verifyLabel;
     verify.dataset.label = verifyLabel;

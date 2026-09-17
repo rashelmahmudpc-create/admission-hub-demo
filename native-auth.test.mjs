@@ -582,6 +582,56 @@ test('Telegram canary is exact-query isolated, generic, and cannot leak through 
   assert.equal(app.authority.calls.filter(path => path === '/internal/verification/capabilities').length, 1);
 });
 
+test('email OTP publication exposes the generic backup channel only when a provider is healthy', async () => {
+  const capabilities = {
+    available: true,
+    availabilityCode: 'READY',
+    genericFlow: true,
+    providerNamesExposed: false,
+    contactInput: 'none',
+    maxAttempts: 5,
+    expiresInSeconds: 300,
+    telegramAvailable: true
+  };
+
+  // Flag off: the channel stays dark even though the orchestrator is healthy.
+  const dormant = handlerSetup({ backupCapabilities: capabilities });
+  dormant.env.VERIFICATION_AUTH_ACTIVATION = 'enabled';
+  const dormantAuth = (await (await dormant.handler(apiRequest(`${AUTH_API_PREFIX}/config`), dormant.env, {})).json()).auth;
+  assert.equal(dormantAuth.methods.backup.available, false);
+  assert.equal(dormantAuth.methods.backup.availabilityCode, 'LIVE_E2E_PENDING');
+
+  // Flag on with a healthy provider: the selector is exposed.
+  const live = handlerSetup({ backupCapabilities: capabilities });
+  live.env.VERIFICATION_AUTH_ACTIVATION = 'enabled';
+  live.env.VERIFICATION_EMAIL_OTP_PUBLICATION = 'enabled';
+  const liveAuth = (await (await live.handler(apiRequest(`${AUTH_API_PREFIX}/config`), live.env, {})).json()).auth;
+  assert.equal(liveAuth.methods.backup.available, true);
+  assert.equal(liveAuth.methods.backup.availabilityCode, 'READY');
+  assert.equal(liveAuth.methods.backup.providerNamesExposed, false);
+  assert.equal('telegramAvailable' in liveAuth.methods.backup, false);
+  // Provider names must never leak into the public projection.
+  assert.equal(/otp-a|apps-script|google|bridge/i.test(JSON.stringify(liveAuth.methods.backup)), false);
+});
+
+test('email OTP publication stays dark when the orchestrator reports no healthy provider', async () => {
+  const app = handlerSetup({
+    backupCapabilities: {
+      available: false,
+      availabilityCode: 'NO_HEALTHY_PROVIDER',
+      genericFlow: true,
+      providerNamesExposed: false,
+      contactInput: 'none'
+    }
+  });
+  app.env.VERIFICATION_AUTH_ACTIVATION = 'enabled';
+  app.env.VERIFICATION_EMAIL_OTP_PUBLICATION = 'enabled';
+  const auth = (await (await app.handler(apiRequest(`${AUTH_API_PREFIX}/config`), app.env, {})).json()).auth;
+  assert.equal(auth.methods.backup.available, false);
+  // A set-but-broken deployment must not advertise a channel it cannot deliver.
+  assert.equal(auth.methods.backup.availabilityCode, 'LIVE_E2E_PENDING');
+});
+
 test('approved Telegram publication exposes only the Email-or-Telegram selector while generic backup stays protected', async () => {
   const capabilities = {
     available: true,

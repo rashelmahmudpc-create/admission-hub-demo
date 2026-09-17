@@ -8,8 +8,12 @@ FIREBASE_CONTINUE_URL = "https://admissionhub.pages.dev/?firebaseVerified=1"
 GOOGLE_AUTH_ACTIVATION = "enabled"
 PASSKEY_AUTH_ACTIVATION = "canary"
 VERIFICATION_AUTH_ACTIVATION = "enabled"
+# Email OTP rides the generic backup channel. The exposure is self-gating: the
+# button only appears when the orchestrator reports a healthy provider, which
+# needs the OTP_A_PROVIDER_APPS_SCRIPT_URL + OTP_A_PROVIDER_SHARED_SECRET secrets.
+VERIFICATION_EMAIL_OTP_PUBLICATION = "enabled"
 # Internal admission cap: existing 120 challenges/minute global limiter × 1,440; this is not a Telegram-reported quota.
-VERIFICATION_ORCHESTRATOR_CONFIG = '{"enabled":true,"providers":[{"id":"telegram","enabled":true,"priority":1,"dailyQuota":172800,"timeoutMs":20000,"label":"secure backup"}]}'
+VERIFICATION_ORCHESTRATOR_CONFIG = '{"enabled":true,"providers":[{"id":"otp-a","enabled":true,"priority":10,"dailyQuota":100,"timeoutMs":20000,"label":"email code"},{"id":"telegram","enabled":true,"priority":50,"dailyQuota":172800,"timeoutMs":20000,"label":"secure backup"}]}'
 TELEGRAM_AUTH_WEBHOOK_URL = "https://admission-gk.admissionhub.workers.dev/api/auth/v1/telegram/webhook"
 TELEGRAM_AUTH_DAILY_QUOTA = "172800"
 
