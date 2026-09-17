@@ -14,7 +14,7 @@ const PAGES_GUARD = read('.github/workflows/cf-pages.yml');
 const RELEASE_WORKFLOW = read('.github/workflows/telegram-auth-canary-activate.yml');
 const UI_VERSION = '20260916-account-entry-v6';
 
-const SHELL_VERSION = 'v277-fcm-enable-fix-20260917';
+const SHELL_VERSION = 'v278-toast-visible-20260917';
 
 const between = (source, start, end) => {
   const from = source.indexOf(start);
