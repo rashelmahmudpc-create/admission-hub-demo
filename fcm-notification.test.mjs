@@ -79,12 +79,20 @@ function makeFakeD1() {
   };
   return {
     _devices: devices, _settings: settings,
-    prepare(sql) { return { bind: (...args) => stmt(sql, args) }; },
+    prepare(sql) {
+      // Real D1PreparedStatement exposes run/first/all directly AND bind().
+      return { ...stmt(sql, []), bind: (...args) => stmt(sql, args) };
+    },
     async batch(statements) {
       const results = [];
       for (const s of statements) {
-        if (typeof s === 'string') { results.push({ success: true }); continue; } // schema DDL is a no-op here
-        results.push(s.run());
+        // Real D1 rejects raw SQL strings here ("Malformed input"), so the fake
+        // must too — otherwise a string-vs-prepared-statement mistake in a
+        // caller passes CI and then fails on every real registration.
+        if (typeof s === 'string') {
+          throw new Error('D1_ERROR: Malformed input: [{}], should be {sql: string, params?: any[]} or an array of these query objects');
+        }
+        results.push(await s.run());
       }
       return results;
     }
