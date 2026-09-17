@@ -308,7 +308,22 @@
     offDone: { bn: 'Push বন্ধ হয়েছে', en: 'Push turned off' },
     needPermission: { bn: 'ব্রাউজারে অনুমতি দিতে হবে', en: 'Browser permission is needed' },
     retry: { bn: 'এবার চলেছে না — আবার চেষ্টা করুন', en: 'Could not enable — please try again' },
-    working: { bn: 'চালু হচ্ছে…', en: 'Turning on…' }
+    working: { bn: 'চালু হচ্ছে…', en: 'Turning on…' },
+    iosInstallBody: { bn: 'iPhone-এ ওয়েব পুশ শুধু Home Screen-এ অ্যাপ যোগ করলেই চলে। করবেন: (১) Safari-র Share (⬆) বাটন → "Add to Home Screen" — (২) Home Screen থেকে অ্যাপটি খুলুন — (৩) আবার এখানে এসে Turn on চাপুন।', en: 'On iPhone, web push works only when the app is on your Home Screen. Do this: (1) Safari Share (⬆) → "Add to Home Screen" — (2) open the app from your Home Screen — (3) come back and tap Turn on.' },
+    iosToast: { bn: 'iPhone: আগে Home Screen-এ যোগ করুন', en: 'iPhone: add to Home Screen first' },
+    notSupported: { bn: 'এই ডিভাইসে push supported নয়', en: 'Push is not supported on this device' },
+    errConfig: { bn: 'সার্ভার সেটিংস আসছে না — ইন্টারনেট চেক করে আবার চেষ্টা করুন', en: 'Server settings not loading — check internet and retry' },
+    errSdk: { bn: 'Push SDK লোড হয়নি — ইন্টারনেট চেক করে আবার চেষ্টা করুন', en: 'Push SDK failed to load — check internet and retry' },
+    errToken: { bn: 'Device token তৈরি হয়নি — Home Screen থেকে খোলা থাকলেও আবার চেষ্টা করুন', en: 'Device token failed — open from Home Screen and retry' },
+    errRegister: { bn: 'সার্ভারে register ব্যর্থ — আবার চেষ্টা করুন', en: 'Server registration failed — try again' },
+    errRate: { bn: 'বেশিবার চেষ্টা হয়েছে — ১ ঘণ্টা পর আবার চেষ্টা করুন', en: 'Too many attempts — please try again in an hour' },
+    errLogin: { bn: 'Login session সমস্যা — আবার login করে চেষ্টা করুন', en: 'Login session issue — log in again, then retry' },
+    lastErrLabel: { bn: 'সর্বশেষ সমস্যা', en: 'Last error' },
+    testPush: { bn: 'টেস্ট push', en: 'Test push' },
+    testSent: { bn: 'টেস্ট push পাঠানো হয়েছে ✓', en: 'Test push sent ✓' },
+    testRate: { bn: 'বেশিবার পাঠানো হয়েছে — ১ ঘণ্টা পর আবার চেষ্টা করুন', en: 'Too many tests — try again in an hour' },
+    testNoDevice: { bn: 'কোনো device নেই — আগে Turn on করুন', en: 'No device registered — turn on push first' },
+    testFailed: { bn: 'টেস্ট পাঠানো যায়নি — আবার চেষ্টা করুন', en: 'Test could not be sent — try again' }
   };
   const sheetT = key => {
     let lang = 'bn';
@@ -316,6 +331,12 @@
     const entry = SHEET_I18N[key];
     return (entry && entry[lang]) || (entry && entry.bn) || key;
   };
+  /* Apple's rule (2026): the Push API exists ONLY in a Home-Screen-installed
+   * web app on iOS — never in a Safari tab. So 'unsupported' on iOS means
+   * "not installed yet", which is fixable — guide the user instead of
+   * showing "blocked in settings" (owner confusion 2026-09-17). */
+  const isIOS = () => { try { return /iPhone|iPad|iPod/i.test(navigator.userAgent || ''); } catch (_) { return false; } };
+  const isStandalone = () => { try { return navigator.standalone === true || matchMedia('(display-mode: standalone)').matches; } catch (_) { return false; } };
   const fcmSheetRow = (s) => {
     const pad = 'padding:14px 0;border-bottom:1px solid var(--line);';
     if (!s.fcmConfigured) {
@@ -326,14 +347,33 @@
       return `<div style="${pad}"><div style="font-size:14px;font-weight:700">${sheetT('pushTitle')}</div>
         <div style="font-size:12.5px;margin-top:6px;color:var(--red);line-height:1.5">${sheetT('blocked')}</div></div>`;
     }
-    if (s.registered) {
-      return `<div style="${pad}display:flex;align-items:center;justify-content:space-between;gap:10px">
-        <div><div style="font-size:14px;font-weight:700">${sheetT('pushTitle')}</div>
-        <div style="font-size:12.5px;margin-top:4px;color:var(--green);font-weight:600">✓ ${sheetT('on')}</div></div>
-        <button class="btn ghost sm" style="flex:0 0 auto" data-sheet-fcm-btn onclick="NotificationHub.fcmSheetToggle()">${sheetT('disable')}</button></div>`;
+    if (s.permission === 'unsupported') {
+      // iOS Safari tab (not installed): explain the Home Screen requirement.
+      if (isIOS()) {
+        return `<div style="${pad}"><div style="font-size:14px;font-weight:700">${sheetT('pushTitle')}</div>
+          <div style="font-size:12.5px;margin-top:6px;line-height:1.6">${sheetT('iosInstallBody')}</div>
+          <button class="btn sm" style="margin-top:12px" data-sheet-fcm-btn onclick="NotificationHub.fcmSheetToggle()">${sheetT('enable')}</button></div>`;
+      }
+      return `<div style="${pad}"><div style="font-size:14px;font-weight:700">${sheetT('pushTitle')}</div>
+        <div style="font-size:12.5px;margin-top:6px;opacity:.7;line-height:1.5">${sheetT('notSupported')}</div></div>`;
     }
+    if (s.registered) {
+      return `<div style="${pad}display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+        <div><div style="font-size:14px;font-weight:700">${sheetT('pushTitle')}</div>
+        <div style="font-size:12.5px;margin-top:4px;color:var(--green);font-weight:600">✓ ${sheetT('on')}${s.devices ? ` · ${s.devices} device` : ''}</div></div>
+        <div style="display:flex;gap:8px;flex:0 0 auto">
+          <button class="btn ghost sm" onclick="NotificationHub.sendSelfTest()">${sheetT('testPush')}</button>
+          <button class="btn ghost sm" style="flex:0 0 auto" data-sheet-fcm-btn onclick="NotificationHub.fcmSheetToggle()">${sheetT('disable')}</button></div></div>`;
+    }
+    const last = (() => {
+      try {
+        const e = window.AhFcm && window.AhFcm.lastErr ? window.AhFcm.lastErr() : null;
+        return e && e.code ? `${sheetT('lastErrLabel')}: ${e.code}` : '';
+      } catch (_) { return ''; }
+    })();
     return `<div style="${pad}"><div style="font-size:14px;font-weight:700">${sheetT('pushTitle')}</div>
       <div style="font-size:13px;margin-top:6px;line-height:1.55">${sheetT('pushBody')}</div>
+      ${last ? `<div style="font-size:11.5px;margin-top:6px;color:var(--red);font-family:ui-monospace,monospace">${last}</div>` : ''}
       <button class="btn sm" style="margin-top:12px" data-sheet-fcm-btn onclick="NotificationHub.fcmSheetToggle()">${sheetT('enable')}</button></div>`;
   };
   const openSheet = async () => {
@@ -365,7 +405,7 @@
    * before any status/config fetch. AhFcm.enable() was fixed the same way. */
   const doPushToggle = async (rerender) => {
     try {
-      if (typeof Notification === 'undefined') { toastShort(sheetT('blocked')); return; }
+      if (typeof Notification === 'undefined') { toastShort(isIOS() ? sheetT('iosToast') : sheetT('blocked')); return; }
       if (Notification.permission === 'default') {
         const ask = await Notification.requestPermission();
         if (ask !== 'granted') {
@@ -385,7 +425,13 @@
         const r = await window.AhFcm.enable();
         if (r === 'granted') toastShort(sheetT('onDone'));
         else if (r === 'denied' || r === 'unsupported') toastShort(sheetT('needPermission'));
-        else toastShort(sheetT('retry'));
+        else if (r === 'config-failed') toastShort(sheetT('errConfig'));
+        else if (r === 'sdk-failed') toastShort(sheetT('errSdk'));
+        else if (r === 'token-failed') toastShort(sheetT('errToken'));
+        else if (r === 'register-429') toastShort(sheetT('errRate') + ' (register-429)');
+        else if (r === 'register-401') toastShort(sheetT('errLogin') + ' (register-401)');
+        else if (String(r).startsWith('register-')) toastShort(sheetT('errRegister') + ' (' + r + ')');
+        else toastShort(sheetT('retry') + ' (' + r + ')');
       }
     } catch (_) { toastShort(sheetT('retry')); }
     if (rerender) rerender();
@@ -403,6 +449,18 @@
       document.querySelectorAll('[data-sheet-fcm-btn]').forEach(b => { b.disabled = true; b.textContent = busy; });
     } catch (_) {}
     await doPushToggle(openSheet);
+  };
+  /* Self-service test push — no admin token, only the user's own devices
+   * (server-side, rate-limited 3/hour). */
+  const sendSelfTest = async () => {
+    try {
+      if (!window.AhFcm || !window.AhFcm.selfTest) { toastShort(sheetT('testFailed')); return; }
+      const out = await window.AhFcm.selfTest();
+      if (out.ok && out.data && out.data.total > 0) toastShort(`${sheetT('testSent')} (${out.data.sent}/${out.data.total})`);
+      else if (out.status === 429) toastShort(sheetT('testRate'));
+      else if (out.status === 404) toastShort(sheetT('testNoDevice'));
+      else toastShort(sheetT('testFailed'));
+    } catch (_) { toastShort(sheetT('testFailed')); }
   };
   /* Inbox push banner toggle — same gesture-safe core, re-renders the inbox. */
   const inboxPushToggle = async () => {
@@ -494,7 +552,7 @@
   if (typeof document !== 'undefined') boot();
 
   window.NotificationHub = {
-    dashboardHtml, hydrateDashboard, mountDashboardCard, openCenter, openSettings, openSheet, fcmSheetToggle, toggleMasterSheet, markAllRead, markOneRead, bellTap, inboxPushToggle, maybeResubscribe,
+    dashboardHtml, hydrateDashboard, mountDashboardCard, openCenter, openSettings, openSheet, fcmSheetToggle, toggleMasterSheet, markAllRead, markOneRead, bellTap, inboxPushToggle, sendSelfTest, maybeResubscribe,
     promptEnable, dismissPrompt, enablePush, disablePush, testNow,
     toggleMaster, toggleCat, setQuiet, setCap, saveEndpoint,
     evaluate, syncState,

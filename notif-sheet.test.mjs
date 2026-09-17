@@ -47,6 +47,7 @@ test('sheet options are minimal (categories/quiet-hours/cap not in the sheet)', 
 /* ── Round 2 (owner directive 2026-09-17): full-screen inbox + one-time prompt + iOS fix ── */
 
 const INBOX = readFileSync('notification-inbox.js', 'utf8');
+const WORKER_SRC = readFileSync('fcm-notification.mjs', 'utf8');
 const PROFILE = readFileSync('profile-ui.js', 'utf8');
 const INDEX = readFileSync('index.html', 'utf8');
 const SW = readFileSync('sw.js', 'utf8');
@@ -79,11 +80,11 @@ test('inbox: full-screen page, All/Unread tabs, back to dashboard, dual language
 
 test('router: #notifications route + script tag + SW pin', () => {
   assert.match(INDEX, /p==='notifications' && window\.renderNotificationsInbox/);
-  assert.match(INDEX, /notification-inbox\.js\?v=notif-inbox-v1/);
-  assert.match(INDEX, /notification-hub\.js\?v=notify-v113/);
-  assert.match(INDEX, /notification-fcm\.js\?v=fcm-p1-v2/);
+  assert.match(INDEX, /notification-inbox\.js\?v=notif-inbox-v3/);
+  assert.match(INDEX, /notification-hub\.js\?v=notify-v117/);
+  assert.match(INDEX, /notification-fcm\.js\?v=fcm-p1-v5/);
   assert.match(INDEX, /profile-ui\.js\?v=profile-v15-nonotif/);
-  assert.match(SW, /notification-inbox\.js\?v=notif-inbox-v1/);
+  assert.match(SW, /notification-inbox\.js\?v=notif-inbox-v3/);
   assert.match(SW, /dashboard-v2\.js\?v=dash2f15-inbox/);
 });
 
@@ -103,4 +104,51 @@ test('iOS fix: permission ask runs before any network await (hub + fcm)', () => 
 test('profile: Notifications row removed from Preferences (owner: সরিয়ে নাও)', () => {
   assert.ok(!PROFILE.includes("row('🔔', 'Notifications'"), 'no Notifications row in profile');
   assert.ok(!PROFILE.includes('pref-notifications') || !/row\('🔔'/.test(PROFILE), 'no row with pref-notifications role');
+});
+
+test('enable() failures are specific, not a vague "try again" (2026-09-17)', () => {
+  assert.match(FCM, /setErr\('config-failed'\); return 'config-failed'/);
+  assert.match(FCM, /setErr\('sdk-failed'\); return 'sdk-failed'/);
+  assert.match(FCM, /setErr\('token-failed'\); return 'token-failed'/);
+  assert.match(FCM, /setErr\('register-' \+ out\.status\)/);
+  assert.match(FCM, /_state: stateGet, _config: getConfig, lastErr/, 'lastErr exported for UI');
+  assert.match(HUB, /r === 'config-failed'\) toastShort\(sheetT\('errConfig'\)\)/);
+  assert.match(HUB, /r === 'sdk-failed'\) toastShort\(sheetT\('errSdk'\)\)/);
+  assert.match(HUB, /String\(r\)\.startsWith\('register-'\)/);
+  assert.ok(HUB.includes("bn: 'সর্বশেষ সমস্যা'") && HUB.includes("en: 'Last error'"), 'sheet shows last error code');
+});
+
+test('self-service test push: no admin token, user-facing button (owner: ঝামেলা না)', () => {
+  assert.match(FCM, /const selfTest = async/, 'AhFcm.selfTest client');
+  assert.match(FCM, /_state: stateGet, _config: getConfig, lastErr, selfTest/);
+  assert.match(HUB, /const sendSelfTest = async/);
+  assert.match(HUB, /NotificationHub\.sendSelfTest\(\)/, 'sheet test button');
+  assert.match(INBOX, /__nifTest\(\)/, 'inbox test button');
+  assert.match(INBOX, /nif-statusbar/, 'registered status bar in inbox');
+  assert.ok(HUB.includes("bn: 'টেস্ট push পাঠানো হয়েছে ✓'") && HUB.includes("en: 'Test push sent ✓'"), 'result toast dual language');
+  assert.match(WORKER_SRC, /'\/api\/notifications\/self-test'/, 'worker endpoint');
+  assert.match(WORKER_SRC, /FCM_WELCOME_PUSH !== 'off'/, 'welcome push on registration');
+});
+
+test('Firebase SDK self-hosted (Cloudflare stack) with gstatic fallback', () => {
+  assert.match(FCM, /const SDK_LOCAL = '.\/sdk'/);
+  assert.match(FCM, /try \{ return await tryLoadSdk\(SDK_LOCAL\); \}/);
+  assert.match(FCM, /catch \(_\) \{ return await tryLoadSdk\(SDK_BASE\); \}/);
+  assert.ok(HUB.includes("bn: 'বেশিবার চেষ্টা হয়েছে — ১ ঘণ্টা পর আবার চেষ্টা করুন'"), '429 toast bn');
+  assert.ok(HUB.includes("bn: 'Login session সমস্যা — আবার login করে চেষ্টা করুন'"), '401 toast bn');
+  assert.match(HUB, /r === 'register-429'\) toastShort\(sheetT\('errRate'\)/);
+  assert.match(HUB, /r === 'register-401'\) toastShort\(sheetT\('errLogin'\)/);
+});
+
+test('iOS Home-Screen guidance (Apple: Push API only in installed PWA)', () => {
+  assert.match(HUB, /const isIOS = \(\) =>/, 'hub detects iOS');
+  assert.match(HUB, /iosInstallBody/, 'sheet has the Home-Screen instructions');
+  assert.ok(HUB.includes("bn: 'iPhone-এ ওয়েব পুশ শুধু Home Screen-এ"), 'bn instruction');
+  assert.ok(HUB.includes("en: 'On iPhone, web push works only when the app is on your Home Screen."), 'en instruction');
+  assert.match(HUB, /toastShort\(isIOS\(\) \? sheetT\('iosToast'\) : sheetT\('blocked'\)\)/, 'unsupported-on-iOS → helpful toast, not "blocked"');
+  assert.match(HUB, /s\.permission === 'unsupported'/, 'sheet row handles the unsupported state');
+  assert.match(INBOX, /isIOSDevice\(\)/, 'inbox detects iOS');
+  assert.match(INBOX, /nif-pushbar-ios/, 'inbox shows the iOS install banner');
+  assert.ok(INBOX.includes("en: '📱 On iPhone, push needs the app on your Home Screen:"), 'inbox banner en');
+  assert.ok(INBOX.includes("bn: '📱 iPhone-এ push পেতে:"), 'inbox banner bn');
 });

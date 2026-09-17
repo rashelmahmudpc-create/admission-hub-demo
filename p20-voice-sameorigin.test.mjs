@@ -24,7 +24,8 @@ t('৪. voice-worker-allowlist-এ pages.dev (CORS-ফাঁক-বন্ধ)', 
 t('৫. Pages proxy preserves method, headers and request body', WK.includes('new Headers(request.headers)') && WK.includes('method: request.method') && WK.includes('init.body = request.body'));
 
 /* ── ২. ভার্সন-অখণ্ডতা v204 ── */
-t('৬. el-voice-v106 stays deferred outside the lean current app shell', H.includes('vocabulary-elevenlabs.js?v=el-voice-v106') && !SW.includes("'./vocabulary-elevenlabs.js?v=el-voice-v106'") && SW.includes("const BUILD_ID = 'v274-ai-in-dashboard-20260916'") && H.includes('sw.js?v=v274-ai-in-dashboard-20260916') && H.includes("const expectedSwVersion = 'v274-ai-in-dashboard-20260916'") && H.includes("const cur = 'admission-hub-shell-v274-ai-in-dashboard-20260916'"));
+
+t('৬. el-voice-v106 stays deferred outside the lean current app shell', H.includes('vocabulary-elevenlabs.js?v=el-voice-v106') && !SW.includes("'./vocabulary-elevenlabs.js?v=el-voice-v106'") && SW.includes("const BUILD_ID = 'v275-nav4-fcm-sw-20260917'") && H.includes('sw.js?v=v275-nav4-fcm-sw-20260917') && H.includes("const expectedSwVersion = 'v275-nav4-fcm-sw-20260917'") && H.includes("const cur = 'admission-hub-shell-v275-nav4-fcm-sw-20260917'"));
 
 /* ── ৩. রানটাইম: এক-ক্লিক → generate+সেভ → ২য়-ক্লিক-নেট-নয় → অফলাইনে-বাজে ── */
 t('৭. রানটাইম: ১ম-ক্লিক generate+ক্যাশ ("generated") → ২য়-ক্লিক ক্যাশ থেকে ("cache", নেট-০) → অফলাইনেও বাজে', (async () => {

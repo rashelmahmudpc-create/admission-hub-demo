@@ -423,7 +423,22 @@ export async function handleFcmNotificationRequest(request, env) {
     const deviceInfo = String(body.deviceInfo || '').slice(0, 120);
     const now = Date.now();
     await store.upsertDevice({ userId, token, platform, browser, deviceInfo, now });
-    return jsonResponse(request, { ok: true, registered: true, devices: (await store.activeDevices(userId)).length }, 201);
+    /* Welcome push: the user just turned push ON — immediately send a test
+     * so the user SEES the whole chain work with zero extra steps (owner:
+     * "টোকেনের ঝামেলা চাই না"). Best effort — a push hiccup must never
+     * fail the registration itself. */
+    let welcome = false;
+    try {
+      if (fcmConfigured(env) && env.FCM_WELCOME_PUSH !== 'off') {
+        welcome = Boolean((await fcmSendToDevice(env, {
+          token,
+          title: '✅ Push চালু হয়েছে',
+          body: 'এটি Admission Hub-এর test push — সিস্টেম চলছে ✅ (test message)',
+          data: { link: 'notifications', src: 'fcm-welcome' }
+        })).ok);
+      }
+    } catch (_) { welcome = false; }
+    return jsonResponse(request, { ok: true, registered: true, welcome, devices: (await store.activeDevices(userId)).length }, 201);
   }
 
   if (path === '/api/notifications/unregister-token' && request.method === 'POST') {
@@ -490,6 +505,33 @@ export async function handleFcmNotificationRequest(request, env) {
     const results = [];
     for (const device of targets) {
       const outcome = await fcmSendToDevice(env, { token: device.token, title, body: text, data: { link, src: 'fcm-test' } });
+      if (!outcome.ok && (outcome.reason === 'unregistered' || outcome.reason === 'invalid')) {
+        await store.markInactive([device.id], Date.now());
+      }
+      results.push({ id: device.id, ok: outcome.ok, reason: outcome.reason || 'ok' });
+    }
+    return jsonResponse(request, { ok: results.every(r => r.ok), sent: results.filter(r => r.ok).length, total: results.length, results });
+  }
+
+  /* Self-service test push: an authenticated user sends a test notification
+   * to their OWN registered devices — no admin token needed (owner directive
+   * 2026-09-17: "টোকেনের ঝামেলা না"). Strictly rate-limited (3/hour). */
+  if (path === '/api/notifications/self-test' && request.method === 'POST') {
+    if (!fcmConfigured(env)) return jsonResponse(request, { error: 'fcm-not-configured' }, 503);
+    if (!store.available()) return jsonResponse(request, { error: 'storage-unavailable' }, 503);
+    if (!(await kvRateAllow(env, `selftest:${userId}`, 3, 3600))) {
+      return jsonResponse(request, { error: 'rate-limited' }, 429);
+    }
+    const targets = (await store.activeTokens(userId)).slice(0, 8);
+    if (!targets.length) return jsonResponse(request, { error: 'no-devices' }, 404);
+    const results = [];
+    for (const device of targets) {
+      const outcome = await fcmSendToDevice(env, {
+        token: device.token,
+        title: '📡 Test notification',
+        body: 'এটি Admission Hub-এর test push — সিস্টেম ঠিকঠাক চলছে ✅',
+        data: { link: 'notifications', src: 'fcm-self-test' }
+      });
       if (!outcome.ok && (outcome.reason === 'unregistered' || outcome.reason === 'invalid')) {
         await store.markInactive([device.id], Date.now());
       }

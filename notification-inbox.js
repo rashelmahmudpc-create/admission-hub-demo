@@ -18,6 +18,9 @@
     emptyUnread: { bn: 'সব পড়া হয়েছে', en: 'You are all caught up' },
     emptyUnreadSub: { bn: 'নতুন কিছু এলে এখানে দেখাবে', en: 'New notifications will appear here' },
     pushOff: { bn: 'Push নোটিফিকেশন বন্ধ আছে', en: 'Push notifications are off' },
+    pushOn: { bn: '✓ Push চালু আছে', en: '✓ Push is on' },
+    test: { bn: 'টেস্ট', en: 'Test' },
+    iosInstall: { bn: '📱 iPhone-এ push পেতে: Safari-র Share (⬆) → "Add to Home Screen" করুন, তারপর Home Screen থেকে অ্যাপটি খুলুন', en: '📱 On iPhone, push needs the app on your Home Screen: Safari Share (⬆) → "Add to Home Screen", then open it from there' },
     pushOnCta: { bn: 'চালু করুন', en: 'Turn on' },
     pushOn: { bn: 'চালু হচ্ছে…', en: 'Turning on…' },
     pushOffCta: { bn: 'বন্ধ করুন', en: 'Turn off' },
@@ -32,6 +35,7 @@
 
   const lang = () => { try { return window.AhI18n ? window.AhI18n.get() : 'bn'; } catch (_) { return 'bn'; } };
   const t = (key) => { const e = I18N[key]; return (e && e[lang()]) || (e && e.bn) || key; };
+  const isIOSDevice = () => { try { return /iPhone|iPad|iPod/i.test(navigator.userAgent || ''); } catch (_) { return false; } };
 
   const CAT_ICON = {
     study: '📚', streak: '🔥', revision: '🔁', mistake: '🧠',
@@ -97,6 +101,11 @@
   .nif-markall:active{opacity:.6;}
   .nif-pushbar{display:flex;align-items:center;justify-content:space-between;gap:10px;background:#fff8e6;border:1px solid #f2e2b3;border-radius:14px;padding:12px 14px;margin:4px 0 12px;font-size:13px;font-weight:600;color:#7a5b12;}
   .nif-pushbar button{border:none;background:var(--emerald,#0f6b4f);color:#fff;font-weight:700;font-size:12.5px;border-radius:10px;padding:8px 14px;cursor:pointer;flex:0 0 auto;}
+  .nif-statusbar{display:flex;align-items:center;justify-content:space-between;gap:10px;background:#e8f3ec;border:1px solid #cfe4da;border-radius:14px;padding:11px 14px;margin:4px 0 12px;font-size:13px;font-weight:700;color:#0f6b4f;}
+  .nif-statusbar button{border:none;background:transparent;border:1.5px solid var(--emerald,#0f6b4f);color:var(--emerald,#0f6b4f);font-weight:700;font-size:12px;border-radius:10px;padding:6px 12px;cursor:pointer;flex:0 0 auto;}
+  .nif-statusbar button:active{opacity:.6;}
+  .nif-pushbar-ios{align-items:center;background:#eef5f1;border-color:#cfe4da;color:#0c3b2a;}
+  .nif-pushbar-ios span{line-height:1.55;}
   .nif-pushbar button:disabled{opacity:.6;}
   .nif-tabs{display:flex;gap:6px;background:#e9eeec;border-radius:14px;padding:4px;margin-bottom:14px;}
   .nif-tab{flex:1;border:none;background:none;border-radius:11px;padding:9px 10px;font-size:13.5px;font-weight:700;color:#5c6b64;cursor:pointer;transition:background .18s ease,color .18s ease;}
@@ -131,9 +140,21 @@
     try {
       const s = window.AhFcm ? await window.AhFcm.status() : null;
       registered = Boolean(s && s.registered);
-      if (s && s.fcmConfigured && !registered && s.permission !== 'denied') {
-        pushBar = `<div class="nif-pushbar fade-in"><span>${esc(t('pushOff'))}</span>
-          <button id="nifPushBtn" onclick="window.__nifPushToggle()">${esc(t('pushOnCta'))}</button></div>`;
+      if (registered) {
+        pushBar = `<div class="nif-statusbar fade-in"><span>${esc(t('pushOn'))}${s.devices ? ` · ${s.devices} device` : ''}</span>
+          <button id="nifTestBtn" onclick="window.__nifTest()">${esc(t('test'))}</button></div>`;
+      } else if (s && s.fcmConfigured) {
+        if (s.permission === 'unsupported') {
+          /* Apple: Push API exists only in a Home-Screen-installed web app
+           * on iOS — a Safari tab can never get push. Guide, don't mislead. */
+          if (isIOSDevice()) {
+            pushBar = `<div class="nif-pushbar nif-pushbar-ios fade-in"><span>${esc(t('iosInstall'))}</span>
+              <button id="nifPushBtn" onclick="window.__nifPushToggle()">${esc(t('pushOnCta'))}</button></div>`;
+          }
+        } else if (s.permission !== 'denied') {
+          pushBar = `<div class="nif-pushbar fade-in"><span>${esc(t('pushOff'))}</span>
+            <button id="nifPushBtn" onclick="window.__nifPushToggle()">${esc(t('pushOnCta'))}</button></div>`;
+        }
       }
     } catch (_) {}
 
@@ -178,6 +199,14 @@
       try { const hub = window.NotificationHub; if (hub && typeof hub.markAllRead === 'function') await hub.markAllRead(); } catch (_) {}
       reRender();
     })();
+  };
+  window.__nifTest = () => {
+    try {
+      const btn = document.getElementById('nifTestBtn');
+      if (btn) { btn.disabled = true; }
+      const hub = window.NotificationHub;
+      if (hub && typeof hub.sendSelfTest === 'function') hub.sendSelfTest();
+    } catch (_) {}
   };
   window.__nifPushToggle = () => {
     const btn = document.getElementById('nifPushBtn');

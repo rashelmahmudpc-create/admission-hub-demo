@@ -143,6 +143,7 @@ async function makeFcmEnv(overrides = {}) {
     FIREBASE_MESSAGING_SENDER_ID: '1234567890',
     FIREBASE_APP_ID: '1:1234567890:web:abc123',
     FIREBASE_VAPID_KEY: 'BJtpTestVapidKey',
+    FCM_WELCOME_PUSH: 'off', /* base env: skip the automatic welcome push (external FCM call) */
     ...overrides
   };
 }
@@ -323,6 +324,60 @@ test('FCM NOT_FOUND deactivates the dead token', async () => {
     assert.equal(out.data.results[0].reason, 'unregistered');
     const devices = await call(cookieRequest('/api/notifications/devices'), env);
     assert.equal(devices.data.devices.length, 0, 'dead token removed from the active list');
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test('register-token auto-sends a welcome push so the user sees it work (no effort)', async () => {
+  const env = await makeFcmEnv({ FCM_WELCOME_PUSH: 'on' });
+  const realFetch = globalThis.fetch;
+  let fcmCalls = 0;
+  let welcomeTitle = '';
+  globalThis.fetch = async (input, init) => {
+    const url = String(input);
+    if (url.includes('oauth2.googleapis.com')) return Response.json({ access_token: 'fake-oauth-token', expires_in: 3600 });
+    if (url.includes('fcm.googleapis.com')) {
+      fcmCalls++;
+      welcomeTitle = JSON.parse(String(init && init.body)).message.notification.title;
+      return Response.json({ name: 'projects/test-project/messages/welcome-1' }, { status: 200 });
+    }
+    return realFetch(input, init);
+  };
+  try {
+    const out = await call(cookieRequest('/api/notifications/register-token', { method: 'POST', body: { token: `wel-${'w'.repeat(120)}` } }), env);
+    assert.equal(out.response.status, 201);
+    assert.equal(out.data.welcome, true, 'register response reports the welcome push');
+    assert.equal(fcmCalls, 1, 'exactly one FCM send on registration');
+    assert.match(welcomeTitle, /Push/);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test('self-test: users push a test to their OWN devices, no admin token, rate-limited', async () => {
+  const env = await makeFcmEnv();
+  const token = `st-${'t'.repeat(120)}`;
+  await call(cookieRequest('/api/notifications/register-token', { method: 'POST', body: { token } }), env);
+  const realFetch = globalThis.fetch;
+  let fcmCalls = 0;
+  globalThis.fetch = async (input, init) => {
+    const url = String(input);
+    if (url.includes('oauth2.googleapis.com')) return Response.json({ access_token: 'fake-oauth-token', expires_in: 3600 });
+    if (url.includes('fcm.googleapis.com')) { fcmCalls++; return Response.json({ name: 'projects/test-project/messages/self-1' }, { status: 200 }); }
+    return realFetch(input, init);
+  };
+  try {
+    const ok = await call(cookieRequest('/api/notifications/self-test', { method: 'POST' }), env);
+    assert.equal(ok.response.status, 200);
+    assert.equal(ok.data.ok, true);
+    assert.equal(ok.data.sent, 1);
+    assert.equal(fcmCalls, 1);
+    const anon = await call(cookieRequest('/api/notifications/self-test', { method: 'POST', session: null }), env);
+    assert.equal(anon.response.status, 401, 'no session → 401');
+    await call(cookieRequest('/api/notifications/unregister-token', { method: 'POST', body: { token } }), env);
+    const noDevices = await call(cookieRequest('/api/notifications/self-test', { method: 'POST' }), env);
+    assert.equal(noDevices.response.status, 404, 'no registered device → 404');
   } finally {
     globalThis.fetch = realFetch;
   }

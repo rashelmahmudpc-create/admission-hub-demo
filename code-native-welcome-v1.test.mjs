@@ -13,7 +13,8 @@ const SW = read('sw.js');
 const PAGES_GUARD = read('.github/workflows/cf-pages.yml');
 const RELEASE_WORKFLOW = read('.github/workflows/telegram-auth-canary-activate.yml');
 const UI_VERSION = '20260916-account-entry-v6';
-const SHELL_VERSION = 'v274-ai-in-dashboard-20260916';
+
+const SHELL_VERSION = 'v275-nav4-fcm-sw-20260917';
 
 const between = (source, start, end) => {
   const from = source.indexOf(start);
