@@ -162,6 +162,18 @@ const looksLikeName = value => {
   const v = String(value || '').trim();
   return v.length >= 2 && v.length <= 80 && /^[\p{L}\p{M} .'-]+$/u.test(v);
 };
+// Best-effort greeting personalisation for the backup email: a missing or unusual
+// profile name must never block sending, so failures collapse to an empty string.
+async function verifiedRecipientName(env, context, current) {
+  try {
+    const profile = await callAuthority(env, '/internal/profile/get-v2', {
+      input: { sessionToken: current.sessionToken, email: current.user.email, subject: current.user.subject },
+      context
+    });
+    const name = String(profile?.profile?.fullName || '').trim();
+    return looksLikeName(name) ? name : '';
+  } catch { return ''; }
+}
 async function seedGoogleProfile(env, context, established, googleUser) {
   const sessionToken = String(established?.sessionToken || '');
   const email = String(googleUser?.email || '');
@@ -1455,11 +1467,13 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         const contact = String(body.contact || '').trim();
         if (contact && !/^\+[1-9]\d{7,14}$/.test(contact)) throw new NativeAuthError(AUTH_ERROR_CODES.INVALID_INPUT);
         const current = await firebaseReadySession({ provider, jar, env, context, allowTelegram: telegramVerificationRequested(env, url) });
+        const recipientName = await verifiedRecipientName(env, context, current);
         const result = await callAuthority(env, '/internal/verification/request', {
           input: {
             sessionToken: current.sessionToken,
             email: current.user.email,
             subject: current.user.subject,
+            recipientName,
             purpose: body.purpose === 'sensitive-action' ? 'sensitive-action' : 'account-backup',
             contact,
             allowTelegramLink: true

@@ -20,6 +20,14 @@ const SEND_LIMITS = Object.freeze([
 ]);
 
 const validText = (value, min, max) => typeof value === 'string' && value.length >= min && value.length <= max && !/[\r\n\u0000]/.test(value);
+
+// Greeting personalisation only: it never feeds a lock, ref, or rate key, so it is
+// capped and stripped of control characters rather than validated as an identity.
+const cleanRecipientName = value => String(value ?? '')
+  .replace(/[\u0000-\u001f\u007f]/g, ' ')
+  .replace(/\s+/g, ' ')
+  .trim()
+  .slice(0, 60);
 const reason = value => String(value || 'UNKNOWN').toUpperCase().replace(/[^A-Z0-9_-]/g, '_').slice(0, 64) || 'UNKNOWN';
 const safeInteraction = value => {
   if (value?.type !== 'telegram-link') return null;
@@ -113,7 +121,7 @@ export class VerificationOrchestrator {
         this.hmac.hex('verification-destination-v1', 'telegram-account-verification')
       ]);
       return Object.freeze({
-        sessionToken: '', subject: '', userId, email: '', purpose,
+        sessionToken: '', subject: '', userId, email: '', purpose, recipientName: '',
         destinations: Object.freeze({ otp: '', whatsapp: '', telegram: 'user-initiated-link' }),
         context, sessionRef, subjectRef, emailRef, ipRef, deviceRef, destinationRef
       });
@@ -131,6 +139,7 @@ export class VerificationOrchestrator {
     const linkedTelegram = /^[A-Za-z0-9_-]{8,128}$/.test(String(linked.telegram || '')) ? String(linked.telegram) : '';
     const telegram = linkedTelegram || (input?.allowTelegramLink === true ? 'user-initiated-link' : '');
     const destinations = Object.freeze({ otp: email, whatsapp, telegram });
+    const recipientName = cleanRecipientName(input?.recipientName);
     const [sessionRef, subjectRef, emailRef, ipRef, deviceRef, destinationRef] = await Promise.all([
       this.hmac.hex('session-ref-v1', sessionToken),
       this.hmac.hex('firebase-subject-v1', subject),
@@ -139,7 +148,7 @@ export class VerificationOrchestrator {
       this.hmac.hex('device-ref-v1', context.deviceId),
       this.hmac.hex('verification-destination-v1', `${email}|${whatsapp}|${telegram}`)
     ]);
-    return Object.freeze({ sessionToken, subject, userId, email, purpose, destinations, context, sessionRef, subjectRef, emailRef, ipRef, deviceRef, destinationRef });
+    return Object.freeze({ sessionToken, subject, userId, email, purpose, recipientName, destinations, context, sessionRef, subjectRef, emailRef, ipRef, deviceRef, destinationRef });
   }
 
   #limits(identity) {
@@ -269,6 +278,7 @@ export class VerificationOrchestrator {
             destination: destinations[entry.channel],
             code,
             linkToken,
+            recipientName: identity.recipientName,
             expiresAt: now + (policy.codeTtlSeconds * 1000),
             signalContext: { origin: identity.context.origin }
           }), entry.timeoutMs);

@@ -10,6 +10,8 @@ import {
   TelegramLinkVerificationProvider
 } from './auth-native/verification/providers.mjs';
 import { VERIFICATION_FAILURE_CLASS } from './auth-native/verification/provider-contract.mjs';
+import { __verificationProvidersTest } from './auth-native/verification/providers.mjs';
+const { otpEmailBody } = __verificationProvidersTest;
 
 const json = (body, status = 200) => Response.json(body, { status });
 const KEY = `provider-key-${'k'.repeat(32)}`;
@@ -257,8 +259,40 @@ test('Brevo OTP provider sends through the Brevo API and derives quota from acco
   assert.deepEqual(body.to, [{ email: 'user@example.com' }]);
   assert.match(body.textContent, /123456/);
   assert.match(body.htmlContent, /123456/);
-  assert.match(body.subject, /verification code/i);
+  assert.match(body.subject, /যাচাইকরণ কোড/);
+  assert.match(body.htmlContent, /email-logo\.png/);
   assert.equal(calls.every(call => call.init.redirect === 'manual'), true);
+});
+
+test('Backup OTP email carries the branded layout, a prominent code, and dark-mode styles', () => {
+  const { text, html } = otpEmailBody('123456', 10, 'মাহমুদ রাসেল');
+
+  assert.equal(html.includes('<script'), false);
+  assert.match(html, /color-scheme" content="light dark"/);
+  assert.match(html, /prefers-color-scheme: dark/);
+  assert.match(html, /email-logo\.png/);
+  assert.match(html, /Admission Hub/);
+  assert.match(html, /আপনার প্রস্তুতি, আরও গুছিয়ে।/);
+  assert.match(html, /ইমেইল যাচাইকরণ/);
+  assert.match(html, /প্রিয় মাহমুদ রাসেল,/);
+  assert.match(html, /10 মিনিট/);
+  assert.match(html, /নিরাপত্তা নির্দেশনা/);
+  assert.match(html, /উপেক্ষা করতে পারেন/);
+  assert.match(html, /Admission Hub Team/);
+  assert.match(html, /&copy; Admission Hub/);
+  assert.match(text, /মাহমুদ রাসেল/);
+  assert.match(text, /123456/);
+});
+
+test('Backup OTP email escapes a hostile recipient name and falls back when absent', () => {
+  const hostile = otpEmailBody('123456', 10, '<img src=x onerror=alert(1)>');
+  assert.equal(hostile.html.includes('<img src=x'), false);
+  assert.match(hostile.html, /&lt;img src=x/);
+  assert.match(hostile.text, /প্রিয় <img src=x onerror=alert\(1\)>,/);
+
+  const anonymous = otpEmailBody('123456', 10, '');
+  assert.match(anonymous.html, /প্রিয় ব্যবহারকারী,/);
+  assert.equal(anonymous.html.includes('প্রিয় ,'), false);
 });
 
 test('Brevo OTP provider fails closed when unconfigured and refuses a non-email destination', async () => {
