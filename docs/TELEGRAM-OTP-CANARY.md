@@ -43,7 +43,7 @@ The Telegram webhook itself is server-to-server:
 - Accepts only a private chat where `message.from.id === message.chat.id`.
 - Accepts only a valid `/start <one-time-token>` update from a non-bot Telegram user.
 
-Ordinary `/config`, signup, and unverified login now expose the dedicated Telegram verification choice. Public Google and Email/Password remain available. Generic backup and Passkey stay unpublished.
+Ordinary `/config`, signup, and unverified login expose the dedicated Email-or-Telegram selector, and the generic backup flow is published. Public Google, Passkey, and Email/Password remain available.
 
 ## OTP and abuse policy
 
@@ -102,8 +102,8 @@ Protected deployment is performed only by `.github/workflows/telegram-auth-canar
 4. validates bot identity and binds the secret webhook using a transient activation secret;
 5. reruns live Firebase Email/Password lifecycle evidence;
 6. deploys the same-origin UI;
-7. proves public selector readiness while keeping generic backup and Passkey isolated;
+7. proves public selector, Passkey, and generic backup readiness;
 8. rechecks the public Google browser origin;
 9. removes the transient activation secret and confirms the activation route is closed.
 
-Final production-ready status still requires the physical phone E2E. Passkey remains hidden and is not Telegram rollout evidence.
+Final production-ready status still requires the physical phone E2E. Passkey is now published and is not Telegram rollout evidence.

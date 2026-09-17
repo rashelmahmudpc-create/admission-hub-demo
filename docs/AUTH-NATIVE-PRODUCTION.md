@@ -1,6 +1,6 @@
 # Firebase-canonical multi-method Auth — production contract
 
-Status: Email/Password and Google are public production methods. The explicit Email-or-Telegram verification selector is publicly deployed at the owner’s request; Telegram START → OTP remains pending the final physical phone E2E before it is called production-ready. After successful verification, supported devices may enroll an optional Passkey or Skip; public Passkey login remains hidden pending its separate physical authentication test.
+Status: Email/Password, Google, and Passkey are public production methods. The explicit Email-or-Telegram verification selector is publicly deployed at the owner’s request, and the generic backup flow is published; Telegram START → OTP remains pending the final physical phone E2E before it is called production-ready. After successful verification, supported devices may enroll an optional Passkey or Skip.
 
 ## Canonical identity and verification
 

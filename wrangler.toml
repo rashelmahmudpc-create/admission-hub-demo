@@ -6,7 +6,7 @@ workers_dev = true
 [vars]
 FIREBASE_CONTINUE_URL = "https://admissionhub.pages.dev/?firebaseVerified=1"
 GOOGLE_AUTH_ACTIVATION = "enabled"
-PASSKEY_AUTH_ACTIVATION = "canary"
+PASSKEY_AUTH_ACTIVATION = "enabled"
 VERIFICATION_AUTH_ACTIVATION = "enabled"
 # Internal admission cap: existing 120 challenges/minute global limiter × 1,440; this is not a Telegram-reported quota.
 VERIFICATION_ORCHESTRATOR_CONFIG = '{"enabled":true,"providers":[{"id":"telegram","enabled":true,"priority":1,"dailyQuota":172800,"timeoutMs":20000,"label":"secure backup"}]}'

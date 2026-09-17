@@ -546,7 +546,7 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         };
         const passkeyAvailable = available && health.schema >= 3 && (passkeyPublished(env) || passkeyCanary);
         const passkeyEnrollmentAvailable = available && health.schema >= 3 && passkeyEndpointReady(env);
-        const publicBackup = telegramCanary ? backup : {
+        const publicBackup = (verificationPublished(env) || telegramCanary) ? backup : {
           available: false,
           availabilityCode: 'LIVE_E2E_PENDING',
           genericFlow: true,

@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       confirmation:
-        description: Type ACTIVATE_FIREBASE_AUTH to deploy Firebase canonical Email/Password + Google; Passkey and backup channels remain gated
+        description: Type ACTIVATE_FIREBASE_AUTH to deploy Firebase canonical Email/Password + Google + Passkey + the generic backup flow
         required: true
         type: string
 
@@ -112,8 +112,8 @@ jobs:
         run: |
           set -eu
           body="$(curl --fail --silent --show-error --connect-timeout 10 --max-time 30 'https://admissionhub.pages.dev/api/auth/v1/config')"
-          node -e "const x=JSON.parse(process.argv[1]); const a=x?.auth; const g=a?.methods?.google; if(a?.version!=='firebase-canonical-auth-v3'||a?.uiContract!=='auth-premium-v6'||a?.onboarding?.version!=='premium-onboarding-v1'||a?.onboarding?.profileVersion!==1||a?.mode!=='firebase-canonical-multi-method'||a?.available!==true||a?.emailVerifiedRequired!==true||a?.methods?.emailPassword?.available!==true||a?.methods?.passwordReset?.available!==true||a?.methods?.profile?.available!==true||g?.available!==true||g?.availabilityCode!=='READY'||typeof g?.clientId!=='string'||!/^[A-Za-z0-9._-]+\\.apps\\.googleusercontent\\.com$/.test(g.clientId)||a?.methods?.passkey?.available!==false||a?.methods?.backup?.available!==false||a?.verificationEmail?.dailyCapacity!==1000||a?.verificationEmail?.statusCheckAvailable!==true||a?.registeredAccountLimit!=='unlimited') process.exit(1)" "$body"
-          echo 'Firebase canonical Email + Password + Google are live; Passkey and backup methods remain unpublished.'
+          node -e "const x=JSON.parse(process.argv[1]); const a=x?.auth; const g=a?.methods?.google; if(a?.version!=='firebase-canonical-auth-v3'||a?.uiContract!=='auth-premium-v6'||a?.onboarding?.version!=='premium-onboarding-v1'||a?.onboarding?.profileVersion!==1||a?.mode!=='firebase-canonical-multi-method'||a?.available!==true||a?.emailVerifiedRequired!==true||a?.methods?.emailPassword?.available!==true||a?.methods?.passwordReset?.available!==true||a?.methods?.profile?.available!==true||g?.available!==true||g?.availabilityCode!=='READY'||typeof g?.clientId!=='string'||!/^[A-Za-z0-9._-]+\\.apps\\.googleusercontent\\.com$/.test(g.clientId)||a?.methods?.passkey?.available!==true||a?.methods?.backup?.available!==true||a?.verificationEmail?.dailyCapacity!==1000||a?.verificationEmail?.statusCheckAvailable!==true||a?.registeredAccountLimit!=='unlimited') process.exit(1)" "$body"
+          echo 'Firebase canonical Email + Password + Google + Passkey are live; generic backup remains unpublished.'
 
       - name: Verify Google browser origin without account access
         run: node auth-native/operations/verify-google-browser-origin.mjs
