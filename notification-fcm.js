@@ -19,6 +19,7 @@
 
   let sdkPromise = null;
   let configCache = null;
+  let onMessageAttached = false;
 
   const stateGet = () => {
     try { return JSON.parse(localStorage.getItem(LS_STATE) || '{}') || {}; } catch (_) { return {}; }
@@ -132,7 +133,25 @@
     const fb = await loadSdk();
     if (!fb || typeof fb.initializeApp !== 'function') throw new Error('sdk-missing');
     const app = (fb.apps && fb.apps.length) ? fb.apps[0] : fb.initializeApp(cfg);
-    return fb.messaging(app);
+    const messaging = fb.messaging(app);
+    /* A foreground message is delivered to the page only through this callback.
+     * Without it the SDK has nowhere to hand the payload and the toast never
+     * appears, even though the push arrived. Attach once — enable/disable/
+     * refresh all call this. */
+    if (!onMessageAttached) {
+      onMessageAttached = true;
+      try {
+        messaging.onMessage((payload) => {
+          const n = (payload && payload.notification) || {};
+          const d = (payload && payload.data) || {};
+          const title = n.title || 'Admission Hub';
+          const body = n.body || '';
+          try { window.toast?.(`${title} — ${body}`.slice(0, 240)); } catch (_) {}
+          try { window.AhFcmInbox?.onForeground?.(d); } catch (_) {}
+        });
+      } catch (_) { onMessageAttached = false; }
+    }
+    return messaging;
   };
 
   const permission = () => (typeof Notification !== 'undefined' && Notification.permission) || 'unsupported';

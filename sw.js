@@ -56,7 +56,7 @@ const ASSET_DIGESTS = {
   "./data-protection.js?v=dp-v3-fastboot": "359dc907ade4bcb3a6a722385969ebb6af47f7e436e6cdf2cce0dd6b7343723d",
   "./dashboard-v2.js?v=dash2f15-inbox": "bea4ccad52b85c482d3fef5a7f2b2eec54dcdb125597a22411c4839b81783a49",
   "./ai-agent-chat.js?v=agent-f1-ui-chatv18-fresh": "36a11f8d5dec5a5bf1b8fa86db06b9a34e01ad27c931f37aadbffe6e6f4930e5",
-  "./notification-fcm.js?v=fcm-p1-v7": "230680fede6c305f7fe53449655cd212e2d6c47d3c7ed54d1c57fb889220b828",
+  "./notification-fcm.js?v=fcm-p1-v7": "eaafb0dab2a71c234c75bad7d13f774659856ff80cf4868c50808f3a48efff86",
   "./notification-inbox.js?v=notif-inbox-v3": "1dcfe40d859bda7b781e2c680f8c22e9fb8b64fd488a6c504c8c4cd10ff54756",
   "./icons/icon-192.png": "777ce5566fbeff0f2e384c787c8dde4f47d7c869e455c6e577a503decd4f1683",
   "./icons/icon-512.png": "86459109582f82b1d891a3e5a82723fefd21a3c65e9d0d22ab4dae33bb540520",
