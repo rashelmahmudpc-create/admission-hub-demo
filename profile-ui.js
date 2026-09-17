@@ -1914,6 +1914,16 @@
       try { window.NotificationHub?.openCenter?.(); } catch (_) { toast('Notification center এখনো ready নয়।'); }
       return;
     }
+    else if (role === 'gate-retry') {
+      /* Stuck-session rescue: re-run the auth check + profile fetch. */
+      state.data = null;
+      try { window.renderProfilePage(); } catch (_) {}
+      return;
+    }
+    else if (role === 'gate-login') {
+      try { window.AdmissionAccount?.open?.(); } catch (_) {}
+      return;
+    }
     else if (role === 'brand-account') {
       window.AdmissionAccount?.open();
       return;
@@ -2333,7 +2343,6 @@
         </span>
         <div class="pp-brand-text"><b>Admission Hub</b><small>Your Admission. Our Mission.</small></div>
         <span class="pp-brand-actions">
-          <button class="pp-brand-ic" data-role="brand-bell" type="button" aria-label="Notifications">🔔</button>
           <button class="pp-brand-ic" data-role="brand-account" type="button" aria-label="Account">👤</button>
         </span>
       </div>`;
@@ -2408,6 +2417,25 @@
       // AUTH_LOADING: skeleton only — never a guest fallback, never stale data.
       shell(profileSkeleton(), { topbar: false });
       bindPageEvents($('#app'));
+      /* Round 8 (owner bug 2026-09-17: "প্রোফাইল বাটনে কিল্ক করলে কিছুই
+       * আসছে না"): if the session check never settles the skeleton sat
+       * there forever — looked like "nothing opens". After 8s swap to an
+       * actionable state (retry / sign in) so it can never be a dead end. */
+      window.setTimeout(() => {
+        if (state.view !== 'profile') return;
+        if (authGate() !== 'loading') return;
+        shell(`<div class="pp-wrap">${brandHeader()}
+          <div style="padding:52px 24px;text-align:center">
+            <div style="font-size:38px">🔐</div>
+            <b style="display:block;font-size:15px;margin-top:10px">Login যাচাই শেষ হয়নি</b>
+            <p style="font-size:12.5px;opacity:.7;margin:8px auto 16px;max-width:34ch;line-height:1.6">আবার চেষ্টা করুন, অথবা সরাসরি Login করুন</p>
+            <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+              <button class="btn sm" data-role="gate-retry" type="button">আবার চেষ্টা করুন</button>
+              <button class="btn ghost sm" data-role="gate-login" type="button">Login করুন</button>
+            </div>
+          </div></div>`, { topbar: false });
+        bindPageEvents($('#app'));
+      }, 8000);
       return;
     }
     if (gate === 'guest') {

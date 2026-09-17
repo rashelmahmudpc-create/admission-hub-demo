@@ -1,4 +1,6 @@
-/* v107 — Admission Hub Smart Notification engine (client).
+/* v118 — Admission Hub Smart Notification engine (client).
+   Round 8 (owner directive 2026-09-17): auto engine OFF, premium centered
+   allow dialog (one tap, silent success), bell = inbox-or-allow only.
    Golden rule: "Notification পাঠানোর মতো কারণ না থাকলে পাঠাবে না।"
    সব claim আসল ডেটা থেকে (activityLogs/examResults/mistakes/streak) — fake praise নিষিদ্ধ।
    Delivery: Telegram + iPhone/PWA web-push (নিজের Cloudflare worker); user active থাকলে শুধু in-app toast। */
@@ -9,6 +11,11 @@
   const LS_ENDPOINT = 'ahNotifyUrl';
   const VAPID_PUBLIC = 'BJtpFY7isSDAQy7ck7zNQjNfmhAu4w-bcQ3_eFUTQbITSHBJO5f6n5ayYm_-TE7vNcnZ_1Ib45DVmxQkyLIFDsY';
   const APP_HEADER = 'admission-hub';
+  /* Owner directive 2026-09-17 (round 8): auto-generated notifications are
+   * OFF ("সেকেন্ডের পর সেকেন্ড অটোমেটিক নোটিফিকেশন আসছে — বন্ধ করতে হবে").
+   * The candidate/decision engine below stays in place; real announcements
+   * (Phase 2+ global push) will use the explicit send path instead. */
+  const AUTO_ENGINE_ENABLED = false;
 
   const DEFAULT_PREFS = Object.freeze({
     master: true,
@@ -116,6 +123,7 @@
   // ── Decision engine (spec §30 ধাপ ১–১০) ─────────────────────────────────────
   const evaluate = async (opts = {}) => {
     const result = { sent: null, suppressed: [], reason: '', inApp: false };
+    if (!AUTO_ENGINE_ENABLED) { result.reason = 'engine-off'; return result; }
     try {
       const prefs = await getPrefs();
       if (!prefs.master) { result.reason = 'master-off'; return result; }
@@ -262,13 +270,15 @@
       if (!copy) return;
       const permission = typeof Notification !== 'undefined' ? Notification.permission : 'unsupported';
       if (permission === 'default') {
-        copy.innerHTML = `<b>🔔 Study reminder চালু করবি?</b><br><span style="opacity:.75;font-size:11.5px">গুরুত্বপূর্ণ update + ঠিক সময়ে ছোট রিমাইন্ডার — বিরক্তিটা আমরাই লজ্জা পাই 😄</span>
-          <div style="display:flex;gap:8px;margin-top:8px"><button class="btn sm" onclick="NotificationHub.promptEnable()">চালু করি</button><button class="btn ghost sm" onclick="NotificationHub.dismissPrompt()">এখন না</button></div>`;
+        /* No auto-prompt (owner directive 2026-09-17): a calm single action
+         * that opens the premium centered allow dialog. */
+        copy.innerHTML = `<b>🔔 নোটিফিকেশন</b><br><span style="opacity:.75;font-size:11.5px">খবর এলে যেন মিস না হয়</span>
+          <div style="display:flex;gap:8px;margin-top:8px"><button class="btn sm" onclick="NotificationHub.openAllowDialog()">চালু করুন</button></div>`;
       } else {
         const unread = await unreadCount();
         const badge = document.getElementById('ahNotifBadge');
         if (badge) { badge.style.display = unread ? 'inline-block' : 'none'; badge.textContent = unread > 9 ? '9+' : unread; }
-        copy.innerHTML = `<b>Notifications</b> <span style="opacity:.7;font-size:11.5px">${unread ? `${unread}টি নতুন` : 'সব পড়া হয়ে গেছে ✓'}</span><br><button class="btn ghost sm" style="margin-top:6px" onclick="NotificationHub.openCenter()">🔔 Notification Center খোলো</button>`;
+        copy.innerHTML = `<b>Notifications</b> <span style="opacity:.7;font-size:11.5px">${unread ? `${unread}টি নতুন` : 'সব পড়া হয়ে গেছে ✓'}</span><br><button class="btn ghost sm" style="margin-top:6px" onclick="NotificationHub.goInbox()">🔔 ইনবক্স খোলো</button>`;
       }
     } catch (_) {}
   };
@@ -360,23 +370,12 @@
     if (s.registered) {
       return `<div style="${pad}display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
         <div><div style="font-size:14px;font-weight:700">${sheetT('pushTitle')}</div>
-        <div style="font-size:12.5px;margin-top:4px;color:var(--green);font-weight:600">✓ ${sheetT('on')}${s.devices ? ` · ${s.devices} device` : ''}</div></div>
-        <div style="display:flex;gap:8px;flex:0 0 auto">
-          <button class="btn ghost sm" onclick="NotificationHub.sendSelfTest()">${sheetT('testPush')}</button>
-          <button class="btn ghost sm" style="flex:0 0 auto" data-sheet-fcm-btn onclick="NotificationHub.fcmSheetToggle()">${sheetT('disable')}</button></div></div>`;
+        <div style="font-size:12.5px;margin-top:4px;color:var(--green);font-weight:600">✓ ${sheetT('on')}</div></div>
+        <button class="btn ghost sm" style="flex:0 0 auto" data-sheet-fcm-btn onclick="NotificationHub.fcmSheetToggle()">${sheetT('disable')}</button></div>`;
     }
-    const last = (() => {
-      try {
-        const e = window.AhFcm && window.AhFcm.lastErr ? window.AhFcm.lastErr() : null;
-        if (!e || !e.code) return '';
-        const detail = e.detail ? ` — ${e.detail}` : '';
-        return `${sheetT('lastErrLabel')}: ${e.code}${detail}`;
-      } catch (_) { return ''; }
-    })();
     return `<div style="${pad}"><div style="font-size:14px;font-weight:700">${sheetT('pushTitle')}</div>
       <div style="font-size:13px;margin-top:6px;line-height:1.55">${sheetT('pushBody')}</div>
-      ${last ? `<div style="font-size:11.5px;margin-top:6px;color:var(--red);font-family:ui-monospace,monospace">${last}</div>` : ''}
-      <button class="btn sm" style="margin-top:12px" data-sheet-fcm-btn onclick="NotificationHub.fcmSheetToggle()">${sheetT('enable')}</button></div>`;
+      <button class="btn sm" style="margin-top:12px" onclick="closeModal();NotificationHub.openAllowDialog()">${sheetT('enable')}</button></div>`;
   };
   const openSheet = async () => {
     const prefs = await getPrefs();
@@ -473,24 +472,95 @@
    *  - push registered        → straight to the full-screen inbox
    *  - not registered + prompt never shown → enable sheet ONCE
    *  - afterwards              → straight to the inbox */
+  /* ── Premium centered allow dialog (owner directive 2026-09-17, round 8) ──
+   * Like the other apps: one centered card, one tap → system prompt →
+   * silently done. No test buttons, no device/token/FCM jargon, and no
+   * "চালু হয়েছে" celebration — after the user taps Allow they see
+   * nothing: the work is simply finished.
+   * DUAL LANGUAGE: bn + en written, only the active language is rendered. */
+  const ALLOW_I18N = {
+    title: { bn: 'নোটিফিকেশন চালু করুন', en: 'Turn on notifications' },
+    sub: { bn: 'খবর এলে যেন মিস না হয়', en: 'So you never miss an update' },
+    allow: { bn: 'অনুমতি দিই', en: 'Allow' },
+    later: { bn: 'এখন না', en: 'Not now' },
+    denied: { bn: 'ব্রাউজারে নোটিফিকেশন বন্ধ আছে — Settings → Notifications থেকে চালু করুন', en: 'Notifications are blocked in your browser — enable them in Settings → Notifications' },
+    gotIt: { bn: 'বুঝেছি', en: 'Got it' },
+    retry: { bn: 'এবার চলেছে না — আবার চেষ্টা করুন', en: 'Could not turn on — please try again' },
+    working: { bn: 'চালু হচ্ছে…', en: 'Turning on…' },
+    iosHome: { bn: 'iPhone-এ push পেতে: Safari-র Share (⬆) → "Add to Home Screen", তারপর Home Screen থেকে অ্যাপটি খুলুন', en: 'On iPhone, push needs the app on your Home Screen: Safari Share (⬆) → "Add to Home Screen", then open it from there' }
+  };
+  const allowT = (key) => {
+    let l = 'bn';
+    try { l = window.AhI18n ? window.AhI18n.get() : 'bn'; } catch (_) {}
+    const e = ALLOW_I18N[key];
+    return (e && e[l]) || (e && e.bn) || key;
+  };
+  const openAllowDialog = () => {
+    const allowFlow = async () => {
+      const btn = document.getElementById('ahAllowBtn');
+      const line = (text, color) => {
+        const el = document.getElementById('ahAllowLine');
+        if (el) { el.textContent = text; el.style.color = color || ''; }
+      };
+      try {
+        if (typeof Notification === 'undefined') { line(allowT('denied'), 'var(--red)'); return; }
+        /* Gesture-safe: the permission ask runs FIRST — before any network
+         * await — so the iOS tap's transient activation is never spent. */
+        if (Notification.permission === 'default') {
+          const ask = await Notification.requestPermission();
+          if (ask !== 'granted') { line(ask === 'denied' ? allowT('denied') : allowT('retry'), 'var(--red)'); return; }
+        } else if (Notification.permission === 'denied') {
+          line(allowT('denied'), 'var(--red)'); return;
+        } else {
+          /* 'unsupported' — on iOS that means the app is not on the Home
+           * Screen (Apple's Push API rule); on other browsers push is
+           * unavailable. Guide, don't mislead. */
+          line(isIOS() ? allowT('iosHome') : allowT('retry'), 'var(--red)'); return;
+        }
+        if (!window.AhFcm || typeof window.AhFcm.enable !== 'function') { line(allowT('retry'), 'var(--red)'); return; }
+        if (btn) { btn.disabled = true; btn.textContent = allowT('working'); }
+        const r = await window.AhFcm.enable();
+        if (r === 'granted') {
+          /* Silent success — nothing is shown to the user. The bell now
+           * opens the inbox; that is the confirmation. */
+          try { closeModal(); } catch (_) {}
+          try { hydrateDashboard(); } catch (_) {}
+        } else {
+          if (btn) { btn.disabled = false; btn.textContent = allowT('allow'); }
+          line(r === 'denied' ? allowT('denied') : allowT('retry'), 'var(--red)');
+        }
+      } catch (_) {
+        if (btn) { btn.disabled = false; btn.textContent = allowT('allow'); }
+        line(allowT('retry'), 'var(--red)');
+      }
+    };
+    openModal(`<div style="display:flex;flex-direction:column;align-items:center;text-align:center;padding:12px 6px 6px">
+      <div style="width:64px;height:64px;border-radius:22px;background:#eef5f1;display:grid;place-items:center;font-size:30px">🔔</div>
+      <h3 style="margin:14px 0 6px;font-size:17px">${allowT('title')}</h3>
+      <p style="font-size:13px;color:var(--sub,#64748b);margin:0 0 18px;line-height:1.6">${allowT('sub')}</p>
+      <button class="btn" id="ahAllowBtn" style="width:100%;font-weight:800" onclick="window.__ahAllowFlow()">${allowT('allow')}</button>
+      <div id="ahAllowLine" style="font-size:12px;min-height:16px;margin-top:10px;line-height:1.5"></div>
+      <button class="btn ghost sm" style="margin-top:6px" onclick="closeModal()">${allowT('later')}</button>
+    </div>`);
+    window.__ahAllowFlow = allowFlow;
+    try { if (window.AhI18n && window.AhI18n.apply) window.AhI18n.apply(document.getElementById('modalRoot')); } catch (_) {}
+  };
+
   const goInbox = () => {
     try {
       if (location.hash === '#notifications') { if (typeof window.render === 'function') window.render(); return; }
     } catch (_) {}
     location.hash = 'notifications';
   };
+  /* Bell (owner directive 2026-09-17, round 8):
+   *  - push registered  → straight to the full-screen inbox
+   *  - not registered   → the premium centered allow dialog (one tap)
+   * Never an auto-prompt, never the settings sheet. */
   const bellTap = async () => {
     let registered = false;
     try { const s = window.AhFcm ? await window.AhFcm.status() : null; registered = Boolean(s && s.registered); } catch (_) {}
     if (registered) { goInbox(); return; }
-    let shown = false;
-    try { shown = localStorage.getItem('ahNotifPromptShown') === '1'; } catch (_) {}
-    if (!shown) {
-      try { localStorage.setItem('ahNotifPromptShown', '1'); } catch (_) {}
-      openSheet();
-    } else {
-      goInbox();
-    }
+    openAllowDialog();
   };
   const markOneRead = async (id) => {
     const rows = await logRows();
@@ -517,7 +587,6 @@
       <select onchange="NotificationHub.setCap(this.value)">${[1, 2, 3, 4, 5].map(n => `<option value="${n}" ${prefs.dailyCap === n ? 'selected' : ''}>${n}টি</option>`).join('')}</select>
       ${soon ? `<p class="muted" style="font-size:11px;margin-top:10px">${soon} — verified আসল তথ্য পেলেই চালু হবে; অনুমান-নির্ভর কিছু পাঠানো হবে না।</p>` : ''}
       <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
-        <button class="btn sm" onclick="NotificationHub.testNow()">🔔 টেস্ট পাঠাও</button>
         ${pushReady() && Notification.permission === 'granted' ? '<button class="btn ghost sm" onclick="NotificationHub.disablePush();closeModal()">Push বন্ধ করো</button>' : ''}
         <button class="btn ghost sm" onclick="closeModal()">Close</button>
       </div>
@@ -554,7 +623,7 @@
   if (typeof document !== 'undefined') boot();
 
   window.NotificationHub = {
-    dashboardHtml, hydrateDashboard, mountDashboardCard, openCenter, openSettings, openSheet, fcmSheetToggle, toggleMasterSheet, markAllRead, markOneRead, bellTap, inboxPushToggle, sendSelfTest, maybeResubscribe,
+    dashboardHtml, hydrateDashboard, mountDashboardCard, openCenter, openSettings, openSheet, openAllowDialog, fcmSheetToggle, toggleMasterSheet, markAllRead, markOneRead, bellTap, goInbox, inboxPushToggle, sendSelfTest, maybeResubscribe,
     promptEnable, dismissPrompt, enablePush, disablePush, testNow,
     toggleMaster, toggleCat, setQuiet, setCap, saveEndpoint,
     evaluate, syncState,

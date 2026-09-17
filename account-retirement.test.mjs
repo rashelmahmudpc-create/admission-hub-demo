@@ -109,10 +109,10 @@ await test('content hydration is public and account-independent',
 
 await test('service-worker build and HTML registration are synchronized',
 
-  SW.includes("const BUILD_ID = 'v278-toast-visible-20260917'") &&
-  H.includes("const expectedSwVersion = 'v278-toast-visible-20260917'") &&
-  H.includes('sw.js?v=v278-toast-visible-20260917') &&
-  H.includes('admission-hub-shell-v278-toast-visible-20260917'));
+  SW.includes("const BUILD_ID = 'v279-clean-notif-20260917'") &&
+  H.includes("const expectedSwVersion = 'v279-clean-notif-20260917'") &&
+  H.includes('sw.js?v=v279-clean-notif-20260917') &&
+  H.includes('admission-hub-shell-v279-clean-notif-20260917'));
 await test('service-worker shell cannot cache retired assets', retiredMarkers.every(marker => !SW.includes(marker)));
 await test('premium account and institution assets use synchronized cache-busting versions',
   ['account-access.css?v=20260916-account-entry-v6', 'account-access.js?v=20260916-account-entry-v6', 'institutions-bd.js?v=bd-institutions-v2']

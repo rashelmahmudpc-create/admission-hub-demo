@@ -8225,20 +8225,7 @@ async function handleFcmNotificationRequest(request, env) {
     const deviceInfo = String(body.deviceInfo || "").slice(0, 120);
     const now = Date.now();
     await store.upsertDevice({ userId, token, platform, browser, deviceInfo, now });
-    let welcome = false;
-    try {
-      if (fcmConfigured(env) && env.FCM_WELCOME_PUSH !== "off") {
-        welcome = Boolean((await fcmSendToDevice(env, {
-          token,
-          title: "✅ Push চালু হয়েছে",
-          body: "এটি Admission Hub-এর test push — সিস্টেম চলছে ✅ (test message)",
-          data: { link: "notifications", src: "fcm-welcome" }
-        })).ok);
-      }
-    } catch (_) {
-      welcome = false;
-    }
-    return jsonResponse(request, { ok: true, registered: true, welcome, devices: (await store.activeDevices(userId)).length }, 201);
+    return jsonResponse(request, { ok: true, registered: true, devices: (await store.activeDevices(userId)).length }, 201);
   }
   if (path === "/api/notifications/unregister-token" && request.method === "POST") {
     if (!store.available()) return jsonResponse(request, { error: "storage-unavailable" }, 503);

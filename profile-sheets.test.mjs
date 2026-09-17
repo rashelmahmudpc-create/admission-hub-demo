@@ -251,26 +251,19 @@ test('Premium Green survives a reload (owner bug: green reverted to Light)', asy
   window.close();
 });
 
-test('notification bell has a handler (owner bug: bell did nothing)', async () => {
-  const window = boot();
-  await waitFor(() => window.document.querySelector('[data-role="brand-bell"]'), 'brand header');
-
-  await clickUntil(window, 'brand-bell', () => window.__notifOpened === true, 'notification center to open');
-  assert.equal(window.__notifOpened, true);
+test('profile header has NO notification bell (owner 2026-09-17: profile-এ notifications বাটন বাদ)', async () => {
+  const window = bootAs(false);
+  await waitFor(() => window.document.querySelector('[data-role="brand-account"]'), 'guest brand header');
+  assert.equal(window.document.querySelector('[data-role="brand-bell"]'), null, 'no notification bell in the profile header');
   window.close();
 });
-
-test('guest profile header bell and account icons both respond', async () => {
+test('profile header account icon still opens the account sheet', async () => {
   const window = bootAs(false);
-  await waitFor(() => window.document.querySelector('[data-role="brand-bell"]'), 'guest brand header');
-
-  click(window, 'brand-bell');
-  assert.equal(window.__notifOpened, true, 'guest header bell must open the notification center');
-
+  await waitFor(() => window.document.querySelector('[data-role="brand-account"]'), 'guest brand header');
   click(window, 'brand-account');
   assert.equal(window.__accountOpened, true, 'guest header account icon must open the account sheet');
   window.close();
-});
+})
 
 test('avatar page offers 10 male + 10 female defaults with 5MB source limit', async () => {
   const window = boot();

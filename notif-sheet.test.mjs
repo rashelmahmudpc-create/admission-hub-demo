@@ -80,20 +80,20 @@ const INDEX = readFileSync('index.html', 'utf8');
 const SW = readFileSync('sw.js', 'utf8');
 const FCM = readFileSync('notification-fcm.js', 'utf8');
 
-test('bell uses bellTap: registered→inbox, else one-time sheet, then inbox', () => {
+test('bell uses bellTap: registered → inbox, not registered → allow dialog (round 8)', () => {
   assert.match(DASH, /dv2-bell[^>]*onclick="NotificationHub\.bellTap\(\)"/, 'bell → NotificationHub.bellTap()');
   assert.match(HUB, /const bellTap = async/);
   assert.match(HUB, /location\.hash = 'notifications'/, 'goInbox navigates to #notifications');
-  assert.match(HUB, /ahNotifPromptShown/, 'prompt-once flag');
   const bell = HUB.slice(HUB.indexOf('const bellTap'), HUB.indexOf('const markOneRead'));
-  assert.ok(bell.includes("localStorage.getItem('ahNotifPromptShown')"), 'reads the one-time flag');
-  assert.ok(bell.includes("localStorage.setItem('ahNotifPromptShown', '1')"), 'marks the flag when shown');
-  assert.ok(bell.includes('openSheet()'), 'shows the sheet on first tap only');
-});
+  assert.ok(bell.includes('openAllowDialog()'), 'not registered → premium centered allow dialog');
+  assert.ok(!bell.includes('ahNotifPromptShown'), 'no one-time prompt flag left');
+  assert.ok(!bell.includes('openSheet()'), 'bell never opens the settings sheet');
+})
 
-test('inbox: full-screen page, All/Unread tabs, back to dashboard, dual language, real data', () => {
+test('inbox: CLEAN full-screen list — no status bar, no test button, back works (round 8)', () => {
   assert.match(INBOX, /window\.renderNotificationsInbox = function renderNotificationsInbox/);
-  assert.match(INBOX, /location\.hash='dashboard'/, 'back button returns to dashboard');
+  assert.match(INBOX, /window\.__nifBack = \(\) => \{/, 'back button handler (owner bug: back did nothing)');
+  assert.match(INBOX, /window\.navigate\('dashboard'\)/, 'back uses the app router');
   assert.match(INBOX, /nif-tab[^>]*onclick="window\.__nifTab\('all'\)"/, 'All tab');
   assert.match(INBOX, /nif-tab[^>]*onclick="window\.__nifTab\('unread'\)"/, 'Unread tab');
   assert.match(INBOX, /app\.classList\.add\('no-nav'\)/, 'full-screen (nav hidden)');
@@ -102,18 +102,20 @@ test('inbox: full-screen page, All/Unread tabs, back to dashboard, dual language
   assert.ok(INBOX.includes("bn: 'নোটিফিকেশন'") && INBOX.includes("en: 'Notifications'"), 'title dual language');
   assert.match(INBOX, /hub\._log\(\)/, 'data from the hub log (real data only)');
   assert.match(INBOX, /hub\.markOneRead\(id\)/, 'tap marks a row read');
-  assert.match(INBOX, /inboxPushToggle\(\)/, 'push-off banner uses the gesture-safe toggle');
-});
+  assert.ok(!INBOX.includes('nif-statusbar'), 'no "Push চালু আছে / device" status bar');
+  assert.ok(!INBOX.includes('nifTestBtn'), 'no Test button in the inbox');
+  assert.ok(!INBOX.includes('nif-pushbar'), 'no push-off/ios banner in the inbox');
+})
 
-test('router: #notifications route + script tag + SW pin', () => {
+test('router: #notifications route + script tags + SW pin (round 8 pins)', () => {
   assert.match(INDEX, /p==='notifications' && window\.renderNotificationsInbox/);
-  assert.match(INDEX, /notification-inbox\.js\?v=notif-inbox-v3/);
-  assert.match(INDEX, /notification-hub\.js\?v=notify-v117/);
-  assert.match(INDEX, /notification-fcm\.js\?v=fcm-p1-v7/);
-  assert.match(INDEX, /profile-ui\.js\?v=profile-v15-nonotif/);
-  assert.match(SW, /notification-inbox\.js\?v=notif-inbox-v3/);
+  assert.match(INDEX, /notification-inbox\.js\?v=notif-inbox-v4/);
+  assert.match(INDEX, /notification-hub\.js\?v=notify-v118/);
+  assert.match(INDEX, /notification-fcm\.js\?v=fcm-p1-v8/);
+  assert.match(INDEX, /profile-ui\.js\?v=profile-v16-clean/);
+  assert.match(SW, /notification-inbox\.js\?v=notif-inbox-v4/);
   assert.match(SW, /dashboard-v2\.js\?v=dash2f15-inbox/);
-});
+})
 
 test('iOS fix: permission ask runs before any network await (hub + fcm)', () => {
   const toggle = HUB.slice(HUB.indexOf('const doPushToggle'), HUB.indexOf('const fcmSheetToggle'));
@@ -133,30 +135,24 @@ test('profile: Notifications row removed from Preferences (owner: সরিয�
   assert.ok(!PROFILE.includes('pref-notifications') || !/row\('🔔'/.test(PROFILE), 'no row with pref-notifications role');
 });
 
-test('enable() failures are specific, not a vague "try again" (2026-09-17)', () => {
+test('enable() failures stay specific internally (no raw error codes shown to users, round 8)', () => {
   assert.match(FCM, /setErr\('config-failed', 'config request failed'\); return 'config-failed'/);
   assert.match(FCM, /setErr\('sdk-failed', errText\(e\)\); return 'sdk-failed'/);
   assert.match(FCM, /setErr\('token-failed', errText\(e\)\); return 'token-failed'/);
   assert.match(FCM, /setErr\('register-' \+ out\.status/);
-  assert.match(FCM, /_state: stateGet, _config: getConfig, lastErr/, 'lastErr exported for UI');
+  assert.match(FCM, /_state: stateGet, _config: getConfig, lastErr/, 'lastErr retained for diagnostics');
   assert.match(FCM, /detail: detail \? String\(detail\)\.slice\(0, 200\) : undefined/, 'raw failure reason is retained');
-  assert.match(HUB, /r === 'config-failed'\) toastShort\(sheetT\('errConfig'\)\)/);
-  assert.match(HUB, /r === 'sdk-failed'\) toastShort\(sheetT\('errSdk'\)\)/);
-  assert.match(HUB, /String\(r\)\.startsWith\('register-'\)/);
-  assert.ok(HUB.includes("bn: 'সর্বশেষ সমস্যা'") && HUB.includes("en: 'Last error'"), 'sheet shows last error code');
-});
+  assert.ok(!HUB.includes("sheetT('lastErrLabel')"), 'sheet no longer renders the raw error code');
+})
 
-test('self-service test push: no admin token, user-facing button (owner: ঝামেলা না)', () => {
-  assert.match(FCM, /const selfTest = async/, 'AhFcm.selfTest client');
+test('test push: no user-facing buttons anywhere (owner 2026-09-17); endpoint stays for dev', () => {
+  assert.match(FCM, /const selfTest = async/, 'AhFcm.selfTest client kept for diagnostics');
   assert.match(FCM, /_state: stateGet, _config: getConfig, lastErr, selfTest/);
-  assert.match(HUB, /const sendSelfTest = async/);
-  assert.match(HUB, /NotificationHub\.sendSelfTest\(\)/, 'sheet test button');
-  assert.match(INBOX, /__nifTest\(\)/, 'inbox test button');
-  assert.match(INBOX, /nif-statusbar/, 'registered status bar in inbox');
-  assert.ok(HUB.includes("bn: 'টেস্ট push পাঠানো হয়েছে ✓'") && HUB.includes("en: 'Test push sent ✓'"), 'result toast dual language');
-  assert.match(WORKER_SRC, /'\/api\/notifications\/self-test'/, 'worker endpoint');
-  assert.match(WORKER_SRC, /FCM_WELCOME_PUSH !== 'off'/, 'welcome push on registration');
-});
+  assert.ok(!HUB.includes('sendSelfTest()'), 'no test button in the sheet');
+  assert.ok(!INBOX.includes('__nifTest()'), 'no test button in the inbox');
+  assert.match(WORKER_SRC, /'\/api\/notifications\/self-test'/, 'worker endpoint still exists (rate-limited, session-bound)');
+  assert.ok(!WORKER_SRC.includes("FCM_WELCOME_PUSH !== 'off'"), 'welcome push removed from the worker');
+})
 
 test('Firebase SDK self-hosted (Cloudflare stack) with gstatic fallback', () => {
   assert.match(FCM, /const SDK_LOCAL = '.\/sdk'/);
@@ -168,15 +164,14 @@ test('Firebase SDK self-hosted (Cloudflare stack) with gstatic fallback', () => 
   assert.match(HUB, /r === 'register-401'\) toastShort\(sheetT\('errLogin'\)/);
 });
 
-test('iOS Home-Screen guidance (Apple: Push API only in installed PWA)', () => {
+test('iOS Home-Screen guidance: allow dialog + sheet (round 8)', () => {
   assert.match(HUB, /const isIOS = \(\) =>/, 'hub detects iOS');
   assert.match(HUB, /iosInstallBody/, 'sheet has the Home-Screen instructions');
   assert.ok(HUB.includes("bn: 'iPhone-এ ওয়েব পুশ শুধু Home Screen-এ"), 'bn instruction');
   assert.ok(HUB.includes("en: 'On iPhone, web push works only when the app is on your Home Screen."), 'en instruction');
   assert.match(HUB, /toastShort\(isIOS\(\) \? sheetT\('iosToast'\) : sheetT\('blocked'\)\)/, 'unsupported-on-iOS → helpful toast, not "blocked"');
   assert.match(HUB, /s\.permission === 'unsupported'/, 'sheet row handles the unsupported state');
-  assert.match(INBOX, /isIOSDevice\(\)/, 'inbox detects iOS');
-  assert.match(INBOX, /nif-pushbar-ios/, 'inbox shows the iOS install banner');
-  assert.ok(INBOX.includes("en: '📱 On iPhone, push needs the app on your Home Screen:"), 'inbox banner en');
-  assert.ok(INBOX.includes("bn: '📱 iPhone-এ push পেতে:"), 'inbox banner bn');
-});
+  assert.match(HUB, /allowT\('iosHome'\)/, 'allow dialog guides iOS Home-Screen install');
+  assert.ok(HUB.includes("bn: 'নোটিফিকেশন চালু করুন'") && HUB.includes("en: 'Turn on notifications'"), 'allow dialog title dual language');
+  assert.ok(HUB.includes("bn: 'অনুমতি দিই'") && HUB.includes("en: 'Allow'"), 'allow dialog button dual language');
+})

@@ -310,20 +310,24 @@
     };
   };
 
-  /* Row injected into the notification-hub settings modal (extends, no fork). */
+  /* Row injected into the notification-hub settings modal (extends, no fork).
+   * Round 8 (owner directive 2026-09-17): no device/token jargon, no success
+   * toasts — enablement routes to the premium centered allow dialog. */
   const settingsRow = async () => {
     const s = await status();
     const pad = 'padding:10px 0;border-bottom:1px solid var(--line);';
+    const L = (() => { try { return window.AhI18n ? window.AhI18n.get() : 'bn'; } catch (_) { return 'bn'; } })();
+    const st = (bn, en) => (L === 'en' ? en : bn);
     if (!s.fcmConfigured) {
-      return `<div style="${pad}font-size:12px;color:var(--sub)"><span>📡 FCM Push</span> <span style="opacity:.7">সংযোগ হচ্ছে না — configuration আসার অপেক্ষায়</span></div>`;
+      return `<div style="${pad}font-size:12px;color:var(--sub)"><span>📡 FCM Push</span> <span style="opacity:.7">${st('সংযোগ হচ্ছে না — configuration আসার অপেক্ষায়', 'Connecting — waiting for server settings')}</span></div>`;
     }
     if (s.permission === 'denied') {
-      return `<div style="${pad}font-size:12px;color:var(--red)">📡 FCM Push — browser-এ অনুমতি বন্ধ আছে (Settings → Site settings → Notifications থেকে খুলতে হবে)</div>`;
+      return `<div style="${pad}font-size:12px;color:var(--red)">📡 FCM Push — ${st('browser-এ অনুমতি বন্ধ আছে (Settings → Site settings → Notifications থেকে খুলতে হবে)', 'permission is blocked (enable in Settings → Site settings → Notifications)')}</div>`;
     }
     if (s.registered) {
-      return `<div style="${pad}display:flex;align-items:center;gap:10px"><span style="flex:1;font-size:12px">📡 FCM Push <b style="color:var(--green)">✓ Registered</b> <span style="opacity:.7">(${s.devices} device)</span></span><button class="btn ghost sm" onclick="AhFcm.disable().then(()=>{window.toast?.('FCM push বন্ধ হলো');NotificationHub.openSettings()})">বন্ধ</button></div>`;
+      return `<div style="${pad}display:flex;align-items:center;gap:10px"><span style="flex:1;font-size:12px">📡 FCM Push <b style="color:var(--green)">✓ ${st('চলছে', 'Active')}</b></span><button class="btn ghost sm" onclick="AhFcm.disable().then(()=>NotificationHub.openSettings())">${st('বন্ধ করুন', 'Turn off')}</button></div>`;
     }
-    return `<div style="${pad}display:flex;align-items:center;gap:10px"><span style="flex:1;font-size:12px">📡 FCM Push <span style="opacity:.7">— streak, admission date, progress reminder device-এ পৌঁছাবে</span></span><button class="btn sm" onclick="AhFcm.enable().then(r=>{window.toast?.(r==='granted'?'FCM push চালু হয়েছে ✓':r==='denied'?'Browser অনুমতি চাই':r==='not-configured'?'FCM setup চলছে':'এবার চলেছে না — পরে চেষ্টা করো');NotificationHub.openSettings()})">চালু করি</button></div>`;
+    return `<div style="${pad}display:flex;align-items:center;gap:10px"><span style="flex:1;font-size:12px">📡 FCM Push</span><button class="btn sm" onclick="closeModal();NotificationHub.openAllowDialog()">${st('চালু করুন', 'Turn on')}</button></div>`;
   };
 
   /* Dev test center (§18) — hidden route #notif-dev. Admin Bearer token is

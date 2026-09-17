@@ -1410,10 +1410,16 @@ function render(){
   if(p.startsWith('history/')) return renderHistoryDetail(p.split('/')[1]);
   if(p==='mistakes') return renderMistakes();
   if(p==='progress') return renderProgress();
-  if(p==='my-profile') return (window.renderProfilePage ? window.renderProfilePage() : renderDashboard()); /* Phase 7 */
+  if(p==='my-profile') return (window.renderProfilePage ? window.renderProfilePage() : renderProfileFallback()); /* Phase 7 — never a silent dashboard fallback (owner bug 2026-09-17: "কিছুই আসছে না") */
   if(p==='settings') return renderDashboard();
   if(p==='dictionary'||p==='question-bank/settings') return renderLazyToolFallback(p);
   renderDashboard();
+}
+/* Profile renderer missing (profile-ui.js failed to load/run) — a VISIBLE,
+ * recoverable state instead of silently re-rendering the dashboard
+ * (owner bug 2026-09-17: "প্রোফাইল বাটনে কিল্ক করলে কিছুই আসছে না"). */
+function renderProfileFallback(){
+  renderShell(`<div style="text-align:center;padding:56px 20px"><div style="font-size:40px">👤</div><h2 style="margin:10px 0 6px;font-size:18px">Profile লোড হয়নি</h2><p style="font-size:13px;color:#64748b;margin:0 auto;max-width:380px;line-height:1.7">একটু পর আবার চেষ্টা করুন — বা পেজটা Refresh করুন।</p><div style="display:flex;gap:10px;justify-content:center;margin-top:16px"><button class="btn" onclick="location.reload()">🔄 Retry</button><button class="btn ghost" onclick="navigate('dashboard')">🏠 Home</button></div></div>`,{title:'Profile'});
 }
 function renderLazyToolFallback(path){
   const diag=[];
@@ -4981,16 +4987,16 @@ window.__admissionBootPromise.catch(error => console.error('[Admission Hub] boot
     // The updated worker takes control now; the current document remains usable and the next launch uses the new shell.
     try{
 
-      const expectedSwVersion = 'v278-toast-visible-20260917';
+      const expectedSwVersion = 'v279-clean-notif-20260917';
       // register() on the same scope performs an in-place update. Never unregister
       // the active iOS worker first: that discards the instant offline shell.
-      const registration=await navigator.serviceWorker.register('./sw.js?v=v278-toast-visible-20260917',{scope:'./',updateViaCache:'none'});
+      const registration=await navigator.serviceWorker.register('./sw.js?v=v279-clean-notif-20260917',{scope:'./',updateViaCache:'none'});
       await registration.update().catch(()=>{});
       // Purge every old app-shell cache (any build id ≠ current). This guarantees
       // stale pre-retirement application shells can never be served from cache again.
       try {
 
-        const cur = 'admission-hub-shell-v278-toast-visible-20260917';
+        const cur = 'admission-hub-shell-v279-clean-notif-20260917';
         const names = await caches.keys();
         for (const name of names) {
           if (name.startsWith('admission-hub-shell-') && name !== cur) await caches.delete(name).catch(()=>{});
@@ -5126,7 +5132,7 @@ window.__admissionBootPromise.catch(error => console.error('[Admission Hub] boot
 <!-- First-interaction modules execute before optional/heavy tools. -->
 <script defer src="./dashboard-v2.js?v=dash2f15-inbox"></script>
 <script defer src="./academic-catalog.js?v=acad-cat-v2"></script>
-<script defer src="./profile-ui.js?v=profile-v15-nonotif"></script>
+<script defer src="./profile-ui.js?v=profile-v16-clean"></script>
 <script defer src="./ai-agent-chat.js?v=agent-f1-ui-chatv18-fresh"></script>
 <script defer src="qbank-redesign.js?v=practice15"></script>
 <script defer src="urgent-fix.js?v=practice13"></script>
@@ -5416,9 +5422,9 @@ setTimeout(() => { if (location.hash.replace(/^#/, '').split('?')[0] === 'dictio
 <script src="./vocabulary-master-tool.js?v=vm-autoimg-v106" defer></script>
 <script src="./vocabulary-pronunciation.js?v=voice-el-v104" defer></script>
 <script src="./vocabulary-elevenlabs.js?v=el-voice-v106" defer></script>
-<script defer src="./notification-hub.js?v=notify-v117"></script>
-<script defer src="./notification-fcm.js?v=fcm-p1-v7"></script>
-<script defer src="./notification-inbox.js?v=notif-inbox-v3"></script>
+<script defer src="./notification-hub.js?v=notify-v118"></script>
+<script defer src="./notification-fcm.js?v=fcm-p1-v8"></script>
+<script defer src="./notification-inbox.js?v=notif-inbox-v4"></script>
 <script src="./memorizing-match-tool.js?v=memorizing-match-v8-stable-cards" defer></script>
 <script src="./question-card-game-visual.js?v=question-card-game-v2-persistent" defer></script>
 <script src="./result-analysis-500.js?v=result-analysis-500-deep-matched-v2" defer></script>

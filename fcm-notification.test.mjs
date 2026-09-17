@@ -337,27 +337,21 @@ test('FCM NOT_FOUND deactivates the dead token', async () => {
   }
 });
 
-test('register-token auto-sends a welcome push so the user sees it work (no effort)', async () => {
+test('register-token sends NO welcome push (owner 2026-09-17: enabling is silent)', async () => {
   const env = await makeFcmEnv({ FCM_WELCOME_PUSH: 'on' });
   const realFetch = globalThis.fetch;
   let fcmCalls = 0;
-  let welcomeTitle = '';
   globalThis.fetch = async (input, init) => {
     const url = String(input);
     if (url.includes('oauth2.googleapis.com')) return Response.json({ access_token: 'fake-oauth-token', expires_in: 3600 });
-    if (url.includes('fcm.googleapis.com')) {
-      fcmCalls++;
-      welcomeTitle = JSON.parse(String(init && init.body)).message.notification.title;
-      return Response.json({ name: 'projects/test-project/messages/welcome-1' }, { status: 200 });
-    }
+    if (url.includes('fcm.googleapis.com')) { fcmCalls++; return Response.json({ name: 'x' }, { status: 200 }); }
     return realFetch(input, init);
   };
   try {
     const out = await call(cookieRequest('/api/notifications/register-token', { method: 'POST', body: { token: `wel-${'w'.repeat(120)}` } }), env);
     assert.equal(out.response.status, 201);
-    assert.equal(out.data.welcome, true, 'register response reports the welcome push');
-    assert.equal(fcmCalls, 1, 'exactly one FCM send on registration');
-    assert.match(welcomeTitle, /Push/);
+    assert.equal('welcome' in out.data, false, 'no welcome field in the register response');
+    assert.equal(fcmCalls, 0, 'zero FCM sends on registration — nothing is shown to the user');
   } finally {
     globalThis.fetch = realFetch;
   }

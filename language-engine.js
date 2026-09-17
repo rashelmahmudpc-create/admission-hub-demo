@@ -710,6 +710,11 @@
     '[dv2] build পতন — পুরনো ড্যাশবোর্ডে ফলব্যাক': '[dv2] build failed — falling back to the legacy dashboard',
     'Google সাইন-ইন সম্পন্ন হয়নি—ইমেইল দিয়ে চেষ্টা করুন।': 'Google sign-in did not finish — try with email.',
     'Google দিয়ে তোমার একই account-এ প্রবেশ হয়েছে।': 'You signed into the same account with Google.',
+    /* Round 8 (2026-09-17) — profile stuck-session rescue view */
+    'Login যাচাই শেষ হয়নি': 'Session check did not finish',
+    'আবার চেষ্টা করুন, অথবা সরাসরি Login করুন': 'Try again, or sign in directly',
+    'আবার চেষ্টা করুন': 'Try again',
+    'Login করুন': 'Sign in',
   };
 
   /* Bengali digits, so numbers inside a translated string stay consistent. */

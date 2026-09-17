@@ -427,22 +427,10 @@ export async function handleFcmNotificationRequest(request, env) {
     const deviceInfo = String(body.deviceInfo || '').slice(0, 120);
     const now = Date.now();
     await store.upsertDevice({ userId, token, platform, browser, deviceInfo, now });
-    /* Welcome push: the user just turned push ON — immediately send a test
-     * so the user SEES the whole chain work with zero extra steps (owner:
-     * "টোকেনের ঝামেলা চাই না"). Best effort — a push hiccup must never
-     * fail the registration itself. */
-    let welcome = false;
-    try {
-      if (fcmConfigured(env) && env.FCM_WELCOME_PUSH !== 'off') {
-        welcome = Boolean((await fcmSendToDevice(env, {
-          token,
-          title: '✅ Push চালু হয়েছে',
-          body: 'এটি Admission Hub-এর test push — সিস্টেম চলছে ✅ (test message)',
-          data: { link: 'notifications', src: 'fcm-welcome' }
-        })).ok);
-      }
-    } catch (_) { welcome = false; }
-    return jsonResponse(request, { ok: true, registered: true, welcome, devices: (await store.activeDevices(userId)).length }, 201);
+    /* Round 8 (owner directive 2026-09-17): no welcome push — enabling is
+     * silent; the user sees nothing after tapping Allow. The bell opening
+     * the inbox is the confirmation. */
+    return jsonResponse(request, { ok: true, registered: true, devices: (await store.activeDevices(userId)).length }, 201);
   }
 
   if (path === '/api/notifications/unregister-token' && request.method === 'POST') {
