@@ -95,6 +95,7 @@ async function s3ListTotalBytes(env) {
   const ak = String(env.R2_ACCESS_KEY || '');
   const sk = String(env.R2_SECRET_KEY || '');
   if (!ak || !sk) return null;
+  const bucketName = String(env?.FILE_BUCKET?.name || 'admission-hub');
   try {
     let total = 0;
     let token = '';
@@ -106,21 +107,30 @@ async function s3ListTotalBytes(env) {
       const query = { 'list-type': '2', 'max-keys': '1000' };
       if (token) query['continuation-token'] = token;
       const queryStr = Object.keys(query).sort().map(k => `${k}=${query[k]}`).join('&');
-      const path = '/';
-      const canonicalHeaders = `host:${R2_HOST}\nx-amz-content-sha256:UNSIGNED_PAYLOAD\nx-amz-date:${amzDate}\n`;
+      /* R2 (unlike real S3) requires the bucket in the URL path — a bare
+       * `GET /` is ListBuckets and fails with 501. */
+      const path = `/${bucketName}`;
+      /* R2 requires the real payload hash (never UNSIGNED_PAYLOAD); a GET
+       * has an empty body → SHA-256 of ''. */
+      const payloadHash = await sha256HexStr('');
+      const canonicalHeaders = `host:${R2_HOST}\nx-amz-content-sha256:${payloadHash}\nx-amz-date:${amzDate}\n`;
       const signedHeaders = 'host;x-amz-content-sha256;x-amz-date';
-      const canonicalRequest = [ 'GET', path, queryStr, canonicalHeaders, signedHeaders, 'UNSIGNED_PAYLOAD' ].join('\n');
+      const canonicalRequest = [ 'GET', path, queryStr, canonicalHeaders, signedHeaders, payloadHash ].join('\n');
       const scope = `${shortDate}/${region}/${service}/aws4_request`;
       const stringToSign = ['AWS4-HMAC-SHA256', amzDate, scope, await sha256HexStr(canonicalRequest)].join('\n');
       let k = await hmacHex(new TextEncoder().encode(`AWS4${sk}`), shortDate);
       k = await hmacHex(hexToBytes(k), region);
       k = await hmacHex(hexToBytes(k), service);
-      const signature = await hmacHex(hexToBytes(k), 'aws4_request');
-      const res = await fetch(`https://${R2_HOST}/${queryStr}`, {
+      k = await hmacHex(hexToBytes(k), 'aws4_request');
+      /* The signature is over the StringToSign (NOT over 'aws4_request' —
+       * that is the final derivation step of the signing key). Verified
+       * live against R2 on 2026-09-18. */
+      const signature = await hmacHex(hexToBytes(k), stringToSign);
+      const res = await fetch(`https://${R2_HOST}/${bucketName}?${queryStr}`, {
         method: 'GET',
         headers: {
           'x-amz-date': amzDate,
-          'x-amz-content-sha256': 'UNSIGNED_PAYLOAD',
+          'x-amz-content-sha256': payloadHash,
           Authorization: `AWS4-HMAC-SHA256 Credential=${ak}/${scope}, SignedHeaders=${signedHeaders}, Signature=${signature}`
         }
       });
