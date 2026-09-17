@@ -164,6 +164,34 @@ Reference implementation: `openSheet()` in `notification-hub.js`
 - The GitHub PAT in the remote URL can stop working mid-session even though
   pushes succeeded earlier (reflog shows prior `update by push`). A 404 from
   `api.github.com/repos/<owner>/<repo>` while the token itself is valid means
-  the repo is gone/renamed or the token's account lost access ÔÇö it is not a
+  the repo is gone/renamed or the token's account lost access — it is not a
   push-format problem. Confirm with `GET /user` (token identity) before
   retrying; the deployed site can still ship via wrangler without GitHub.
+
+## FCM / web push
+
+- Two independent faults block push, and fixing the first hides the second:
+  1. `/firebase-messaging-sw.js` must exist at the site root (the SDK registers
+     that exact path itself). Missing file => `failed-service-worker-registration`.
+  2. The SDK registers the SW but **subscribes without waiting for it to
+     activate**; on a cold first enable `pushManager.subscribe()` throws
+     `no active Service Worker` (error 20). `notification-fcm.js` therefore
+     registers the SW itself, waits for `reg.active`, and passes the ready
+     registration to `getToken({ serviceWorkerRegistration })` on all three
+     paths (enable / disable / refresh). Do not "simplify" that back to a bare
+     `getToken()`.
+- `vapidKey` is optional: the SDK falls back to its built-in default
+  (`BDOU99-h67H...`). An empty `vapidKey` from `/api/notifications/config` is
+  not by itself a failure.
+- A token cannot be obtained inside this sandbox: headless Chromium refuses the
+  Push subscription (`Registration failed - permission denied`) even with
+  `Browser.grantPermissions`. Verify only up to `reg.active === true` here and
+  confirm real delivery on a device.
+- Cached FCM state lives under `ahFcmEnabled` / `ahFcmLastErr` in localStorage;
+  read `ahFcmLastErr` first when diagnosing an owner report.
+- Bumping `BUILD_ID` requires updating every pin at once: `sw.js`, `index.html`
+  (3 spots), the `SHELL_VERSION` const in `interactive-native-personal-v1.test.mjs`,
+  *and* the `grep -Fq "const BUILD_ID = ..."` assertion in
+  `.github/workflows/telegram-auth-canary-activate.yml`. `npm run sw:manifest`
+  then rewrites the digests. Miss the workflow file and that test fails only in
+  a full-suite run, not when run alone.
