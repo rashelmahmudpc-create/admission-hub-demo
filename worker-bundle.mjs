@@ -9088,7 +9088,11 @@ var hexToBytes = (h) => Uint8Array.from(h.match(/.{2}/g), (x) => parseInt(x, 16)
 async function s3ListTotalBytes(env) {
   const ak = String(env.R2_ACCESS_KEY || "");
   const sk = String(env.R2_SECRET_KEY || "");
-  if (!ak || !sk) return null;
+  if (!ak || !sk) {
+    console.log("[files] s3 reconcile skipped: ak=" + (ak ? "set(" + ak.length + ")" : "EMPTY") + " sk=" + (sk ? "set(" + sk.length + ")" : "EMPTY"));
+    return null;
+  }
+  const bucketName = String(env?.FILE_BUCKET?.name || "admission-hub");
   try {
     let total = 0;
     let token = "";
@@ -9100,28 +9104,33 @@ async function s3ListTotalBytes(env) {
       const query = { "list-type": "2", "max-keys": "1000" };
       if (token) query["continuation-token"] = token;
       const queryStr = Object.keys(query).sort().map((k2) => `${k2}=${query[k2]}`).join("&");
-      const path = "/";
+      const path = `/${bucketName}`;
+      const payloadHash = await sha256HexStr("");
       const canonicalHeaders = `host:${R2_HOST}
-x-amz-content-sha256:UNSIGNED_PAYLOAD
+x-amz-content-sha256:${payloadHash}
 x-amz-date:${amzDate}
 `;
       const signedHeaders = "host;x-amz-content-sha256;x-amz-date";
-      const canonicalRequest = ["GET", path, queryStr, canonicalHeaders, signedHeaders, "UNSIGNED_PAYLOAD"].join("\n");
+      const canonicalRequest = ["GET", path, queryStr, canonicalHeaders, signedHeaders, payloadHash].join("\n");
       const scope = `${shortDate}/${region}/${service}/aws4_request`;
       const stringToSign = ["AWS4-HMAC-SHA256", amzDate, scope, await sha256HexStr(canonicalRequest)].join("\n");
       let k = await hmacHex(new TextEncoder().encode(`AWS4${sk}`), shortDate);
       k = await hmacHex(hexToBytes(k), region);
       k = await hmacHex(hexToBytes(k), service);
-      const signature = await hmacHex(hexToBytes(k), "aws4_request");
-      const res = await fetch(`https://${R2_HOST}/${queryStr}`, {
+      k = await hmacHex(hexToBytes(k), "aws4_request");
+      const signature = await hmacHex(hexToBytes(k), stringToSign);
+      const res = await fetch(`https://${R2_HOST}/${bucketName}?${queryStr}`, {
         method: "GET",
         headers: {
           "x-amz-date": amzDate,
-          "x-amz-content-sha256": "UNSIGNED_PAYLOAD",
+          "x-amz-content-sha256": payloadHash,
           Authorization: `AWS4-HMAC-SHA256 Credential=${ak}/${scope}, SignedHeaders=${signedHeaders}, Signature=${signature}`
         }
       });
-      if (!res.ok) return null;
+      if (!res.ok) {
+        console.error("[files] s3 list failed", res.status, (await res.text()).slice(0, 400));
+        return null;
+      }
       const xml = await res.text();
       for (const m of xml.matchAll(/<Size>(\d+)<\/Size>/g)) total += Number(m[1]);
       const nt = xml.match(/<NextContinuationToken>([^<]+)<\/NextContinuationToken>/);
@@ -9129,37 +9138,55 @@ x-amz-date:${amzDate}
       token = nt[1];
     }
     return total;
-  } catch {
+  } catch (e) {
+    console.error("[files] s3 list error", e?.message || String(e));
     return null;
   }
 }
+var RECONCILE_EVERY_SECONDS = 3600;
+var readCounter = async (kv) => {
+  try {
+    const raw = await kv.get(USAGE_KEY);
+    if (raw == null) return null;
+    if (raw.trim() === "") return null;
+    if (raw.startsWith("{")) {
+      const o = JSON.parse(raw);
+      const b = Number(o?.b), t = Number(o?.t);
+      if (Number.isFinite(b) && Number.isFinite(t) && b >= 0) return { bytes: b, ts: t };
+      return null;
+    }
+    const n = Number(raw);
+    if (!Number.isFinite(n)) return null;
+    return { bytes: n, ts: 0 };
+  } catch {
+    return null;
+  }
+};
+var writeCounter = async (kv, bytes) => {
+  try {
+    await kv.put(USAGE_KEY, JSON.stringify({ b: Math.max(0, Math.round(bytes)), t: Math.floor(Date.now() / 1e3) }));
+  } catch {
+  }
+};
 async function bucketUsage(env) {
   const kv = env?.GK_KV;
-  if (kv) {
-    try {
-      const n = await kv.get(USAGE_KEY);
-      if (n != null) return { bytes: Number(n) || 0, exact: true };
-    } catch {
-    }
-  }
+  const cached = kv ? await readCounter(kv) : null;
+  const fresh = cached && Date.now() / 1e3 - cached.ts < RECONCILE_EVERY_SECONDS;
+  if (fresh) return { bytes: cached.bytes, exact: true };
   const total = await s3ListTotalBytes(env);
   if (total != null) {
-    if (kv) {
-      try {
-        await kv.put(USAGE_KEY, String(total));
-      } catch {
-      }
-    }
+    if (kv) await writeCounter(kv, total);
     return { bytes: total, exact: true };
   }
+  if (cached) return { bytes: cached.bytes, exact: false };
   return { bytes: 0, exact: false };
 }
 var bumpUsage = async (env, delta) => {
   const kv = env?.GK_KV;
   if (!kv) return;
   try {
-    const n = Number(await kv.get(USAGE_KEY) || 0);
-    await kv.put(USAGE_KEY, String(Math.max(0, n + delta)));
+    const c = await readCounter(kv);
+    await writeCounter(kv, (c ? c.bytes : 0) + delta);
   } catch {
   }
 };
@@ -9198,6 +9225,22 @@ async function handleFilesStorageRequest(request, env) {
   }
   const bucket = env?.FILE_BUCKET;
   const available = Boolean(bucket && typeof bucket.put === "function");
+  if (request.method === "GET" && path === "/api/files/usage" && url.searchParams.get("probe") === "1") {
+    const tok = String(request.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
+    if (tok && tok === String(env.ADMIN_TOKEN || "")) {
+      return jsonResponse2(request, {
+        ok: true,
+        probe: {
+          akLen: String(env.R2_ACCESS_KEY || "").length,
+          skLen: String(env.R2_SECRET_KEY || "").length,
+          hasKV: Boolean(env?.GK_KV),
+          bucketName: String(env?.FILE_BUCKET?.name || ""),
+          bucketFn: Boolean(env?.FILE_BUCKET && typeof env.FILE_BUCKET.get === "function")
+        }
+      });
+    }
+    return jsonResponse2(request, { error: "forbidden" }, 403);
+  }
   if (request.method === "GET" && path === "/api/files/usage") {
     const usage = await bucketUsage(env);
     return jsonResponse2(request, {

@@ -94,10 +94,7 @@ const hexToBytes = h => Uint8Array.from(h.match(/.{2}/g), x => parseInt(x, 16));
 async function s3ListTotalBytes(env) {
   const ak = String(env.R2_ACCESS_KEY || '');
   const sk = String(env.R2_SECRET_KEY || '');
-  if (!ak || !sk) {
-    console.log('[files] s3 reconcile skipped: ak=' + (ak ? 'set(' + ak.length + ')' : 'EMPTY') + ' sk=' + (sk ? 'set(' + sk.length + ')' : 'EMPTY'));
-    return null;
-  }
+  if (!ak || !sk) return null;
   const bucketName = String(env?.FILE_BUCKET?.name || 'admission-hub');
   try {
     let total = 0;
@@ -254,25 +251,6 @@ export async function handleFilesStorageRequest(request, env) {
 
   const bucket = env?.FILE_BUCKET;
   const available = Boolean(bucket && typeof bucket.put === 'function');
-
-  if (request.method === 'GET' && path === '/api/files/usage'
-    && url.searchParams.get('probe') === '1') {
-    /* TEMP diagnostic (removed after the 9 GB counter is verified live). */
-    const tok = String(request.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '');
-    if (tok && tok === String(env.ADMIN_TOKEN || '')) {
-      return jsonResponse(request, {
-        ok: true,
-        probe: {
-          akLen: String(env.R2_ACCESS_KEY || '').length,
-          skLen: String(env.R2_SECRET_KEY || '').length,
-          hasKV: Boolean(env?.GK_KV),
-          bucketName: String(env?.FILE_BUCKET?.name || ''),
-          bucketFn: Boolean(env?.FILE_BUCKET && typeof env.FILE_BUCKET.get === 'function')
-        }
-      });
-    }
-    return jsonResponse(request, { error: 'forbidden' }, 403);
-  }
 
   if (request.method === 'GET' && path === '/api/files/usage') {
     const usage = await bucketUsage(env);
