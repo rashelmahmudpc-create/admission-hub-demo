@@ -53,3 +53,10 @@ id = "942828aa82e546d4af11796ef92ab134"
 binding = "PROFILE_DB"
 database_name = "admission-profile"
 database_id = "8f7cf101-66a3-437d-bc98-a8984698d7f5"
+
+# R2 file storage (owner-approved 2026-09-18) — private objects,
+# served from our own domain ($0 egress). S3 API creds stay in the
+# dashboard only; the worker uses this binding, no secrets needed.
+[[r2_buckets]]
+binding = "FILE_BUCKET"
+bucket_name = "admission-hub"

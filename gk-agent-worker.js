@@ -3,6 +3,7 @@ import pubHandler, { publishGlobal } from './public-worker.js';
 import { handleInternalEmailRequest } from './email-gateway/worker/handler.mjs';
 import { createNativeAuthHandler } from './auth-native/worker/public-auth-handler.mjs';
 import { handleFcmNotificationRequest, runScheduledGlobalNotifications } from './fcm-notification.mjs';
+import { handleFilesStorageRequest } from './files-storage.mjs';
 export { EmailGatewayCoordinator } from './email-gateway/worker/email-coordinator.mjs';
 export { AdmissionAuthAuthority } from './auth-native/worker/auth-authority-do.mjs';
 
@@ -438,6 +439,10 @@ export default {
     // Phase 1 — FCM notification foundation (owns /api/notifications/* + /internal/notifications/health).
     const fcmResponse = await handleFcmNotificationRequest(request, env, ctx);
     if (fcmResponse) return fcmResponse;
+    // R2 file storage (owner-approved 2026-09-18) — owns /api/files/*.
+    // Must run before the /api/* pubHandler catch-all.
+    const filesResponse = await handleFilesStorageRequest(request, env, ctx);
+    if (filesResponse) return filesResponse;
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors(request) });
 
     // Public product API: content, Firebase-session-aware or ephemeral-guest AI,
