@@ -92,6 +92,22 @@
     try { return JSON.parse(localStorage.getItem('ahFcmLastErr') || 'null'); } catch (_) { return null; }
   };
 
+  /* Firebase registers /firebase-messaging-sw.js itself, but subscribes without
+   * waiting for it to activate — on a cold first enable that loses the race and
+   * pushManager.subscribe() throws "no active Service Worker" (error 20), so no
+   * device ever gets a token. Register here and wait until it is active, then
+   * hand the ready registration to getToken(). */
+  const SW_URL = './firebase-messaging-sw.js';
+  const SW_SCOPE = '/firebase-cloud-messaging-push-scope';
+  const readySw = async () => {
+    if (!('serviceWorker' in navigator)) return null;
+    try {
+      const reg = await navigator.serviceWorker.register(SW_URL, { scope: SW_SCOPE });
+      for (let i = 0; i < 60 && !reg.active; i++) await new Promise((r) => setTimeout(r, 100));
+      return reg;
+    } catch (_) { return null; }
+  };
+
   const initMessaging = async (cfg) => {
     const fb = await loadSdk();
     if (!fb || typeof fb.initializeApp !== 'function') throw new Error('sdk-missing');
@@ -171,7 +187,10 @@
       try { messaging = await initMessaging(cfg.webConfig); }
       catch (_) { setErr('sdk-failed'); return 'sdk-failed'; }
       let token;
-      try { token = await messaging.getToken(); }
+      try {
+        const reg = await readySw();
+        token = await messaging.getToken(reg ? { serviceWorkerRegistration: reg } : undefined);
+      }
       catch (_) { setErr('token-failed'); return 'token-failed'; }
       if (!token) { setErr('token-empty'); return 'token-failed'; }
       const out = await registerToken(token);
@@ -191,7 +210,8 @@
       const cfg = await getConfig();
       if (cfg && cfg.fcmConfigured && cfg.webConfig) {
         const messaging = await initMessaging(cfg.webConfig);
-        const token = await messaging.getToken();
+        const reg = await readySw();
+        const token = await messaging.getToken(reg ? { serviceWorkerRegistration: reg } : undefined);
         if (token) {
           await boundedFetch('/unregister-token', {
             method: 'POST',
@@ -216,7 +236,8 @@
     try {
       const messaging = await initMessaging(cfg.webConfig);
       if (permission() !== 'granted') { stateSet({ enabled: false }); return; }
-      const token = await messaging.getToken();
+      const reg = await readySw();
+      const token = await messaging.getToken(reg ? { serviceWorkerRegistration: reg } : undefined);
       if (token) await registerToken(token);
     } catch (_) { /* next start retries */ }
   };

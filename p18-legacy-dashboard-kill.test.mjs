@@ -32,7 +32,7 @@ test('HTML and service worker are no-cache controlled', HEADERS.includes('/sw.js
 test('dashboard and app-shell build markers are current',
   H.includes('dashboard-v2.js?v=dash2f13-theme') && SW.includes('dashboard-v2.js?v=dash2f13-theme') &&
 
-  SW.includes("const BUILD_ID = 'v275-nav4-fcm-sw-20260917'") && H.includes('sw.js?v=v275-nav4-fcm-sw-20260917'));
+  SW.includes("const BUILD_ID = 'v276-fcm-sw-ready-20260917'") && H.includes('sw.js?v=v276-fcm-sw-ready-20260917'));
 
 test('dashboard-v2 renders without any account bootstrap', await (async () => {
   const dom = new JSDOM('<!doctype html><html><head></head><body><div id="app"></div><div id="navRoot"></div></body></html>', { runScripts: 'dangerously', pretendToBeVisual: true, url: 'https://admissionhub.pages.dev/' });

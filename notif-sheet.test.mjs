@@ -82,7 +82,7 @@ test('router: #notifications route + script tag + SW pin', () => {
   assert.match(INDEX, /p==='notifications' && window\.renderNotificationsInbox/);
   assert.match(INDEX, /notification-inbox\.js\?v=notif-inbox-v3/);
   assert.match(INDEX, /notification-hub\.js\?v=notify-v117/);
-  assert.match(INDEX, /notification-fcm\.js\?v=fcm-p1-v5/);
+  assert.match(INDEX, /notification-fcm\.js\?v=fcm-p1-v6/);
   assert.match(INDEX, /profile-ui\.js\?v=profile-v15-nonotif/);
   assert.match(SW, /notification-inbox\.js\?v=notif-inbox-v3/);
   assert.match(SW, /dashboard-v2\.js\?v=dash2f15-inbox/);
