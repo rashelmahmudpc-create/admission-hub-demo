@@ -110,7 +110,7 @@ test('generic backup verification is centralized and bound to the current Fireba
 
 test('Google and the explicit Email-or-Telegram selector are public while Passkey and generic backup stay unpublished', () => {
   assert.match(wrangler, /GOOGLE_AUTH_ACTIVATION = "enabled"/);
-  assert.match(wrangler, /PASSKEY_AUTH_ACTIVATION = "canary"/);
+  assert.match(wrangler, /PASSKEY_AUTH_ACTIVATION = "enabled"/);
   assert.match(wrangler, /VERIFICATION_AUTH_ACTIVATION = "enabled"/);
   assert.match(wrangler, /VERIFICATION_ORCHESTRATOR_CONFIG = '\{"enabled":true,"providers":\[\{"id":"telegram","enabled":true/);
   assert.doesNotMatch(wrangler, /"id":"(?:otp-a|otp-b|otp-c|whatsapp)","enabled":true/);
@@ -128,7 +128,7 @@ test('Google and the explicit Email-or-Telegram selector are public while Passke
   assert.match(runtime, /\['canary', 'enabled'\]\.includes\(String\(env\.VERIFICATION_AUTH_ACTIVATION/);
   assert.match(activationWorkflow, /g\?\.available!==true/);
   assert.match(activationWorkflow, /verify-google-browser-origin\.mjs/);
-  assert.match(activationWorkflow, /methods\?\.passkey\?\.available!==false/);
+  assert.match(activationWorkflow, /methods\?\.passkey\?\.available!==true/);
   assert.match(activationWorkflow, /methods\?\.backup\?\.available!==false/);
   assert.match(googleBrowserOriginOperation, /waitForSelector\('\.ah-account-page', \{ state: 'attached'/);
   assert.doesNotMatch(googleBrowserOriginOperation, /waitForSelector\('\.ah-account-launcher'/);

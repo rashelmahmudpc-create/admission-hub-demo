@@ -423,7 +423,8 @@ test('live Firebase lifecycle guard requires public Google and Telegram selector
   assert.equal(liveAuthMethodsReady({ ...methods, google: { available: false } }), false);
   assert.equal(liveAuthMethodsReady({ ...methods, telegramVerification: { available: false } }), false);
   assert.equal(liveAuthMethodsReady({ ...methods, backup: { available: true } }), false);
-  assert.equal(liveAuthMethodsReady({ ...methods, passkey: { available: true, enrollmentAvailable: true } }), false);
+  assert.equal(liveAuthMethodsReady({ ...methods, passkey: { available: true, enrollmentAvailable: true } }), true);
+  assert.equal(liveAuthMethodsReady({ ...methods, passkey: { available: false, enrollmentAvailable: false } }), false);
 });
 
 test('live Firebase check extracts only a standard verify-email action', () => {

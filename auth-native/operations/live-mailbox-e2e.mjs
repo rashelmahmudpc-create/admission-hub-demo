@@ -93,7 +93,6 @@ export function liveAuthMethodsReady(methods = {}) {
     && google?.available === true
     && google?.availabilityCode === 'READY'
     && /^[A-Za-z0-9._-]+\.apps\.googleusercontent\.com$/.test(String(google?.clientId || ''))
-    && methods?.passkey?.available === false
     && methods?.passkey?.enrollmentAvailable === true
     && telegram?.available === true
     && telegram?.availabilityCode === 'READY'
