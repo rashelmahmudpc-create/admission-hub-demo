@@ -726,6 +726,123 @@ export async function handleFcmNotificationRequest(request, env) {
     });
   }
 
+  /* ── Phase 2: global notification ADMIN routes ─────────────────────────────
+   * The Bearer ADMIN_TOKEN is the credential — a valid token is enough, with
+   * or without a logged-in session (the session, when present, is only used
+   * to record who the admin is). Keeps the Admin Center usable from any
+   * device/browser. User routes below still require a session. */
+  const ADMIN_PATHS = new Set([
+    '/api/notifications/global/send',
+    '/api/notifications/global/schedule',
+    '/api/notifications/global/cancel',
+    '/api/notifications/history',
+    '/api/notifications/templates'
+  ]);
+  if (ADMIN_PATHS.has(path)) {
+    const adminToken = String(request.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '').trim();
+    if (!env.ADMIN_TOKEN || adminToken !== env.ADMIN_TOKEN) {
+      return jsonResponse(request, { error: 'forbidden' }, 403);
+    }
+    const maybeSession = await sessionUser(env, request);
+    const adminUserId = maybeSession ? String(maybeSession.user.id) : 'admin';
+    if (path === '/api/notifications/global/send' && request.method === 'POST') {
+      if (!fcmConfigured(env)) return jsonResponse(request, { error: 'fcm-not-configured' }, 503);
+      if (!store.available()) return jsonResponse(request, { error: 'storage-unavailable' }, 503);
+      const body = await parseBody(request);
+      if (!body) return jsonResponse(request, { error: 'invalid-json' }, 400);
+      const type = GLOBAL_TYPES.includes(body.type) ? body.type : null;
+      if (!type) return jsonResponse(request, { error: 'invalid-type' }, 400);
+      const title = String(body.title || '').trim().slice(0, 120);
+      const text = String(body.body || '').trim().slice(0, 400);
+      if (title.length < 1 || title.length > 120) return jsonResponse(request, { error: 'invalid-title' }, 400);
+      if (text.length < 1 || text.length > 400) return jsonResponse(request, { error: 'invalid-body' }, 400);
+      const imageUrl = String(body.imageUrl || '').slice(0, 500) || null;
+      const targetUrl = String(body.targetUrl || '').replace(/[^\w./#-]/g, '').slice(0, 200) || null;
+      const audience = GLOBAL_AUDIENCES[body.audience] ? body.audience : 'all_students';
+      const topic = GLOBAL_AUDIENCES[audience].topic;
+      if (!TOPIC_RE.test(topic)) return jsonResponse(request, { error: 'invalid-topic' }, 500);
+      /* Rule (spec §17): duplicate protection — same content within 10 days. */
+      const dedup = (await sha256Hex(`${type}|${title}|${text}`)).slice(0, 40);
+      const dup = await store.duplicateRecent(dedup, Date.now() - 10 * 86400000);
+      if (dup) return jsonResponse(request, { error: 'duplicate', existingId: dup }, 409);
+      /* Rule (spec §17): daily spam cap. */
+      if (!(await kvRateAllow(env, `global:day:${dhakaDayKey()}`, GLOBAL_DAILY_CAP, 86400))) {
+        return jsonResponse(request, { error: 'rate-limited' }, 429);
+      }
+      const id = `gn-${Math.random().toString(36).slice(2, 8)}${Math.random().toString(36).slice(2, 8)}`;
+      const row = {
+        id, type, title, body: text, imageUrl, targetUrl,
+        audience, topic, dedup, scheduledAt: null,
+        createdBy: adminUserId, status: 'sending', createdAt: Date.now()
+      };
+      await store.insertGlobal(row);
+      const result = await sendGlobal(env, store, row);
+      return jsonResponse(request, { ok: result.ok, id, status: result.ok ? 'sent' : 'failed', reachEstimate: result.reach }, result.ok ? 201 : 502);
+    }
+
+    if (path === '/api/notifications/global/schedule' && request.method === 'POST') {
+      if (!store.available()) return jsonResponse(request, { error: 'storage-unavailable' }, 503);
+      const body = await parseBody(request);
+      if (!body) return jsonResponse(request, { error: 'invalid-json' }, 400);
+      const type = GLOBAL_TYPES.includes(body.type) ? body.type : null;
+      if (!type) return jsonResponse(request, { error: 'invalid-type' }, 400);
+      const title = String(body.title || '').trim().slice(0, 120);
+      const text = String(body.body || '').trim().slice(0, 400);
+      if (title.length < 1 || title.length > 120) return jsonResponse(request, { error: 'invalid-title' }, 400);
+      if (text.length < 1 || text.length > 400) return jsonResponse(request, { error: 'invalid-body' }, 400);
+      const imageUrl = String(body.imageUrl || '').slice(0, 500) || null;
+      const targetUrl = String(body.targetUrl || '').replace(/[^\w./#-]/g, '').slice(0, 200) || null;
+      const audience = GLOBAL_AUDIENCES[body.audience] ? body.audience : 'all_students';
+      const topic = GLOBAL_AUDIENCES[audience].topic;
+      const when = Number(body.scheduledAt);
+      if (!Number.isFinite(when) || when <= Date.now() + 60_000) {
+        return jsonResponse(request, { error: 'invalid-schedule' }, 400);
+      }
+      if (when > Date.now() + GLOBAL_MAX_SCHEDULE_DAYS * 86400000) {
+        return jsonResponse(request, { error: 'schedule-too-far' }, 400);
+      }
+      const dedup = (await sha256Hex(`${type}|${title}|${text}`)).slice(0, 40);
+      const dup = await store.duplicateRecent(dedup, Date.now() - 10 * 86400000);
+      if (dup) return jsonResponse(request, { error: 'duplicate', existingId: dup }, 409);
+      const id = `gn-${Math.random().toString(36).slice(2, 8)}${Math.random().toString(36).slice(2, 8)}`;
+      await store.insertGlobal({
+        id, type, title, body: text, imageUrl, targetUrl,
+        audience, topic, dedup, scheduledAt: Math.floor(when),
+        createdBy: adminUserId, status: 'scheduled', createdAt: Date.now()
+      });
+      return jsonResponse(request, { ok: true, id, status: 'scheduled', scheduledAt: Math.floor(when) }, 201);
+    }
+
+    if (path === '/api/notifications/global/cancel' && request.method === 'POST') {
+      if (!store.available()) return jsonResponse(request, { error: 'storage-unavailable' }, 503);
+      const body = await parseBody(request);
+      if (!body) return jsonResponse(request, { error: 'invalid-json' }, 400);
+      const id = String(body.id || '');
+      if (!GN_ID_RE.test(id)) return jsonResponse(request, { error: 'invalid-id' }, 400);
+      const rows = await store.recentGlobals(50);
+      const row = rows.find(r => r.id === id);
+      if (!row) return jsonResponse(request, { error: 'not-found' }, 404);
+      if (row.status !== 'scheduled') return jsonResponse(request, { error: 'not-scheduled' }, 409);
+      await store.updateGlobalStatus(id, { status: 'cancelled' });
+      return jsonResponse(request, { ok: true, id, status: 'cancelled' });
+    }
+
+    if (path === '/api/notifications/history' && request.method === 'GET') {
+      if (!store.available()) return jsonResponse(request, { error: 'storage-unavailable' }, 503);
+      return jsonResponse(request, {
+        ok: true,
+        items: await store.recentGlobals(50),
+        reachEstimate: await store.activeDeviceCount(),
+        dailyCap: GLOBAL_DAILY_CAP
+      });
+    }
+
+    if (path === '/api/notifications/templates' && request.method === 'GET') {
+      return jsonResponse(request, { ok: true, templates: GLOBAL_TEMPLATES });
+    }
+
+  }
+
   // Everything below requires an authenticated student.
   const session = await sessionUser(env, request);
   if (!session) return jsonResponse(request, { error: 'auth-required' }, 401);
@@ -861,111 +978,6 @@ export async function handleFcmNotificationRequest(request, env) {
       results.push({ id: device.id, ok: outcome.ok, reason: outcome.reason || 'ok' });
     }
     return jsonResponse(request, { ok: results.every(r => r.ok), sent: results.filter(r => r.ok).length, total: results.length, results });
-  }
-
-  /* ── Phase 2: global notification admin routes (session + ADMIN_TOKEN) ──── */
-  const adminToken = String(request.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '').trim();
-  const isAdmin = Boolean(env.ADMIN_TOKEN) && adminToken === env.ADMIN_TOKEN;
-
-  if (path === '/api/notifications/global/send' && request.method === 'POST') {
-    if (!isAdmin) return jsonResponse(request, { error: 'forbidden' }, 403);
-    if (!fcmConfigured(env)) return jsonResponse(request, { error: 'fcm-not-configured' }, 503);
-    if (!store.available()) return jsonResponse(request, { error: 'storage-unavailable' }, 503);
-    const body = await parseBody(request);
-    if (!body) return jsonResponse(request, { error: 'invalid-json' }, 400);
-    const type = GLOBAL_TYPES.includes(body.type) ? body.type : null;
-    if (!type) return jsonResponse(request, { error: 'invalid-type' }, 400);
-    const title = String(body.title || '').trim().slice(0, 120);
-    const text = String(body.body || '').trim().slice(0, 400);
-    if (title.length < 1 || title.length > 120) return jsonResponse(request, { error: 'invalid-title' }, 400);
-    if (text.length < 1 || text.length > 400) return jsonResponse(request, { error: 'invalid-body' }, 400);
-    const imageUrl = String(body.imageUrl || '').slice(0, 500) || null;
-    const targetUrl = String(body.targetUrl || '').replace(/[^\w./#-]/g, '').slice(0, 200) || null;
-    const audience = GLOBAL_AUDIENCES[body.audience] ? body.audience : 'all_students';
-    const topic = GLOBAL_AUDIENCES[audience].topic;
-    if (!TOPIC_RE.test(topic)) return jsonResponse(request, { error: 'invalid-topic' }, 500);
-    /* Rule (spec §17): duplicate protection — same content within 10 days. */
-    const dedup = (await sha256Hex(`${type}|${title}|${text}`)).slice(0, 40);
-    const dup = await store.duplicateRecent(dedup, Date.now() - 10 * 86400000);
-    if (dup) return jsonResponse(request, { error: 'duplicate', existingId: dup }, 409);
-    /* Rule (spec §17): daily spam cap. */
-    if (!(await kvRateAllow(env, `global:day:${dhakaDayKey()}`, GLOBAL_DAILY_CAP, 86400))) {
-      return jsonResponse(request, { error: 'rate-limited' }, 429);
-    }
-    const id = `gn-${Math.random().toString(36).slice(2, 8)}${Math.random().toString(36).slice(2, 8)}`;
-    const row = {
-      id, type, title, body: text, imageUrl, targetUrl,
-      audience, topic, dedup, scheduledAt: null,
-      createdBy: userId, status: 'sending', createdAt: Date.now()
-    };
-    await store.insertGlobal(row);
-    const result = await sendGlobal(env, store, row);
-    return jsonResponse(request, { ok: result.ok, id, status: result.ok ? 'sent' : 'failed', reachEstimate: result.reach }, result.ok ? 201 : 502);
-  }
-
-  if (path === '/api/notifications/global/schedule' && request.method === 'POST') {
-    if (!isAdmin) return jsonResponse(request, { error: 'forbidden' }, 403);
-    if (!store.available()) return jsonResponse(request, { error: 'storage-unavailable' }, 503);
-    const body = await parseBody(request);
-    if (!body) return jsonResponse(request, { error: 'invalid-json' }, 400);
-    const type = GLOBAL_TYPES.includes(body.type) ? body.type : null;
-    if (!type) return jsonResponse(request, { error: 'invalid-type' }, 400);
-    const title = String(body.title || '').trim().slice(0, 120);
-    const text = String(body.body || '').trim().slice(0, 400);
-    if (title.length < 1 || title.length > 120) return jsonResponse(request, { error: 'invalid-title' }, 400);
-    if (text.length < 1 || text.length > 400) return jsonResponse(request, { error: 'invalid-body' }, 400);
-    const imageUrl = String(body.imageUrl || '').slice(0, 500) || null;
-    const targetUrl = String(body.targetUrl || '').replace(/[^\w./#-]/g, '').slice(0, 200) || null;
-    const audience = GLOBAL_AUDIENCES[body.audience] ? body.audience : 'all_students';
-    const topic = GLOBAL_AUDIENCES[audience].topic;
-    const when = Number(body.scheduledAt);
-    if (!Number.isFinite(when) || when <= Date.now() + 60_000) {
-      return jsonResponse(request, { error: 'invalid-schedule' }, 400);
-    }
-    if (when > Date.now() + GLOBAL_MAX_SCHEDULE_DAYS * 86400000) {
-      return jsonResponse(request, { error: 'schedule-too-far' }, 400);
-    }
-    const dedup = (await sha256Hex(`${type}|${title}|${text}`)).slice(0, 40);
-    const dup = await store.duplicateRecent(dedup, Date.now() - 10 * 86400000);
-    if (dup) return jsonResponse(request, { error: 'duplicate', existingId: dup }, 409);
-    const id = `gn-${Math.random().toString(36).slice(2, 8)}${Math.random().toString(36).slice(2, 8)}`;
-    await store.insertGlobal({
-      id, type, title, body: text, imageUrl, targetUrl,
-      audience, topic, dedup, scheduledAt: Math.floor(when),
-      createdBy: userId, status: 'scheduled', createdAt: Date.now()
-    });
-    return jsonResponse(request, { ok: true, id, status: 'scheduled', scheduledAt: Math.floor(when) }, 201);
-  }
-
-  if (path === '/api/notifications/global/cancel' && request.method === 'POST') {
-    if (!isAdmin) return jsonResponse(request, { error: 'forbidden' }, 403);
-    if (!store.available()) return jsonResponse(request, { error: 'storage-unavailable' }, 503);
-    const body = await parseBody(request);
-    if (!body) return jsonResponse(request, { error: 'invalid-json' }, 400);
-    const id = String(body.id || '');
-    if (!GN_ID_RE.test(id)) return jsonResponse(request, { error: 'invalid-id' }, 400);
-    const rows = await store.recentGlobals(50);
-    const row = rows.find(r => r.id === id);
-    if (!row) return jsonResponse(request, { error: 'not-found' }, 404);
-    if (row.status !== 'scheduled') return jsonResponse(request, { error: 'not-scheduled' }, 409);
-    await store.updateGlobalStatus(id, { status: 'cancelled' });
-    return jsonResponse(request, { ok: true, id, status: 'cancelled' });
-  }
-
-  if (path === '/api/notifications/history' && request.method === 'GET') {
-    if (!isAdmin) return jsonResponse(request, { error: 'forbidden' }, 403);
-    if (!store.available()) return jsonResponse(request, { error: 'storage-unavailable' }, 503);
-    return jsonResponse(request, {
-      ok: true,
-      items: await store.recentGlobals(50),
-      reachEstimate: await store.activeDeviceCount(),
-      dailyCap: GLOBAL_DAILY_CAP
-    });
-  }
-
-  if (path === '/api/notifications/templates' && request.method === 'GET') {
-    if (!isAdmin) return jsonResponse(request, { error: 'forbidden' }, 403);
-    return jsonResponse(request, { ok: true, templates: GLOBAL_TEMPLATES });
   }
 
   /* ── Phase 2: user routes (session) ─────────────────────────────────────── */

@@ -307,18 +307,26 @@ const registerDevice = async (env, suffix) => {
   return token;
 };
 
-test('admin routes reject missing/invalid sessions and tokens', async () => {
+test('admin routes: Bearer token is the credential (session optional)', async () => {
   const env = await makeEnv();
-  const noSession = await call(cookieRequest('/api/notifications/global/send', { method: 'POST', session: null, body: { type: 'announcement', title: 'x', body: 'y' } }), env);
-  assert.equal(noSession.response.status, 401, 'no session → 401 (session gate first)');
-  const noAdmin = await call(cookieRequest('/api/notifications/global/send', { method: 'POST', admin: null, body: { type: 'announcement', title: 'x', body: 'y' } }), env);
-  assert.equal(noAdmin.response.status, 403, 'no token → 403');
-  const badAdmin = await call(cookieRequest('/api/notifications/global/send', { method: 'POST', admin: 'wrong', body: { type: 'announcement', title: 'x', body: 'y' } }), env);
+  const noSessionNoToken = await call(cookieRequest('/api/notifications/global/send', { method: 'POST', session: null, admin: null, body: { type: 'announcement', title: 'x', body: 'y' } }), env);
+  assert.equal(noSessionNoToken.response.status, 403, 'no token → 403');
+  const badAdmin = await call(cookieRequest('/api/notifications/global/send', { method: 'POST', session: null, admin: 'wrong', body: { type: 'announcement', title: 'x', body: 'y' } }), env);
   assert.equal(badAdmin.response.status, 403, 'wrong token → 403');
-  const histNoAdmin = await call(cookieRequest('/api/notifications/history', { admin: null }), env);
+  const histNoAdmin = await call(cookieRequest('/api/notifications/history', { session: null, admin: null }), env);
   assert.equal(histNoAdmin.response.status, 403);
-  const tplNoAdmin = await call(cookieRequest('/api/notifications/templates', { admin: null }), env);
+  const tplNoAdmin = await call(cookieRequest('/api/notifications/templates', { session: null, admin: null }), env);
   assert.equal(tplNoAdmin.response.status, 403);
+  /* the owner fix (2026-09-18): a valid token works WITHOUT a logged-in
+   * session — the Admin Center must not depend on the app sign-in state */
+  const histTokenOnly = await call(cookieRequest('/api/notifications/history', { session: null }), env);
+  assert.equal(histTokenOnly.response.status, 200, 'token only (no session) → 200');
+  const tplTokenOnly = await call(cookieRequest('/api/notifications/templates', { session: null }), env);
+  assert.equal(tplTokenOnly.response.status, 200);
+  assert.equal(tplTokenOnly.data.templates.length, 6);
+  /* user routes still require a session */
+  const inboxNoSession = await call(cookieRequest('/api/notifications/inbox', { session: null, admin: null }), env);
+  assert.equal(inboxNoSession.response.status, 401, 'user route without session → 401');
 });
 
 test('global/send: topic-first send, stored row, reliable reach estimate', async () => {

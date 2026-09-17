@@ -1,4 +1,7 @@
-/* v1 — Admission Hub admin Notification Center (Phase 2, owner-approved 2026-09-17).
+/* v2 — Admission Hub admin Notification Center (Phase 2, owner-approved 2026-09-17).
+ * v2 (2026-09-18, owner bug): verify flow now distinguishes the failure
+ * modes — the Bearer ADMIN_TOKEN is the credential (session optional), so
+ * 403 = wrong token; 503 = storage/FCM not ready; network = try again.
  *
  * Hidden route #notif-admin (not in the bottom nav). Admin auth = the existing
  * ADMIN_TOKEN sent as Bearer; it is kept in sessionStorage for this browser
@@ -26,7 +29,9 @@
     tokenBody: { bn: 'এই section-এ ঢוקতে ADMIN token দিন — শুধু এই browser session-এ থাকবে, কোথাও store হবে না।', en: 'Enter the ADMIN token to open this section — it is kept in this browser session only, never stored.' },
     tokenPh: { bn: 'ADMIN_TOKEN', en: 'ADMIN_TOKEN' },
     verify: { bn: 'Verify', en: 'Verify' },
-    badToken: { bn: 'Token সঠিক নয়', en: 'Incorrect token' },
+    badToken: { bn: 'Token সঠিক নয় — আবার চেষ্টা করুন', en: 'Incorrect token — please try again' },
+    notReady: { bn: 'এখনো ready নয় — কিছুক্ষণ পর আবার চেষ্টা করুন', en: 'Not ready yet — please try again in a moment' },
+    networkErr: { bn: 'Connection সমস্যা — internet check করে আবার চেষ্টা করুন', en: 'Connection problem — check your internet and try again' },
     typeLabel: { bn: 'Type', en: 'Type' },
     types: {
       'new-content': { bn: '📚 নতুন Content', en: '📚 New Content' },
@@ -83,6 +88,7 @@
     scheduledOk: { bn: 'Schedule হয়ে গেছে ✓', en: 'Scheduled ✓' },
     cancelledOk: { bn: 'Cancelled ✓', en: 'Cancelled ✓' },
     logout: { bn: 'Admin session বন্ধ করুন', en: 'End admin session' },
+    storage: { bn: 'Storage (৯ GB hard limit-এর নিচে)', en: 'Storage (under the 9 GB hard lock)' },
     metricsNote: { bn: 'শুধু reliable metrics: sent / estimated reach / clicks। Open rate web push-এ reliably measure করা যায় না।', en: 'Only reliable metrics: sent / estimated reach / clicks. Open rate is not reliably measurable on web push.' }
   };
 
@@ -139,7 +145,8 @@
     mode: 'now',           // now | schedule
     when: '',              // datetime-local value (Asia/Dhaka local)
     busy: false,
-    error: ''
+    error: '',
+    usage: null /* { usedBytes, limitBytes, percent, exact } */
   };
 
   const applyTemplate = (key) => {
@@ -151,6 +158,13 @@
     state.body = tpl[L].body;
   };
 
+  const fmtBytes = (n) => {
+    if (!n && n !== 0) return '—';
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    let v = Number(n || 0), i = 0;
+    while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+    return `${v >= 100 ? Math.round(v) : v.toFixed(1)} ${units[i]}`;
+  };
   const previewHtml = () => {
     const now = new Date();
     const L = lang() === 'bn' ? 'bn-BD' : 'en-GB';
@@ -237,6 +251,13 @@
 
   const centerView = () => `
     <button class="gn-btn" onclick="window.__gnGoCreate()">🔔 ${esc(t('create'))}</button>
+    ${state.usage ? `<div class="gn-card gn-item" style="margin-top:10px">
+      <span class="gn-item-ic" aria-hidden="true">📦</span>
+      <div class="gn-item-main">
+        <div class="gn-item-title">${esc(t('storage'))}</div>
+        <div class="gn-item-sub">${fmtBytes(state.usage.usedBytes)} / 9 GB (${state.usage.percent}%)${state.usage.exact ? '' : ' · ~'}</div>
+      </div>
+    </div>` : ''}
     <div style="height:14px"></div>
     <span class="gn-label">${esc(t('recent'))}</span>
     ${state.history.length ? state.history.map(historyItem).join('') : `<div class="gn-card" style="text-align:center;color:#8a988f;padding:26px 14px;font-size:13px">${esc(t('empty'))}</div>`}
@@ -312,11 +333,21 @@
   const reRender = () => render().catch(() => {});
 
   /* ── center data ────────────────────────────────────────────────────────── */
+  const loadUsage = async () => {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 6000);
+      const res = await fetch('/api/files/usage', { credentials: 'include', signal: controller.signal });
+      clearTimeout(timer);
+      if (res.ok) state.usage = await res.json();
+    } catch (_) { /* meter is optional */ }
+  };
   const loadCenter = async () => {
     const out = await api('/api/notifications/history');
     if (!out.ok) { state.error = t('errGeneric'); reRender(); return; }
     state.history = out.data.items || [];
     state.reachEstimate = Number(out.data.reachEstimate || 0);
+    await loadUsage();
     reRender();
   };
 
@@ -334,7 +365,8 @@
       reRender();
     } else {
       setTok('');
-      if (errEl) errEl.textContent = t('badToken');
+      const msg = out.status === 403 ? t('badToken') : (out.status === 503 ? t('notReady') : t('networkErr'));
+      if (errEl) errEl.textContent = msg;
       input && input.focus();
     }
   };

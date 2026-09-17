@@ -172,6 +172,42 @@ test('storage unavailable → 503, never a crash', async () => {
   assert.equal(del.response.status, 503);
 });
 
+
+test('9 GB hard lock: bucket usage caps uploads (owner: card must never be charged)', async () => {
+  const env = makeEnv();
+  /* seed the counter just under the 9 GB limit (500 B of headroom) */
+  await env.GK_KV.put('fs:bucket:bytes', String(T.BUCKET_HARD_LIMIT_BYTES - 500));
+  const small = new Uint8Array(400);
+  const okUp = await call(req('/api/files/upload', { method: 'POST', headers: { 'X-File-Ext': 'png', 'X-File-Folder': 'profile', 'Content-Length': '400' }, body: small }), env);
+  assert.equal(okUp.response.status, 201, '400 B fits into the 500 B headroom');
+  const over = await call(req('/api/files/upload', { method: 'POST', headers: { 'X-File-Ext': 'png', 'X-File-Folder': 'profile', 'Content-Length': '400' }, body: small }), env);
+  assert.equal(over.response.status, 507, 'over the 9 GB lock → 507');
+  assert.equal(over.data.error, 'bucket-limit');
+  assert.equal(env.FILE_BUCKET._objects.size, 1, 'nothing stored past the lock');
+  /* usage endpoint reports the lock state */
+  const usage = await handleFilesStorageRequest(req('/api/files/usage'), env);
+  assert.equal(usage.status, 200);
+  const u = await usage.json();
+  assert.equal(u.limitBytes, T.BUCKET_HARD_LIMIT_BYTES);
+  assert.ok(u.usedBytes > T.BUCKET_HARD_LIMIT_BYTES - 2000);
+  assert.ok(u.percent >= 99.9);
+});
+
+test('usage counter: delete subtracts the removed size', async () => {
+  const env = makeEnv();
+  const up = await call(req('/api/files/upload', { method: 'POST', headers: { 'X-File-Ext': 'png', 'X-File-Folder': 'profile', 'Content-Length': '12' }, body: PNG_BYTES }), env);
+  assert.equal(await env.GK_KV.get('fs:bucket:bytes'), '12');
+  await call(req('/api/files/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: up.data.key }) }), env);
+  assert.equal(await env.GK_KV.get('fs:bucket:bytes'), '0', 'delete decrements the counter');
+});
+
+test('usage reconciliation: counter missing + S3 creds present → S3 list heals it', async () => {
+  /* env without S3 secrets: counter missing → unknown (bytes 0, exact false) */
+  const envNoCreds = makeEnv();
+  const u1 = await T.bucketUsage(envNoCreds);
+  assert.equal(u1.exact, false, 'no S3 creds → unknown, not falsely "empty"');
+});
+
 test('units: KEY_RE shape + KV prefix', async () => {
   assert.ok(T.KEY_RE.test('profile/user-files-1/2026-09-18/abcdefghijkl.png'));
   assert.ok(!T.KEY_RE.test('profile/user-files-1/2026-09-18/../../etc.png'));

@@ -23,6 +23,12 @@ const UPLOAD_TYPES = Object.freeze({
   jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png',
   webp: 'image/webp', gif: 'image/gif'
 });
+/* 9 GB hard lock (owner directive 2026-09-18): 1 GB of headroom under the
+ * 10 GB R2 free tier, so the card is never charged. Enforced in the worker
+ * with a KV usage counter, reconciled through the S3 API when missing. */
+const BUCKET_HARD_LIMIT_BYTES = 9 * 1024 * 1024 * 1024;
+const USAGE_KEY = 'fs:bucket:bytes';
+const R2_HOST = 'abb783e456e51a5d338419de93d5e576.r2.cloudflarestorage.com';
 const FOLDER_RE = /^[a-z][a-z0-9-]{0,31}$/;
 /* User segment stays deliberately permissive (production user ids vary in
  * shape) — unguessability comes from the 12-char random key + date, not
@@ -71,6 +77,95 @@ async function kvRateAllow(env, key, limit, ttlSeconds) {
   }
 }
 
+const sha256HexStr = async s => {
+  const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
+  return [...new Uint8Array(d)].map(b => b.toString(16).padStart(2, '0')).join('');
+};
+const hmacHex = async (keyBytes, msg) => {
+  const key = await crypto.subtle.importKey('raw', keyBytes, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(msg));
+  return [...new Uint8Array(sig)].map(b => b.toString(16).padStart(2, '0')).join('');
+};
+const hexToBytes = h => Uint8Array.from(h.match(/.{2}/g), x => parseInt(x, 16));
+
+/* Total bytes stored in the bucket, via the S3 ListObjectsV2 API
+ * (the R2 binding has no list). Returns null when it cannot be determined —
+ * callers must treat null as "unknown", never as "empty". */
+async function s3ListTotalBytes(env) {
+  const ak = String(env.R2_ACCESS_KEY || '');
+  const sk = String(env.R2_SECRET_KEY || '');
+  if (!ak || !sk) return null;
+  try {
+    let total = 0;
+    let token = '';
+    for (let page = 0; page < 100; page++) {
+      const amzDate = new Date().toISOString().replace(/[:-]|\.\d{3}/g, '');
+      const shortDate = amzDate.slice(0, 8);
+      const region = 'auto';
+      const service = 's3';
+      const query = { 'list-type': '2', 'max-keys': '1000' };
+      if (token) query['continuation-token'] = token;
+      const queryStr = Object.keys(query).sort().map(k => `${k}=${query[k]}`).join('&');
+      const path = '/';
+      const canonicalHeaders = `host:${R2_HOST}\nx-amz-content-sha256:UNSIGNED_PAYLOAD\nx-amz-date:${amzDate}\n`;
+      const signedHeaders = 'host;x-amz-content-sha256;x-amz-date';
+      const canonicalRequest = [ 'GET', path, queryStr, canonicalHeaders, signedHeaders, 'UNSIGNED_PAYLOAD' ].join('\n');
+      const scope = `${shortDate}/${region}/${service}/aws4_request`;
+      const stringToSign = ['AWS4-HMAC-SHA256', amzDate, scope, await sha256HexStr(canonicalRequest)].join('\n');
+      let k = await hmacHex(new TextEncoder().encode(`AWS4${sk}`), shortDate);
+      k = await hmacHex(hexToBytes(k), region);
+      k = await hmacHex(hexToBytes(k), service);
+      const signature = await hmacHex(hexToBytes(k), 'aws4_request');
+      const res = await fetch(`https://${R2_HOST}/${queryStr}`, {
+        method: 'GET',
+        headers: {
+          'x-amz-date': amzDate,
+          'x-amz-content-sha256': 'UNSIGNED_PAYLOAD',
+          Authorization: `AWS4-HMAC-SHA256 Credential=${ak}/${scope}, SignedHeaders=${signedHeaders}, Signature=${signature}`
+        }
+      });
+      if (!res.ok) return null;
+      const xml = await res.text();
+      for (const m of xml.matchAll(/<Size>(\d+)<\/Size>/g)) total += Number(m[1]);
+      const nt = xml.match(/<NextContinuationToken>([^<]+)<\/NextContinuationToken>/);
+      if (!nt) break;
+      token = nt[1];
+    }
+    return total;
+  } catch {
+    return null;
+  }
+}
+
+/* Current bucket usage in bytes: KV counter first, S3 reconciliation when
+ * the counter is missing. Returns { bytes, exact } — exact=false means the
+ * number may be stale-low, so the limit check adds the pending upload on top
+ * and we periodically re-reconcile on reads. */
+async function bucketUsage(env) {
+  const kv = env?.GK_KV;
+  if (kv) {
+    try {
+      const n = await kv.get(USAGE_KEY);
+      if (n != null) return { bytes: Number(n) || 0, exact: true };
+    } catch { /* fall through to reconciliation */ }
+  }
+  const total = await s3ListTotalBytes(env);
+  if (total != null) {
+    if (kv) { try { await kv.put(USAGE_KEY, String(total)); } catch { /* non-fatal */ } }
+    return { bytes: total, exact: true };
+  }
+  return { bytes: 0, exact: false };
+}
+
+const bumpUsage = async (env, delta) => {
+  const kv = env?.GK_KV;
+  if (!kv) return;
+  try {
+    const n = Number(await kv.get(USAGE_KEY) || 0);
+    await kv.put(USAGE_KEY, String(Math.max(0, n + delta)));
+  } catch { /* counter is a cache — S3 reconciliation heals it */ }
+};
+
 const jsonResponse = (request, obj, status = 200) => new Response(JSON.stringify(obj), {
   status,
   headers: {
@@ -111,6 +206,17 @@ export async function handleFilesStorageRequest(request, env) {
 
   const bucket = env?.FILE_BUCKET;
   const available = Boolean(bucket && typeof bucket.put === 'function');
+
+  if (request.method === 'GET' && path === '/api/files/usage') {
+    const usage = await bucketUsage(env);
+    return jsonResponse(request, {
+      ok: true,
+      usedBytes: usage.bytes,
+      exact: usage.exact,
+      limitBytes: BUCKET_HARD_LIMIT_BYTES,
+      percent: Math.min(100, Math.round((usage.bytes / BUCKET_HARD_LIMIT_BYTES) * 1000) / 10)
+    });
+  }
 
   /* Public read (unguessable server-generated keys). */
   if (request.method === 'GET') {
@@ -165,10 +271,16 @@ export async function handleFilesStorageRequest(request, env) {
     if (!bytes.length || bytes.length > MAX_UPLOAD_BYTES) {
       return jsonResponse(request, { error: 'too-large' }, 413);
     }
+    /* 9 GB hard lock — the card must never be charged (owner 2026-09-18). */
+    const usage = await bucketUsage(env);
+    if (usage.bytes + bytes.length > BUCKET_HARD_LIMIT_BYTES) {
+      return jsonResponse(request, { error: 'bucket-limit', limitBytes: BUCKET_HARD_LIMIT_BYTES, usedBytes: usage.bytes }, 507);
+    }
     const day = new Date().toISOString().slice(0, 10);
     const key = `${folder}/${userId}/${day}/${randKey(12)}.${ext}`;
     try {
       await bucket.put(key, bytes, { httpMetadata: { contentType } });
+      await bumpUsage(env, bytes.length);
     } catch {
       return jsonResponse(request, { error: 'storage-error' }, 503);
     }
@@ -186,7 +298,9 @@ export async function handleFilesStorageRequest(request, env) {
     /* Ownership: the key's user segment must be the caller's id. */
     if (key.split('/')[1] !== userId) return jsonResponse(request, { error: 'forbidden' }, 403);
     try {
+      const existing = await bucket.get(key);
       await bucket.delete(key);
+      if (existing) await bumpUsage(env, -existing.size);
     } catch {
       return jsonResponse(request, { error: 'storage-error' }, 503);
     }
@@ -197,6 +311,9 @@ export async function handleFilesStorageRequest(request, env) {
 }
 
 export const __filesStorageTest = Object.freeze({
+  BUCKET_HARD_LIMIT_BYTES,
+  s3ListTotalBytes,
+  bucketUsage,
   sessionUser,
   readSessionToken,
   kvRateAllow,

@@ -8707,6 +8707,130 @@ async function handleFcmNotificationRequest(request, env) {
       at: Date.now()
     });
   }
+  const ADMIN_PATHS = /* @__PURE__ */ new Set([
+    "/api/notifications/global/send",
+    "/api/notifications/global/schedule",
+    "/api/notifications/global/cancel",
+    "/api/notifications/history",
+    "/api/notifications/templates"
+  ]);
+  if (ADMIN_PATHS.has(path)) {
+    const adminToken = String(request.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "").trim();
+    if (!env.ADMIN_TOKEN || adminToken !== env.ADMIN_TOKEN) {
+      return jsonResponse(request, { error: "forbidden" }, 403);
+    }
+    const maybeSession = await sessionUser(env, request);
+    const adminUserId = maybeSession ? String(maybeSession.user.id) : "admin";
+    if (path === "/api/notifications/global/send" && request.method === "POST") {
+      if (!fcmConfigured(env)) return jsonResponse(request, { error: "fcm-not-configured" }, 503);
+      if (!store.available()) return jsonResponse(request, { error: "storage-unavailable" }, 503);
+      const body = await parseBody(request);
+      if (!body) return jsonResponse(request, { error: "invalid-json" }, 400);
+      const type = GLOBAL_TYPES.includes(body.type) ? body.type : null;
+      if (!type) return jsonResponse(request, { error: "invalid-type" }, 400);
+      const title = String(body.title || "").trim().slice(0, 120);
+      const text = String(body.body || "").trim().slice(0, 400);
+      if (title.length < 1 || title.length > 120) return jsonResponse(request, { error: "invalid-title" }, 400);
+      if (text.length < 1 || text.length > 400) return jsonResponse(request, { error: "invalid-body" }, 400);
+      const imageUrl = String(body.imageUrl || "").slice(0, 500) || null;
+      const targetUrl = String(body.targetUrl || "").replace(/[^\w./#-]/g, "").slice(0, 200) || null;
+      const audience = GLOBAL_AUDIENCES[body.audience] ? body.audience : "all_students";
+      const topic = GLOBAL_AUDIENCES[audience].topic;
+      if (!TOPIC_RE.test(topic)) return jsonResponse(request, { error: "invalid-topic" }, 500);
+      const dedup = (await sha256Hex2(`${type}|${title}|${text}`)).slice(0, 40);
+      const dup = await store.duplicateRecent(dedup, Date.now() - 10 * 864e5);
+      if (dup) return jsonResponse(request, { error: "duplicate", existingId: dup }, 409);
+      if (!await kvRateAllow(env, `global:day:${dhakaDayKey()}`, GLOBAL_DAILY_CAP, 86400)) {
+        return jsonResponse(request, { error: "rate-limited" }, 429);
+      }
+      const id = `gn-${Math.random().toString(36).slice(2, 8)}${Math.random().toString(36).slice(2, 8)}`;
+      const row = {
+        id,
+        type,
+        title,
+        body: text,
+        imageUrl,
+        targetUrl,
+        audience,
+        topic,
+        dedup,
+        scheduledAt: null,
+        createdBy: adminUserId,
+        status: "sending",
+        createdAt: Date.now()
+      };
+      await store.insertGlobal(row);
+      const result = await sendGlobal(env, store, row);
+      return jsonResponse(request, { ok: result.ok, id, status: result.ok ? "sent" : "failed", reachEstimate: result.reach }, result.ok ? 201 : 502);
+    }
+    if (path === "/api/notifications/global/schedule" && request.method === "POST") {
+      if (!store.available()) return jsonResponse(request, { error: "storage-unavailable" }, 503);
+      const body = await parseBody(request);
+      if (!body) return jsonResponse(request, { error: "invalid-json" }, 400);
+      const type = GLOBAL_TYPES.includes(body.type) ? body.type : null;
+      if (!type) return jsonResponse(request, { error: "invalid-type" }, 400);
+      const title = String(body.title || "").trim().slice(0, 120);
+      const text = String(body.body || "").trim().slice(0, 400);
+      if (title.length < 1 || title.length > 120) return jsonResponse(request, { error: "invalid-title" }, 400);
+      if (text.length < 1 || text.length > 400) return jsonResponse(request, { error: "invalid-body" }, 400);
+      const imageUrl = String(body.imageUrl || "").slice(0, 500) || null;
+      const targetUrl = String(body.targetUrl || "").replace(/[^\w./#-]/g, "").slice(0, 200) || null;
+      const audience = GLOBAL_AUDIENCES[body.audience] ? body.audience : "all_students";
+      const topic = GLOBAL_AUDIENCES[audience].topic;
+      const when = Number(body.scheduledAt);
+      if (!Number.isFinite(when) || when <= Date.now() + 6e4) {
+        return jsonResponse(request, { error: "invalid-schedule" }, 400);
+      }
+      if (when > Date.now() + GLOBAL_MAX_SCHEDULE_DAYS * 864e5) {
+        return jsonResponse(request, { error: "schedule-too-far" }, 400);
+      }
+      const dedup = (await sha256Hex2(`${type}|${title}|${text}`)).slice(0, 40);
+      const dup = await store.duplicateRecent(dedup, Date.now() - 10 * 864e5);
+      if (dup) return jsonResponse(request, { error: "duplicate", existingId: dup }, 409);
+      const id = `gn-${Math.random().toString(36).slice(2, 8)}${Math.random().toString(36).slice(2, 8)}`;
+      await store.insertGlobal({
+        id,
+        type,
+        title,
+        body: text,
+        imageUrl,
+        targetUrl,
+        audience,
+        topic,
+        dedup,
+        scheduledAt: Math.floor(when),
+        createdBy: adminUserId,
+        status: "scheduled",
+        createdAt: Date.now()
+      });
+      return jsonResponse(request, { ok: true, id, status: "scheduled", scheduledAt: Math.floor(when) }, 201);
+    }
+    if (path === "/api/notifications/global/cancel" && request.method === "POST") {
+      if (!store.available()) return jsonResponse(request, { error: "storage-unavailable" }, 503);
+      const body = await parseBody(request);
+      if (!body) return jsonResponse(request, { error: "invalid-json" }, 400);
+      const id = String(body.id || "");
+      if (!GN_ID_RE.test(id)) return jsonResponse(request, { error: "invalid-id" }, 400);
+      const rows = await store.recentGlobals(50);
+      const row = rows.find((r) => r.id === id);
+      if (!row) return jsonResponse(request, { error: "not-found" }, 404);
+      if (row.status !== "scheduled") return jsonResponse(request, { error: "not-scheduled" }, 409);
+      await store.updateGlobalStatus(id, { status: "cancelled" });
+      return jsonResponse(request, { ok: true, id, status: "cancelled" });
+    }
+    if (path === "/api/notifications/history" && request.method === "GET") {
+      if (!store.available()) return jsonResponse(request, { error: "storage-unavailable" }, 503);
+      return jsonResponse(request, {
+        ok: true,
+        items: await store.recentGlobals(50),
+        reachEstimate: await store.activeDeviceCount(),
+        dailyCap: GLOBAL_DAILY_CAP
+      });
+    }
+    if (path === "/api/notifications/templates" && request.method === "GET") {
+      return jsonResponse(request, { ok: true, templates: GLOBAL_TEMPLATES });
+    }
+  }
   const session = await sessionUser(env, request);
   if (!session) return jsonResponse(request, { error: "auth-required" }, 401);
   const userId = String(session.user.id);
@@ -8828,122 +8952,6 @@ async function handleFcmNotificationRequest(request, env) {
     }
     return jsonResponse(request, { ok: results.every((r) => r.ok), sent: results.filter((r) => r.ok).length, total: results.length, results });
   }
-  const adminToken = String(request.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "").trim();
-  const isAdmin = Boolean(env.ADMIN_TOKEN) && adminToken === env.ADMIN_TOKEN;
-  if (path === "/api/notifications/global/send" && request.method === "POST") {
-    if (!isAdmin) return jsonResponse(request, { error: "forbidden" }, 403);
-    if (!fcmConfigured(env)) return jsonResponse(request, { error: "fcm-not-configured" }, 503);
-    if (!store.available()) return jsonResponse(request, { error: "storage-unavailable" }, 503);
-    const body = await parseBody(request);
-    if (!body) return jsonResponse(request, { error: "invalid-json" }, 400);
-    const type = GLOBAL_TYPES.includes(body.type) ? body.type : null;
-    if (!type) return jsonResponse(request, { error: "invalid-type" }, 400);
-    const title = String(body.title || "").trim().slice(0, 120);
-    const text = String(body.body || "").trim().slice(0, 400);
-    if (title.length < 1 || title.length > 120) return jsonResponse(request, { error: "invalid-title" }, 400);
-    if (text.length < 1 || text.length > 400) return jsonResponse(request, { error: "invalid-body" }, 400);
-    const imageUrl = String(body.imageUrl || "").slice(0, 500) || null;
-    const targetUrl = String(body.targetUrl || "").replace(/[^\w./#-]/g, "").slice(0, 200) || null;
-    const audience = GLOBAL_AUDIENCES[body.audience] ? body.audience : "all_students";
-    const topic = GLOBAL_AUDIENCES[audience].topic;
-    if (!TOPIC_RE.test(topic)) return jsonResponse(request, { error: "invalid-topic" }, 500);
-    const dedup = (await sha256Hex2(`${type}|${title}|${text}`)).slice(0, 40);
-    const dup = await store.duplicateRecent(dedup, Date.now() - 10 * 864e5);
-    if (dup) return jsonResponse(request, { error: "duplicate", existingId: dup }, 409);
-    if (!await kvRateAllow(env, `global:day:${dhakaDayKey()}`, GLOBAL_DAILY_CAP, 86400)) {
-      return jsonResponse(request, { error: "rate-limited" }, 429);
-    }
-    const id = `gn-${Math.random().toString(36).slice(2, 8)}${Math.random().toString(36).slice(2, 8)}`;
-    const row = {
-      id,
-      type,
-      title,
-      body: text,
-      imageUrl,
-      targetUrl,
-      audience,
-      topic,
-      dedup,
-      scheduledAt: null,
-      createdBy: userId,
-      status: "sending",
-      createdAt: Date.now()
-    };
-    await store.insertGlobal(row);
-    const result = await sendGlobal(env, store, row);
-    return jsonResponse(request, { ok: result.ok, id, status: result.ok ? "sent" : "failed", reachEstimate: result.reach }, result.ok ? 201 : 502);
-  }
-  if (path === "/api/notifications/global/schedule" && request.method === "POST") {
-    if (!isAdmin) return jsonResponse(request, { error: "forbidden" }, 403);
-    if (!store.available()) return jsonResponse(request, { error: "storage-unavailable" }, 503);
-    const body = await parseBody(request);
-    if (!body) return jsonResponse(request, { error: "invalid-json" }, 400);
-    const type = GLOBAL_TYPES.includes(body.type) ? body.type : null;
-    if (!type) return jsonResponse(request, { error: "invalid-type" }, 400);
-    const title = String(body.title || "").trim().slice(0, 120);
-    const text = String(body.body || "").trim().slice(0, 400);
-    if (title.length < 1 || title.length > 120) return jsonResponse(request, { error: "invalid-title" }, 400);
-    if (text.length < 1 || text.length > 400) return jsonResponse(request, { error: "invalid-body" }, 400);
-    const imageUrl = String(body.imageUrl || "").slice(0, 500) || null;
-    const targetUrl = String(body.targetUrl || "").replace(/[^\w./#-]/g, "").slice(0, 200) || null;
-    const audience = GLOBAL_AUDIENCES[body.audience] ? body.audience : "all_students";
-    const topic = GLOBAL_AUDIENCES[audience].topic;
-    const when = Number(body.scheduledAt);
-    if (!Number.isFinite(when) || when <= Date.now() + 6e4) {
-      return jsonResponse(request, { error: "invalid-schedule" }, 400);
-    }
-    if (when > Date.now() + GLOBAL_MAX_SCHEDULE_DAYS * 864e5) {
-      return jsonResponse(request, { error: "schedule-too-far" }, 400);
-    }
-    const dedup = (await sha256Hex2(`${type}|${title}|${text}`)).slice(0, 40);
-    const dup = await store.duplicateRecent(dedup, Date.now() - 10 * 864e5);
-    if (dup) return jsonResponse(request, { error: "duplicate", existingId: dup }, 409);
-    const id = `gn-${Math.random().toString(36).slice(2, 8)}${Math.random().toString(36).slice(2, 8)}`;
-    await store.insertGlobal({
-      id,
-      type,
-      title,
-      body: text,
-      imageUrl,
-      targetUrl,
-      audience,
-      topic,
-      dedup,
-      scheduledAt: Math.floor(when),
-      createdBy: userId,
-      status: "scheduled",
-      createdAt: Date.now()
-    });
-    return jsonResponse(request, { ok: true, id, status: "scheduled", scheduledAt: Math.floor(when) }, 201);
-  }
-  if (path === "/api/notifications/global/cancel" && request.method === "POST") {
-    if (!isAdmin) return jsonResponse(request, { error: "forbidden" }, 403);
-    if (!store.available()) return jsonResponse(request, { error: "storage-unavailable" }, 503);
-    const body = await parseBody(request);
-    if (!body) return jsonResponse(request, { error: "invalid-json" }, 400);
-    const id = String(body.id || "");
-    if (!GN_ID_RE.test(id)) return jsonResponse(request, { error: "invalid-id" }, 400);
-    const rows = await store.recentGlobals(50);
-    const row = rows.find((r) => r.id === id);
-    if (!row) return jsonResponse(request, { error: "not-found" }, 404);
-    if (row.status !== "scheduled") return jsonResponse(request, { error: "not-scheduled" }, 409);
-    await store.updateGlobalStatus(id, { status: "cancelled" });
-    return jsonResponse(request, { ok: true, id, status: "cancelled" });
-  }
-  if (path === "/api/notifications/history" && request.method === "GET") {
-    if (!isAdmin) return jsonResponse(request, { error: "forbidden" }, 403);
-    if (!store.available()) return jsonResponse(request, { error: "storage-unavailable" }, 503);
-    return jsonResponse(request, {
-      ok: true,
-      items: await store.recentGlobals(50),
-      reachEstimate: await store.activeDeviceCount(),
-      dailyCap: GLOBAL_DAILY_CAP
-    });
-  }
-  if (path === "/api/notifications/templates" && request.method === "GET") {
-    if (!isAdmin) return jsonResponse(request, { error: "forbidden" }, 403);
-    return jsonResponse(request, { ok: true, templates: GLOBAL_TEMPLATES });
-  }
   if (path === "/api/notifications/topics/subscribe" && request.method === "POST") {
     if (!store.available()) return jsonResponse(request, { error: "storage-unavailable" }, 503);
     const body = await parseBody(request);
@@ -9023,6 +9031,9 @@ var UPLOAD_TYPES = Object.freeze({
   webp: "image/webp",
   gif: "image/gif"
 });
+var BUCKET_HARD_LIMIT_BYTES = 9 * 1024 * 1024 * 1024;
+var USAGE_KEY = "fs:bucket:bytes";
+var R2_HOST = "abb783e456e51a5d338419de93d5e576.r2.cloudflarestorage.com";
 var FOLDER_RE = /^[a-z][a-z0-9-]{0,31}$/;
 var KEY_RE = /^[a-z][a-z0-9-]{0,31}\/[A-Za-z0-9_-]{1,64}\/\d{4}-\d{2}-\d{2}\/[a-z0-9]{10,24}\.[a-z0-9]{2,4}$/;
 var readSessionToken2 = (request) => {
@@ -9064,6 +9075,94 @@ async function kvRateAllow2(env, key, limit, ttlSeconds) {
     return true;
   }
 }
+var sha256HexStr = async (s) => {
+  const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
+  return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, "0")).join("");
+};
+var hmacHex = async (keyBytes, msg) => {
+  const key = await crypto.subtle.importKey("raw", keyBytes, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(msg));
+  return [...new Uint8Array(sig)].map((b) => b.toString(16).padStart(2, "0")).join("");
+};
+var hexToBytes = (h) => Uint8Array.from(h.match(/.{2}/g), (x) => parseInt(x, 16));
+async function s3ListTotalBytes(env) {
+  const ak = String(env.R2_ACCESS_KEY || "");
+  const sk = String(env.R2_SECRET_KEY || "");
+  if (!ak || !sk) return null;
+  try {
+    let total = 0;
+    let token = "";
+    for (let page = 0; page < 100; page++) {
+      const amzDate = (/* @__PURE__ */ new Date()).toISOString().replace(/[:-]|\.\d{3}/g, "");
+      const shortDate = amzDate.slice(0, 8);
+      const region = "auto";
+      const service = "s3";
+      const query = { "list-type": "2", "max-keys": "1000" };
+      if (token) query["continuation-token"] = token;
+      const queryStr = Object.keys(query).sort().map((k2) => `${k2}=${query[k2]}`).join("&");
+      const path = "/";
+      const canonicalHeaders = `host:${R2_HOST}
+x-amz-content-sha256:UNSIGNED_PAYLOAD
+x-amz-date:${amzDate}
+`;
+      const signedHeaders = "host;x-amz-content-sha256;x-amz-date";
+      const canonicalRequest = ["GET", path, queryStr, canonicalHeaders, signedHeaders, "UNSIGNED_PAYLOAD"].join("\n");
+      const scope = `${shortDate}/${region}/${service}/aws4_request`;
+      const stringToSign = ["AWS4-HMAC-SHA256", amzDate, scope, await sha256HexStr(canonicalRequest)].join("\n");
+      let k = await hmacHex(new TextEncoder().encode(`AWS4${sk}`), shortDate);
+      k = await hmacHex(hexToBytes(k), region);
+      k = await hmacHex(hexToBytes(k), service);
+      const signature = await hmacHex(hexToBytes(k), "aws4_request");
+      const res = await fetch(`https://${R2_HOST}/${queryStr}`, {
+        method: "GET",
+        headers: {
+          "x-amz-date": amzDate,
+          "x-amz-content-sha256": "UNSIGNED_PAYLOAD",
+          Authorization: `AWS4-HMAC-SHA256 Credential=${ak}/${scope}, SignedHeaders=${signedHeaders}, Signature=${signature}`
+        }
+      });
+      if (!res.ok) return null;
+      const xml = await res.text();
+      for (const m of xml.matchAll(/<Size>(\d+)<\/Size>/g)) total += Number(m[1]);
+      const nt = xml.match(/<NextContinuationToken>([^<]+)<\/NextContinuationToken>/);
+      if (!nt) break;
+      token = nt[1];
+    }
+    return total;
+  } catch {
+    return null;
+  }
+}
+async function bucketUsage(env) {
+  const kv = env?.GK_KV;
+  if (kv) {
+    try {
+      const n = await kv.get(USAGE_KEY);
+      if (n != null) return { bytes: Number(n) || 0, exact: true };
+    } catch {
+    }
+  }
+  const total = await s3ListTotalBytes(env);
+  if (total != null) {
+    if (kv) {
+      try {
+        await kv.put(USAGE_KEY, String(total));
+      } catch {
+      }
+    }
+    return { bytes: total, exact: true };
+  }
+  return { bytes: 0, exact: false };
+}
+var bumpUsage = async (env, delta) => {
+  const kv = env?.GK_KV;
+  if (!kv) return;
+  try {
+    const n = Number(await kv.get(USAGE_KEY) || 0);
+    await kv.put(USAGE_KEY, String(Math.max(0, n + delta)));
+  } catch {
+  }
+};
 var jsonResponse2 = (request, obj, status = 200) => new Response(JSON.stringify(obj), {
   status,
   headers: {
@@ -9099,6 +9198,16 @@ async function handleFilesStorageRequest(request, env) {
   }
   const bucket = env?.FILE_BUCKET;
   const available = Boolean(bucket && typeof bucket.put === "function");
+  if (request.method === "GET" && path === "/api/files/usage") {
+    const usage = await bucketUsage(env);
+    return jsonResponse2(request, {
+      ok: true,
+      usedBytes: usage.bytes,
+      exact: usage.exact,
+      limitBytes: BUCKET_HARD_LIMIT_BYTES,
+      percent: Math.min(100, Math.round(usage.bytes / BUCKET_HARD_LIMIT_BYTES * 1e3) / 10)
+    });
+  }
   if (request.method === "GET") {
     const key = path.slice("/api/files/".length);
     if (!KEY_RE.test(key)) return jsonResponse2(request, { error: "not-found" }, 404);
@@ -9149,10 +9258,15 @@ async function handleFilesStorageRequest(request, env) {
     if (!bytes.length || bytes.length > MAX_UPLOAD_BYTES) {
       return jsonResponse2(request, { error: "too-large" }, 413);
     }
+    const usage = await bucketUsage(env);
+    if (usage.bytes + bytes.length > BUCKET_HARD_LIMIT_BYTES) {
+      return jsonResponse2(request, { error: "bucket-limit", limitBytes: BUCKET_HARD_LIMIT_BYTES, usedBytes: usage.bytes }, 507);
+    }
     const day = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
     const key = `${folder}/${userId}/${day}/${randKey(12)}.${ext}`;
     try {
       await bucket.put(key, bytes, { httpMetadata: { contentType } });
+      await bumpUsage(env, bytes.length);
     } catch {
       return jsonResponse2(request, { error: "storage-error" }, 503);
     }
@@ -9172,7 +9286,9 @@ async function handleFilesStorageRequest(request, env) {
     if (!KEY_RE.test(key)) return jsonResponse2(request, { error: "invalid-key" }, 400);
     if (key.split("/")[1] !== userId) return jsonResponse2(request, { error: "forbidden" }, 403);
     try {
+      const existing = await bucket.get(key);
       await bucket.delete(key);
+      if (existing) await bumpUsage(env, -existing.size);
     } catch {
       return jsonResponse2(request, { error: "storage-error" }, 503);
     }
@@ -9181,6 +9297,9 @@ async function handleFilesStorageRequest(request, env) {
   return jsonResponse2(request, { error: "not-found" }, 404);
 }
 var __filesStorageTest = Object.freeze({
+  BUCKET_HARD_LIMIT_BYTES,
+  s3ListTotalBytes,
+  bucketUsage,
   sessionUser: sessionUser2,
   readSessionToken: readSessionToken2,
   kvRateAllow: kvRateAllow2,
