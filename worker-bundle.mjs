@@ -11050,10 +11050,10 @@ function httpFailure(response3, _payload, { userStatuses = [400, 404, 422] } = {
   if (status === 429 || status >= 500 || status === 0) return new VerificationProviderError(code, VERIFICATION_FAILURE_CLASS.TEMPORARY, { retryAfter: 60 });
   return new VerificationProviderError(code, VERIFICATION_FAILURE_CLASS.HARD);
 }
-async function fetchJson(fetchImpl, url, init = {}) {
+async function fetchJson(fetchImpl, url, init = {}, { redirect = "manual", timeoutMs = 12e3 } = {}) {
   let response3;
   try {
-    response3 = await fetchImpl(url, { ...init, redirect: "manual", signal: init.signal || AbortSignal.timeout(12e3) });
+    response3 = await fetchImpl(url, { ...init, redirect, signal: init.signal || AbortSignal.timeout(timeoutMs) });
   } catch {
     throw new VerificationProviderError("NETWORK_ERROR", VERIFICATION_FAILURE_CLASS.TEMPORARY);
   }
@@ -11061,6 +11061,196 @@ async function fetchJson(fetchImpl, url, init = {}) {
   if (!response3.ok) throw httpFailure(response3, payload);
   return payload;
 }
+var base64UrlBytes = (bytes) => {
+  let binary = "";
+  for (const byte of new Uint8Array(bytes)) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+};
+function appsScriptWebAppUrl(value) {
+  try {
+    const url = new URL(String(value || ""));
+    if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash) return "";
+    if (url.hostname !== "script.google.com") return "";
+    if (!/^\/macros\/s\/[A-Za-z0-9_-]{20,80}\/exec$/.test(url.pathname)) return "";
+    return url.href;
+  } catch {
+    return "";
+  }
+}
+var validEmailAddress = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(value || "")) && String(value).length <= 254;
+var otpEmailBody = (code, minutes) => {
+  const text = `Admission Hub verification code: ${code}
+
+It expires in ${minutes} minute(s). If you did not request it, ignore this email.`;
+  const html = `<p>Admission Hub verification code:</p><p style="font-size:28px;letter-spacing:6px;font-weight:700">${code}</p><p>It expires in ${minutes} minute(s). If you did not request it, ignore this email.</p>`;
+  return { text, html };
+};
+var nextUtcMidnight = (now) => (Math.floor(Number(now) / 864e5) + 1) * 864e5;
+var BrevoOtpVerificationProvider = class {
+  constructor({ id = "otp-a", apiKey, fromAddress, fromName = "Admission Hub", declaredDailyQuota, fetchImpl = globalThis.fetch, now = Date.now } = {}) {
+    this.id = String(id || "");
+    this.channel = VERIFICATION_CHANNELS.OTP;
+    this.verificationMode = VERIFICATION_MODES.LOCAL_CODE;
+    this.apiKey = String(apiKey || "");
+    this.fromAddress = validEmailAddress(fromAddress) ? String(fromAddress) : "";
+    this.fromName = String(fromName || "Admission Hub").slice(0, 64);
+    this.declaredDailyQuota = safeInteger(declaredDailyQuota, 1, 1e7);
+    this.fetch = typeof fetchImpl === "function" ? fetchImpl.bind(globalThis) : null;
+    this.now = typeof now === "function" ? now : Date.now;
+    this.configured = Boolean(validSecret(this.apiKey) && this.fromAddress && this.declaredDailyQuota && this.fetch);
+  }
+  #headers(content = false) {
+    return {
+      Accept: "application/json",
+      "Cache-Control": "no-store",
+      "api-key": this.apiKey,
+      ...content ? { "Content-Type": "application/json" } : {}
+    };
+  }
+  async checkAvailability() {
+    if (!this.configured) return { available: false, code: "NOT_CONFIGURED" };
+    const payload = await fetchJson(this.fetch, "https://api.brevo.com/v3/senders", { method: "GET", headers: this.#headers() });
+    const sender = Array.isArray(payload?.senders) ? payload.senders.find((item) => String(item?.email || "").toLowerCase() === this.fromAddress.toLowerCase()) : null;
+    const ready = sender?.active === true;
+    return { available: ready, code: ready ? "READY" : "SENDER_NOT_VERIFIED" };
+  }
+  async getRemainingQuota() {
+    if (!this.configured) return { remaining: 0, limit: 0, resetAt: 0, source: "not-configured" };
+    const payload = await fetchJson(this.fetch, "https://api.brevo.com/v3/account", { method: "GET", headers: this.#headers() });
+    const plans = Array.isArray(payload?.plan) ? payload.plan : [];
+    const sendLimit = plans.find((plan) => String(plan?.creditsType || "") === "sendLimit");
+    const credits = safeInteger(sendLimit?.credits, 0, 1e7);
+    const limit = this.declaredDailyQuota;
+    return {
+      remaining: Math.min(credits, limit),
+      limit,
+      resetAt: nextUtcMidnight(this.now()),
+      source: "brevo-account-credits"
+    };
+  }
+  async sendVerification(input = {}) {
+    if (!this.configured) throw new VerificationProviderError("NOT_CONFIGURED", VERIFICATION_FAILURE_CLASS.HARD);
+    const destination = String(input.destination || "");
+    const code = String(input.code || "");
+    if (!validEmailAddress(destination) || !/^\d{6}$/.test(code)) {
+      throw new VerificationProviderError("INVALID_DESTINATION", VERIFICATION_FAILURE_CLASS.USER);
+    }
+    const expiresAt = Number(input.expiresAt || 0);
+    const minutes = expiresAt > 0 ? Math.max(1, Math.round((expiresAt - Number(this.now())) / 6e4)) : 5;
+    const { text, html } = otpEmailBody(code, minutes);
+    const payload = await fetchJson(this.fetch, "https://api.brevo.com/v3/smtp/email", {
+      method: "POST",
+      headers: this.#headers(true),
+      body: JSON.stringify({
+        sender: { email: this.fromAddress, name: this.fromName },
+        to: [{ email: destination }],
+        subject: "Admission Hub — verification code",
+        htmlContent: html,
+        textContent: text,
+        tags: ["admission-hub-transactional"]
+      })
+    });
+    if (typeof payload?.messageId !== "string" || !payload.messageId) {
+      throw new VerificationProviderError("INVALID_PROVIDER_RESPONSE", VERIFICATION_FAILURE_CLASS.HARD);
+    }
+    return { accepted: true };
+  }
+  async verifyCode() {
+    throw new VerificationProviderError("LOCAL_VERIFICATION_ONLY", VERIFICATION_FAILURE_CLASS.USER);
+  }
+  async getProviderStatus() {
+    return { status: this.configured ? "configured" : "disabled", configured: this.configured, officialApi: true, mailer: "brevo" };
+  }
+};
+var AppsScriptOtpVerificationProvider = class {
+  constructor({ id = "otp-b", webAppUrl, sharedSecret, declaredDailyQuota, fetchImpl = globalThis.fetch, cryptoImpl = globalThis.crypto, now = Date.now } = {}) {
+    this.id = String(id || "");
+    this.channel = VERIFICATION_CHANNELS.OTP;
+    this.verificationMode = VERIFICATION_MODES.LOCAL_CODE;
+    this.webAppUrl = appsScriptWebAppUrl(webAppUrl);
+    this.sharedSecret = validSecret(sharedSecret) ? String(sharedSecret) : "";
+    this.declaredDailyQuota = safeInteger(declaredDailyQuota, 1, 1e7);
+    this.fetch = typeof fetchImpl === "function" ? fetchImpl.bind(globalThis) : null;
+    this.crypto = cryptoImpl?.subtle && typeof cryptoImpl.getRandomValues === "function" ? cryptoImpl : null;
+    this.now = typeof now === "function" ? now : Date.now;
+    this.keyPromise = null;
+    this.configured = Boolean(this.webAppUrl && this.sharedSecret && this.declaredDailyQuota && this.fetch && this.crypto);
+  }
+  async #signature(canonical) {
+    if (!this.keyPromise) {
+      this.keyPromise = this.crypto.subtle.importKey(
+        "raw",
+        new TextEncoder().encode(this.sharedSecret),
+        { name: "HMAC", hash: "SHA-256" },
+        false,
+        ["sign"]
+      );
+    }
+    const key = await this.keyPromise;
+    const signature = await this.crypto.subtle.sign("HMAC", key, new TextEncoder().encode(canonical));
+    return base64UrlBytes(signature);
+  }
+  // The Apps Script web app answers on a googleusercontent.com redirect, so these
+  // calls must follow redirects instead of the manual default.
+  async #call(action, { destination = "", code = "" } = {}) {
+    const timestamp = String(Math.floor(Number(this.now()) / 1e3));
+    const nonceBytes = new Uint8Array(18);
+    this.crypto.getRandomValues(nonceBytes);
+    const nonce = base64UrlBytes(nonceBytes);
+    const signature = await this.#signature([action, timestamp, nonce, destination, code].join("\n"));
+    const options = { redirect: "follow", timeoutMs: 15e3 };
+    if (action === "send") {
+      return fetchJson(this.fetch, this.webAppUrl, {
+        method: "POST",
+        headers: { Accept: "application/json", "Content-Type": "application/json", "Cache-Control": "no-store" },
+        body: JSON.stringify({ action, timestamp, nonce, destination, code, signature })
+      }, options);
+    }
+    const url = new URL(this.webAppUrl);
+    url.searchParams.set("action", action);
+    url.searchParams.set("timestamp", timestamp);
+    url.searchParams.set("nonce", nonce);
+    url.searchParams.set("signature", signature);
+    return fetchJson(this.fetch, url.href, {
+      method: "GET",
+      headers: { Accept: "application/json", "Cache-Control": "no-store" }
+    }, options);
+  }
+  async checkAvailability() {
+    if (!this.configured) return { available: false, code: "NOT_CONFIGURED" };
+    const payload = await this.#call("health");
+    const ready = payload?.ok === true && payload?.ready === true;
+    return { available: ready, code: ready ? "READY" : "NOT_READY" };
+  }
+  async getRemainingQuota() {
+    if (!this.configured) return { remaining: 0, limit: 0, resetAt: 0, source: "not-configured" };
+    const payload = await this.#call("quota");
+    const limit = safeInteger(payload?.limit, 1, this.declaredDailyQuota) || this.declaredDailyQuota;
+    const remaining = Math.min(limit, safeInteger(payload?.remaining, 0, limit));
+    const resetAt = safeInteger(payload?.resetAt, 0, 9e12);
+    if (!resetAt) throw new VerificationProviderError("INVALID_QUOTA_RESPONSE", VERIFICATION_FAILURE_CLASS.HARD);
+    return { remaining, limit, resetAt, source: "apps-script-mail-quota" };
+  }
+  async sendVerification(input = {}) {
+    if (!this.configured) throw new VerificationProviderError("NOT_CONFIGURED", VERIFICATION_FAILURE_CLASS.HARD);
+    const destination = String(input.destination || "");
+    const code = String(input.code || "");
+    if (!validEmailAddress(destination) || !/^\d{6}$/.test(code)) {
+      throw new VerificationProviderError("INVALID_DESTINATION", VERIFICATION_FAILURE_CLASS.USER);
+    }
+    const payload = await this.#call("send", { destination, code });
+    if (payload?.accepted !== true || !/^[A-Za-z0-9_-]{6,128}$/.test(String(payload?.messageRef || ""))) {
+      throw new VerificationProviderError("INVALID_PROVIDER_RESPONSE", VERIFICATION_FAILURE_CLASS.HARD);
+    }
+    return { accepted: true };
+  }
+  async verifyCode() {
+    throw new VerificationProviderError("LOCAL_VERIFICATION_ONLY", VERIFICATION_FAILURE_CLASS.USER);
+  }
+  async getProviderStatus() {
+    return { status: this.configured ? "configured" : "disabled", configured: this.configured, officialApi: false, mailer: "google-apps-script" };
+  }
+};
 var BridgeOtpVerificationProvider = class {
   constructor({ id, origin, apiKey, declaredDailyQuota, fetchImpl = globalThis.fetch } = {}) {
     this.id = String(id || "");
@@ -11378,9 +11568,26 @@ var TelegramLinkVerificationProvider = class {
   }
 };
 function createConfiguredVerificationProviders(env = {}, { fetchImpl = globalThis.fetch } = {}) {
+  const brevoOtpA = new BrevoOtpVerificationProvider({
+    id: "otp-a",
+    apiKey: env.BREVO_API_KEY,
+    fromAddress: env.BREVO_FROM_ADDRESS,
+    fromName: env.BREVO_FROM_NAME,
+    declaredDailyQuota: env.OTP_A_DAILY_QUOTA,
+    fetchImpl
+  });
+  const bridgeOtpA = new BridgeOtpVerificationProvider({ id: "otp-a", origin: env.OTP_A_PROVIDER_ORIGIN, apiKey: env.OTP_A_PROVIDER_KEY, declaredDailyQuota: env.OTP_A_DAILY_QUOTA, fetchImpl });
+  const appsScriptOtpB = new AppsScriptOtpVerificationProvider({
+    id: "otp-b",
+    webAppUrl: env.OTP_B_PROVIDER_APPS_SCRIPT_URL,
+    sharedSecret: env.OTP_B_PROVIDER_SHARED_SECRET,
+    declaredDailyQuota: env.OTP_B_DAILY_QUOTA,
+    fetchImpl
+  });
+  const bridgeOtpB = new BridgeOtpVerificationProvider({ id: "otp-b", origin: env.OTP_B_PROVIDER_ORIGIN, apiKey: env.OTP_B_PROVIDER_KEY, declaredDailyQuota: env.OTP_B_DAILY_QUOTA, fetchImpl });
   return [
-    new BridgeOtpVerificationProvider({ id: "otp-a", origin: env.OTP_A_PROVIDER_ORIGIN, apiKey: env.OTP_A_PROVIDER_KEY, declaredDailyQuota: env.OTP_A_DAILY_QUOTA, fetchImpl }),
-    new BridgeOtpVerificationProvider({ id: "otp-b", origin: env.OTP_B_PROVIDER_ORIGIN, apiKey: env.OTP_B_PROVIDER_KEY, declaredDailyQuota: env.OTP_B_DAILY_QUOTA, fetchImpl }),
+    brevoOtpA.configured ? brevoOtpA : bridgeOtpA,
+    appsScriptOtpB.configured ? appsScriptOtpB : bridgeOtpB,
     new BridgeOtpVerificationProvider({ id: "otp-c", origin: env.OTP_C_PROVIDER_ORIGIN, apiKey: env.OTP_C_PROVIDER_KEY, declaredDailyQuota: env.OTP_C_DAILY_QUOTA, fetchImpl }),
     new OfficialWhatsAppVerificationProvider({
       graphVersion: env.WHATSAPP_GRAPH_VERSION,
@@ -11402,7 +11609,7 @@ function createConfiguredVerificationProviders(env = {}, { fetchImpl = globalThi
     })
   ];
 }
-var __verificationProvidersTest = Object.freeze({ httpsOrigin, boundedJson, httpFailure });
+var __verificationProvidersTest = Object.freeze({ httpsOrigin, boundedJson, httpFailure, appsScriptWebAppUrl, otpEmailBody });
 
 // auth-native/core/security-notifications.mjs
 var SECURITY_NOTIFICATION_EVENTS = Object.freeze({

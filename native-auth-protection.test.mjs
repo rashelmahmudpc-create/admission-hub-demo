@@ -112,8 +112,15 @@ test('Google, Passkey, and the explicit Email-or-Telegram selector are public wi
   assert.match(wrangler, /GOOGLE_AUTH_ACTIVATION = "enabled"/);
   assert.match(wrangler, /PASSKEY_AUTH_ACTIVATION = "enabled"/);
   assert.match(wrangler, /VERIFICATION_AUTH_ACTIVATION = "enabled"/);
-  assert.match(wrangler, /VERIFICATION_ORCHESTRATOR_CONFIG = '\{"enabled":true,"providers":\[\{"id":"telegram","enabled":true/);
-  assert.doesNotMatch(wrangler, /"id":"(?:otp-a|otp-b|otp-c|whatsapp)","enabled":true/);
+  // The email OTP slots are enabled with declared daily caps and rotate ahead of
+  // Telegram, but their provider identities stay server-side.
+  assert.match(wrangler, /VERIFICATION_ORCHESTRATOR_CONFIG = '\{"enabled":true,"providers":\[\{"id":"otp-a","enabled":true,"priority":10,"dailyQuota":300/);
+  assert.match(wrangler, /\{"id":"otp-b","enabled":true,"priority":20,"dailyQuota":100/);
+  assert.match(wrangler, /\{"id":"telegram","enabled":true,"priority":50/);
+  assert.match(wrangler, /OTP_A_DAILY_QUOTA = "300"/);
+  assert.match(wrangler, /OTP_B_DAILY_QUOTA = "100"/);
+  assert.doesNotMatch(wrangler, /BREVO_API_KEY|BREVO_FROM_ADDRESS|OTP_B_PROVIDER_SHARED_SECRET\s*=/);
+  assert.doesNotMatch(wrangler, /"id":"otp-c","enabled":true|"id":"whatsapp","enabled":true/);
   assert.match(handler, /googlePublished\(env\)/);
   assert.match(handler, /googleCanaryRequested\(env, url\)/);
   assert.match(handler, /passkeyPublished\(env\)/);
