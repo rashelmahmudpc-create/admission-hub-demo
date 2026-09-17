@@ -19,6 +19,7 @@
 
   let sdkPromise = null;
   let configCache = null;
+  let onMessageAttached = false;
 
   const stateGet = () => {
     try { return JSON.parse(localStorage.getItem(LS_STATE) || '{}') || {}; } catch (_) { return {}; }
@@ -81,13 +82,20 @@
   };
 
   /* Last enable() outcome — surfaced in the UI so the owner can report the
-   * exact failure code instead of a vague "try again" (2026-09-17). */
-  const setErr = (code) => {
+   * exact failure code instead of a vague "try again" (2026-09-17).
+   * `detail` carries the raw browser/SDK message: without it every distinct
+   * failure (SW race, permission, VAPID, network) collapses into one
+   * unactionable code. */
+  const setErr = (code, detail) => {
     try {
       if (code == null) localStorage.removeItem('ahFcmLastErr');
-      else localStorage.setItem('ahFcmLastErr', JSON.stringify({ code: String(code), at: Date.now() }));
+      else localStorage.setItem('ahFcmLastErr', JSON.stringify({
+        code: String(code), at: Date.now(),
+        detail: detail ? String(detail).slice(0, 200) : undefined
+      }));
     } catch (_) {}
   };
+  const errText = (e) => (e && (e.message || e.code || String(e))) || 'unknown';
   const lastErr = () => {
     try { return JSON.parse(localStorage.getItem('ahFcmLastErr') || 'null'); } catch (_) { return null; }
   };
@@ -96,16 +104,29 @@
    * waiting for it to activate — on a cold first enable that loses the race and
    * pushManager.subscribe() throws "no active Service Worker" (error 20), so no
    * device ever gets a token. Register here and wait until it is active, then
-   * hand the ready registration to getToken(). */
+   * hand the ready registration to getToken().
+   * A registration that never reaches `active` must fail loudly: silently
+   * returning null would let the SDK re-register at its own default scope and
+   * reintroduce the same race. */
   const SW_URL = './firebase-messaging-sw.js';
   const SW_SCOPE = '/firebase-cloud-messaging-push-scope';
   const readySw = async () => {
-    if (!('serviceWorker' in navigator)) return null;
-    try {
-      const reg = await navigator.serviceWorker.register(SW_URL, { scope: SW_SCOPE });
-      for (let i = 0; i < 60 && !reg.active; i++) await new Promise((r) => setTimeout(r, 100));
-      return reg;
-    } catch (_) { return null; }
+    if (!('serviceWorker' in navigator)) throw new Error('sw-unsupported');
+    const reg = await navigator.serviceWorker.register(SW_URL, { scope: SW_SCOPE });
+    for (let i = 0; i < 100 && !reg.active; i++) await new Promise((r) => setTimeout(r, 100));
+    if (!reg.active) throw new Error('sw-not-active');
+    return reg;
+  };
+
+  /* The VAPID public key must be handed to getToken(). The compat SDK exposes
+   * no useVapidKey()/useVapidKeyIfAvailable() method at all (verified against
+   * firebase-messaging-compat 10.12.2), so the old branch was dead code and the
+   * configured key was never applied. */
+  const getTokenWith = async (messaging, reg, cfg) => {
+    const options = {};
+    if (reg) options.serviceWorkerRegistration = reg;
+    if (cfg && cfg.vapidKey) options.vapidKey = cfg.vapidKey;
+    return messaging.getToken(options);
   };
 
   const initMessaging = async (cfg) => {
@@ -113,10 +134,22 @@
     if (!fb || typeof fb.initializeApp !== 'function') throw new Error('sdk-missing');
     const app = (fb.apps && fb.apps.length) ? fb.apps[0] : fb.initializeApp(cfg);
     const messaging = fb.messaging(app);
-    if (cfg.vapidKey && typeof messaging.useVapidKey === 'function') {
-      try { messaging.useVapidKey(cfg.vapidKey); } catch (_) { /* FCM default VAPID */ }
-    } else if (typeof messaging.useVapidKeyIfAvailable === 'function') {
-      try { messaging.useVapidKeyIfAvailable(); } catch (_) {}
+    /* A foreground message is delivered to the page only through this callback.
+     * Without it the SDK has nowhere to hand the payload and the toast never
+     * appears, even though the push arrived. Attach once — enable/disable/
+     * refresh all call this. */
+    if (!onMessageAttached) {
+      onMessageAttached = true;
+      try {
+        messaging.onMessage((payload) => {
+          const n = (payload && payload.notification) || {};
+          const d = (payload && payload.data) || {};
+          const title = n.title || 'Admission Hub';
+          const body = n.body || '';
+          try { window.toast?.(`${title} — ${body}`.slice(0, 240)); } catch (_) {}
+          try { window.AhFcmInbox?.onForeground?.(d); } catch (_) {}
+        });
+      } catch (_) { onMessageAttached = false; }
     }
     return messaging;
   };
@@ -173,10 +206,10 @@
         const ask = await Notification.requestPermission();
         if (ask !== 'granted') return ask;
       }
-    } catch (_) { setErr('prompt-error'); return 'error'; }
+    } catch (e) { setErr('prompt-error', errText(e)); return 'error'; }
     const cfg = await getConfig();
-    if (!cfg) { setErr('config-failed'); return 'config-failed'; }
-    if (!cfg.fcmConfigured || !cfg.webConfig) { setErr('not-configured'); return 'not-configured'; }
+    if (!cfg) { setErr('config-failed', 'config request failed'); return 'config-failed'; }
+    if (!cfg.fcmConfigured || !cfg.webConfig) { setErr('not-configured', 'server has no FCM web config'); return 'not-configured'; }
     try {
       if (permission() !== 'granted') {
         const p = permission();
@@ -185,20 +218,20 @@
       }
       let messaging;
       try { messaging = await initMessaging(cfg.webConfig); }
-      catch (_) { setErr('sdk-failed'); return 'sdk-failed'; }
+      catch (e) { setErr('sdk-failed', errText(e)); return 'sdk-failed'; }
       let token;
       try {
         const reg = await readySw();
-        token = await messaging.getToken(reg ? { serviceWorkerRegistration: reg } : undefined);
+        token = await getTokenWith(messaging, reg, cfg.webConfig);
       }
-      catch (_) { setErr('token-failed'); return 'token-failed'; }
-      if (!token) { setErr('token-empty'); return 'token-failed'; }
+      catch (e) { setErr('token-failed', errText(e)); return 'token-failed'; }
+      if (!token) { setErr('token-empty', 'getToken returned an empty value'); return 'token-failed'; }
       const out = await registerToken(token);
       if (out.ok) { setErr(null); stateSet({ enabled: true, at: Date.now() }); return 'granted'; }
-      setErr('register-' + out.status);
+      setErr('register-' + out.status, 'server rejected the token registration');
       return 'register-' + out.status;
-    } catch (_) {
-      setErr('error');
+    } catch (e) {
+      setErr('error', errText(e));
       return 'error';
     }
   };
@@ -211,7 +244,7 @@
       if (cfg && cfg.fcmConfigured && cfg.webConfig) {
         const messaging = await initMessaging(cfg.webConfig);
         const reg = await readySw();
-        const token = await messaging.getToken(reg ? { serviceWorkerRegistration: reg } : undefined);
+        const token = await getTokenWith(messaging, reg, cfg.webConfig);
         if (token) {
           await boundedFetch('/unregister-token', {
             method: 'POST',
@@ -237,22 +270,27 @@
       const messaging = await initMessaging(cfg.webConfig);
       if (permission() !== 'granted') { stateSet({ enabled: false }); return; }
       const reg = await readySw();
-      const token = await messaging.getToken(reg ? { serviceWorkerRegistration: reg } : undefined);
+      const token = await getTokenWith(messaging, reg, cfg.webConfig);
       if (token) await registerToken(token);
-    } catch (_) { /* next start retries */ }
+    } catch (e) { setErr('refresh-failed', errText(e)); }
   };
 
-  /* Foreground FCM delivery — the SW postMessages focused clients. */
+  /* Foreground FCM delivery — the SW postMessages focused clients.
+   * The push arrives on the push-scope registration (firebase-messaging-sw.js),
+   * NOT on navigator.serviceWorker.ready (which resolves to the shell worker),
+   * so listening only on `ready` silently dropped every foreground message. */
   const watchForeground = () => {
     if (!('serviceWorker' in navigator)) return;
-    navigator.serviceWorker.ready.then((reg) => {
-      reg.addEventListener?.('message', (event) => {
-        const msg = event.data;
-        if (!msg || msg.ah !== 'fcm') return;
-        try {
-          window.toast?.(`${msg.title} — ${msg.body}`.slice(0, 240));
-        } catch (_) {}
-      });
+    const onMsg = (event) => {
+      const msg = event.data;
+      if (!msg || msg.ah !== 'fcm') return;
+      try {
+        window.toast?.(`${msg.title} — ${msg.body}`.slice(0, 240));
+      } catch (_) {}
+    };
+    navigator.serviceWorker.addEventListener?.('message', onMsg);
+    navigator.serviceWorker.getRegistrations?.().then((regs) => {
+      regs.forEach((reg) => reg.addEventListener?.('message', onMsg));
     }).catch(() => {});
   };
 

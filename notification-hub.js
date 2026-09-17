@@ -368,7 +368,9 @@
     const last = (() => {
       try {
         const e = window.AhFcm && window.AhFcm.lastErr ? window.AhFcm.lastErr() : null;
-        return e && e.code ? `${sheetT('lastErrLabel')}: ${e.code}` : '';
+        if (!e || !e.code) return '';
+        const detail = e.detail ? ` — ${e.detail}` : '';
+        return `${sheetT('lastErrLabel')}: ${e.code}${detail}`;
       } catch (_) { return ''; }
     })();
     return `<div style="${pad}"><div style="font-size:14px;font-weight:700">${sheetT('pushTitle')}</div>

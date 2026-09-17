@@ -82,7 +82,7 @@ test('router: #notifications route + script tag + SW pin', () => {
   assert.match(INDEX, /p==='notifications' && window\.renderNotificationsInbox/);
   assert.match(INDEX, /notification-inbox\.js\?v=notif-inbox-v3/);
   assert.match(INDEX, /notification-hub\.js\?v=notify-v117/);
-  assert.match(INDEX, /notification-fcm\.js\?v=fcm-p1-v6/);
+  assert.match(INDEX, /notification-fcm\.js\?v=fcm-p1-v7/);
   assert.match(INDEX, /profile-ui\.js\?v=profile-v15-nonotif/);
   assert.match(SW, /notification-inbox\.js\?v=notif-inbox-v3/);
   assert.match(SW, /dashboard-v2\.js\?v=dash2f15-inbox/);
@@ -107,11 +107,12 @@ test('profile: Notifications row removed from Preferences (owner: সরিয�
 });
 
 test('enable() failures are specific, not a vague "try again" (2026-09-17)', () => {
-  assert.match(FCM, /setErr\('config-failed'\); return 'config-failed'/);
-  assert.match(FCM, /setErr\('sdk-failed'\); return 'sdk-failed'/);
-  assert.match(FCM, /setErr\('token-failed'\); return 'token-failed'/);
-  assert.match(FCM, /setErr\('register-' \+ out\.status\)/);
+  assert.match(FCM, /setErr\('config-failed', 'config request failed'\); return 'config-failed'/);
+  assert.match(FCM, /setErr\('sdk-failed', errText\(e\)\); return 'sdk-failed'/);
+  assert.match(FCM, /setErr\('token-failed', errText\(e\)\); return 'token-failed'/);
+  assert.match(FCM, /setErr\('register-' \+ out\.status/);
   assert.match(FCM, /_state: stateGet, _config: getConfig, lastErr/, 'lastErr exported for UI');
+  assert.match(FCM, /detail: detail \? String\(detail\)\.slice\(0, 200\) : undefined/, 'raw failure reason is retained');
   assert.match(HUB, /r === 'config-failed'\) toastShort\(sheetT\('errConfig'\)\)/);
   assert.match(HUB, /r === 'sdk-failed'\) toastShort\(sheetT\('errSdk'\)\)/);
   assert.match(HUB, /String\(r\)\.startsWith\('register-'\)/);

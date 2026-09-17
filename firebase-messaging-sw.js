@@ -9,8 +9,8 @@
  * Config is hardcoded because a static SW cannot read runtime config; these are
  * the public web config values the worker already returns from /config.
  */
-importScripts('https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js');
-importScripts('https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js');
+importScripts('./sdk/firebase-app-compat.js');
+importScripts('./sdk/firebase-messaging-compat.js');
 
 firebase.initializeApp({
   apiKey: 'AIzaSyDOcARNpuV0BizWVlOmNSMexnVOzZV31Hc',
@@ -21,18 +21,11 @@ firebase.initializeApp({
 
 const messaging = firebase.messaging();
 
-messaging.onBackgroundMessage((payload) => {
-  const n = (payload && payload.notification) || {};
-  const d = (payload && payload.data) || {};
-  self.registration.showNotification(String(n.title || 'Admission Hub'), {
-    body: String(n.body || ''),
-    tag: 'ah-fcm',
-    renotify: true,
-    icon: './icons/icon-192.png',
-    badge: './icons/icon-192.png',
-    data: { src: 'fcm', link: String(d.link || 'dashboard') }
-  });
-});
+/* No onBackgroundMessage handler on purpose. When the payload carries a
+ * `notification` block the SDK ALREADY calls showNotification() itself; adding
+ * our own handler made every background push appear twice (two entries with the
+ * same tag). Supplying only `data` payloads would keep a manual handler, but
+ * the worker sends `notification` and iOS/Chrome need it for reliable delivery. */
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();

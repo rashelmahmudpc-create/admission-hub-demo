@@ -1,6 +1,6 @@
 const CACHE_PREFIX = 'admission-hub-shell-';
 
-const BUILD_ID = 'v276-fcm-sw-ready-20260917';
+const BUILD_ID = 'v277-fcm-enable-fix-20260917';
 const CACHE_NAME = `${CACHE_PREFIX}${BUILD_ID}`;
 const VERSION_HEADER = 'X-Admission-Hub-Build';
 const DOCUMENT_NETWORK_TIMEOUT_MS = 2500;
@@ -30,7 +30,7 @@ const APP_SHELL = [
   './data-protection.js?v=dp-v3-fastboot',
   './dashboard-v2.js?v=dash2f15-inbox',
   './ai-agent-chat.js?v=agent-f1-ui-chatv18-fresh',
-  './notification-fcm.js?v=fcm-p1-v6',
+  './notification-fcm.js?v=fcm-p1-v7',
   './notification-inbox.js?v=notif-inbox-v3',
   './icons/icon-192.png',
   './icons/icon-512.png'
@@ -40,7 +40,7 @@ const APP_SHELL = [
 // A truncated/corrupt download is NEVER written to the shell cache.
 const ASSET_DIGESTS = {
 /* sw-manifest:start */
-  "./index.html": "c65f7b19c44d43d17e19e630db60f8471b9388a057d0995b007bd58b3dc345d6",
+  "./index.html": "cb9f357ee0bd22133ebf3c2c0822241544f62c062fefc10248b0300d18b56eb4",
   "./manifest.json": "11a85ae594fc629b11605daeda3f9afe4ef95215a55a29f9cc423314bfb275a4",
   "./manifest.webmanifest": "5be476009a140eabd088bd972bd4d345b9c4f4a055cd6e4f08774b9cb4afaf52",
   "./dashboard-v2.css?v=dash2f13-theme": "4f4c9295b487b8186fd45c006a96a43bcaf896a1a5b871f506a05874a8e00c99",
@@ -56,7 +56,7 @@ const ASSET_DIGESTS = {
   "./data-protection.js?v=dp-v3-fastboot": "359dc907ade4bcb3a6a722385969ebb6af47f7e436e6cdf2cce0dd6b7343723d",
   "./dashboard-v2.js?v=dash2f15-inbox": "bea4ccad52b85c482d3fef5a7f2b2eec54dcdb125597a22411c4839b81783a49",
   "./ai-agent-chat.js?v=agent-f1-ui-chatv18-fresh": "36a11f8d5dec5a5bf1b8fa86db06b9a34e01ad27c931f37aadbffe6e6f4930e5",
-  "./notification-fcm.js?v=fcm-p1-v6": "137689f88554be42068b9924c4546ba6abf5ccb96ab0dcca43489fc2b5194ae2",
+  "./notification-fcm.js?v=fcm-p1-v7": "eaafb0dab2a71c234c75bad7d13f774659856ff80cf4868c50808f3a48efff86",
   "./notification-inbox.js?v=notif-inbox-v3": "1dcfe40d859bda7b781e2c680f8c22e9fb8b64fd488a6c504c8c4cd10ff54756",
   "./icons/icon-192.png": "777ce5566fbeff0f2e384c787c8dde4f47d7c869e455c6e577a503decd4f1683",
   "./icons/icon-512.png": "86459109582f82b1d891a3e5a82723fefd21a3c65e9d0d22ab4dae33bb540520",
@@ -226,6 +226,9 @@ self.addEventListener('fetch', event => {
 //   1) FCM (Phase 1, fcm-notification.mjs) — payload: { "0":"gcm", notification:{title,body}, data:{link,src} }
 //      Foreground: the focused page shows an in-app toast (postMessage), no system notification.
 //      Background: system notification; click deep-links to the app route.
+//      NOTE: FCM subscriptions live on the push-scope worker
+//      (firebase-messaging-sw.js), so in practice these pushes do not reach this
+//      worker — that worker's SDK does the background display.
 //   2) Legacy admission-notify VAPID push (v107) — payload: { title, body, tag, url } — unchanged behavior.
 const isFcmPayload = data => Boolean(data && typeof data === 'object' && (data['0'] === 'gcm' || data.notification));
 
