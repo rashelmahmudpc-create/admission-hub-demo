@@ -47,8 +47,11 @@
       google: { available: false, clientId: '' },
       passkey: { available: false, enrollmentAvailable: false },
       telegram: { available: false },
+      emailOwnership: { available: false },
       backup: { available: false, contactInput: 'none' }
     },
+    ownership: null,
+    ownershipTimer: null,
     googleClientId: '',
     googleReady: false,
     googlePromise: null
@@ -345,10 +348,11 @@
           <div data-role="verification-selection">
             <p class="ah-account-mask">তোমার account নিরাপদ রাখতে নিচের যেকোনো একটি পদ্ধতি ব্যবহার করো।</p>
             <div class="ah-method-stack">
-              <button class="ah-method-card recommended is-selected" type="button" data-role="email-verification-start"><span class="ah-method-icon email" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><rect x="3.2" y="5.6" width="17.6" height="12.8" rx="3.2"/><path d="m4.6 8.2 7.4 5 7.4-5"/></svg></span><span><strong>Email Verification</strong><small>সহজ ও দ্রুত · Email OTP নয়, নিরাপদ link</small></span><em>✦ Recommended</em><span class="ah-method-trail"><span class="ah-method-check" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="m6.5 12.4 4 4L17.6 8.6"/></svg></span><b aria-hidden="true">›</b></span></button>
+              <button class="ah-method-card recommended is-selected" type="button" data-role="email-ownership-start"><span class="ah-method-icon email" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><rect x="3.2" y="5.6" width="17.6" height="12.8" rx="3.2"/><path d="m4.6 8.2 7.4 5 7.4-5"/></svg></span><span><strong>Email OTP</strong><small>Email-এ আসা ৬ সংখ্যার code · Email মালিকানার প্রমাণ</small><em>✦ Recommended</em></span><span class="ah-method-trail"><span class="ah-method-check" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="m6.5 12.4 4 4L17.6 8.6"/></svg></span><b aria-hidden="true">›</b></span></button>
+              <button class="ah-method-card telegram" type="button" data-role="telegram-verification-start"><span class="ah-method-icon telegram" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M20.4 4.6 3.9 11.1l4.9 1.7 1.6 5.1 2.7-3.4 4.3 2.9 3-12.8Z"/><path d="m8.8 12.8 7.6-5.3-5.4 6.7"/></svg></span><span><strong>Telegram</strong><small>Telegram দিয়ে verify · Official bot-এর real ৬ সংখ্যার code</small></span><span class="ah-method-trail"><b aria-hidden="true">›</b></span></button>
               <button class="ah-method-card unavailable" type="button" disabled aria-disabled="true"><span class="ah-method-icon passkey" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><circle cx="9" cy="14.5" r="4.5"/><path d="m12.5 11 8-8"/><path d="M16 6.5h4.5V11"/></svg></span><span><strong>Passkey</strong><small>দ্রুত ও নিরাপদ · Verification শেষে optional</small></span><span class="ah-method-trail"><b class="ah-method-lock" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><rect x="5" y="10" width="14" height="10.5" rx="3.2"/><path d="M8.2 10V7.6a3.8 3.8 0 0 1 7.6 0V10"/></svg></b></span></button>
               <button class="ah-method-card whatsapp unavailable" type="button" data-role="whatsapp-info" aria-describedby="ah-whatsapp-unavailable"><span class="ah-method-icon whatsapp" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3.8c-4.5 0-8.2 3.6-8.2 8 0 1.5.4 2.9 1.2 4.2L3.8 20l4.1-1.1a8 8 0 0 0 4.1 1.1c4.5 0 8.2-3.6 8.2-8s-3.7-8.2-8.2-8.2Z"/><path d="M9 9.2c.5 2.3 2.5 4.3 4.8 4.8l1-1.2 1.9 1c-.3 1-.9 1.5-1.9 1.4-3.1-.4-5.8-3.1-6.2-6.2-.1-1 .4-1.6 1.4-1.9l1 1.9-1 1.2Z"/></svg></span><span><strong>WhatsApp</strong><small>WhatsApp দিয়ে verify</small><small class="ah-method-status" id="ah-whatsapp-unavailable">এখন verification পাওয়া যাচ্ছে না</small></span><span class="ah-method-trail"><b aria-hidden="true">›</b></span></button>
-              <button class="ah-method-card telegram" type="button" data-role="telegram-verification-start"><span class="ah-method-icon telegram" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M20.4 4.6 3.9 11.1l4.9 1.7 1.6 5.1 2.7-3.4 4.3 2.9 3-12.8Z"/><path d="m8.8 12.8 7.6-5.3-5.4 6.7"/></svg></span><span><strong>Telegram</strong><small>Telegram দিয়ে verify · Official bot-এর real ৬ সংখ্যার code</small></span><span class="ah-method-trail"><b aria-hidden="true">›</b></span></button>
+              <button class="ah-method-card" type="button" data-role="email-verification-start"><span class="ah-method-icon email" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><rect x="3.2" y="5.6" width="17.6" height="12.8" rx="3.2"/><path d="m4.6 8.2 7.4 5 7.4-5"/></svg></span><span><strong>Email link (Firebase)</strong><small>Firebase link · শেষ বিকল্প, backup হিসেবে</small></span><span class="ah-method-trail"><b aria-hidden="true">›</b></span></button>
             </div>
             <p class="ah-account-note">শুধু available method-ই কাজ করবে। Telegram Telegram account-এর নিয়ন্ত্রণ নিশ্চিত করে—Email মালিকানা নয়।</p>
             <div class="ah-help ah-verify-help">
@@ -385,6 +389,19 @@
         </div>
 
         <div class="ah-account-view ah-provider-info-view ah-whatsapp-info-view" data-view="whatsapp-info" hidden>
+        <form class="ah-account-view ah-email-ownership-view" data-view="email-ownership" data-state="waiting" hidden novalidate>
+          <div class="ah-mail-hero" aria-hidden="true"><span class="ah-mail-orb"><svg viewBox="0 0 24 24" fill="none"><rect x="3" y="5.5" width="18" height="13" rx="3.5"/><path d="m4.5 8 7.5 5.2 7.5-5.2"/></svg><i><svg viewBox="0 0 24 24" fill="none"><path d="m6.5 12.4 4 4L17.6 8.6"/></svg></i></span><span class="ah-mail-shield-float"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3 5 6v5c0 4.8 2.5 8 7 10 4.5-2 7-5.2 7-10V6l-7-3Z"/><path d="m9.4 12.1 1.7 1.7 3.7-4"/></svg></span></div>
+          <p class="ah-view-kicker">EMAIL OWNERSHIP</p>
+          <h3 class="ah-account-view-title">Email-এ পাঠানো ৬ সংখ্যার code লিখো</h3>
+          <p class="ah-account-mask">Code পাঠানো হয়েছে <strong data-role="ownership-mask">তোমার Email-এ</strong>। এটি Email মালিকানার সরাসরি প্রমাণ।</p>
+          <div class="ah-account-field ah-otp-field"><label class="ah-account-label" for="ah-ownership-code">৬ সংখ্যার code</label><div class="ah-six-code" aria-hidden="true"><span data-otp-digit="0"></span><span data-otp-digit="1"></span><span data-otp-digit="2"></span><span data-otp-digit="3"></span><span data-otp-digit="4"></span><span data-otp-digit="5"></span></div><input class="ah-account-input ah-account-otp" id="ah-ownership-code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" aria-describedby="ah-ownership-code-help" required></div><p class="ah-field-feedback ah-otp-help" id="ah-ownership-code-help">Code না পেলে Spam folder দেখো, অথবা নতুন code নাও।</p>
+          <p class="ah-account-fine" data-role="ownership-expiry" hidden></p>
+          <button class="ah-account-primary" type="submit" data-role="ownership-verify">Verify →</button>
+          <button class="ah-account-secondary" type="button" data-role="ownership-resend">নতুন code নিন</button>
+          <p class="ah-account-note">Code কখনো অন্য কাউকে দিও না। Admission Hub কখনো ফোনে বা chat-এ code চাইবে না।</p>
+          <p class="ah-account-switch"><button class="ah-account-link" type="button" data-role="ownership-back">অন্য পদ্ধতি ব্যবহার করো</button></p>
+        </form>
+
           <div class="ah-provider-phone whatsapp" aria-hidden="true"><span>◉</span><i>✓</i></div>
           <h3 class="ah-account-view-title">WhatsApp verification</h3>
           <p class="ah-account-mask">এই no-cost public version-এ সত্যিকারের WhatsApp verification এখনো available নয়। তাই কোনো message পাঠানো বা success দেখানো হবে না।</p>
@@ -533,6 +550,10 @@
   const clearTelegramTimer = () => {
     if (state.telegramTimer) clearInterval(state.telegramTimer);
     state.telegramTimer = null;
+  };
+  const clearOwnershipTimer = () => {
+    if (state.ownershipTimer) clearInterval(state.ownershipTimer);
+    state.ownershipTimer = null;
   };
   const telegramResendRemaining = () => Math.max(0, Math.ceil((Number(state.telegram?.resendUntil || 0) - Date.now()) / 1000));
   const renderTelegramDigits = () => {
@@ -717,12 +738,12 @@
     const row = String(document.cookie || '').split(';').map(part => part.trim()).find(part => part.startsWith(`${PENDING_SIGNUP_COOKIE}=`));
     const value = row ? decodeURIComponent(row.slice(row.indexOf('=') + 1)) : '';
     if (value === '1') return 'select';
-    return ['select', 'email', 'telegram'].includes(value) ? value : '';
+    return ['select', 'email', 'telegram', 'email-ownership'].includes(value) ? value : '';
   };
   const pendingSignup = () => Boolean(pendingSignupMode());
   const rememberPendingSignup = (active, mode = 'select') => {
     const secure = location.protocol === 'https:' ? '; Secure' : '';
-    const value = active && ['select', 'email', 'telegram'].includes(mode) ? mode : '';
+    const value = active && ['select', 'email', 'telegram', 'email-ownership'].includes(mode) ? mode : '';
     document.cookie = `${PENDING_SIGNUP_COOKIE}=${value}; Path=/; Max-Age=${active ? 3600 : 0}; SameSite=Lax${secure}`;
   };
 
@@ -1241,6 +1262,7 @@
       $('[data-role="verification-selection"]').hidden = !selecting;
       $('[data-role="verification-email-panel"]').hidden = selecting;
       $('[data-role="telegram-verification-start"]').hidden = !state.capabilities.telegram.available;
+      $('[data-role="email-ownership-start"]').hidden = !state.capabilities.emailOwnership.available;
       const copy = $('[data-role="verification-email-copy"]');
       if (copy) copy.innerHTML = sent
         ? 'Verification link পাঠানো হয়েছে <strong data-role="mask"></strong>। Email app-এ link-এ tap করে এখানে ফিরে আসো।'
@@ -1252,6 +1274,12 @@
       const emailStatusAddress = $('[data-role="email-status-address"]');
       if (emailStatusAddress) emailStatusAddress.textContent = sent ? '\u2713 Verification email sent' : 'Verification pending\u2026';
       updateResendCooldown();
+    }
+    if (name === 'email-ownership') {
+      const mask = $('[data-role="ownership-mask"]');
+      if (mask) mask.textContent = state.verification?.emailMasked || 'তোমার Email-এ';
+      renderOwnershipDigits();
+      updateOwnershipResend();
     }
     if (name === 'email-intro') {
       const address = $('[data-role="email-intro-address"]');
@@ -1282,7 +1310,8 @@
       forgot: () => $('#ah-forgot-email'),
       created: () => $('[data-role="created-continue"]'),
       verify: () => state.verification?.mode === 'select'
-        ? $('[data-role="email-verification-start"]') : $('[data-role="open-email"]'),
+        ? $('[data-role="email-ownership-start"]:not([hidden])') || $('[data-role="email-verification-start"]') : $('[data-role="open-email"]'),
+      'email-ownership': () => $('#ah-ownership-code'),
       'email-intro': () => $('[data-role="email-intro-continue"]'),
       'whatsapp-info': () => $('[data-role="whatsapp-info-back"]'),
       'telegram-intro': () => $('[data-role="telegram-intro-continue"]'),
@@ -1464,7 +1493,9 @@
     state.verification = null;
     state.telegram = null;
     state.backup = null;
+    state.ownership = null;
     clearTelegramTimer();
+    clearOwnershipTimer();
     clearResendCooldown();
     setSessionState('AUTHENTICATED');
     scheduleNextRefresh();
@@ -1675,6 +1706,7 @@
       enrollmentAvailable: (methods.passkey?.enrollmentAvailable === true || methods.passkey?.available === true) && passkeyBrowserReady()
     };
     state.capabilities.telegram = { available: methods.telegramVerification?.available === true };
+    state.capabilities.emailOwnership = { available: methods.emailOwnership?.available === true };
     state.capabilities.backup = {
       available: methods.backup?.available === true,
       contactInput: ['none', 'optional', 'required'].includes(methods.backup?.contactInput) ? methods.backup.contactInput : 'none'
@@ -2237,6 +2269,62 @@
     } finally { setBusy(false); }
   };
 
+  const beginEmailOwnership = async () => {
+    if (state.busy || !state.verification || !state.capabilities.emailOwnership.available) return;
+    setBusy(true);
+    try {
+      if (state.pendingProfile && state.profileBound && !state.profileSynced) await syncPendingProfile({ pending: true });
+      const result = await api('/email-ownership/start', { method: 'POST', body: {} });
+      if (result.alreadyVerified) {
+        setBusy(false);
+        await checkEmailVerification();
+        return;
+      }
+      if (!setOwnershipChallenge(result.ownership)) throw new Error('Email OTP যাচাই এখন পাওয়া যাচ্ছে না।');
+      if (state.signupJourney || pendingSignup()) rememberPendingSignup(true, 'email-ownership');
+      showView('email-ownership');
+    } catch (error) { message(friendlyError(error), 'error'); }
+    finally { setBusy(false); }
+  };
+
+  const setOwnershipChallenge = info => {
+    if (!info?.attemptId) return false;
+    state.ownership = {
+      attemptId: info.attemptId,
+      expiresAt: Number(info.expiresAt || 0),
+      resendUntil: Date.now() + Math.max(0, Number(info.resendAfter || 0)) * 1000
+    };
+    const input = $('#ah-ownership-code');
+    if (input) input.value = '';
+    renderOwnershipDigits();
+    updateOwnershipResend();
+    return true;
+  };
+
+  const renderOwnershipDigits = () => {
+    const value = String($('#ah-ownership-code')?.value || '');
+    $('[data-view="email-ownership"]')?.querySelectorAll('[data-otp-digit]').forEach((cell, index) => {
+      const digit = value[index] || '';
+      cell.textContent = digit;
+      cell.classList.toggle('is-filled', Boolean(digit));
+    });
+  };
+
+  const updateOwnershipResend = () => {
+    const button = $('[data-role="ownership-resend"]');
+    if (!button) return;
+    const until = Number(state.ownership?.resendUntil || 0);
+    const remaining = Math.max(0, Math.ceil((until - Date.now()) / 1000));
+    button.disabled = state.busy || remaining > 0;
+    if (remaining > 0) {
+      button.textContent = `আবার পাঠান (${remaining}s)`;
+      if (!state.ownershipTimer) state.ownershipTimer = setInterval(updateOwnershipResend, 1000);
+    } else {
+      button.textContent = 'নতুন code নিন';
+      if (state.ownershipTimer) { clearInterval(state.ownershipTimer); state.ownershipTimer = null; }
+    }
+  };
+
   const requestBackup = async (contact = '') => {
     if (state.busy || !state.session || !state.capabilities.backup.available) return;
     setBusy(true);
@@ -2524,6 +2612,43 @@
     $('[data-role="link-cancel"]').addEventListener('click', () => { $('#ah-link-password').value = ''; prefillLogin($('#ah-link-email').value); showView('login'); });
 
     $('[data-role="created-continue"]').addEventListener('click', () => showView('verify'));
+    $('[data-role="email-ownership-start"]').addEventListener('click', beginEmailOwnership);
+    $('[data-role="ownership-back"]').addEventListener('click', () => showView('verify'));
+    $('[data-role="ownership-resend"]').addEventListener('click', async () => {
+      if (state.busy || Date.now() < Number(state.ownership?.resendUntil || 0)) return;
+      setBusy(true);
+      try {
+        const result = await api('/email-ownership/start', { method: 'POST', body: {} });
+        if (!setOwnershipChallenge(result.ownership)) throw new Error('নতুন code পাঠানো যায়নি।');
+        message('নতুন code পাঠানো হয়েছে।', 'info');
+      } catch (error) { message(friendlyError(error), 'error'); }
+      finally { setBusy(false); }
+    });
+    $('#ah-ownership-code').addEventListener('input', event => {
+      event.target.value = String(event.target.value || '').replace(/\D/g, '').slice(0, 6);
+      renderOwnershipDigits();
+    });
+    $('[data-view="email-ownership"]').addEventListener('submit', async event => {
+      event.preventDefault();
+      if (state.busy || !state.ownership) return;
+      const code = String($('#ah-ownership-code').value || '').replace(/\D/g, '');
+      if (!/^\d{6}$/.test(code)) return message('৬ সংখ্যার code লিখুন।', 'error');
+      setBusy(true);
+      try {
+        const result = await api('/email-ownership/verify', {
+          method: 'POST',
+          body: { attemptId: state.ownership.attemptId, code }
+        });
+        state.verificationLabel = 'Email';
+        clearOwnershipTimer();
+        state.ownership = null;
+        await establishSession(result, 'তোমার Email মালিকানা যাচাই হয়েছে।');
+      } catch (error) {
+        $('#ah-ownership-code').value = '';
+        renderOwnershipDigits();
+        message(friendlyError(error), 'error');
+      } finally { setBusy(false); }
+    });
     $('[data-role="email-verification-start"]').addEventListener('click', () => showView('email-intro'));
     $('[data-role="email-intro-continue"]').addEventListener('click', beginEmailVerification);
     $('[data-role="email-intro-back"]').addEventListener('click', () => showView('verify'));

@@ -1261,4 +1261,4 @@ html[data-theme="green"] .ah-account-page{
 html[data-theme="green"] .ah-account-shell[data-visual-contract="code-native-page-system-v1"],
 html[data-theme="green"] .ah-account-page{background:#eef7f1}
 html[data-theme="green"] .ah-account-shell[data-visual-contract="code-native-page-system-v1"]{background:#ffffff}
-
+.ah-email-ownership-view{text-align:center}.ah-email-ownership-view .ah-six-code{margin:0 auto}.ah-email-ownership-view[data-state="success"] .ah-account-field{opacity:.6}

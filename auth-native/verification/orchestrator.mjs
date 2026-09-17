@@ -10,7 +10,7 @@ import {
   VerificationProviderError
 } from './provider-contract.mjs';
 
-const PURPOSES = new Set(['account-backup', 'sensitive-action']);
+const PURPOSES = new Set(['account-backup', 'sensitive-action', 'email-ownership']);
 const HOUR_MS = 60 * 60 * 1000;
 const SEND_LIMITS = Object.freeze([
   Object.freeze({ scope: 'backup-user-hour', source: 'user', limit: 5, windowMs: HOUR_MS }),
@@ -115,14 +115,26 @@ export class VerificationOrchestrator {
       if (!validText(userId, 3, 128) || ![sessionRef, subjectRef, emailRef].every(value => /^[a-f0-9]{64}$/.test(value))) {
         failAuth(AUTH_ERROR_CODES.SESSION_INVALID);
       }
+      // Pre-verification path: the worker already holds the address from the
+      // Firebase lookup, so it passes it in and we hash it here. It never arrives
+      // from client input, which keeps this from becoming a send-to-anyone vector.
+      const ownershipEmail = purpose === 'email-ownership' ? normalizeAuthEmail(trusted.email) : '';
+      if (purpose === 'email-ownership' && !ownershipEmail) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+      const recipientName = purpose === 'email-ownership' ? cleanRecipientName(trusted.recipientName) : '';
       const [ipRef, deviceRef, destinationRef] = await Promise.all([
         this.hmac.hex('network-ref-v1', context.ip),
         this.hmac.hex('device-ref-v1', context.deviceId),
-        this.hmac.hex('verification-destination-v1', 'telegram-account-verification')
+        this.hmac.hex('verification-destination-v1', purpose === 'email-ownership'
+          ? `email-ownership:${ownershipEmail}`
+          : 'telegram-account-verification')
       ]);
       return Object.freeze({
-        sessionToken: '', subject: '', userId, email: '', purpose, recipientName: '',
-        destinations: Object.freeze({ otp: '', whatsapp: '', telegram: 'user-initiated-link' }),
+        sessionToken: '', subject: '', userId, email: ownershipEmail, purpose, recipientName,
+        destinations: Object.freeze({
+          otp: ownershipEmail,
+          whatsapp: '',
+          telegram: purpose === 'email-ownership' ? '' : 'user-initiated-link'
+        }),
         context, sessionRef, subjectRef, emailRef, ipRef, deviceRef, destinationRef
       });
     }
@@ -435,7 +447,8 @@ export class VerificationOrchestrator {
       verified: true,
       purpose: verified.purpose,
       userId: identity.userId,
-      ...(verified.telegramLinked === true ? { telegramLinked: true, emailVerified: false } : {})
+      ...(verified.telegramLinked === true ? { telegramLinked: true, emailVerified: false } : {}),
+      ...(verified.emailOwnershipProven === true ? { emailOwnershipProven: true, emailVerified: false } : {})
     });
   }
 
@@ -479,6 +492,14 @@ export class VerificationOrchestrator {
     const identity = await this.#identity(input, requestContext);
     const result = await this.repository.isTelegramLinked({ userId: identity.userId, subjectRef: identity.subjectRef });
     return Object.freeze({ linked: result?.linked === true });
+  }
+
+  // Read-only counterpart to isTelegramLinked for the email-ownership proof. The
+  // worker calls it with a trusted identity resolved from the Firebase session.
+  async isEmailOwnershipProven(input = {}, requestContext = {}) {
+    const identity = await this.#identity(input, requestContext);
+    const result = await this.repository.isEmailOwnershipProven({ userId: identity.userId, subjectRef: identity.subjectRef });
+    return Object.freeze({ proven: result?.proven === true, method: result?.method || null });
   }
 
   async confirmTelegramWebhook(input = {}) {

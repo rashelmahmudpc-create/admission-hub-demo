@@ -133,6 +133,7 @@ const requiredRepositoryMethods = Object.freeze([
   'getAccountState', 'setAccountState',
   'identitySnapshot', 'listLinkedIdentities',
   'beginFirebaseAccountVerification', 'getFirebaseAccountVerification',
+  'getFirebaseVerificationRecipientName',
   'completeFirebaseAccountVerification', 'getFirebaseIdentity',
   'savePendingProfile', 'saveProfile', 'getProfile',
   'beginPasskeyRegistration', 'getPasskeyRegistrationChallenge', 'finishPasskeyRegistration',
@@ -679,6 +680,21 @@ export class CloudflareNativeAuthEngine {
       expiresAt: now + ACCOUNT_VERIFICATION_TICKET_TTL_MS,
       user: publicUser(prepared.user)
     });
+  }
+
+  // Greeting personalisation for the pre-verification OTP. The name is read from
+  // the profile the signup flow already saved, so the client never supplies it.
+  async getFirebaseVerificationRecipientName(verificationTicket, requestContext = {}) {
+    const token = String(verificationTicket || '').trim();
+    if (!/^[A-Za-z0-9_-]{40,96}$/.test(token)) failAuth(AUTH_ERROR_CODES.TELEGRAM_VERIFICATION_INVALID);
+    const context = normalizeContext(requestContext);
+    const refs = await this.#references('account-verification@admissionhub.invalid', context);
+    const result = errorFromRepository(await this.repository.getFirebaseVerificationRecipientName({
+      ticketRef: await this.hmac.hex('session-ref-v1', token),
+      deviceRef: refs.deviceRef,
+      now: Number(this.now())
+    }));
+    return Object.freeze({ fullName: String(result?.fullName || '') });
   }
 
   async getFirebaseAccountVerification(verificationTicket, input = {}, requestContext = {}) {
