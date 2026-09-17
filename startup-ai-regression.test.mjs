@@ -51,7 +51,7 @@ test('১১. protection snapshot runs as idle post-boot work',
 /* PWA lifecycle */
 test('১২. build/cache/static-Welcome and main-app AI versions are synchronized',
 
-  SW.includes("const BUILD_ID = 'v279-clean-notif-20260917'") && H.includes("const expectedSwVersion = 'v279-clean-notif-20260917'") && H.includes('sw.js?v=v279-clean-notif-20260917') && H.includes('account-access.js?v=20260916-account-entry-v6') && SW.includes('account-access.js?v=20260916-account-entry-v6') && H.includes('ai-agent-chat.js?v=agent-f1-ui-chatv18-fresh') && SW.includes('ai-agent-chat.js?v=agent-f1-ui-chatv18-fresh'));
+  SW.includes("const BUILD_ID = 'v280-global-notif-20260917'") && H.includes("const expectedSwVersion = 'v280-global-notif-20260917'") && H.includes('sw.js?v=v280-global-notif-20260917') && H.includes('account-access.js?v=20260916-account-entry-v6') && SW.includes('account-access.js?v=20260916-account-entry-v6') && H.includes('ai-agent-chat.js?v=agent-f1-ui-chatv18-fresh') && SW.includes('ai-agent-chat.js?v=agent-f1-ui-chatv18-fresh'));
 test('১৩. service-worker activation never navigates or reloads open clients',
   !SW.includes('c.navigate(c.url)') && !SW.includes("self.clients.matchAll({ type: 'window', includeUncontrolled: true });\n      for"));
 test('১৪. installed PWA document is bounded network-first with fast offline fallback',

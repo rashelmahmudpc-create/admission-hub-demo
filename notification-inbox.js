@@ -1,4 +1,4 @@
-/* v4 — Admission Hub full-screen notification inbox.
+/* v6 — Admission Hub full-screen notification inbox (Phase 2: global feed).
  * Owner directive 2026-09-17 (round 8): the inbox is a CLEAN list only —
  * no "Push চালু আছে / 1 device" status bar, no Test button, no
  * "চালু করুন" banner, no token/device/FCM jargon anywhere in the UI.
@@ -37,13 +37,45 @@
 
   const esc = (v) => String(v ?? '').replace(/[&<>\"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 
-  /* Real data only — the hub's own log (IDB). Never fake entries. */
-  const rows = async () => {
+  /* Global notification types → inbox category icons (Phase 2). */
+  const GLOBAL_ICONS = {
+    'new-content': 'study', announcement: 'update', 'new-feature': 'update',
+    challenge: 'achievement', course: 'admission', important: 'update'
+  };
+
+  /* Real data only, never fake: local events from the hub log (IDB) +
+   * global notifications from the server feed (Phase 2), deduped by id. */
+  const localRows = async () => {
     try {
       const hub = window.NotificationHub;
       if (hub && typeof hub._log === 'function') return (await hub._log()) || [];
     } catch (_) {}
     return [];
+  };
+  const globalRows = async () => {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 6000);
+      const res = await fetch('/api/notifications/inbox', { credentials: 'include', signal: controller.signal });
+      clearTimeout(timer);
+      if (!res.ok) return [];
+      const data = await res.json();
+      return (data.items || []).map(r => ({
+        id: r.id,
+        title: r.title,
+        body: r.body,
+        createdAt: Number(r.sentAt || 0),
+        readAt: r.readAt ? Number(r.readAt) : null,
+        category: GLOBAL_ICONS[r.type] || 'update',
+        targetUrl: r.targetUrl || null,
+        source: 'global'
+      }));
+    } catch (_) { return []; }
+  };
+  const rows = async () => {
+    const [local, global] = await Promise.all([localRows(), globalRows()]);
+    const seen = new Set(global.map(r => r.id));
+    return [...global, ...local.filter(r => !seen.has(r.id))];
   };
 
   const fmtTime = (ts) => {
@@ -73,7 +105,8 @@
       const icon = CAT_ICON[row.category] || '🔔';
       const unread = !row.readAt;
       return `<button class="nif-item fade-in stagger-${Math.min(i + 1, 6)} ${unread ? 'nif-unread' : ''}"
-        data-nif-id="${esc(row.id)}" onclick="window.__nifTap(this)" ${unread ? '' : 'aria-label="read"'}>
+        data-nif-id="${esc(row.id)}" data-nif-global="${row.source === 'global' ? '1' : '0'}" data-nif-link="${esc(row.targetUrl || '')}"
+        onclick="window.__nifTap(this)" ${unread ? '' : 'aria-label="read"'}>
         <span class="nif-ic" aria-hidden="true">${icon}</span>
         <span class="nif-main">
           <span class="nif-top"><b class="nif-title">${esc(row.title || '—')}</b><span class="nif-time">${esc(fmtTime(row.createdAt))}</span></span>
@@ -171,11 +204,25 @@
   window.__nifTab = (tab) => { state.tab = tab === 'unread' ? 'unread' : 'all'; reRender(); };
   window.__nifTap = (el) => {
     const id = el.dataset.nifId;
+    const isGlobal = el.dataset.nifGlobal === '1';
+    const targetUrl = el.dataset.nifLink || '';
     (async () => {
       try {
-        const hub = window.NotificationHub;
-        if (hub && typeof hub.markOneRead === 'function') await hub.markOneRead(id);
+        if (isGlobal) {
+          await fetch('/api/notifications/read', {
+            method: 'POST', credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id })
+          });
+        } else {
+          const hub = window.NotificationHub;
+          if (hub && typeof hub.markOneRead === 'function') await hub.markOneRead(id);
+        }
       } catch (_) {}
+      if (isGlobal && targetUrl) {
+        try { location.hash = targetUrl.replace(/^#?\/?/, ''); } catch (_) {}
+        return;
+      }
       reRender();
     })();
   };

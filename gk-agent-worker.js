@@ -2,7 +2,7 @@
 import pubHandler, { publishGlobal } from './public-worker.js';
 import { handleInternalEmailRequest } from './email-gateway/worker/handler.mjs';
 import { createNativeAuthHandler } from './auth-native/worker/public-auth-handler.mjs';
-import { handleFcmNotificationRequest } from './fcm-notification.mjs';
+import { handleFcmNotificationRequest, runScheduledGlobalNotifications } from './fcm-notification.mjs';
 export { EmailGatewayCoordinator } from './email-gateway/worker/email-coordinator.mjs';
 export { AdmissionAuthAuthority } from './auth-native/worker/auth-authority-do.mjs';
 
@@ -502,6 +502,11 @@ export default {
   },
 
   async scheduled(event, env, ctx) {
+    /* Phase 2 (owner-approved 2026-09-17): global notification scheduler —
+     * every cron tick sends any due scheduled global (topic-first). Cloudflare
+     * Cron Triggers replace the spec's "Vercel Cron" (owner: no Vercel).
+     * The GK run below stays date-guarded (once per day). */
+    try { await runScheduledGlobalNotifications(env); } catch (_) {}
     if (!env.GK_KV || !keys(env).length) return;
     const date = dhakaToday();
     try { if ((await env.GK_KV.get('gkDay')) === date) return; } catch (_) {}

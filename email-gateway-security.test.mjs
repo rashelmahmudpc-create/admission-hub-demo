@@ -399,7 +399,7 @@ test('Durable Object binding is explicit and no email credential is stored in wr
   assert.match(wrangler, /class_name = "EmailGatewayCoordinator"/);
   assert.match(wrangler, /new_sqlite_classes = \["EmailGatewayCoordinator"\]/);
   assert.match(wrangler, /binding = "GK_KV"/);
-  assert.match(wrangler, /crons = \["30 18 \* \* \*"\]/);
+  assert.match(wrangler, /crons = \["\* \* \* \* \*"\]/); /* Phase 2 (2026-09-17): every-minute cron runs the global notification scheduler; GK stays date-guarded */
   assert.doesNotMatch(wrangler, /EMAIL_GATEWAY_SIGNING_SECRET|RECIPIENT_HASH_PEPPER|API_KEY|PASSWORD|TOKEN/);
 });
 

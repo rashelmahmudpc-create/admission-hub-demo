@@ -1,4 +1,6 @@
-/* v118 — Admission Hub Smart Notification engine (client).
+/* v119 — Admission Hub Smart Notification engine (client).
+   Phase 2 (owner-approved 2026-09-17): global feed unread in the bell badge,
+   notification click logging for the global engine analytics.
    Round 8 (owner directive 2026-09-17): auto engine OFF, premium centered
    allow dialog (one tap, silent success), bell = inbox-or-allow only.
    Golden rule: "Notification পাঠানোর মতো কারণ না থাকলে পাঠাবে না।"
@@ -264,6 +266,19 @@
       <div id="ahNotifCopy" style="flex:1;min-width:0;font-size:13px;line-height:1.45"></div>
       <button class="iconbtn" style="flex:0 0 auto" title="Notification settings" onclick="NotificationHub.openSheet()">⚙️</button>
     </div>`;
+  /* Phase 2: unread global notifications from the server feed (for the bell
+   * badge). Bounded + fail-soft — the badge must never break the dashboard. */
+  const globalUnreadCount = async () => {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 5000);
+      const res = await fetch('/api/notifications/inbox', { credentials: 'include', signal: controller.signal });
+      clearTimeout(timer);
+      if (!res.ok) return 0;
+      const data = await res.json();
+      return Number(data.unread || 0);
+    } catch (_) { return 0; }
+  };
   const hydrateDashboard = async () => {
     try {
       const copy = document.getElementById('ahNotifCopy');
@@ -275,7 +290,7 @@
         copy.innerHTML = `<b>🔔 নোটিফিকেশন</b><br><span style="opacity:.75;font-size:11.5px">খবর এলে যেন মিস না হয়</span>
           <div style="display:flex;gap:8px;margin-top:8px"><button class="btn sm" onclick="NotificationHub.openAllowDialog()">চালু করুন</button></div>`;
       } else {
-        const unread = await unreadCount();
+        const unread = (await unreadCount()) + (await globalUnreadCount());
         const badge = document.getElementById('ahNotifBadge');
         if (badge) { badge.style.display = unread ? 'inline-block' : 'none'; badge.textContent = unread > 9 ? '9+' : unread; }
         copy.innerHTML = `<b>Notifications</b> <span style="opacity:.7;font-size:11.5px">${unread ? `${unread}টি নতুন` : 'সব পড়া হয়ে গেছে ✓'}</span><br><button class="btn ghost sm" style="margin-top:6px" onclick="NotificationHub.goInbox()">🔔 ইনবক্স খোলো</button>`;
@@ -624,6 +639,22 @@
 
   // ── boot: dashboard hydration + periodic engine ─────────────────────────────
   const boot = () => {
+    /* Phase 2: a background notification click stores {id, link} here (set by
+     * firebase-messaging-sw.js). Log the click once, then clear it. */
+    try {
+      const raw = localStorage.getItem('ahFcmClick');
+      if (raw) {
+        localStorage.removeItem('ahFcmClick');
+        const click = JSON.parse(raw);
+        if (click && click.id) {
+          fetch('/api/notifications/click', {
+            method: 'POST', credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: String(click.id) })
+          }).catch(() => {});
+        }
+      }
+    } catch (_) {}
     const lazy = fn => () => { if (!window.__ahNotifyNoAuto) fn(); };
     setTimeout(lazy(() => { evaluate(); syncState(); maybeResubscribe(); }), 8000);
     setInterval(lazy(() => { evaluate(); syncState(); }), 15 * 60000);
@@ -633,7 +664,7 @@
   if (typeof document !== 'undefined') boot();
 
   window.NotificationHub = {
-    dashboardHtml, hydrateDashboard, mountDashboardCard, openCenter, openSettings, openSheet, openAllowDialog, fcmSheetToggle, toggleMasterSheet, markAllRead, markOneRead, clearAllLog, bellTap, goInbox, inboxPushToggle, sendSelfTest, maybeResubscribe,
+    dashboardHtml, hydrateDashboard, mountDashboardCard, openCenter, openSettings, openSheet, openAllowDialog, fcmSheetToggle, toggleMasterSheet, markAllRead, markOneRead, clearAllLog, globalUnreadCount, bellTap, goInbox, inboxPushToggle, sendSelfTest, maybeResubscribe,
     promptEnable, dismissPrompt, enablePush, disablePush, testNow,
     toggleMaster, toggleCat, setQuiet, setCap, saveEndpoint,
     evaluate, syncState,

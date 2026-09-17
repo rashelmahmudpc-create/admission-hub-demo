@@ -15,6 +15,7 @@
   const SDK_BASE = 'https://www.gstatic.com/firebasejs/10.12.2';
   const SDK_LOCAL = './sdk'; /* self-hosted copy on our own domain (Cloudflare stack); gstatic is the fallback */
   const LS_STATE = 'ahFcmState';
+  const GLOBAL_TOPIC = 'all_students'; /* Phase 2 global topic (spec §2) */
   const SDK_TIMEOUT_MS = 25000;
 
   let sdkPromise = null;
@@ -193,6 +194,21 @@
     return out;
   };
 
+  /* Phase 2: subscribe this device to the global topic (spec §2). Best
+   * effort — a topic failure never breaks enablement; the server's
+   * multi-token fallback still reaches non-topic devices. */
+  const ensureTopic = async (messaging, token) => {
+    try {
+      await messaging.subscribeToTopic(GLOBAL_TOPIC);
+      await boundedFetch('/topics/subscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, topics: [GLOBAL_TOPIC] })
+      });
+      stateSet({ topic: GLOBAL_TOPIC });
+    } catch (_) { /* server fallback covers this device */ }
+  };
+
   /* User taps Enable → browser permission → FCM token → register on server.
    * Returns: 'granted' | 'denied' | 'unsupported' | 'not-configured' | 'error' */
   /* Returns: 'granted' | 'denied' | 'unsupported' | 'config-failed' |
@@ -227,7 +243,7 @@
       catch (e) { setErr('token-failed', errText(e)); return 'token-failed'; }
       if (!token) { setErr('token-empty', 'getToken returned an empty value'); return 'token-failed'; }
       const out = await registerToken(token);
-      if (out.ok) { setErr(null); stateSet({ enabled: true, at: Date.now() }); return 'granted'; }
+      if (out.ok) { setErr(null); stateSet({ enabled: true, at: Date.now() }); await ensureTopic(messaging, token); return 'granted'; }
       setErr('register-' + out.status, 'server rejected the token registration');
       return 'register-' + out.status;
     } catch (e) {
@@ -271,7 +287,7 @@
       if (permission() !== 'granted') { stateSet({ enabled: false }); return; }
       const reg = await readySw();
       const token = await getTokenWith(messaging, reg, cfg.webConfig);
-      if (token) await registerToken(token);
+      if (token) { await registerToken(token); await ensureTopic(messaging, token); }
     } catch (e) { setErr('refresh-failed', errText(e)); }
   };
 

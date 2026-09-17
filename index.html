@@ -1390,6 +1390,7 @@ function render(){
   }
   if(p.startsWith('notes') && window.renderNotesTool) return window.renderNotesTool();
   if(p==='notifications' && window.renderNotificationsInbox) return window.renderNotificationsInbox();
+  if(p==='notif-admin' && window.renderNotificationAdmin) return window.renderNotificationAdmin();
   if(p==='dictionary' && window.renderDictionaryV2) return window.renderDictionaryV2();
   if(p==='ai'){ if(window.renderAiAgentPage) return window.renderAiAgentPage(); return renderLazyToolFallback(p); }
   if((p==='question-bank'||p.startsWith('question-bank/')) && window.renderQuestionBankV2) return window.renderQuestionBankV2();
@@ -4987,16 +4988,16 @@ window.__admissionBootPromise.catch(error => console.error('[Admission Hub] boot
     // The updated worker takes control now; the current document remains usable and the next launch uses the new shell.
     try{
 
-      const expectedSwVersion = 'v279-clean-notif-20260917';
+      const expectedSwVersion = 'v280-global-notif-20260917';
       // register() on the same scope performs an in-place update. Never unregister
       // the active iOS worker first: that discards the instant offline shell.
-      const registration=await navigator.serviceWorker.register('./sw.js?v=v279-clean-notif-20260917',{scope:'./',updateViaCache:'none'});
+      const registration=await navigator.serviceWorker.register('./sw.js?v=v280-global-notif-20260917',{scope:'./',updateViaCache:'none'});
       await registration.update().catch(()=>{});
       // Purge every old app-shell cache (any build id ≠ current). This guarantees
       // stale pre-retirement application shells can never be served from cache again.
       try {
 
-        const cur = 'admission-hub-shell-v279-clean-notif-20260917';
+        const cur = 'admission-hub-shell-v280-global-notif-20260917';
         const names = await caches.keys();
         for (const name of names) {
           if (name.startsWith('admission-hub-shell-') && name !== cur) await caches.delete(name).catch(()=>{});
@@ -5422,9 +5423,10 @@ setTimeout(() => { if (location.hash.replace(/^#/, '').split('?')[0] === 'dictio
 <script src="./vocabulary-master-tool.js?v=vm-autoimg-v106" defer></script>
 <script src="./vocabulary-pronunciation.js?v=voice-el-v104" defer></script>
 <script src="./vocabulary-elevenlabs.js?v=el-voice-v106" defer></script>
-<script defer src="./notification-hub.js?v=notify-v118"></script>
-<script defer src="./notification-fcm.js?v=fcm-p1-v8"></script>
-<script defer src="./notification-inbox.js?v=notif-inbox-v5"></script>
+<script defer src="./notification-hub.js?v=notify-v119"></script>
+<script defer src="./notification-fcm.js?v=fcm-p1-v9"></script>
+<script defer src="./notification-inbox.js?v=notif-inbox-v6"></script>
+<script defer src="./notification-admin.js?v=admin-notif-v1"></script>
 <script src="./memorizing-match-tool.js?v=memorizing-match-v8-stable-cards" defer></script>
 <script src="./question-card-game-visual.js?v=question-card-game-v2-persistent" defer></script>
 <script src="./result-analysis-500.js?v=result-analysis-500-deep-matched-v2" defer></script>

@@ -8122,8 +8122,40 @@ var FcmStore = class {
         quiet_start TEXT NOT NULL DEFAULT '23:00',
         quiet_end TEXT NOT NULL DEFAULT '07:00',
         updated_at INTEGER NOT NULL
+      )`),
+      this.#d1.prepare(`CREATE TABLE IF NOT EXISTS global_notifications (
+        id TEXT PRIMARY KEY,
+        type TEXT NOT NULL,
+        title TEXT NOT NULL,
+        body TEXT NOT NULL,
+        image_url TEXT,
+        target_url TEXT,
+        audience TEXT NOT NULL DEFAULT 'all_students',
+        topic TEXT NOT NULL,
+        dedup TEXT,
+        scheduled_at INTEGER,
+        sent_at INTEGER,
+        created_by TEXT NOT NULL,
+        status TEXT NOT NULL,
+        fcm_message_id TEXT,
+        reach_estimate INTEGER,
+        clicks INTEGER NOT NULL DEFAULT 0,
+        error TEXT,
+        created_at INTEGER NOT NULL
+      )`),
+      this.#d1.prepare(`CREATE INDEX IF NOT EXISTS idx_gn_status ON global_notifications(status, scheduled_at)`),
+      this.#d1.prepare(`CREATE INDEX IF NOT EXISTS idx_gn_created ON global_notifications(created_at DESC)`),
+      this.#d1.prepare(`CREATE TABLE IF NOT EXISTS notification_reads (
+        notification_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        read_at INTEGER NOT NULL,
+        PRIMARY KEY (notification_id, user_id)
       )`)
     ]);
+    try {
+      await this.#d1.prepare("ALTER TABLE fcm_devices ADD COLUMN topics TEXT").run();
+    } catch (_) {
+    }
     this.#ready = true;
   }
   async upsertDevice({ userId, token, platform, browser, deviceInfo, now }) {
@@ -8222,6 +8254,164 @@ var FcmStore = class {
       now
     ).run();
     return prefs;
+  }
+  /* ── Phase 2: global notification storage ───────────────────────────────── */
+  async insertGlobal(row) {
+    await this.#ensureTables();
+    await this.#d1.prepare(
+      `INSERT INTO global_notifications(id, type, title, body, image_url, target_url, audience, topic,
+        dedup, scheduled_at, created_by, status, created_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`
+    ).bind(
+      row.id,
+      row.type,
+      row.title,
+      row.body,
+      row.imageUrl || null,
+      row.targetUrl || null,
+      row.audience,
+      row.topic,
+      row.dedup || null,
+      row.scheduledAt || null,
+      row.createdBy,
+      row.status,
+      row.createdAt
+    ).run();
+  }
+  async updateGlobalStatus(id, patch) {
+    await this.#ensureTables();
+    const sets = [];
+    const binds = [];
+    if (patch.status !== void 0) {
+      sets.push("status=?");
+      binds.push(patch.status);
+    }
+    if (patch.sentAt !== void 0) {
+      sets.push("sent_at=?");
+      binds.push(patch.sentAt);
+    }
+    if (patch.fcmMessageId !== void 0) {
+      sets.push("fcm_message_id=?");
+      binds.push(patch.fcmMessageId);
+    }
+    if (patch.reachEstimate !== void 0) {
+      sets.push("reach_estimate=?");
+      binds.push(patch.reachEstimate);
+    }
+    if (patch.error !== void 0) {
+      sets.push("error=?");
+      binds.push(patch.error);
+    }
+    if (!sets.length) return;
+    binds.push(id);
+    await this.#d1.prepare(`UPDATE global_notifications SET ${sets.join(", ")} WHERE id=?`).bind(...binds).run();
+  }
+  async dueGlobals(now) {
+    await this.#ensureTables();
+    const res = await this.#d1.prepare(
+      `SELECT * FROM global_notifications WHERE status='scheduled' AND scheduled_at IS NOT NULL AND scheduled_at<=? ORDER BY scheduled_at ASC LIMIT 20`
+    ).bind(now).all();
+    return (res?.results || []).map((row) => ({
+      id: row.id,
+      type: row.type,
+      title: row.title,
+      body: row.body,
+      imageUrl: row.image_url,
+      targetUrl: row.target_url,
+      audience: row.audience,
+      topic: row.topic,
+      scheduledAt: Number(row.scheduled_at || 0)
+    }));
+  }
+  async recentGlobals(limit = 50) {
+    await this.#ensureTables();
+    const res = await this.#d1.prepare(
+      `SELECT id, type, title, body, audience, topic, status, scheduled_at, sent_at, reach_estimate, clicks, error, created_at
+       FROM global_notifications ORDER BY created_at DESC, id DESC LIMIT ?`
+    ).bind(limit).all();
+    return (res?.results || []).map((row) => ({
+      id: row.id,
+      type: row.type,
+      title: row.title,
+      body: row.body,
+      audience: row.audience,
+      topic: row.topic,
+      status: row.status,
+      scheduledAt: row.scheduled_at ? Number(row.scheduled_at) : null,
+      sentAt: row.sent_at ? Number(row.sent_at) : null,
+      reachEstimate: row.reach_estimate ? Number(row.reach_estimate) : null,
+      clicks: Number(row.clicks || 0),
+      error: row.error,
+      createdAt: Number(row.created_at)
+    }));
+  }
+  async duplicateRecent(dedup, sinceMs) {
+    await this.#ensureTables();
+    const row = await this.#d1.prepare(
+      `SELECT id FROM global_notifications WHERE dedup=? AND status IN ('sent','scheduled') AND created_at>=? LIMIT 1`
+    ).bind(dedup, sinceMs).first();
+    return row ? row.id : null;
+  }
+  async markRead(notificationId, userId, now) {
+    await this.#ensureTables();
+    await this.#d1.prepare(
+      `INSERT OR IGNORE INTO notification_reads(notification_id, user_id, read_at) VALUES (?,?,?)`
+    ).bind(notificationId, userId, now).run();
+  }
+  async readState(userId, ids) {
+    if (!ids.length) return {};
+    await this.#ensureTables();
+    const res = await this.#d1.prepare(
+      `SELECT notification_id, read_at FROM notification_reads WHERE user_id=? AND notification_id IN (${ids.map(() => "?").join(",")})`
+    ).bind(userId, ...ids).all();
+    const out = {};
+    for (const row of res?.results || []) out[row.notification_id] = Number(row.read_at);
+    return out;
+  }
+  async globalFeed(limit = 30) {
+    await this.#ensureTables();
+    const res = await this.#d1.prepare(
+      `SELECT id, type, title, body, image_url, target_url, audience, sent_at
+       FROM global_notifications WHERE status='sent' AND sent_at IS NOT NULL
+       ORDER BY sent_at DESC LIMIT ?`
+    ).bind(limit).all();
+    return (res?.results || []).map((row) => ({
+      id: row.id,
+      type: row.type,
+      title: row.title,
+      body: row.body,
+      imageUrl: row.image_url,
+      targetUrl: row.target_url,
+      audience: row.audience,
+      sentAt: Number(row.sent_at)
+    }));
+  }
+  async incrementClicks(id) {
+    await this.#ensureTables();
+    await this.#d1.prepare(`UPDATE global_notifications SET clicks=clicks+1 WHERE id=?`).bind(id).run();
+  }
+  async setDeviceTopics(userId, token, topicsCsv) {
+    await this.#ensureTables();
+    await this.#d1.prepare("UPDATE fcm_devices SET topics=? WHERE user_id=? AND fcm_token=?").bind(topicsCsv, userId, token).run();
+  }
+  async activeDevicesMissingTopic(topic) {
+    await this.#ensureTables();
+    const res = await this.#d1.prepare(
+      `SELECT id, fcm_token FROM fcm_devices WHERE is_active=1 AND (topics IS NULL OR topics='' OR topics NOT LIKE ?) LIMIT 2000`
+    ).bind(`%${topic}%`).all();
+    return (res?.results || []).map((row) => ({ id: row.id, token: row.fcm_token }));
+  }
+  async allActiveTokens() {
+    await this.#ensureTables();
+    const res = await this.#d1.prepare(
+      `SELECT id, fcm_token FROM fcm_devices WHERE is_active=1 LIMIT 2000`
+    ).all();
+    return (res?.results || []).map((row) => ({ id: row.id, token: row.fcm_token }));
+  }
+  async activeDeviceCount() {
+    await this.#ensureTables();
+    const row = await this.#d1.prepare("SELECT COUNT(*) AS n FROM fcm_devices WHERE is_active=1").first();
+    return Number(row?.n || 0);
   }
 };
 async function kvRateAllow(env, key, limit, ttlSeconds) {
@@ -8335,6 +8525,158 @@ var parseBody = async (request) => {
   } catch {
     return null;
   }
+};
+var GLOBAL_TYPES = Object.freeze(["new-content", "announcement", "new-feature", "challenge", "course", "important"]);
+var GLOBAL_AUDIENCES = Object.freeze({
+  all_students: { topic: "all_students", bn: "সব Student", en: "All Students" },
+  beginner: { topic: "course_beginner", bn: "Beginner Student", en: "Beginner Students" },
+  intermediate: { topic: "course_intermediate", bn: "Intermediate Student", en: "Intermediate Students" },
+  pro: { topic: "course_pro", bn: "Pro Student", en: "Pro Students" },
+  course_subscribers: { topic: "course_all", bn: "Course Subscribers", en: "Course Subscribers" }
+});
+var GLOBAL_DAILY_CAP = 10;
+var GLOBAL_MAX_SCHEDULE_DAYS = 30;
+var GN_ID_RE = /^gn-[a-z0-9]{12}$/;
+var TOPIC_RE = /^[a-z][a-z0-9_-]{0,63}$/;
+var GLOBAL_TEMPLATES = Object.freeze([
+  {
+    key: "new-content",
+    type: "new-content",
+    bn: { title: "{{title}} এখন available", body: "নতুন content এখন available — দেখে নিন।" },
+    en: { title: "{{title}} is now available", body: "New content is live — take a look." }
+  },
+  {
+    key: "announcement",
+    type: "announcement",
+    bn: { title: "গুরুত্বপূর্ণ আপডেট", body: "{{title}}" },
+    en: { title: "Important update", body: "{{title}}" }
+  },
+  {
+    key: "new-feature",
+    type: "new-feature",
+    bn: { title: "নতুন feature live হয়েছে", body: "{{feature}} এখন available — ব্যবহার করে দেখুন।" },
+    en: { title: "New feature is live", body: "{{feature}} is available — give it a try." }
+  },
+  {
+    key: "challenge",
+    type: "challenge",
+    bn: { title: "সাপ্তাহিক challenge শুরু!", body: "নতুন challenge ready। শেষ: {{date}}" },
+    en: { title: "Weekly challenge is on!", body: "Your new challenge is ready. Ends: {{date}}" }
+  },
+  {
+    key: "course",
+    type: "course",
+    bn: { title: "{{course}}-এ নতুন module", body: "{{course}}-এর নতুন module প্রকাশিত হয়েছে।" },
+    en: { title: "New module in {{course}}", body: "A new module was published in {{course}}." }
+  },
+  {
+    key: "important",
+    type: "important",
+    bn: { title: "🚨 গুরুত্বপূর্ণ", body: "{{title}}" },
+    en: { title: "🚨 Important", body: "{{title}}" }
+  }
+]);
+async function fcmSendToTopic(env, topic, { title, body, imageUrl, data }) {
+  const accessToken = await fcmAccessToken(env);
+  const notification = { title, body };
+  if (imageUrl) notification.image = imageUrl;
+  const message = {
+    topic,
+    notification,
+    data: Object.fromEntries(Object.entries(data || {}).map(([k, v]) => [k, String(v)]))
+  };
+  let res;
+  try {
+    res = await fetch(`https://fcm.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/messages:send`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({ message })
+    });
+  } catch {
+    return { ok: false, reason: "error" };
+  }
+  const out = await res.json().catch(() => ({}));
+  if (res.ok && out?.name) return { ok: true, name: out.name };
+  return { ok: false, reason: "error", detail: String(out?.error?.message || "").slice(0, 200) };
+}
+async function fcmSendToTokens(env, targets, { title, body, data }) {
+  const accessToken = await fcmAccessToken(env);
+  let sent = 0;
+  const failed = [];
+  const messageData = Object.fromEntries(Object.entries(data || {}).map(([k, v]) => [k, String(v)]));
+  for (let i = 0; i < targets.length; i += 500) {
+    const chunk = targets.slice(i, i + 500);
+    let res;
+    try {
+      res = await fetch(`https://fcm.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/messages:send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+        body: JSON.stringify({ message: { tokens: chunk.map((t) => t.token), notification: { title, body }, data: messageData } })
+      });
+    } catch {
+      failed.push(...chunk.map((t) => ({ id: t.id, reason: "error" })));
+      continue;
+    }
+    const out = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      failed.push(...chunk.map((t) => ({ id: t.id, reason: "error" })));
+      continue;
+    }
+    const errors = out?.response?.message_processing_error || [];
+    const erroredIndex = new Set(errors.map((e) => Number(e?.index ?? -1)));
+    for (let j = 0; j < chunk.length; j++) {
+      if (erroredIndex.has(j)) {
+        const code = Number((errors.find((e) => Number(e?.index) === j) || {}).error?.code || 0);
+        failed.push({ id: chunk[j].id, reason: code === 3 || code === 6 ? code === 3 ? "unregistered" : "invalid" : "error" });
+      } else {
+        sent += 1;
+      }
+    }
+  }
+  return { sent, failed };
+}
+async function sendGlobal(env, store, row) {
+  const data = { gid: row.id, link: row.targetUrl || "notifications", type: row.type, src: "fcm-global" };
+  const topicRes = await fcmSendToTopic(env, row.topic, { title: row.title, body: row.body, imageUrl: row.imageUrl, data });
+  let fallbackSent = 0;
+  let fallbackFailed = 0;
+  const targets = topicRes.ok ? await store.activeDevicesMissingTopic(row.topic) : await store.allActiveTokens();
+  if (targets.length) {
+    const out = await fcmSendToTokens(env, targets, { title: row.title, body: row.body, data });
+    fallbackSent = out.sent;
+    fallbackFailed = out.failed.length;
+    const badIds = out.failed.filter((f) => f.reason === "unregistered" || f.reason === "invalid").map((f) => f.id);
+    if (badIds.length) await store.markInactive(badIds, Date.now());
+  }
+  const reach = await store.activeDeviceCount();
+  const ok = topicRes.ok || fallbackSent > 0;
+  await store.updateGlobalStatus(row.id, {
+    status: ok ? "sent" : "failed",
+    sentAt: Date.now(),
+    fcmMessageId: topicRes.name || null,
+    reachEstimate: reach,
+    error: ok ? null : String(topicRes.detail || "send-failed").slice(0, 200)
+  });
+  return { ok, topicOk: topicRes.ok, fallbackSent, fallbackFailed, reach };
+}
+async function runScheduledGlobalNotifications(env) {
+  if (!fcmConfigured(env)) return { processed: 0 };
+  const store = new FcmStore(env?.PROFILE_DB);
+  if (!store.available()) return { processed: 0 };
+  const due = await store.dueGlobals(Date.now());
+  let processed = 0;
+  for (const row of due) {
+    try {
+      await sendGlobal(env, store, row);
+    } catch (e) {
+      await store.updateGlobalStatus(row.id, { status: "failed", error: String(e?.message || e).slice(0, 200) });
+    }
+    processed += 1;
+  }
+  return { processed };
+}
+var dhakaDayKey = () => {
+  return (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
 };
 async function handleFcmNotificationRequest(request, env) {
   const url = new URL(request.url);
@@ -8486,9 +8828,177 @@ async function handleFcmNotificationRequest(request, env) {
     }
     return jsonResponse(request, { ok: results.every((r) => r.ok), sent: results.filter((r) => r.ok).length, total: results.length, results });
   }
+  const adminToken = String(request.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "").trim();
+  const isAdmin = Boolean(env.ADMIN_TOKEN) && adminToken === env.ADMIN_TOKEN;
+  if (path === "/api/notifications/global/send" && request.method === "POST") {
+    if (!isAdmin) return jsonResponse(request, { error: "forbidden" }, 403);
+    if (!fcmConfigured(env)) return jsonResponse(request, { error: "fcm-not-configured" }, 503);
+    if (!store.available()) return jsonResponse(request, { error: "storage-unavailable" }, 503);
+    const body = await parseBody(request);
+    if (!body) return jsonResponse(request, { error: "invalid-json" }, 400);
+    const type = GLOBAL_TYPES.includes(body.type) ? body.type : null;
+    if (!type) return jsonResponse(request, { error: "invalid-type" }, 400);
+    const title = String(body.title || "").trim().slice(0, 120);
+    const text = String(body.body || "").trim().slice(0, 400);
+    if (title.length < 1 || title.length > 120) return jsonResponse(request, { error: "invalid-title" }, 400);
+    if (text.length < 1 || text.length > 400) return jsonResponse(request, { error: "invalid-body" }, 400);
+    const imageUrl = String(body.imageUrl || "").slice(0, 500) || null;
+    const targetUrl = String(body.targetUrl || "").replace(/[^\w./#-]/g, "").slice(0, 200) || null;
+    const audience = GLOBAL_AUDIENCES[body.audience] ? body.audience : "all_students";
+    const topic = GLOBAL_AUDIENCES[audience].topic;
+    if (!TOPIC_RE.test(topic)) return jsonResponse(request, { error: "invalid-topic" }, 500);
+    const dedup = (await sha256Hex2(`${type}|${title}|${text}`)).slice(0, 40);
+    const dup = await store.duplicateRecent(dedup, Date.now() - 10 * 864e5);
+    if (dup) return jsonResponse(request, { error: "duplicate", existingId: dup }, 409);
+    if (!await kvRateAllow(env, `global:day:${dhakaDayKey()}`, GLOBAL_DAILY_CAP, 86400)) {
+      return jsonResponse(request, { error: "rate-limited" }, 429);
+    }
+    const id = `gn-${Math.random().toString(36).slice(2, 8)}${Math.random().toString(36).slice(2, 8)}`;
+    const row = {
+      id,
+      type,
+      title,
+      body: text,
+      imageUrl,
+      targetUrl,
+      audience,
+      topic,
+      dedup,
+      scheduledAt: null,
+      createdBy: userId,
+      status: "sending",
+      createdAt: Date.now()
+    };
+    await store.insertGlobal(row);
+    const result = await sendGlobal(env, store, row);
+    return jsonResponse(request, { ok: result.ok, id, status: result.ok ? "sent" : "failed", reachEstimate: result.reach }, result.ok ? 201 : 502);
+  }
+  if (path === "/api/notifications/global/schedule" && request.method === "POST") {
+    if (!isAdmin) return jsonResponse(request, { error: "forbidden" }, 403);
+    if (!store.available()) return jsonResponse(request, { error: "storage-unavailable" }, 503);
+    const body = await parseBody(request);
+    if (!body) return jsonResponse(request, { error: "invalid-json" }, 400);
+    const type = GLOBAL_TYPES.includes(body.type) ? body.type : null;
+    if (!type) return jsonResponse(request, { error: "invalid-type" }, 400);
+    const title = String(body.title || "").trim().slice(0, 120);
+    const text = String(body.body || "").trim().slice(0, 400);
+    if (title.length < 1 || title.length > 120) return jsonResponse(request, { error: "invalid-title" }, 400);
+    if (text.length < 1 || text.length > 400) return jsonResponse(request, { error: "invalid-body" }, 400);
+    const imageUrl = String(body.imageUrl || "").slice(0, 500) || null;
+    const targetUrl = String(body.targetUrl || "").replace(/[^\w./#-]/g, "").slice(0, 200) || null;
+    const audience = GLOBAL_AUDIENCES[body.audience] ? body.audience : "all_students";
+    const topic = GLOBAL_AUDIENCES[audience].topic;
+    const when = Number(body.scheduledAt);
+    if (!Number.isFinite(when) || when <= Date.now() + 6e4) {
+      return jsonResponse(request, { error: "invalid-schedule" }, 400);
+    }
+    if (when > Date.now() + GLOBAL_MAX_SCHEDULE_DAYS * 864e5) {
+      return jsonResponse(request, { error: "schedule-too-far" }, 400);
+    }
+    const dedup = (await sha256Hex2(`${type}|${title}|${text}`)).slice(0, 40);
+    const dup = await store.duplicateRecent(dedup, Date.now() - 10 * 864e5);
+    if (dup) return jsonResponse(request, { error: "duplicate", existingId: dup }, 409);
+    const id = `gn-${Math.random().toString(36).slice(2, 8)}${Math.random().toString(36).slice(2, 8)}`;
+    await store.insertGlobal({
+      id,
+      type,
+      title,
+      body: text,
+      imageUrl,
+      targetUrl,
+      audience,
+      topic,
+      dedup,
+      scheduledAt: Math.floor(when),
+      createdBy: userId,
+      status: "scheduled",
+      createdAt: Date.now()
+    });
+    return jsonResponse(request, { ok: true, id, status: "scheduled", scheduledAt: Math.floor(when) }, 201);
+  }
+  if (path === "/api/notifications/global/cancel" && request.method === "POST") {
+    if (!isAdmin) return jsonResponse(request, { error: "forbidden" }, 403);
+    if (!store.available()) return jsonResponse(request, { error: "storage-unavailable" }, 503);
+    const body = await parseBody(request);
+    if (!body) return jsonResponse(request, { error: "invalid-json" }, 400);
+    const id = String(body.id || "");
+    if (!GN_ID_RE.test(id)) return jsonResponse(request, { error: "invalid-id" }, 400);
+    const rows = await store.recentGlobals(50);
+    const row = rows.find((r) => r.id === id);
+    if (!row) return jsonResponse(request, { error: "not-found" }, 404);
+    if (row.status !== "scheduled") return jsonResponse(request, { error: "not-scheduled" }, 409);
+    await store.updateGlobalStatus(id, { status: "cancelled" });
+    return jsonResponse(request, { ok: true, id, status: "cancelled" });
+  }
+  if (path === "/api/notifications/history" && request.method === "GET") {
+    if (!isAdmin) return jsonResponse(request, { error: "forbidden" }, 403);
+    if (!store.available()) return jsonResponse(request, { error: "storage-unavailable" }, 503);
+    return jsonResponse(request, {
+      ok: true,
+      items: await store.recentGlobals(50),
+      reachEstimate: await store.activeDeviceCount(),
+      dailyCap: GLOBAL_DAILY_CAP
+    });
+  }
+  if (path === "/api/notifications/templates" && request.method === "GET") {
+    if (!isAdmin) return jsonResponse(request, { error: "forbidden" }, 403);
+    return jsonResponse(request, { ok: true, templates: GLOBAL_TEMPLATES });
+  }
+  if (path === "/api/notifications/topics/subscribe" && request.method === "POST") {
+    if (!store.available()) return jsonResponse(request, { error: "storage-unavailable" }, 503);
+    const body = await parseBody(request);
+    if (!body) return jsonResponse(request, { error: "invalid-json" }, 400);
+    const token = String(body.token || "");
+    const topics = Array.isArray(body.topics) ? body.topics.map((t) => String(t)).filter((t) => TOPIC_RE.test(t)).slice(0, 10) : [];
+    if (token.length < TOKEN_MIN_LEN || topics.length < 1) return jsonResponse(request, { error: "invalid-payload" }, 400);
+    await store.setDeviceTopics(userId, token, topics.join(","));
+    return jsonResponse(request, { ok: true, topics });
+  }
+  if (path === "/api/notifications/topics/unsubscribe" && request.method === "POST") {
+    if (!store.available()) return jsonResponse(request, { error: "storage-unavailable" }, 503);
+    const body = await parseBody(request);
+    if (!body) return jsonResponse(request, { error: "invalid-json" }, 400);
+    const token = String(body.token || "");
+    if (token.length < TOKEN_MIN_LEN) return jsonResponse(request, { error: "invalid-payload" }, 400);
+    await store.setDeviceTopics(userId, token, "");
+    return jsonResponse(request, { ok: true });
+  }
+  if (path === "/api/notifications/inbox" && request.method === "GET") {
+    if (!store.available()) return jsonResponse(request, { error: "storage-unavailable" }, 503);
+    const feed = await store.globalFeed(30);
+    const reads = await store.readState(userId, feed.map((r) => r.id));
+    const items = feed.map((r) => ({ ...r, readAt: reads[r.id] || null }));
+    return jsonResponse(request, { ok: true, items, unread: items.filter((r) => !r.readAt).length });
+  }
+  if (path === "/api/notifications/read" && request.method === "POST") {
+    if (!store.available()) return jsonResponse(request, { error: "storage-unavailable" }, 503);
+    const body = await parseBody(request);
+    if (!body) return jsonResponse(request, { error: "invalid-json" }, 400);
+    const id = String(body.id || "");
+    if (!GN_ID_RE.test(id)) return jsonResponse(request, { error: "invalid-id" }, 400);
+    await store.markRead(id, userId, Date.now());
+    return jsonResponse(request, { ok: true, id });
+  }
+  if (path === "/api/notifications/click" && request.method === "POST") {
+    if (!store.available()) return jsonResponse(request, { error: "storage-unavailable" }, 503);
+    const body = await parseBody(request);
+    if (!body) return jsonResponse(request, { error: "invalid-json" }, 400);
+    const id = String(body.id || "");
+    if (!GN_ID_RE.test(id)) return jsonResponse(request, { error: "invalid-id" }, 400);
+    if (!await kvRateAllow(env, `click:${userId}`, 60, 600)) return jsonResponse(request, { error: "rate-limited" }, 429);
+    await store.incrementClicks(id);
+    return jsonResponse(request, { ok: true, id });
+  }
   return jsonResponse(request, { error: "not-found" }, 404);
 }
 var __fcmNotificationTest = Object.freeze({
+  sendGlobal,
+  runScheduledGlobalNotifications,
+  fcmSendToTopic,
+  fcmSendToTokens,
+  GLOBAL_TYPES,
+  GLOBAL_AUDIENCES,
+  GLOBAL_TEMPLATES,
   b64u,
   sha256Hex: sha256Hex2,
   readSessionToken,
@@ -13931,6 +14441,10 @@ var gk_agent_worker_default = {
     return json4(request, { error: "not_found" }, 404);
   },
   async scheduled(event, env, ctx) {
+    try {
+      await runScheduledGlobalNotifications(env);
+    } catch (_) {
+    }
     if (!env.GK_KV || !keys(env).length) return;
     const date = dhakaToday();
     try {
