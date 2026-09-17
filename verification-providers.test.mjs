@@ -276,12 +276,33 @@ test('Backup OTP email carries the branded layout, a prominent code, and dark-mo
   assert.match(html, /ইমেইল যাচাইকরণ/);
   assert.match(html, /প্রিয় মাহমুদ রাসেল,/);
   assert.match(html, /10 মিনিট/);
-  assert.match(html, /নিরাপত্তা নির্দেশনা/);
+  assert.match(html, /Admission Hub-এর কোনো কর্মী আপনার OTP চাইবে না।/);
   assert.match(html, /উপেক্ষা করতে পারেন/);
   assert.match(html, /Admission Hub Team/);
-  assert.match(html, /&copy; Admission Hub/);
   assert.match(text, /মাহমুদ রাসেল/);
   assert.match(text, /123456/);
+
+  // Design contract: one container card, no nested boxes, no emoji/font icons.
+  assert.equal(/border[^;"]*dashed/.test(html), false);
+  assert.equal(/border[^;"]*dotted/.test(html), false);
+  assert.match(html, /linear-gradient\(135deg,#12a876/);
+  assert.match(html, /background-color:#0f8f68/);
+  assert.match(html, /'SF Mono','Roboto Mono'/);
+  assert.match(html, /letter-spacing:6px/);
+  assert.match(html, /data:image\/svg\+xml;base64,/);
+  assert.match(html, /-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif/);
+  assert.equal(/#fff2d9|#e4a620|#856221/i.test(html), false);
+  assert.equal(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(html), false);
+  assert.equal(/❓|🔒|✅|⚠/.test(html), false);
+
+  // Exactly one bordered+rounded container: the outer card. Inner sections are
+  // separated by spacing and 1px dividers only.
+  const roundedBoxes = html.match(/border-radius:(\d+)px/g) || [];
+  assert.deepEqual(roundedBoxes, ['border-radius:16px', 'border-radius:10px']);
+
+  const layoutTables = html.match(/<table/g) || [];
+  const presentational = html.match(/<table role="presentation"/g) || [];
+  assert.equal(layoutTables.length, presentational.length);
 });
 
 test('Backup OTP email escapes a hostile recipient name and falls back when absent', () => {
