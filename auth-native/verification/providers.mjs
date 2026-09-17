@@ -176,7 +176,7 @@ const otpEmailBody = (code, minutes, recipientName = '') => {
     .ah-card { background-color: #131c1a !important; border-color: #26332f !important; }
     .ah-divider { background-color: #26332f !important; }
     .ah-otp { color: #7ad9b8 !important; }
-    .ah-foot { background-color: #101917 !important; border-top-color: #26332f !important; }
+    .ah-foot { border-top-color: #26332f !important; }
     .ah-heading { color: #f4f8f7 !important; }
     .ah-body { color: #b7c6c2 !important; }
     .ah-muted { color: #8b9c98 !important; }
@@ -246,7 +246,7 @@ const otpEmailBody = (code, minutes, recipientName = '') => {
 <p class="ah-muted" style="margin:0;font-family:${OTP_EMAIL_FONT};font-size:12.5px;line-height:1.65;font-weight:400;color:${OTP_EMAIL_MUTED};">শুভেচ্ছান্তে,<br><strong style="display:inline-block;margin-top:3px;font-size:13.5px;font-weight:600;color:${OTP_EMAIL_INK};">Admission Hub Team</strong></p>
 </td></tr>
 
-<tr><td class="ah-foot" bgcolor="#fafbfb" style="padding:18px 28px;background-color:#fafbfb;border-top:1px solid #eff2f1;">
+<tr><td class="ah-foot" style="padding:18px 28px 26px;border-top:1px solid #eff2f1;">
 <p class="ah-foot-title" style="margin:0;font-family:${OTP_EMAIL_FONT};font-size:12px;line-height:1.5;font-weight:600;color:#3f4a47;">Admission Hub</p>
 <p class="ah-muted" style="margin:3px 0 0;font-family:${OTP_EMAIL_FONT};font-size:11px;line-height:1.5;font-weight:400;color:#8b9491;">${OTP_EMAIL_TAGLINE}</p>
 <p class="ah-faint" style="margin:12px 0 0;font-family:${OTP_EMAIL_FONT};font-size:11px;line-height:1.6;font-weight:400;color:#9aa3a0;">এটি একটি স্বয়ংক্রিয় বার্তা। এই ইমেইলে উত্তর দেওয়ার প্রয়োজন নেই।</p>

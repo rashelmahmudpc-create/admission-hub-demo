@@ -299,6 +299,13 @@ test('Backup OTP email carries the branded layout, a prominent code, and dark-mo
   // separated by spacing and 1px dividers only.
   const roundedBoxes = html.match(/border-radius:(\d+)px/g) || [];
   assert.deepEqual(roundedBoxes, ['border-radius:16px', 'border-radius:10px']);
+  // Only these may set a background: the page shell, the banner, the card, and
+  // the 1px dividers. Anything else would be an inner box.
+  const bgColors = [...new Set(html.match(/background-color:#[0-9a-f]{6}/gi) || [])].sort();
+  assert.deepEqual(bgColors, ['background-color:#0f8f68', 'background-color:#eaecec', 'background-color:#f7f8f8', 'background-color:#ffffff']);
+  // Dividers are hairlines, not tinted blocks.
+  for (const m of html.matchAll(/height:1px;background-color:#eaecec/g)) assert.ok(m);
+  assert.equal((html.match(/background-color:#eaecec/g) || []).length, (html.match(/height:1px;background-color:#eaecec/g) || []).length);
 
   const layoutTables = html.match(/<table/g) || [];
   const presentational = html.match(/<table role="presentation"/g) || [];
