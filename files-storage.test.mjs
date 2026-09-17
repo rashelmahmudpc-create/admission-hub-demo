@@ -193,12 +193,14 @@ test('9 GB hard lock: bucket usage caps uploads (owner: card must never be charg
   assert.ok(u.percent >= 99.9);
 });
 
-test('usage counter: delete subtracts the removed size', async () => {
+test('usage counter: delete subtracts the removed size (JSON format)', async () => {
   const env = makeEnv();
   const up = await call(req('/api/files/upload', { method: 'POST', headers: { 'X-File-Ext': 'png', 'X-File-Folder': 'profile', 'Content-Length': '12' }, body: PNG_BYTES }), env);
-  assert.equal(await env.GK_KV.get('fs:bucket:bytes'), '12');
+  const after = JSON.parse(await env.GK_KV.get('fs:bucket:bytes'));
+  assert.equal(after.b, 12);
+  assert.ok(after.t > 0, 'counter stores a reconciliation timestamp');
   await call(req('/api/files/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: up.data.key }) }), env);
-  assert.equal(await env.GK_KV.get('fs:bucket:bytes'), '0', 'delete decrements the counter');
+  assert.equal((JSON.parse(await env.GK_KV.get('fs:bucket:bytes'))).b, 0, 'delete decrements the counter');
 });
 
 test('usage reconciliation: counter missing + S3 creds present → S3 list heals it', async () => {
@@ -206,6 +208,29 @@ test('usage reconciliation: counter missing + S3 creds present → S3 list heals
   const envNoCreds = makeEnv();
   const u1 = await T.bucketUsage(envNoCreds);
   assert.equal(u1.exact, false, 'no S3 creds → unknown, not falsely "empty"');
+});
+
+test('usage counter: fresh JSON short-circuits S3; legacy number falls back inexact', async () => {
+  /* fresh counter (t = now) → served from KV even without S3 creds */
+  const freshEnv = makeEnv();
+  await freshEnv.GK_KV.put('fs:bucket:bytes', JSON.stringify({ b: 777, t: Math.floor(Date.now() / 1000) }));
+  const fresh = await T.bucketUsage(freshEnv);
+  assert.equal(fresh.bytes, 777);
+  assert.equal(fresh.exact, true, 'fresh counter is trusted without re-listing');
+
+  /* legacy plain number → stale → S3 attempted; no creds → cached bytes, inexact */
+  const legacyEnv = makeEnv();
+  await legacyEnv.GK_KV.put('fs:bucket:bytes', '4242');
+  const legacy = await T.bucketUsage(legacyEnv);
+  assert.equal(legacy.bytes, 4242, 'stale cache still bounds growth');
+  assert.equal(legacy.exact, false, 'unreconciled number is flagged inexact');
+
+  /* corrupt value → treated as missing */
+  const corruptEnv = makeEnv();
+  await corruptEnv.GK_KV.put('fs:bucket:bytes', '{oops');
+  const corrupt = await T.bucketUsage(corruptEnv);
+  assert.equal(corrupt.bytes, 0);
+  assert.equal(corrupt.exact, false);
 });
 
 test('units: KEY_RE shape + KV prefix', async () => {

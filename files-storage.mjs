@@ -94,7 +94,10 @@ const hexToBytes = h => Uint8Array.from(h.match(/.{2}/g), x => parseInt(x, 16));
 async function s3ListTotalBytes(env) {
   const ak = String(env.R2_ACCESS_KEY || '');
   const sk = String(env.R2_SECRET_KEY || '');
-  if (!ak || !sk) return null;
+  if (!ak || !sk) {
+    console.log('[files] s3 reconcile skipped: ak=' + (ak ? 'set(' + ak.length + ')' : 'EMPTY') + ' sk=' + (sk ? 'set(' + sk.length + ')' : 'EMPTY'));
+    return null;
+  }
   const bucketName = String(env?.FILE_BUCKET?.name || 'admission-hub');
   try {
     let total = 0;
@@ -151,23 +154,54 @@ async function s3ListTotalBytes(env) {
   }
 }
 
-/* Current bucket usage in bytes: KV counter first, S3 reconciliation when
- * the counter is missing. Returns { bytes, exact } — exact=false means the
- * number may be stale-low, so the limit check adds the pending upload on top
- * and we periodically re-reconcile on reads. */
+/* KV counter format: JSON {"b":bytes,"t":epochSeconds} (a legacy plain
+ * number is treated as stale). The counter is a fast cache of the truth;
+ * S3 ListObjectsV2 is the truth, and we re-reconcile when the cache is
+ * older than RECONCILE_EVERY_SECONDS (or missing/corrupt). */
+const RECONCILE_EVERY_SECONDS = 3600;
+
+const readCounter = async kv => {
+  try {
+    const raw = await kv.get(USAGE_KEY);
+    if (raw == null) return null;
+    if (raw.trim() === '') return null;
+    if (raw.startsWith('{')) {
+      const o = JSON.parse(raw);
+      const b = Number(o?.b), t = Number(o?.t);
+      if (Number.isFinite(b) && Number.isFinite(t) && b >= 0) return { bytes: b, ts: t };
+      return null;
+    }
+    const n = Number(raw);
+    if (!Number.isFinite(n)) return null;
+    return { bytes: n, ts: 0 }; /* legacy format — force reconciliation */
+  } catch {
+    return null;
+  }
+};
+
+const writeCounter = async (kv, bytes) => {
+  try {
+    await kv.put(USAGE_KEY, JSON.stringify({ b: Math.max(0, Math.round(bytes)), t: Math.floor(Date.now() / 1000) }));
+  } catch { /* counter is a cache — reconciliation heals it */ }
+};
+
+/* Current bucket usage in bytes. Returns { bytes, exact } — exact=false
+ * means the number may be stale-low, so the limit check treats it
+ * conservatively (it only ever blocks MORE than the limit, never less,
+ * because the pending upload is always added on top). */
 async function bucketUsage(env) {
   const kv = env?.GK_KV;
-  if (kv) {
-    try {
-      const n = await kv.get(USAGE_KEY);
-      if (n != null) return { bytes: Number(n) || 0, exact: true };
-    } catch { /* fall through to reconciliation */ }
-  }
+  const cached = kv ? await readCounter(kv) : null;
+  const fresh = cached && (Date.now() / 1000 - cached.ts) < RECONCILE_EVERY_SECONDS;
+  if (fresh) return { bytes: cached.bytes, exact: true };
   const total = await s3ListTotalBytes(env);
   if (total != null) {
-    if (kv) { try { await kv.put(USAGE_KEY, String(total)); } catch { /* non-fatal */ } }
+    if (kv) await writeCounter(kv, total);
     return { bytes: total, exact: true };
   }
+  /* Reconciliation failed: fall back to the cached number if we have one
+   * (stale beats unknown — it still bounds growth), flagged inexact. */
+  if (cached) return { bytes: cached.bytes, exact: false };
   return { bytes: 0, exact: false };
 }
 
@@ -175,9 +209,9 @@ const bumpUsage = async (env, delta) => {
   const kv = env?.GK_KV;
   if (!kv) return;
   try {
-    const n = Number(await kv.get(USAGE_KEY) || 0);
-    await kv.put(USAGE_KEY, String(Math.max(0, n + delta)));
-  } catch { /* counter is a cache — S3 reconciliation heals it */ }
+    const c = await readCounter(kv);
+    await writeCounter(kv, (c ? c.bytes : 0) + delta);
+  } catch { /* counter is a cache — reconciliation heals it */ }
 };
 
 const jsonResponse = (request, obj, status = 200) => new Response(JSON.stringify(obj), {
@@ -220,6 +254,25 @@ export async function handleFilesStorageRequest(request, env) {
 
   const bucket = env?.FILE_BUCKET;
   const available = Boolean(bucket && typeof bucket.put === 'function');
+
+  if (request.method === 'GET' && path === '/api/files/usage'
+    && url.searchParams.get('probe') === '1') {
+    /* TEMP diagnostic (removed after the 9 GB counter is verified live). */
+    const tok = String(request.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '');
+    if (tok && tok === String(env.ADMIN_TOKEN || '')) {
+      return jsonResponse(request, {
+        ok: true,
+        probe: {
+          akLen: String(env.R2_ACCESS_KEY || '').length,
+          skLen: String(env.R2_SECRET_KEY || '').length,
+          hasKV: Boolean(env?.GK_KV),
+          bucketName: String(env?.FILE_BUCKET?.name || ''),
+          bucketFn: Boolean(env?.FILE_BUCKET && typeof env.FILE_BUCKET.get === 'function')
+        }
+      });
+    }
+    return jsonResponse(request, { error: 'forbidden' }, 403);
+  }
 
   if (request.method === 'GET' && path === '/api/files/usage') {
     const usage = await bucketUsage(env);
