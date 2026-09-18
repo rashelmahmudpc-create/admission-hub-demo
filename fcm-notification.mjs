@@ -267,7 +267,7 @@ class FcmStore {
     await this.#d1.prepare(
       `INSERT INTO global_notifications(id, type, title, body, image_url, target_url, audience, topic,
         dedup, scheduled_at, created_by, status, created_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`
     ).bind(row.id, row.type, row.title, row.body, row.imageUrl || null, row.targetUrl || null,
       row.audience, row.topic, row.dedup || null, row.scheduledAt || null,
       row.createdBy, row.status, row.createdAt).run();
@@ -517,6 +517,66 @@ const parseBody = async request => {
   }
 };
 
+/* The send/schedule client encodes the composer payload (hex, or base64 behind
+ * a nonce) under a random key. That exists because the Cloudflare edge rejects
+ * POST bodies whose top level looks like a {type,title,body} envelope, but the
+ * deployed clients still send it — so the admin routes must accept BOTH the
+ * encoded form and a plain object. Anything undecodable falls back to the raw
+ * body, which keeps plain JSON working. */
+const hexToUtf8 = value => {
+  const clean = String(value).replace(/\s/g, '');
+  if (!/^[0-9a-fA-F]+$/.test(clean) || clean.length < 16 || clean.length % 2 !== 0) return null;
+  try {
+    const bytes = Uint8Array.from(clean.match(/.{2}/g), h => parseInt(h, 16));
+    return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  } catch { return null; }
+};
+
+const decodeBase64Utf8 = value => {
+  try {
+    const bin = atob(String(value));
+    return new TextDecoder('utf-8', { fatal: true }).decode(Uint8Array.from(bin, c => c.charCodeAt(0)));
+  } catch { return null; }
+};
+
+const isComposerPayload = obj =>
+  Boolean(obj && typeof obj === 'object' && !Array.isArray(obj) && (obj.type || obj.title));
+
+/* Native shells wrap the composer object in a single `n` key. Unwrap it so
+ * those clients keep working, then fall back to the raw body. */
+const unwrapEnvelope = raw => {
+  if (raw && typeof raw === 'object' && !Array.isArray(raw) &&
+      raw.n && typeof raw.n === 'object' && !Array.isArray(raw.n)) return raw.n;
+  return raw;
+};
+
+/* Accepts the encoded composer payload the deployed client sends, or the plain
+ * object itself. An undecodable value falls through to the raw body. */
+const readAdminPayload = async request => {
+  const raw = await parseBody(request);
+  if (!raw) return null;
+  for (const value of Object.values(raw)) {
+    if (typeof value !== 'string' || value.length < 16) continue;
+    const hex = hexToUtf8(value);
+    if (hex != null) {
+      try {
+        const obj = JSON.parse(hex);
+        if (isComposerPayload(obj)) return obj;
+      } catch { /* not the encoded payload — keep looking */ }
+      continue;
+    }
+    const b64 = decodeBase64Utf8(value);
+    if (b64 == null) continue;
+    const sep = b64.indexOf('|');
+    if (sep < 1) continue;
+    try {
+      const obj = JSON.parse(b64.slice(sep + 1));
+      if (isComposerPayload(obj)) return obj;
+    } catch { /* not the encoded payload — keep looking */ }
+  }
+  return unwrapEnvelope(raw);
+};
+
 /* ── Phase 2 — Global Notification Engine (owner-approved 2026-09-17) ──────
  * Topic-first sends (spec "$0-first"): ONE FCM topic call reaches every
  * subscribed device — no per-user loop. Devices that could not subscribe to
@@ -748,12 +808,12 @@ export async function handleFcmNotificationRequest(request, env) {
     if (path === '/api/notifications/global/send' && request.method === 'POST') {
       if (!fcmConfigured(env)) return jsonResponse(request, { error: 'fcm-not-configured' }, 503);
       if (!store.available()) return jsonResponse(request, { error: 'storage-unavailable' }, 503);
-      const body = await parseBody(request);
+      const body = await readAdminPayload(request);
       if (!body) return jsonResponse(request, { error: 'invalid-json' }, 400);
       const type = GLOBAL_TYPES.includes(body.type) ? body.type : null;
       if (!type) return jsonResponse(request, { error: 'invalid-type' }, 400);
       const title = String(body.title || '').trim().slice(0, 120);
-      const text = String(body.body || '').trim().slice(0, 400);
+      const text = String((body.msg ?? body.text ?? body.body) || '').trim().slice(0, 400);
       if (title.length < 1 || title.length > 120) return jsonResponse(request, { error: 'invalid-title' }, 400);
       if (text.length < 1 || text.length > 400) return jsonResponse(request, { error: 'invalid-body' }, 400);
       const imageUrl = String(body.imageUrl || '').slice(0, 500) || null;
@@ -782,12 +842,12 @@ export async function handleFcmNotificationRequest(request, env) {
 
     if (path === '/api/notifications/global/schedule' && request.method === 'POST') {
       if (!store.available()) return jsonResponse(request, { error: 'storage-unavailable' }, 503);
-      const body = await parseBody(request);
+      const body = await readAdminPayload(request);
       if (!body) return jsonResponse(request, { error: 'invalid-json' }, 400);
       const type = GLOBAL_TYPES.includes(body.type) ? body.type : null;
       if (!type) return jsonResponse(request, { error: 'invalid-type' }, 400);
       const title = String(body.title || '').trim().slice(0, 120);
-      const text = String(body.body || '').trim().slice(0, 400);
+      const text = String((body.msg ?? body.text ?? body.body) || '').trim().slice(0, 400);
       if (title.length < 1 || title.length > 120) return jsonResponse(request, { error: 'invalid-title' }, 400);
       if (text.length < 1 || text.length > 400) return jsonResponse(request, { error: 'invalid-body' }, 400);
       const imageUrl = String(body.imageUrl || '').slice(0, 500) || null;

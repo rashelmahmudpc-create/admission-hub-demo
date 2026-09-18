@@ -8261,7 +8261,7 @@ var FcmStore = class {
     await this.#d1.prepare(
       `INSERT INTO global_notifications(id, type, title, body, image_url, target_url, audience, topic,
         dedup, scheduled_at, created_by, status, created_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`
     ).bind(
       row.id,
       row.type,
@@ -8526,6 +8526,55 @@ var parseBody = async (request) => {
     return null;
   }
 };
+var hexToUtf8 = (value) => {
+  const clean = String(value).replace(/\s/g, "");
+  if (!/^[0-9a-fA-F]+$/.test(clean) || clean.length < 16 || clean.length % 2 !== 0) return null;
+  try {
+    const bytes = Uint8Array.from(clean.match(/.{2}/g), (h) => parseInt(h, 16));
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    return null;
+  }
+};
+var decodeBase64Utf8 = (value) => {
+  try {
+    const bin = atob(String(value));
+    return new TextDecoder("utf-8", { fatal: true }).decode(Uint8Array.from(bin, (c) => c.charCodeAt(0)));
+  } catch {
+    return null;
+  }
+};
+var isComposerPayload = (obj) => Boolean(obj && typeof obj === "object" && !Array.isArray(obj) && (obj.type || obj.title));
+var unwrapEnvelope = (raw) => {
+  if (raw && typeof raw === "object" && !Array.isArray(raw) && raw.n && typeof raw.n === "object" && !Array.isArray(raw.n)) return raw.n;
+  return raw;
+};
+var readAdminPayload = async (request) => {
+  const raw = await parseBody(request);
+  if (!raw) return null;
+  for (const value of Object.values(raw)) {
+    if (typeof value !== "string" || value.length < 16) continue;
+    const hex = hexToUtf8(value);
+    if (hex != null) {
+      try {
+        const obj = JSON.parse(hex);
+        if (isComposerPayload(obj)) return obj;
+      } catch {
+      }
+      continue;
+    }
+    const b64 = decodeBase64Utf8(value);
+    if (b64 == null) continue;
+    const sep = b64.indexOf("|");
+    if (sep < 1) continue;
+    try {
+      const obj = JSON.parse(b64.slice(sep + 1));
+      if (isComposerPayload(obj)) return obj;
+    } catch {
+    }
+  }
+  return unwrapEnvelope(raw);
+};
 var GLOBAL_TYPES = Object.freeze(["new-content", "announcement", "new-feature", "challenge", "course", "important"]);
 var GLOBAL_AUDIENCES = Object.freeze({
   all_students: { topic: "all_students", bn: "সব Student", en: "All Students" },
@@ -8724,12 +8773,12 @@ async function handleFcmNotificationRequest(request, env) {
     if (path === "/api/notifications/global/send" && request.method === "POST") {
       if (!fcmConfigured(env)) return jsonResponse(request, { error: "fcm-not-configured" }, 503);
       if (!store.available()) return jsonResponse(request, { error: "storage-unavailable" }, 503);
-      const body = await parseBody(request);
+      const body = await readAdminPayload(request);
       if (!body) return jsonResponse(request, { error: "invalid-json" }, 400);
       const type = GLOBAL_TYPES.includes(body.type) ? body.type : null;
       if (!type) return jsonResponse(request, { error: "invalid-type" }, 400);
       const title = String(body.title || "").trim().slice(0, 120);
-      const text = String(body.body || "").trim().slice(0, 400);
+      const text = String((body.msg ?? body.text ?? body.body) || "").trim().slice(0, 400);
       if (title.length < 1 || title.length > 120) return jsonResponse(request, { error: "invalid-title" }, 400);
       if (text.length < 1 || text.length > 400) return jsonResponse(request, { error: "invalid-body" }, 400);
       const imageUrl = String(body.imageUrl || "").slice(0, 500) || null;
@@ -8765,12 +8814,12 @@ async function handleFcmNotificationRequest(request, env) {
     }
     if (path === "/api/notifications/global/schedule" && request.method === "POST") {
       if (!store.available()) return jsonResponse(request, { error: "storage-unavailable" }, 503);
-      const body = await parseBody(request);
+      const body = await readAdminPayload(request);
       if (!body) return jsonResponse(request, { error: "invalid-json" }, 400);
       const type = GLOBAL_TYPES.includes(body.type) ? body.type : null;
       if (!type) return jsonResponse(request, { error: "invalid-type" }, 400);
       const title = String(body.title || "").trim().slice(0, 120);
-      const text = String(body.body || "").trim().slice(0, 400);
+      const text = String((body.msg ?? body.text ?? body.body) || "").trim().slice(0, 400);
       if (title.length < 1 || title.length > 120) return jsonResponse(request, { error: "invalid-title" }, 400);
       if (text.length < 1 || text.length > 400) return jsonResponse(request, { error: "invalid-body" }, 400);
       const imageUrl = String(body.imageUrl || "").slice(0, 500) || null;
@@ -9088,10 +9137,7 @@ var hexToBytes = (h) => Uint8Array.from(h.match(/.{2}/g), (x) => parseInt(x, 16)
 async function s3ListTotalBytes(env) {
   const ak = String(env.R2_ACCESS_KEY || "");
   const sk = String(env.R2_SECRET_KEY || "");
-  if (!ak || !sk) {
-    console.log("[files] s3 reconcile skipped: ak=" + (ak ? "set(" + ak.length + ")" : "EMPTY") + " sk=" + (sk ? "set(" + sk.length + ")" : "EMPTY"));
-    return null;
-  }
+  if (!ak || !sk) return null;
   const bucketName = String(env?.FILE_BUCKET?.name || "admission-hub");
   try {
     let total = 0;
@@ -9225,22 +9271,6 @@ async function handleFilesStorageRequest(request, env) {
   }
   const bucket = env?.FILE_BUCKET;
   const available = Boolean(bucket && typeof bucket.put === "function");
-  if (request.method === "GET" && path === "/api/files/usage" && url.searchParams.get("probe") === "1") {
-    const tok = String(request.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
-    if (tok && tok === String(env.ADMIN_TOKEN || "")) {
-      return jsonResponse2(request, {
-        ok: true,
-        probe: {
-          akLen: String(env.R2_ACCESS_KEY || "").length,
-          skLen: String(env.R2_SECRET_KEY || "").length,
-          hasKV: Boolean(env?.GK_KV),
-          bucketName: String(env?.FILE_BUCKET?.name || ""),
-          bucketFn: Boolean(env?.FILE_BUCKET && typeof env.FILE_BUCKET.get === "function")
-        }
-      });
-    }
-    return jsonResponse2(request, { error: "forbidden" }, 403);
-  }
   if (request.method === "GET" && path === "/api/files/usage") {
     const usage = await bucketUsage(env);
     return jsonResponse2(request, {
