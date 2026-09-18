@@ -269,3 +269,40 @@ Reference implementation: `openSheet()` in `notification-hub.js`
   A new `/internal/...` diagnostic returns `null`, falls through to the app
   guard, and answers `403 forbidden` — widen the `isInternal` test while the
   diagnostic exists, and put the exact-path form back when you remove it.
+
+## Global notification sends (2026-09-18)
+
+- `FcmStore.insertGlobal` lists 13 columns; it bound only 12 placeholders. D1
+  compiles the statement before writing, so every admin send threw and the
+  route returned 502 (Cloudflare 1101) *before FCM was called*. The client
+  retries on 500, so it looked like a flaky network. Symptom to remember:
+  "push sends fail, history shows nothing" usually means the INSERT, not FCM.
+- The engine tests used a hand-written in-memory D1 stub that dispatches on SQL
+  text and never checks the column/value count, so a placeholder mismatch passed
+  silently. `fcm-global-sql.test.mjs` runs the real `FcmStore` and the real
+  send/schedule routes against `better-sqlite3`, which compiles SQL like D1
+  does. Keep real-SQL coverage for store changes.
+- Settling a D1 question needs the real engine: create a throwaway table over
+  the D1 HTTP API, run both forms, then `DROP TABLE`. That gave the definitive
+  `12 values for 13 columns: SQLITE_ERROR` in one run. `CREATE TEMP TABLE` is
+  NOT authorized over the HTTP API (`SQLITE_AUTH`), so use a real-named table
+  and drop it.
+- The deployed worker was built from source that was never committed and ran a
+  newer feature set than `main`: hex and `nonce|base64` composer payloads under
+  a random key, `{n:{...}}` unwrapping, and `msg`/`text`/`body` aliases. Before
+  rebuilding from source, diff the new bundle against the live one and normalize
+  (`\uXXXX`/`\xXX` escapes, `__name(fn,"label")`, blank lines); the live bundle
+  is the de-facto source of truth for those uncommitted features.
+- The Cloudflare edge 1101-blocks JSON whose top level looks like a
+  `{type,title,body}` envelope, which is why the admin client hex-encodes the
+  composer payload under a random key. Any rebuild must keep `readAdminPayload`
+  accepting hex, base64-behind-nonce, plain object, and the `n` envelope.
+- Pushing a worker via the API: `PUT .../accounts/<acc>/workers/scripts/<name>`
+  with multipart metadata. Send non-secret bindings back verbatim (an
+  `r2_bucket` binding needs `bucket_name` or you get error 10021) and keep
+  secrets with `keep_bindings: ["secret_text"]`. Deploying with only a partial
+  binding list silently drops the rest.
+- `/api/notifications/global/history` needs a session (`auth-required`, 401)
+  and `.../send` needs `Bearer ADMIN_TOKEN` (`forbidden`, 403). Neither the
+  account id, the R2 key id, nor the API token is the admin token, so a curl
+  cannot exercise an authenticated send — use the panel's stored token.
