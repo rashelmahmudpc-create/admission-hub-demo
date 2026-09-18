@@ -12,8 +12,8 @@ t('dashboard-v2.js defer-লোড (?v=dash2)', H.includes('<script defer src=".
 t('dashboard-v2.css link (?v=dash2)', H.includes('<link rel="stylesheet" href="./dashboard-v2.css?v=dash2f13-theme">'));
 t('sw APP_SHELL-এ dashboard-v2 (js+css)', SW.includes("'./dashboard-v2.js?v=dash2f13-theme'") && SW.includes("'./dashboard-v2.css?v=dash2f13-theme'"));
 
-t('sw BUILD_ID v280-global-notif-20260917', SW.includes("const BUILD_ID = 'v280-global-notif-20260917'"));
-t('index sw-marker v195', H.includes('sw.js?v=v280-global-notif-20260917'));
+t('sw BUILD_ID v281-auth-error-20260918', SW.includes("const BUILD_ID = 'v281-auth-error-20260918'"));
+t('index sw-marker v195', H.includes('sw.js?v=v281-auth-error-20260918'));
 
 /* ২ — ১৪ মডিউল (ছবির প্রতিটি সেকশন) */
 t('১ Personal Header (avatar+তারিখ+🔔)', V2.includes('dv2-header') && V2.includes('Intl.DateTimeFormat') && V2.includes('dv2-bell'));
