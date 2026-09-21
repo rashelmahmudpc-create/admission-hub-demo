@@ -439,3 +439,19 @@ test('Signup Assistant is absent and the core Signup journey remains independent
   assert.equal(app.calls.some(call => call.path.includes('/api/ai/chat')), false);
   app.dom.window.close();
 });
+
+test('every verification view is a direct child of the account body, so none can nest inside a hidden sibling', async t => {
+  const app = setup();
+  t.after(() => app.dom.window.close());
+  await waitFor(() => app.document.querySelector('[data-view="welcome"]')?.hidden === false);
+  const body = app.document.querySelector('.ah-account-body');
+  const views = [...app.document.querySelectorAll('[data-view]')];
+  assert.ok(views.length >= 15, `expected the full view set, got ${views.length}`);
+  // Regression: `whatsapp-info` once opened while `email-ownership` was still
+  // unclosed, so the whole Email OTP form became a child of a hidden view and
+  // rendered as a 0x0 blank page. A view nested in another view is always that bug.
+  for (const view of views) {
+    assert.equal(view.parentElement, body, `[data-view="${view.dataset.view}"] must be a direct child of .ah-account-body`);
+  }
+  assert.equal(app.document.querySelectorAll('[data-view] [data-view]').length, 0, 'a view must never be nested inside another view');
+});

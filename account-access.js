@@ -388,7 +388,6 @@
           <button class="ah-account-link ah-calm-back" type="button" data-role="email-intro-back">অন্য পদ্ধতি ব্যবহার করো</button>
         </div>
 
-        <div class="ah-account-view ah-provider-info-view ah-whatsapp-info-view" data-view="whatsapp-info" hidden>
         <form class="ah-account-view ah-email-ownership-view" data-view="email-ownership" data-state="waiting" hidden novalidate>
           <div class="ah-mail-hero" aria-hidden="true"><span class="ah-mail-orb"><svg viewBox="0 0 24 24" fill="none"><rect x="3" y="5.5" width="18" height="13" rx="3.5"/><path d="m4.5 8 7.5 5.2 7.5-5.2"/></svg><i><svg viewBox="0 0 24 24" fill="none"><path d="m6.5 12.4 4 4L17.6 8.6"/></svg></i></span><span class="ah-mail-shield-float"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3 5 6v5c0 4.8 2.5 8 7 10 4.5-2 7-5.2 7-10V6l-7-3Z"/><path d="m9.4 12.1 1.7 1.7 3.7-4"/></svg></span></div>
           <p class="ah-view-kicker">EMAIL OWNERSHIP</p>
@@ -402,6 +401,7 @@
           <p class="ah-account-switch"><button class="ah-account-link" type="button" data-role="ownership-back">অন্য পদ্ধতি ব্যবহার করো</button></p>
         </form>
 
+        <div class="ah-account-view ah-provider-info-view ah-whatsapp-info-view" data-view="whatsapp-info" hidden>
           <div class="ah-provider-phone whatsapp" aria-hidden="true"><span>◉</span><i>✓</i></div>
           <h3 class="ah-account-view-title">WhatsApp verification</h3>
           <p class="ah-account-mask">এই no-cost public version-এ সত্যিকারের WhatsApp verification এখনো available নয়। তাই কোনো message পাঠানো বা success দেখানো হবে না।</p>
