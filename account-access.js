@@ -712,10 +712,26 @@
       PASSKEY_UNAVAILABLE: 'এই device-এ Passkey এখন পাওয়া যাচ্ছে না—অন্য পথ ব্যবহার করো।',
       ACCOUNT_CONFLICT: 'এই পরিচয়টি অন্য account-এর সঙ্গে যুক্ত। নিরাপত্তার জন্য প্রবেশ বন্ধ রাখা হয়েছে।',
       OTP_INVALID: 'কোডটি সঠিক নয়—আবার লিখে দেখো।',
-      CHALLENGE_INVALID: 'Verificationটি সঠিক নয় বা সময় শেষ—আবার চেষ্টা করো।'
+      CHALLENGE_INVALID: 'Verificationটি সঠিক নয় বা সময় শেষ—আবার চেষ্টা করো।',
+      RESEND_COOLDOWN: 'নতুন code পাঠাতে একটু অপেক্ষা করতে হবে—কিছুক্ষণ পরে আবার চেষ্টা করো।',
+      OTP_EXPIRED: 'কোডের সময় শেষ হয়ে গেছে—নতুন code নাও।',
+      OTP_LOCKED: 'অনেকবার ভুল কোড দেওয়া হয়েছে—একটু অপেক্ষা করে নতুন code নাও।',
+      OTP_USED: 'এই কোডটি আগেই ব্যবহার হয়েছে—নতুন code নাও।',
+      DELIVERY_UNAVAILABLE: 'এখন Email পাঠানো যাচ্ছে না—একটু পরে আবার চেষ্টা করো।',
+      BACKUP_UNAVAILABLE: 'এই যাচাইয়ের পথটি এখন বন্ধ আছে—একটু পরে আবার চেষ্টা করো।',
+      AUTH_PROVIDER_UNAVAILABLE: 'Account সেবাটি সাময়িকভাবে ব্যস্ত—একটু পরে আবার চেষ্টা করো।',
+      STORAGE_UNAVAILABLE: 'Account সেবাটি সাময়িকভাবে ব্যস্ত—একটু পরে আবার চেষ্টা করো।',
+      TELEGRAM_VERIFICATION_INVALID: 'Verification session-এর সময় শেষ—আবার Sign Up বা Log In করো।',
+      PROFILE_VERSION_CONFLICT: 'Profile একই সময়ে অন্য জায়গা থেকে বদলেছে—আবার দেখে সংরক্ষণ করো।',
+      ENDPOINT_UNAVAILABLE: 'এই লিংকে account সেবা নেই—অ্যাপের মূল ঠিকানা admissionhub.pages.dev খুলে আবার চেষ্টা করো।',
+      ORIGIN_FORBIDDEN: 'এই ঠিকানা থেকে account কাজ করছে না—অ্যাপের মূল লিংক (admissionhub.pages.dev) থেকে আবার চেষ্টা করো।',
+      NOT_CONFIGURED: 'Account সেবাটি এখনো প্রস্তুত নয়—একটু পরে আবার চেষ্টা করো।',
     };
     if (known[error?.code]) return known[error.code];
     if (error?.status === 0) return 'ইন্টারনেট সংযোগ পাওয়া যাচ্ছে না—সংযোগ ঠিক হলে আবার চেষ্টা করো।';
+    // A named reason from the API beats the generic banner: the server already
+    // says in Bengali which step failed, so the user is not left guessing.
+    if (typeof error?.serverMessage === 'string' && error.serverMessage.trim()) return error.serverMessage.trim();
     return 'সাময়িক সমস্যা হয়েছে—একটু পরে আবার চেষ্টা করো।';
   };
 
@@ -1404,6 +1420,15 @@
       const error = new Error('Admission Hub অনুরোধটি শেষ করতে পারেনি।');  
       error.status = response.status;  
       error.code = typeof data?.error?.code === 'string' ? data.error.code : '';  
+      // A host that serves the SPA but has no auth backend (the legacy GitHub
+      // Pages mirror, or the stale hyphenated Pages project) replies with an
+      // HTML error page, so there is no machine code to map. Name that case
+      // instead of falling through to the generic 'সাময়িক সমস্যা' banner.
+      if (!error.code && !parsed) error.code = 'ENDPOINT_UNAVAILABLE';
+      // The API already answers in Bengali with a specific reason. Carrying it
+      // through stops friendlyError from flattening every unmapped code into the
+      // same dead end and hiding what actually failed.
+      error.serverMessage = typeof data?.error?.message === 'string' ? data.error.message : '';
       error.retryAfter = Number(data?.error?.retryAfter || response.headers.get('Retry-After') || 0);  
       throw error;  
     }  

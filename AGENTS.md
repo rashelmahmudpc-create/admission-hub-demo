@@ -269,3 +269,12 @@ Reference implementation: `openSheet()` in `notification-hub.js`
   A new `/internal/...` diagnostic returns `null`, falls through to the app
   guard, and answers `403 forbidden` — widen the `isInternal` test while the
   diagnostic exists, and put the exact-path form back when you remove it.
+- Two public hosts look like the app but are not: the legacy GitHub Pages
+  mirror `sheikhrashel47-stack.github.io/admission-hub-demo` is fully dead
+  (every path, including `/index.html` and `/api/...`, returns GitHub's 404),
+  and `admission-hub.pages.dev` (hyphenated) serves a stale bundle with no
+  auth backend, so `/api/auth/v1/*` answers 405 HTML. The only working origin
+  is `admissionhub.pages.dev`. When an auth step dies on a mirror the browser
+  receives HTML rather than JSON — `api()` in `account-access.js` labels that
+  `ENDPOINT_UNAVAILABLE` so the banner names the wrong host instead of showing
+  the generic "সাময়িক সমস্যা" dead end.
