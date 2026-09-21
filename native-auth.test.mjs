@@ -128,6 +128,9 @@ class EngineNamespace {
   constructor(engine, { backupCapabilities = null } = {}) {
     this.engine = engine;
     this.backupCapabilities = backupCapabilities;
+    // Stands in for the verification orchestrator's ownership record so the
+    // handler tests can flip "this address was proven by an OTP" on and off.
+    this.ownership = { proven: false, method: null };
     this.calls = [];
   }
   idFromName(name) { return name; }
@@ -165,7 +168,8 @@ class EngineNamespace {
         '/internal/firebase/login/failure': () => this.engine.recordLoginFailure(body.input, body.context),
         '/internal/security/device/trust': () => this.engine.trustCurrentDevice(body.input, body.context),
         '/internal/security/device/revoke': () => this.engine.revokeTrustedDevice(body.input, body.context),
-        '/internal/security/state': () => this.engine.getSecurityState(body.input, body.context)
+        '/internal/security/state': () => this.engine.getSecurityState(body.input, body.context),
+        '/internal/verification/ownership/status': () => this.ownership
       };
       if (!routes[url.pathname]) return Response.json({ ok: false }, { status: 404 });
       return Response.json({ ok: true, result: await routes[url.pathname]() });
@@ -451,6 +455,59 @@ test('unverified Firebase account is denied, verified account on a new device pa
   const after = await app.handler(apiRequest(`${AUTH_API_PREFIX}/session`, { cookie: `${session}; ${firebase}` }), app.env, {});
   assert.equal(after.status, 401);
 });
+
+
+test('a proven email ownership unlocks every later login instead of demanding a fresh OTP', async () => {
+  const app = handlerSetup();
+  const email = 'owner.relogin@example.com';
+  const password = 'Ownership-password-91';
+  const signup = await app.handler(apiRequest(`${AUTH_API_PREFIX}/signup`, { method: 'POST', body: { email, password } }), app.env, {});
+  // Carry the device cookie so the separate Phase-6 new-device challenge does
+  // not mask the OTP behaviour this test is about.
+  const device = extractCookiePair(signup, '__Host-ah_device');
+  const login = () => app.handler(apiRequest(`${AUTH_API_PREFIX}/login`, { method: 'POST', body: { email, password }, cookie: device }), app.env, {});
+
+  // Nothing proven yet: the account is unverified (Firebase's own flag is still
+  // false and no backup channel is activated here), so login is denied outright.
+  const pending = await login();
+  assert.equal(pending.status, 403);
+  assert.equal((await pending.json()).error.code, AUTH_ERROR_CODES.EMAIL_NOT_VERIFIED);
+
+  // The student completes the email OTP: the worker records ownership and the
+  // session it issues reports the proof back to the client.
+  app.authority.ownership = { proven: true, method: 'email-otp' };
+  const verified = await login();
+  assert.equal(verified.status, 200, 'a proven address must not be challenged again');
+  const verifiedBody = await verified.json();
+  assert.equal(verifiedBody.authenticated, true);
+  assert.equal(verifiedBody.accountVerified, true);
+  assert.equal(verifiedBody.emailOwnershipProven, true);
+  assert.equal(verifiedBody.emailVerified, false);
+  const session = extractCookiePair(verified, '__Host-ah_session');
+  const firebaseCookie = extractCookiePair(verified, '__Host-ah_firebase');
+  assert.ok(session);
+
+  // Logout revokes the session but must leave ownership proven, so the next
+  // sign-in is a fast path — this is the regression the bug report described.
+  const logout = await app.handler(apiRequest(`${AUTH_API_PREFIX}/session/logout`, { method: 'POST', body: {}, cookie: `${session}; ${firebaseCookie}` }), app.env, {});
+  assert.equal(logout.status, 200);
+  assert.equal(app.authority.ownership.proven, true, 'logout must not revoke the ownership proof');
+
+  const again = await login();
+  assert.equal(again.status, 200, 'signing back in must not demand another OTP');
+  const againBody = await again.json();
+  assert.equal(againBody.authenticated, true);
+  assert.equal(againBody.emailOwnershipProven, true);
+  assert.equal('selectionRequired' in (againBody.verification || {}), false);
+
+  // The proof is a real gate, not a blanket bypass: revoking it restores the
+  // denial for an account whose Firebase flag is still false.
+  app.authority.ownership = { proven: false, method: null };
+  const revoked = await login();
+  assert.equal(revoked.status, 403);
+  assert.equal((await revoked.json()).error.code, AUTH_ERROR_CODES.EMAIL_NOT_VERIFIED);
+});
+
 
 test('verification resend requires password and never authenticates the user', async () => {
   const app = handlerSetup();

@@ -6898,11 +6898,18 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           context,
           allowed: telegramRequested
         });
-        if (!user.emailVerified && !telegramVerified && telegramRequested && !currentAuthUi(request)) {
+        const ownershipVerified = !user.emailVerified && !telegramVerified && await emailOwnershipProven({
+          env,
+          user,
+          context,
+          allowed: true
+        });
+        const accountVerified = user.emailVerified || telegramVerified || ownershipVerified;
+        if (!accountVerified && telegramRequested && !currentAuthUi(request)) {
           throw new NativeAuthError(AUTH_ERROR_CODES.CLIENT_UPDATE_REQUIRED);
         }
         const telegramAvailable = await telegramVerificationAvailable(env, telegramRequested);
-        if (!user.emailVerified && !telegramVerified && telegramRequested) {
+        if (!accountVerified && telegramRequested) {
           try {
             const temporaryRefreshMaterial = signed.refreshToken;
             const ticket = await callAuthority(env, "/internal/firebase/account-verification/begin", {
@@ -6935,13 +6942,13 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           } catch {
           }
         }
-        if (!user.emailVerified && !telegramVerified) throw new NativeAuthError(AUTH_ERROR_CODES.EMAIL_NOT_VERIFIED);
+        if (!accountVerified) throw new NativeAuthError(AUTH_ERROR_CODES.EMAIL_NOT_VERIFIED);
         const established = await callAuthority(env, "/internal/firebase/session/create", {
           input: {
             email: user.email,
             subject: user.subject,
             remember: input.remember,
-            verified: user.emailVerified === true || telegramVerified === true,
+            verified: accountVerified,
             newDevice: context.isNewDevice === true,
             securityChallenge: true
           },
@@ -6993,7 +7000,8 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         }
         return authSuccess(request, established, signed.refreshToken, context, {
           emailVerified: user.emailVerified === true,
-          telegramVerified
+          telegramVerified,
+          emailOwnershipProven: ownershipVerified
         });
       }
       if (request.method === "POST" && url.pathname === `${AUTH_API_PREFIX}/google`) {
@@ -9088,10 +9096,7 @@ var hexToBytes = (h) => Uint8Array.from(h.match(/.{2}/g), (x) => parseInt(x, 16)
 async function s3ListTotalBytes(env) {
   const ak = String(env.R2_ACCESS_KEY || "");
   const sk = String(env.R2_SECRET_KEY || "");
-  if (!ak || !sk) {
-    console.log("[files] s3 reconcile skipped: ak=" + (ak ? "set(" + ak.length + ")" : "EMPTY") + " sk=" + (sk ? "set(" + sk.length + ")" : "EMPTY"));
-    return null;
-  }
+  if (!ak || !sk) return null;
   const bucketName = String(env?.FILE_BUCKET?.name || "admission-hub");
   try {
     let total = 0;
@@ -9225,22 +9230,6 @@ async function handleFilesStorageRequest(request, env) {
   }
   const bucket = env?.FILE_BUCKET;
   const available = Boolean(bucket && typeof bucket.put === "function");
-  if (request.method === "GET" && path === "/api/files/usage" && url.searchParams.get("probe") === "1") {
-    const tok = String(request.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
-    if (tok && tok === String(env.ADMIN_TOKEN || "")) {
-      return jsonResponse2(request, {
-        ok: true,
-        probe: {
-          akLen: String(env.R2_ACCESS_KEY || "").length,
-          skLen: String(env.R2_SECRET_KEY || "").length,
-          hasKV: Boolean(env?.GK_KV),
-          bucketName: String(env?.FILE_BUCKET?.name || ""),
-          bucketFn: Boolean(env?.FILE_BUCKET && typeof env.FILE_BUCKET.get === "function")
-        }
-      });
-    }
-    return jsonResponse2(request, { error: "forbidden" }, 403);
-  }
   if (request.method === "GET" && path === "/api/files/usage") {
     const usage = await bucketUsage(env);
     return jsonResponse2(request, {
