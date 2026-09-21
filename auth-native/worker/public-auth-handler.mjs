@@ -803,11 +803,24 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           context,
           allowed: telegramRequested
         });
-        if (!user.emailVerified && !telegramVerified && telegramRequested && !currentAuthUi(request)) {
+        // An address proven by a delivered OTP stays proven for the account, so a
+        // later sign-in must not be asked to repeat it. Without this the ownership
+        // proof only ever unlocked the session that created it: every logout and
+        // sign-in demanded a fresh code even though the record was still active.
+        // `allowed: true` mirrors firebaseReadySession, so login and session
+        // bootstrap give the same answer for the same account.
+        const ownershipVerified = !user.emailVerified && !telegramVerified && await emailOwnershipProven({
+          env,
+          user,
+          context,
+          allowed: true
+        });
+        const accountVerified = user.emailVerified || telegramVerified || ownershipVerified;
+        if (!accountVerified && telegramRequested && !currentAuthUi(request)) {
           throw new NativeAuthError(AUTH_ERROR_CODES.CLIENT_UPDATE_REQUIRED);
         }
         const telegramAvailable = await telegramVerificationAvailable(env, telegramRequested);
-        if (!user.emailVerified && !telegramVerified && telegramRequested) {
+        if (!accountVerified && telegramRequested) {
           try {
             const temporaryRefreshMaterial = signed.refreshToken;
             const ticket = await callAuthority(env, '/internal/firebase/account-verification/begin', {
@@ -839,13 +852,13 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
             });
           } catch {}
         }
-        if (!user.emailVerified && !telegramVerified) throw new NativeAuthError(AUTH_ERROR_CODES.EMAIL_NOT_VERIFIED);
+        if (!accountVerified) throw new NativeAuthError(AUTH_ERROR_CODES.EMAIL_NOT_VERIFIED);
         const established = await callAuthority(env, '/internal/firebase/session/create', {
           input: {
             email: user.email,
             subject: user.subject,
             remember: input.remember,
-            verified: user.emailVerified === true || telegramVerified === true,
+            verified: accountVerified,
             newDevice: context.isNewDevice === true,
             securityChallenge: true
           },
@@ -902,7 +915,8 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         }
         return authSuccess(request, established, signed.refreshToken, context, {
           emailVerified: user.emailVerified === true,
-          telegramVerified
+          telegramVerified,
+          emailOwnershipProven: ownershipVerified
         });
       }
 
