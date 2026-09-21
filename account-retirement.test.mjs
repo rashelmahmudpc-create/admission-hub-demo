@@ -115,9 +115,9 @@ await test('service-worker build and HTML registration are synchronized',
   H.includes('admission-hub-shell-v281-auth-error-20260918'));
 await test('service-worker shell cannot cache retired assets', retiredMarkers.every(marker => !SW.includes(marker)));
 await test('premium account and institution assets use synchronized cache-busting versions',
-  ['account-access.css?v=20260918-auth-error-v7', 'account-access.js?v=20260918-auth-error-v7', 'institutions-bd.js?v=bd-institutions-v2']
+  ['account-access.css?v=20260921-email-otp-blank-fix', 'account-access.js?v=20260921-email-otp-blank-fix', 'institutions-bd.js?v=bd-institutions-v2']
     .every(asset => H.includes(asset) && SW.includes(asset)) &&
-  H.indexOf('institutions-bd.js?v=bd-institutions-v2') < H.indexOf('account-access.js?v=20260918-auth-error-v7'));
+  H.indexOf('institutions-bd.js?v=bd-institutions-v2') < H.indexOf('account-access.js?v=20260921-email-otp-blank-fix'));
 await test('premium Auth UI/server contract and curated-manual institution policy are locked',
   ACCOUNT_UI.includes("'X-AH-Auth-UI': 'auth-premium-v6'") &&
   AUTH_HANDLER.includes("const AUTH_UI_VERSION = 'auth-premium-v6'") &&
