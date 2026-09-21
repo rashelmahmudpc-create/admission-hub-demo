@@ -18,7 +18,7 @@ t('২. কোনো আনগার্ডেড C().settings.X অ্যাক�
 t('৩. goal(): ফাঁকা-ফলব্যাকে DB-লেখা নিষেধ (if (S && window.dbPut))', V2.includes('if (S && window.dbPut) window.dbPut(\'settings\', s)'));
 t('৪. renderV2 try/catch → পুরনো-ড্যাশবোর্ড-ফলব্যাক (কখনো ক্র্যাশ নয়)', V2.includes("console.warn('[dv2] build পতন") && /catch \(e\) \{[\s\S]{0,200}if \(typeof previous === 'function'\) previous\(\);/.test(V2));
 
-t('৫. ভার্সন-অখণ্ডতা: dashboard-v2.js ?v=dash2f10-main-ai (index+sw) + current BUILD_ID', H.includes('<script defer src="./dashboard-v2.js?v=dash2f13-theme"></script>') && SW.includes("'./dashboard-v2.js?v=dash2f13-theme'") && SW.includes("const BUILD_ID = 'v280-global-notif-20260917'") && H.includes('sw.js?v=v280-global-notif-20260917') && H.includes("const expectedSwVersion = 'v280-global-notif-20260917'") && !H.includes('v196-gfix'));
+t('৫. ভার্সন-অখণ্ডতা: dashboard-v2.js ?v=dash2f10-main-ai (index+sw) + current BUILD_ID', H.includes('<script defer src="./dashboard-v2.js?v=dash2f13-theme"></script>') && SW.includes("'./dashboard-v2.js?v=dash2f13-theme'") && SW.includes("const BUILD_ID = 'v281-auth-error-20260918'") && H.includes('sw.js?v=v281-auth-error-20260918') && H.includes("const expectedSwVersion = 'v281-auth-error-20260918'") && !H.includes('v196-gfix'));
 
 /* ── ২. রানটাইম (jsdom): আসল সিনারিওতে আর কোনো ক্র্যাশ নেই ── */
 function runtimeCase(name, setup) {

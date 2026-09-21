@@ -1,6 +1,6 @@
 const CACHE_PREFIX = 'admission-hub-shell-';
 
-const BUILD_ID = 'v280-global-notif-20260917';
+const BUILD_ID = 'v281-auth-error-20260918';
 const CACHE_NAME = `${CACHE_PREFIX}${BUILD_ID}`;
 const VERSION_HEADER = 'X-Admission-Hub-Build';
 const DOCUMENT_NETWORK_TIMEOUT_MS = 2500;
@@ -20,10 +20,10 @@ const APP_SHELL = [
   './dashboard-v2.css?v=dash2f13-theme',
   './3d-loader.css?v=3d-v2',
   './session-persist.js?v=session-v2',
-  './account-access.css?v=20260916-account-entry-v6',
+  './account-access.css?v=20260918-auth-error-v7',
   './institutions-bd.js?v=bd-institutions-v2',
   './language-engine.js?v=lang-v3-dashboard',
-  './account-access.js?v=20260916-account-entry-v6',
+  './account-access.js?v=20260918-auth-error-v7',
   './academic-catalog.js?v=acad-cat-v2',
   './profile-ui.js?v=profile-v17-uni-tap',
   './profile-ui.css?v=profile-v15-uni-tap',
@@ -41,16 +41,16 @@ const APP_SHELL = [
 // A truncated/corrupt download is NEVER written to the shell cache.
 const ASSET_DIGESTS = {
 /* sw-manifest:start */
-  "./index.html": "fbad81a8a854d1b2e12774c7c3e63c8dc7198647c1f1fe1dee68667e1861fa46",
+  "./index.html": "e1e4d6e6ba6f973720de2dc45d729c18eff0a798e1847d43b930f4fea7ed6e88",
   "./manifest.json": "11a85ae594fc629b11605daeda3f9afe4ef95215a55a29f9cc423314bfb275a4",
   "./manifest.webmanifest": "5be476009a140eabd088bd972bd4d345b9c4f4a055cd6e4f08774b9cb4afaf52",
   "./dashboard-v2.css?v=dash2f13-theme": "4f4c9295b487b8186fd45c006a96a43bcaf896a1a5b871f506a05874a8e00c99",
   "./3d-loader.css?v=3d-v2": "43ca21b0a41be5d223c317fd63582f19ff6ffab5d010639ef26349464550da63",
   "./session-persist.js?v=session-v2": "99f3d1f49f6d5714fd25f1c12b2aa978ca97a009d6caba9a690a0442d082593c",
-  "./account-access.css?v=20260916-account-entry-v6": "54d46ed598915409c72c5da480cde492f947928a21088d4ed7b2f9ad4d13682e",
+  "./account-access.css?v=20260918-auth-error-v7": "54d46ed598915409c72c5da480cde492f947928a21088d4ed7b2f9ad4d13682e",
   "./institutions-bd.js?v=bd-institutions-v2": "602c5549515e8207ad152b948ca9b8fe3ad0fbe429afb56380e4e21b662f779d",
-  "./language-engine.js?v=lang-v3-dashboard": "3e8a0e1c7b1e4a68970df0744cb7cdc19bc859372fbc737e79cc52af2d3967e3",
-  "./account-access.js?v=20260916-account-entry-v6": "69fb6c48f3ee8324f2ec307e5e7e6e18545eb2b3877acc532cb1a87e7b788902",
+  "./language-engine.js?v=lang-v3-dashboard": "df456cbb08f3b6bed6c85c79eb76f42389075c8bf0027d40154eb98d9bd62612",
+  "./account-access.js?v=20260918-auth-error-v7": "b345eb0893182da2dbd04a9149df05aa0348d72e54831d13c12f243bc8d33481",
   "./academic-catalog.js?v=acad-cat-v2": "75e7b80663d41330658c948ad1d4829d49f5c9abed581350582cfeace06d5b32",
   "./profile-ui.js?v=profile-v17-uni-tap": "bb341598f5e20bf4b743af9a580ee84adcb5fc0113aaef79ca13478d0d2df9f1",
   "./profile-ui.css?v=profile-v15-uni-tap": "6408a4b7ac8acf6845cd0148c58377a4953c8ff879d30b2c520eafae0314b98a",
