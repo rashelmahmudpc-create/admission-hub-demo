@@ -181,7 +181,18 @@ function makeFakeD1() {
   return {
     _devices: devices, _globals: globals, _reads: reads,
     prepare(sql) {
-      return { ...stmt(sql, []), bind: (...args) => stmt(sql, args) };
+      /* D1 rejects a statement whose bind count differs from its placeholder
+       * count ("N values for M columns"). The fake used to ignore both, so a
+       * 13-column INSERT with 12 placeholders passed here and only failed in
+       * production. Enforce it so that class of bug cannot hide again. */
+      const placeholders = (sql.match(/\?/g) || []).length;
+      const bound = (...args) => {
+        if (args.length !== placeholders) {
+          throw new Error(`D1_ERROR: ${args.length} values for ${placeholders} placeholders: SQLITE_ERROR`);
+        }
+        return stmt(sql, args);
+      };
+      return { ...stmt(sql, []), bind: bound };
     },
     async batch(statements) {
       const results = [];

@@ -8274,7 +8274,7 @@ var FcmStore = class {
     await this.#d1.prepare(
       `INSERT INTO global_notifications(id, type, title, body, image_url, target_url, audience, topic,
         dedup, scheduled_at, created_by, status, created_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`
     ).bind(
       row.id,
       row.type,

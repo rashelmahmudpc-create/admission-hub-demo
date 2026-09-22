@@ -30,9 +30,9 @@ test('production code contains no superseded command-center markers', (() => {
 
 test('HTML and service worker are no-cache controlled', HEADERS.includes('/sw.js') && HEADERS.includes('/index.html') && HEADERS.includes('Cache-Control: no-cache'));
 test('dashboard and app-shell build markers are current',
-  H.includes('dashboard-v2.js?v=dash2f13-theme') && SW.includes('dashboard-v2.js?v=dash2f13-theme') &&
+  H.includes('dashboard-v2.js?v=dash2f15-inbox') && SW.includes('dashboard-v2.js?v=dash2f15-inbox') &&
 
-  SW.includes("const BUILD_ID = 'v281-auth-error-20260918'") && H.includes('sw.js?v=v281-auth-error-20260918'));
+  SW.includes("const BUILD_ID = 'v282-device-challenge-20260921'") && H.includes('sw.js?v=v282-device-challenge-20260921'));
 
 test('dashboard-v2 renders without any account bootstrap', await (async () => {
   const dom = new JSDOM('<!doctype html><html><head></head><body><div id="app"></div><div id="navRoot"></div></body></html>', { runScripts: 'dangerously', pretendToBeVisual: true, url: 'https://admissionhub.pages.dev/' });
@@ -47,7 +47,10 @@ test('dashboard-v2 renders without any account bootstrap', await (async () => {
   await new Promise(resolve => setTimeout(resolve, 30));
   try { w.renderDashboard?.(); } catch (_) {}
   const html = String(w.__shell || '') + w.document.getElementById('app').innerHTML;
-  return html.includes('dv2-root') && !/login|sign in|profile/i.test(html);
+  /* The header avatar intentionally links to the Profile tab via the
+   * 'my-profile' route, so match the account-bootstrap prompt itself rather
+   * than any occurrence of those words. */
+  return html.includes('dv2-root') && !/\blog ?in\b|sign ?in|লগইন|লগ ইন/i.test(html);
 })());
 
 test('inline application shell cannot emit a legacy dashboard marker', !/TODAY COMMAND CENTER|Your Command Center|Swipe to explore|data-p3-command/.test(H));

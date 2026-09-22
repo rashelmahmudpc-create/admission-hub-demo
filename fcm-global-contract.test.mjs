@@ -129,9 +129,9 @@ test('pin consistency: index.html script pins match sw.js cache entries + digest
     assert.match(SW, new RegExp(`"./${file}\\?v=${pin}": "[0-9a-f]{64}"`), `digest for ${file}`);
   }
   /* shell canary bumped together in both files */
-  assert.match(INDEX, /v281-auth-error-20260918/g);
-  assert.match(SW, /const BUILD_ID = 'v281-auth-error-20260918';/);
-  assert.ok((INDEX.match(/v281-auth-error-20260918/g) || []).length >= 3, 'canary pinned in index.html (register + SW check)');
+  assert.match(INDEX, /v282-device-challenge-20260921/g);
+  assert.match(SW, /const BUILD_ID = 'v282-device-challenge-20260921';/);
+  assert.ok((INDEX.match(/v282-device-challenge-20260921/g) || []).length >= 3, 'canary pinned in index.html (register + SW check)');
 });
 
 test('sw-manifest digest of the admin file is correct', () => {

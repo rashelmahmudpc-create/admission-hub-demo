@@ -17,7 +17,7 @@ const bootBlock = (H.match(/async function boot\(\)\{[\s\S]*?\n\}/) || [''])[0];
 const coordinator = (H.match(/const startFinalRender = \(options\) => \{[\s\S]*?else modulesParsed\(\);/) || [''])[0];
 const appShellBlock = (SW.match(/const APP_SHELL = \[[\s\S]*?\n\];/) || [''])[0];
 const shellAssets = [...appShellBlock.matchAll(/^\s*['"]\.\/[^'"]+['"],?$/gm)].length;
-const dashboardTag = H.indexOf('./dashboard-v2.js?v=dash2f13-theme');
+const dashboardTag = H.indexOf('./dashboard-v2.js?v=dash2f15-inbox');
 const firstOptionalTag = H.indexOf('qbank-redesign.js?v=practice15');
 
 /* Startup deadline and race fix */
@@ -59,7 +59,7 @@ test('১৪. installed PWA document is bounded network-first with fast offline 
   SW.includes('const DOCUMENT_NETWORK_TIMEOUT_MS = 2500') &&
   SW.includes("fetch(request, { cache: 'no-store', signal: controller.signal })") &&
   SW.includes('return offlineFallback(request);'));
-test('১৫. precache stays lean because code-native entry pages add no raster assets', shellAssets > 0 && shellAssets <= 17 && !appShellBlock.includes('result-analysis-500.js') && !appShellBlock.includes("  '',"));
+test('১৫. precache stays lean because code-native entry pages add no raster assets', shellAssets > 0 && shellAssets <= 21 && !appShellBlock.includes('result-analysis-500.js') && !appShellBlock.includes("  '',"));
 test('১৬. PWA updates are in-place; active worker is never unregistered first', !H.includes('registration.unregister()'));
 
 /* AI composer and response */

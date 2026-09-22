@@ -39,8 +39,8 @@ t('discardActiveExam: retry-টাইমার ক্লিয়ার', /async
 
 /* ৬ — ভার্সন-ট্র্যাকিং v189 */
 
-t('sw BUILD_ID current shell', SW.includes("const BUILD_ID = 'v281-auth-error-20260918'"));
-t('index sw-marker current shell', H.includes('sw.js?v=v281-auth-error-20260918'));
+t('sw BUILD_ID current shell', SW.includes("const BUILD_ID = 'v282-device-challenge-20260921'"));
+t('index sw-marker current shell', H.includes('sw.js?v=v282-device-challenge-20260921'));
 
 console.log(`\nP08-AC3: ${pass} pass / ${fail} fail`);
 if (fail) process.exit(1);

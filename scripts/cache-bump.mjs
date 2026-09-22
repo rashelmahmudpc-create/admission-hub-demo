@@ -28,6 +28,21 @@ const targets = [
   'code-native-welcome-v1.test.mjs',
   'startup-ai-regression.test.mjs',
   'profile-ui.test.mjs',
+  'fcm-global-contract.test.mjs',
+  // The shell version is asserted by these older shell-contract suites too.
+  // They were missing from this list, so a bump left them pinned to the
+  // previous string and the suite failed on a version that had moved on.
+  'idb-hardening.test.mjs',
+  'intro.test.mjs',
+  'p08-exam-ac3.test.mjs',
+  'p08-state-preserve.test.mjs',
+  'p10-mistakes.test.mjs',
+  'p11-dashboard-v2.test.mjs',
+  'p13-dashboard-cache-guard.test.mjs',
+  'p16-dashboard-single.test.mjs',
+  'p18-legacy-dashboard-kill.test.mjs',
+  'p20-voice-sameorigin.test.mjs',
+  'p21-ai-agent-ui.test.mjs',
   // The publish workflow greps the deployed shell for these exact literals, so
   // it pins the same version string and must move with it.
   '.github/workflows/telegram-auth-canary-activate.yml'
