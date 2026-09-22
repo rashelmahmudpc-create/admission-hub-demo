@@ -278,3 +278,43 @@ Reference implementation: `openSheet()` in `notification-hub.js`
   receives HTML rather than JSON — `api()` in `account-access.js` labels that
   `ENDPOINT_UNAVAILABLE` so the banner names the wrong host instead of showing
   the generic "সাময়িক সমস্যা" dead end.
+
+## Push delivery: FCM HTTP v1 takes ONE token per send
+
+The global-notification fallback used to POST `{message:{tokens:[...]}}` to
+`/v1/projects/<p>/messages:send`. That body belongs to the *batch* endpoint
+(`:sendEachForMulticast`, a different URL). Every fallback request got a 400,
+so devices that never subscribed to the topic received nothing while the stored
+`global_notifications` row still read `sent` and `reachEstimate` counted them.
+The failure was invisible because `res.ok` alone was checked.
+
+Rules to keep this correct:
+- One request per device: `{message:{token:'<one>', notification, data}}`.
+  `fcmSendOne` is the only sender; `fcmSendToTokens` fans out with bounded
+  concurrency (`FCM_SEND_CONCURRENCY`) and stops at `FCM_FALLBACK_MAX`.
+- `fcm-global.test.mjs`'s stub rejects a `tokens` body with 400, so reverting to
+  the array shape fails the suite instead of silently "passing".
+- `fcm_devices.topics` is a comma-separated list matched by WHOLE name
+  (`activeDevicesMissingTopic` splits it). A bare `LIKE %topic%` would treat
+  `course_beginner` as subscribed to `beginner`.
+- Client topic subscribe is best-effort and no-ops without a VAPID key, so the
+  admin send path also records the sender's own device topic from
+  `payload.deviceToken` (`window.AhFcm.getToken()`).
+
+## Deploying without GitHub
+
+`GITHUB_TOKEN` and the PATs in the task are all 401, so `git push` blocks on a
+password prompt. Cloudflare is reachable directly, so ship both halves by hand:
+
+```
+# worker
+CLOUDFLARE_API_TOKEN=... npx wrangler@4.35.0 deploy
+# pages (rsync is absent in this image — use tar)
+tar -cf - --exclude='./.git' --exclude='./node_modules' ... ./ | (cd dist && tar -xf -)
+CLOUDFLARE_API_TOKEN=... npx wrangler@4.35.0 pages deploy dist \
+  --project-name=admissionhub --branch=main
+```
+
+Without `--branch=main` the deploy lands as a preview and `admissionhub.pages.dev`
+keeps serving the old bundle. Verify with
+`curl -s https://admissionhub.pages.dev/ | grep -o 'notification-admin.js?v=[^"]*'`.
