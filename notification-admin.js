@@ -84,6 +84,7 @@
     errDuplicate: { bn: 'এই notification আগেই sent/schedule আছে (১০ দিনের duplicate protection)', en: 'This notification was already sent/scheduled (10-day duplicate protection)' },
     errRate: { bn: 'আজকের daily cap শেষ — কাল আবার চেষ্টা করুন', en: 'Today’s daily cap reached — try again tomorrow' },
     errGeneric: { bn: 'Send ব্যর্থ হয়েছে — আবার চেষ্টা করুন', en: 'Send failed — please try again' },
+    errCode: { bn: 'কারণ', en: 'Reason' },
     sentOk: { bn: 'Global notification sent ✓', en: 'Global notification sent ✓' },
     scheduledOk: { bn: 'Schedule হয়ে গেছে ✓', en: 'Scheduled ✓' },
     cancelledOk: { bn: 'Cancelled ✓', en: 'Cancelled ✓' },
@@ -446,7 +447,12 @@
         state.view = 'center';
         loadCenter();
       } else {
-        state.error = out.status === 409 ? t('errDuplicate') : (out.status === 429 ? t('errRate') : t('errGeneric'));
+        /* Surface the server's own reason. A generic "failed" hides the
+         * difference between a stale token (403), a rejected field (400) and
+         * an FCM delivery failure (502), which is exactly what makes this
+         * screen undebuggable from the phone. */
+        const reason = out.data && out.data.error ? String(out.data.error) : `HTTP ${out.status}`;
+        state.error = (out.status === 409 ? t('errDuplicate') : (out.status === 429 ? t('errRate') : t('errGeneric'))) + ` [${reason}]`;
         reRender();
       }
     });

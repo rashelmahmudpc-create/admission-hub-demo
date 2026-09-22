@@ -517,6 +517,14 @@ const parseBody = async request => {
   }
 };
 
+/* Admin send rejections are invisible from the phone: the client collapses
+ * every failure into one generic message. Log the deciding field so a 400 can
+ * be told apart from a stale token or a delivery failure. */
+const rejectNotify = (request, why, detail) => {
+  try { console.log('notify-reject', why, JSON.stringify(detail || {}).slice(0, 300)); } catch (_) {}
+  return jsonResponse(request, { error: why }, 400);
+};
+
 /* ── Phase 2 — Global Notification Engine (owner-approved 2026-09-17) ──────
  * Topic-first sends (spec "$0-first"): ONE FCM topic call reaches every
  * subscribed device — no per-user loop. Devices that could not subscribe to
@@ -751,11 +759,11 @@ export async function handleFcmNotificationRequest(request, env) {
       const body = await parseBody(request);
       if (!body) return jsonResponse(request, { error: 'invalid-json' }, 400);
       const type = GLOBAL_TYPES.includes(body.type) ? body.type : null;
-      if (!type) return jsonResponse(request, { error: 'invalid-type' }, 400);
+      if (!type) return rejectNotify(request, "invalid-type", body);
       const title = String(body.title || '').trim().slice(0, 120);
       const text = String(body.body || '').trim().slice(0, 400);
-      if (title.length < 1 || title.length > 120) return jsonResponse(request, { error: 'invalid-title' }, 400);
-      if (text.length < 1 || text.length > 400) return jsonResponse(request, { error: 'invalid-body' }, 400);
+      if (title.length < 1 || title.length > 120) return rejectNotify(request, "invalid-title", { title, n: title.length });
+      if (text.length < 1 || text.length > 400) return rejectNotify(request, "invalid-body", { n: text.length });
       const imageUrl = String(body.imageUrl || '').slice(0, 500) || null;
       const targetUrl = String(body.targetUrl || '').replace(/[^\w./#-]/g, '').slice(0, 200) || null;
       const audience = GLOBAL_AUDIENCES[body.audience] ? body.audience : 'all_students';
