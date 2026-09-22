@@ -46,11 +46,15 @@ test('worker exposes all 10 Phase 2 routes', () => {
   ]) assert.ok(FCM.includes(`path === '${p}'`), `route ${p}`);
 });
 
-test('worker: topic-first hybrid send (no per-user loop), 500-token chunks, caps', () => {
+test('worker: topic-first hybrid send (no per-user loop), single-token fallback, caps', () => {
   assert.match(FCM, /const GLOBAL_DAILY_CAP = 10;/);
-  assert.match(FCM, /i \+= 500/);
   assert.ok(FCM.includes('fcmSendToTopic'), 'topic sender exists');
   assert.ok(FCM.includes('activeDevicesMissingTopic'), 'fallback targets only non-topic devices');
+  /* The fallback must use the single-send contract (`token:`), not the batch
+   * `tokens:` array — that array belongs to a different FCM endpoint and every
+   * non-topic device silently received nothing while the row read "sent". */
+  assert.match(FCM, /const message = \{ token: target\.token, notification: \{ title, body \}, data: messageData \};/);
+  assert.ok(!/message: \{ tokens:/.test(FCM), 'never batch-send to the single-send endpoint');
   assert.ok(FCM.includes("status IN ('sent','scheduled')"), 'dedup window covers sent + scheduled');
 });
 
@@ -105,16 +109,16 @@ test('admin center: token gate (sessionStorage only), 6 types, 5 audiences, live
 });
 
 test('index.html: admin script tag + route dispatch (hidden route, not in nav)', () => {
-  assert.match(INDEX, /<script defer src="\.\/notification-admin\.js\?v=admin-notif-v3"><\/script>/);
+  assert.match(INDEX, /<script defer src="\.\/notification-admin\.js\?v=admin-notif-v4"><\/script>/);
   assert.match(INDEX, /if\(p==='notif-admin' && window\.renderNotificationAdmin\) return window\.renderNotificationAdmin\(\);/);
 });
 
 test('pin consistency: index.html script pins match sw.js cache entries + digests', () => {
   const pins = {
-    'notification-fcm.js': 'fcm-p1-v9',
+    'notification-fcm.js': 'fcm-p1-v10',
     'notification-inbox.js': 'notif-inbox-v6',
     'notification-hub.js': 'notify-v119',
-    'notification-admin.js': 'admin-notif-v3'
+    'notification-admin.js': 'admin-notif-v4'
   };
   for (const [file, pin] of Object.entries(pins)) {
     assert.match(INDEX, new RegExp(`<script defer src="\\./${file}\\?v=${pin}">`), `${file} pin in index.html`);
@@ -135,7 +139,7 @@ test('pin consistency: index.html script pins match sw.js cache entries + digest
 });
 
 test('sw-manifest digest of the admin file is correct', () => {
-  const m = SW.match(/"\/?\.\/notification-admin\.js\?v=admin-notif-v3": "([0-9a-f]{64})"/);
+  const m = SW.match(/"\/?\.\/notification-admin\.js\?v=admin-notif-v4": "([0-9a-f]{64})"/);
   assert.ok(m, 'digest present');
   const actual = createHash('sha256').update(readFileSync('notification-admin.js')).digest('hex');
   assert.equal(m[1], actual, 'digest matches the file on disk');

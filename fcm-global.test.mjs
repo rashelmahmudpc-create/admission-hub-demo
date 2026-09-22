@@ -127,12 +127,12 @@ function makeFakeD1() {
     };
 
     const all = () => {
-      if (sql.includes('SELECT id, fcm_token FROM fcm_devices WHERE is_active=1 AND (topics IS NULL')) {
-        const like = args[0]; // %topic%
-        const topic = like.replace(/^%|%$/g, '');
+      if (sql.includes('SELECT id, fcm_token, topics FROM fcm_devices')) {
+        /* Mirrors the production filter: whole topic names only. */
+        const topic = String(args[0] || '');
         return { results: activeDevices()
-          .filter(r => !r.topics || !r.topics.includes(topic))
-          .map(r => ({ id: r.id, fcm_token: r.fcmToken })) };
+          .filter(r => !topic || !String(r.topics || '').split(',').includes(topic))
+          .map(r => ({ id: r.id, fcm_token: r.fcmToken, topics: r.topics || null })) };
       }
       if (sql.includes('SELECT id, fcm_token FROM fcm_devices WHERE is_active=1')) {
         return { results: activeDevices().map(r => ({ id: r.id, fcm_token: r.fcmToken })) };
@@ -276,10 +276,15 @@ const call = async (request, env) => {
   return { response, data: await response.json() };
 };
 
-/* FCM fetch stub. `topicFail` fails topic sends, `tokenErrorIndexes` marks
- * per-index message_processing_error in token batches, `throwAll` simulates
- * a total network outage to FCM. */
-function withFcmStub(env, { topicFail = false, tokenErrorIndexes = {}, throwAll = false } = {}) {
+/* FCM fetch stub. `topicFail` fails topic sends, `deadTokenIndexes` marks
+ * which sequential token sends come back NOT_FOUND, `throwAll` simulates a
+ * total network outage to FCM.
+ *
+ * The token branch models the REAL single-send contract: the body must carry
+ * `message.token`. A batch-shaped `message.tokens` is rejected the way FCM
+ * rejects it, so a regression to the old dead-code payload fails loudly
+ * instead of "succeeding" while delivering nothing. */
+function withFcmStub(env, { topicFail = false, deadTokenIndexes = {}, throwAll = false } = {}) {
   const realFetch = globalThis.fetch;
   const calls = { topic: [], tokens: [] };
   globalThis.fetch = async (input, init) => {
@@ -297,14 +302,14 @@ function withFcmStub(env, { topicFail = false, tokenErrorIndexes = {}, throwAll 
         return Response.json({ name: `projects/test-project/messages/topic-${calls.topic.length}` });
       }
       calls.tokens.push({ body: message });
-      const errors = [];
-      (message.tokens || []).forEach((_, i) => {
-        if (tokenErrorIndexes[i]) errors.push({ index: i, error: { code: tokenErrorIndexes[i], status: tokenErrorIndexes[i] === 3 ? 'NOT_FOUND' : 'INVALID_ARGUMENT' } });
-      });
-      if (errors.length) {
-        return Response.json({ response: { message_count: message.tokens.length, message_processing_error: errors } });
+      if (!message.token) {
+        return Response.json({ error: { code: 400, message: 'Recipient of the message is not set.' } }, { status: 400 });
       }
-      return Response.json({ name: `projects/test-project/messages/batch-${calls.tokens.length}`, response: { message_count: message.tokens.length } });
+      const callIndex = calls.tokens.length - 1;
+      if (deadTokenIndexes[callIndex]) {
+        return Response.json({ error: { code: 404, message: 'Requested entity was not found.' } }, { status: 404 });
+      }
+      return Response.json({ name: `projects/test-project/messages/dev-${callIndex}` });
     }
     return realFetch(input, init);
   };
@@ -389,8 +394,8 @@ test('hybrid fallback: only devices WITHOUT the topic get multi-token sends', as
     assert.equal(out.response.status, 201);
     assert.equal(out.data.ok, true);
     assert.equal(stub.calls.topic.length, 1);
-    assert.equal(stub.calls.tokens.length, 1, 'exactly one fallback batch');
-    assert.deepEqual(stub.calls.tokens[0].body.tokens, [tokenB], 'only the non-topic device');
+    assert.equal(stub.calls.tokens.length, 1, 'exactly one fallback send');
+    assert.deepEqual(stub.calls.tokens[0].body.token, tokenB, 'only the non-topic device');
   } finally { stub.restore(); }
 });
 
@@ -405,8 +410,8 @@ test('topic send failure → every active device goes through the fallback', asy
     }), env);
     assert.equal(out.response.status, 201);
     assert.equal(out.data.ok, true, 'fallback delivers');
-    assert.equal(stub.calls.tokens.length, 1);
-    assert.equal(stub.calls.tokens[0].body.tokens.length, 2);
+    assert.equal(stub.calls.tokens.length, 2, 'one send per device');
+    assert.ok(stub.calls.tokens.every(c => c.body.token), 'every send carries a single token');
     const hist = await call(cookieRequest('/api/notifications/history'), env);
     assert.equal(hist.data.items[0].status, 'sent');
   } finally { stub.restore(); }
@@ -417,7 +422,7 @@ test('NOT_FOUND in a token batch deactivates the dead token (no infinite retry)'
   const tokenA = await registerDevice(env, 'alive');
   const tokenB = await registerDevice(env, 'dead');
   void tokenA;
-  const stub = withFcmStub(env, { tokenErrorIndexes: { 1: 3 } });
+  const stub = withFcmStub(env, { deadTokenIndexes: { 1: true } });
   try {
     const out = await call(cookieRequest('/api/notifications/global/send', {
       method: 'POST', body: { type: 'announcement', title: 'dead token test', body: 'b' }

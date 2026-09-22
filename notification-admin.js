@@ -437,6 +437,14 @@
         audience: state.audience
       };
       if (state.mode === 'schedule') payload.scheduledAt = whenMs;
+      /* Send this browser's own device token so the server can record the
+       * audience topic against it. Topic subscription in the client is
+       * best-effort and silently fails when no VAPID key is configured, which
+       * left the admin's own phone unreachable from its own send. */
+      try {
+        const ownToken = await window.AhFcm?.getToken?.();
+        if (ownToken) payload.deviceToken = ownToken;
+      } catch (_) {}
       const path = state.mode === 'schedule' ? '/api/notifications/global/schedule' : '/api/notifications/global/send';
       const out = await api(path, { method: 'POST', body: JSON.stringify(payload) });
       document.getElementById('gnConfirm')?.remove();

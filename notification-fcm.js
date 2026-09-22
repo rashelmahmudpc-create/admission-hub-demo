@@ -420,9 +420,23 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
   else boot();
 
+  /* The device's current FCM token, or '' when push is unsupported/off.
+   * Exposed so callers that need to act on this specific device — the admin
+   * sender recording its own topic — do not have to re-derive it. */
+  const currentToken = async () => {
+    try {
+      const cfg = await getConfig();
+      if (!cfg || !cfg.fcmConfigured || !cfg.webConfig) return '';
+      if (permission() !== 'granted') return '';
+      const messaging = await initMessaging(cfg.webConfig);
+      const reg = await readySw();
+      return (await getTokenWith(messaging, reg, cfg.webConfig)) || '';
+    } catch (_) { return ''; }
+  };
+
   window.AhFcm = {
     status, enable, disable, refresh: refreshIfEnabled,
-    settingsRow, devPanel,
+    settingsRow, devPanel, getToken: currentToken,
     _state: stateGet, _config: getConfig, lastErr, selfTest
   };
 })();

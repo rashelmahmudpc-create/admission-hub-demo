@@ -30,9 +30,9 @@ const APP_SHELL = [
   './data-protection.js?v=dp-v3-fastboot',
   './dashboard-v2.js?v=dash2f15-inbox',
   './ai-agent-chat.js?v=agent-f1-ui-chatv18-fresh',
-  './notification-fcm.js?v=fcm-p1-v9',
+  './notification-fcm.js?v=fcm-p1-v10',
   './notification-inbox.js?v=notif-inbox-v6',
-  './notification-admin.js?v=admin-notif-v3',
+  './notification-admin.js?v=admin-notif-v4',
   './icons/icon-192.png',
   './icons/icon-512.png'
 ];
@@ -41,7 +41,7 @@ const APP_SHELL = [
 // A truncated/corrupt download is NEVER written to the shell cache.
 const ASSET_DIGESTS = {
 /* sw-manifest:start */
-  "./index.html": "aec0109755a7e52b92a0be12a4e4a761d4fd19ce95eb5d43973f265230b485bc",
+  "./index.html": "d056d87a4218dcfb451f29f00688e1c5519e10b48dacb8673a670d2dd5310ef9",
   "./manifest.json": "11a85ae594fc629b11605daeda3f9afe4ef95215a55a29f9cc423314bfb275a4",
   "./manifest.webmanifest": "5be476009a140eabd088bd972bd4d345b9c4f4a055cd6e4f08774b9cb4afaf52",
   "./dashboard-v2.css?v=dash2f13-theme": "4f4c9295b487b8186fd45c006a96a43bcaf896a1a5b871f506a05874a8e00c99",
@@ -57,9 +57,9 @@ const ASSET_DIGESTS = {
   "./data-protection.js?v=dp-v3-fastboot": "359dc907ade4bcb3a6a722385969ebb6af47f7e436e6cdf2cce0dd6b7343723d",
   "./dashboard-v2.js?v=dash2f15-inbox": "bea4ccad52b85c482d3fef5a7f2b2eec54dcdb125597a22411c4839b81783a49",
   "./ai-agent-chat.js?v=agent-f1-ui-chatv18-fresh": "36a11f8d5dec5a5bf1b8fa86db06b9a34e01ad27c931f37aadbffe6e6f4930e5",
-  "./notification-fcm.js?v=fcm-p1-v9": "e1f04b28885ebaed78e8ff1e4b2e1ee7f446cde7709a2fc120adde589883d255",
+  "./notification-fcm.js?v=fcm-p1-v10": "5459b90d360cdf30cf818fa9791f6f4e92bf23b49b4e7b824710624b96be6ac8",
   "./notification-inbox.js?v=notif-inbox-v6": "ab3a57740d96311c57086af3e0893e356257b093d09560ce8110b731e702d995",
-  "./notification-admin.js?v=admin-notif-v3": "81201878dea5bbeb89dc044d2f6987d2562a566d7665a5dd2a400de86e679fc8",
+  "./notification-admin.js?v=admin-notif-v4": "65d78f73f16c972559bc71706b3aad714a607c1c47246639549dcf2a066bac98",
   "./icons/icon-192.png": "777ce5566fbeff0f2e384c787c8dde4f47d7c869e455c6e577a503decd4f1683",
   "./icons/icon-512.png": "86459109582f82b1d891a3e5a82723fefd21a3c65e9d0d22ab4dae33bb540520",
 /* sw-manifest:end */

@@ -8410,9 +8410,12 @@ var FcmStore = class {
   async activeDevicesMissingTopic(topic) {
     await this.#ensureTables();
     const res = await this.#d1.prepare(
-      `SELECT id, fcm_token FROM fcm_devices WHERE is_active=1 AND (topics IS NULL OR topics='' OR topics NOT LIKE ?) LIMIT 2000`
-    ).bind(`%${topic}%`).all();
-    return (res?.results || []).map((row) => ({ id: row.id, token: row.fcm_token }));
+      "SELECT id, fcm_token, topics FROM fcm_devices WHERE is_active=1 LIMIT 2000"
+    ).all();
+    return (res?.results || []).filter((row) => {
+      const held = String(row.topics || "").split(/[|,]/).map((t) => t.trim()).filter(Boolean);
+      return !held.includes(topic);
+    }).map((row) => ({ id: row.id, token: row.fcm_token }));
   }
   async allActiveTokens() {
     await this.#ensureTables();
@@ -8619,38 +8622,46 @@ async function fcmSendToTopic(env, topic, { title, body, imageUrl, data }) {
   if (res.ok && out?.name) return { ok: true, name: out.name };
   return { ok: false, reason: "error", detail: String(out?.error?.message || "").slice(0, 200) };
 }
+var FCM_SEND_URL = (project) => `https://fcm.googleapis.com/v1/projects/${project}/messages:send`;
+var FCM_SEND_CONCURRENCY = 10;
+var FCM_FALLBACK_MAX = 200;
+async function fcmSendOne(env, accessToken, target, { title, body, data: messageData }) {
+  const message = { token: target.token, notification: { title, body }, data: messageData };
+  let res;
+  try {
+    res = await fetch(FCM_SEND_URL(env.FIREBASE_PROJECT_ID), {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({ message })
+    });
+  } catch {
+    return { id: target.id, ok: false, reason: "error" };
+  }
+  const out = await res.json().catch(() => ({}));
+  if (res.ok && out?.name) return { id: target.id, ok: true, reason: "ok" };
+  const code = Number(out?.error?.code || 0);
+  const msg = String(out?.error?.message || "");
+  if (code === 404 || /not.?registered|Requested entity was not found/i.test(msg)) {
+    return { id: target.id, ok: false, reason: "unregistered" };
+  }
+  if (code === 400 || /INVALID_ARGUMENT/i.test(msg)) {
+    return { id: target.id, ok: false, reason: "invalid" };
+  }
+  return { id: target.id, ok: false, reason: "error" };
+}
 async function fcmSendToTokens(env, targets, { title, body, data }) {
   const accessToken = await fcmAccessToken(env);
+  const messageData = Object.fromEntries(Object.entries(data || {}).map(([k, v]) => [k, String(v)]));
+  const batch = targets.slice(0, FCM_FALLBACK_MAX);
   let sent = 0;
   const failed = [];
-  const messageData = Object.fromEntries(Object.entries(data || {}).map(([k, v]) => [k, String(v)]));
-  for (let i = 0; i < targets.length; i += 500) {
-    const chunk = targets.slice(i, i + 500);
-    let res;
-    try {
-      res = await fetch(`https://fcm.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/messages:send`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
-        body: JSON.stringify({ message: { tokens: chunk.map((t) => t.token), notification: { title, body }, data: messageData } })
-      });
-    } catch {
-      failed.push(...chunk.map((t) => ({ id: t.id, reason: "error" })));
-      continue;
-    }
-    const out = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      failed.push(...chunk.map((t) => ({ id: t.id, reason: "error" })));
-      continue;
-    }
-    const errors = out?.response?.message_processing_error || [];
-    const erroredIndex = new Set(errors.map((e) => Number(e?.index ?? -1)));
-    for (let j = 0; j < chunk.length; j++) {
-      if (erroredIndex.has(j)) {
-        const code = Number((errors.find((e) => Number(e?.index) === j) || {}).error?.code || 0);
-        failed.push({ id: chunk[j].id, reason: code === 3 || code === 6 ? code === 3 ? "unregistered" : "invalid" : "error" });
-      } else {
-        sent += 1;
-      }
+  for (let i = 0; i < batch.length; i += FCM_SEND_CONCURRENCY) {
+    const results = await Promise.all(
+      batch.slice(i, i + FCM_SEND_CONCURRENCY).map((t) => fcmSendOne(env, accessToken, t, { title, body, data: messageData }))
+    );
+    for (const r of results) {
+      if (r.ok) sent += 1;
+      else failed.push({ id: r.id, reason: r.reason });
     }
   }
   return { sent, failed };
@@ -8780,6 +8791,12 @@ async function handleFcmNotificationRequest(request, env) {
         createdAt: Date.now()
       };
       await store.insertGlobal(row);
+      if (body.deviceToken) {
+        try {
+          await store.setDeviceTopics(adminUserId, String(body.deviceToken), topic);
+        } catch (_) {
+        }
+      }
       const result = await sendGlobal(env, store, row);
       return jsonResponse(request, { ok: result.ok, id, status: result.ok ? "sent" : "failed", reachEstimate: result.reach }, result.ok ? 201 : 502);
     }
