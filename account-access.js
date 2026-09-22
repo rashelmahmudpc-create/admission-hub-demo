@@ -2594,6 +2594,21 @@
         const result = await api('/login', { method: 'POST', body: { email, password, remember: $('#ah-login-remember')?.checked === true } });
         if (result.authenticated === true) {
           await establishSession(result, 'যাচাইকৃত অ্যাকাউন্টে লগইন হয়েছে।');
+        } else if (result.verification?.reason === 'new-device') {
+          // The account is already verified; Phase-6 is asking us to confirm the
+          // *device* once. Calling this an unverified account made the student
+          // repeat a verification they had already completed.
+          state.verification = {
+            email,
+            emailMasked: result.verification?.emailMasked || email,
+            emailSent: false,
+            mode: 'select',
+            newDevice: true,
+            resendUntil: 0
+          };
+          state.telegram = null;
+          showView('verify');
+          message('তোমার account যাচাই করা আছে। নিরাপত্তার জন্য শুধু এই ডিভাইসটি একবার নিশ্চিত করো।', 'info');
         } else if (result.verification?.selectionRequired === true) {
           state.verification = {
             email,

@@ -1007,7 +1007,12 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         try { refreshed = await provider.refresh(material.refreshToken); } catch (cause) { throw providerError(cause, 'refresh'); }
         try { user = await provider.lookup(refreshed.idToken); } catch (cause) { throw providerError(cause, 'lookup-session'); }
         assertProviderUser(refreshed, user);
-        if (user.emailVerified) {
+        // An address already proven by an OTP needs no Firebase measurement
+        // link: sending one burns the free daily send quota and can never set
+        // the flag this method checks. Answer like the Firebase flag was set so
+        // the client proceeds straight to the status check.
+        const ownershipAlreadyProven = !user.emailVerified && await emailOwnershipProven({ env, user, context, allowed: true });
+        if (user.emailVerified || ownershipAlreadyProven) {
           return json(request, 200, { ok: true, alreadyVerified: true, authenticated: false });
         }
         await callAuthority(env, '/internal/firebase/rate', { input: { operation: 'verification-send', email: user.email }, context });
@@ -1040,12 +1045,21 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         try { user = await provider.lookup(refreshed.idToken); } catch (cause) { throw providerError(cause, 'lookup-session'); }
         assertProviderUser(refreshed, user);
         if (user.emailVerified !== true) {
-          return json(request, 200, {
-            ok: true,
-            authenticated: false,
-            emailVerified: false,
-            emailMasked: material.user?.emailMasked || 'তোমার Email-এ'
-          }, context.isNewDevice ? { 'Set-Cookie': deviceCookie(context.deviceId) } : {});
+          // An OTP delivered to the address itself proves ownership, so it
+          // unlocks the account even while Firebase's own flag stays false.
+          // Without this the Email method can never finish when the student is
+          // asked to verify a device: the Firebase link only sets that flag for
+          // mail Firebase sends, and delivery runs through Brevo, so the check
+          // answered emailVerified:false forever.
+          const ownershipVerified = await emailOwnershipProven({ env, user, context, allowed: true });
+          if (!ownershipVerified) {
+            return json(request, 200, {
+              ok: true,
+              authenticated: false,
+              emailVerified: false,
+              emailMasked: material.user?.emailMasked || 'তোমার Email-এ'
+            }, context.isNewDevice ? { 'Set-Cookie': deviceCookie(context.deviceId) } : {});
+          }
         }
         const established = await callAuthority(env, '/internal/firebase/account-verification/complete', {
           input: {
@@ -1056,8 +1070,9 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           context
         });
         return authSuccess(request, established, refreshed.refreshToken, context, {
-          emailVerified: true,
-          telegramVerified: false
+          emailVerified: user.emailVerified === true,
+          telegramVerified: false,
+          emailOwnershipProven: user.emailVerified !== true
         }, [verificationCookie('', 0)]);
       }
 

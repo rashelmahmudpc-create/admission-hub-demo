@@ -7130,7 +7130,8 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           throw providerError(cause, "lookup-session");
         }
         assertProviderUser(refreshed, user);
-        if (user.emailVerified) {
+        const ownershipAlreadyProven = !user.emailVerified && await emailOwnershipProven({ env, user, context, allowed: true });
+        if (user.emailVerified || ownershipAlreadyProven) {
           return json3(request, 200, { ok: true, alreadyVerified: true, authenticated: false });
         }
         await callAuthority(env, "/internal/firebase/rate", { input: { operation: "verification-send", email: user.email }, context });
@@ -7174,12 +7175,15 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         }
         assertProviderUser(refreshed, user);
         if (user.emailVerified !== true) {
-          return json3(request, 200, {
-            ok: true,
-            authenticated: false,
-            emailVerified: false,
-            emailMasked: material.user?.emailMasked || "তোমার Email-এ"
-          }, context.isNewDevice ? { "Set-Cookie": deviceCookie(context.deviceId) } : {});
+          const ownershipVerified = await emailOwnershipProven({ env, user, context, allowed: true });
+          if (!ownershipVerified) {
+            return json3(request, 200, {
+              ok: true,
+              authenticated: false,
+              emailVerified: false,
+              emailMasked: material.user?.emailMasked || "তোমার Email-এ"
+            }, context.isNewDevice ? { "Set-Cookie": deviceCookie(context.deviceId) } : {});
+          }
         }
         const established = await callAuthority(env, "/internal/firebase/account-verification/complete", {
           input: {
@@ -7190,8 +7194,9 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           context
         });
         return authSuccess(request, established, refreshed.refreshToken, context, {
-          emailVerified: true,
-          telegramVerified: false
+          emailVerified: user.emailVerified === true,
+          telegramVerified: false,
+          emailOwnershipProven: user.emailVerified !== true
         }, [verificationCookie("", 0)]);
       }
       if (request.method === "POST" && url.pathname === `${AUTH_API_PREFIX}/email-ownership/start`) {

@@ -436,6 +436,7 @@
     'পাসওয়ার্ডটি সঠিকভাবে লিখুন।': 'Enter the password correctly.',
     'যাচাইকৃত অ্যাকাউন্টে লগইন হয়েছে।': 'Signed in to a verified account.',
     'এই অ্যাকাউন্টটি এখনো যাচাইকৃত নয়। Gmail/ইমেইল অথবা Telegram—একটি পদ্ধতি বেছে নিন।': 'This account is not verified yet. Choose one method — Gmail/email or Telegram.',
+    'তোমার account যাচাই করা আছে। নিরাপত্তার জন্য শুধু এই ডিভাইসটি একবার নিশ্চিত করো।': 'Your account is verified. For security, just confirm this device once.',
     'অ্যাকাউন্ট যাচাই সম্পন্ন হয়নি।': 'Account verification was not completed.',
     'Account verification বাকি। এই মুহূর্তে নতুন Email পাঠানো হয়নি—resend option ব্যবহার করতে পারো।': 'Verification is pending. No new email was sent right now — you can use the resend option.',
     'আগের অ্যাকাউন্টের ইমেইল ও পাসওয়ার্ড লিখুন।': 'Enter the email and password of your existing account.',

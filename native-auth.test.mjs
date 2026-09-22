@@ -508,6 +508,56 @@ test('a proven email ownership unlocks every later login instead of demanding a 
   assert.equal((await revoked.json()).error.code, AUTH_ERROR_CODES.EMAIL_NOT_VERIFIED);
 });
 
+test('REPRO: an ownership-proven account on a new device must not loop on Email verification', async () => {
+  const app = handlerSetup();
+  const email = 'loop.repro@example.com';
+  const password = 'Loop-password-31';
+  await app.handler(apiRequest(`${AUTH_API_PREFIX}/signup`, { method: 'POST', body: { email, password } }), app.env, {});
+
+  // The student proved ownership with the OTP; Firebase's own flag stays false
+  // because delivery runs through Brevo, never Firebase's VERIFY_EMAIL link.
+  app.authority.ownership = { proven: true, method: 'email-otp' };
+
+  // A device without a stored device cookie — same situation as a cleared
+  // browser, a reinstall, or a first sign-in after logout in a fresh profile.
+  const login = () => app.handler(apiRequest(`${AUTH_API_PREFIX}/login`, { method: 'POST', body: { email, password } }), app.env, {});
+  const first = await login();
+  const firstBody = await first.json();
+  assert.equal(firstBody.verification.reason, 'new-device');
+
+  const device = extractCookiePair(first, '__Host-ah_device');
+  const ticket = extractCookiePair(first, '__Host-ah_verification');
+  const cookies = `${device}; ${ticket}`;
+
+  // The verification UI offers "Email link (Firebase)" as the easiest method,
+  // so the student taps that one.
+  const start = await app.handler(apiRequest(`${AUTH_API_PREFIX}/account-verification/email/start`, { method: 'POST', body: {}, cookie: cookies }), app.env, {});
+  assert.equal((await start.json()).alreadyVerified, true, 'a proven address needs no Firebase measurement link');
+
+  // The student comes back and taps "I have verified — Check".
+  // Ownership is already proven, so this must satisfy the device challenge
+  // instead of reporting emailVerified:false forever (the reported loop).
+  const status = await app.handler(apiRequest(`${AUTH_API_PREFIX}/account-verification/email/status`, { method: 'POST', body: {}, cookie: cookies }), app.env, {});
+  const statusBody = await status.json();
+  assert.equal(statusBody.authenticated, true, 'a proven address must complete the device challenge');
+  assert.equal(statusBody.emailOwnershipProven, true);
+  assert.equal(statusBody.emailVerified, false);
+
+  // Completing it stored 30-day trust for exactly this user+device, so the next
+  // sign-in is a fast path — this is what stops the loop from recurring.
+  const trusted = app.state.repository.snapshot().trustedDevices;
+  assert.equal(trusted.length, 1);
+
+  const session = extractCookiePair(status, '__Host-ah_session');
+  const firebase = extractCookiePair(status, '__Host-ah_firebase');
+  await app.handler(apiRequest(`${AUTH_API_PREFIX}/session/logout`, { method: 'POST', body: {}, cookie: `${session}; ${firebase}` }), app.env, {});
+
+  const again = await app.handler(apiRequest(`${AUTH_API_PREFIX}/login`, { method: 'POST', body: { email, password }, cookie: device }), app.env, {});
+  assert.equal(again.status, 200, 'a trusted device must not be challenged again');
+  assert.equal((await again.json()).authenticated, true);
+});
+
+
 
 test('verification resend requires password and never authenticates the user', async () => {
   const app = handlerSetup();

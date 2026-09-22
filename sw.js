@@ -1,6 +1,6 @@
 const CACHE_PREFIX = 'admission-hub-shell-';
 
-const BUILD_ID = 'v281-auth-error-20260918';
+const BUILD_ID = 'v282-device-challenge-20260921';
 const CACHE_NAME = `${CACHE_PREFIX}${BUILD_ID}`;
 const VERSION_HEADER = 'X-Admission-Hub-Build';
 const DOCUMENT_NETWORK_TIMEOUT_MS = 2500;
@@ -20,10 +20,10 @@ const APP_SHELL = [
   './dashboard-v2.css?v=dash2f13-theme',
   './3d-loader.css?v=3d-v2',
   './session-persist.js?v=session-v2',
-  './account-access.css?v=20260921-email-otp-blank-fix',
+  './account-access.css?v=20260921-relogin-device-challenge-fix',
   './institutions-bd.js?v=bd-institutions-v2',
-  './language-engine.js?v=lang-v3-dashboard',
-  './account-access.js?v=20260921-email-otp-blank-fix',
+  './language-engine.js?v=lang-v4-device-challenge',
+  './account-access.js?v=20260921-relogin-device-challenge-fix',
   './academic-catalog.js?v=acad-cat-v2',
   './profile-ui.js?v=profile-v17-uni-tap',
   './profile-ui.css?v=profile-v15-uni-tap',
@@ -41,16 +41,16 @@ const APP_SHELL = [
 // A truncated/corrupt download is NEVER written to the shell cache.
 const ASSET_DIGESTS = {
 /* sw-manifest:start */
-  "./index.html": "f5a498778906aa37a25faac2a0ac103363a01ad7a3453641e9ac334e33867df6",
+  "./index.html": "8224a68519707aedf5d876676aa73a58c91150b73aeb143db3c4bd1eda0cba0d",
   "./manifest.json": "11a85ae594fc629b11605daeda3f9afe4ef95215a55a29f9cc423314bfb275a4",
   "./manifest.webmanifest": "5be476009a140eabd088bd972bd4d345b9c4f4a055cd6e4f08774b9cb4afaf52",
   "./dashboard-v2.css?v=dash2f13-theme": "4f4c9295b487b8186fd45c006a96a43bcaf896a1a5b871f506a05874a8e00c99",
   "./3d-loader.css?v=3d-v2": "43ca21b0a41be5d223c317fd63582f19ff6ffab5d010639ef26349464550da63",
   "./session-persist.js?v=session-v2": "99f3d1f49f6d5714fd25f1c12b2aa978ca97a009d6caba9a690a0442d082593c",
-  "./account-access.css?v=20260921-email-otp-blank-fix": "54d46ed598915409c72c5da480cde492f947928a21088d4ed7b2f9ad4d13682e",
+  "./account-access.css?v=20260921-relogin-device-challenge-fix": "54d46ed598915409c72c5da480cde492f947928a21088d4ed7b2f9ad4d13682e",
   "./institutions-bd.js?v=bd-institutions-v2": "602c5549515e8207ad152b948ca9b8fe3ad0fbe429afb56380e4e21b662f779d",
-  "./language-engine.js?v=lang-v3-dashboard": "df456cbb08f3b6bed6c85c79eb76f42389075c8bf0027d40154eb98d9bd62612",
-  "./account-access.js?v=20260921-email-otp-blank-fix": "6a5a522013d1bf2f4928780985f5827dbcf6e10fa533e76f351fbc91503cb32d",
+  "./language-engine.js?v=lang-v4-device-challenge": "5ae3a91c4a7104bd7e12c3a1bf393c3461a8aef355a05db47fc52248abc07b5c",
+  "./account-access.js?v=20260921-relogin-device-challenge-fix": "73c037698669fcb1a27923c425807e59dd50ec87a876c5906e4b8fa8023802c3",
   "./academic-catalog.js?v=acad-cat-v2": "75e7b80663d41330658c948ad1d4829d49f5c9abed581350582cfeace06d5b32",
   "./profile-ui.js?v=profile-v17-uni-tap": "bb341598f5e20bf4b743af9a580ee84adcb5fc0113aaef79ca13478d0d2df9f1",
   "./profile-ui.css?v=profile-v15-uni-tap": "6408a4b7ac8acf6845cd0148c58377a4953c8ff879d30b2c520eafae0314b98a",
