@@ -303,8 +303,13 @@ Rules to keep this correct:
 
 ## Deploying without GitHub
 
-`GITHUB_TOKEN` and the PATs in the task are all 401, so `git push` blocks on a
-password prompt. Cloudflare is reachable directly, so ship both halves by hand:
+The repo lives at `rashelmahmudpc-create/admission-hub-demo` (default branch
+`main`). `sheikhrashel47-stack/admission-hub-demo` no longer exists (404), so any
+`sheikhrashel47-stack` remote is dead. The in-session `GITHUB_TOKEN` may be
+absent; a PAT with `repo`+`workflow` works for the push.
+
+Cloudflare is reachable directly, so ship both halves by hand when CI is not
+enough:
 
 ```
 # worker
