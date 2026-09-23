@@ -11,7 +11,9 @@ VERIFICATION_AUTH_ACTIVATION = "enabled"
 # Internal admission caps, not provider-reported quotas. otp-a is Brevo (free 300/day)
 # and otp-b is the free Google Apps Script mailer (Gmail 100/day); the orchestrator
 # rotates to otp-b when otp-a's declared quota is exhausted.
-VERIFICATION_ORCHESTRATOR_CONFIG = '{"enabled":true,"providers":[{"id":"otp-a","enabled":true,"priority":10,"dailyQuota":300,"timeoutMs":15000,"label":"secure backup"},{"id":"otp-b","enabled":true,"priority":20,"dailyQuota":100,"timeoutMs":15000,"label":"secure backup"},{"id":"telegram","enabled":true,"priority":50,"dailyQuota":172800,"timeoutMs":20000,"label":"secure backup"}]}'
+# otp-b gets the full 20s ceiling: Apps Script answers through a redirect and its
+# cold start has been measured at ~11s, so a 15s budget dropped live probes.
+VERIFICATION_ORCHESTRATOR_CONFIG = '{"enabled":true,"providers":[{"id":"otp-a","enabled":true,"priority":10,"dailyQuota":300,"timeoutMs":15000,"label":"secure backup"},{"id":"otp-b","enabled":true,"priority":20,"dailyQuota":100,"timeoutMs":20000,"label":"secure backup"},{"id":"telegram","enabled":true,"priority":50,"dailyQuota":172800,"timeoutMs":20000,"label":"secure backup"}]}'
 OTP_A_DAILY_QUOTA = "300"
 OTP_B_DAILY_QUOTA = "100"
 TELEGRAM_AUTH_WEBHOOK_URL = "https://admission-gk.admissionhub.workers.dev/api/auth/v1/telegram/webhook"
