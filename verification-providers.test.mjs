@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
 import {
+  AgentMailOtpVerificationProvider,
   AppsScriptOtpVerificationProvider,
   BrevoOtpVerificationProvider,
   BridgeOtpVerificationProvider,
@@ -18,9 +19,9 @@ const { otpEmailBody } = __verificationProvidersTest;
 const json = (body, status = 200) => Response.json(body, { status });
 const KEY = `provider-key-${'k'.repeat(32)}`;
 
-test('four OTP slots implement the shared contract and fail closed when not securely configured', async () => {
+test('five OTP slots implement the shared contract and fail closed when not securely configured', async () => {
   const providers = createConfiguredVerificationProviders({});
-  assert.deepEqual(providers.map(row => row.id), ['otp-a', 'otp-b', 'otp-c', 'otp-d', 'whatsapp', 'telegram']);
+  assert.deepEqual(providers.map(row => row.id), ['otp-a', 'otp-b', 'otp-c', 'otp-d', 'otp-e', 'whatsapp', 'telegram']);
   for (const provider of providers) {
     assert.equal((await provider.checkAvailability()).available, false);
     assert.equal((await provider.getRemainingQuota()).remaining, 0);
@@ -577,7 +578,7 @@ test('OTP slots prefer Brevo and Apps Script and fall back to bridge bindings', 
   assert.equal(bridged[1].constructor.name, 'BridgeOtpVerificationProvider');
 
   const empty = createConfiguredVerificationProviders({});
-  assert.deepEqual(empty.map(row => row.id), ['otp-a', 'otp-b', 'otp-c', 'otp-d', 'whatsapp', 'telegram']);
+  assert.deepEqual(empty.map(row => row.id), ['otp-a', 'otp-b', 'otp-c', 'otp-d', 'otp-e', 'whatsapp', 'telegram']);
   for (const provider of empty) assert.equal((await provider.getProviderStatus()).configured, false);
 });
 
@@ -594,4 +595,19 @@ test('Resend owns otp-d and is chosen only when its key and sender address are b
   const halfBound = createConfiguredVerificationProviders({ RESEND_API_KEY: KEY, OTP_D_DAILY_QUOTA: '100' });
   assert.equal(halfBound[3].constructor.name, 'BridgeOtpVerificationProvider');
   assert.equal(halfBound[3].configured, false);
+});
+
+test('AgentMail owns otp-e and sends from an inbox instead of a verified domain', async () => {
+  const bound = createConfiguredVerificationProviders({
+    AGENTMAIL_API_KEY: KEY,
+    AGENTMAIL_INBOX_ID: 'admission-hub@agentmail.to',
+    OTP_E_DAILY_QUOTA: '100'
+  });
+  assert.equal(bound[4] instanceof AgentMailOtpVerificationProvider, true);
+  assert.equal(bound[4].id, 'otp-e');
+  assert.equal(bound[4].configured, true);
+  // No verified domain or from-address is involved: the sending inbox is the sender.
+  const halfBound = createConfiguredVerificationProviders({ AGENTMAIL_API_KEY: KEY, OTP_E_DAILY_QUOTA: '100' });
+  assert.equal(halfBound[4].constructor.name, 'BridgeOtpVerificationProvider');
+  assert.equal(halfBound[4].configured, false);
 });

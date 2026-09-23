@@ -5986,6 +5986,7 @@ var SLOT_DEFINITIONS = Object.freeze({
   "otp-b": Object.freeze({ channel: VERIFICATION_CHANNELS.OTP, verificationMode: VERIFICATION_MODES.LOCAL_CODE, priority: 20 }),
   "otp-c": Object.freeze({ channel: VERIFICATION_CHANNELS.OTP, verificationMode: VERIFICATION_MODES.LOCAL_CODE, priority: 30 }),
   "otp-d": Object.freeze({ channel: VERIFICATION_CHANNELS.OTP, verificationMode: VERIFICATION_MODES.LOCAL_CODE, priority: 35 }),
+  "otp-e": Object.freeze({ channel: VERIFICATION_CHANNELS.OTP, verificationMode: VERIFICATION_MODES.LOCAL_CODE, priority: 37 }),
   whatsapp: Object.freeze({ channel: VERIFICATION_CHANNELS.WHATSAPP, verificationMode: VERIFICATION_MODES.LOCAL_CODE, priority: 40 }),
   telegram: Object.freeze({ channel: VERIFICATION_CHANNELS.TELEGRAM, verificationMode: VERIFICATION_MODES.LOCAL_CODE, priority: 50 })
 });
@@ -12476,6 +12477,73 @@ var ResendOtpVerificationProvider = class {
     return { status: this.configured ? "configured" : "disabled", configured: this.configured, officialApi: true, mailer: "resend" };
   }
 };
+var AgentMailOtpVerificationProvider = class {
+  constructor({ id = "otp-e", apiKey, inboxId, declaredDailyQuota, fetchImpl = globalThis.fetch, now = Date.now } = {}) {
+    this.id = String(id || "");
+    this.channel = VERIFICATION_CHANNELS.OTP;
+    this.verificationMode = VERIFICATION_MODES.LOCAL_CODE;
+    this.apiKey = String(apiKey || "");
+    this.inboxId = validEmailAddress(inboxId) ? String(inboxId) : "";
+    this.declaredDailyQuota = safeInteger(declaredDailyQuota, 1, 1e7);
+    this.fetch = typeof fetchImpl === "function" ? fetchImpl.bind(globalThis) : null;
+    this.now = typeof now === "function" ? now : Date.now;
+    this.configured = Boolean(validSecret(this.apiKey) && this.inboxId && this.declaredDailyQuota && this.fetch);
+  }
+  // AgentMail signs the sender with the inbox the message is sent from, so there is
+  // no separate from-address to verify. A read of the inbox is the cheapest proof
+  // that the key is live and scoped to an inbox this worker may send from.
+  async checkAvailability() {
+    if (!this.configured) return { available: false, code: "NOT_CONFIGURED" };
+    const payload = await fetchJson(this.fetch, `https://api.agentmail.to/inboxes/${encodeURIComponent(this.inboxId)}`, {
+      method: "GET",
+      headers: { Accept: "application/json", "Cache-Control": "no-store", Authorization: `Bearer ${this.apiKey}` }
+    });
+    const ready = String(payload?.inbox_id || payload?.inboxId || "") === this.inboxId;
+    return { available: ready, code: ready ? "READY" : "INBOX_NOT_AVAILABLE" };
+  }
+  async getRemainingQuota() {
+    if (!this.configured) return { remaining: 0, limit: 0, resetAt: 0, source: "not-configured" };
+    const limit = this.declaredDailyQuota;
+    return { remaining: limit, limit, resetAt: nextUtcMidnight(this.now()), source: "agentmail-declared-daily-quota" };
+  }
+  async sendVerification(input = {}) {
+    if (!this.configured) throw new VerificationProviderError("NOT_CONFIGURED", VERIFICATION_FAILURE_CLASS.HARD);
+    const destination = String(input.destination || "");
+    const code = String(input.code || "");
+    if (!validEmailAddress(destination) || !/^\d{6}$/.test(code)) {
+      throw new VerificationProviderError("INVALID_DESTINATION", VERIFICATION_FAILURE_CLASS.USER);
+    }
+    const expiresAt = Number(input.expiresAt || 0);
+    const minutes = expiresAt > 0 ? Math.max(1, Math.round((expiresAt - Number(this.now())) / 6e4)) : 5;
+    const { text, html } = otpEmailBody(code, minutes, input.recipientName);
+    const payload = await fetchJson(this.fetch, `https://api.agentmail.to/inboxes/${encodeURIComponent(this.inboxId)}/messages/send`, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Cache-Control": "no-store",
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${this.apiKey}`
+      },
+      body: JSON.stringify({
+        to: destination,
+        subject: "Admission Hub — আপনার যাচাইকরণ কোড",
+        html,
+        text
+      })
+    });
+    const reference = payload?.message_id || payload?.messageId || payload?.id;
+    if (typeof reference !== "string" || !reference) {
+      throw new VerificationProviderError("INVALID_PROVIDER_RESPONSE", VERIFICATION_FAILURE_CLASS.HARD);
+    }
+    return { accepted: true };
+  }
+  async verifyCode() {
+    throw new VerificationProviderError("LOCAL_VERIFICATION_ONLY", VERIFICATION_FAILURE_CLASS.USER);
+  }
+  async getProviderStatus() {
+    return { status: this.configured ? "configured" : "disabled", configured: this.configured, officialApi: true, mailer: "agentmail" };
+  }
+};
 var MailjetOtpVerificationProvider = class {
   constructor({ id = "mailjet", apiKey, secretKey, apiBase = "https://api.mailjet.com", fromAddress, fromName = "Admission Hub", declaredDailyQuota, fetchImpl = globalThis.fetch, now = Date.now } = {}) {
     this.id = String(id || "");
@@ -13010,11 +13078,20 @@ function createConfiguredVerificationProviders(env = {}, { fetchImpl = globalThi
     fetchImpl
   });
   const bridgeOtpD = new BridgeOtpVerificationProvider({ id: "otp-d", origin: env.OTP_D_PROVIDER_ORIGIN, apiKey: env.OTP_D_PROVIDER_KEY, declaredDailyQuota: env.OTP_D_DAILY_QUOTA, fetchImpl });
+  const agentMailOtpE = new AgentMailOtpVerificationProvider({
+    id: "otp-e",
+    apiKey: env.AGENTMAIL_API_KEY,
+    inboxId: env.AGENTMAIL_INBOX_ID,
+    declaredDailyQuota: env.OTP_E_DAILY_QUOTA,
+    fetchImpl
+  });
+  const bridgeOtpE = new BridgeOtpVerificationProvider({ id: "otp-e", origin: env.OTP_E_PROVIDER_ORIGIN, apiKey: env.OTP_E_PROVIDER_KEY, declaredDailyQuota: env.OTP_E_DAILY_QUOTA, fetchImpl });
   return [
     brevoOtpA.configured ? brevoOtpA : bridgeOtpA,
     appsScriptOtpB.configured ? appsScriptOtpB : bridgeOtpB,
     mailjetOtpC.configured ? mailjetOtpC : bridgeOtpC,
     resendOtpD.configured ? resendOtpD : bridgeOtpD,
+    agentMailOtpE.configured ? agentMailOtpE : bridgeOtpE,
     new OfficialWhatsAppVerificationProvider({
       graphVersion: env.WHATSAPP_GRAPH_VERSION,
       phoneNumberId: env.WHATSAPP_PHONE_NUMBER_ID,
