@@ -13,7 +13,7 @@
  *   Deploy > New deployment > Web app
  *     Execute as:      Me
  *     Who has access:  Anyone
- * then copy the /exec URL into the Worker as OTP_A_PROVIDER_APPS_SCRIPT_URL.
+ * then copy the /exec URL into the Worker as OTP_B_PROVIDER_APPS_SCRIPT_URL.
  */
 
 var MAX_CLOCK_SKEW_SECONDS = 300;
