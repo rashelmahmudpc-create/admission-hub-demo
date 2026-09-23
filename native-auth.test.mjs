@@ -1079,3 +1079,39 @@ test('the Firebase link stays untouched while an OTP mailer still has quota', as
   // mailers are actually exhausted.
   assert.equal(app.firebase.calls.filter(call => call.pathname.endsWith('/accounts:sendOobCode')).length, 0);
 });
+
+test('a fallback send is never followed by a second Firebase link for the same tap', async () => {
+  const app = handlerSetup({ backupCapabilities: { available: true, availabilityCode: 'READY', telegramAvailable: true } });
+  app.env.VERIFICATION_AUTH_ACTIVATION = 'enabled';
+  const email = 'no.double.send@example.com';
+  const signup = await app.handler(apiRequest(`${AUTH_API_PREFIX}/signup`, {
+    method: 'POST', body: { email, password: 'No-double-send-71' }
+  }), app.env, {});
+  assert.equal(signup.status, 202);
+  const ticketCookies = [
+    extractCookiePair(signup, '__Host-ah_verification'),
+    extractCookiePair(signup, '__Host-ah_device')
+  ].filter(Boolean).join('; ');
+  const authorityFetch = app.authority.fetch.bind(app.authority);
+  app.authority.fetch = request => new URL(request.url).pathname === '/internal/verification/ownership/request'
+    ? Response.json({ ok: false, error: { code: AUTH_ERROR_CODES.BACKUP_UNAVAILABLE } }, { status: 503 })
+    : authorityFetch(request);
+
+  // One user tap is one POST. The response must already state that the link
+  // went out, so the browser has no reason to ask for a second send.
+  const start = await app.handler(apiRequest(`${AUTH_API_PREFIX}/email-ownership/start`, {
+    method: 'POST', body: {}, cookie: ticketCookies
+  }), app.env, {});
+  const body = await start.json();
+  assert.equal(start.status, 202);
+  assert.equal(body.delivery.sent, true, 'the tap itself must carry the delivery receipt');
+  assert.equal(body.delivery.method, 'firebase-link');
+
+  const oobCalls = () => app.firebase.calls.filter(call => call.pathname.endsWith('/accounts:sendOobCode')).length;
+  assert.equal(oobCalls(), 1);
+  // Re-reading the result, as a retry or a status poll would, must not resend.
+  await app.handler(apiRequest(`${AUTH_API_PREFIX}/account-verification/email/status`, {
+    method: 'POST', body: {}, cookie: ticketCookies
+  }), app.env, {});
+  assert.equal(oobCalls(), 1, 'a status poll must not trigger another verification email');
+});

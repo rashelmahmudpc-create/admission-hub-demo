@@ -134,6 +134,7 @@
     'Email link খোলার অপেক্ষায়': 'Waiting for the email link to open',
     '✓ আমি Verify করেছি — Check করুন': '✓ I have verified — check now',
     'Continue চাপলেই একটি verification message যাবে। আগে কোনো message যাবে না।': 'One tap on Continue sends a verification message. Nothing is sent before that.',
+    'নিরাপদ verification link পাঠানো হয়েছে।': 'A secure verification link has been sent.',
     '৬ সংখ্যার code — না পেলে নিরাপদ link': 'A 6-digit code — with a secure link as backup',
     'চাইলে পরে বেছে নিতে পারবে': 'You can switch to it later',
     'Telegram দিয়ে যাচাই': 'Verify with Telegram',

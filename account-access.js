@@ -2310,12 +2310,14 @@
       // falls back to the Firebase link once they are exhausted. Both routes are
       // the same button, so route on what the server reports sending.
       if (result.delivery?.method === 'firebase-link') {
+        // The Worker already sent the link as the last resort, so reveal the
+        // waiting panel with mode 'email'. Calling beginEmailVerification here
+        // would fire a second sendOobCode and burn the free daily quota.
         state.verification.emailSent = true;
         state.verification.mode = 'email';
         state.ownership = null;
         startResendCooldown(Number(result.delivery?.resendAfter || state.resendCooldownSeconds));
-        showView('email-intro');
-        await beginEmailVerification();
+        showView('verify');
         return;
       }
       if (!setOwnershipChallenge(result.ownership)) throw new Error('Email OTP যাচাই এখন পাওয়া যাচ্ছে না।');
@@ -2683,8 +2685,8 @@
           state.verification.mode = 'email';
           state.ownership = null;
           startResendCooldown(Number(result.delivery?.resendAfter || state.resendCooldownSeconds));
-          showView('email-intro');
-          await beginEmailVerification();
+          showView('verify');
+          message('নিরাপদ verification link পাঠানো হয়েছে।', 'info');
           return;
         }
         if (!setOwnershipChallenge(result.ownership)) throw new Error('নতুন code পাঠানো যায়নি।');
