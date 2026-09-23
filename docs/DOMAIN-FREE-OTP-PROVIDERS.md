@@ -57,6 +57,16 @@ student OTPs. Measured by reading the receiving mailbox and its authentication h
 | Elastic Email | fails | recipient MTA refused: `DKIM authentication didn't pass` |
 | Mailtrap demo domain | owner only | API returns 403 for other recipients |
 | Courier | fails | accepted 202, then `status: UNMAPPED`, no provider bound |
+| Mailjet | fails | API returns `success`, Mailjet logs `Status: "sent"`, but no `delivered` event and the recipient never receives it |
+
+## Why Mailjet cannot carry a freemail sender here
+
+Mailjet validates the sender's own domain, so a `gmail.com` or `icloud.com` sender needs DNS
+records on a zone the owner does not control. Validation ends in `DKIMStatus: Error` /
+`SPFStatus: Error` and Mailjet reports `Status: "sent"` without ever reaching `delivered`.
+MailerSend and AgentMail avoid this by sending from their own domain, which is why they are the
+no-domain senders we rely on. Mailjet would need a domain the owner controls.
+
 
 
 Total reachable email OTP capacity: **600/day** from the signed no-domain senders
