@@ -1007,8 +1007,8 @@ export function createConfiguredVerificationProviders(env = {}, { fetchImpl = gl
   // trusted, so a failing Resend account can never starve the earlier slots.
   const resendOtpD = new ResendOtpVerificationProvider({
     id: 'otp-d',
-    apiKey: env.RESEND_API_KEY || env.RESEND_KEY,
-    fromAddress: env.RESEND_FROM_ADDRESS || env.EMAIL_FROM_ADDRESS,
+    apiKey: env.RESEND_API_KEY,
+    fromAddress: env.RESEND_FROM_ADDRESS,
     fromName: env.RESEND_FROM_NAME,
     declaredDailyQuota: env.OTP_D_DAILY_QUOTA,
     fetchImpl

@@ -13003,8 +13003,8 @@ function createConfiguredVerificationProviders(env = {}, { fetchImpl = globalThi
   const bridgeOtpC = new BridgeOtpVerificationProvider({ id: "otp-c", origin: env.OTP_C_PROVIDER_ORIGIN, apiKey: env.OTP_C_PROVIDER_KEY, declaredDailyQuota: env.OTP_C_DAILY_QUOTA, fetchImpl });
   const resendOtpD = new ResendOtpVerificationProvider({
     id: "otp-d",
-    apiKey: env.RESEND_API_KEY || env.RESEND_KEY,
-    fromAddress: env.RESEND_FROM_ADDRESS || env.EMAIL_FROM_ADDRESS,
+    apiKey: env.RESEND_API_KEY,
+    fromAddress: env.RESEND_FROM_ADDRESS,
     fromName: env.RESEND_FROM_NAME,
     declaredDailyQuota: env.OTP_D_DAILY_QUOTA,
     fetchImpl

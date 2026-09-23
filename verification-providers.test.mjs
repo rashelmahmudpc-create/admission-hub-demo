@@ -583,7 +583,7 @@ test('OTP slots prefer Brevo and Apps Script and fall back to bridge bindings', 
 
 test('Resend owns otp-d and is chosen only when its key and sender address are both present', async () => {
   const bound = createConfiguredVerificationProviders({
-    RESEND_KEY: KEY,
+    RESEND_API_KEY: KEY,
     RESEND_FROM_ADDRESS: 'sender@admissionhub.dev',
     OTP_D_DAILY_QUOTA: '100'
   });
@@ -591,7 +591,7 @@ test('Resend owns otp-d and is chosen only when its key and sender address are b
   assert.equal(bound[3].id, 'otp-d');
   assert.equal(bound[3].configured, true);
   // The key alone must never reach the wire: Resend rejects sends without a sender.
-  const halfBound = createConfiguredVerificationProviders({ RESEND_KEY: KEY, OTP_D_DAILY_QUOTA: '100' });
+  const halfBound = createConfiguredVerificationProviders({ RESEND_API_KEY: KEY, OTP_D_DAILY_QUOTA: '100' });
   assert.equal(halfBound[3].constructor.name, 'BridgeOtpVerificationProvider');
   assert.equal(halfBound[3].configured, false);
 });
