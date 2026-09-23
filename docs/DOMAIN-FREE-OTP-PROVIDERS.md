@@ -39,9 +39,30 @@ Gmail's DMARC record. That is why SMTP2GO rejects it. Brevo and Mailjet accept i
 | `otp-a` | Brevo | 300 | primary |
 | `otp-b` | Google Apps Script (Gmail) | 100 | needs the full 20s timeout; cold start measured at ~11s |
 | `otp-c` | Mailjet | 200 | wired here; skipped until its sender is confirmed |
+| `otp-d` | Resend | 100 | needs a verified domain; dormant without one |
+| `otp-e` | AgentMail | 100 | needs neither a domain nor a from-address |
+| `otp-f` | MailerSend | 100 | sends from MailerSend's own verified trial domain |
 | `telegram` | Telegram bot | 172,800 | unchanged |
 
-Total reachable email OTP capacity: **600/day**, all domain-free.
+## Senders that reach arbitrary recipients without a custom domain
+
+Most no-domain senders only deliver to the account owner, which makes them useless for
+student OTPs. Measured by reading the receiving mailbox and its authentication headers:
+
+| Sender | Cross-recipient | Evidence |
+|---|---|---|
+| AgentMail | works | recipient inbox received it |
+| MailerSend trial domain | works | received with `spf=pass`, `dkim=pass`, `dmarc=pass` |
+| Resend `onboarding@resend.dev` | owner only | acceptable, never delivered off-account |
+| Elastic Email | fails | recipient MTA refused: `DKIM authentication didn't pass` |
+| Mailtrap demo domain | owner only | API returns 403 for other recipients |
+| Courier | fails | accepted 202, then `status: UNMAPPED`, no provider bound |
+
+
+Total reachable email OTP capacity: **600/day** from the signed no-domain senders
+(`otp-a` Brevo, `otp-b` Apps Script, `otp-e` AgentMail, `otp-f` MailerSend), plus
+whatever Gmail accepts from `otp-b`. `otp-c` and `otp-d` stay dormant until their
+senders are verified.
 
 ## Activating Mailjet
 
