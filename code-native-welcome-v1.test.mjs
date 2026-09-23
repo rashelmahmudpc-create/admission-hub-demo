@@ -12,9 +12,9 @@ const HTML = read('index.html');
 const SW = read('sw.js');
 const PAGES_GUARD = read('.github/workflows/cf-pages.yml');
 const RELEASE_WORKFLOW = read('.github/workflows/telegram-auth-canary-activate.yml');
-const UI_VERSION = '20260921-relogin-device-challenge-fix';
+const UI_VERSION = '20260921-single-email-button-fallback';
 
-const SHELL_VERSION = 'v282-device-challenge-20260921';
+const SHELL_VERSION = 'v283-single-email-button-20260921';
 
 const between = (source, start, end) => {
   const from = source.indexOf(start);

@@ -1012,3 +1012,70 @@ test('unrelated /api/public paths are still not claimed by the native handler', 
   }), app.env, {});
   assert.equal(response, null, 'only the profile prefix belongs to the native handler');
 });
+
+test('one email button falls back to the Firebase link once every OTP provider is out', async () => {
+  const app = handlerSetup({ backupCapabilities: { available: true, availabilityCode: 'READY', telegramAvailable: true } });
+  app.env.VERIFICATION_AUTH_ACTIVATION = 'enabled';
+  const email = 'fallback.link@example.com';
+  const signup = await app.handler(apiRequest(`${AUTH_API_PREFIX}/signup`, {
+    method: 'POST', body: { email, password: 'Fallback-password-71' }
+  }), app.env, {});
+  assert.equal(signup.status, 202);
+  const verification = extractCookiePair(signup, '__Host-ah_verification');
+  assert.ok(verification, 'the pre-verification ticket is what an unverified user holds');
+  // The ticket is bound to the device that created the account, so the device
+  // cookie has to ride along or the authority rejects the ticket itself.
+  const device = extractCookiePair(signup, '__Host-ah_device');
+  const ticketCookies = [verification, device].filter(Boolean).join('; ');
+
+  // Exhaust the OTP chain exactly as the orchestrator does: quota for every
+  // mailer is gone, so the authority answers BACKUP_UNAVAILABLE.
+  const authorityFetch = app.authority.fetch.bind(app.authority);
+  app.authority.fetch = request => new URL(request.url).pathname === '/internal/verification/ownership/request'
+    ? Response.json({ ok: false, error: { code: AUTH_ERROR_CODES.BACKUP_UNAVAILABLE } }, { status: 503 })
+    : authorityFetch(request);
+
+  const start = await app.handler(apiRequest(`${AUTH_API_PREFIX}/email-ownership/start`, {
+    method: 'POST', body: {}, cookie: ticketCookies
+  }), app.env, {});
+  const body = await start.json();
+  assert.equal(start.status, 202);
+  assert.equal(body.delivery.method, 'firebase-link');
+  assert.equal(body.delivery.fallback, true);
+  assert.equal(body.delivery.sent, true);
+  assert.equal(body.ownership, undefined, 'no OTP attempt may be advertised when none was sent');
+  // The last-resort link is the only thing that went out, exactly once.
+  assert.equal(app.firebase.calls.filter(call => call.pathname.endsWith('/accounts:sendOobCode')).length, 1);
+  assert.equal(app.firebase.calls.find(call => call.pathname.endsWith('/accounts:sendOobCode')).body.requestType, 'VERIFY_EMAIL');
+});
+
+test('the Firebase link stays untouched while an OTP mailer still has quota', async () => {
+  const app = handlerSetup({ backupCapabilities: { available: true, availabilityCode: 'READY', telegramAvailable: true } });
+  app.env.VERIFICATION_AUTH_ACTIVATION = 'enabled';
+  const email = 'otp.first@example.com';
+  const signup = await app.handler(apiRequest(`${AUTH_API_PREFIX}/signup`, {
+    method: 'POST', body: { email, password: 'Otp-first-password-71' }
+  }), app.env, {});
+  assert.equal(signup.status, 202);
+  const ticketCookies = [
+    extractCookiePair(signup, '__Host-ah_verification'),
+    extractCookiePair(signup, '__Host-ah_device')
+  ].filter(Boolean).join('; ');
+
+  const authorityFetch = app.authority.fetch.bind(app.authority);
+  app.authority.fetch = request => new URL(request.url).pathname === '/internal/verification/ownership/request'
+    ? Response.json({ ok: true, result: { sent: true, attemptId: `attempt-${'a'.repeat(40)}`, resendAfter: 60 } })
+    : authorityFetch(request);
+
+  const start = await app.handler(apiRequest(`${AUTH_API_PREFIX}/email-ownership/start`, {
+    method: 'POST', body: {}, cookie: ticketCookies
+  }), app.env, {});
+  const body = await start.json();
+  assert.equal(start.status, 202);
+  assert.equal(body.delivery.method, 'email-otp');
+  assert.equal(body.delivery.fallback, false);
+  assert.ok(body.ownership?.attemptId, 'the OTP form needs an attempt id to verify against');
+  // The whole point of the chain: Firebase only ever sees traffic when the
+  // mailers are actually exhausted.
+  assert.equal(app.firebase.calls.filter(call => call.pathname.endsWith('/accounts:sendOobCode')).length, 0);
+});

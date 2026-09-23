@@ -7227,17 +7227,39 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           return json3(request, 200, { ok: true, alreadyVerified: true, authenticated: false });
         }
         await callAuthority(env, "/internal/firebase/rate", { input: { operation: "verification-send", email: user.email }, context });
-        const result = await callAuthority(env, "/internal/verification/ownership/request", {
-          input: {
-            verificationTicket,
-            email: user.email,
-            subject: user.subject
-          },
-          context
-        });
+        let result;
+        try {
+          result = await callAuthority(env, "/internal/verification/ownership/request", {
+            input: {
+              verificationTicket,
+              email: user.email,
+              subject: user.subject
+            },
+            context
+          });
+        } catch (cause) {
+          if (!(cause instanceof NativeAuthError) || cause.code !== AUTH_ERROR_CODES.BACKUP_UNAVAILABLE) throw cause;
+          try {
+            await provider.sendVerificationEmail(refreshed.idToken, user.email);
+          } catch (sendCause) {
+            throw sendCause instanceof NativeAuthError ? sendCause : providerError(sendCause, "verification");
+          }
+          return json3(request, 202, {
+            ok: true,
+            authenticated: false,
+            delivery: {
+              method: "firebase-link",
+              sent: true,
+              fallback: true,
+              emailMasked: material.user?.emailMasked || "আপনার ইমেইলে",
+              resendAfter: FIREBASE_VERIFICATION_RESEND_SECONDS
+            }
+          }, context.isNewDevice ? { "Set-Cookie": deviceCookie(context.deviceId) } : {});
+        }
         return json3(request, 202, {
           ok: true,
           authenticated: false,
+          delivery: { method: "email-otp", sent: result?.sent !== false, fallback: false },
           ownership: {
             sent: result?.sent !== false,
             attemptId: result?.attemptId || "",
