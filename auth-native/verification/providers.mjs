@@ -79,6 +79,10 @@ const base64UrlBytes = bytes => {
   return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 };
 
+// Standard base64 with padding intact — Basic auth needs the '=' characters that
+// base64UrlBytes deliberately strips, so the two transforms stay separate.
+const base64Bytes = value => btoa(String(value));
+
 // Script IDs are ~57 chars; the bound keeps a hostile value from becoming a
 // huge URL without rejecting legitimate ids.
 function appsScriptWebAppUrl(value) {
@@ -352,6 +356,85 @@ export class BrevoOtpVerificationProvider {
   async verifyCode() { throw new VerificationProviderError('LOCAL_VERIFICATION_ONLY', VERIFICATION_FAILURE_CLASS.USER); }
   async getProviderStatus() {
     return { status: this.configured ? 'configured' : 'disabled', configured: this.configured, officialApi: true, mailer: 'brevo' };
+  }
+}
+
+export class MailjetOtpVerificationProvider {
+  constructor({ id = 'mailjet', apiKey, secretKey, apiBase = 'https://api.mailjet.com', fromAddress, fromName = 'Admission Hub', declaredDailyQuota, fetchImpl = globalThis.fetch, now = Date.now } = {}) {
+    this.id = String(id || '');
+    this.channel = VERIFICATION_CHANNELS.OTP;
+    this.verificationMode = VERIFICATION_MODES.LOCAL_CODE;
+    this.apiKey = String(apiKey || '');
+    this.secretKey = String(secretKey || '');
+    this.apiBase = httpsOrigin(apiBase) || 'https://api.mailjet.com';
+    this.fromAddress = validEmailAddress(fromAddress) ? String(fromAddress) : '';
+    this.fromName = String(fromName || 'Admission Hub').slice(0, 64);
+    this.declaredDailyQuota = safeInteger(declaredDailyQuota, 1, 10_000_000);
+    this.fetch = typeof fetchImpl === 'function' ? fetchImpl.bind(globalThis) : null;
+    this.now = typeof now === 'function' ? now : Date.now;
+    this.configured = Boolean(validSecret(this.apiKey) && validSecret(this.secretKey) && this.fromAddress && this.declaredDailyQuota && this.fetch);
+  }
+
+  #headers(content = false) {
+    return {
+      Accept: 'application/json',
+      'Cache-Control': 'no-store',
+      Authorization: `Basic ${base64Bytes(`${this.apiKey}:${this.secretKey}`)}`,
+      ...(content ? { 'Content-Type': 'application/json' } : {})
+    };
+  }
+
+  // Mailjet activates a sender only after the owner clicks the confirmation link,
+  // so Status is the gate: 'active' or 'validated' both mean sendable.
+  async checkAvailability() {
+    if (!this.configured) return { available: false, code: 'NOT_CONFIGURED' };
+    const payload = await fetchJson(this.fetch, `${this.apiBase}/v3/REST/sender?SenderEmail=${encodeURIComponent(this.fromAddress)}`, { method: 'GET', headers: this.#headers() });
+    const rows = Array.isArray(payload?.Data) ? payload.Data : [];
+    const sender = rows.find(item => String(item?.Email || item?.SenderEmail || '').toLowerCase() === this.fromAddress.toLowerCase());
+    const ready = Boolean(sender && ['active', 'validated'].includes(String(sender?.Status || '').toLowerCase()));
+    return { available: ready, code: ready ? 'READY' : 'SENDER_NOT_VERIFIED' };
+  }
+
+  async getRemainingQuota() {
+    if (!this.configured) return { remaining: 0, limit: 0, resetAt: 0, source: 'not-configured' };
+    const limit = this.declaredDailyQuota;
+    return { remaining: limit, limit, resetAt: nextUtcMidnight(this.now()), source: 'mailjet-declared-daily-quota' };
+  }
+
+  async sendVerification(input = {}) {
+    if (!this.configured) throw new VerificationProviderError('NOT_CONFIGURED', VERIFICATION_FAILURE_CLASS.HARD);
+    const destination = String(input.destination || '');
+    const code = String(input.code || '');
+    if (!validEmailAddress(destination) || !/^\d{6}$/.test(code)) {
+      throw new VerificationProviderError('INVALID_DESTINATION', VERIFICATION_FAILURE_CLASS.USER);
+    }
+    const expiresAt = Number(input.expiresAt || 0);
+    const minutes = expiresAt > 0 ? Math.max(1, Math.round((expiresAt - Number(this.now())) / 60_000)) : 5;
+    const { text, html } = otpEmailBody(code, minutes, input.recipientName);
+    const payload = await fetchJson(this.fetch, `${this.apiBase}/v3.1/send`, {
+      method: 'POST',
+      headers: this.#headers(true),
+      body: JSON.stringify({
+        Messages: [{
+          From: { Email: this.fromAddress, Name: this.fromName },
+          To: [{ Email: destination }],
+          Subject: 'Admission Hub — আপনার যাচাইকরণ কোড',
+          HTMLPart: html,
+          TextPart: text,
+          CustomID: 'admission-hub-transactional'
+        }]
+      })
+    });
+    const messageRef = payload?.Messages?.[0]?.To?.[0]?.MessageUUID;
+    if (typeof messageRef !== 'string' || !messageRef) {
+      throw new VerificationProviderError('INVALID_PROVIDER_RESPONSE', VERIFICATION_FAILURE_CLASS.HARD);
+    }
+    return { accepted: true };
+  }
+
+  async verifyCode() { throw new VerificationProviderError('LOCAL_VERIFICATION_ONLY', VERIFICATION_FAILURE_CLASS.USER); }
+  async getProviderStatus() {
+    return { status: this.configured ? 'configured' : 'disabled', configured: this.configured, officialApi: true, mailer: 'mailjet' };
   }
 }
 
@@ -809,10 +892,21 @@ export function createConfiguredVerificationProviders(env = {}, { fetchImpl = gl
     fetchImpl
   });
   const bridgeOtpB = new BridgeOtpVerificationProvider({ id: 'otp-b', origin: env.OTP_B_PROVIDER_ORIGIN, apiKey: env.OTP_B_PROVIDER_KEY, declaredDailyQuota: env.OTP_B_DAILY_QUOTA, fetchImpl });
+  const mailjetOtpC = new MailjetOtpVerificationProvider({
+    id: 'otp-c',
+    apiKey: env.MAILJET_API_KEY,
+    secretKey: env.MAILJET_SECRET_KEY,
+    apiBase: env.MAILJET_API_BASE,
+    fromAddress: env.MAILJET_FROM_ADDRESS,
+    fromName: env.MAILJET_FROM_NAME,
+    declaredDailyQuota: env.OTP_C_DAILY_QUOTA,
+    fetchImpl
+  });
+  const bridgeOtpC = new BridgeOtpVerificationProvider({ id: 'otp-c', origin: env.OTP_C_PROVIDER_ORIGIN, apiKey: env.OTP_C_PROVIDER_KEY, declaredDailyQuota: env.OTP_C_DAILY_QUOTA, fetchImpl });
   return [
     brevoOtpA.configured ? brevoOtpA : bridgeOtpA,
     appsScriptOtpB.configured ? appsScriptOtpB : bridgeOtpB,
-    new BridgeOtpVerificationProvider({ id: 'otp-c', origin: env.OTP_C_PROVIDER_ORIGIN, apiKey: env.OTP_C_PROVIDER_KEY, declaredDailyQuota: env.OTP_C_DAILY_QUOTA, fetchImpl }),
+    mailjetOtpC.configured ? mailjetOtpC : bridgeOtpC,
     new OfficialWhatsAppVerificationProvider({
       graphVersion: env.WHATSAPP_GRAPH_VERSION,
       phoneNumberId: env.WHATSAPP_PHONE_NUMBER_ID,

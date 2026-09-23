@@ -6,6 +6,7 @@ import {
   BrevoOtpVerificationProvider,
   BridgeOtpVerificationProvider,
   createConfiguredVerificationProviders,
+  MailjetOtpVerificationProvider,
   OfficialWhatsAppVerificationProvider,
   TelegramLinkVerificationProvider
 } from './auth-native/verification/providers.mjs';
@@ -417,6 +418,81 @@ test('Apps Script OTP provider rejects non-Google web app URLs and weak secrets'
   assert.equal(new AppsScriptOtpVerificationProvider({ ...base, webAppUrl: validUrl, sharedSecret: 'short' }).configured, false);
 });
 
+test('Mailjet OTP provider verifies an active single sender without requiring a custom domain', async () => {
+  const calls = [];
+  const fetchImpl = async (url, init) => {
+    calls.push({ url, init });
+    if (String(url).includes('/v3/REST/sender')) {
+      return json({ Data: [{ Email: 'sender@example.com', Status: 'active' }] });
+    }
+    return json({ Messages: [{ To: [{ MessageUUID: 'mailjet-message-ref' }] }] });
+  };
+  const provider = new MailjetOtpVerificationProvider({
+    apiKey: KEY,
+    secretKey: KEY,
+    fromAddress: 'sender@example.com',
+    declaredDailyQuota: 200,
+    fetchImpl
+  });
+
+  assert.equal(provider.configured, true);
+  assert.deepEqual(await provider.checkAvailability(), { available: true, code: 'READY' });
+  // Basic auth must keep its base64 padding or Mailjet rejects the request outright.
+  const expected = `Basic ${Buffer.from(`${KEY}:${KEY}`, 'utf8').toString('base64')}`;
+  assert.equal(calls[0].init.headers.Authorization, expected);
+  assert.equal(calls[0].url, 'https://api.mailjet.com/v3/REST/sender?SenderEmail=sender%40example.com');
+
+  const sent = await provider.sendVerification({ destination: 'learner@example.com', code: '123456', expiresAt: Date.now() + 300_000 });
+  assert.deepEqual(sent, { accepted: true });
+  const body = JSON.parse(calls[1].init.body);
+  assert.equal(calls[1].url, 'https://api.mailjet.com/v3.1/send');
+  assert.equal(body.Messages[0].From.Email, 'sender@example.com');
+  assert.equal(body.Messages[0].To[0].Email, 'learner@example.com');
+  assert.match(body.Messages[0].TextPart, /123456/);
+  assert.match(body.Messages[0].HTMLPart, /123456/);
+
+  const quota = await provider.getRemainingQuota();
+  assert.equal(quota.limit, 200);
+  assert.equal(quota.remaining, 200);
+  assert.equal(quota.source, 'mailjet-declared-daily-quota');
+});
+
+test('Mailjet OTP provider reports an unconfirmed sender instead of claiming readiness', async () => {
+  const provider = new MailjetOtpVerificationProvider({
+    apiKey: KEY,
+    secretKey: KEY,
+    fromAddress: 'sender@example.com',
+    declaredDailyQuota: 200,
+    fetchImpl: async () => json({ Data: [{ Email: 'sender@example.com', Status: 'pending' }] })
+  });
+  assert.deepEqual(await provider.checkAvailability(), { available: false, code: 'SENDER_NOT_VERIFIED' });
+});
+
+test('Mailjet OTP provider fails closed when unconfigured and refuses a non-email destination', async () => {
+  const bare = new MailjetOtpVerificationProvider({});
+  assert.equal(bare.configured, false);
+  assert.deepEqual(await bare.checkAvailability(), { available: false, code: 'NOT_CONFIGURED' });
+  await assert.rejects(bare.sendVerification({ destination: 'learner@example.com', code: '123456' }), error => error.code === 'NOT_CONFIGURED');
+
+  const provider = new MailjetOtpVerificationProvider({ apiKey: KEY, secretKey: KEY, fromAddress: 'sender@example.com', declaredDailyQuota: 200, fetchImpl: async () => json({}) });
+  await assert.rejects(provider.sendVerification({ destination: 'not-an-email', code: '123456' }), error => error.failureClass === VERIFICATION_FAILURE_CLASS.USER);
+  await assert.rejects(provider.sendVerification({ destination: 'learner@example.com', code: '12345' }), error => error.failureClass === VERIFICATION_FAILURE_CLASS.USER);
+});
+
+test('Mailjet OTP provider rejects a delivery response without a message reference', async () => {
+  const provider = new MailjetOtpVerificationProvider({
+    apiKey: KEY,
+    secretKey: KEY,
+    fromAddress: 'sender@example.com',
+    declaredDailyQuota: 200,
+    fetchImpl: async () => json({ Messages: [{ To: [{}] }] })
+  });
+  await assert.rejects(
+    provider.sendVerification({ destination: 'learner@example.com', code: '123456' }),
+    error => error.code === 'INVALID_PROVIDER_RESPONSE' && error.failureClass === VERIFICATION_FAILURE_CLASS.HARD
+  );
+});
+
 test('OTP slots prefer Brevo and Apps Script and fall back to bridge bindings', async () => {
   const scriptsUrl = 'https://script.google.com/macros/s/AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcd/exec';
   const preferred = createConfiguredVerificationProviders({
@@ -431,6 +507,19 @@ test('OTP slots prefer Brevo and Apps Script and fall back to bridge bindings', 
   assert.equal(preferred[0].id, 'otp-a');
   assert.equal(preferred[1] instanceof AppsScriptOtpVerificationProvider, true);
   assert.equal(preferred[1].id, 'otp-b');
+
+  const withMailjet = createConfiguredVerificationProviders({
+    MAILJET_API_KEY: KEY,
+    MAILJET_SECRET_KEY: KEY,
+    MAILJET_FROM_ADDRESS: 'sender@example.com',
+    OTP_C_DAILY_QUOTA: '200'
+  });
+  assert.equal(withMailjet[2] instanceof MailjetOtpVerificationProvider, true);
+  assert.equal(withMailjet[2].id, 'otp-c');
+  assert.equal(withMailjet[2].configured, true);
+  // A half-bound slot must fall back rather than send unauthenticated requests.
+  const halfBound = createConfiguredVerificationProviders({ MAILJET_API_KEY: KEY, MAILJET_FROM_ADDRESS: 'sender@example.com', OTP_C_DAILY_QUOTA: '200' });
+  assert.equal(halfBound[2].constructor.name, 'BridgeOtpVerificationProvider');
 
   const bridged = createConfiguredVerificationProviders({
     OTP_A_PROVIDER_ORIGIN: 'https://otp-bridge.example',

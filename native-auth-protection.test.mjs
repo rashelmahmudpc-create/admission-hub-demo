@@ -116,11 +116,13 @@ test('Google, Passkey, and the explicit Email-or-Telegram selector are public wi
   // Telegram, but their provider identities stay server-side.
   assert.match(wrangler, /VERIFICATION_ORCHESTRATOR_CONFIG = '\{"enabled":true,"providers":\[\{"id":"otp-a","enabled":true,"priority":10,"dailyQuota":300/);
   assert.match(wrangler, /\{"id":"otp-b","enabled":true,"priority":20,"dailyQuota":100/);
+  assert.match(wrangler, /\{"id":"otp-c","enabled":true,"priority":30,"dailyQuota":200/);
   assert.match(wrangler, /\{"id":"telegram","enabled":true,"priority":50/);
   assert.match(wrangler, /OTP_A_DAILY_QUOTA = "300"/);
   assert.match(wrangler, /OTP_B_DAILY_QUOTA = "100"/);
-  assert.doesNotMatch(wrangler, /BREVO_API_KEY|BREVO_FROM_ADDRESS|OTP_B_PROVIDER_SHARED_SECRET\s*=/);
-  assert.doesNotMatch(wrangler, /"id":"otp-c","enabled":true|"id":"whatsapp","enabled":true/);
+  assert.match(wrangler, /OTP_C_DAILY_QUOTA = "200"/);
+  assert.doesNotMatch(wrangler, /BREVO_API_KEY|BREVO_FROM_ADDRESS|OTP_B_PROVIDER_SHARED_SECRET\s*=|MAILJET_API_KEY|MAILJET_SECRET_KEY/);
+  assert.doesNotMatch(wrangler, /"id":"whatsapp","enabled":true/);
   assert.match(handler, /googlePublished\(env\)/);
   assert.match(handler, /googleCanaryRequested\(env, url\)/);
   assert.match(handler, /passkeyPublished\(env\)/);
