@@ -363,6 +363,80 @@ export class BrevoOtpVerificationProvider {
   }
 }
 
+export class ResendOtpVerificationProvider {
+  constructor({ id = 'otp-d', apiKey, fromAddress, fromName = 'Admission Hub', declaredDailyQuota, fetchImpl = globalThis.fetch, now = Date.now } = {}) {
+    this.id = String(id || '');
+    this.channel = VERIFICATION_CHANNELS.OTP;
+    this.verificationMode = VERIFICATION_MODES.LOCAL_CODE;
+    this.apiKey = String(apiKey || '');
+    this.fromAddress = validEmailAddress(fromAddress) ? String(fromAddress) : '';
+    this.fromName = String(fromName || 'Admission Hub').slice(0, 64);
+    this.declaredDailyQuota = safeInteger(declaredDailyQuota, 1, 10_000_000);
+    this.fetch = typeof fetchImpl === 'function' ? fetchImpl.bind(globalThis) : null;
+    this.now = typeof now === 'function' ? now : Date.now;
+    this.configured = Boolean(validSecret(this.apiKey) && this.fromAddress && this.declaredDailyQuota && this.fetch);
+  }
+
+  #headers(content = false) {
+    return {
+      Accept: 'application/json',
+      'Cache-Control': 'no-store',
+      Authorization: `Bearer ${this.apiKey}`,
+      ...(content ? { 'Content-Type': 'application/json' } : {})
+    };
+  }
+
+  async checkAvailability() {
+    if (!this.configured) return { available: false, code: 'NOT_CONFIGURED' };
+    const senderDomain = this.fromAddress.split('@').pop()?.toLowerCase();
+    const payload = await fetchJson(this.fetch, 'https://api.resend.com/domains', { method: 'GET', headers: this.#headers() });
+    const domains = Array.isArray(payload?.data) ? payload.data : [];
+    const ready = domains.some(domain =>
+      String(domain?.name || '').toLowerCase() === senderDomain
+      && domain.status === 'verified'
+      && domain.capabilities?.sending !== 'disabled');
+    return { available: ready, code: ready ? 'READY' : 'SENDER_NOT_VERIFIED' };
+  }
+
+  async getRemainingQuota() {
+    if (!this.configured) return { remaining: 0, limit: 0, resetAt: 0, source: 'not-configured' };
+    const limit = this.declaredDailyQuota;
+    return { remaining: limit, limit, resetAt: nextUtcMidnight(this.now()), source: 'resend-declared-daily-quota' };
+  }
+
+  async sendVerification(input = {}) {
+    if (!this.configured) throw new VerificationProviderError('NOT_CONFIGURED', VERIFICATION_FAILURE_CLASS.HARD);
+    const destination = String(input.destination || '');
+    const code = String(input.code || '');
+    if (!validEmailAddress(destination) || !/^\d{6}$/.test(code)) {
+      throw new VerificationProviderError('INVALID_DESTINATION', VERIFICATION_FAILURE_CLASS.USER);
+    }
+    const expiresAt = Number(input.expiresAt || 0);
+    const minutes = expiresAt > 0 ? Math.max(1, Math.round((expiresAt - Number(this.now())) / 60_000)) : 5;
+    const { text, html } = otpEmailBody(code, minutes, input.recipientName);
+    const payload = await fetchJson(this.fetch, 'https://api.resend.com/emails', {
+      method: 'POST',
+      headers: this.#headers(true),
+      body: JSON.stringify({
+        from: `${this.fromName} <${this.fromAddress}>`,
+        to: [destination],
+        subject: 'Admission Hub — আপনার যাচাইকরণ কোড',
+        html,
+        text
+      })
+    });
+    if (typeof payload?.id !== 'string' || !payload.id) {
+      throw new VerificationProviderError('INVALID_PROVIDER_RESPONSE', VERIFICATION_FAILURE_CLASS.HARD);
+    }
+    return { accepted: true };
+  }
+
+  async verifyCode() { throw new VerificationProviderError('LOCAL_VERIFICATION_ONLY', VERIFICATION_FAILURE_CLASS.USER); }
+  async getProviderStatus() {
+    return { status: this.configured ? 'configured' : 'disabled', configured: this.configured, officialApi: true, mailer: 'resend' };
+  }
+}
+
 export class MailjetOtpVerificationProvider {
   constructor({ id = 'mailjet', apiKey, secretKey, apiBase = 'https://api.mailjet.com', fromAddress, fromName = 'Admission Hub', declaredDailyQuota, fetchImpl = globalThis.fetch, now = Date.now } = {}) {
     this.id = String(id || '');
@@ -929,10 +1003,22 @@ export function createConfiguredVerificationProviders(env = {}, { fetchImpl = gl
     fetchImpl
   });
   const bridgeOtpC = new BridgeOtpVerificationProvider({ id: 'otp-c', origin: env.OTP_C_PROVIDER_ORIGIN, apiKey: env.OTP_C_PROVIDER_KEY, declaredDailyQuota: env.OTP_C_DAILY_QUOTA, fetchImpl });
+  // Slot `otp-d` is Resend. It sits behind the three mailers the owner already
+  // trusted, so a failing Resend account can never starve the earlier slots.
+  const resendOtpD = new ResendOtpVerificationProvider({
+    id: 'otp-d',
+    apiKey: env.RESEND_API_KEY || env.RESEND_KEY,
+    fromAddress: env.RESEND_FROM_ADDRESS || env.EMAIL_FROM_ADDRESS,
+    fromName: env.RESEND_FROM_NAME,
+    declaredDailyQuota: env.OTP_D_DAILY_QUOTA,
+    fetchImpl
+  });
+  const bridgeOtpD = new BridgeOtpVerificationProvider({ id: 'otp-d', origin: env.OTP_D_PROVIDER_ORIGIN, apiKey: env.OTP_D_PROVIDER_KEY, declaredDailyQuota: env.OTP_D_DAILY_QUOTA, fetchImpl });
   return [
     brevoOtpA.configured ? brevoOtpA : bridgeOtpA,
     appsScriptOtpB.configured ? appsScriptOtpB : bridgeOtpB,
     mailjetOtpC.configured ? mailjetOtpC : bridgeOtpC,
+    resendOtpD.configured ? resendOtpD : bridgeOtpD,
     new OfficialWhatsAppVerificationProvider({
       graphVersion: env.WHATSAPP_GRAPH_VERSION,
       phoneNumberId: env.WHATSAPP_PHONE_NUMBER_ID,

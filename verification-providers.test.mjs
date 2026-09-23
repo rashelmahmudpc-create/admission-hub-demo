@@ -8,6 +8,7 @@ import {
   createConfiguredVerificationProviders,
   MailjetOtpVerificationProvider,
   OfficialWhatsAppVerificationProvider,
+  ResendOtpVerificationProvider,
   TelegramLinkVerificationProvider
 } from './auth-native/verification/providers.mjs';
 import { VERIFICATION_FAILURE_CLASS } from './auth-native/verification/provider-contract.mjs';
@@ -17,9 +18,9 @@ const { otpEmailBody } = __verificationProvidersTest;
 const json = (body, status = 200) => Response.json(body, { status });
 const KEY = `provider-key-${'k'.repeat(32)}`;
 
-test('three OTP bridge slots implement the shared contract and fail closed when not securely configured', async () => {
+test('four OTP slots implement the shared contract and fail closed when not securely configured', async () => {
   const providers = createConfiguredVerificationProviders({});
-  assert.deepEqual(providers.map(row => row.id), ['otp-a', 'otp-b', 'otp-c', 'whatsapp', 'telegram']);
+  assert.deepEqual(providers.map(row => row.id), ['otp-a', 'otp-b', 'otp-c', 'otp-d', 'whatsapp', 'telegram']);
   for (const provider of providers) {
     assert.equal((await provider.checkAvailability()).available, false);
     assert.equal((await provider.getRemainingQuota()).remaining, 0);
@@ -576,6 +577,21 @@ test('OTP slots prefer Brevo and Apps Script and fall back to bridge bindings', 
   assert.equal(bridged[1].constructor.name, 'BridgeOtpVerificationProvider');
 
   const empty = createConfiguredVerificationProviders({});
-  assert.deepEqual(empty.map(row => row.id), ['otp-a', 'otp-b', 'otp-c', 'whatsapp', 'telegram']);
+  assert.deepEqual(empty.map(row => row.id), ['otp-a', 'otp-b', 'otp-c', 'otp-d', 'whatsapp', 'telegram']);
   for (const provider of empty) assert.equal((await provider.getProviderStatus()).configured, false);
+});
+
+test('Resend owns otp-d and is chosen only when its key and sender address are both present', async () => {
+  const bound = createConfiguredVerificationProviders({
+    RESEND_KEY: KEY,
+    RESEND_FROM_ADDRESS: 'sender@admissionhub.dev',
+    OTP_D_DAILY_QUOTA: '100'
+  });
+  assert.equal(bound[3] instanceof ResendOtpVerificationProvider, true);
+  assert.equal(bound[3].id, 'otp-d');
+  assert.equal(bound[3].configured, true);
+  // The key alone must never reach the wire: Resend rejects sends without a sender.
+  const halfBound = createConfiguredVerificationProviders({ RESEND_KEY: KEY, OTP_D_DAILY_QUOTA: '100' });
+  assert.equal(halfBound[3].constructor.name, 'BridgeOtpVerificationProvider');
+  assert.equal(halfBound[3].configured, false);
 });
