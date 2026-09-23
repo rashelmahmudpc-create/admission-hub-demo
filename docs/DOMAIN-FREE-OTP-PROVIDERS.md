@@ -46,20 +46,35 @@ Total reachable email OTP capacity: **600/day**, all domain-free.
 ## Activating Mailjet
 
 The credentials are already on the Worker (`MAILJET_API_KEY`, `MAILJET_SECRET_KEY`,
-`MAILJET_FROM_ADDRESS`, `MAILJET_FROM_NAME`). One step remains, and it must be done in a
-browser — the `SenderEmail` address must click Mailjet's confirmation link before it can
-send.
+`MAILJET_API_BASE`, `MAILJET_FROM_ADDRESS`, `MAILJET_FROM_NAME`) — written by the
+provisioning flow in `auth-native/operations/prepare-production-secrets.mjs`. The `otp-c`
+slot now consumes them.
+
+Readiness is decided by a live API probe, never by the stored evidence flags.
+`MAILJET_SENDER_VERIFIED` and `MAILJET_SANDBOX_SENDER_VERIFIED` belong to the separate
+`email-gateway/` subsystem; the OTP path ignores them.
+
+The probe reads **both** `/v3/REST/sender` and `/v3/REST/metasender`. A sender registered
+under a Mailjet subaccount is absent from `/sender` and listed only by `/metasender`, so
+reading one endpoint alone reports a working address as `SENDER_NOT_VERIFIED` and drops
+the slot. A rejected probe is rethrown as an outage instead of being reported as an
+unverified sender, so a transient API failure cannot masquerade as a missing sender.
+
+If the sender is genuinely not active yet, the fix is a browser action:
 
 1. Mailjet dashboard → Account → Sender domains & addresses → Add a sender address.
 2. Enter the address in `MAILJET_FROM_ADDRESS` and submit.
 3. Open that inbox and click the confirmation link. Status becomes `Active`.
 
-Until then the orchestrator skips `otp-c`: `checkAvailability` returns
-`SENDER_NOT_VERIFIED`, the provider is dropped from the candidate list, and no partially
-configured request is ever sent. `otp-a` and `otp-b` keep serving.
+Until then the orchestrator skips `otp-c`: the slot is dropped from the candidate list and
+no partially configured request is ever sent. `otp-a` and `otp-b` keep serving.
 
 ## Checking a slot without reading a secret
 
 `GET /api/auth/v1/config` reports `methods.backup.availabilityCode`. `READY` means at
 least one OTP provider passed its sender check. Provider identities and per-slot state
 stay server-side — they are deliberately never exposed to the client.
+
+`GET /api/auth/v1/admin/verification/status` exposes per-slot state to an operator. It
+requires the `X-AH-Admin-Token` header to match the `ADMIN_TOKEN` Worker secret and
+returns 403 otherwise.

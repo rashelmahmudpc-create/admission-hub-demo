@@ -12136,6 +12136,7 @@ async function fetchJson(fetchImpl, url, init = {}, { redirect = "manual", timeo
   if (!response3.ok) throw httpFailure(response3, payload);
   return payload;
 }
+var MAILJET_API_BASES = /* @__PURE__ */ new Set(["https://api.mailjet.com", "https://api.us.mailjet.com"]);
 var base64UrlBytes = (bytes) => {
   let binary = "";
   for (const byte of new Uint8Array(bytes)) binary += String.fromCharCode(byte);
@@ -12392,13 +12393,13 @@ var MailjetOtpVerificationProvider = class {
     this.verificationMode = VERIFICATION_MODES.LOCAL_CODE;
     this.apiKey = String(apiKey || "");
     this.secretKey = String(secretKey || "");
-    this.apiBase = httpsOrigin(apiBase) || "https://api.mailjet.com";
+    this.apiBase = MAILJET_API_BASES.has(String(apiBase || "").trim()) ? String(apiBase).trim() : "";
     this.fromAddress = validEmailAddress(fromAddress) ? String(fromAddress) : "";
     this.fromName = String(fromName || "Admission Hub").slice(0, 64);
     this.declaredDailyQuota = safeInteger(declaredDailyQuota, 1, 1e7);
     this.fetch = typeof fetchImpl === "function" ? fetchImpl.bind(globalThis) : null;
     this.now = typeof now === "function" ? now : Date.now;
-    this.configured = Boolean(validSecret(this.apiKey) && validSecret(this.secretKey) && this.fromAddress && this.declaredDailyQuota && this.fetch);
+    this.configured = Boolean(validSecret(this.apiKey) && validSecret(this.secretKey) && this.apiBase && this.fromAddress && this.declaredDailyQuota && this.fetch);
   }
   #headers(content = false) {
     return {
@@ -12408,15 +12409,31 @@ var MailjetOtpVerificationProvider = class {
       ...content ? { "Content-Type": "application/json" } : {}
     };
   }
-  // Mailjet activates a sender only after the owner clicks the confirmation link,
-  // so Status is the gate: 'active' or 'validated' both mean sendable.
+  // A sender registered under a Mailjet subaccount is absent from /sender and only
+  // listed by /metasender, so both endpoints are probed. Probing one would report a
+  // working sender as SENDER_NOT_VERIFIED and silently drop the slot.
   async checkAvailability() {
     if (!this.configured) return { available: false, code: "NOT_CONFIGURED" };
+    const senderCheck = this.#probeSender();
+    const metaCheck = this.#probeMetaSender();
+    const results = await Promise.allSettled([senderCheck, metaCheck]);
+    const verified = results.find((result) => result.status === "fulfilled" && result.value === true);
+    if (verified) return { available: true, code: "READY" };
+    const failed = results.find((result) => result.status === "rejected");
+    if (failed) throw failed.reason;
+    return { available: false, code: "SENDER_NOT_VERIFIED" };
+  }
+  async #probeSender() {
     const payload = await fetchJson(this.fetch, `${this.apiBase}/v3/REST/sender?SenderEmail=${encodeURIComponent(this.fromAddress)}`, { method: "GET", headers: this.#headers() });
     const rows = Array.isArray(payload?.Data) ? payload.Data : [];
     const sender = rows.find((item) => String(item?.Email || item?.SenderEmail || "").toLowerCase() === this.fromAddress.toLowerCase());
-    const ready = Boolean(sender && ["active", "validated"].includes(String(sender?.Status || "").toLowerCase()));
-    return { available: ready, code: ready ? "READY" : "SENDER_NOT_VERIFIED" };
+    return Boolean(sender && ["active", "validated"].includes(String(sender?.Status || "").toLowerCase()));
+  }
+  async #probeMetaSender() {
+    const payload = await fetchJson(this.fetch, `${this.apiBase}/v3/REST/metasender?Limit=100`, { method: "GET", headers: this.#headers() });
+    const rows = Array.isArray(payload?.Data) ? payload.Data : [];
+    const sender = rows.find((item) => String(item?.Email || "").toLowerCase() === this.fromAddress.toLowerCase());
+    return Boolean(sender && (sender?.IsEnabled === true || sender?.IsEnabled === 1 || String(sender?.IsEnabled || "").toLowerCase() === "true"));
   }
   async getRemainingQuota() {
     if (!this.configured) return { remaining: 0, limit: 0, resetAt: 0, source: "not-configured" };

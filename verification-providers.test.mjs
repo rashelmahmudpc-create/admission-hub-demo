@@ -425,11 +425,13 @@ test('Mailjet OTP provider verifies an active single sender without requiring a 
     if (String(url).includes('/v3/REST/sender')) {
       return json({ Data: [{ Email: 'sender@example.com', Status: 'active' }] });
     }
+    if (String(url).includes('/v3/REST/metasender')) return json({ Data: [] });
     return json({ Messages: [{ To: [{ MessageUUID: 'mailjet-message-ref' }] }] });
   };
   const provider = new MailjetOtpVerificationProvider({
     apiKey: KEY,
     secretKey: KEY,
+    apiBase: 'https://api.mailjet.com',
     fromAddress: 'sender@example.com',
     declaredDailyQuota: 200,
     fetchImpl
@@ -444,8 +446,9 @@ test('Mailjet OTP provider verifies an active single sender without requiring a 
 
   const sent = await provider.sendVerification({ destination: 'learner@example.com', code: '123456', expiresAt: Date.now() + 300_000 });
   assert.deepEqual(sent, { accepted: true });
-  const body = JSON.parse(calls[1].init.body);
-  assert.equal(calls[1].url, 'https://api.mailjet.com/v3.1/send');
+  const sendCall = calls.find(call => call.url.includes('/v3.1/send'));
+  const body = JSON.parse(sendCall.init.body);
+  assert.equal(sendCall.url, 'https://api.mailjet.com/v3.1/send');
   assert.equal(body.Messages[0].From.Email, 'sender@example.com');
   assert.equal(body.Messages[0].To[0].Email, 'learner@example.com');
   assert.match(body.Messages[0].TextPart, /123456/);
@@ -457,10 +460,27 @@ test('Mailjet OTP provider verifies an active single sender without requiring a 
   assert.equal(quota.source, 'mailjet-declared-daily-quota');
 });
 
+test('Mailjet OTP provider accepts a sender that only the subaccount metasender endpoint lists', async () => {
+  // A sender living in a subaccount never appears in /sender; reading only that
+  // endpoint would report a working address as unverified and drop the slot.
+  const provider = new MailjetOtpVerificationProvider({
+    apiKey: KEY,
+    secretKey: KEY,
+    apiBase: 'https://api.mailjet.com',
+    fromAddress: 'sender@example.com',
+    declaredDailyQuota: 200,
+    fetchImpl: async url => (String(url).includes('/v3/REST/sender')
+      ? json({ Data: [] })
+      : json({ Data: [{ Email: 'sender@example.com', IsEnabled: true }] }))
+  });
+  assert.deepEqual(await provider.checkAvailability(), { available: true, code: 'READY' });
+});
+
 test('Mailjet OTP provider reports an unconfirmed sender instead of claiming readiness', async () => {
   const provider = new MailjetOtpVerificationProvider({
     apiKey: KEY,
     secretKey: KEY,
+    apiBase: 'https://api.mailjet.com',
     fromAddress: 'sender@example.com',
     declaredDailyQuota: 200,
     fetchImpl: async () => json({ Data: [{ Email: 'sender@example.com', Status: 'pending' }] })
@@ -468,13 +488,33 @@ test('Mailjet OTP provider reports an unconfirmed sender instead of claiming rea
   assert.deepEqual(await provider.checkAvailability(), { available: false, code: 'SENDER_NOT_VERIFIED' });
 });
 
-test('Mailjet OTP provider fails closed when unconfigured and refuses a non-email destination', async () => {
+test('Mailjet OTP provider treats a failing probe as an outage rather than an unverified sender', async () => {
+  const provider = new MailjetOtpVerificationProvider({
+    apiKey: KEY,
+    secretKey: KEY,
+    apiBase: 'https://api.mailjet.com',
+    fromAddress: 'sender@example.com',
+    declaredDailyQuota: 200,
+    fetchImpl: async () => new Response('nope', { status: 500 })
+  });
+  await assert.rejects(provider.checkAvailability());
+});
+
+test('Mailjet OTP provider fails closed on an unapproved API region and when unconfigured', async () => {
+  const base = { apiKey: KEY, secretKey: KEY, fromAddress: 'sender@example.com', declaredDailyQuota: 200, fetchImpl: async () => json({}) };
+  assert.equal(new MailjetOtpVerificationProvider({ ...base, apiBase: 'https://api.mailjet.com' }).configured, true);
+  assert.equal(new MailjetOtpVerificationProvider({ ...base, apiBase: 'https://api.us.mailjet.com' }).configured, true);
+  assert.equal(new MailjetOtpVerificationProvider({ ...base, apiBase: 'https://attacker.example' }).configured, false);
+  assert.equal(new MailjetOtpVerificationProvider({ ...base, apiBase: '' }).configured, false);
+
   const bare = new MailjetOtpVerificationProvider({});
   assert.equal(bare.configured, false);
   assert.deepEqual(await bare.checkAvailability(), { available: false, code: 'NOT_CONFIGURED' });
   await assert.rejects(bare.sendVerification({ destination: 'learner@example.com', code: '123456' }), error => error.code === 'NOT_CONFIGURED');
+});
 
-  const provider = new MailjetOtpVerificationProvider({ apiKey: KEY, secretKey: KEY, fromAddress: 'sender@example.com', declaredDailyQuota: 200, fetchImpl: async () => json({}) });
+test('Mailjet OTP provider refuses a non-email destination or a malformed code', async () => {
+  const provider = new MailjetOtpVerificationProvider({ apiKey: KEY, secretKey: KEY, apiBase: 'https://api.mailjet.com', fromAddress: 'sender@example.com', declaredDailyQuota: 200, fetchImpl: async () => json({}) });
   await assert.rejects(provider.sendVerification({ destination: 'not-an-email', code: '123456' }), error => error.failureClass === VERIFICATION_FAILURE_CLASS.USER);
   await assert.rejects(provider.sendVerification({ destination: 'learner@example.com', code: '12345' }), error => error.failureClass === VERIFICATION_FAILURE_CLASS.USER);
 });
@@ -483,6 +523,7 @@ test('Mailjet OTP provider rejects a delivery response without a message referen
   const provider = new MailjetOtpVerificationProvider({
     apiKey: KEY,
     secretKey: KEY,
+    apiBase: 'https://api.mailjet.com',
     fromAddress: 'sender@example.com',
     declaredDailyQuota: 200,
     fetchImpl: async () => json({ Messages: [{ To: [{}] }] })
@@ -511,6 +552,7 @@ test('OTP slots prefer Brevo and Apps Script and fall back to bridge bindings', 
   const withMailjet = createConfiguredVerificationProviders({
     MAILJET_API_KEY: KEY,
     MAILJET_SECRET_KEY: KEY,
+    MAILJET_API_BASE: 'https://api.mailjet.com',
     MAILJET_FROM_ADDRESS: 'sender@example.com',
     OTP_C_DAILY_QUOTA: '200'
   });
@@ -518,7 +560,7 @@ test('OTP slots prefer Brevo and Apps Script and fall back to bridge bindings', 
   assert.equal(withMailjet[2].id, 'otp-c');
   assert.equal(withMailjet[2].configured, true);
   // A half-bound slot must fall back rather than send unauthenticated requests.
-  const halfBound = createConfiguredVerificationProviders({ MAILJET_API_KEY: KEY, MAILJET_FROM_ADDRESS: 'sender@example.com', OTP_C_DAILY_QUOTA: '200' });
+  const halfBound = createConfiguredVerificationProviders({ MAILJET_API_KEY: KEY, MAILJET_FROM_ADDRESS: 'sender@example.com', MAILJET_API_BASE: 'https://api.mailjet.com', OTP_C_DAILY_QUOTA: '200' });
   assert.equal(halfBound[2].constructor.name, 'BridgeOtpVerificationProvider');
 
   const bridged = createConfiguredVerificationProviders({

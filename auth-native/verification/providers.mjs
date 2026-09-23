@@ -73,6 +73,10 @@ async function fetchJson(fetchImpl, url, init = {}, { redirect = 'manual', timeo
   return payload;
 }
 
+// Mailjet runs EU and US hosts; a US account only authenticates against the US host,
+// so the base is validated rather than guessed.
+const MAILJET_API_BASES = new Set(['https://api.mailjet.com', 'https://api.us.mailjet.com']);
+
 const base64UrlBytes = bytes => {
   let binary = '';
   for (const byte of new Uint8Array(bytes)) binary += String.fromCharCode(byte);
@@ -366,13 +370,15 @@ export class MailjetOtpVerificationProvider {
     this.verificationMode = VERIFICATION_MODES.LOCAL_CODE;
     this.apiKey = String(apiKey || '');
     this.secretKey = String(secretKey || '');
-    this.apiBase = httpsOrigin(apiBase) || 'https://api.mailjet.com';
+    // An unrecognized base is not silently rewritten: a US account sent to the EU
+    // host authenticates against the wrong region, so fail closed instead.
+    this.apiBase = MAILJET_API_BASES.has(String(apiBase || '').trim()) ? String(apiBase).trim() : '';
     this.fromAddress = validEmailAddress(fromAddress) ? String(fromAddress) : '';
     this.fromName = String(fromName || 'Admission Hub').slice(0, 64);
     this.declaredDailyQuota = safeInteger(declaredDailyQuota, 1, 10_000_000);
     this.fetch = typeof fetchImpl === 'function' ? fetchImpl.bind(globalThis) : null;
     this.now = typeof now === 'function' ? now : Date.now;
-    this.configured = Boolean(validSecret(this.apiKey) && validSecret(this.secretKey) && this.fromAddress && this.declaredDailyQuota && this.fetch);
+    this.configured = Boolean(validSecret(this.apiKey) && validSecret(this.secretKey) && this.apiBase && this.fromAddress && this.declaredDailyQuota && this.fetch);
   }
 
   #headers(content = false) {
@@ -384,15 +390,35 @@ export class MailjetOtpVerificationProvider {
     };
   }
 
-  // Mailjet activates a sender only after the owner clicks the confirmation link,
-  // so Status is the gate: 'active' or 'validated' both mean sendable.
+  // A sender registered under a Mailjet subaccount is absent from /sender and only
+  // listed by /metasender, so both endpoints are probed. Probing one would report a
+  // working sender as SENDER_NOT_VERIFIED and silently drop the slot.
   async checkAvailability() {
     if (!this.configured) return { available: false, code: 'NOT_CONFIGURED' };
+    const senderCheck = this.#probeSender();
+    const metaCheck = this.#probeMetaSender();
+    const results = await Promise.allSettled([senderCheck, metaCheck]);
+    const verified = results.find(result => result.status === 'fulfilled' && result.value === true);
+    if (verified) return { available: true, code: 'READY' };
+    // A rejected probe is an outage, not a missing sender: only a clean false from
+    // both endpoints proves the address is unconfirmed.
+    const failed = results.find(result => result.status === 'rejected');
+    if (failed) throw failed.reason;
+    return { available: false, code: 'SENDER_NOT_VERIFIED' };
+  }
+
+  async #probeSender() {
     const payload = await fetchJson(this.fetch, `${this.apiBase}/v3/REST/sender?SenderEmail=${encodeURIComponent(this.fromAddress)}`, { method: 'GET', headers: this.#headers() });
     const rows = Array.isArray(payload?.Data) ? payload.Data : [];
     const sender = rows.find(item => String(item?.Email || item?.SenderEmail || '').toLowerCase() === this.fromAddress.toLowerCase());
-    const ready = Boolean(sender && ['active', 'validated'].includes(String(sender?.Status || '').toLowerCase()));
-    return { available: ready, code: ready ? 'READY' : 'SENDER_NOT_VERIFIED' };
+    return Boolean(sender && ['active', 'validated'].includes(String(sender?.Status || '').toLowerCase()));
+  }
+
+  async #probeMetaSender() {
+    const payload = await fetchJson(this.fetch, `${this.apiBase}/v3/REST/metasender?Limit=100`, { method: 'GET', headers: this.#headers() });
+    const rows = Array.isArray(payload?.Data) ? payload.Data : [];
+    const sender = rows.find(item => String(item?.Email || '').toLowerCase() === this.fromAddress.toLowerCase());
+    return Boolean(sender && (sender?.IsEnabled === true || sender?.IsEnabled === 1 || String(sender?.IsEnabled || '').toLowerCase() === 'true'));
   }
 
   async getRemainingQuota() {
