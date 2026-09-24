@@ -12605,8 +12605,6 @@ var MailerSendOtpVerificationProvider = class {
         text
       })
     });
-    // A 202 with an empty body is the success shape here, so acceptance is inferred
-    // from the request not throwing.
     return { accepted: true };
   }
   async verifyCode() {
