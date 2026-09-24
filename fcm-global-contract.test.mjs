@@ -15,8 +15,7 @@ const CLIENT_FCM = readFileSync('notification-fcm.js', 'utf8');
 const INBOX = readFileSync('notification-inbox.js', 'utf8');
 const HUB = readFileSync('notification-hub.js', 'utf8');
 const SW_MSG = readFileSync('firebase-messaging-sw.js', 'utf8');
-const ADMIN = readFileSync('notification-command-center.js', 'utf8');
-const ADMIN_CSS = readFileSync('notification-command-center.css', 'utf8');
+const ADMIN = readFileSync('notification-admin.js', 'utf8');
 const INDEX = readFileSync('index.html', 'utf8');
 const SW = readFileSync('sw.js', 'utf8');
 
@@ -137,40 +136,40 @@ test('service worker: notificationclick stores {id: gid, link} for the app', () 
 });
 
 test('admin center: token gate (sessionStorage only), 6 types, 5 audiences, live preview, confirm + cancel', () => {
-  assert.ok(ADMIN.includes("ADMIN_TOK_KEY = 'ahAdminTok'"), 'admin token key is preserved');
-  assert.match(ADMIN, /sessionStorage\.setItem\(ADMIN_TOK_KEY, v\)/, 'sessionStorage — never localStorage/URL');
+  assert.ok(ADMIN.includes("const LS_KEY = 'ahAdminTok'"), 'admin token stored');
+  assert.match(ADMIN, /sessionStorage\.setItem\(LS_KEY, v\)/, 'sessionStorage — never localStorage/URL');
   assert.ok(!/localStorage\.[gs]etItem\('ahAdminTok'\)/.test(ADMIN), 'token never in localStorage');
   const types = ['new-content', 'announcement', 'new-feature', 'challenge', 'course', 'important'];
-  for (const k of types) assert.ok(ADMIN.includes(`'${k}':`), `type ${k}`);
+  for (const k of types) assert.ok(ADMIN.includes(`'${k}': {`), `type ${k}`);
   const audiences = ['all_students', 'beginner', 'intermediate', 'pro', 'course_subscribers'];
-  for (const k of audiences) assert.ok(ADMIN.includes(`'${k}'`), `audience ${k}`);
+  for (const k of audiences) assert.ok(ADMIN.includes(`${k}: {`), `audience ${k}`);
   assert.match(ADMIN, /'\/api\/notifications\/templates'/, 'templates from the API');
   assert.match(ADMIN, /'\/api\/notifications\/global\/send'/);
   assert.match(ADMIN, /'\/api\/notifications\/global\/schedule'/);
   assert.match(ADMIN, /'\/api\/notifications\/global\/cancel'/);
   assert.match(ADMIN, /'\/api\/notifications\/history'/);
-  assert.match(ADMIN, /reachEstimate|Estimated reach/, 'confirm shows estimated reach');
-  assert.match(ADMIN_CSS, /\.ns-sheet/, 'confirmation modal');
+  assert.match(ADMIN, /Estimated reach|Estimated reach:|confirmReach/, 'confirm shows estimated reach');
+  assert.match(ADMIN, /ns-sheet/, 'confirmation modal');
   assert.match(ADMIN, /Asia\/Dhaka/, 'schedule labelled Asia/Dhaka');
-  assert.match(ADMIN, /'Authorization': 'Bearer ' \+ adminTok\(\)/, 'every admin call carries the Bearer token');
+  assert.match(ADMIN, /Authorization: `Bearer \$\{tok\(\)\}`/, 'every admin call carries the Bearer token');
 });
 
 test('admin composer: typing never re-renders the form (mobile keyboard stays up)', () => {
-  /* The text inputs must patch the preview in place, not re-render the view.
+  /* The text inputs must call the in-place handler, not the full re-render.
    * A re-render replaces the focused node, so the mobile keyboard closed after
    * every keystroke (owner report 2026-09-24). */
-  for (const field of ['title', 'body', 'titleen', 'bodyen']) {
-    const re = new RegExp(`${field}: function\\(el\\)\\{ NS\\.state\\.(title|body|titleEn|bodyEn) = el\\.value; scheduleAutosave\\(\\); liveUpdate\\(\\); \\}`);
+  for (const field of ['title', 'body', 'imageUrl', 'targetUrl']) {
+    const re = new RegExp(`on(input|change)="window\\.__nsLive\\('${field}'`);
     assert.match(ADMIN, re, `${field} uses the in-place handler`);
+    assert.ok(!ADMIN.includes(`__nsField('${field}'`), `${field} must not trigger a full re-render on typing`);
   }
-  assert.match(ADMIN, /function liveUpdate\(\)/, 'in-place handler defined');
-  assert.match(ADMIN, /id="nsPreviewHost"/, 'preview host is addressable');
-  assert.match(ADMIN, /id="nsTitle"/, 'title input is addressable');
+  assert.match(ADMIN, /window\.__nsLive = \(field, value\)/, 'in-place handler defined');
+  assert.match(ADMIN, /id="nsPrevTitle"/, 'preview title is addressable');
+  assert.match(ADMIN, /id="nsPrevBody"/, 'preview body is addressable');
 });
 
 test('index.html: admin script tag + route dispatch (hidden route, not in nav)', () => {
-  assert.match(INDEX, /<script defer src="\.\/notification-command-center\.js\?v=admin-notif-v9"><\/script>/);
-  assert.match(INDEX, /<link rel="stylesheet" href="\.\/notification-command-center\.css\?v=ns-cc-v1">/);
+  assert.match(INDEX, /<script defer src="\.\/notification-admin\.js\?v=admin-notif-v8"><\/script>/);
   assert.match(INDEX, /if\(p==='notif-admin' && window\.renderNotificationAdmin\) return window\.renderNotificationAdmin\(\);/);
 });
 
@@ -179,33 +178,29 @@ test('pin consistency: index.html script pins match sw.js cache entries + digest
     'notification-fcm.js': 'fcm-p1-v14',
     'notification-inbox.js': 'notif-inbox-v6',
     'notification-hub.js': 'notify-v121',
-    'notification-command-center.js': 'admin-notif-v9'
+    'notification-admin.js': 'admin-notif-v8'
   };
   for (const [file, pin] of Object.entries(pins)) {
     assert.match(INDEX, new RegExp(`<script defer src="\\./${file}\\?v=${pin}">`), `${file} pin in index.html`);
   }
   /* shell-precached subset (the hub is not in APP_SHELL by design) */
-  for (const file of ['notification-fcm.js', 'notification-inbox.js', 'notification-command-center.js']) {
+  for (const file of ['notification-fcm.js', 'notification-inbox.js', 'notification-admin.js']) {
     assert.ok(SW.includes(`'./${file}?v=${pins[file]}'`), `${file} pin in sw.js APP_SHELL`);
   }
   /* digests must exist for the shell-cached files */
-  for (const file of ['notification-fcm.js', 'notification-inbox.js', 'notification-command-center.js']) {
+  for (const file of ['notification-fcm.js', 'notification-inbox.js', 'notification-admin.js']) {
     const pin = pins[file];
     assert.match(SW, new RegExp(`"./${file}\\?v=${pin}": "[0-9a-f]{64}"`), `digest for ${file}`);
   }
-  /* the stylesheet rides along, pinned and digested */
-  assert.match(INDEX, /notification-command-center\.css\?v=ns-cc-v1/);
-  assert.ok(SW.includes("'./notification-command-center.css?v=ns-cc-v1'"), 'stylesheet in APP_SHELL');
-  assert.match(SW, /"\.\/notification-command-center\.css\?v=ns-cc-v1": "[0-9a-f]{64}"/, 'stylesheet digest');
   /* shell canary bumped together in both files */
-  assert.match(INDEX, /v284-notification-command-center-20260924/g);
-  assert.match(SW, /const BUILD_ID = 'v284-notification-command-center-20260924';/);
-  assert.ok((INDEX.match(/v284-notification-command-center-20260924/g) || []).length >= 3, 'canary pinned in index.html (register + SW check)');
+  assert.match(INDEX, /v283-single-email-button-20260921/g);
+  assert.match(SW, /const BUILD_ID = 'v283-single-email-button-20260921';/);
+  assert.ok((INDEX.match(/v283-single-email-button-20260921/g) || []).length >= 3, 'canary pinned in index.html (register + SW check)');
 });
 
 test('sw-manifest digest of the admin file is correct', () => {
-  const m = SW.match(/"\/?\.\/notification-command-center\.js\?v=admin-notif-v9": "([0-9a-f]{64})"/);
+  const m = SW.match(/"\/?\.\/notification-admin\.js\?v=admin-notif-v8": "([0-9a-f]{64})"/);
   assert.ok(m, 'digest present');
-  const actual = createHash('sha256').update(readFileSync('notification-command-center.js')).digest('hex');
+  const actual = createHash('sha256').update(readFileSync('notification-admin.js')).digest('hex');
   assert.equal(m[1], actual, 'digest matches the file on disk');
 });
