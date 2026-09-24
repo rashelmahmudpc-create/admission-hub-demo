@@ -149,27 +149,27 @@ test('admin center: token gate (sessionStorage only), 6 types, 5 audiences, live
   assert.match(ADMIN, /'\/api\/notifications\/global\/cancel'/);
   assert.match(ADMIN, /'\/api\/notifications\/history'/);
   assert.match(ADMIN, /Estimated reach|Estimated reach:|confirmReach/, 'confirm shows estimated reach');
-  assert.match(ADMIN, /gn-center-confirm/, 'confirmation modal');
+  assert.match(ADMIN, /ns-sheet/, 'confirmation modal');
   assert.match(ADMIN, /Asia\/Dhaka/, 'schedule labelled Asia/Dhaka');
   assert.match(ADMIN, /Authorization: `Bearer \$\{tok\(\)\}`/, 'every admin call carries the Bearer token');
 });
 
-test('admin create form: typing never re-renders the form (mobile keyboard stays up)', () => {
+test('admin composer: typing never re-renders the form (mobile keyboard stays up)', () => {
   /* The text inputs must call the in-place handler, not the full re-render.
    * A re-render replaces the focused node, so the mobile keyboard closed after
    * every keystroke (owner report 2026-09-24). */
   for (const field of ['title', 'body', 'imageUrl', 'targetUrl']) {
-    const re = new RegExp(`on(input|change)="window\\.__gnLive\\('${field}'`);
+    const re = new RegExp(`on(input|change)="window\\.__nsLive\\('${field}'`);
     assert.match(ADMIN, re, `${field} uses the in-place handler`);
-    assert.ok(!ADMIN.includes(`__gnField('${field}'`), `${field} must not trigger a full re-render on typing`);
+    assert.ok(!ADMIN.includes(`__nsField('${field}'`), `${field} must not trigger a full re-render on typing`);
   }
-  assert.match(ADMIN, /window\.__gnLive = \(field, value\)/, 'in-place handler defined');
-  assert.match(ADMIN, /id="gnPrevTitle"/, 'preview title is addressable');
-  assert.match(ADMIN, /id="gnPrevBody"/, 'preview body is addressable');
+  assert.match(ADMIN, /window\.__nsLive = \(field, value\)/, 'in-place handler defined');
+  assert.match(ADMIN, /id="nsPrevTitle"/, 'preview title is addressable');
+  assert.match(ADMIN, /id="nsPrevBody"/, 'preview body is addressable');
 });
 
 test('index.html: admin script tag + route dispatch (hidden route, not in nav)', () => {
-  assert.match(INDEX, /<script defer src="\.\/notification-admin\.js\?v=admin-notif-v6"><\/script>/);
+  assert.match(INDEX, /<script defer src="\.\/notification-admin\.js\?v=admin-notif-v7"><\/script>/);
   assert.match(INDEX, /if\(p==='notif-admin' && window\.renderNotificationAdmin\) return window\.renderNotificationAdmin\(\);/);
 });
 
@@ -178,7 +178,7 @@ test('pin consistency: index.html script pins match sw.js cache entries + digest
     'notification-fcm.js': 'fcm-p1-v12',
     'notification-inbox.js': 'notif-inbox-v6',
     'notification-hub.js': 'notify-v119',
-    'notification-admin.js': 'admin-notif-v6'
+    'notification-admin.js': 'admin-notif-v7'
   };
   for (const [file, pin] of Object.entries(pins)) {
     assert.match(INDEX, new RegExp(`<script defer src="\\./${file}\\?v=${pin}">`), `${file} pin in index.html`);
@@ -199,7 +199,7 @@ test('pin consistency: index.html script pins match sw.js cache entries + digest
 });
 
 test('sw-manifest digest of the admin file is correct', () => {
-  const m = SW.match(/"\/?\.\/notification-admin\.js\?v=admin-notif-v6": "([0-9a-f]{64})"/);
+  const m = SW.match(/"\/?\.\/notification-admin\.js\?v=admin-notif-v7": "([0-9a-f]{64})"/);
   assert.ok(m, 'digest present');
   const actual = createHash('sha256').update(readFileSync('notification-admin.js')).digest('hex');
   assert.equal(m[1], actual, 'digest matches the file on disk');

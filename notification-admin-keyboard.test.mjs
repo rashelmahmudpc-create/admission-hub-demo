@@ -5,8 +5,8 @@
  * re-rendered the whole view, replacing the focused <input> and dismissing
  * the on-screen keyboard.
  *
- * The fix keeps typing on <input>/<textarea> bound to `__gnLive`, which only
- * patches the preview nodes in place. `__gnField` (which does re-render)
+ * The fix keeps typing on <input>/<textarea> bound to `__nsLive`, which only
+ * patches the preview nodes in place. `__nsField` (which does re-render)
  * stays reserved for controls where a rebuild is legitimate: the schedule
  * picker and programmatic template application.
  *
@@ -26,38 +26,38 @@ const inputTags = () => ADMIN.match(/<(?:input|textarea)\b[^>]*>/g) || [];
 
 test('no text input re-renders on every keystroke', () => {
   const fields = inputTags().filter(tag => /oninput=/.test(tag));
-  assert.ok(fields.length >= 4, `expected the create form fields, found ${fields.length}`);
+  assert.ok(fields.length >= 4, `expected the composer fields, found ${fields.length}`);
   for (const tag of fields) {
     assert.ok(
-      !/__gnField/.test(tag),
+      !/__nsField/.test(tag),
       `text field must not re-render on input: ${tag.slice(0, 80)}`
     );
     assert.ok(
-      /oninput="window\.__gnLive\(/.test(tag),
+      /oninput="window\.__nsLive\(/.test(tag),
       `text field must use the in-place live handler: ${tag.slice(0, 80)}`
     );
   }
 });
 
 test('the live handler patches the preview in place and never re-renders', () => {
-  const body = ADMIN.slice(ADMIN.indexOf('window.__gnLive ='));
-  const live = body.slice(0, body.indexOf('window.__gnField'));
-  assert.ok(live.length > 0, '__gnLive definition found');
-  assert.ok(!/reRender\(\)/.test(live), '__gnLive must not call reRender');
-  assert.ok(!/innerHTML\s*=/.test(live), '__gnLive must not replace DOM subtrees');
-  assert.match(live, /getElementById\('gnPrevTitle'\)/, 'updates the preview title');
-  assert.match(live, /getElementById\('gnPrevBody'\)/, 'updates the preview body');
+  const body = ADMIN.slice(ADMIN.indexOf('window.__nsLive ='));
+  const live = body.slice(0, body.indexOf('window.__nsField'));
+  assert.ok(live.length > 0, '__nsLive definition found');
+  assert.ok(!/reRender\(\)/.test(live), '__nsLive must not call reRender');
+  assert.ok(!/innerHTML\s*=/.test(live), '__nsLive must not replace DOM subtrees');
+  assert.match(live, /getElementById\('nsPrevTitle'\)/, 'updates the preview title');
+  assert.match(live, /getElementById\('nsPrevBody'\)/, 'updates the preview body');
 });
 
 test('re-rendering handler is kept only for programmatic controls', () => {
-  const withField = inputTags().filter(tag => /__gnField/.test(tag));
+  const withField = inputTags().filter(tag => /__nsField/.test(tag));
   assert.equal(withField.length, 1, 'only the schedule picker re-renders');
   assert.match(withField[0], /type="datetime-local"/, 'and it is the datetime control');
-  assert.match(ADMIN, /window\.__gnField = \(field, value\) => \{ state\[field\] = value; reRender\(\); \}/);
+  assert.match(ADMIN, /window\.__nsField = \(field, value\) => \{ state\[field\] = value; reRender\(\); \}/);
 });
 
-test('template apply and mode/type changes still re-render deliberately', () => {
-  for (const fn of ['__gnSetType', '__gnSetAudience', '__gnSetTemplate', '__gnSetMode']) {
+test('template apply and audience/type changes still re-render deliberately', () => {
+  for (const fn of ['__nsSetType', '__nsSetAudience', '__nsSetTemplate']) {
     const re = new RegExp(`window\\.${fn} = [^\\n]*reRender\\(\\)`);
     assert.match(ADMIN, re, `${fn} re-renders on purpose`);
   }
