@@ -169,7 +169,7 @@ test('admin composer: typing never re-renders the form (mobile keyboard stays up
 });
 
 test('index.html: admin script tag + route dispatch (hidden route, not in nav)', () => {
-  assert.match(INDEX, /<script defer src="\.\/notification-admin\.js\?v=admin-notif-v7"><\/script>/);
+  assert.match(INDEX, /<script defer src="\.\/notification-admin\.js\?v=admin-notif-v8"><\/script>/);
   assert.match(INDEX, /if\(p==='notif-admin' && window\.renderNotificationAdmin\) return window\.renderNotificationAdmin\(\);/);
 });
 
@@ -178,7 +178,7 @@ test('pin consistency: index.html script pins match sw.js cache entries + digest
     'notification-fcm.js': 'fcm-p1-v14',
     'notification-inbox.js': 'notif-inbox-v6',
     'notification-hub.js': 'notify-v121',
-    'notification-admin.js': 'admin-notif-v7'
+    'notification-admin.js': 'admin-notif-v8'
   };
   for (const [file, pin] of Object.entries(pins)) {
     assert.match(INDEX, new RegExp(`<script defer src="\\./${file}\\?v=${pin}">`), `${file} pin in index.html`);
@@ -199,7 +199,7 @@ test('pin consistency: index.html script pins match sw.js cache entries + digest
 });
 
 test('sw-manifest digest of the admin file is correct', () => {
-  const m = SW.match(/"\/?\.\/notification-admin\.js\?v=admin-notif-v7": "([0-9a-f]{64})"/);
+  const m = SW.match(/"\/?\.\/notification-admin\.js\?v=admin-notif-v8": "([0-9a-f]{64})"/);
   assert.ok(m, 'digest present');
   const actual = createHash('sha256').update(readFileSync('notification-admin.js')).digest('hex');
   assert.equal(m[1], actual, 'digest matches the file on disk');
