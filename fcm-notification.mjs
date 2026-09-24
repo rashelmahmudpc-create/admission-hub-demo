@@ -1050,7 +1050,12 @@ export async function handleFcmNotificationRequest(request, env) {
       try { bytes = new Uint8Array(await request.arrayBuffer()); } catch { return jsonResponse(request, { error: 'read-failed' }, 400); }
       if (!bytes.length || bytes.length > NOTIFY_IMAGE_MAX_BYTES) return jsonResponse(request, { error: 'too-large' }, 413);
       const day = new Date().toISOString().slice(0, 10);
-      const key = `notify/${day}/${randKey(12)}.${ext}`;
+      /* The key must match files-storage KEY_RE
+       * (`folder/<segment>/<date>/<rand>.<ext>`), or the public GET rejects it
+       * as 404 and the notification image renders as a broken "?" — a
+       * tell-tale that upload succeeded but read-back did not. */
+      const owner = String(adminUserId).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64) || 'admin';
+      const key = `notify/${owner}/${day}/${randKey(12)}.${ext}`;
       try { await bucket.put(key, bytes, { httpMetadata: { contentType: type } }); }
       catch { return jsonResponse(request, { error: 'storage-error' }, 503); }
       const url = `${new URL(request.url).origin}/api/files/${key}`;

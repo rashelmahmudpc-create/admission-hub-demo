@@ -285,6 +285,17 @@ const call = async (request, env) => {
   return { response, data: await response.json() };
 };
 
+/* Minimal R2 stand-in. Only `put` is exercised by the image route; the returned
+ * key is what the public files route later validates, so the assertion that
+ * matters is on the key shape, not the bytes. */
+function makeFakeBucket() {
+  const puts = [];
+  return {
+    puts,
+    put: async (key, bytes) => { puts.push({ key, size: bytes.length }); return {}; }
+  };
+}
+
 /* FCM fetch stub. `topicFail` fails topic sends, `deadTokenIndexes` marks
  * which sequential token sends come back NOT_FOUND, `throwAll` simulates a
  * total network outage to FCM.
@@ -535,6 +546,28 @@ test('schedule: send-then-schedule the same text is allowed (regression)', async
     assert.equal(scheduled.response.status, 201, 'scheduling after a send must not be blocked');
     assert.equal(scheduled.data.status, 'scheduled');
   } finally { stub.restore(); }
+});
+
+test('image upload: R2 key matches the public files key shape (regression)', async () => {
+  /* Live bug 2026-09-24: the key was `notify/<day>/<rand>.jpg`, missing the
+   * owner segment, so `files-storage` KEY_RE rejected the later public GET as
+   * 404 and the notification image showed as a broken "?". The key must be
+   * `folder/<owner>/<date>/<rand>.<ext>` — the same shape KEY_RE validates. */
+  const bucket = makeFakeBucket();
+  const env = await makeEnv({ FILE_BUCKET: bucket });
+  const bytes = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]);
+  const req = new Request('https://admission-gk.admissionhub.workers.dev/api/notifications/global/image', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/octet-stream', 'Content-Length': String(bytes.length), Authorization: `Bearer ${ADMIN}`, 'X-File-Ext': 'jpg', Cookie: `__Host-ah_session=${VALID_SESSION}` },
+    body: bytes
+  });
+  const res = await call(req, env);
+  assert.equal(res.response.status, 201, JSON.stringify(res.data));
+  assert.equal(bucket.puts.length, 1, 'one object written');
+  const key = res.data.key;
+  const KEY_RE = /^[a-z][a-z0-9-]{0,31}\/[A-Za-z0-9_-]{1,64}\/\d{4}-\d{2}-\d{2}\/[a-z0-9]{10,24}\.[a-z0-9]{2,4}$/;
+  assert.match(key, KEY_RE, `R2 key must pass files-storage KEY_RE, got ${key}`);
+  assert.equal(res.data.url, `https://admission-gk.admissionhub.workers.dev/api/files/${key}`);
 });
 
 test('schedule: valid window accepted, past and >30d rejected', async () => {

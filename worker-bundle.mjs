@@ -9036,7 +9036,8 @@ async function handleFcmNotificationRequest(request, env) {
       }
       if (!bytes.length || bytes.length > NOTIFY_IMAGE_MAX_BYTES) return jsonResponse(request, { error: "too-large" }, 413);
       const day = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
-      const key = `notify/${day}/${randKey(12)}.${ext}`;
+      const owner = String(adminUserId).replace(/[^A-Za-z0-9_-]/g, "").slice(0, 64) || "admin";
+      const key = `notify/${owner}/${day}/${randKey(12)}.${ext}`;
       try {
         await bucket.put(key, bytes, { httpMetadata: { contentType: type } });
       } catch {
