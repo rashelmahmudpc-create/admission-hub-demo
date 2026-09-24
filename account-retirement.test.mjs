@@ -212,7 +212,7 @@ await test('runtime: AI status is guest-accessible and does not consume usage', 
   return response.status === 200 && data.ok === true && data.streaming === true && kv.writes.length === 0;
 });
 
-await test('runtime: guest AI calls are ephemeral and never persist conversation content or raw guest IDs', async () => {
+await test('runtime: guest AI calls are refused up front and never persist conversation content or raw guest IDs', async () => {
   const kv = new MemoryKV();
   const env = { PUB_KV: kv };
   for (const id of ['device-guest-00000001', 'device-guest-00000002']) {
@@ -221,13 +221,15 @@ await test('runtime: guest AI calls are ephemeral and never persist conversation
       headers: { 'Content-Type': 'application/json', 'X-AH-Guest': id, 'CF-Connecting-IP': '203.0.113.7' },
       body: JSON.stringify({ messages: [{ role: 'user', content: 'বাংলা ব্যাকরণ বুঝাও' }] })
     }), env);
-    if (response.status !== 503) return false; // no model keys in this isolated test
+    // M7: a guest has no durable identity, so AI chat is refused before rate,
+    // memory or the provider — 401 sign_in_required, no KV write at all.
+    if (response.status !== 401) return false;
   }
   const keys = [...kv.data.keys()];
-  return keys.filter(key => key.startsWith('airl:guest-')).length === 2 &&
-    keys.filter(key => key.startsWith('aipub:')).length === 1 &&
-    !keys.some(key => key.startsWith('chatmem:') || key.startsWith('chatmemsum:')) &&
-    !keys.some(key => key.includes('device-guest-'));
+  return keys.length === 0
+    && !keys.some(key => key.startsWith('chatmem:') || key.startsWith('chatmemsum:'))
+    && !keys.some(key => key.startsWith('mem:'))
+    && !keys.some(key => key.includes('device-guest-'));
 });
 
 await test('runtime: CORS preflight permits anonymous-device header', async () => {
