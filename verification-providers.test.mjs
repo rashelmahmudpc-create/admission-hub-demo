@@ -2,12 +2,15 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
 import {
+  AgentMailOtpVerificationProvider,
   AppsScriptOtpVerificationProvider,
   BrevoOtpVerificationProvider,
   BridgeOtpVerificationProvider,
   createConfiguredVerificationProviders,
   MailjetOtpVerificationProvider,
+  MailerSendOtpVerificationProvider,
   OfficialWhatsAppVerificationProvider,
+  ResendOtpVerificationProvider,
   TelegramLinkVerificationProvider
 } from './auth-native/verification/providers.mjs';
 import { VERIFICATION_FAILURE_CLASS } from './auth-native/verification/provider-contract.mjs';
@@ -17,9 +20,9 @@ const { otpEmailBody } = __verificationProvidersTest;
 const json = (body, status = 200) => Response.json(body, { status });
 const KEY = `provider-key-${'k'.repeat(32)}`;
 
-test('three OTP bridge slots implement the shared contract and fail closed when not securely configured', async () => {
+test('six OTP slots implement the shared contract and fail closed when not securely configured', async () => {
   const providers = createConfiguredVerificationProviders({});
-  assert.deepEqual(providers.map(row => row.id), ['otp-a', 'otp-b', 'otp-c', 'whatsapp', 'telegram']);
+  assert.deepEqual(providers.map(row => row.id), ['otp-a', 'otp-b', 'otp-c', 'otp-d', 'otp-e', 'otp-f', 'whatsapp', 'telegram']);
   for (const provider of providers) {
     assert.equal((await provider.checkAvailability()).available, false);
     assert.equal((await provider.getRemainingQuota()).remaining, 0);
@@ -576,6 +579,97 @@ test('OTP slots prefer Brevo and Apps Script and fall back to bridge bindings', 
   assert.equal(bridged[1].constructor.name, 'BridgeOtpVerificationProvider');
 
   const empty = createConfiguredVerificationProviders({});
-  assert.deepEqual(empty.map(row => row.id), ['otp-a', 'otp-b', 'otp-c', 'whatsapp', 'telegram']);
+  assert.deepEqual(empty.map(row => row.id), ['otp-a', 'otp-b', 'otp-c', 'otp-d', 'otp-e', 'otp-f', 'whatsapp', 'telegram']);
   for (const provider of empty) assert.equal((await provider.getProviderStatus()).configured, false);
+});
+
+test('Resend owns otp-d and is chosen only when its key and sender address are both present', async () => {
+  const bound = createConfiguredVerificationProviders({
+    RESEND_API_KEY: KEY,
+    RESEND_FROM_ADDRESS: 'sender@admissionhub.dev',
+    OTP_D_DAILY_QUOTA: '100'
+  });
+  assert.equal(bound[3] instanceof ResendOtpVerificationProvider, true);
+  assert.equal(bound[3].id, 'otp-d');
+  assert.equal(bound[3].configured, true);
+  // The key alone must never reach the wire: Resend rejects sends without a sender.
+  const halfBound = createConfiguredVerificationProviders({ RESEND_API_KEY: KEY, OTP_D_DAILY_QUOTA: '100' });
+  assert.equal(halfBound[3].constructor.name, 'BridgeOtpVerificationProvider');
+  assert.equal(halfBound[3].configured, false);
+});
+
+test('AgentMail owns otp-e and sends from an inbox instead of a verified domain', async () => {
+  const bound = createConfiguredVerificationProviders({
+    AGENTMAIL_API_KEY: KEY,
+    AGENTMAIL_INBOX_ID: 'admission-hub@agentmail.to',
+    OTP_E_DAILY_QUOTA: '100'
+  });
+  assert.equal(bound[4] instanceof AgentMailOtpVerificationProvider, true);
+  assert.equal(bound[4].id, 'otp-e');
+  assert.equal(bound[4].configured, true);
+  // No verified domain or from-address is involved: the sending inbox is the sender.
+  const halfBound = createConfiguredVerificationProviders({ AGENTMAIL_API_KEY: KEY, OTP_E_DAILY_QUOTA: '100' });
+  assert.equal(halfBound[4].constructor.name, 'BridgeOtpVerificationProvider');
+  assert.equal(halfBound[4].configured, false);
+});
+
+test('MailerSend owns otp-f and sends from a MailerSend-verified trial domain', async () => {
+  const bound = createConfiguredVerificationProviders({
+    MAILERSEND_API_KEY: KEY,
+    MAILERSEND_FROM_ADDRESS: 'otp@test-p7kx4xw3rz7g9yjr.mlsender.net',
+    OTP_F_DAILY_QUOTA: '100'
+  });
+  assert.equal(bound[5] instanceof MailerSendOtpVerificationProvider, true);
+  assert.equal(bound[5].id, 'otp-f');
+  assert.equal(bound[5].configured, true);
+  // Without a from-address the slot falls back to the bridge rather than sending
+  // from an unverified domain.
+  const halfBound = createConfiguredVerificationProviders({ MAILERSEND_API_KEY: KEY, OTP_F_DAILY_QUOTA: '100' });
+  assert.equal(halfBound[5].constructor.name, 'BridgeOtpVerificationProvider');
+  assert.equal(halfBound[5].configured, false);
+});
+
+test('MailerSend reports READY only when the trial domain is verified and not paused', async () => {
+  const sender = 'otp@test-p7kx4xw3rz7g9yjr.mlsender.net';
+  const make = payload => new MailerSendOtpVerificationProvider({
+    id: 'otp-f',
+    apiKey: KEY,
+    fromAddress: sender,
+    declaredDailyQuota: 100,
+    fetchImpl: async () => new Response(JSON.stringify(payload), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  });
+
+  const verified = await make({ data: [{ name: sender.split('@').pop(), is_verified: true, domain_settings: { send_paused: false } }] }).checkAvailability();
+  assert.deepEqual(verified, { available: true, code: 'READY' });
+
+  const unverified = await make({ data: [{ name: sender.split('@').pop(), is_verified: false, domain_settings: { send_paused: false } }] }).checkAvailability();
+  assert.deepEqual(unverified, { available: false, code: 'SENDER_NOT_VERIFIED' });
+
+  const paused = await make({ data: [{ name: sender.split('@').pop(), is_verified: true, domain_settings: { send_paused: true } }] }).checkAvailability();
+  assert.deepEqual(paused, { available: false, code: 'SENDER_NOT_VERIFIED' });
+});
+
+test('MailerSend accepts on a 202 with an empty body and rejects a malformed code', async () => {
+  const calls = [];
+  const provider = new MailerSendOtpVerificationProvider({
+    id: 'otp-f',
+    apiKey: KEY,
+    fromAddress: 'otp@test-p7kx4xw3rz7g9yjr.mlsender.net',
+    declaredDailyQuota: 100,
+    fetchImpl: async (url, init) => {
+      calls.push({ url, init });
+      return new Response(null, { status: 202 });
+    }
+  });
+  const sent = await provider.sendVerification({ destination: 'student@example.com', code: '123456', expiresAt: Date.now() + 300_000 });
+  assert.deepEqual(sent, { accepted: true });
+  assert.equal(calls[0].url, 'https://api.mailersend.com/v1/email');
+  const body = JSON.parse(calls[0].init.body);
+  assert.equal(body.from.email, 'otp@test-p7kx4xw3rz7g9yjr.mlsender.net');
+  assert.deepEqual(body.to, [{ email: 'student@example.com' }]);
+
+  await assert.rejects(
+    () => provider.sendVerification({ destination: 'student@example.com', code: '12' }),
+    error => error.code === 'INVALID_DESTINATION'
+  );
 });

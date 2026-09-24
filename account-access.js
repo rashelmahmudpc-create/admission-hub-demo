@@ -333,10 +333,10 @@
               <span class="ah-created-next-kicker">পরের ধাপ</span>
               <strong id="ah-created-next-title">একটি verification বাকি</strong>
             </header>
-            <p class="ah-created-next-copy">একটি বাস্তব method দিয়ে verify করলেই account পুরোপুরি সক্রিয় হবে। পছন্দের আগে কোনো message যাবে না।</p>
+            <p class="ah-created-next-copy">Continue চাপলেই একটি verification message যাবে। আগে কোনো message যাবে না।</p>
             <ul class="ah-created-next-list">
-              <li><span class="ah-created-next-icon email" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><rect x="3.2" y="5.6" width="17.6" height="12.8" rx="3.2"/><path d="m4.6 8.2 7.4 5 7.4-5"/></svg></span><span><strong>Email verification</strong><small>নিরাপদ link — Email OTP নয়</small></span></li>
-              <li><span class="ah-created-next-icon telegram" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M20.4 4.6 3.9 11.1l4.9 1.7 1.6 5.1 2.7-3.4 4.3 2.9 3-12.8Z"/><path d="m8.8 12.8 7.6-5.3-5.4 6.7"/></svg></span><span><strong>Telegram</strong><small>official bot-এর ৬ সংখ্যার code</small></span></li>
+              <li><span class="ah-created-next-icon email" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><rect x="3.2" y="5.6" width="17.6" height="12.8" rx="3.2"/><path d="m4.6 8.2 7.4 5 7.4-5"/></svg></span><span><strong>Email verification</strong><small>৬ সংখ্যার code — না পেলে নিরাপদ link</small></span></li>
+              <li><span class="ah-created-next-icon telegram" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M20.4 4.6 3.9 11.1l4.9 1.7 1.6 5.1 2.7-3.4 4.3 2.9 3-12.8Z"/><path d="m8.8 12.8 7.6-5.3-5.4 6.7"/></svg></span><span><strong>Telegram</strong><small>চাইলে পরে বেছে নিতে পারবে</small></span></li>
             </ul>
           </section>
         </div>
@@ -2305,8 +2305,22 @@
         await checkEmailVerification();
         return;
       }
-      if (!setOwnershipChallenge(result.ownership)) throw new Error('Email OTP যাচাই এখন পাওয়া যাচ্ছে না।');
       if (state.signupJourney || pendingSignup()) rememberPendingSignup(true, 'email-ownership');
+      // The Worker sends the 6-digit code while any OTP provider has quota and
+      // falls back to the Firebase link once they are exhausted. Both routes are
+      // the same button, so route on what the server reports sending.
+      if (result.delivery?.method === 'firebase-link') {
+        // The Worker already sent the link as the last resort, so reveal the
+        // waiting panel with mode 'email'. Calling beginEmailVerification here
+        // would fire a second sendOobCode and burn the free daily quota.
+        state.verification.emailSent = true;
+        state.verification.mode = 'email';
+        state.ownership = null;
+        startResendCooldown(Number(result.delivery?.resendAfter || state.resendCooldownSeconds));
+        showView('verify');
+        return;
+      }
+      if (!setOwnershipChallenge(result.ownership)) throw new Error('Email OTP যাচাই এখন পাওয়া যাচ্ছে না।');
       showView('email-ownership');
     } catch (error) { message(friendlyError(error), 'error'); }
     finally { setBusy(false); }
@@ -2651,7 +2665,14 @@
     });
     $('[data-role="link-cancel"]').addEventListener('click', () => { $('#ah-link-password').value = ''; prefillLogin($('#ah-link-email').value); showView('login'); });
 
-    $('[data-role="created-continue"]').addEventListener('click', () => showView('verify'));
+    // One button starts the whole email journey: the Worker tries the OTP
+    // providers in order and falls back to the Firebase link on its own. Only
+    // when the OTP family is unavailable does the method picker remain reachable.
+    $('[data-role="created-continue"]').addEventListener('click', async () => {
+      if (state.busy) return;
+      if (state.capabilities?.emailOwnership?.available) { await beginEmailOwnership(); return; }
+      showView('verify');
+    });
     $('[data-role="email-ownership-start"]').addEventListener('click', beginEmailOwnership);
     $('[data-role="ownership-back"]').addEventListener('click', () => showView('verify'));
     $('[data-role="ownership-resend"]').addEventListener('click', async () => {
@@ -2659,6 +2680,15 @@
       setBusy(true);
       try {
         const result = await api('/email-ownership/start', { method: 'POST', body: {} });
+        if (result.delivery?.method === 'firebase-link') {
+          state.verification.emailSent = true;
+          state.verification.mode = 'email';
+          state.ownership = null;
+          startResendCooldown(Number(result.delivery?.resendAfter || state.resendCooldownSeconds));
+          showView('verify');
+          message('নিরাপদ verification link পাঠানো হয়েছে।', 'info');
+          return;
+        }
         if (!setOwnershipChallenge(result.ownership)) throw new Error('নতুন code পাঠানো যায়নি।');
         message('নতুন code পাঠানো হয়েছে।', 'info');
       } catch (error) { message(friendlyError(error), 'error'); }

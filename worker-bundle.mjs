@@ -5985,6 +5985,9 @@ var SLOT_DEFINITIONS = Object.freeze({
   "otp-a": Object.freeze({ channel: VERIFICATION_CHANNELS.OTP, verificationMode: VERIFICATION_MODES.LOCAL_CODE, priority: 10 }),
   "otp-b": Object.freeze({ channel: VERIFICATION_CHANNELS.OTP, verificationMode: VERIFICATION_MODES.LOCAL_CODE, priority: 20 }),
   "otp-c": Object.freeze({ channel: VERIFICATION_CHANNELS.OTP, verificationMode: VERIFICATION_MODES.LOCAL_CODE, priority: 30 }),
+  "otp-d": Object.freeze({ channel: VERIFICATION_CHANNELS.OTP, verificationMode: VERIFICATION_MODES.LOCAL_CODE, priority: 35 }),
+  "otp-e": Object.freeze({ channel: VERIFICATION_CHANNELS.OTP, verificationMode: VERIFICATION_MODES.LOCAL_CODE, priority: 37 }),
+  "otp-f": Object.freeze({ channel: VERIFICATION_CHANNELS.OTP, verificationMode: VERIFICATION_MODES.LOCAL_CODE, priority: 38 }),
   whatsapp: Object.freeze({ channel: VERIFICATION_CHANNELS.WHATSAPP, verificationMode: VERIFICATION_MODES.LOCAL_CODE, priority: 40 }),
   telegram: Object.freeze({ channel: VERIFICATION_CHANNELS.TELEGRAM, verificationMode: VERIFICATION_MODES.LOCAL_CODE, priority: 50 })
 });
@@ -7227,17 +7230,39 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           return json3(request, 200, { ok: true, alreadyVerified: true, authenticated: false });
         }
         await callAuthority(env, "/internal/firebase/rate", { input: { operation: "verification-send", email: user.email }, context });
-        const result = await callAuthority(env, "/internal/verification/ownership/request", {
-          input: {
-            verificationTicket,
-            email: user.email,
-            subject: user.subject
-          },
-          context
-        });
+        let result;
+        try {
+          result = await callAuthority(env, "/internal/verification/ownership/request", {
+            input: {
+              verificationTicket,
+              email: user.email,
+              subject: user.subject
+            },
+            context
+          });
+        } catch (cause) {
+          if (!(cause instanceof NativeAuthError) || cause.code !== AUTH_ERROR_CODES.BACKUP_UNAVAILABLE) throw cause;
+          try {
+            await provider.sendVerificationEmail(refreshed.idToken, user.email);
+          } catch (sendCause) {
+            throw sendCause instanceof NativeAuthError ? sendCause : providerError(sendCause, "verification");
+          }
+          return json3(request, 202, {
+            ok: true,
+            authenticated: false,
+            delivery: {
+              method: "firebase-link",
+              sent: true,
+              fallback: true,
+              emailMasked: material.user?.emailMasked || "আপনার ইমেইলে",
+              resendAfter: FIREBASE_VERIFICATION_RESEND_SECONDS
+            }
+          }, context.isNewDevice ? { "Set-Cookie": deviceCookie(context.deviceId) } : {});
+        }
         return json3(request, 202, {
           ok: true,
           authenticated: false,
+          delivery: { method: "email-otp", sent: result?.sent !== false, fallback: false },
           ownership: {
             sent: result?.sent !== false,
             attemptId: result?.attemptId || "",
@@ -12386,6 +12411,209 @@ var BrevoOtpVerificationProvider = class {
     return { status: this.configured ? "configured" : "disabled", configured: this.configured, officialApi: true, mailer: "brevo" };
   }
 };
+var ResendOtpVerificationProvider = class {
+  constructor({ id = "otp-d", apiKey, fromAddress, fromName = "Admission Hub", declaredDailyQuota, fetchImpl = globalThis.fetch, now = Date.now } = {}) {
+    this.id = String(id || "");
+    this.channel = VERIFICATION_CHANNELS.OTP;
+    this.verificationMode = VERIFICATION_MODES.LOCAL_CODE;
+    this.apiKey = String(apiKey || "");
+    this.fromAddress = validEmailAddress(fromAddress) ? String(fromAddress) : "";
+    this.fromName = String(fromName || "Admission Hub").slice(0, 64);
+    this.declaredDailyQuota = safeInteger(declaredDailyQuota, 1, 1e7);
+    this.fetch = typeof fetchImpl === "function" ? fetchImpl.bind(globalThis) : null;
+    this.now = typeof now === "function" ? now : Date.now;
+    this.configured = Boolean(validSecret(this.apiKey) && this.fromAddress && this.declaredDailyQuota && this.fetch);
+  }
+  #headers(content = false) {
+    return {
+      Accept: "application/json",
+      "Cache-Control": "no-store",
+      Authorization: `Bearer ${this.apiKey}`,
+      ...content ? { "Content-Type": "application/json" } : {}
+    };
+  }
+  async checkAvailability() {
+    if (!this.configured) return { available: false, code: "NOT_CONFIGURED" };
+    const senderDomain = this.fromAddress.split("@").pop()?.toLowerCase();
+    const payload = await fetchJson(this.fetch, "https://api.resend.com/domains", { method: "GET", headers: this.#headers() });
+    const domains = Array.isArray(payload?.data) ? payload.data : [];
+    const ready = domains.some((domain) => String(domain?.name || "").toLowerCase() === senderDomain && domain.status === "verified" && domain.capabilities?.sending !== "disabled");
+    return { available: ready, code: ready ? "READY" : "SENDER_NOT_VERIFIED" };
+  }
+  async getRemainingQuota() {
+    if (!this.configured) return { remaining: 0, limit: 0, resetAt: 0, source: "not-configured" };
+    const limit = this.declaredDailyQuota;
+    return { remaining: limit, limit, resetAt: nextUtcMidnight(this.now()), source: "resend-declared-daily-quota" };
+  }
+  async sendVerification(input = {}) {
+    if (!this.configured) throw new VerificationProviderError("NOT_CONFIGURED", VERIFICATION_FAILURE_CLASS.HARD);
+    const destination = String(input.destination || "");
+    const code = String(input.code || "");
+    if (!validEmailAddress(destination) || !/^\d{6}$/.test(code)) {
+      throw new VerificationProviderError("INVALID_DESTINATION", VERIFICATION_FAILURE_CLASS.USER);
+    }
+    const expiresAt = Number(input.expiresAt || 0);
+    const minutes = expiresAt > 0 ? Math.max(1, Math.round((expiresAt - Number(this.now())) / 6e4)) : 5;
+    const { text, html } = otpEmailBody(code, minutes, input.recipientName);
+    const payload = await fetchJson(this.fetch, "https://api.resend.com/emails", {
+      method: "POST",
+      headers: this.#headers(true),
+      body: JSON.stringify({
+        from: `${this.fromName} <${this.fromAddress}>`,
+        to: [destination],
+        subject: "Admission Hub — আপনার যাচাইকরণ কোড",
+        html,
+        text
+      })
+    });
+    if (typeof payload?.id !== "string" || !payload.id) {
+      throw new VerificationProviderError("INVALID_PROVIDER_RESPONSE", VERIFICATION_FAILURE_CLASS.HARD);
+    }
+    return { accepted: true };
+  }
+  async verifyCode() {
+    throw new VerificationProviderError("LOCAL_VERIFICATION_ONLY", VERIFICATION_FAILURE_CLASS.USER);
+  }
+  async getProviderStatus() {
+    return { status: this.configured ? "configured" : "disabled", configured: this.configured, officialApi: true, mailer: "resend" };
+  }
+};
+var AgentMailOtpVerificationProvider = class {
+  constructor({ id = "otp-e", apiKey, inboxId, declaredDailyQuota, fetchImpl = globalThis.fetch, now = Date.now } = {}) {
+    this.id = String(id || "");
+    this.channel = VERIFICATION_CHANNELS.OTP;
+    this.verificationMode = VERIFICATION_MODES.LOCAL_CODE;
+    this.apiKey = String(apiKey || "");
+    this.inboxId = validEmailAddress(inboxId) ? String(inboxId) : "";
+    this.declaredDailyQuota = safeInteger(declaredDailyQuota, 1, 1e7);
+    this.fetch = typeof fetchImpl === "function" ? fetchImpl.bind(globalThis) : null;
+    this.now = typeof now === "function" ? now : Date.now;
+    this.configured = Boolean(validSecret(this.apiKey) && this.inboxId && this.declaredDailyQuota && this.fetch);
+  }
+  // AgentMail signs the sender with the inbox the message is sent from, so there is
+  // no separate from-address to verify. A read of the inbox is the cheapest proof
+  // that the key is live and scoped to an inbox this worker may send from.
+  async checkAvailability() {
+    if (!this.configured) return { available: false, code: "NOT_CONFIGURED" };
+    const payload = await fetchJson(this.fetch, `https://api.agentmail.to/inboxes/${encodeURIComponent(this.inboxId)}`, {
+      method: "GET",
+      headers: { Accept: "application/json", "Cache-Control": "no-store", Authorization: `Bearer ${this.apiKey}` }
+    });
+    const ready = String(payload?.inbox_id || payload?.inboxId || "") === this.inboxId;
+    return { available: ready, code: ready ? "READY" : "INBOX_NOT_AVAILABLE" };
+  }
+  async getRemainingQuota() {
+    if (!this.configured) return { remaining: 0, limit: 0, resetAt: 0, source: "not-configured" };
+    const limit = this.declaredDailyQuota;
+    return { remaining: limit, limit, resetAt: nextUtcMidnight(this.now()), source: "agentmail-declared-daily-quota" };
+  }
+  async sendVerification(input = {}) {
+    if (!this.configured) throw new VerificationProviderError("NOT_CONFIGURED", VERIFICATION_FAILURE_CLASS.HARD);
+    const destination = String(input.destination || "");
+    const code = String(input.code || "");
+    if (!validEmailAddress(destination) || !/^\d{6}$/.test(code)) {
+      throw new VerificationProviderError("INVALID_DESTINATION", VERIFICATION_FAILURE_CLASS.USER);
+    }
+    const expiresAt = Number(input.expiresAt || 0);
+    const minutes = expiresAt > 0 ? Math.max(1, Math.round((expiresAt - Number(this.now())) / 6e4)) : 5;
+    const { text, html } = otpEmailBody(code, minutes, input.recipientName);
+    const payload = await fetchJson(this.fetch, `https://api.agentmail.to/inboxes/${encodeURIComponent(this.inboxId)}/messages/send`, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Cache-Control": "no-store",
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${this.apiKey}`
+      },
+      body: JSON.stringify({
+        to: destination,
+        subject: "Admission Hub — আপনার যাচাইকরণ কোড",
+        html,
+        text
+      })
+    });
+    const reference = payload?.message_id || payload?.messageId || payload?.id;
+    if (typeof reference !== "string" || !reference) {
+      throw new VerificationProviderError("INVALID_PROVIDER_RESPONSE", VERIFICATION_FAILURE_CLASS.HARD);
+    }
+    return { accepted: true };
+  }
+  async verifyCode() {
+    throw new VerificationProviderError("LOCAL_VERIFICATION_ONLY", VERIFICATION_FAILURE_CLASS.USER);
+  }
+  async getProviderStatus() {
+    return { status: this.configured ? "configured" : "disabled", configured: this.configured, officialApi: true, mailer: "agentmail" };
+  }
+};
+var MailerSendOtpVerificationProvider = class {
+  // MailerSend's trial domain (test-*.mlsender.net) is verified by MailerSend itself
+  // and needs no DNS the owner controls, so it is one of the few senders that works
+  // without a custom domain. The API reports it under /v1/domains as is_verified.
+  constructor({ id = "otp-f", apiKey, fromAddress, fromName = "Admission Hub", declaredDailyQuota, fetchImpl = globalThis.fetch, now = Date.now } = {}) {
+    this.id = String(id || "");
+    this.channel = VERIFICATION_CHANNELS.OTP;
+    this.verificationMode = VERIFICATION_MODES.LOCAL_CODE;
+    this.apiKey = String(apiKey || "");
+    this.fromAddress = validEmailAddress(fromAddress) ? String(fromAddress) : "";
+    this.fromName = String(fromName || "Admission Hub").slice(0, 64);
+    this.declaredDailyQuota = safeInteger(declaredDailyQuota, 1, 1e7);
+    this.fetch = typeof fetchImpl === "function" ? fetchImpl.bind(globalThis) : null;
+    this.now = typeof now === "function" ? now : Date.now;
+    this.configured = Boolean(validSecret(this.apiKey) && this.fromAddress && this.declaredDailyQuota && this.fetch);
+  }
+  #headers(content = false) {
+    return {
+      Accept: "application/json",
+      "Cache-Control": "no-store",
+      Authorization: `Bearer ${this.apiKey}`,
+      ...content ? { "Content-Type": "application/json" } : {}
+    };
+  }
+  // The trial domain is only usable while it stays verified, so readiness is probed
+  // live instead of trusted from a stored flag.
+  async checkAvailability() {
+    if (!this.configured) return { available: false, code: "NOT_CONFIGURED" };
+    const senderDomain = this.fromAddress.split("@").pop()?.toLowerCase();
+    const payload = await fetchJson(this.fetch, "https://api.mailersend.com/v1/domains", { method: "GET", headers: this.#headers() });
+    const domains = Array.isArray(payload?.data) ? payload.data : [];
+    const ready = domains.some((domain) => String(domain?.name || "").toLowerCase() === senderDomain && domain.is_verified === true && domain.domain_settings?.send_paused !== true);
+    return { available: ready, code: ready ? "READY" : "SENDER_NOT_VERIFIED" };
+  }
+  async getRemainingQuota() {
+    if (!this.configured) return { remaining: 0, limit: 0, resetAt: 0, source: "not-configured" };
+    const limit = this.declaredDailyQuota;
+    return { remaining: limit, limit, resetAt: nextUtcMidnight(this.now()), source: "mailersend-declared-daily-quota" };
+  }
+  async sendVerification(input = {}) {
+    if (!this.configured) throw new VerificationProviderError("NOT_CONFIGURED", VERIFICATION_FAILURE_CLASS.HARD);
+    const destination = String(input.destination || "");
+    const code = String(input.code || "");
+    if (!validEmailAddress(destination) || !/^\d{6}$/.test(code)) {
+      throw new VerificationProviderError("INVALID_DESTINATION", VERIFICATION_FAILURE_CLASS.USER);
+    }
+    const expiresAt = Number(input.expiresAt || 0);
+    const minutes = expiresAt > 0 ? Math.max(1, Math.round((expiresAt - Number(this.now())) / 6e4)) : 5;
+    const { text, html } = otpEmailBody(code, minutes, input.recipientName);
+    await fetchJson(this.fetch, "https://api.mailersend.com/v1/email", {
+      method: "POST",
+      headers: this.#headers(true),
+      body: JSON.stringify({
+        from: { email: this.fromAddress, name: this.fromName },
+        to: [{ email: destination }],
+        subject: "Admission Hub — আপনার যাচাইকরণ কোড",
+        html,
+        text
+      })
+    });
+    return { accepted: true };
+  }
+  async verifyCode() {
+    throw new VerificationProviderError("LOCAL_VERIFICATION_ONLY", VERIFICATION_FAILURE_CLASS.USER);
+  }
+  async getProviderStatus() {
+    return { status: this.configured ? "configured" : "disabled", configured: this.configured, officialApi: true, mailer: "mailersend" };
+  }
+};
 var MailjetOtpVerificationProvider = class {
   constructor({ id = "mailjet", apiKey, secretKey, apiBase = "https://api.mailjet.com", fromAddress, fromName = "Admission Hub", declaredDailyQuota, fetchImpl = globalThis.fetch, now = Date.now } = {}) {
     this.id = String(id || "");
@@ -12911,10 +13139,39 @@ function createConfiguredVerificationProviders(env = {}, { fetchImpl = globalThi
     fetchImpl
   });
   const bridgeOtpC = new BridgeOtpVerificationProvider({ id: "otp-c", origin: env.OTP_C_PROVIDER_ORIGIN, apiKey: env.OTP_C_PROVIDER_KEY, declaredDailyQuota: env.OTP_C_DAILY_QUOTA, fetchImpl });
+  const resendOtpD = new ResendOtpVerificationProvider({
+    id: "otp-d",
+    apiKey: env.RESEND_API_KEY,
+    fromAddress: env.RESEND_FROM_ADDRESS,
+    fromName: env.RESEND_FROM_NAME,
+    declaredDailyQuota: env.OTP_D_DAILY_QUOTA,
+    fetchImpl
+  });
+  const bridgeOtpD = new BridgeOtpVerificationProvider({ id: "otp-d", origin: env.OTP_D_PROVIDER_ORIGIN, apiKey: env.OTP_D_PROVIDER_KEY, declaredDailyQuota: env.OTP_D_DAILY_QUOTA, fetchImpl });
+  const agentMailOtpE = new AgentMailOtpVerificationProvider({
+    id: "otp-e",
+    apiKey: env.AGENTMAIL_API_KEY,
+    inboxId: env.AGENTMAIL_INBOX_ID,
+    declaredDailyQuota: env.OTP_E_DAILY_QUOTA,
+    fetchImpl
+  });
+  const bridgeOtpE = new BridgeOtpVerificationProvider({ id: "otp-e", origin: env.OTP_E_PROVIDER_ORIGIN, apiKey: env.OTP_E_PROVIDER_KEY, declaredDailyQuota: env.OTP_E_DAILY_QUOTA, fetchImpl });
+  const mailerSendOtpF = new MailerSendOtpVerificationProvider({
+    id: "otp-f",
+    apiKey: env.MAILERSEND_API_KEY,
+    fromAddress: env.MAILERSEND_FROM_ADDRESS,
+    fromName: env.MAILERSEND_FROM_NAME,
+    declaredDailyQuota: env.OTP_F_DAILY_QUOTA,
+    fetchImpl
+  });
+  const bridgeOtpF = new BridgeOtpVerificationProvider({ id: "otp-f", origin: env.OTP_F_PROVIDER_ORIGIN, apiKey: env.OTP_F_PROVIDER_KEY, declaredDailyQuota: env.OTP_F_DAILY_QUOTA, fetchImpl });
   return [
     brevoOtpA.configured ? brevoOtpA : bridgeOtpA,
     appsScriptOtpB.configured ? appsScriptOtpB : bridgeOtpB,
     mailjetOtpC.configured ? mailjetOtpC : bridgeOtpC,
+    resendOtpD.configured ? resendOtpD : bridgeOtpD,
+    agentMailOtpE.configured ? agentMailOtpE : bridgeOtpE,
+    mailerSendOtpF.configured ? mailerSendOtpF : bridgeOtpF,
     new OfficialWhatsAppVerificationProvider({
       graphVersion: env.WHATSAPP_GRAPH_VERSION,
       phoneNumberId: env.WHATSAPP_PHONE_NUMBER_ID,

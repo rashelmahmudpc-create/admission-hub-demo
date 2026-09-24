@@ -9,9 +9,9 @@ const HTML = read('index.html');
 const SW = read('sw.js');
 const RELEASE = read('.github/workflows/telegram-auth-canary-activate.yml');
 const BUNDLE_GUARD = read('.github/workflows/cf-pages.yml');
-const UI_VERSION = '20260921-relogin-device-challenge-fix';
+const UI_VERSION = '20260921-single-email-button-fallback';
 
-const SHELL_VERSION = 'v282-device-challenge-20260921';
+const SHELL_VERSION = 'v283-single-email-button-20260921';
 
 const signupStart = JS.indexOf('<form class="ah-account-view ah-signup-view"');
 const signupEnd = JS.indexOf('<div class="ah-account-view ah-created-view"', signupStart);
