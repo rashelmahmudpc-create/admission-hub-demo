@@ -15,6 +15,11 @@ advanced-mode Pages worker that proxies `/api/*` and gates asset serving.
 - Deployment is a manual `workflow_dispatch`:
   `wrangler pages deploy dist --project-name admissionhub --branch main`.
   Requires `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID`.
+- **Manual deploy workflow:** `.github/workflows/deploy-pages-worker.yml`
+  (`confirmation: DEPLOY`) publishes both the Worker bundle and the Pages UI from
+  `main` using repository secrets. It is deploy-only — no Firebase, mailbox or
+  secret mutation. Merging to `main` does **not** deploy on its own; run this
+  workflow (or dispatch it via the API) whenever `main` must reach production.
 - Local deploy without `rsync` (not installed here): replicate the exclude list
   in Python, then run wrangler via `npx --yes wrangler@3 pages deploy dist ...`.
 
