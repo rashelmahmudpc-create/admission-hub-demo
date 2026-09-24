@@ -498,12 +498,13 @@ but identity fields must never leave the browser. Two gates, both required:
 A client-side projection is never sufficient on its own — the server is the only
 gate the user cannot edit.
 
-**Name sharing is opt-in and enforced server-side.** `aiprefs.shareName` (default
-`false`) is read from KV, not from the request body; only a single name token
-passes, so a full name is rejected even when sharing is on. The toggle lives in
-Profile → Preferences → AI Personalization ("AI আমার নাম জানবে"); the chat client
-reads a `localStorage` mirror (`ah-ai-prefs-cache`) only to decide whether to put
-the token on the wire, and the server re-checks regardless.
+**The first name is automatic — no setting.** The AI greets the signed-in student
+by first name with zero setup; there is no toggle anywhere in the UI. Only a
+single name token passes, so a full name is rejected even if one is sent. All
+other identity fields (mobile, email, DOB, bio, public AH-ID) never leave the
+device. Do not reintroduce a name-sharing preference: it made the AI feel harder
+to use, and a stale stored `false` from an earlier build would silently keep the
+name off for existing accounts.
 
 **New UI copy must be added to `language-engine.js`'s `DICT` in the same change** —
 `language-engine.test.mjs` scans `profile-ui.js` and fails on any Bengali literal

@@ -112,11 +112,13 @@ function renderContext(bundle) {
     if (q) lines.push(`- academic: institution search "${q}"`);
   }
   if (!lines.length) return "";
+  const named = scopeAtLeast(scope.profile, SCOPE.MINIMAL) && data.profile && data.profile.firstName;
+  const tail = named ? ` Address the student by first name (${data.profile.firstName}) where it reads naturally. Never ask for or infer anything outside the categories above.` : ` Only the categories above were shared with you. Never ask for or infer anything outside them.`;
   return `
 
 CONTEXT ENGINE (permission-scoped — ${CONTEXT_VERSION}):
 ${lines.join("\n")}
-Only the categories above were shared with you. Never ask for or infer anything outside them.`;
+${tail}`;
 }
 
 // ai-agent.js
@@ -240,7 +242,7 @@ function capStats(stats) {
   if (stats.mistakes != null) s.mistakes = num(stats.mistakes, 0, 1e5);
   return Object.keys(s).length ? s : null;
 }
-var AI_PREFS_DEFAULT = Object.freeze({ langStyle: "bn", tone: "friendly", responseLen: "balanced", memory: true, shareName: false });
+var AI_PREFS_DEFAULT = Object.freeze({ langStyle: "bn", tone: "friendly", responseLen: "balanced", memory: true });
 function sanitizeAiPrefs(value) {
   if (!value || typeof value !== "object") return null;
   const pick = (v, set, dflt) => set.has(String(v)) ? String(v) : dflt;
@@ -248,17 +250,14 @@ function sanitizeAiPrefs(value) {
     langStyle: pick(value.langStyle, /* @__PURE__ */ new Set(["bn", "en", "mix"]), AI_PREFS_DEFAULT.langStyle),
     tone: pick(value.tone, /* @__PURE__ */ new Set(["friendly", "professional", "simple", "motivating", "direct"]), AI_PREFS_DEFAULT.tone),
     responseLen: pick(value.responseLen, /* @__PURE__ */ new Set(["short", "balanced", "detailed"]), AI_PREFS_DEFAULT.responseLen),
-    memory: value.memory === false ? false : true,
-    // Opt-in: the AI may greet the student by first name. Off unless explicitly on.
-    shareName: value.shareName === true
+    memory: value.memory === false ? false : true
   };
 }
 var PROFILE_TEXT = (value, max) => String(value ?? "").normalize("NFKC").replace(/[\r\n\u0000<>]/g, "").trim().slice(0, max);
 function sanitizeProfileContext(value, opts = {}) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  const shareName = opts.shareName === true;
   const out = {};
-  if (shareName) {
+  {
     const firstName = PROFILE_TEXT(value.firstName, 40);
     if (firstName && !/\s/.test(firstName)) out.firstName = firstName;
   }
@@ -706,7 +705,7 @@ async function agentChat(request, env, uid, opts = {}) {
   }
   msgs = msgs.slice(-24);
   const systemPrompt = buildSystemPrompt({ stats, examMode, quiz: quizMode, onboarding, prefs: aiPrefs });
-  const profileCtx = sendCtx.uid.startsWith("account-") ? sanitizeProfileContext(body?.context?.profile, { shareName: aiPrefs?.shareName === true }) : null;
+  const profileCtx = sendCtx.uid.startsWith("account-") ? sanitizeProfileContext(body?.context?.profile) : null;
   const ctxBundle = contextEngineEnabled(env) ? buildContext({ uid: sendCtx.uid, prefs: aiPrefs, stats, onboarding, profile: profileCtx, memoryOn }) : null;
   const ctxText = ctxBundle ? renderContext(ctxBundle) : "";
   let summaryText = memoryOn && !freshThread ? await getKv(env.PUB_KV, "chatmemsum:" + sendCtx.uid) : "";

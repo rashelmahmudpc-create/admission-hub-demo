@@ -154,5 +154,9 @@ export function renderContext(bundle) {
     if (q) lines.push(`- academic: institution search "${q}"`);
   }
   if (!lines.length) return '';
-  return `\n\nCONTEXT ENGINE (permission-scoped — ${CONTEXT_VERSION}):\n${lines.join('\n')}\nOnly the categories above were shared with you. Never ask for or infer anything outside them.`;
+  const named = scopeAtLeast(scope.profile, SCOPE.MINIMAL) && data.profile && data.profile.firstName;
+  const tail = named
+    ? ` Address the student by first name (${data.profile.firstName}) where it reads naturally. Never ask for or infer anything outside the categories above.`
+    : ` Only the categories above were shared with you. Never ask for or infer anything outside them.`;
+  return `\n\nCONTEXT ENGINE (permission-scoped — ${CONTEXT_VERSION}):\n${lines.join('\n')}\n${tail}`;
 }

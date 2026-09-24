@@ -137,12 +137,11 @@ t('M4-২১. sanitizeProfileContext drops every PII key and keeps the academic 
     && p.firstName === undefined
     && !/Rashed|0\d{9,}|2005-01-01|a@b\.com|AH-ABC123|hello/.test(s);
 })());
-t('M4-২২. the first name appears only when sharing is explicitly opted in', (() => {
+t('M4-২২. the first name is always sanitized automatically, with no opt-in', (() => {
   const arg = { firstName: 'Rashed', institutionName: 'Dhaka College' };
-  const off = __test.sanitizeProfileContext(arg, { shareName: false });
-  const on = __test.sanitizeProfileContext(arg, { shareName: true });
-  const full = __test.sanitizeProfileContext({ firstName: 'Rashed Mahmud' }, { shareName: true });
-  return off.firstName === undefined && on.firstName === 'Rashed' && full === null;
+  const got = __test.sanitizeProfileContext(arg);
+  const full = __test.sanitizeProfileContext({ firstName: 'Rashed Mahmud' });
+  return got.firstName === 'Rashed' && full === null;
 })());
 t('M4-২৩. sanitizeProfileContext strips control chars/angle brackets and returns null when empty',
   (() => {
@@ -158,19 +157,19 @@ t('M4-২৫. renderContext surfaces the academic profile at an allowed scope', 
   const txt = renderContext(buildContext({ uid: 'account-x', profile: { institutionName: 'Dhaka College', district: 'Dhaka', targets: [{ name: 'DMC', unit: 'MBBS', year: '2026' }] }, memoryOn: false }));
   return txt.includes('profile (academic)') && txt.includes('Dhaka College') && txt.includes('DMC');
 })());
-t('M4-২৬. renderContext shows the name only when it survived sanitization', (() => {
+t('M4-২৬. renderContext shows the name and tells the AI to use it', (() => {
   const withName = renderContext(buildContext({ uid: 'account-x', profile: { firstName: 'Rashed', institutionName: 'Dhaka College' }, memoryOn: false }));
   const noName = renderContext(buildContext({ uid: 'account-x', profile: { institutionName: 'Dhaka College' }, memoryOn: false }));
-  return withName.includes('name: Rashed') && !noName.includes('name:');
+  return withName.includes('name: Rashed') && withName.includes('by first name (Rashed)')
+    && !noName.includes('name:') && !noName.includes('by first name');
 })());
-t('M4-২৭. shareName defaults off and is only on for an explicit true', (() => {
+t('M4-২৭. AI prefs carry no name-sharing switch — the name is automatic', (() => {
   const { sanitizeAiPrefs } = A;
-  return sanitizeAiPrefs({}).shareName === false
-    && sanitizeAiPrefs({ shareName: 'yes' }).shareName === false
-    && sanitizeAiPrefs({ shareName: true }).shareName === true;
+  const p = sanitizeAiPrefs({ shareName: false });
+  return !('shareName' in p) && !('shareName' in sanitizeAiPrefs({}));
 })());
 
-/* ── ৯. E2E: consent decides whether the name reaches the provider ── */
+/* ── ৯. E2E: the name reaches the provider automatically, without any setting ── */
 async function capturedWithContext(env, ctx) {
   const real = globalThis.fetch;
   let captured = '';
@@ -184,18 +183,15 @@ async function capturedWithContext(env, ctx) {
   } finally { globalThis.fetch = real; }
   return captured;
 }
-t('M4-২৮. E2E: without opt-in the provider sees the college but not the name',
+t('M4-২৮. E2E: no setup needed — the first name reaches the provider by default',
   (async () => {
     const p = await capturedWithContext(envWith({ USE_CONTEXT_ENGINE: 'enabled' }), { profile: { firstName: 'Rashed', institutionName: 'Dhaka College' } });
-    return p.includes('Dhaka College') && !p.includes('Rashed');
-  })(), { timeout: 10000 });
-t('M4-২৯. E2E: with the stored opt-in on, the first name reaches the provider',
-  (async () => {
-    const env = envWith({ USE_CONTEXT_ENGINE: 'enabled' });
-    const store = new Map([['aiprefs:account-abc', JSON.stringify({ shareName: true })]]);
-    env.PUB_KV = { get: async (k) => (store.has(k) ? store.get(k) : null), put: async (k, v) => { store.set(k, v); } };
-    const p = await capturedWithContext(env, { profile: { firstName: 'Rashed', institutionName: 'Dhaka College' } });
     return p.includes('name: Rashed') && p.includes('Dhaka College');
+  })(), { timeout: 10000 });
+t('M4-২৯. E2E: a full name still never leaves — only one token survives',
+  (async () => {
+    const p = await capturedWithContext(envWith({ USE_CONTEXT_ENGINE: 'enabled' }), { profile: { firstName: 'Rashed Mahmud', institutionName: 'Dhaka College' } });
+    return p.includes('Dhaka College') && !/name:/.test(p);
   })(), { timeout: 10000 });
 
 console.log(`\n🧩 PHASE9-M4-CONTEXT-ENGINE: ${pass} pass / ${fail} fail`);
