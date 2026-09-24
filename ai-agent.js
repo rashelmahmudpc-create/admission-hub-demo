@@ -19,6 +19,7 @@ import { buildContext, renderContext, describeContext, CONTEXT_VERSION } from '.
 import { getPromptText, BASE_PROMPT_ID } from './prompt-registry.js';
 import { listTools, TOOL_REGISTRY_VERSION } from './tool-registry.js';
 import { extractMemoryCandidates, makeMemory, upsertMemory, parseMemory, renderMemory, resolveMemoryOwner, MEMORY_VERSION } from './memory-engine.js';
+import { validateResponse, describeResponseValidation, RESPONSE_VALIDATION_VERSION } from './response-validator.js';
 
 export const AGENT_VERSION = 'agent-f1';
 export const SYSTEM_PROMPT_V = 'sys-f1-3-ai-personalization';
@@ -728,10 +729,24 @@ export async function agentChat(request, env, uid, opts = {}) {
   }
 
   const failures = [];
+  /* M8: validate every model response before it is returned or stored. The
+     context (intent, stats, quiz, exam mode) is what the checks compare against;
+     nothing here reaches the model. */
+  const validationCtx = {
+    intent,
+    intentConfidence: intentCls.confidence,
+    stats,
+    quiz: quizMode,
+    examMode,
+    blocked: safety.blocked
+  };
   const finalize = async (model, provider, text) => {
     /* Guests are refused before this point; a signed-in student's memory is keyed
        only by the server-validated account identity and has no client UID. */
-    if (!memoryOn) return;
+    if (!memoryOn) return text;
+    /* M8: a response that failed validation is never written to conversation or
+       long-term memory — an unsafe reply is not a memory. */
+    if (!validateResponse(text, validationCtx).persistable) return text;
     try {
       const next = msgs.concat([{ role: 'user', content: v.messages[v.messages.length - 1].content }, { role: 'assistant', content: text }]).slice(-24).map(x => ({ role: x.role, content: x.content }));
       await putKv(env.PUB_KV, 'chatmem:' + sendCtx.uid, JSON.stringify(next));
@@ -763,10 +778,13 @@ export async function agentChat(request, env, uid, opts = {}) {
     let lastErr = '';
     for (const c of providerChain(env, tier, badSet)) {
       try {
-        const t = await GEMINI_ADAPTER.chatOnce(c, payloadG());
-        if (t) {
-          await finalize(c.model, c.provider, t);
-          return jsonResp({ text: t, model: c.model, intent, pv: SYSTEM_PROMPT_V, latencyMs: Date.now() - startedAt, agent: AGENT_VERSION });
+        const raw = await GEMINI_ADAPTER.chatOnce(c, payloadG());
+        if (raw) {
+          /* M8: the validated text is what the caller receives; the raw model
+             output never leaves this function unchecked. */
+          const check = validateResponse(raw, validationCtx);
+          await finalize(c.model, c.provider, raw);
+          return jsonResp({ text: check.text, structured: check.structured, model: c.model, intent, pv: SYSTEM_PROMPT_V, latencyMs: Date.now() - startedAt, agent: AGENT_VERSION });
         }
         lastErr = 'empty-' + c.model;
       } catch (e) {
@@ -795,7 +813,13 @@ export async function agentChat(request, env, uid, opts = {}) {
             if (full.trim()) {
               ok = true;
               await finalize(c.model, c.provider, full);
-              push(`event: done\ndata: ${JSON.stringify({ model: c.model, provider: c.provider, intent, quiz: quizMode, pv: SYSTEM_PROMPT_V, agent: AGENT_VERSION, latencyMs: Date.now() - startedAt })}\n\n`);
+              /* M8: text already streamed, so a blocked response is corrected in
+                 place — the client replaces what it rendered with the safe notice.
+                 Only high-precision classes fire here, so a normal answer is never
+                 rewritten mid-stream. */
+              const check = validateResponse(full, validationCtx);
+              if (check.enforced) push(`event: replace\ndata: ${JSON.stringify({ text: check.text })}\n\n`);
+              push(`event: done\ndata: ${JSON.stringify({ model: c.model, provider: c.provider, intent, quiz: quizMode, pv: SYSTEM_PROMPT_V, agent: AGENT_VERSION, latencyMs: Date.now() - startedAt, structured: check.structured })}\n\n`);
               break;
             }
             lastErr = 'empty-' + c.model;
@@ -840,6 +864,7 @@ export async function agentStatus(request, env, uid) {
     streaming: true,
     tools: { version: TOOL_REGISTRY_VERSION, declared: listTools() },
     memory: { version: MEMORY_VERSION, mode: 'auto', scope: 'account-only' },
+    response: describeResponseValidation(),
     context: ctxOn
       ? describeContext(buildContext({ uid, prefs: null, stats: null, onboarding: null, memoryOn: true }))
       : { enabled: false }
@@ -869,5 +894,6 @@ export const __test = {
   INTENTS, TIER, GEMINI_MODELS, AGENT_VERSION, SYSTEM_PROMPT_V,
   contextEngineEnabled, buildContext, renderContext, describeContext, CONTEXT_VERSION, sanitizeProfileContext,
   listTools, TOOL_REGISTRY_VERSION,
-  extractMemoryCandidates, makeMemory, upsertMemory, parseMemory, renderMemory, MEMORY_VERSION
+  extractMemoryCandidates, makeMemory, upsertMemory, parseMemory, renderMemory, MEMORY_VERSION,
+  validateResponse, describeResponseValidation, RESPONSE_VALIDATION_VERSION
 };

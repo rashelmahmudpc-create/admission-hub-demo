@@ -1573,6 +1573,15 @@
     if (p) { const cur = p.querySelector('.ai-cursor'); if (cur) cur.remove(); p.textContent += chunk; const sp = document.createElement('span'); sp.className = 'ai-cursor'; p.appendChild(sp); }
     scrollBottom();
   }
+  /* M8: server-side validation may replace a whole response after streaming.
+     textContent (never innerHTML) keeps the corrected text XSS-safe. */
+  function replaceStream(text) {
+    if (!streamingEl) { appendStream(text); return; }
+    const p = streamingEl.querySelector('.ai-msg-body p');
+    if (!p) return;
+    p.textContent = text;
+    scrollBottom();
+  }
 
   /* ── api ── */
   function history() {
@@ -1611,13 +1620,18 @@
       const parts = buf.split('\n\n');
       buf = parts.pop() || '';
       for (const part of parts) {
+        let evt = '';
         for (const line of part.split('\n')) {
           const s = line.trim();
-          if (!s.startsWith('data:')) { if (s.startsWith('event:') && s.includes('error')) meta = meta || { event: 'error' }; continue; }
+          if (s.startsWith('event:')) { evt = s.slice(6).trim(); if (evt === 'error') meta = meta || { event: 'error' }; continue; }
+          if (!s.startsWith('data:')) continue;
           let j = null; try { j = JSON.parse(s.slice(5).trim()); } catch (_) { continue; }
-          if (j.text) { full += j.text; appendStream(j.text); }
+          /* M8: a validated response may correct text that already streamed.
+             Replace what was rendered instead of appending the safe notice. */
+          if (evt === 'replace' && typeof j.text === 'string') { full = j.text; replaceStream(full); }
+          else if (j.text) { full += j.text; appendStream(j.text); }
           else if (j.error) meta = { event: 'error', message: j.message, retryable: j.retryable };
-          else if (j.model || j.provider || j.intent) meta = { event: 'done', model: j.model, provider: j.provider, intent: j.intent };
+          else if (j.model || j.provider || j.intent) meta = { event: 'done', model: j.model, provider: j.provider, intent: j.intent, structured: j.structured };
         }
       }
     }

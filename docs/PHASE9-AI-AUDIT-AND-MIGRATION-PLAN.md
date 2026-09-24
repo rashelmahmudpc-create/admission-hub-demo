@@ -107,7 +107,7 @@ Missing ‚Üí required before Phase 9 completes:
 | **M5** | Prompt Registry ‚Äî existing prompt becomes `v1`; A/B before replacing | low | yes | **DONE** (see ¬ß12) |
 | **M6** | Tool Registry ‚Äî READ-ONLY tools only; cross-user isolation enforced at the tool boundary | high | yes | **DONE** (see ¬ß13) |
 | **M7** | Memory Engine — long-term layer (owner override: automatic, no toggle) | medium | yes | **DONE** (see §14) |
-| **M8** | Response validation + structured output | medium | yes | pending |
+| **M8** | Response validation + structured output | medium | yes | **DONE** (see §15) |
 | **M9** | Write/Execute actions ‚Äî disabled by default, confirmation required | high | yes | pending |
 | **M10** | Observability, cost engine, full regression + hardening | low | yes | pending |
 
@@ -418,3 +418,76 @@ keeps its two pre-existing, unrelated failures (`profile-core`,
 
 **Next gate:** awaiting owner direction for the milestone after M7.
 
+
+## 15. M8 completion record — Response Validation + Structured Output
+
+**Where:** `response-validator.js` (pure data + pure guards — no `env`, no I/O, no
+model call). `ai-agent.js` calls it in `finalize()` for the persist decision and
+again around the provider loop for the returned text; `ai-agent-chat.js` learned
+one new SSE frame.
+
+**What it does (§52 gap 7).** Every model response is checked on four dimensions
+before it reaches the UI or memory:
+
+1. **Schema** — non-empty string, bounded length (`MAX_RESPONSE_LEN` 24000).
+2. **Safety** — internal-leak, credential-request, secret-material, false-success
+   and action-claim classes (see `VIOLATION`).
+3. **Data** — a sentence that attributes a number to the student's own stats and
+   contradicts the stat the caller supplied is flagged as `invented-stats`.
+4. **Action** — a claimed save/delete/update is an `action-claim`; the envelope's
+   `actions` array is hard-empty until M9.
+
+The structured envelope is `{version, type, message, insights, recommendations,
+actions, confidence}`. `type` follows the *request context* (answer / analysis /
+quiz / guidance / refusal), never the model's own claim. `insights` and
+`recommendations` are derived only from stats the caller actually provided, each
+capped at 3 bullets; with no stats both are empty. `confidence` starts from the
+intent classifier and drops 0.1 per violation.
+
+**High-precision only — the deliberate boundary.** A guard that rewrites a
+legitimate academic answer is worse than the risk it covers, so only six classes
+replace the text (`BLOCKING`): schema, internal-leak, credential-request,
+secret-material, action-claim, false-success. Everything else is recorded and the
+answer passes through byte-identical. This is why the patterns are self-disclosure
+shaped rather than keyword-shaped:
+
+- "My system prompt is ..." is blocked; *"System prompt কী?"* passes — asking about
+  prompts is legitimate study.
+- "তোমার OTP দাও" is blocked; "লগইন করতে password দাও" passes — the sentence
+  points at the app's own field (`APP_TARGET_RE`), not at the assistant.
+- "ভেরিফিকেশন হয়ে গেছে" is blocked; "ভেরিফিকেশন সফল হলে ইমেইল পাবে" passes —
+  a conditional is not a claim.
+- An `invented-stats` flag needs a *provided* value to contradict. With no stats
+  the claim is a guess, not proof, so it is never rewritten.
+
+**No new Worker variable.** The plan mentioned a feature flag, but `wrangler.toml`
+already sits on the 64-variable cap, so enforcement is the module constant
+`ENFORCE` (currently `true`) — reversible in one place, no new binding.
+
+**Guests and memory are unchanged.** Validation runs *inside* `agentChat`, after
+the guest `401` gate, so a guest is still refused before anything is parsed. A
+blocked response is never persisted: `finalize()` returns early unless
+`validateResponse(...).persistable` is true, so an unsafe reply cannot become a
+conversation turn or a long-term memory record.
+
+**Streaming.** Text is already on the wire by the time the full reply is known, so
+the server emits a new `event: replace` frame carrying the safe text; the client
+replaces what it rendered (via `textContent`, never `innerHTML`) before the
+`event: done` frame. A clean stream emits no `replace` frame at all.
+
+**Backward compatibility.** The response shape is unchanged — `text`, `intent`,
+`pv`, `agent`, `authoritative` all still present; `structured` is additive. The
+prompt text and its SHA-256 are untouched.
+
+**Verification:** `phase9-m8-response-validation.test.mjs` **33/33** — envelope
+shape and bounded confidence (M8-৩...৭), schema (M8-৮/৯), each safety class with its
+passing counterpart (M8-১০...১৯), data contradictions (M8-২০...২২), the quiz contract
+(M8-২৩/২৪), the high-precision enforcement policy and byte-identical clean answer
+(M8-২৫...২৭), end-to-end non-stream replace + no-store (M8-২৮/২৯), end-to-end
+stream `replace` frame (M8-৩০/৩১), and client/status wiring (M8-৩২/৩৩). M4 29/29,
+M5 10/10, M6 15/15, M7 33/33, `ai-agent-f1` 44/44, adapters 27/27, guards and
+`check:worker-bundle` stay green; the full native-auth suite keeps its two
+pre-existing, unrelated failures (`profile-core`, `session-recovery-chaos`).
+
+**Next gate:** awaiting owner direction for the milestone after M8 (M9 is
+write/execute actions — high risk, disabled by default).
