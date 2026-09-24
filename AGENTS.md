@@ -323,3 +323,21 @@ CLOUDFLARE_API_TOKEN=... npx wrangler@4.35.0 pages deploy dist \
 Without `--branch=main` the deploy lands as a preview and `admissionhub.pages.dev`
 keeps serving the old bundle. Verify with
 `curl -s https://admissionhub.pages.dev/ | grep -o 'notification-admin.js?v=[^"]*'`.
+
+The working credential pair (verified 2026-09-24) is the injected secret
+`ADMISSIONHUB_CLOUDFLARE_API` as the token and `ADMISSIONHUB_CLODFLARE_ACCOUNT_ID`
+(note the spelling) as the account id — pass them as `CLOUDFLARE_API_TOKEN` /
+`CLOUDFLARE_ACCOUNT_ID` to wrangler. The env-api pair is **not** a Cloudflare
+token/account; use the Cloudflare pair above.
+
+The Pages project `admissionhub` is not Git-connected (`source: null`), so a
+push to `main` does not rebuild it — every client release is a manual
+`pages deploy`. Build the sanitized bundle with `python3` (no `rsync` in the
+image): copy the tracked tree minus `.git`, `node_modules`, `dist`, `docs`,
+`AGENT_RESUME`, `ai-proxy`, `auth*`, `email-gateway`, `uploads`, `.github`,
+`*worker*.js`, `wrangler.toml`, `package*.json`, `*.test.mjs`, `*.md`.
+
+The `workflow_dispatch` deploy pipelines currently cannot run: the repo and both
+environments (`github-pages`, `email-gateway-production`) have zero Actions
+secrets, so `verify-firebase-config.mjs` aborts with `code=API_KEY_MISSING`. Do
+not rely on those workflows until the owner configures secrets.

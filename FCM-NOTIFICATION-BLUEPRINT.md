@@ -452,7 +452,32 @@ pointlessly as users grow.
 - Telegram channel remains the backup notification channel (FCM primary).
 - Deep links target the existing hash routes / `AH-XXXXXX` public pages.
 
-## Open items (only one remains)
+## Production deploy status (2026-09-24)
+
+Deployed and verified live, manually with the owner's Cloudflare
+credential, because the repo's `workflow_dispatch` deploy pipelines are
+**not usable**: no Actions secrets are configured (repo and both
+environments report `total_count: 0`), and the Pages project
+`admissionhub` has `source: null` (not Git-connected), so a push to
+`main` does **not** auto-build the site. Treat manual deploy as the
+normal path until the owner configures secrets / reconnects Pages.
+
+Deployed state:
+
+- **Worker** `admission-gk` → version `ce5447e1-b563-4e95-aee7-90650d6459af`.
+  `/api/userdata/sync` and `/api/notifications/personal-pref` return 401
+  (present, session-guarded); auth contract still `firebase-canonical-auth-v3`,
+  Google `READY`, passkey available.
+- **Pages** `admissionhub` → deployment `5e4f5366`.
+  `student-data-sync.js`, the FCM reconciler and the admin-form keyboard
+  fix are all live; `/api/notifications/config` returns 200 through the
+  Pages origin.
+- Known non-blocking gap: the CI deploy workflow refuses to run without
+  a `FIREBASE_WEB_API_KEY` secret. Not set — the key is public (already
+  in the client bundle) but was not added, to avoid guessing or storing
+  a credential the owner did not hand over.
+
+## Open items
 
 1. ~~Database~~ → **Decided: Cloudflare (D1 `PROFILE_DB` — same DB as profiles).**
 2. ~~Firebase project~~ → **Done: `admission-hub-fcm` (sender
@@ -463,6 +488,10 @@ pointlessly as users grow.
 3. ~~Vercel plan~~ → **Decided: no Vercel; Cloudflare Workers free tier.**
 4. **Telegram channel** — kept as backup (recommended; confirm at
    Phase 2 start).
+5. **Owner CI deploy** — configure Actions secrets (`CLOUDFLARE_API_TOKEN`,
+   `CLOUDFLARE_ACCOUNT_ID`, `FIREBASE_WEB_API_KEY`) and/or reconnect the
+   Pages project to Git so merges deploy themselves instead of relying
+   on a manual `wrangler` run.
 
 ## Phase gate
 
