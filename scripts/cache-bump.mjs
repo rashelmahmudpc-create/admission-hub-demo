@@ -17,8 +17,8 @@ const UI_VERSION_FROM = '20260921-relogin-device-challenge-fix';
 const UI_VERSION_TO = '20260921-single-email-button-fallback';
 const LANG_VERSION_FROM = 'lang-v4-device-challenge';
 const LANG_VERSION_TO = 'lang-v5-single-email-button';
-const SW_BUILD_FROM = 'v283-single-email-button-20260921';
-const SW_BUILD_TO = 'v284-notification-command-center-20260924';
+const SW_BUILD_FROM = 'v282-device-challenge-20260921';
+const SW_BUILD_TO = 'v283-single-email-button-20260921';
 
 const targets = [
   'index.html',
