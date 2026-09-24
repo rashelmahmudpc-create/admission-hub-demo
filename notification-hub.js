@@ -228,6 +228,10 @@
     } catch (_) {}
   };
   const disablePush = async () => {
+    /* This toggle owns the VAPID subscription only. The FCM registration in
+     * AhFcm is a separate channel, so leaving it active kept pushes arriving
+     * after the user had turned push off — the confusing part was that the UI
+     * said "off" while notifications continued. Stop both. */
     try {
       const registration = await navigator.serviceWorker.ready;
       const subscription = await registration.pushManager.getSubscription();
@@ -235,6 +239,7 @@
         await fetch(endpoint + '/api/push/unsubscribe', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-AH-App': APP_HEADER }, body: JSON.stringify(subscription.toJSON()) }).catch(() => {});
         await subscription.unsubscribe();
       }
+      await window.AhFcm?.disable?.().catch(() => {});
       window.toast?.('Push বন্ধ হয়েছে');
     } catch (_) {}
   };

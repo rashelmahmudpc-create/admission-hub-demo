@@ -62,9 +62,35 @@ test('client fcm: subscribes the device to all_students after register + on refr
   assert.match(CLIENT_FCM, /const GLOBAL_TOPIC = 'all_students';/);
   assert.match(CLIENT_FCM, /await messaging\.subscribeToTopic\(GLOBAL_TOPIC\);/);
   assert.match(CLIENT_FCM, /'\/topics\/subscribe'/);
-  assert.ok(CLIENT_FCM.indexOf('await ensureTopic(messaging, token); return \'granted\'') > -1, 'topic sub on first enable');
-  assert.match(CLIENT_FCM, /if \(token\) \{ await registerToken\(token\); await ensureTopic\(messaging, token\); \}/, 'topic sub refreshed on app start');
+  assert.ok(CLIENT_FCM.indexOf("await ensureTopic(messaging, token); return 'granted'") > -1, 'topic sub on first enable');
+  assert.match(CLIENT_FCM, /await ensureTopic\(messaging, token\);/, 'topic sub refreshed on boot reconcile');
   assert.match(CLIENT_FCM, /catch \(_\) \{ \/\* server fallback covers this device \*\/ \}/, 'best-effort — never breaks enablement');
+});
+
+/* Owner directive: users must receive push with no extra/confusing steps.
+ * Permission already granted is the durable signal — if the device looks
+ * "off" only because a flag/token went stale, boot must silently re-register
+ * rather than wait for the user to tap Enable again. */
+test('client fcm: boot reconciles push instead of trusting the flag', () => {
+  assert.match(CLIENT_FCM, /const reconcile = async \(force = false\) =>/, 'a reconciler exists');
+  assert.match(CLIENT_FCM, /const refreshIfEnabled = \(\) => reconcile\(\);/, 'boot hook routes through it');
+  assert.match(CLIENT_FCM, /if \(st\.optedOut\) return;/, 'an explicit opt-out is respected, never overridden');
+  assert.match(CLIENT_FCM, /if \(permission\(\) !== 'granted'\) return;/, 'permission is the durable signal');
+  assert.ok(!/if \(!st\.enabled\) return;/.test(CLIENT_FCM), 'a stale/absent enabled flag must not skip reconciliation');
+  assert.match(CLIENT_FCM, /stateSet\(\{ enabled: true, optedOut: false, token, at: Date\.now\(\) \}\);/, 'success records the token for next boot');
+  assert.match(CLIENT_FCM, /stateSet\(\{ enabled: false, optedOut: true, at: Date\.now\(\) \}\);/, 'disable records the opt-out');
+  assert.ok(!/Notification\.requestPermission\(\)[\s\S]{0,200}reconcile/.test(CLIENT_FCM), 'reconcile never prompts');
+});
+
+/* Turning push off must actually stop push. The settings sheet's VAPID path
+ * and the FCM registration are two channels; stopping only one left push
+ * arriving while the UI said "off". */
+test('client hub: turning push off stops both push channels', () => {
+  const HUB = readFileSync('notification-hub.js', 'utf8');
+  const body = HUB.slice(HUB.indexOf('const disablePush ='), HUB.indexOf('// ── UI: dashboard card'));
+  assert.match(body, /\/api\/push\/unsubscribe'/, 'drops the VAPID subscription');
+  assert.match(body, /subscription\.unsubscribe\(\)/, 'and unsets it locally');
+  assert.match(body, /await window\.AhFcm\?\.disable\?\.\(\)/, 'and stops the FCM channel too');
 });
 
 test('inbox v6: merges the global feed, dedupes by id, taps log read + deep link', () => {

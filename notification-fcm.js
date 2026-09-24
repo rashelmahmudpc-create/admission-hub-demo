@@ -246,7 +246,7 @@
       catch (e) { setErr('token-failed', errText(e)); return 'token-failed'; }
       if (!token) { setErr('token-empty', 'getToken returned an empty value'); return 'token-failed'; }
       const out = await registerToken(token);
-      if (out.ok) { setErr(null); stateSet({ enabled: true, at: Date.now() }); await ensureTopic(messaging, token); return 'granted'; }
+      if (out.ok) { setErr(null); stateSet({ enabled: true, optedOut: false, at: Date.now() }); await ensureTopic(messaging, token); return 'granted'; }
       setErr('register-' + out.status, 'server rejected the token registration');
       return 'register-' + out.status;
     } catch (e) {
@@ -257,7 +257,9 @@
 
   /* User turns push OFF → stop the FCM subscription + deactivate server-side. */
   const disable = async () => {
-    stateSet({ enabled: false, at: Date.now() });
+    /* Remember that this was the user's own choice: boot reconciliation must
+     * never silently turn push back on against it. */
+    stateSet({ enabled: false, optedOut: true, at: Date.now() });
     try {
       const cfg = await getConfig();
       if (cfg && cfg.fcmConfigured && cfg.webConfig) {
@@ -277,22 +279,43 @@
     return true;
   };
 
-  /* §6 Token refresh: app start → check token → changed? update : continue.
-   * Idempotent server upsert, so running this on every start is safe and also
-   * keeps last_seen fresh. Runs in the background, never blocks boot. */
-  const refreshIfEnabled = async () => {
+  /* Boot / resume reconciliation — the self-healing heart of push.
+   *
+   * A user who granted permission once must keep receiving push with no
+   * further action, yet several ordinary events silently break that:
+   *   - the FCM token rotates and our stored copy is stale;
+   *   - localStorage is cleared, so nothing knows push was ever on;
+   *   - an earlier enable failed after the permission grant (network blip)
+   *     and was never retried, leaving `enabled` unset forever.
+   * In every one of those the device looks "off" while the user believes it
+   * is on, so push just stops and only a manual re-enable fixes it.
+   *
+   * Reconcile instead of trusting the flag: if permission is granted and the
+   * user has not explicitly opted out, (re)register the current token. The
+   * server upsert is idempotent, so repeating it on every resume is safe and
+   * also refreshes last_seen. Never prompts — permission is already granted. */
+  const reconcile = async (force = false) => {
     const st = stateGet();
-    if (!st.enabled) return;
+    if (st.optedOut) return;
+    if (permission() !== 'granted') return;
     const cfg = await getConfig();
     if (!cfg || !cfg.fcmConfigured || !cfg.webConfig) { stateSet({ enabled: false }); return; }
     try {
       const messaging = await initMessaging(cfg.webConfig);
-      if (permission() !== 'granted') { stateSet({ enabled: false }); return; }
       const reg = await readySw();
       const token = await getTokenWith(messaging, reg, cfg.webConfig);
-      if (token) { await registerToken(token); await ensureTopic(messaging, token); }
-    } catch (e) { setErr('refresh-failed', errText(e)); }
+      if (!token) return;
+      if (!force && st.enabled && st.token === token) return; /* nothing changed */
+      const out = await registerToken(token);
+      if (!out.ok) return; /* keep the flag as-is; try again next time */
+      setErr(null);
+      stateSet({ enabled: true, optedOut: false, token, at: Date.now() });
+      await ensureTopic(messaging, token);
+    } catch (e) { setErr('reconcile-failed', errText(e)); }
   };
+
+  /* Kept as the public name used by the boot hook and callers. */
+  const refreshIfEnabled = () => reconcile();
 
   /* Foreground FCM delivery — the SW postMessages focused clients.
    * The push arrives on the push-scope registration (firebase-messaging-sw.js),
