@@ -15,7 +15,8 @@ const CLIENT_FCM = readFileSync('notification-fcm.js', 'utf8');
 const INBOX = readFileSync('notification-inbox.js', 'utf8');
 const HUB = readFileSync('notification-hub.js', 'utf8');
 const SW_MSG = readFileSync('firebase-messaging-sw.js', 'utf8');
-const ADMIN = readFileSync('notification-admin.js', 'utf8');
+const ADMIN = readFileSync('notification-command-center.html', 'utf8');
+const ADMIN_ROUTE = readFileSync('notification-center-route.js', 'utf8');
 const INDEX = readFileSync('index.html', 'utf8');
 const SW = readFileSync('sw.js', 'utf8');
 
@@ -135,42 +136,44 @@ test('service worker: notificationclick stores {id: gid, link} for the app', () 
   assert.match(SW_MSG, /event\.notification\.close\(\);/, 'closes the notification (unchanged behavior)');
 });
 
-test('admin center: token gate (sessionStorage only), 6 types, 5 audiences, live preview, confirm + cancel', () => {
-  assert.ok(ADMIN.includes("const LS_KEY = 'ahAdminTok'"), 'admin token stored');
-  assert.match(ADMIN, /sessionStorage\.setItem\(LS_KEY, v\)/, 'sessionStorage — never localStorage/URL');
+test('command center: token gate (sessionStorage only) + all 6 types and 5 audiences', () => {
+  assert.match(ADMIN, /const API_TOKEN_KEY='ahAdminTok'/, 'admin token stored');
+  assert.match(ADMIN, /sessionStorage\.setItem\(API_TOKEN_KEY,v\)/, 'sessionStorage — never localStorage/URL');
   assert.ok(!/localStorage\.[gs]etItem\('ahAdminTok'\)/.test(ADMIN), 'token never in localStorage');
   const types = ['new-content', 'announcement', 'new-feature', 'challenge', 'course', 'important'];
-  for (const k of types) assert.ok(ADMIN.includes(`'${k}': {`), `type ${k}`);
+  for (const k of types) assert.ok(ADMIN.includes(`key:"${k}"`), `type ${k}`);
   const audiences = ['all_students', 'beginner', 'intermediate', 'pro', 'course_subscribers'];
-  for (const k of audiences) assert.ok(ADMIN.includes(`${k}: {`), `audience ${k}`);
-  assert.match(ADMIN, /'\/api\/notifications\/templates'/, 'templates from the API');
-  assert.match(ADMIN, /'\/api\/notifications\/global\/send'/);
-  assert.match(ADMIN, /'\/api\/notifications\/global\/schedule'/);
-  assert.match(ADMIN, /'\/api\/notifications\/global\/cancel'/);
-  assert.match(ADMIN, /'\/api\/notifications\/history'/);
-  assert.match(ADMIN, /Estimated reach|Estimated reach:|confirmReach/, 'confirm shows estimated reach');
-  assert.match(ADMIN, /ns-sheet/, 'confirmation modal');
-  assert.match(ADMIN, /Asia\/Dhaka/, 'schedule labelled Asia/Dhaka');
-  assert.match(ADMIN, /Authorization: `Bearer \$\{tok\(\)\}`/, 'every admin call carries the Bearer token');
+  for (const k of audiences) assert.ok(ADMIN.includes(`key:"${k}"`), `audience ${k}`);
 });
 
-test('admin composer: typing never re-renders the form (mobile keyboard stays up)', () => {
-  /* The text inputs must call the in-place handler, not the full re-render.
-   * A re-render replaces the focused node, so the mobile keyboard closed after
-   * every keystroke (owner report 2026-09-24). */
-  for (const field of ['title', 'body', 'imageUrl', 'targetUrl']) {
-    const re = new RegExp(`on(input|change)="window\\.__nsLive\\('${field}'`);
-    assert.match(ADMIN, re, `${field} uses the in-place handler`);
-    assert.ok(!ADMIN.includes(`__nsField('${field}'`), `${field} must not trigger a full re-render on typing`);
-  }
-  assert.match(ADMIN, /window\.__nsLive = \(field, value\)/, 'in-place handler defined');
-  assert.match(ADMIN, /id="nsPrevTitle"/, 'preview title is addressable');
-  assert.match(ADMIN, /id="nsPrevBody"/, 'preview body is addressable');
+test('command center data layer: real endpoints, Bearer token, no demo send', () => {
+  assert.match(ADMIN, /NS\.api\.get\('\/api\/notifications\/history'\)/, 'history from the API');
+  assert.match(ADMIN, /\/api\/notifications\/global\/send/, 'real send endpoint');
+  assert.match(ADMIN, /\/api\/notifications\/global\/schedule/, 'real schedule endpoint');
+  assert.match(ADMIN, /\/api\/notifications\/global\/cancel/, 'real cancel endpoint');
+  assert.match(ADMIN, /'Authorization':'Bearer '\+apiToken\(\)/, 'every admin call carries the Bearer token');
+  assert.doesNotMatch(ADMIN, /Recorded send approval and started delivery \(SAMPLE\)/, 'demo audit copy is gone');
+  assert.doesNotMatch(ADMIN, /state\.sent\.unshift\(newRow\)/, 'demo send-into-state is gone');
 });
 
-test('index.html: admin script tag + route dispatch (hidden route, not in nav)', () => {
-  assert.match(INDEX, /<script defer src="\.\/notification-admin\.js\?v=admin-notif-v8"><\/script>/);
-  assert.match(INDEX, /if\(p==='notif-admin' && window\.renderNotificationAdmin\) return window\.renderNotificationAdmin\(\);/);
+test('command center composer: typing never re-renders the form (mobile keyboard stays up)', () => {
+  /* The v2 composer updates state and patches the preview in place on `input`;
+   * it never replaces the focused <input> node, so the keyboard stays up. */
+  assert.match(ADMIN, /data-field="title"/, 'title field is addressable');
+  assert.match(ADMIN, /data-field="body"/, 'body field is addressable');
+  assert.match(ADMIN, /function refreshPreviewOnly\(\)/, 'in-place preview refresh exists');
+  assert.match(ADMIN, /querySelectorAll\('\.ns-compose-side'\)/, 'refresh targets the side panels');
+  assert.match(ADMIN, /refreshPreviewOnly\(\); return;/, 'input handler refreshes in place without re-rendering');
+  assert.match(ADMIN, /function initKeyboard\(\)/, 'visualViewport keyboard handling exists');
+  assert.match(ADMIN, /--keyboard-inset/, 'the keyboard inset is computed');
+});
+
+test('index.html: command-center script tag + route dispatch (hidden route, not in nav)', () => {
+  assert.match(INDEX, /<script defer src="\.\/notification-center-route\.js\?v=ns-cc-route-v1"><\/script>/);
+  assert.match(INDEX, /if\(p==='notif-admin'\)\{/);
+  assert.match(INDEX, /window\.NotificationCenterRoute\.render/);
+  assert.match(ADMIN_ROUTE, /window\.renderNotificationAdmin = openCenter;/, 'back-compat route contract kept');
+  assert.match(ADMIN_ROUTE, /notification-command-center\.html/, 'hands off to the standalone page');
 });
 
 test('pin consistency: index.html script pins match sw.js cache entries + digests', () => {
@@ -178,17 +181,17 @@ test('pin consistency: index.html script pins match sw.js cache entries + digest
     'notification-fcm.js': 'fcm-p1-v14',
     'notification-inbox.js': 'notif-inbox-v6',
     'notification-hub.js': 'notify-v121',
-    'notification-admin.js': 'admin-notif-v8'
+    'notification-center-route.js': 'ns-cc-route-v1'
   };
   for (const [file, pin] of Object.entries(pins)) {
     assert.match(INDEX, new RegExp(`<script defer src="\\./${file}\\?v=${pin}">`), `${file} pin in index.html`);
   }
   /* shell-precached subset (the hub is not in APP_SHELL by design) */
-  for (const file of ['notification-fcm.js', 'notification-inbox.js', 'notification-admin.js']) {
+  for (const file of ['notification-fcm.js', 'notification-inbox.js', 'notification-center-route.js']) {
     assert.ok(SW.includes(`'./${file}?v=${pins[file]}'`), `${file} pin in sw.js APP_SHELL`);
   }
   /* digests must exist for the shell-cached files */
-  for (const file of ['notification-fcm.js', 'notification-inbox.js', 'notification-admin.js']) {
+  for (const file of ['notification-fcm.js', 'notification-inbox.js', 'notification-center-route.js']) {
     const pin = pins[file];
     assert.match(SW, new RegExp(`"./${file}\\?v=${pin}": "[0-9a-f]{64}"`), `digest for ${file}`);
   }
@@ -198,9 +201,9 @@ test('pin consistency: index.html script pins match sw.js cache entries + digest
   assert.ok((INDEX.match(/v283-single-email-button-20260921/g) || []).length >= 3, 'canary pinned in index.html (register + SW check)');
 });
 
-test('sw-manifest digest of the admin file is correct', () => {
-  const m = SW.match(/"\/?\.\/notification-admin\.js\?v=admin-notif-v8": "([0-9a-f]{64})"/);
+test('sw-manifest digest of the command-center route shim is correct', () => {
+  const m = SW.match(/"\/?\.\/notification-center-route\.js\?v=ns-cc-route-v1": "([0-9a-f]{64})"/);
   assert.ok(m, 'digest present');
-  const actual = createHash('sha256').update(readFileSync('notification-admin.js')).digest('hex');
+  const actual = createHash('sha256').update(readFileSync('notification-center-route.js')).digest('hex');
   assert.equal(m[1], actual, 'digest matches the file on disk');
 });

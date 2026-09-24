@@ -76,3 +76,14 @@
   X-Robots-Tag: noindex, nofollow
   Cache-Control: no-store, max-age=0
 
+# Admin Notification Command Center — admin-only surface, never indexed.
+/notification-command-center
+  X-Robots-Tag: noindex, nofollow
+  Cache-Control: no-store, max-age=0
+  Referrer-Policy: no-referrer
+
+/notification-command-center.html
+  X-Robots-Tag: noindex, nofollow
+  Cache-Control: no-store, max-age=0
+  Referrer-Policy: no-referrer
+

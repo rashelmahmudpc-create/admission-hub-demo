@@ -28,7 +28,8 @@ const PUBLIC_ROUTES = new Set([
   '/', '/index.html',
   '/splash-preview', '/splash-preview.html',
   '/verification-control-center', '/verification-control-center.html',
-  '/ai-performance-analysis-live', '/ai-performance-analysis-live.html'
+  '/ai-performance-analysis-live', '/ai-performance-analysis-live.html',
+  '/notification-command-center', '/notification-command-center.html'
 ]);
 const PUBLIC_FILES = new Set([
   '/robots.txt', '/sitemap.xml', '/favicon.ico', '/og-image.png',
