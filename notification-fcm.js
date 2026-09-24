@@ -349,6 +349,38 @@
     return `<div style="${pad}display:flex;align-items:center;gap:10px"><span style="flex:1;font-size:12px">📡 FCM Push</span><button class="btn sm" onclick="closeModal();NotificationHub.openAllowDialog()">${st('চালু করুন', 'Turn on')}</button></div>`;
   };
 
+  /* Student's own switch for the personalized daily reminder (Phase G).
+   * Kept in the same settings modal as the FCM row, one line, no jargon. */
+  const personalRow = async () => {
+    const L = (() => { try { return window.AhI18n ? window.AhI18n.get() : 'bn'; } catch (_) { return 'bn'; } })();
+    const st = (bn, en) => (L === 'en' ? en : bn);
+    let on = true;
+    try {
+      const res = await boundedFetch('/personal-pref');
+      if (res.data && typeof res.data.personalized_enabled !== 'undefined') on = Number(res.data.personalized_enabled) === 1;
+    } catch (_) { /* leave default */ }
+    return `<div style="padding:10px 0;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px">
+      <span style="flex:1;font-size:12px">⭐ ${st('দৈনিক স্মার্ট রিমাইন্ডার', 'Daily smart reminder')}
+        <span style="opacity:.7">— ${st('প্রতিদিন একবার, পড়ার অবস্থা অনুযায়ী', 'once a day, based on your study')}</span></span>
+      <button class="btn ${on ? 'ghost' : ''} sm" onclick="AhFcm.togglePersonal()">${on ? st('বন্ধ করুন', 'Turn off') : st('চালু করুন', 'Turn on')}</button>
+    </div>`;
+  };
+
+  const togglePersonal = async () => {
+    const L = (() => { try { return window.AhI18n ? window.AhI18n.get() : 'bn'; } catch (_) { return 'bn'; } })();
+    try {
+      const cur = await boundedFetch('/personal-pref');
+      const next = !(cur.data && Number(cur.data.personalized_enabled) === 1);
+      await boundedFetch('/personal-pref', { method: 'POST', body: JSON.stringify({ personalized_enabled: next }) });
+      window.toast?.(next
+        ? (L === 'en' ? 'Daily reminder on' : 'দৈনিক রিমাইন্ডার চালু হলো')
+        : (L === 'en' ? 'Daily reminder off' : 'দৈনিক রিমাইন্ডার বন্ধ হলো'));
+      window.NotificationHub?.openSettings?.();
+    } catch (_) {
+      window.toast?.(L === 'en' ? 'Could not save' : 'সেভ করা গেল না');
+    }
+  };
+
   /* Dev test center (§18) — hidden route #notif-dev. Admin Bearer token is
    * entered per call and never stored. */
   const devPanel = () => {
@@ -439,7 +471,7 @@
 
   window.AhFcm = {
     status, enable, disable, refresh: refreshIfEnabled,
-    settingsRow, devPanel, getToken: currentToken,
+    settingsRow, personalRow, togglePersonal, devPanel, getToken: currentToken,
     _state: stateGet, _config: getConfig, lastErr, selfTest
   };
 })();

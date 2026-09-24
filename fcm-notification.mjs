@@ -94,7 +94,7 @@ async function sessionUser(env, request) {
 }
 
 /* ── D1 store (lazy schema bootstrap, same pattern as D1ProfileStore) ────── */
-class FcmStore {
+export class FcmStore {
   #d1;
   #ready = false;
 
@@ -499,6 +499,7 @@ async function fcmSendToDevice(env, { token, title, body, data }) {
 function fcmConfigured(env) {
   return Boolean(env?.FIREBASE_PROJECT_ID && env?.FIREBASE_CLIENT_EMAIL && env?.FIREBASE_PRIVATE_KEY);
 }
+export { fcmConfigured, sessionUser, parseBody, fcmSendToTokens };
 
 function publicWebConfig(env) {
   if (!fcmConfigured(env)) return null;
