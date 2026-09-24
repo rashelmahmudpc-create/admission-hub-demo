@@ -39,7 +39,7 @@ TELEGRAM_AUTH_DAILY_QUOTA = "172800"
 #
 # Phase 9 M4 Context Engine — typed, permission-scoped context. Off by default;
 # flip to "enabled" to append the scoped context bundle to the system prompt.
-USE_CONTEXT_ENGINE = "disabled"
+USE_CONTEXT_ENGINE = "enabled"
 
 [triggers]
 crons = ["* * * * *"]
