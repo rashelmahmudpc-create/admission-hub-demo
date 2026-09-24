@@ -1085,19 +1085,51 @@ function waitForBootStorage(work){
   if(!DB&&STORAGE_MODE==='indexeddb'&&!window.__admissionDataReady&&pending&&typeof pending.then==='function') return pending.then(work,work);
   return null;
 }
+const STUDENT_SYNC_STORES=new Set(['examResults','exams','mistakes','dailyStats','activityLogs','notes','ADMISSION_PLANS','PLAN_DAYS','settings']);
+/* Rows applied FROM the server must not be mirrored straight back: that would
+   make every pull echo into a push. Two independent guards: a flag the engine
+   sets while it writes, and a `syncedAt` stamp on server-origin rows. */
+let SYNC_APPLYING_SERVER_ROWS=false;
+let STUDENT_SYNC_SCHEDULED=0;
+/* Mirror a local write to the server (fire-and-forget; never blocks the write
+   and never fails it). The sync engine ignores stores it does not own. */
+function announceLocalWrite(store,id,op,doc,updatedAt){
+  if(!STUDENT_SYNC_STORES.has(store))return;
+  if(SYNC_APPLYING_SERVER_ROWS)return;
+  if(doc&&typeof doc==='object'&&doc.syncedAt)return;
+  try{
+    window.dispatchEvent(new CustomEvent('admissionhub:local-write',{detail:{store,id:String(id),op,doc:op==='delete'?null:doc,updated_at:updatedAt}}));
+  }catch(_){}
+}
+window.addEventListener('admissionhub:sync-apply-start',()=>{SYNC_APPLYING_SERVER_ROWS=true;});
+window.addEventListener('admissionhub:sync-apply-end',()=>{SYNC_APPLYING_SERVER_ROWS=false;});
+/* After the engine lands server rows, rebuild the in-memory cache once (not per
+   row) so the UI shows the restored data without a reload. */
+window.addEventListener('admissionhub:sync-applied',()=>{
+  if(STUDENT_SYNC_SCHEDULED)return;
+  STUDENT_SYNC_SCHEDULED=setTimeout(()=>{
+    STUDENT_SYNC_SCHEDULED=0;
+    if(typeof loadCache!=='function')return;
+    Promise.resolve(loadCache()).then(()=>{
+      try{if(typeof render==='function')render();}catch(_){}
+      try{window.dispatchEvent(new CustomEvent('admission:boot-ready',{detail:{storageMode:STORAGE_MODE,sync:true}}));}catch(_){}
+    }).catch(()=>{});
+  },300);
+});
 function dbPut(store,obj){
   if(!obj||typeof obj!=='object')return Promise.resolve(obj);
   if(obj.id===undefined||obj.id===null||obj.id==='')obj.id='auto-'+Date.now().toString(36)+Math.random().toString(36).slice(2,8);
-  if(!persistentDataScope()){MEMORY_DB.get(store)?.set(obj.id,{...obj});return Promise.resolve(obj);}
+  if(obj.updatedAt===undefined)obj.updatedAt=Date.now();
+  if(!persistentDataScope()){MEMORY_DB.get(store)?.set(obj.id,{...obj});announceLocalWrite(store,obj.id,'put',obj,obj.updatedAt);return Promise.resolve(obj);}
   const deferred=waitForBootStorage(()=>dbPut(store,obj));if(deferred)return deferred;
   if(!DB)return Promise.reject(new Error('Account storage is unavailable'));
-  return runDbRequest(store,'readwrite',objectStore=>objectStore.put(toScopedRecord(obj))).then(()=>obj);
+  return runDbRequest(store,'readwrite',objectStore=>objectStore.put(toScopedRecord(obj))).then(()=>{announceLocalWrite(store,obj.id,'put',obj,obj.updatedAt);return obj;});
 }
 function dbDelRaw(store,id){
-  if(!persistentDataScope()){MEMORY_DB.get(store)?.delete(id);return Promise.resolve(true);}
+  if(!persistentDataScope()){MEMORY_DB.get(store)?.delete(id);announceLocalWrite(store,id,'delete',null,Date.now());return Promise.resolve(true);}
   const deferred=waitForBootStorage(()=>dbDelRaw(store,id));if(deferred)return deferred;
   if(!DB)return Promise.reject(new Error('Account storage is unavailable'));
-  return runDbRequest(store,'readwrite',objectStore=>objectStore.delete(scopedRecordId(id))).then(()=>true);
+  return runDbRequest(store,'readwrite',objectStore=>objectStore.delete(scopedRecordId(id))).then(()=>{announceLocalWrite(store,id,'delete',null,Date.now());return true;});
 }
 async function dbDel(store,id){
   if(store==='questions'){
@@ -5424,9 +5456,9 @@ setTimeout(() => { if (location.hash.replace(/^#/, '').split('?')[0] === 'dictio
 <script src="./vocabulary-pronunciation.js?v=voice-el-v104" defer></script>
 <script src="./vocabulary-elevenlabs.js?v=el-voice-v106" defer></script>
 <script defer src="./notification-hub.js?v=notify-v119"></script>
-<script defer src="./notification-fcm.js?v=fcm-p1-v10"></script>
+<script defer src="./notification-fcm.js?v=fcm-p1-v11"></script>
 <script defer src="./notification-inbox.js?v=notif-inbox-v6"></script>
-<script defer src="./notification-admin.js?v=admin-notif-v4"></script>
+<script defer src="./notification-admin.js?v=admin-notif-v5"></script>
 <script src="./memorizing-match-tool.js?v=memorizing-match-v8-stable-cards" defer></script>
 <script src="./question-card-game-visual.js?v=question-card-game-v2-persistent" defer></script>
 <script src="./result-analysis-500.js?v=result-analysis-500-deep-matched-v2" defer></script>
@@ -5445,6 +5477,7 @@ setTimeout(() => { if (location.hash.replace(/^#/, '').split('?')[0] === 'dictio
 <script defer src="./android-runtime-fix.js?v=and-scroll-v1"></script>
 <script>window.AH_CLOUD_ROLE='public';</script>
 <script defer src="./cloud-content-sync.js?v=account-retired-v221"></script>
+<script defer src="./student-data-sync.js?v=student-sync-v1"></script>
 <script src="./app-seed.js?v=v189-empty" defer></script>
 <script>
 /* Seed + cloud hydrate: cloud-content-sync.js (batched IDB, Android-safe). */

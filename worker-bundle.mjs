@@ -4813,11 +4813,11 @@ var CloudflareNativeAuthEngine = class {
   // High-dynamic blueprint §01/§04/§05/§13/§14 — deterministic rule table.
   // No AI, no behavioral inference; only real account/profile state.
   profileContext({ profile = null, completion = 0, lastLoginAt = null, now = Date.now() }) {
-    const DAY_MS3 = 864e5;
+    const DAY_MS4 = 864e5;
     const createdAt = profile?.createdAt ? Number(profile.createdAt) : null;
     const hasTarget = Array.isArray(profile?.targets) && profile.targets.length > 0 && Boolean(profile.targets[0]?.name);
-    const ageDays = createdAt ? (now - createdAt) / DAY_MS3 : Number.POSITIVE_INFINITY;
-    const gapDays = lastLoginAt ? (now - Number(lastLoginAt)) / DAY_MS3 : Number.POSITIVE_INFINITY;
+    const ageDays = createdAt ? (now - createdAt) / DAY_MS4 : Number.POSITIVE_INFINITY;
+    const gapDays = lastLoginAt ? (now - Number(lastLoginAt)) / DAY_MS4 : Number.POSITIVE_INFINITY;
     let context = "DEFAULT";
     let greeting = "আগে থেকেই চলো";
     if (!profile || Number(completion) < 60) {
@@ -8072,6 +8072,8 @@ var __publicAuthTest = Object.freeze({
 // fcm-notification.mjs
 var FCM_API_SCOPE = "https://www.googleapis.com/auth/firebase.messaging";
 var FCM_TOKEN_URL = "https://oauth2.googleapis.com/token";
+var IID_BATCH_ADD_URL = "https://iid.googleapis.com/iid/v1:batchAdd";
+var IID_BATCH_REMOVE_URL = "https://iid.googleapis.com/iid/v1:batchRemove";
 var AUTHORITY_NAME2 = "admission-hub-global-auth-v1";
 var SESSION_COOKIE = "__Host-ah_session";
 var SESSION_TOKEN_RE = /^[A-Za-z0-9_-]{40,96}$/;
@@ -8193,6 +8195,10 @@ var FcmStore = class {
     ]);
     try {
       await this.#d1.prepare("ALTER TABLE fcm_devices ADD COLUMN topics TEXT").run();
+    } catch (_) {
+    }
+    try {
+      await this.#d1.prepare("ALTER TABLE global_notifications ADD COLUMN delivered INTEGER").run();
     } catch (_) {
     }
     this.#ready = true;
@@ -8337,6 +8343,10 @@ var FcmStore = class {
       sets.push("reach_estimate=?");
       binds.push(patch.reachEstimate);
     }
+    if (patch.delivered !== void 0) {
+      sets.push("delivered=?");
+      binds.push(patch.delivered);
+    }
     if (patch.error !== void 0) {
       sets.push("error=?");
       binds.push(patch.error);
@@ -8365,7 +8375,7 @@ var FcmStore = class {
   async recentGlobals(limit = 50) {
     await this.#ensureTables();
     const res = await this.#d1.prepare(
-      `SELECT id, type, title, body, audience, topic, status, scheduled_at, sent_at, reach_estimate, clicks, error, created_at
+      `SELECT id, type, title, body, audience, topic, status, scheduled_at, sent_at, reach_estimate, delivered, clicks, error, created_at
        FROM global_notifications ORDER BY created_at DESC, id DESC LIMIT ?`
     ).bind(limit).all();
     return (res?.results || []).map((row) => ({
@@ -8379,6 +8389,7 @@ var FcmStore = class {
       scheduledAt: row.scheduled_at ? Number(row.scheduled_at) : null,
       sentAt: row.sent_at ? Number(row.sent_at) : null,
       reachEstimate: row.reach_estimate ? Number(row.reach_estimate) : null,
+      delivered: row.delivered === null || row.delivered === void 0 ? null : Number(row.delivered),
       clicks: Number(row.clicks || 0),
       error: row.error,
       createdAt: Number(row.created_at)
@@ -8587,6 +8598,7 @@ var GLOBAL_DAILY_CAP = 10;
 var GLOBAL_MAX_SCHEDULE_DAYS = 30;
 var GN_ID_RE = /^gn-[a-z0-9]{12}$/;
 var TOPIC_RE = /^[a-z][a-z0-9_-]{0,63}$/;
+var GLOBAL_TOPIC = "all_students";
 var GLOBAL_TEMPLATES = Object.freeze([
   {
     key: "new-content",
@@ -8648,9 +8660,35 @@ async function fcmSendToTopic(env, topic, { title, body, imageUrl, data }) {
   if (res.ok && out?.name) return { ok: true, name: out.name };
   return { ok: false, reason: "error", detail: String(out?.error?.message || "").slice(0, 200) };
 }
+async function iidBatch(env, url, token, topic) {
+  if (!TOPIC_RE.test(topic)) return { ok: false, reason: "invalid-topic" };
+  let accessToken;
+  try {
+    accessToken = await fcmAccessToken(env);
+  } catch {
+    return { ok: false, reason: "auth" };
+  }
+  let res;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({ to: `/topics/${topic}`, registration_tokens: [token] })
+    });
+  } catch {
+    return { ok: false, reason: "network" };
+  }
+  const out = await res.json().catch(() => ({}));
+  if (!res.ok) return { ok: false, reason: "error", detail: String(out?.error || "").slice(0, 200) };
+  const entry = (out?.results || [])[0];
+  if (entry && entry.error) return { ok: false, reason: String(entry.error).slice(0, 60) };
+  return { ok: true };
+}
+var subscribeDeviceToTopic = (env, token, topic) => iidBatch(env, IID_BATCH_ADD_URL, token, topic);
+var unsubscribeDeviceFromTopic = (env, token, topic) => iidBatch(env, IID_BATCH_REMOVE_URL, token, topic);
 var FCM_SEND_URL = (project) => `https://fcm.googleapis.com/v1/projects/${project}/messages:send`;
 var FCM_SEND_CONCURRENCY = 10;
-var FCM_FALLBACK_MAX = 200;
+var FCM_FANOUT_MAX = 2e4;
 async function fcmSendOne(env, accessToken, target, { title, body, data: messageData }) {
   const message = { token: target.token, notification: { title, body }, data: messageData };
   let res;
@@ -8678,19 +8716,25 @@ async function fcmSendOne(env, accessToken, target, { title, body, data: message
 async function fcmSendToTokens(env, targets, { title, body, data }) {
   const accessToken = await fcmAccessToken(env);
   const messageData = Object.fromEntries(Object.entries(data || {}).map(([k, v]) => [k, String(v)]));
-  const batch = targets.slice(0, FCM_FALLBACK_MAX);
+  const batch = targets.slice(0, FCM_FANOUT_MAX);
   let sent = 0;
+  let failedTotal = 0;
   const failed = [];
+  const badIds = [];
   for (let i = 0; i < batch.length; i += FCM_SEND_CONCURRENCY) {
     const results = await Promise.all(
       batch.slice(i, i + FCM_SEND_CONCURRENCY).map((t) => fcmSendOne(env, accessToken, t, { title, body, data: messageData }))
     );
     for (const r of results) {
       if (r.ok) sent += 1;
-      else failed.push({ id: r.id, reason: r.reason });
+      else {
+        failedTotal += 1;
+        if (failed.length < 20) failed.push({ id: r.id, reason: r.reason });
+        if (r.reason === "unregistered" || r.reason === "invalid") badIds.push(r.id);
+      }
     }
   }
-  return { sent, failed };
+  return { sent, failed: failedTotal, failedSample: failed, badIds, truncated: targets.length > batch.length };
 }
 async function sendGlobal(env, store, row) {
   const data = { gid: row.id, link: row.targetUrl || "notifications", type: row.type, src: "fcm-global" };
@@ -8701,20 +8745,21 @@ async function sendGlobal(env, store, row) {
   if (targets.length) {
     const out = await fcmSendToTokens(env, targets, { title: row.title, body: row.body, data });
     fallbackSent = out.sent;
-    fallbackFailed = out.failed.length;
-    const badIds = out.failed.filter((f) => f.reason === "unregistered" || f.reason === "invalid").map((f) => f.id);
-    if (badIds.length) await store.markInactive(badIds, Date.now());
+    fallbackFailed = out.failed;
+    if (out.badIds.length) await store.markInactive(out.badIds, Date.now());
   }
   const reach = await store.activeDeviceCount();
   const ok = topicRes.ok || fallbackSent > 0;
+  const delivered = topicRes.ok ? reach : fallbackSent;
   await store.updateGlobalStatus(row.id, {
     status: ok ? "sent" : "failed",
     sentAt: Date.now(),
     fcmMessageId: topicRes.name || null,
     reachEstimate: reach,
+    delivered,
     error: ok ? null : String(topicRes.detail || "send-failed").slice(0, 200)
   });
-  return { ok, topicOk: topicRes.ok, fallbackSent, fallbackFailed, reach };
+  return { ok, topicOk: topicRes.ok, fallbackSent, fallbackFailed, reach, delivered };
 }
 async function runScheduledGlobalNotifications(env) {
   if (!fcmConfigured(env)) return { processed: 0 };
@@ -8818,13 +8863,15 @@ async function handleFcmNotificationRequest(request, env) {
       };
       await store.insertGlobal(row);
       if (body.deviceToken) {
+        const adminDeviceToken = String(body.deviceToken);
         try {
-          await store.setDeviceTopics(adminUserId, String(body.deviceToken), topic);
+          const sub = await subscribeDeviceToTopic(env, adminDeviceToken, topic);
+          if (sub.ok) await store.setDeviceTopics(adminUserId, adminDeviceToken, topic);
         } catch (_) {
         }
       }
       const result = await sendGlobal(env, store, row);
-      return jsonResponse(request, { ok: result.ok, id, status: result.ok ? "sent" : "failed", reachEstimate: result.reach }, result.ok ? 201 : 502);
+      return jsonResponse(request, { ok: result.ok, id, status: result.ok ? "sent" : "failed", reachEstimate: result.reach, delivered: result.delivered }, result.ok ? 201 : 502);
     }
     if (path === "/api/notifications/global/schedule" && request.method === "POST") {
       if (!store.available()) return jsonResponse(request, { error: "storage-unavailable" }, 503);
@@ -8923,7 +8970,14 @@ async function handleFcmNotificationRequest(request, env) {
     const deviceInfo = String(body.deviceInfo || "").slice(0, 120);
     const now = Date.now();
     await store.upsertDevice({ userId, token, platform, browser, deviceInfo, now });
-    return jsonResponse(request, { ok: true, registered: true, devices: (await store.activeDevices(userId)).length }, 201);
+    let topicOk = false;
+    try {
+      const sub = await subscribeDeviceToTopic(env, token, GLOBAL_TOPIC);
+      topicOk = sub.ok;
+      if (sub.ok) await store.setDeviceTopics(userId, token, GLOBAL_TOPIC);
+    } catch (_) {
+    }
+    return jsonResponse(request, { ok: true, registered: true, topicSubscribed: topicOk, devices: (await store.activeDevices(userId)).length }, 201);
   }
   if (path === "/api/notifications/unregister-token" && request.method === "POST") {
     if (!store.available()) return jsonResponse(request, { error: "storage-unavailable" }, 503);
@@ -9022,8 +9076,13 @@ async function handleFcmNotificationRequest(request, env) {
     const token = String(body.token || "");
     const topics = Array.isArray(body.topics) ? body.topics.map((t) => String(t)).filter((t) => TOPIC_RE.test(t)).slice(0, 10) : [];
     if (token.length < TOKEN_MIN_LEN || topics.length < 1) return jsonResponse(request, { error: "invalid-payload" }, 400);
-    await store.setDeviceTopics(userId, token, topics.join(","));
-    return jsonResponse(request, { ok: true, topics });
+    const accepted = [];
+    for (const topic of topics) {
+      const sub = await subscribeDeviceToTopic(env, token, topic);
+      if (sub.ok) accepted.push(topic);
+    }
+    if (accepted.length) await store.setDeviceTopics(userId, token, accepted.join(","));
+    return jsonResponse(request, { ok: accepted.length === topics.length, topics: accepted });
   }
   if (path === "/api/notifications/topics/unsubscribe" && request.method === "POST") {
     if (!store.available()) return jsonResponse(request, { error: "storage-unavailable" }, 503);
@@ -9031,6 +9090,8 @@ async function handleFcmNotificationRequest(request, env) {
     if (!body) return jsonResponse(request, { error: "invalid-json" }, 400);
     const token = String(body.token || "");
     if (token.length < TOKEN_MIN_LEN) return jsonResponse(request, { error: "invalid-payload" }, 400);
+    const topics = Array.isArray(body.topics) && body.topics.length ? body.topics.map((t) => String(t)).filter((t) => TOPIC_RE.test(t)).slice(0, 10) : [GLOBAL_TOPIC];
+    for (const topic of topics) await unsubscribeDeviceFromTopic(env, token, topic);
     await store.setDeviceTopics(userId, token, "");
     return jsonResponse(request, { ok: true });
   }
@@ -9081,10 +9142,811 @@ var __fcmNotificationTest = Object.freeze({
   DEFAULT_PREFS
 });
 
-// files-storage.mjs
+// userdata-api.mjs
 var AUTHORITY_NAME3 = "admission-hub-global-auth-v1";
 var SESSION_COOKIE2 = "__Host-ah_session";
 var SESSION_TOKEN_RE2 = /^[A-Za-z0-9_-]{40,96}$/;
+var STUDENT_TABLES = Object.freeze({
+  examResults: "user_exam_results",
+  exams: "user_exams",
+  mistakes: "user_mistakes",
+  dailyStats: "user_daily_stats",
+  activityLogs: "user_activity",
+  notes: "user_notes",
+  ADMISSION_PLANS: "user_plans",
+  PLAN_DAYS: "user_plan_days",
+  settings: "user_settings"
+});
+var DAY_KEYED = /* @__PURE__ */ new Set(["dailyStats"]);
+var SINGLETON = /* @__PURE__ */ new Set(["settings"]);
+var MAX_OPS_PER_SYNC = 400;
+var MAX_PULL_LIMIT = 500;
+var MAX_DOC_BYTES = 2 * 1024 * 1024;
+var HEAVY_MIN_BYTES = 8 * 1024;
+var HEAVY_KEYS = Object.freeze([
+  "snapshot",
+  "timeAnalysis",
+  "timing",
+  "topicBreakdown",
+  "subjectBreakdown",
+  "configuration"
+]);
+var jsonResponse2 = (request, obj, status = 200) => new Response(JSON.stringify(obj), {
+  status,
+  headers: {
+    "Content-Type": "application/json; charset=utf-8",
+    "Cache-Control": "no-store",
+    ...request?.headers?.get("Origin") ? { "Access-Control-Allow-Origin": request.headers.get("Origin"), "Access-Control-Allow-Credentials": "true" } : {}
+  }
+});
+var readSessionToken2 = (request) => {
+  const cookie = String(request.headers.get("Cookie") || "");
+  for (const part of cookie.split(";")) {
+    const idx = part.indexOf("=");
+    if (idx > 0 && part.slice(0, idx).trim() === SESSION_COOKIE2) return part.slice(idx + 1).trim();
+  }
+  return "";
+};
+async function sessionUser2(env, request) {
+  const token = readSessionToken2(request);
+  if (!SESSION_TOKEN_RE2.test(token)) return null;
+  try {
+    const id = env.AUTH_AUTHORITY.idFromName(AUTHORITY_NAME3);
+    const stub = env.AUTH_AUTHORITY.get(id, { locationHint: "apac" });
+    const res = await stub.fetch("https://auth.internal/internal/session/get", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionToken: token })
+    });
+    const data = await res.json();
+    if (!res.ok || !data?.ok || !data.result?.user?.id) return null;
+    return data.result;
+  } catch {
+    return null;
+  }
+}
+var safeId = (value) => {
+  const id = String(value ?? "");
+  return id.length > 0 && id.length <= 200 && /^[\w:.@-]+$/.test(id) ? id : "";
+};
+var clampInt = (value, min, max, fallback) => {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, Math.trunc(n)));
+};
+var UserDataStore = class {
+  #d1;
+  #r2;
+  #ready;
+  constructor(d1, r2) {
+    this.#d1 = d1 || null;
+    this.#r2 = r2 || null;
+  }
+  available() {
+    return Boolean(this.#d1);
+  }
+  async init() {
+    if (!this.#d1) return;
+    if (!this.#ready) this.#ready = this.#createSchema().catch((err) => {
+      this.#ready = null;
+      throw err;
+    });
+    await this.#ready;
+  }
+  async #createSchema() {
+    const ddl = [
+      `CREATE TABLE IF NOT EXISTS user_exam_results (
+        user_id TEXT NOT NULL, id TEXT NOT NULL, exam_id TEXT,
+        payload_json TEXT NOT NULL, created_at INTEGER, updated_at INTEGER NOT NULL,
+        deleted_at INTEGER, origin_device TEXT,
+        PRIMARY KEY (user_id, id))`,
+      `CREATE TABLE IF NOT EXISTS user_exams (
+        user_id TEXT NOT NULL, id TEXT NOT NULL, status TEXT,
+        payload_json TEXT NOT NULL, created_at INTEGER, updated_at INTEGER NOT NULL,
+        deleted_at INTEGER, origin_device TEXT,
+        PRIMARY KEY (user_id, id))`,
+      `CREATE TABLE IF NOT EXISTS user_mistakes (
+        user_id TEXT NOT NULL, id TEXT NOT NULL, question_id TEXT,
+        subject_id TEXT, topic_id TEXT, revision_status TEXT, mastered INTEGER,
+        payload_json TEXT NOT NULL, created_at INTEGER, updated_at INTEGER NOT NULL,
+        deleted_at INTEGER, origin_device TEXT,
+        PRIMARY KEY (user_id, id))`,
+      `CREATE TABLE IF NOT EXISTS user_daily_stats (
+        user_id TEXT NOT NULL, day TEXT NOT NULL,
+        payload_json TEXT NOT NULL, created_at INTEGER, updated_at INTEGER NOT NULL,
+        deleted_at INTEGER, origin_device TEXT,
+        PRIMARY KEY (user_id, day))`,
+      `CREATE TABLE IF NOT EXISTS user_activity (
+        user_id TEXT NOT NULL, id TEXT NOT NULL,
+        payload_json TEXT NOT NULL, created_at INTEGER, updated_at INTEGER NOT NULL,
+        deleted_at INTEGER, origin_device TEXT,
+        PRIMARY KEY (user_id, id))`,
+      `CREATE TABLE IF NOT EXISTS user_notes (
+        user_id TEXT NOT NULL, id TEXT NOT NULL,
+        payload_json TEXT NOT NULL, created_at INTEGER, updated_at INTEGER NOT NULL,
+        deleted_at INTEGER, origin_device TEXT,
+        PRIMARY KEY (user_id, id))`,
+      `CREATE TABLE IF NOT EXISTS user_plans (
+        user_id TEXT NOT NULL, id TEXT NOT NULL,
+        payload_json TEXT NOT NULL, created_at INTEGER, updated_at INTEGER NOT NULL,
+        deleted_at INTEGER, origin_device TEXT,
+        PRIMARY KEY (user_id, id))`,
+      `CREATE TABLE IF NOT EXISTS user_plan_days (
+        user_id TEXT NOT NULL, id TEXT NOT NULL, plan_id TEXT,
+        payload_json TEXT NOT NULL, created_at INTEGER, updated_at INTEGER NOT NULL,
+        deleted_at INTEGER, origin_device TEXT,
+        PRIMARY KEY (user_id, id))`,
+      `CREATE TABLE IF NOT EXISTS user_settings (
+        user_id TEXT NOT NULL, id TEXT NOT NULL DEFAULT 'settings',
+        payload_json TEXT NOT NULL, created_at INTEGER, updated_at INTEGER NOT NULL,
+        deleted_at INTEGER, origin_device TEXT,
+        PRIMARY KEY (user_id, id))`,
+      `CREATE TABLE IF NOT EXISTS user_sync_meta (
+        user_id TEXT PRIMARY KEY, last_push_at INTEGER, last_pull_at INTEGER,
+        device_count INTEGER NOT NULL DEFAULT 1)`
+    ];
+    const indexes = [
+      "CREATE INDEX IF NOT EXISTS idx_uer_user_upd ON user_exam_results(user_id, updated_at)",
+      "CREATE INDEX IF NOT EXISTS idx_ue_user_upd ON user_exams(user_id, updated_at)",
+      "CREATE INDEX IF NOT EXISTS idx_um_user_upd ON user_mistakes(user_id, updated_at)",
+      "CREATE INDEX IF NOT EXISTS idx_uds_user_upd ON user_daily_stats(user_id, updated_at)",
+      "CREATE INDEX IF NOT EXISTS idx_ua_user_upd ON user_activity(user_id, updated_at)",
+      "CREATE INDEX IF NOT EXISTS idx_un_user_upd ON user_notes(user_id, updated_at)",
+      "CREATE INDEX IF NOT EXISTS idx_up_user_upd ON user_plans(user_id, updated_at)",
+      "CREATE INDEX IF NOT EXISTS idx_upd_user_upd ON user_plan_days(user_id, updated_at)",
+      "CREATE INDEX IF NOT EXISTS idx_um_q ON user_mistakes(user_id, question_id)",
+      "CREATE INDEX IF NOT EXISTS idx_upd_plan ON user_plan_days(user_id, plan_id)"
+    ];
+    for (const stmt of [...ddl, ...indexes]) await this.#d1.prepare(stmt).run();
+  }
+  /* Resolve the row key and the denormalized columns for a store. */
+  #shape(store, id, doc) {
+    const table = STUDENT_TABLES[store];
+    if (!table) return null;
+    if (SINGLETON.has(store)) return { table, key: "settings", column: "id", keyCol: "id" };
+    if (DAY_KEYED.has(store)) {
+      const day = String(id || doc?.day || doc?.date || "").slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return null;
+      return { table, key: day, column: "day", keyCol: "day" };
+    }
+    const clean = safeId(id || doc?.id);
+    if (!clean) return null;
+    return { table, key: clean, column: "id", keyCol: "id" };
+  }
+  #extraColumns(store, doc) {
+    const obj = doc && typeof doc === "object" ? doc : {};
+    if (store === "examResults") return { exam_id: safeId(obj.examId || obj.exam_id) || null };
+    if (store === "exams") return { status: String(obj.status || obj.mode || "").slice(0, 40) || null };
+    if (store === "mistakes") {
+      return {
+        question_id: safeId(obj.questionId) || null,
+        subject_id: safeId(obj.subjectId) || null,
+        topic_id: safeId(obj.topicId) || null,
+        revision_status: String(obj.revisionStatus || "").slice(0, 40) || null,
+        mastered: obj.mastered === true ? 1 : 0
+      };
+    }
+    if (store === "PLAN_DAYS") return { plan_id: safeId(obj.planId) || null };
+    return {};
+  }
+  /* Apply one op. Idempotent: the same (user_id, key) with an older or equal
+   * updated_at cannot regress a newer row, so replays and out-of-order retries
+   * are safe. Deletes write a tombstone and win only if they are newer. */
+  async applyOp(userId, device, op) {
+    const store = String(op?.store || "");
+    const shaped = this.#shape(store, op?.id, op?.doc);
+    if (!shaped) return { ok: false, store, id: String(op?.id || ""), error: "invalid-target" };
+    const doc = op?.doc && typeof op.doc === "object" ? op.doc : {};
+    const isDelete = op?.op === "delete";
+    const updatedAt = clampInt(op?.updated_at, 0, Number.MAX_SAFE_INTEGER, Date.now());
+    const split = isDelete ? { summary: doc } : await this.#splitDoc(userId, store, shaped.key, doc, updatedAt);
+    let encoded;
+    try {
+      encoded = JSON.stringify(split.summary);
+    } catch {
+      return { ok: false, store, id: shaped.key, error: "unencodable" };
+    }
+    if (encoded.length > MAX_DOC_BYTES) return { ok: false, store, id: shaped.key, error: "too-large" };
+    const createdAt = clampInt(doc?.createdAt, 0, Number.MAX_SAFE_INTEGER, updatedAt);
+    const tombstone = isDelete ? updatedAt : null;
+    const extra = isDelete ? {} : this.#extraColumns(store, doc);
+    const cols = ["user_id", shaped.keyCol, ...Object.keys(extra), "payload_json", "created_at", "updated_at", "deleted_at", "origin_device"];
+    const placeholders = cols.map(() => "?").join(", ");
+    const values = [
+      userId,
+      shaped.key,
+      ...Object.values(extra),
+      encoded,
+      createdAt,
+      updatedAt,
+      tombstone,
+      device || null
+    ];
+    const updateSet = cols.filter((c) => c !== "user_id" && c !== shaped.keyCol).map((c) => `${c}=excluded.${c}`).join(", ");
+    await this.#d1.prepare(
+      `INSERT INTO ${shaped.table} (${cols.join(", ")}) VALUES (${placeholders})
+       ON CONFLICT(user_id, ${shaped.keyCol}) DO UPDATE SET ${updateSet}
+       WHERE excluded.updated_at >= ${shaped.table}.updated_at`
+    ).bind(...values).run();
+    const row = await this.#d1.prepare(
+      `SELECT updated_at, deleted_at FROM ${shaped.table} WHERE user_id=? AND ${shaped.keyCol}=?`
+    ).bind(userId, shaped.key).first();
+    if (!row) return { ok: false, store, id: shaped.key, error: "server-error" };
+    const serverUpdatedAt = Number(row.updated_at || 0);
+    return {
+      ok: true,
+      applied: serverUpdatedAt <= updatedAt,
+      store,
+      id: shaped.key,
+      updated_at: serverUpdatedAt,
+      deleted: row.deleted_at != null
+    };
+  }
+  async listSince(userId, store, since, limit, cursor) {
+    const shapedKey = store === "dailyStats" ? "day" : "id";
+    const table = STUDENT_TABLES[store];
+    if (!table) return null;
+    const after = clampInt(since, 0, Number.MAX_SAFE_INTEGER, 0);
+    const max = clampInt(limit, 1, MAX_PULL_LIMIT, MAX_PULL_LIMIT);
+    const rows = await this.#d1.prepare(
+      `SELECT ${shapedKey} AS id, payload_json, updated_at, deleted_at
+       FROM ${table}
+       WHERE user_id=? AND updated_at>? AND ${shapedKey}>?
+       ORDER BY updated_at ASC, ${shapedKey} ASC LIMIT ?`
+    ).bind(userId, after, String(cursor || ""), max + 1).all();
+    const items = [];
+    for (const r of rows?.results || []) {
+      const id = String(r.id);
+      let doc = null;
+      if (r.deleted_at == null) {
+        doc = safeParse(r.payload_json);
+        doc = await this.#rehydrate(userId, store, id, doc, r);
+      }
+      items.push({
+        id,
+        updated_at: Number(r.updated_at || 0),
+        deleted: r.deleted_at != null,
+        doc
+      });
+    }
+    const limited = items.slice(0, max);
+    const hasMore = items.length > max;
+    return {
+      store,
+      items: limited,
+      cursor: limited.length ? limited[limited.length - 1].id : String(cursor || ""),
+      hasMore,
+      nextSince: limited.length ? Number(limited[limited.length - 1].updated_at) : after
+    };
+  }
+  async counts(userId) {
+    const out = {};
+    for (const [store, table] of Object.entries(STUDENT_TABLES)) {
+      try {
+        const row = await this.#d1.prepare(
+          `SELECT COUNT(*) AS n, MAX(updated_at) AS latest FROM ${table} WHERE user_id=? AND deleted_at IS NULL`
+        ).bind(userId).first();
+        out[store] = { count: Number(row?.n || 0), latest: Number(row?.latest || 0) };
+      } catch {
+        out[store] = { count: 0, latest: 0 };
+      }
+    }
+    return out;
+  }
+  async touchMeta(userId, { push = false, pull = false } = {}) {
+    const now = Date.now();
+    await this.#d1.prepare(
+      `INSERT INTO user_sync_meta (user_id, last_push_at, last_pull_at, device_count)
+       VALUES (?, ?, ?, 1)
+       ON CONFLICT(user_id) DO UPDATE SET
+         last_push_at = CASE WHEN ?=1 THEN ? ELSE user_sync_meta.last_push_at END,
+         last_pull_at = CASE WHEN ?=1 THEN ? ELSE user_sync_meta.last_pull_at END`
+    ).bind(userId, push ? now : null, pull ? now : null, push ? 1 : 0, now, pull ? 1 : 0, now).run();
+  }
+  /* ── R2 spillover for heavy exam payloads ──────────────────────────────── */
+  #blobKey(userId, store, id) {
+    return `${store}/${encodeURIComponent(userId)}/${encodeURIComponent(id)}.json.gz`;
+  }
+  async #gzip(text) {
+    const stream = new Blob([text]).stream().pipeThrough(new CompressionStream("gzip"));
+    return new Uint8Array(await new Response(stream).arrayBuffer());
+  }
+  async #gunzip(bytes) {
+    const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"));
+    return await new Response(stream).text();
+  }
+  /* Split a document into the D1 summary and the R2-only remainder. Only exam
+   * results spill; everything else is small and stays whole in D1. */
+  async #splitDoc(userId, store, key, doc, updatedAt) {
+    if (store !== "examResults" || !this.#r2 || !doc || typeof doc !== "object") {
+      return { summary: doc, spilled: false };
+    }
+    const heavy = {};
+    let heavyBytes = 0;
+    for (const field of HEAVY_KEYS) {
+      if (doc[field] === void 0) continue;
+      heavy[field] = doc[field];
+      heavyBytes += JSON.stringify(doc[field]).length;
+    }
+    if (heavyBytes < HEAVY_MIN_BYTES) return { summary: doc, spilled: false };
+    const summary = { ...doc };
+    for (const field of HEAVY_KEYS) delete summary[field];
+    try {
+      const body = await this.#gzip(JSON.stringify(heavy));
+      await this.#r2.put(this.#blobKey(userId, store, key), body, {
+        httpMetadata: { contentType: "application/gzip" },
+        customMetadata: { store, updatedAt: String(updatedAt) }
+      });
+    } catch (err) {
+      console.error("[userdata] R2 spill failed, keeping heavy fields in D1", err);
+      return { summary: doc, spilled: false };
+    }
+    return { summary, spilled: true, heavy };
+  }
+  async #rehydrate(userId, store, id, doc, row) {
+    if (store !== "examResults" || !this.#r2) return doc;
+    try {
+      const key = this.#blobKey(userId, store, id);
+      const meta = await this.#r2.head(key);
+      if (!meta) return doc;
+      const blobUpdated = Number(meta.customMetadata?.updatedAt || 0);
+      if (blobUpdated && blobUpdated < Number(row?.updated_at || 0)) return doc;
+      const object = await this.#r2.get(key);
+      if (!object) return doc;
+      const heavy = JSON.parse(await this.#gunzip(await object.arrayBuffer()));
+      return { ...doc, ...heavy };
+    } catch (err) {
+      console.error("[userdata] R2 rehydrate failed, returning summary", err);
+      return doc;
+    }
+  }
+};
+function safeParse(value) {
+  try {
+    const parsed = JSON.parse(String(value));
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+async function handleUserDataRequest(request, env, ctx) {
+  const url = new URL(request.url);
+  if (!url.pathname.startsWith("/api/userdata/")) return null;
+  if (request.method === "OPTIONS") return new Response(null, { status: 204 });
+  const store = new UserDataStore(env?.PROFILE_DB, env?.FILE_BUCKET);
+  if (!store.available()) return jsonResponse2(request, { error: "storage-unavailable" }, 503);
+  const session = await sessionUser2(env, request);
+  if (!session) return jsonResponse2(request, { error: "auth-required" }, 401);
+  const userId = String(session.user.id);
+  if (!/^[\w.:@-]{3,128}$/.test(userId)) return jsonResponse2(request, { error: "auth-required" }, 401);
+  try {
+    await store.init();
+    if (url.pathname === "/api/userdata/sync" && request.method === "POST") {
+      let payload;
+      try {
+        payload = await request.json();
+      } catch {
+        return jsonResponse2(request, { error: "invalid-json" }, 400);
+      }
+      const ops = Array.isArray(payload?.ops) ? payload.ops.slice(0, MAX_OPS_PER_SYNC) : null;
+      if (!ops) return jsonResponse2(request, { error: "ops-required" }, 400);
+      const device = safeId(payload?.device) || null;
+      const results = [];
+      for (const op of ops) {
+        try {
+          results.push(await store.applyOp(userId, device, op));
+        } catch (err) {
+          results.push({ ok: false, store: String(op?.store || ""), id: String(op?.id || ""), error: "server-error" });
+        }
+      }
+      await store.touchMeta(userId, { push: true });
+      return jsonResponse2(request, { ok: true, results, serverTime: Date.now() });
+    }
+    if (url.pathname === "/api/userdata/pull" && request.method === "GET") {
+      const storeName = String(url.searchParams.get("store") || "");
+      if (!STUDENT_TABLES[storeName]) {
+        await store.touchMeta(userId, { pull: true });
+        return jsonResponse2(request, { ok: true, cursor: Number(url.searchParams.get("since") || 0), counts: await store.counts(userId) });
+      }
+      const page = await store.listSince(
+        userId,
+        storeName,
+        url.searchParams.get("since"),
+        url.searchParams.get("limit"),
+        url.searchParams.get("cursor")
+      );
+      await store.touchMeta(userId, { pull: true });
+      return jsonResponse2(request, { ok: true, ...page, serverTime: Date.now() });
+    }
+    if (url.pathname === "/api/userdata/bootstrap" && request.method === "GET") {
+      await store.touchMeta(userId, { pull: true });
+      return jsonResponse2(request, { ok: true, counts: await store.counts(userId), serverTime: Date.now() });
+    }
+    return jsonResponse2(request, { error: "not-found" }, 404);
+  } catch (err) {
+    console.error("[userdata] request failed", err);
+    return jsonResponse2(request, { error: "server-error" }, 500);
+  }
+}
+
+// personalized-notification.mjs
+var DHAKA_OFFSET_MS = 6 * 3600 * 1e3;
+var DAY_MS = 24 * 3600 * 1e3;
+var NUDGE_KINDS = Object.freeze(["revision-due", "streak-risk", "exam-weak", "inactive-3d", "daily-glow"]);
+var DEFAULTS3 = Object.freeze({
+  daily_enabled: 1,
+  max_per_day: 1,
+  min_pending_revisions: 5,
+  inactive_days: 3,
+  weak_score_threshold: 60,
+  quiet_hours_enabled: 1,
+  quiet_start: "23:00",
+  quiet_end: "07:00",
+  send_after_hour: 8,
+  send_before_hour: 22
+});
+function dhakaParts(nowMs) {
+  const d = new Date(Number(nowMs) + DHAKA_OFFSET_MS);
+  return {
+    date: d.toISOString().slice(0, 10),
+    hour: d.getUTCHours(),
+    minute: d.getUTCMinutes()
+  };
+}
+var toMinutes = (hhmm) => {
+  const m = String(hhmm || "").match(/^(\d{2}):(\d{2})$/);
+  return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+};
+function inQuietHours(hour, minute, prefs) {
+  if (!prefs || !Number(prefs.quiet_hours_enabled)) return false;
+  const start = toMinutes(prefs.quiet_start);
+  const end = toMinutes(prefs.quiet_end);
+  if (start == null || end == null || start === end) return false;
+  const nowM = hour * 60 + minute;
+  return start < end ? nowM >= start && nowM < end : nowM >= start || nowM < end;
+}
+function inSendWindow(hour, prefs) {
+  const after = Number.isFinite(Number(prefs?.send_after_hour)) ? Number(prefs.send_after_hour) : DEFAULTS3.send_after_hour;
+  const before = Number.isFinite(Number(prefs?.send_before_hour)) ? Number(prefs.send_before_hour) : DEFAULTS3.send_before_hour;
+  return hour >= after && hour < before;
+}
+var dayDiff = (a, b) => Math.round((Date.parse(a + "T00:00:00Z") - Date.parse(b + "T00:00:00Z")) / DAY_MS);
+var MSG = {
+  "revision-due": {
+    bn: (n) => ({ title: "📚 রিভিশনের সময় হয়েছে", body: `${n}টি ভুল প্রশ্ন রিভিশনের অপেক্ষায় আছে — আজই ঝালাই করে ফেলো` }),
+    en: (n) => ({ title: "📚 Time to revise", body: `${n} missed questions are waiting for revision — clear them today` })
+  },
+  "streak-risk": {
+    bn: () => ({ title: "🔥 স্ট্রিক বাঁচাও", body: "আজ এখনো পড়া শুরু হয়নি — কয়েকটা প্রশ্ন হলেও স্ট্রিক ধরে রাখো" }),
+    en: () => ({ title: "🔥 Keep your streak", body: "You have not studied yet today — a few questions keeps your streak alive" })
+  },
+  "exam-weak": {
+    bn: (n) => ({ title: "🎯 দুর্বল topic", body: `সর্বশেষ পরীক্ষায় ${n}% এসেছে — দুর্বল topicগুলো রিভিশন করলে লাভ হবে` }),
+    en: (n) => ({ title: "🎯 Weak topics", body: `Your last exam was ${n}% — revising the weak topics will pay off` })
+  },
+  "inactive-3d": {
+    bn: (n) => ({ title: "👋 ফিরে এসো", body: `${n} দিন পড়া হয়নি — আজ ছোট একটা সেশন দিয়ে আবার শুরু করো` }),
+    en: (n) => ({ title: "👋 Come back", body: `${n} days without study — a short session today restarts the habit` })
+  },
+  "daily-glow": {
+    bn: (n) => ({ title: "⭐ চালিয়ে যাও", body: `আজ ${n}টি প্রশ্ন solved — এই ছন্দ ধরে রাখো` }),
+    en: (n) => ({ title: "⭐ Keep going", body: `${n} questions solved today — keep the rhythm` })
+  }
+};
+function buildMessage(kind, params = {}, lang = "bn") {
+  const set = MSG[kind];
+  if (!set) return null;
+  const pick = set[lang] || set.bn;
+  const out = typeof pick === "function" ? pick(params.count) : pick;
+  return out ? { ...out, kind, link: params.link || "dashboard" } : null;
+}
+function pickNudge(state = {}, prefs = {}, nowMs = Date.now()) {
+  const p = { ...DEFAULTS3, ...prefs || {} };
+  if (!Number(p.daily_enabled)) return null;
+  const { hour, minute, date } = dhakaParts(nowMs);
+  if (inQuietHours(hour, minute, p)) return null;
+  if (!inSendWindow(hour, p)) return null;
+  const today = state.todayDay || date;
+  const studiedToday = Number(state.todayQuestions || 0) > 0;
+  const lastDay = String(state.lastStudyDay || "");
+  const gapDays = lastDay ? dayDiff(today, lastDay) : null;
+  const examScore = Number(state.recentExams?.[0]?.score);
+  const revisionCount = Number(state.pendingRevisions || 0);
+  const candidates = {
+    /* Priority 1: a real backlog the student can act on right now. */
+    "revision-due": revisionCount >= p.min_pending_revisions && gapDays !== 0 ? revisionCount : 0,
+    /* Priority 2: they studied yesterday, not today, and the day is wearing on. */
+    "streak-risk": gapDays === 1 && !studiedToday && hour >= 18 ? 1 : 0,
+    /* Priority 3: a genuinely weak recent result. */
+    "exam-weak": Number.isFinite(examScore) && examScore > 0 && examScore < p.weak_score_threshold && gapDays !== 0 ? Math.round(examScore) : 0,
+    /* Priority 4: drifting away. */
+    "inactive-3d": gapDays != null && gapDays >= p.inactive_days ? gapDays : 0,
+    /* Priority 5: quiet encouragement on an active day. */
+    "daily-glow": studiedToday && Number(state.todayCorrect || 0) >= 10 && gapDays === 0 ? Number(state.todayQuestions || 0) : 0
+  };
+  for (const kind of NUDGE_KINDS) {
+    const value = candidates[kind];
+    if (!value) continue;
+    if (kind === "revision-due" || kind === "inactive-3d") {
+      return buildMessage(kind, { count: value, link: kind === "revision-due" ? "smart-revision" : "dashboard" });
+    }
+    if (kind === "exam-weak") return buildMessage(kind, { count: value, link: "smart-revision" });
+    if (kind === "streak-risk") return buildMessage(kind, { count: 1, link: "dashboard" });
+    return buildMessage(kind, { count: value, link: "dashboard" });
+  }
+  return null;
+}
+var PersonalizedStore = class {
+  #d1;
+  #ready;
+  constructor(d1) {
+    this.#d1 = d1 || null;
+  }
+  available() {
+    return Boolean(this.#d1);
+  }
+  async init() {
+    if (!this.#d1) return;
+    if (!this.#ready) {
+      this.#ready = (async () => {
+        const ud = new UserDataStore(this.#d1);
+        if (ud.available()) await ud.init();
+        await this.#d1.prepare(`CREATE TABLE IF NOT EXISTS notification_sends (
+          user_id TEXT NOT NULL,
+          kind TEXT NOT NULL,
+          day_key TEXT NOT NULL,
+          sent_at INTEGER NOT NULL,
+          PRIMARY KEY (user_id, kind, day_key)
+        )`).run();
+        await this.#d1.prepare("CREATE INDEX IF NOT EXISTS idx_ns_user_day ON notification_sends(user_id, day_key)").run();
+      })().catch((err) => {
+        this.#ready = null;
+        throw err;
+      });
+    }
+    await this.#ready;
+  }
+  /* Every student who currently has at least one active device. */
+  async audience() {
+    await this.init();
+    const rows = await this.#d1.prepare(
+      "SELECT DISTINCT user_id FROM fcm_devices WHERE is_active=1"
+    ).all();
+    return (rows?.results || []).map((r) => String(r.user_id));
+  }
+  async prefs(userId) {
+    await this.init();
+    const row = await this.#d1.prepare("SELECT * FROM notification_settings WHERE user_id=?").bind(userId).first();
+    if (!row) return { ...DEFAULTS3 };
+    return {
+      daily_enabled: Number(row.personalized_enabled),
+      quiet_hours_enabled: Number(row.quiet_hours_enabled),
+      quiet_start: String(row.quiet_start),
+      quiet_end: String(row.quiet_end)
+    };
+  }
+  async learningState(userId, today) {
+    await this.init();
+    const pending = await this.#d1.prepare(
+      `SELECT COUNT(*) AS n FROM user_mistakes
+       WHERE user_id=? AND deleted_at IS NULL AND COALESCE(mastered,0)=0
+         AND (revision_status IS NULL OR revision_status<>'mastered')`
+    ).bind(userId).first();
+    const lastDay = await this.#d1.prepare(
+      "SELECT MAX(day) AS d FROM user_daily_stats WHERE user_id=? AND deleted_at IS NULL"
+    ).bind(userId).first();
+    const todayRow = await this.#d1.prepare(
+      "SELECT payload_json FROM user_daily_stats WHERE user_id=? AND day=? AND deleted_at IS NULL"
+    ).bind(userId, today).first();
+    const exams = await this.#d1.prepare(
+      `SELECT payload_json, updated_at FROM user_exam_results
+       WHERE user_id=? AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT 3`
+    ).bind(userId).all();
+    const activity = await this.#d1.prepare(
+      "SELECT MAX(updated_at) AS t FROM user_activity WHERE user_id=? AND deleted_at IS NULL"
+    ).bind(userId).first();
+    let todayStats = null;
+    if (todayRow?.payload_json) {
+      try {
+        todayStats = JSON.parse(String(todayRow.payload_json));
+      } catch {
+        todayStats = null;
+      }
+    }
+    const recentExams = (exams?.results || []).map((r) => {
+      let doc = null;
+      try {
+        doc = JSON.parse(String(r.payload_json));
+      } catch {
+        doc = null;
+      }
+      return { score: Number(doc?.score ?? doc?.percentage ?? NaN), at: Number(r.updated_at || 0) };
+    }).filter((e) => Number.isFinite(e.score));
+    return {
+      pendingRevisions: Number(pending?.n || 0),
+      todayQuestions: Number(todayStats?.questions || 0),
+      todayCorrect: Number(todayStats?.correct || 0),
+      lastStudyDay: lastDay?.d ? String(lastDay.d) : "",
+      todayDay: today,
+      recentExams,
+      lastActiveAt: Number(activity?.t || 0)
+    };
+  }
+  async nudgedToday(userId, dayKey3) {
+    await this.init();
+    const row = await this.#d1.prepare(
+      "SELECT COUNT(*) AS n FROM notification_sends WHERE user_id=? AND day_key=?"
+    ).bind(userId, dayKey3).first();
+    return Number(row?.n || 0);
+  }
+  async recordSend(userId, kind, dayKey3, at) {
+    await this.init();
+    const res = await this.#d1.prepare(
+      `INSERT INTO notification_sends(user_id, kind, day_key, sent_at) VALUES (?,?,?,?)
+       ON CONFLICT(user_id, kind, day_key) DO NOTHING`
+    ).bind(userId, kind, dayKey3, at).run();
+    return Number(res?.meta?.changes || 0) > 0;
+  }
+};
+async function sendToUser(env, userId, store, message) {
+  const targets = await store.activeTokens(userId);
+  if (!targets.length) return { ok: false, reason: "no-devices", sent: 0 };
+  const out = await fcmSendToTokens(env, targets, {
+    title: message.title,
+    body: message.body,
+    data: { link: message.link, src: "fcm-personal", kind: message.kind }
+  });
+  if (out.badIds?.length) await store.markInactive(out.badIds, Date.now());
+  return { ok: out.sent > 0, sent: out.sent, failed: out.failed };
+}
+async function runScheduledPersonalizedNotifications(env, deps = {}) {
+  const now = deps.now ? deps.now() : Date.now();
+  const personalized = deps.store || new PersonalizedStore(env?.PROFILE_DB);
+  if (!personalized.available()) return { processed: 0, sent: 0, skipped: 0 };
+  if (!env?.__skipFcmCheck && deps.requireFcm !== false) {
+    if (!fcmConfigured(env)) return { processed: 0, sent: 0, skipped: 0, reason: "fcm-not-configured" };
+  }
+  const fcm = deps.fcmStore || new FcmStore(env?.PROFILE_DB);
+  const send = deps.send || ((userId, message) => sendToUser(env, userId, fcm, message));
+  const { date } = dhakaParts(now);
+  const users = await personalized.audience();
+  let sent = 0;
+  let skipped = 0;
+  const results = [];
+  for (const userId of users) {
+    try {
+      if (await personalized.nudgedToday(userId, date) >= DEFAULTS3.max_per_day) {
+        skipped += 1;
+        continue;
+      }
+      const prefs = await personalized.prefs(userId);
+      if (!Number(prefs.daily_enabled)) {
+        skipped += 1;
+        continue;
+      }
+      const state = await personalized.learningState(userId, date);
+      const message = pickNudge(state, prefs, now);
+      if (!message) {
+        skipped += 1;
+        continue;
+      }
+      const claimed = await personalized.recordSend(userId, message.kind, date, now);
+      if (!claimed) {
+        skipped += 1;
+        continue;
+      }
+      const outcome = await send(userId, message);
+      if (outcome?.ok) sent += 1;
+      results.push({ userId, kind: message.kind, ok: Boolean(outcome?.ok) });
+    } catch (err) {
+      results.push({ userId, ok: false, error: String(err?.message || err).slice(0, 120) });
+    }
+  }
+  return { processed: users.length, sent, skipped, date, results };
+}
+var jsonResponse3 = (request, obj, status = 200) => new Response(JSON.stringify(obj), {
+  status,
+  headers: {
+    "Content-Type": "application/json; charset=utf-8",
+    "Access-Control-Allow-Origin": request.headers.get("Origin") || "*",
+    "Access-Control-Allow-Credentials": "true",
+    "Cache-Control": "no-store"
+  }
+});
+async function handlePersonalizedNotificationRequest(request, env) {
+  const url = new URL(request.url);
+  const path = url.pathname;
+  if (path === "/api/notifications/personal-pref") {
+    if (request.method === "OPTIONS") return new Response(null, { status: 204 });
+    const store2 = new PersonalizedStore(env?.PROFILE_DB);
+    if (!store2.available()) return jsonResponse3(request, { error: "storage-unavailable" }, 503);
+    const session = await sessionUser(env, request);
+    if (!session) return jsonResponse3(request, { error: "auth-required" }, 401);
+    const userId = String(session.user.id);
+    const fcm = new FcmStore(env?.PROFILE_DB);
+    if (request.method === "GET") {
+      const prefs = await fcm.getPrefs(userId);
+      return jsonResponse3(request, { ok: true, personalized_enabled: Number(prefs.personalized_enabled) });
+    }
+    if (request.method === "POST") {
+      const body = await parseBody(request);
+      if (!body || typeof body.personalized_enabled === "undefined") {
+        return jsonResponse3(request, { error: "invalid-body" }, 400);
+      }
+      const current = await fcm.getPrefs(userId);
+      const next = { ...current, personalized_enabled: body.personalized_enabled ? 1 : 0 };
+      delete next.stored;
+      await fcm.savePrefs(userId, next, Date.now());
+      return jsonResponse3(request, { ok: true, personalized_enabled: next.personalized_enabled });
+    }
+    return jsonResponse3(request, { error: "method-not-allowed" }, 405);
+  }
+  const PREFIX = "/api/notifications/personal/";
+  if (!path.startsWith(PREFIX)) return null;
+  if (request.method === "OPTIONS") return new Response(null, { status: 204 });
+  const token = String(request.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "").trim();
+  if (!env.ADMIN_TOKEN || token !== env.ADMIN_TOKEN) return jsonResponse3(request, { error: "forbidden" }, 403);
+  const store = new PersonalizedStore(env?.PROFILE_DB);
+  if (!store.available()) return jsonResponse3(request, { error: "storage-unavailable" }, 503);
+  const { date, hour, minute } = dhakaParts(Date.now());
+  if (path === `${PREFIX}preview` && request.method === "GET") {
+    const userId = String(url.searchParams.get("user") || "").trim();
+    if (!userId) return jsonResponse3(request, { error: "missing-user" }, 400);
+    const prefs = await store.prefs(userId);
+    const state = await store.learningState(userId, date);
+    const nudged = await store.nudgedToday(userId, date);
+    const now = Date.now();
+    return jsonResponse3(request, {
+      ok: true,
+      user: userId,
+      dhaka: { date, hour, minute },
+      prefs,
+      state,
+      nudgedToday: nudged,
+      alreadySentToday: nudged >= DEFAULTS3.max_per_day,
+      message: nudged >= DEFAULTS3.max_per_day ? null : pickNudge(state, prefs, now)
+    });
+  }
+  if (path === `${PREFIX}preview-all` && request.method === "GET") {
+    const now = Date.now();
+    const users = await store.audience();
+    const out = [];
+    for (const userId of users) {
+      const prefs = await store.prefs(userId);
+      const nudged = await store.nudgedToday(userId, date);
+      const state = await store.learningState(userId, date);
+      out.push({
+        user: userId,
+        alreadySentToday: nudged >= DEFAULTS3.max_per_day,
+        message: nudged >= DEFAULTS3.max_per_day ? null : pickNudge(state, prefs, now)
+      });
+    }
+    return jsonResponse3(request, { ok: true, date, audience: users.length, plan: out });
+  }
+  if (path === `${PREFIX}run` && request.method === "POST") {
+    const result = await runScheduledPersonalizedNotifications(env, { store });
+    return jsonResponse3(request, { ok: true, ...result });
+  }
+  return jsonResponse3(request, { error: "not_found" }, 404);
+}
+var __personalizedTest = Object.freeze({
+  pickNudge,
+  buildMessage,
+  dhakaParts,
+  inQuietHours,
+  inSendWindow,
+  NUDGE_KINDS,
+  DEFAULTS: DEFAULTS3,
+  PersonalizedStore,
+  runScheduledPersonalizedNotifications,
+  sendToUser,
+  handlePersonalizedNotificationRequest
+});
+
+// files-storage.mjs
+var AUTHORITY_NAME4 = "admission-hub-global-auth-v1";
+var SESSION_COOKIE3 = "__Host-ah_session";
+var SESSION_TOKEN_RE3 = /^[A-Za-z0-9_-]{40,96}$/;
 var MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 var MAX_UPLOADS_PER_HOUR = 10;
 var UPLOAD_TYPES = Object.freeze({
@@ -9099,19 +9961,19 @@ var USAGE_KEY = "fs:bucket:bytes";
 var R2_HOST = "abb783e456e51a5d338419de93d5e576.r2.cloudflarestorage.com";
 var FOLDER_RE = /^[a-z][a-z0-9-]{0,31}$/;
 var KEY_RE = /^[a-z][a-z0-9-]{0,31}\/[A-Za-z0-9_-]{1,64}\/\d{4}-\d{2}-\d{2}\/[a-z0-9]{10,24}\.[a-z0-9]{2,4}$/;
-var readSessionToken2 = (request) => {
+var readSessionToken3 = (request) => {
   const cookie = String(request.headers.get("Cookie") || "");
   for (const part of cookie.split(";")) {
     const idx = part.indexOf("=");
-    if (idx > 0 && part.slice(0, idx).trim() === SESSION_COOKIE2) return part.slice(idx + 1).trim();
+    if (idx > 0 && part.slice(0, idx).trim() === SESSION_COOKIE3) return part.slice(idx + 1).trim();
   }
   return "";
 };
-async function sessionUser2(env, request) {
-  const token = readSessionToken2(request);
-  if (!SESSION_TOKEN_RE2.test(token)) return null;
+async function sessionUser3(env, request) {
+  const token = readSessionToken3(request);
+  if (!SESSION_TOKEN_RE3.test(token)) return null;
   try {
-    const id = env.AUTH_AUTHORITY.idFromName(AUTHORITY_NAME3);
+    const id = env.AUTH_AUTHORITY.idFromName(AUTHORITY_NAME4);
     const stub = env.AUTH_AUTHORITY.get(id, { locationHint: "apac" });
     const res = await stub.fetch("https://auth.internal/internal/session/get", {
       method: "POST",
@@ -9250,7 +10112,7 @@ var bumpUsage = async (env, delta) => {
   } catch {
   }
 };
-var jsonResponse2 = (request, obj, status = 200) => new Response(JSON.stringify(obj), {
+var jsonResponse4 = (request, obj, status = 200) => new Response(JSON.stringify(obj), {
   status,
   headers: {
     "Content-Type": "application/json; charset=utf-8",
@@ -9287,7 +10149,7 @@ async function handleFilesStorageRequest(request, env) {
   const available = Boolean(bucket && typeof bucket.put === "function");
   if (request.method === "GET" && path === "/api/files/usage") {
     const usage = await bucketUsage(env);
-    return jsonResponse2(request, {
+    return jsonResponse4(request, {
       ok: true,
       usedBytes: usage.bytes,
       exact: usage.exact,
@@ -9297,15 +10159,15 @@ async function handleFilesStorageRequest(request, env) {
   }
   if (request.method === "GET") {
     const key = path.slice("/api/files/".length);
-    if (!KEY_RE.test(key)) return jsonResponse2(request, { error: "not-found" }, 404);
-    if (!available) return jsonResponse2(request, { error: "storage-unavailable" }, 503);
+    if (!KEY_RE.test(key)) return jsonResponse4(request, { error: "not-found" }, 404);
+    if (!available) return jsonResponse4(request, { error: "storage-unavailable" }, 503);
     let obj;
     try {
       obj = await bucket.get(key);
     } catch {
       obj = null;
     }
-    if (!obj) return jsonResponse2(request, { error: "not-found" }, 404);
+    if (!obj) return jsonResponse4(request, { error: "not-found" }, 404);
     const ext = key.split(".").pop().toLowerCase();
     const type = UPLOAD_TYPES[ext] || "application/octet-stream";
     return new Response(obj.body, {
@@ -9318,36 +10180,36 @@ async function handleFilesStorageRequest(request, env) {
       }
     });
   }
-  const session = await sessionUser2(env, request);
-  if (!session) return jsonResponse2(request, { error: "auth-required" }, 401);
+  const session = await sessionUser3(env, request);
+  if (!session) return jsonResponse4(request, { error: "auth-required" }, 401);
   const userId = String(session.user.id);
-  if (request.method !== "POST") return jsonResponse2(request, { error: "method-not-allowed" }, 405);
+  if (request.method !== "POST") return jsonResponse4(request, { error: "method-not-allowed" }, 405);
   if (path === "/api/files/upload") {
-    if (!available) return jsonResponse2(request, { error: "storage-unavailable" }, 503);
+    if (!available) return jsonResponse4(request, { error: "storage-unavailable" }, 503);
     if (!await kvRateAllow2(env, `upload:${userId}`, MAX_UPLOADS_PER_HOUR, 3600)) {
-      return jsonResponse2(request, { error: "rate-limited" }, 429);
+      return jsonResponse4(request, { error: "rate-limited" }, 429);
     }
     const declared = Number(request.headers.get("Content-Length") || 0);
     if (!declared || declared > MAX_UPLOAD_BYTES) {
-      return jsonResponse2(request, { error: "too-large" }, 413);
+      return jsonResponse4(request, { error: "too-large" }, 413);
     }
     const ext = String(request.headers.get("X-File-Ext") || "").toLowerCase().replace(/[^a-z0-9]/g, "");
     const contentType = UPLOAD_TYPES[ext];
-    if (!contentType) return jsonResponse2(request, { error: "invalid-type" }, 400);
+    if (!contentType) return jsonResponse4(request, { error: "invalid-type" }, 400);
     const folder = String(request.headers.get("X-File-Folder") || "").toLowerCase();
-    if (!FOLDER_RE.test(folder)) return jsonResponse2(request, { error: "invalid-folder" }, 400);
+    if (!FOLDER_RE.test(folder)) return jsonResponse4(request, { error: "invalid-folder" }, 400);
     let bytes;
     try {
       bytes = new Uint8Array(await request.arrayBuffer());
     } catch {
-      return jsonResponse2(request, { error: "read-failed" }, 400);
+      return jsonResponse4(request, { error: "read-failed" }, 400);
     }
     if (!bytes.length || bytes.length > MAX_UPLOAD_BYTES) {
-      return jsonResponse2(request, { error: "too-large" }, 413);
+      return jsonResponse4(request, { error: "too-large" }, 413);
     }
     const usage = await bucketUsage(env);
     if (usage.bytes + bytes.length > BUCKET_HARD_LIMIT_BYTES) {
-      return jsonResponse2(request, { error: "bucket-limit", limitBytes: BUCKET_HARD_LIMIT_BYTES, usedBytes: usage.bytes }, 507);
+      return jsonResponse4(request, { error: "bucket-limit", limitBytes: BUCKET_HARD_LIMIT_BYTES, usedBytes: usage.bytes }, 507);
     }
     const day = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
     const key = `${folder}/${userId}/${day}/${randKey(12)}.${ext}`;
@@ -9355,40 +10217,40 @@ async function handleFilesStorageRequest(request, env) {
       await bucket.put(key, bytes, { httpMetadata: { contentType } });
       await bumpUsage(env, bytes.length);
     } catch {
-      return jsonResponse2(request, { error: "storage-error" }, 503);
+      return jsonResponse4(request, { error: "storage-error" }, 503);
     }
     const fileUrl = `/api/files/${key}`;
-    return jsonResponse2(request, { ok: true, url: fileUrl, publicUrl: `${publicUrl(request)}${fileUrl}`, key }, 201);
+    return jsonResponse4(request, { ok: true, url: fileUrl, publicUrl: `${publicUrl(request)}${fileUrl}`, key }, 201);
   }
   if (path === "/api/files/delete") {
-    if (!available) return jsonResponse2(request, { error: "storage-unavailable" }, 503);
+    if (!available) return jsonResponse4(request, { error: "storage-unavailable" }, 503);
     let body = {};
     try {
       body = await request.json();
     } catch {
       body = null;
     }
-    if (!body || typeof body !== "object") return jsonResponse2(request, { error: "invalid-json" }, 400);
+    if (!body || typeof body !== "object") return jsonResponse4(request, { error: "invalid-json" }, 400);
     const key = String(body.key || "");
-    if (!KEY_RE.test(key)) return jsonResponse2(request, { error: "invalid-key" }, 400);
-    if (key.split("/")[1] !== userId) return jsonResponse2(request, { error: "forbidden" }, 403);
+    if (!KEY_RE.test(key)) return jsonResponse4(request, { error: "invalid-key" }, 400);
+    if (key.split("/")[1] !== userId) return jsonResponse4(request, { error: "forbidden" }, 403);
     try {
       const existing = await bucket.get(key);
       await bucket.delete(key);
       if (existing) await bumpUsage(env, -existing.size);
     } catch {
-      return jsonResponse2(request, { error: "storage-error" }, 503);
+      return jsonResponse4(request, { error: "storage-error" }, 503);
     }
-    return jsonResponse2(request, { ok: true, key });
+    return jsonResponse4(request, { ok: true, key });
   }
-  return jsonResponse2(request, { error: "not-found" }, 404);
+  return jsonResponse4(request, { error: "not-found" }, 404);
 }
 var __filesStorageTest = Object.freeze({
   BUCKET_HARD_LIMIT_BYTES,
   s3ListTotalBytes,
   bucketUsage,
-  sessionUser: sessionUser2,
-  readSessionToken: readSessionToken2,
+  sessionUser: sessionUser3,
+  readSessionToken: readSessionToken3,
   kvRateAllow: kvRateAllow2,
   KEY_RE,
   FOLDER_RE,
@@ -9719,8 +10581,8 @@ function summarizeIdentityHealth(result) {
 }
 
 // auth-native/storage/sqlite-auth-repository.mjs
-var DAY_MS = 24 * 60 * 60 * 1e3;
-var EVENT_RETENTION_MS = 90 * DAY_MS;
+var DAY_MS2 = 24 * 60 * 60 * 1e3;
+var EVENT_RETENTION_MS = 90 * DAY_MS2;
 function joinedYearOf(ts) {
   const t = Number(ts);
   if (!Number.isFinite(t) || t <= 0) return null;
@@ -11369,13 +12231,13 @@ var SqliteAuthRepository = class _SqliteAuthRepository {
   async cleanup(now) {
     return this.#transaction(() => {
       this.sql.exec("UPDATE auth_account_verification_tickets SET state='expired',refresh_cipher='' WHERE state='active' AND expires_at<=?", now);
-      this.sql.exec("DELETE FROM auth_account_verification_tickets WHERE expires_at<?", now - DAY_MS);
+      this.sql.exec("DELETE FROM auth_account_verification_tickets WHERE expires_at<?", now - DAY_MS2);
       this.sql.exec("DELETE FROM auth_passkey_challenges WHERE expires_at<=?", now);
       this.sql.exec("DELETE FROM auth_passkey_tickets WHERE expires_at<=?", now);
       this.sql.exec("DELETE FROM auth_passkey_credentials WHERE status='revoked' AND revoked_at<?", now - EVENT_RETENTION_MS);
       this.sql.exec("DELETE FROM auth_rate_limits WHERE expires_at<=?", now);
-      this.sql.exec("DELETE FROM auth_trusted_devices WHERE expires_at<?", now - DAY_MS);
-      this.sql.exec("DELETE FROM auth_security_challenges WHERE expires_at<?", now - DAY_MS);
+      this.sql.exec("DELETE FROM auth_trusted_devices WHERE expires_at<?", now - DAY_MS2);
+      this.sql.exec("DELETE FROM auth_security_challenges WHERE expires_at<?", now - DAY_MS2);
       this.sql.exec("DELETE FROM auth_sessions WHERE expires_at<=? OR revoked_at IS NOT NULL", now);
       this.sql.exec("DELETE FROM auth_security_events WHERE occurred_at<?", now - EVENT_RETENTION_MS);
       this.sql.exec("INSERT INTO auth_meta(key,value) VALUES('last_cleanup',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", String(now));
@@ -13392,8 +14254,8 @@ async function dispatchSecurityNotifications({
 }
 
 // auth-native/verification/sqlite-verification-repository.mjs
-var DAY_MS2 = 864e5;
-var EVENT_RETENTION_MS2 = 90 * DAY_MS2;
+var DAY_MS3 = 864e5;
+var EVENT_RETENTION_MS2 = 90 * DAY_MS3;
 var safeReason = (value) => String(value || "UNKNOWN").toUpperCase().replace(/[^A-Z0-9_-]/g, "_").slice(0, 64) || "UNKNOWN";
 var SqliteVerificationRepository = class {
   constructor(storage) {
@@ -14048,8 +14910,8 @@ var SqliteVerificationRepository = class {
     });
   }
   async dailyQuotaSnapshot({ providerId, dailyQuota, now }) {
-    const dayStart = Math.floor(now / DAY_MS2) * DAY_MS2;
-    const resetAt = dayStart + DAY_MS2;
+    const dayStart = Math.floor(now / DAY_MS3) * DAY_MS3;
+    const resetAt = dayStart + DAY_MS3;
     const row = this.#one(
       "SELECT used FROM auth_verification_daily_quota WHERE provider_id=? AND day_start=?",
       providerId,
@@ -14060,8 +14922,8 @@ var SqliteVerificationRepository = class {
   }
   async reserveDailyQuota({ providerId, dailyQuota, now }) {
     return this.#transaction(() => {
-      const dayStart = Math.floor(now / DAY_MS2) * DAY_MS2;
-      const resetAt = dayStart + DAY_MS2;
+      const dayStart = Math.floor(now / DAY_MS3) * DAY_MS3;
+      const resetAt = dayStart + DAY_MS3;
       this.sql.exec(
         `INSERT INTO auth_verification_daily_quota(provider_id,day_start,used,quota_limit,reset_at,updated_at)
          VALUES(?,?,0,?,?,?) ON CONFLICT(provider_id,day_start)
@@ -15184,6 +16046,10 @@ var gk_agent_worker_default = {
     if (emailResponse) return emailResponse;
     const fcmResponse = await handleFcmNotificationRequest(request, env, ctx);
     if (fcmResponse) return fcmResponse;
+    const personalResponse = await handlePersonalizedNotificationRequest(request, env, ctx);
+    if (personalResponse) return personalResponse;
+    const userDataResponse = await handleUserDataRequest(request, env, ctx);
+    if (userDataResponse) return userDataResponse;
     const filesResponse = await handleFilesStorageRequest(request, env, ctx);
     if (filesResponse) return filesResponse;
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors(request) });
@@ -15248,6 +16114,10 @@ var gk_agent_worker_default = {
   async scheduled(event, env, ctx) {
     try {
       await runScheduledGlobalNotifications(env);
+    } catch (_) {
+    }
+    try {
+      await runScheduledPersonalizedNotifications(env);
     } catch (_) {
     }
     if (!env.GK_KV || !keys(env).length) return;

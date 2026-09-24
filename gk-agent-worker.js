@@ -3,6 +3,8 @@ import pubHandler, { publishGlobal } from './public-worker.js';
 import { handleInternalEmailRequest } from './email-gateway/worker/handler.mjs';
 import { createNativeAuthHandler } from './auth-native/worker/public-auth-handler.mjs';
 import { handleFcmNotificationRequest, runScheduledGlobalNotifications } from './fcm-notification.mjs';
+import { handlePersonalizedNotificationRequest, runScheduledPersonalizedNotifications } from './personalized-notification.mjs';
+import { handleUserDataRequest } from './userdata-api.mjs';
 import { handleFilesStorageRequest } from './files-storage.mjs';
 export { EmailGatewayCoordinator } from './email-gateway/worker/email-coordinator.mjs';
 export { AdmissionAuthAuthority } from './auth-native/worker/auth-authority-do.mjs';
@@ -439,6 +441,12 @@ export default {
     // Phase 1 — FCM notification foundation (owns /api/notifications/* + /internal/notifications/health).
     const fcmResponse = await handleFcmNotificationRequest(request, env, ctx);
     if (fcmResponse) return fcmResponse;
+    // Phase G — personalized smart notifications (owns /api/notifications/personal/*).
+    const personalResponse = await handlePersonalizedNotificationRequest(request, env, ctx);
+    if (personalResponse) return personalResponse;
+    // Student data sync (server-backed student learning data) — owns /api/userdata/*.
+    const userDataResponse = await handleUserDataRequest(request, env, ctx);
+    if (userDataResponse) return userDataResponse;
     // R2 file storage (owner-approved 2026-09-18) — owns /api/files/*.
     // Must run before the /api/* pubHandler catch-all.
     const filesResponse = await handleFilesStorageRequest(request, env, ctx);
@@ -512,6 +520,9 @@ export default {
      * Cron Triggers replace the spec's "Vercel Cron" (owner: no Vercel).
      * The GK run below stays date-guarded (once per day). */
     try { await runScheduledGlobalNotifications(env); } catch (_) {}
+    /* Phase G — one personalized nudge per student per day (restraint built in:
+     * daily cap, quiet hours, duplicate guard). Runs after the global send. */
+    try { await runScheduledPersonalizedNotifications(env); } catch (_) {}
     if (!env.GK_KV || !keys(env).length) return;
     const date = dhakaToday();
     try { if ((await env.GK_KV.get('gkDay')) === date) return; } catch (_) {}

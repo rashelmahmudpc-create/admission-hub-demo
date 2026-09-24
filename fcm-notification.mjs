@@ -25,6 +25,12 @@
 
 const FCM_API_SCOPE = 'https://www.googleapis.com/auth/firebase.messaging';
 const FCM_TOKEN_URL = 'https://oauth2.googleapis.com/token';
+/* Server-side topic subscription (IID v1). The client's subscribeToTopic is
+ * best-effort and silently no-ops when no custom VAPID key is configured, so
+ * every device's `topics` stayed NULL and the topic send reached nobody. Doing
+ * it server-side from the registration token makes the topic path real. */
+const IID_BATCH_ADD_URL = 'https://iid.googleapis.com/iid/v1:batchAdd';
+const IID_BATCH_REMOVE_URL = 'https://iid.googleapis.com/iid/v1:batchRemove';
 const AUTHORITY_NAME = 'admission-hub-global-auth-v1';
 const SESSION_COOKIE = '__Host-ah_session';
 const SESSION_TOKEN_RE = /^[A-Za-z0-9_-]{40,96}$/;
@@ -88,7 +94,7 @@ async function sessionUser(env, request) {
 }
 
 /* ── D1 store (lazy schema bootstrap, same pattern as D1ProfileStore) ────── */
-class FcmStore {
+export class FcmStore {
   #d1;
   #ready = false;
 
@@ -161,6 +167,7 @@ class FcmStore {
       )`)
     ]);
     try { await this.#d1.prepare('ALTER TABLE fcm_devices ADD COLUMN topics TEXT').run(); } catch (_) { /* column already exists */ }
+    try { await this.#d1.prepare('ALTER TABLE global_notifications ADD COLUMN delivered INTEGER').run(); } catch (_) { /* column already exists */ }
     this.#ready = true;
   }
 
@@ -281,6 +288,7 @@ class FcmStore {
     if (patch.sentAt !== undefined) { sets.push('sent_at=?'); binds.push(patch.sentAt); }
     if (patch.fcmMessageId !== undefined) { sets.push('fcm_message_id=?'); binds.push(patch.fcmMessageId); }
     if (patch.reachEstimate !== undefined) { sets.push('reach_estimate=?'); binds.push(patch.reachEstimate); }
+    if (patch.delivered !== undefined) { sets.push('delivered=?'); binds.push(patch.delivered); }
     if (patch.error !== undefined) { sets.push('error=?'); binds.push(patch.error); }
     if (!sets.length) return;
     binds.push(id);
@@ -302,7 +310,7 @@ class FcmStore {
   async recentGlobals(limit = 50) {
     await this.#ensureTables();
     const res = await this.#d1.prepare(
-      `SELECT id, type, title, body, audience, topic, status, scheduled_at, sent_at, reach_estimate, clicks, error, created_at
+      `SELECT id, type, title, body, audience, topic, status, scheduled_at, sent_at, reach_estimate, delivered, clicks, error, created_at
        FROM global_notifications ORDER BY created_at DESC, id DESC LIMIT ?`
     ).bind(limit).all();
     return (res?.results || []).map(row => ({
@@ -311,6 +319,7 @@ class FcmStore {
       scheduledAt: row.scheduled_at ? Number(row.scheduled_at) : null,
       sentAt: row.sent_at ? Number(row.sent_at) : null,
       reachEstimate: row.reach_estimate ? Number(row.reach_estimate) : null,
+      delivered: row.delivered === null || row.delivered === undefined ? null : Number(row.delivered),
       clicks: Number(row.clicks || 0),
       error: row.error,
       createdAt: Number(row.created_at)
@@ -490,6 +499,7 @@ async function fcmSendToDevice(env, { token, title, body, data }) {
 function fcmConfigured(env) {
   return Boolean(env?.FIREBASE_PROJECT_ID && env?.FIREBASE_CLIENT_EMAIL && env?.FIREBASE_PRIVATE_KEY);
 }
+export { fcmConfigured, sessionUser, parseBody, fcmSendToTokens };
 
 function publicWebConfig(env) {
   if (!fcmConfigured(env)) return null;
@@ -563,6 +573,8 @@ const GLOBAL_DAILY_CAP = 10;
 const GLOBAL_MAX_SCHEDULE_DAYS = 30;
 const GN_ID_RE = /^gn-[a-z0-9]{12}$/;
 const TOPIC_RE = /^[a-z][a-z0-9_-]{0,63}$/;
+/* Phase 2 global audience topic. Mirrors the client's GLOBAL_TOPIC. */
+const GLOBAL_TOPIC = 'all_students';
 
 /* Dual-language preset templates (spec §13). Variables: {{title}} {{lesson}}
  * {{course}} {{feature}} {{date}} — the admin replaces them in the composer. */
@@ -611,6 +623,33 @@ async function fcmSendToTopic(env, topic, { title, body, imageUrl, data }) {
   return { ok: false, reason: 'error', detail: String(out?.error?.message || '').slice(0, 200) };
 }
 
+/* Server-side topic subscription. The client's subscribeToTopic is best-effort
+ * and silently no-ops without a custom VAPID key, so the topic path never
+ * reached anyone. IID returns 200 with a per-token error entry, so a 200 alone
+ * is not success — the result body has to be inspected. */
+async function iidBatch(env, url, token, topic) {
+  if (!TOPIC_RE.test(topic)) return { ok: false, reason: 'invalid-topic' };
+  let accessToken;
+  try { accessToken = await fcmAccessToken(env); } catch { return { ok: false, reason: 'auth' }; }
+  let res;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({ to: `/topics/${topic}`, registration_tokens: [token] })
+    });
+  } catch {
+    return { ok: false, reason: 'network' };
+  }
+  const out = await res.json().catch(() => ({}));
+  if (!res.ok) return { ok: false, reason: 'error', detail: String(out?.error || '').slice(0, 200) };
+  const entry = (out?.results || [])[0];
+  if (entry && entry.error) return { ok: false, reason: String(entry.error).slice(0, 60) };
+  return { ok: true };
+}
+const subscribeDeviceToTopic = (env, token, topic) => iidBatch(env, IID_BATCH_ADD_URL, token, topic);
+const unsubscribeDeviceFromTopic = (env, token, topic) => iidBatch(env, IID_BATCH_REMOVE_URL, token, topic);
+
 /* Per-device send, bounded concurrency. The FCM HTTP v1 single-send body takes
  * ONE `token`, never a `tokens` array — the array form belongs to the batch
  * endpoint, which lives at a different URL. Sending `tokens` here got a 400 for
@@ -618,7 +657,11 @@ async function fcmSendToTopic(env, topic, { title, body, imageUrl, data }) {
  * "sent", so the whole non-topic path was dead. */
 const FCM_SEND_URL = project => `https://fcm.googleapis.com/v1/projects/${project}/messages:send`;
 const FCM_SEND_CONCURRENCY = 10;
-const FCM_FALLBACK_MAX = 200;
+/* One global send fans out to every active device, so the only bound that
+ * matters is memory, not cost (a token send is one HTTP request either way).
+ * A fixed small cap silently stopped delivering to users beyond it while the
+ * row still read "sent" — the exact class of bug this path exists to avoid. */
+const FCM_FANOUT_MAX = 20_000;
 
 async function fcmSendOne(env, accessToken, target, { title, body, data: messageData }) {
   const message = { token: target.token, notification: { title, body }, data: messageData };
@@ -649,19 +692,26 @@ async function fcmSendOne(env, accessToken, target, { title, body, data: message
 async function fcmSendToTokens(env, targets, { title, body, data }) {
   const accessToken = await fcmAccessToken(env);
   const messageData = Object.fromEntries(Object.entries(data || {}).map(([k, v]) => [k, String(v)]));
-  const batch = targets.slice(0, FCM_FALLBACK_MAX);
+  const batch = targets.slice(0, FCM_FANOUT_MAX);
   let sent = 0;
+  let failedTotal = 0;
   const failed = [];
+  const badIds = [];
   for (let i = 0; i < batch.length; i += FCM_SEND_CONCURRENCY) {
     const results = await Promise.all(
       batch.slice(i, i + FCM_SEND_CONCURRENCY).map(t => fcmSendOne(env, accessToken, t, { title, body, data: messageData }))
     );
     for (const r of results) {
       if (r.ok) sent += 1;
-      else failed.push({ id: r.id, reason: r.reason });
+      else {
+        failedTotal += 1;
+        /* Keep the sample small: it is diagnostic detail, the count is truth. */
+        if (failed.length < 20) failed.push({ id: r.id, reason: r.reason });
+        if (r.reason === 'unregistered' || r.reason === 'invalid') badIds.push(r.id);
+      }
     }
   }
-  return { sent, failed };
+  return { sent, failed: failedTotal, failedSample: failed, badIds, truncated: targets.length > batch.length };
 }
 
 async function sendGlobal(env, store, row) {
@@ -670,7 +720,7 @@ async function sendGlobal(env, store, row) {
   let fallbackSent = 0;
   let fallbackFailed = 0;
   /* Hybrid (spec §23 + iOS topic support varies by browser): topic first;
-   * only devices WITHOUT the topic get the multi-token fallback. If the topic
+   * only devices WITHOUT the topic get the per-device fallback. If the topic
    * send itself failed, every active device goes through the fallback. */
   const targets = topicRes.ok
     ? await store.activeDevicesMissingTopic(row.topic)
@@ -678,20 +728,24 @@ async function sendGlobal(env, store, row) {
   if (targets.length) {
     const out = await fcmSendToTokens(env, targets, { title: row.title, body: row.body, data });
     fallbackSent = out.sent;
-    fallbackFailed = out.failed.length;
-    const badIds = out.failed.filter(f => f.reason === 'unregistered' || f.reason === 'invalid').map(f => f.id);
-    if (badIds.length) await store.markInactive(badIds, Date.now());
+    fallbackFailed = out.failed;
+    if (out.badIds.length) await store.markInactive(out.badIds, Date.now());
   }
   const reach = await store.activeDeviceCount();
   const ok = topicRes.ok || fallbackSent > 0;
+  /* A "sent" row must mean at least one device really accepted the message.
+   * The delivered count is stored so a future "users get nothing" report can
+   * be answered from the row itself instead of re-deriving it from code. */
+  const delivered = topicRes.ok ? reach : fallbackSent;
   await store.updateGlobalStatus(row.id, {
     status: ok ? 'sent' : 'failed',
     sentAt: Date.now(),
     fcmMessageId: topicRes.name || null,
     reachEstimate: reach,
+    delivered,
     error: ok ? null : String(topicRes.detail || 'send-failed').slice(0, 200)
   });
-  return { ok, topicOk: topicRes.ok, fallbackSent, fallbackFailed, reach };
+  return { ok, topicOk: topicRes.ok, fallbackSent, fallbackFailed, reach, delivered };
 }
 
 /* Cron entry (Cloudflare Cron Triggers): send every due scheduled global.
@@ -804,15 +858,19 @@ export async function handleFcmNotificationRequest(request, env) {
         createdBy: adminUserId, status: 'sending', createdAt: Date.now()
       };
       await store.insertGlobal(row);
-      /* Record the audience topic against the creator's own device(s) so the
-       * admin who just sent is reachable. Topic subscription is best-effort on
-       * the client (and dead without a VAPID key), so the admin path cannot
-       * depend on `subscribeToTopic` having succeeded in the browser. */
+      /* Subscribe the creator's own device(s) to the audience topic so the
+       * admin who just sent is reachable, and record the topic only if FCM
+       * accepted it — same rule as register-token, or the fallback would skip
+       * the device while the topic send never reached it. */
       if (body.deviceToken) {
-        try { await store.setDeviceTopics(adminUserId, String(body.deviceToken), topic); } catch (_) {}
+        const adminDeviceToken = String(body.deviceToken);
+        try {
+          const sub = await subscribeDeviceToTopic(env, adminDeviceToken, topic);
+          if (sub.ok) await store.setDeviceTopics(adminUserId, adminDeviceToken, topic);
+        } catch (_) { /* fallback covers this device */ }
       }
       const result = await sendGlobal(env, store, row);
-      return jsonResponse(request, { ok: result.ok, id, status: result.ok ? 'sent' : 'failed', reachEstimate: result.reach }, result.ok ? 201 : 502);
+      return jsonResponse(request, { ok: result.ok, id, status: result.ok ? 'sent' : 'failed', reachEstimate: result.reach, delivered: result.delivered }, result.ok ? 201 : 502);
     }
 
     if (path === '/api/notifications/global/schedule' && request.method === 'POST') {
@@ -910,10 +968,21 @@ export async function handleFcmNotificationRequest(request, env) {
     const deviceInfo = String(body.deviceInfo || '').slice(0, 120);
     const now = Date.now();
     await store.upsertDevice({ userId, token, platform, browser, deviceInfo, now });
+    /* Subscribe server-side so the topic path actually reaches this device.
+     * Best-effort: a topic failure must never fail registration, the per-device
+     * fallback still covers the device. Only record the topic when FCM accepted
+     * it, otherwise `topics` would lie and the device would be skipped by the
+     * fallback too. */
+    let topicOk = false;
+    try {
+      const sub = await subscribeDeviceToTopic(env, token, GLOBAL_TOPIC);
+      topicOk = sub.ok;
+      if (sub.ok) await store.setDeviceTopics(userId, token, GLOBAL_TOPIC);
+    } catch (_) { /* fallback covers this device */ }
     /* Round 8 (owner directive 2026-09-17): no welcome push — enabling is
      * silent; the user sees nothing after tapping Allow. The bell opening
      * the inbox is the confirmation. */
-    return jsonResponse(request, { ok: true, registered: true, devices: (await store.activeDevices(userId)).length }, 201);
+    return jsonResponse(request, { ok: true, registered: true, topicSubscribed: topicOk, devices: (await store.activeDevices(userId)).length }, 201);
   }
 
   if (path === '/api/notifications/unregister-token' && request.method === 'POST') {
@@ -1023,8 +1092,16 @@ export async function handleFcmNotificationRequest(request, env) {
     const token = String(body.token || '');
     const topics = Array.isArray(body.topics) ? body.topics.map(t => String(t)).filter(t => TOPIC_RE.test(t)).slice(0, 10) : [];
     if (token.length < TOKEN_MIN_LEN || topics.length < 1) return jsonResponse(request, { error: 'invalid-payload' }, 400);
-    await store.setDeviceTopics(userId, token, topics.join(','));
-    return jsonResponse(request, { ok: true, topics });
+    /* Subscribe through IID and record only what FCM actually accepted, so
+     * `topics` never claims a subscription the device does not have — the
+     * fallback decides from this column whether a device still needs a send. */
+    const accepted = [];
+    for (const topic of topics) {
+      const sub = await subscribeDeviceToTopic(env, token, topic);
+      if (sub.ok) accepted.push(topic);
+    }
+    if (accepted.length) await store.setDeviceTopics(userId, token, accepted.join(','));
+    return jsonResponse(request, { ok: accepted.length === topics.length, topics: accepted });
   }
 
   if (path === '/api/notifications/topics/unsubscribe' && request.method === 'POST') {
@@ -1033,6 +1110,13 @@ export async function handleFcmNotificationRequest(request, env) {
     if (!body) return jsonResponse(request, { error: 'invalid-json' }, 400);
     const token = String(body.token || '');
     if (token.length < TOKEN_MIN_LEN) return jsonResponse(request, { error: 'invalid-payload' }, 400);
+    const topics = Array.isArray(body.topics) && body.topics.length
+      ? body.topics.map(t => String(t)).filter(t => TOPIC_RE.test(t)).slice(0, 10)
+      : [GLOBAL_TOPIC];
+    /* Remove from IID first so the device really stops receiving the topic,
+     * then clear the local column. Both are best-effort: the column must not
+     * keep advertising a subscription the backend dropped. */
+    for (const topic of topics) await unsubscribeDeviceFromTopic(env, token, topic);
     await store.setDeviceTopics(userId, token, '');
     return jsonResponse(request, { ok: true });
   }

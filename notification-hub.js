@@ -228,6 +228,10 @@
     } catch (_) {}
   };
   const disablePush = async () => {
+    /* This toggle owns the VAPID subscription only. The FCM registration in
+     * AhFcm is a separate channel, so leaving it active kept pushes arriving
+     * after the user had turned push off — the confusing part was that the UI
+     * said "off" while notifications continued. Stop both. */
     try {
       const registration = await navigator.serviceWorker.ready;
       const subscription = await registration.pushManager.getSubscription();
@@ -235,6 +239,7 @@
         await fetch(endpoint + '/api/push/unsubscribe', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-AH-App': APP_HEADER }, body: JSON.stringify(subscription.toJSON()) }).catch(() => {});
         await subscription.unsubscribe();
       }
+      await window.AhFcm?.disable?.().catch(() => {});
       window.toast?.('Push বন্ধ হয়েছে');
     } catch (_) {}
   };
@@ -598,7 +603,7 @@
     const prefs = await getPrefs();
     const soon = Object.entries(CAT_SOON).filter(([, v]) => v).map(([k]) => CAT_LABEL[k]).join(' · ');
     const perm = typeof Notification !== 'undefined' ? Notification.permission : 'unsupported';
-    const fcmRow = '<div id="ahFcmRow" style="padding:10px 0;border-bottom:1px solid var(--line);font-size:12px;color:var(--sub)">📡 FCM Push — checking…</div>';
+    const fcmRow = '<div id="ahFcmRow" style="padding:10px 0;border-bottom:1px solid var(--line);font-size:12px;color:var(--sub)">📡 FCM Push — checking…</div><div id="ahPersonalRow"></div>';
     const pushRow = !pushReady() ? '<div style="padding:9px 0;border-bottom:1px solid var(--line);font-size:12px;color:var(--sub)">📱 এই device-এ web push নেই — Telegram-এ notification যাবে ✈️</div>'
       : perm === 'granted' ? `<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)"><span style="flex:1;font-size:13px">📱 iPhone push</span><span class="chip active" style="pointer-events:none">চালু ✓</span></div>`
       : perm === 'denied' ? '<div style="padding:9px 0;border-bottom:1px solid var(--line);font-size:12px;color:var(--red)">⚠️ Push অনুমতি ব্লকড — iOS Settings → Safari/Home-অ্যাপ → Notifications থেকে চালু করো</div>'
@@ -620,6 +625,10 @@
     try {
       window.AhFcm?.settingsRow?.().then(html => {
         const el = document.getElementById('ahFcmRow');
+        if (el) el.outerHTML = html;
+      }).catch(() => {});
+      window.AhFcm?.personalRow?.().then(html => {
+        const el = document.getElementById('ahPersonalRow');
         if (el) el.outerHTML = html;
       }).catch(() => {});
     } catch (_) {}

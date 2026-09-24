@@ -196,10 +196,12 @@
 
   /* Phase 2: subscribe this device to the global topic (spec §2). Best
    * effort — a topic failure never breaks enablement; the server's
-   * multi-token fallback still reaches non-topic devices. */
+   * multi-token fallback still reaches non-topic devices. The server call is
+   * independent of `subscribeToTopic` because the client-side call can throw
+   * without a custom VAPID key, and the server-side subscribe is what makes
+   * the topic path real (it records the topic only if FCM accepts it). */
   const ensureTopic = async (messaging, token) => {
     try {
-      await messaging.subscribeToTopic(GLOBAL_TOPIC);
       await boundedFetch('/topics/subscribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -207,6 +209,7 @@
       });
       stateSet({ topic: GLOBAL_TOPIC });
     } catch (_) { /* server fallback covers this device */ }
+    try { await messaging.subscribeToTopic(GLOBAL_TOPIC); } catch (_) { /* server-side subscribe already done */ }
   };
 
   /* User taps Enable → browser permission → FCM token → register on server.
@@ -243,7 +246,7 @@
       catch (e) { setErr('token-failed', errText(e)); return 'token-failed'; }
       if (!token) { setErr('token-empty', 'getToken returned an empty value'); return 'token-failed'; }
       const out = await registerToken(token);
-      if (out.ok) { setErr(null); stateSet({ enabled: true, at: Date.now() }); await ensureTopic(messaging, token); return 'granted'; }
+      if (out.ok) { setErr(null); stateSet({ enabled: true, optedOut: false, at: Date.now() }); await ensureTopic(messaging, token); return 'granted'; }
       setErr('register-' + out.status, 'server rejected the token registration');
       return 'register-' + out.status;
     } catch (e) {
@@ -254,7 +257,9 @@
 
   /* User turns push OFF → stop the FCM subscription + deactivate server-side. */
   const disable = async () => {
-    stateSet({ enabled: false, at: Date.now() });
+    /* Remember that this was the user's own choice: boot reconciliation must
+     * never silently turn push back on against it. */
+    stateSet({ enabled: false, optedOut: true, at: Date.now() });
     try {
       const cfg = await getConfig();
       if (cfg && cfg.fcmConfigured && cfg.webConfig) {
@@ -274,22 +279,43 @@
     return true;
   };
 
-  /* §6 Token refresh: app start → check token → changed? update : continue.
-   * Idempotent server upsert, so running this on every start is safe and also
-   * keeps last_seen fresh. Runs in the background, never blocks boot. */
-  const refreshIfEnabled = async () => {
+  /* Boot / resume reconciliation — the self-healing heart of push.
+   *
+   * A user who granted permission once must keep receiving push with no
+   * further action, yet several ordinary events silently break that:
+   *   - the FCM token rotates and our stored copy is stale;
+   *   - localStorage is cleared, so nothing knows push was ever on;
+   *   - an earlier enable failed after the permission grant (network blip)
+   *     and was never retried, leaving `enabled` unset forever.
+   * In every one of those the device looks "off" while the user believes it
+   * is on, so push just stops and only a manual re-enable fixes it.
+   *
+   * Reconcile instead of trusting the flag: if permission is granted and the
+   * user has not explicitly opted out, (re)register the current token. The
+   * server upsert is idempotent, so repeating it on every resume is safe and
+   * also refreshes last_seen. Never prompts — permission is already granted. */
+  const reconcile = async (force = false) => {
     const st = stateGet();
-    if (!st.enabled) return;
+    if (st.optedOut) return;
+    if (permission() !== 'granted') return;
     const cfg = await getConfig();
     if (!cfg || !cfg.fcmConfigured || !cfg.webConfig) { stateSet({ enabled: false }); return; }
     try {
       const messaging = await initMessaging(cfg.webConfig);
-      if (permission() !== 'granted') { stateSet({ enabled: false }); return; }
       const reg = await readySw();
       const token = await getTokenWith(messaging, reg, cfg.webConfig);
-      if (token) { await registerToken(token); await ensureTopic(messaging, token); }
-    } catch (e) { setErr('refresh-failed', errText(e)); }
+      if (!token) return;
+      if (!force && st.enabled && st.token === token) return; /* nothing changed */
+      const out = await registerToken(token);
+      if (!out.ok) return; /* keep the flag as-is; try again next time */
+      setErr(null);
+      stateSet({ enabled: true, optedOut: false, token, at: Date.now() });
+      await ensureTopic(messaging, token);
+    } catch (e) { setErr('reconcile-failed', errText(e)); }
   };
+
+  /* Kept as the public name used by the boot hook and callers. */
+  const refreshIfEnabled = () => reconcile();
 
   /* Foreground FCM delivery — the SW postMessages focused clients.
    * The push arrives on the push-scope registration (firebase-messaging-sw.js),
@@ -344,6 +370,38 @@
       return `<div style="${pad}display:flex;align-items:center;gap:10px"><span style="flex:1;font-size:12px">📡 FCM Push <b style="color:var(--green)">✓ ${st('চলছে', 'Active')}</b></span><button class="btn ghost sm" onclick="AhFcm.disable().then(()=>NotificationHub.openSettings())">${st('বন্ধ করুন', 'Turn off')}</button></div>`;
     }
     return `<div style="${pad}display:flex;align-items:center;gap:10px"><span style="flex:1;font-size:12px">📡 FCM Push</span><button class="btn sm" onclick="closeModal();NotificationHub.openAllowDialog()">${st('চালু করুন', 'Turn on')}</button></div>`;
+  };
+
+  /* Student's own switch for the personalized daily reminder (Phase G).
+   * Kept in the same settings modal as the FCM row, one line, no jargon. */
+  const personalRow = async () => {
+    const L = (() => { try { return window.AhI18n ? window.AhI18n.get() : 'bn'; } catch (_) { return 'bn'; } })();
+    const st = (bn, en) => (L === 'en' ? en : bn);
+    let on = true;
+    try {
+      const res = await boundedFetch('/personal-pref');
+      if (res.data && typeof res.data.personalized_enabled !== 'undefined') on = Number(res.data.personalized_enabled) === 1;
+    } catch (_) { /* leave default */ }
+    return `<div style="padding:10px 0;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px">
+      <span style="flex:1;font-size:12px">⭐ ${st('দৈনিক স্মার্ট রিমাইন্ডার', 'Daily smart reminder')}
+        <span style="opacity:.7">— ${st('প্রতিদিন একবার, পড়ার অবস্থা অনুযায়ী', 'once a day, based on your study')}</span></span>
+      <button class="btn ${on ? 'ghost' : ''} sm" onclick="AhFcm.togglePersonal()">${on ? st('বন্ধ করুন', 'Turn off') : st('চালু করুন', 'Turn on')}</button>
+    </div>`;
+  };
+
+  const togglePersonal = async () => {
+    const L = (() => { try { return window.AhI18n ? window.AhI18n.get() : 'bn'; } catch (_) { return 'bn'; } })();
+    try {
+      const cur = await boundedFetch('/personal-pref');
+      const next = !(cur.data && Number(cur.data.personalized_enabled) === 1);
+      await boundedFetch('/personal-pref', { method: 'POST', body: JSON.stringify({ personalized_enabled: next }) });
+      window.toast?.(next
+        ? (L === 'en' ? 'Daily reminder on' : 'দৈনিক রিমাইন্ডার চালু হলো')
+        : (L === 'en' ? 'Daily reminder off' : 'দৈনিক রিমাইন্ডার বন্ধ হলো'));
+      window.NotificationHub?.openSettings?.();
+    } catch (_) {
+      window.toast?.(L === 'en' ? 'Could not save' : 'সেভ করা গেল না');
+    }
   };
 
   /* Dev test center (§18) — hidden route #notif-dev. Admin Bearer token is
@@ -436,7 +494,7 @@
 
   window.AhFcm = {
     status, enable, disable, refresh: refreshIfEnabled,
-    settingsRow, devPanel, getToken: currentToken,
+    settingsRow, personalRow, togglePersonal, devPanel, getToken: currentToken,
     _state: stateGet, _config: getConfig, lastErr, selfTest
   };
 })();

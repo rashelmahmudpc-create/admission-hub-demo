@@ -62,9 +62,35 @@ test('client fcm: subscribes the device to all_students after register + on refr
   assert.match(CLIENT_FCM, /const GLOBAL_TOPIC = 'all_students';/);
   assert.match(CLIENT_FCM, /await messaging\.subscribeToTopic\(GLOBAL_TOPIC\);/);
   assert.match(CLIENT_FCM, /'\/topics\/subscribe'/);
-  assert.ok(CLIENT_FCM.indexOf('await ensureTopic(messaging, token); return \'granted\'') > -1, 'topic sub on first enable');
-  assert.match(CLIENT_FCM, /if \(token\) \{ await registerToken\(token\); await ensureTopic\(messaging, token\); \}/, 'topic sub refreshed on app start');
+  assert.ok(CLIENT_FCM.indexOf("await ensureTopic(messaging, token); return 'granted'") > -1, 'topic sub on first enable');
+  assert.match(CLIENT_FCM, /await ensureTopic\(messaging, token\);/, 'topic sub refreshed on boot reconcile');
   assert.match(CLIENT_FCM, /catch \(_\) \{ \/\* server fallback covers this device \*\/ \}/, 'best-effort — never breaks enablement');
+});
+
+/* Owner directive: users must receive push with no extra/confusing steps.
+ * Permission already granted is the durable signal — if the device looks
+ * "off" only because a flag/token went stale, boot must silently re-register
+ * rather than wait for the user to tap Enable again. */
+test('client fcm: boot reconciles push instead of trusting the flag', () => {
+  assert.match(CLIENT_FCM, /const reconcile = async \(force = false\) =>/, 'a reconciler exists');
+  assert.match(CLIENT_FCM, /const refreshIfEnabled = \(\) => reconcile\(\);/, 'boot hook routes through it');
+  assert.match(CLIENT_FCM, /if \(st\.optedOut\) return;/, 'an explicit opt-out is respected, never overridden');
+  assert.match(CLIENT_FCM, /if \(permission\(\) !== 'granted'\) return;/, 'permission is the durable signal');
+  assert.ok(!/if \(!st\.enabled\) return;/.test(CLIENT_FCM), 'a stale/absent enabled flag must not skip reconciliation');
+  assert.match(CLIENT_FCM, /stateSet\(\{ enabled: true, optedOut: false, token, at: Date\.now\(\) \}\);/, 'success records the token for next boot');
+  assert.match(CLIENT_FCM, /stateSet\(\{ enabled: false, optedOut: true, at: Date\.now\(\) \}\);/, 'disable records the opt-out');
+  assert.ok(!/Notification\.requestPermission\(\)[\s\S]{0,200}reconcile/.test(CLIENT_FCM), 'reconcile never prompts');
+});
+
+/* Turning push off must actually stop push. The settings sheet's VAPID path
+ * and the FCM registration are two channels; stopping only one left push
+ * arriving while the UI said "off". */
+test('client hub: turning push off stops both push channels', () => {
+  const HUB = readFileSync('notification-hub.js', 'utf8');
+  const body = HUB.slice(HUB.indexOf('const disablePush ='), HUB.indexOf('// ── UI: dashboard card'));
+  assert.match(body, /\/api\/push\/unsubscribe'/, 'drops the VAPID subscription');
+  assert.match(body, /subscription\.unsubscribe\(\)/, 'and unsets it locally');
+  assert.match(body, /await window\.AhFcm\?\.disable\?\.\(\)/, 'and stops the FCM channel too');
 });
 
 test('inbox v6: merges the global feed, dedupes by id, taps log read + deep link', () => {
@@ -108,17 +134,31 @@ test('admin center: token gate (sessionStorage only), 6 types, 5 audiences, live
   assert.match(ADMIN, /Authorization: `Bearer \$\{tok\(\)\}`/, 'every admin call carries the Bearer token');
 });
 
+test('admin create form: typing never re-renders the form (mobile keyboard stays up)', () => {
+  /* The text inputs must call the in-place handler, not the full re-render.
+   * A re-render replaces the focused node, so the mobile keyboard closed after
+   * every keystroke (owner report 2026-09-24). */
+  for (const field of ['title', 'body', 'imageUrl', 'targetUrl']) {
+    const re = new RegExp(`on(input|change)="window\\.__gnLive\\('${field}'`);
+    assert.match(ADMIN, re, `${field} uses the in-place handler`);
+    assert.ok(!ADMIN.includes(`__gnField('${field}'`), `${field} must not trigger a full re-render on typing`);
+  }
+  assert.match(ADMIN, /window\.__gnLive = \(field, value\)/, 'in-place handler defined');
+  assert.match(ADMIN, /id="gnPrevTitle"/, 'preview title is addressable');
+  assert.match(ADMIN, /id="gnPrevBody"/, 'preview body is addressable');
+});
+
 test('index.html: admin script tag + route dispatch (hidden route, not in nav)', () => {
-  assert.match(INDEX, /<script defer src="\.\/notification-admin\.js\?v=admin-notif-v4"><\/script>/);
+  assert.match(INDEX, /<script defer src="\.\/notification-admin\.js\?v=admin-notif-v5"><\/script>/);
   assert.match(INDEX, /if\(p==='notif-admin' && window\.renderNotificationAdmin\) return window\.renderNotificationAdmin\(\);/);
 });
 
 test('pin consistency: index.html script pins match sw.js cache entries + digests', () => {
   const pins = {
-    'notification-fcm.js': 'fcm-p1-v10',
+    'notification-fcm.js': 'fcm-p1-v11',
     'notification-inbox.js': 'notif-inbox-v6',
     'notification-hub.js': 'notify-v119',
-    'notification-admin.js': 'admin-notif-v4'
+    'notification-admin.js': 'admin-notif-v5'
   };
   for (const [file, pin] of Object.entries(pins)) {
     assert.match(INDEX, new RegExp(`<script defer src="\\./${file}\\?v=${pin}">`), `${file} pin in index.html`);
@@ -139,7 +179,7 @@ test('pin consistency: index.html script pins match sw.js cache entries + digest
 });
 
 test('sw-manifest digest of the admin file is correct', () => {
-  const m = SW.match(/"\/?\.\/notification-admin\.js\?v=admin-notif-v4": "([0-9a-f]{64})"/);
+  const m = SW.match(/"\/?\.\/notification-admin\.js\?v=admin-notif-v5": "([0-9a-f]{64})"/);
   assert.ok(m, 'digest present');
   const actual = createHash('sha256').update(readFileSync('notification-admin.js')).digest('hex');
   assert.equal(m[1], actual, 'digest matches the file on disk');

@@ -19,6 +19,12 @@ const VALID_SESSION = `sess-${'a'.repeat(40)}`.slice(0, 64);
 const USER_ID = 'user-global-1';
 const ADMIN = 'admin-global-test-token-0123456789';
 
+/* Topic subscription now also goes through IID server-side. Default the
+ * transport to "offline" so the suite stays hermetic; tests that need IID or
+ * FCM stubs install withFcmStub, which restores to this offline default. */
+const OFFLINE_FETCH = async () => { throw new Error('offline-test-transport'); };
+globalThis.fetch = OFFLINE_FETCH;
+
 /* ── in-memory D1 (Phase 1 + Phase 2 SQL) ────────────────────────────────── */
 function makeFakeD1() {
   const devices = new Map();   // id → row
@@ -62,7 +68,7 @@ function makeFakeD1() {
           id, type, title, body, image_url: imageUrl, target_url: targetUrl,
           audience, topic, dedup, scheduled_at: scheduledAt,
           created_by: createdBy, status, fcm_message_id: null,
-          sent_at: null, reach_estimate: null, clicks: 0, error: null, created_at: createdAt
+          sent_at: null, reach_estimate: null, delivered: null, clicks: 0, error: null, created_at: createdAt
         });
         return { success: true, meta: { changes: 1 } };
       }
@@ -284,13 +290,25 @@ const call = async (request, env) => {
  * `message.token`. A batch-shaped `message.tokens` is rejected the way FCM
  * rejects it, so a regression to the old dead-code payload fails loudly
  * instead of "succeeding" while delivering nothing. */
-function withFcmStub(env, { topicFail = false, deadTokenIndexes = {}, throwAll = false } = {}) {
+function withFcmStub(env, { topicFail = false, deadTokenIndexes = {}, throwAll = false, iidFail = false } = {}) {
   const realFetch = globalThis.fetch;
-  const calls = { topic: [], tokens: [] };
+  const calls = { topic: [], tokens: [], iid: [] };
   globalThis.fetch = async (input, init) => {
     const url = String(input);
     if (url.includes('oauth2.googleapis.com')) {
       return Response.json({ access_token: 'fake-oauth-token', expires_in: 3600 });
+    }
+    /* Server-side topic subscription. Mirrors IID: 200 with a per-token
+     * `results[].error` entry when the token is rejected, so a status-only
+     * check would wrongly read success. */
+    if (url.includes('iid.googleapis.com')) {
+      const payload = JSON.parse(init?.body || '{}');
+      calls.iid.push({ url, ...payload });
+      const tokens = payload.registration_tokens || [];
+      const results = iidFail
+        ? tokens.map(() => ({ error: 'NOT_FOUND' }))
+        : tokens.map(() => ({}));
+      return Response.json({ results });
     }
     if (url.includes('fcm.googleapis.com')) {
       if (throwAll) throw new Error('network down');
@@ -349,11 +367,11 @@ test('global/send: topic-first send, stored row, reliable reach estimate', async
   const env = await makeEnv();
   const tokenA = await registerDevice(env, 'a');
   const tokenB = await registerDevice(env, 'b');
-  for (const token of [tokenA, tokenB]) {
-    await call(cookieRequest('/api/notifications/topics/subscribe', { method: 'POST', body: { token, topics: ['all_students'] } }), env);
-  }
   const stub = withFcmStub(env);
   try {
+    for (const token of [tokenA, tokenB]) {
+      await call(cookieRequest('/api/notifications/topics/subscribe', { method: 'POST', body: { token, topics: ['all_students'] } }), env);
+    }
     const out = await call(cookieRequest('/api/notifications/global/send', {
       method: 'POST',
       body: { type: 'new-content', title: '📚 নতুন Lesson Available', body: 'B1 unit-এর নতুন lesson live।', audience: 'all_students', targetUrl: '/lesson/25' }
@@ -385,9 +403,9 @@ test('hybrid fallback: only devices WITHOUT the topic get multi-token sends', as
   const env = await makeEnv();
   const tokenA = await registerDevice(env, 'topic');
   const tokenB = await registerDevice(env, 'notopic');
-  await call(cookieRequest('/api/notifications/topics/subscribe', { method: 'POST', body: { token: tokenA, topics: ['all_students'] } }), env);
   const stub = withFcmStub(env);
   try {
+    await call(cookieRequest('/api/notifications/topics/subscribe', { method: 'POST', body: { token: tokenA, topics: ['all_students'] } }), env);
     const out = await call(cookieRequest('/api/notifications/global/send', {
       method: 'POST', body: { type: 'announcement', title: 'fallback test', body: 'b' }
     }), env);
@@ -635,16 +653,108 @@ test('user inbox: sent feed + unread; read clears it; click counts', async () =>
 test('topics/subscribe + unsubscribe update the device row', async () => {
   const env = await makeEnv();
   const token = await registerDevice(env, 'topicsub');
-  const bad = await call(cookieRequest('/api/notifications/topics/subscribe', { method: 'POST', body: { token: 'short', topics: ['all_students'] } }), env);
-  assert.equal(bad.response.status, 400);
-  const ok = await call(cookieRequest('/api/notifications/topics/subscribe', { method: 'POST', body: { token, topics: ['all_students', 'course_beginner', 'EVIL TOPIC'] } }), env);
-  assert.equal(ok.response.status, 200);
-  assert.deepEqual(ok.data.topics, ['all_students', 'course_beginner'], 'invalid topic names are dropped');
-  const row = [...env.PROFILE_DB._devices.values()].find(r => r.fcmToken === token);
-  assert.equal(row.topics, 'all_students,course_beginner');
-  const unsub = await call(cookieRequest('/api/notifications/topics/unsubscribe', { method: 'POST', body: { token } }), env);
-  assert.equal(unsub.response.status, 200);
-  assert.equal(row.topics, '');
+  const stub = withFcmStub(env);
+  try {
+    const bad = await call(cookieRequest('/api/notifications/topics/subscribe', { method: 'POST', body: { token: 'short', topics: ['all_students'] } }), env);
+    assert.equal(bad.response.status, 400);
+    const ok = await call(cookieRequest('/api/notifications/topics/subscribe', { method: 'POST', body: { token, topics: ['all_students', 'course_beginner', 'EVIL TOPIC'] } }), env);
+    assert.equal(ok.response.status, 200);
+    assert.deepEqual(ok.data.topics, ['all_students', 'course_beginner'], 'invalid topic names are dropped');
+    const row = [...env.PROFILE_DB._devices.values()].find(r => r.fcmToken === token);
+    assert.equal(row.topics, 'all_students,course_beginner');
+    const unsub = await call(cookieRequest('/api/notifications/topics/unsubscribe', { method: 'POST', body: { token } }), env);
+    assert.equal(unsub.response.status, 200);
+    assert.equal(row.topics, '');
+    /* the backend subscription is dropped too, not just the local column */
+    assert.ok(stub.calls.iid.some(c => c.url.includes('batchRemove')), 'IID batchRemove issued');
+  } finally { stub.restore(); }
+});
+
+test('topics/subscribe: a topic FCM rejects is not recorded (fallback keeps covering)', async () => {
+  const env = await makeEnv();
+  const token = await registerDevice(env, 'rejtopic');
+  const stub = withFcmStub(env, { iidFail: true });
+  try {
+    const out = await call(cookieRequest('/api/notifications/topics/subscribe', { method: 'POST', body: { token, topics: ['all_students'] } }), env);
+    assert.equal(out.response.status, 200);
+    assert.deepEqual(out.data.topics, [], 'rejected subscribe records nothing');
+    const row = [...env.PROFILE_DB._devices.values()].find(r => r.fcmToken === token);
+    assert.equal(row.topics, null);
+  } finally { stub.restore(); }
+});
+
+test('register-token subscribes the device to all_students server-side', async () => {
+  const env = await makeEnv();
+  const stub = withFcmStub(env);
+  try {
+    const token = await registerDevice(env, 'srvsub');
+    assert.equal(stub.calls.iid.length, 1, 'one IID subscribe call at registration');
+    assert.equal(stub.calls.iid[0].to, '/topics/all_students');
+    assert.deepEqual(stub.calls.iid[0].registration_tokens, [token]);
+    const row = [...env.PROFILE_DB._devices.values()].find(r => r.fcmToken === token);
+    assert.equal(row.topics, 'all_students', 'topic recorded only because FCM accepted it');
+  } finally { stub.restore(); }
+});
+
+test('topic recorded only when IID accepts the token — else fallback still covers it', async () => {
+  const env = await makeEnv();
+  const stub = withFcmStub(env, { iidFail: true });
+  try {
+    const token = await registerDevice(env, 'iidbad');
+    const row = [...env.PROFILE_DB._devices.values()].find(r => r.fcmToken === token);
+    assert.equal(row.topics, null, 'rejected subscribe must not be recorded as a topic');
+  } finally { stub.restore(); }
+  /* the device is still reachable through the per-device fallback */
+  const stub2 = withFcmStub(env);
+  try {
+    await call(cookieRequest('/api/notifications/global/send', {
+      method: 'POST', body: { type: 'announcement', title: 'still covered', body: 'b' }
+    }), env);
+    assert.equal(stub2.calls.tokens.length, 1, 'unsubscribed device delivered via fallback');
+  } finally { stub2.restore(); }
+});
+
+test('delivered count reflects real deliveries, not just reach (fanout has no 200 cap)', async () => {
+  const env = await makeEnv();
+  /* 205 devices seeded straight into the store: past the old hard cap of 200.
+   * Seeding bypasses register-token's 10/hour burst limit, which is not what
+   * this test is about. */
+  const devices = env.PROFILE_DB._devices;
+  for (let i = 0; i < 205; i++) {
+    const id = `dev-fanout-${String(i).padStart(3, '0')}`;
+    devices.set(id, {
+      id, userId: `user-fanout-${i}`, fcmToken: `tok-fanout-${i}-${'x'.repeat(110)}`.slice(0, 140),
+      platform: 'android', browser: 'chrome', deviceInfo: '', createdAt: 1, updatedAt: 1, lastSeen: 1,
+      isActive: 1, topics: null
+    });
+  }
+  const stub = withFcmStub(env, { topicFail: true });
+  try {
+    const out = await call(cookieRequest('/api/notifications/global/send', {
+      method: 'POST', body: { type: 'announcement', title: 'big audience', body: 'b' }
+    }), env);
+    assert.equal(out.response.status, 201);
+    assert.equal(stub.calls.tokens.length, 205, 'every device attempted, none silently dropped');
+    assert.equal(out.data.delivered, 205);
+    const hist = await call(cookieRequest('/api/notifications/history'), env);
+    assert.equal(hist.data.items[0].reachEstimate, 205);
+    assert.equal(hist.data.items[0].delivered, 205);
+  } finally { stub.restore(); }
+});
+
+test('all-delivery-failure → row is failed (never a lying "sent")', async () => {
+  const env = await makeEnv();
+  await registerDevice(env, 'allfail');
+  const stub = withFcmStub(env, { topicFail: true, deadTokenIndexes: { 0: true } });
+  try {
+    const out = await call(cookieRequest('/api/notifications/global/send', {
+      method: 'POST', body: { type: 'announcement', title: 'nobody got it', body: 'b' }
+    }), env);
+    assert.equal(out.response.status, 502);
+    const hist = await call(cookieRequest('/api/notifications/history'), env);
+    assert.equal(hist.data.items[0].status, 'failed');
+    assert.equal(hist.data.items[0].delivered, 0);
+  } finally { stub.restore(); }
 });
 
 test('unconfigured FCM: cron is a safe no-op, send → 503', async () => {

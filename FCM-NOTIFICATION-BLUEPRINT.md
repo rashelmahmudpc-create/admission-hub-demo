@@ -42,7 +42,10 @@ Phase 1 implementation notes (as built):
   `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer` (the shorthand
   `jwt-bearer` is rejected) — the worker uses the URN, covered by test.
   No custom VAPID key configured — FCM's default web-push VAPID applies
-  (the web config the owner provided has no vapidKey field).
+  (the web config the owner provided has no vapidKey field). Consequence:
+  the client's `messaging.subscribeToTopic()` is best-effort and no-ops,
+  so topic subscription is done server-side through IID `batchAdd` at
+  registration (see "Durable global fanout" below).
 - Owner on-device check: open the app → notification settings → enable
   FCM push → receive the test notification (grants Phase 1 completion).
 - Pending owner action: Firebase project enablements + service-account
@@ -172,6 +175,26 @@ deactivated/removed as appropriate.
 ### 15. Automatic invalid-token cleanup
 FCM `UNREGISTERED` / `INVALID_ARGUMENT` → `is_active = false` or safe
 remove. No dead-token accumulation in the DB.
+
+### 15a. Durable global fanout (2026-09-24 fix)
+A global notification used to read `sent` while reaching nobody. Three
+defects, all fixed:
+
+- The per-device fallback sliced targets at 200. Every user past that
+  count got no push and no error. Replaced with a memory-bounded
+  `FCM_FANOUT_MAX` and a chunked send.
+- The topic path was dead. Without a custom VAPID key the client's
+  `subscribeToTopic()` no-ops, so `fcm_devices.topics` stayed NULL for
+  every device and the topic send reached no one. Registration (and
+  `/topics/subscribe`) now subscribe server-side via IID `batchAdd`, and
+  record the topic only when FCM accepts it — a rejected subscribe stays
+  `NULL` so the per-device fallback still covers that device.
+- A row was marked `sent` when at least one device was merely attempted.
+  Now the real `delivered` count is stored, and a row is `failed` only
+  when nothing landed, so reach and delivery are distinguishable from the
+  row itself.
+
+Invalid-token pruning and IID `batchRemove` on unsubscribe round it out.
 
 ### 16. Security rules (mandatory)
 Never: private key in frontend, service account on GitHub, `.env` commit,
@@ -432,10 +455,11 @@ pointlessly as users grow.
 ## Open items (only one remains)
 
 1. ~~Database~~ → **Decided: Cloudflare (D1 `PROFILE_DB` — same DB as profiles).**
-2. **Firebase project** — owner to create/enable (free, no card, ~10 min),
-   then hand over: service-account key (JSON) + web app config
-   (apiKey, projectId, messagingSenderId, appId, vapidKey). These go to
-   Cloudflare Worker secrets on `admission-gk`. Steps provided.
+2. ~~Firebase project~~ → **Done: `admission-hub-fcm` (sender
+   298090335130), worker secrets bound, global fanout durable as of
+   2026-09-24.** Open follow-up: paste a custom `FIREBASE_VAPID_KEY` if
+   we ever want client-side `subscribeToTopic()` to succeed; not needed
+   for delivery because subscription is server-side now.
 3. ~~Vercel plan~~ → **Decided: no Vercel; Cloudflare Workers free tier.**
 4. **Telegram channel** — kept as backup (recommended; confirm at
    Phase 2 start).

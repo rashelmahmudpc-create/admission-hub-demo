@@ -172,9 +172,9 @@
     return `<div class="gn-preview">
       <div class="gn-preview-card">
         <div class="gn-preview-top"><span class="gn-preview-app">🔔 ${esc(t('appHeader'))}</span><span class="gn-preview-time">${esc(now.toLocaleTimeString(L, { hour: '2-digit', minute: '2-digit' }))}</span></div>
-        <b class="gn-preview-title">${esc(state.title || '…')}</b>
-        <p class="gn-preview-body">${esc(state.body || '…')}</p>
-        ${state.targetUrl ? `<div class="gn-preview-link">↗ ${esc(state.targetUrl)}</div>` : ''}
+        <b class="gn-preview-title" id="gnPrevTitle">${esc(state.title || '…')}</b>
+        <p class="gn-preview-body" id="gnPrevBody">${esc(state.body || '…')}</p>
+        <div class="gn-preview-link" id="gnPrevLink" style="${state.targetUrl ? '' : 'display:none'}">↗ ${esc(state.targetUrl)}</div>
       </div>
     </div>`;
   };
@@ -277,13 +277,13 @@
       ${state.templates.map(x => `<option value="${esc(x.key)}" ${state.templateKey === x.key ? 'selected' : ''}>${esc(t(x.type, I18N.types[x.type] || {}))}</option>`).join('')}
     </select>
     <span class="gn-label">${esc(t('titleLabel'))}</span>
-    <input class="gn-input" maxlength="120" placeholder="${esc(t('titlePh'))}" value="${esc(state.title)}" oninput="window.__gnField('title', this.value)">
+    <input id="gnTitle" class="gn-input" maxlength="120" placeholder="${esc(t('titlePh'))}" value="${esc(state.title)}" oninput="window.__gnLive('title', this.value)">
     <span class="gn-label">${esc(t('bodyLabel'))}</span>
-    <textarea class="gn-input gn-textarea" maxlength="400" placeholder="${esc(t('bodyPh'))}" oninput="window.__gnField('body', this.value)">${esc(state.body)}</textarea>
+    <textarea id="gnBody" class="gn-input gn-textarea" maxlength="400" placeholder="${esc(t('bodyPh'))}" oninput="window.__gnLive('body', this.value)">${esc(state.body)}</textarea>
     <span class="gn-label">${esc(t('imageLabel'))}</span>
-    <input class="gn-input" maxlength="500" value="${esc(state.imageUrl)}" oninput="window.__gnField('imageUrl', this.value)" inputmode="url">
+    <input class="gn-input" maxlength="500" value="${esc(state.imageUrl)}" oninput="window.__gnLive('imageUrl', this.value)" inputmode="url">
     <span class="gn-label">${esc(t('targetLabel'))}</span>
-    <input class="gn-input" maxlength="200" placeholder="${esc(t('targetPh'))}" value="${esc(state.targetUrl)}" oninput="window.__gnField('targetUrl', this.value)">
+    <input class="gn-input" maxlength="200" placeholder="${esc(t('targetPh'))}" value="${esc(state.targetUrl)}" oninput="window.__gnLive('targetUrl', this.value)">
     <span class="gn-label">${esc(t('sendModeLabel'))}</span>
     <div class="gn-chips">
       <button class="gn-chip ${state.mode === 'now' ? 'active' : ''}" onclick="window.__gnSetMode('now')">${esc(t('now'))}</button>
@@ -387,6 +387,22 @@
   window.__gnSetAudience = (k) => { state.audience = k; reRender(); };
   window.__gnSetTemplate = (key) => { applyTemplate(key); reRender(); };
   window.__gnSetMode = (m) => { state.mode = m; reRender(); };
+  /* Typing must never rebuild the form: on mobile the re-render replaced the
+   * focused input and the keyboard dropped after every keystroke. Text fields
+   * only update the preview in place; `__gnField` stays for programmatic
+   * changes (template apply, schedule picker) which legitimately re-render. */
+  window.__gnLive = (field, value) => {
+    state[field] = value;
+    const titleEl = document.getElementById('gnPrevTitle');
+    const bodyEl = document.getElementById('gnPrevBody');
+    const linkEl = document.getElementById('gnPrevLink');
+    if (field === 'title' && titleEl) titleEl.textContent = value || '…';
+    if (field === 'body' && bodyEl) bodyEl.textContent = value || '…';
+    if (field === 'targetUrl' && linkEl) {
+      linkEl.textContent = value ? `↗ ${value}` : '';
+      linkEl.style.display = value ? '' : 'none';
+    }
+  };
   window.__gnField = (field, value) => { state[field] = value; reRender(); };
 
   window.__gnCancel = async (id) => {
