@@ -314,6 +314,54 @@ async function* groqStream(key, model, payload, signal) {
     }
   }
 }
+function geminiEndpoint(model, action, key) {
+  return `https://generativelanguage.googleapis.com/v1beta/models/${model}:${action}?key=${encodeURIComponent(key)}`;
+}
+function geminiFirstText(d) {
+  return String(
+    d.candidates && d.candidates[0] && d.candidates[0].content && d.candidates[0].content.parts && d.candidates[0].content.parts.map((x) => x.text || "").join("") || ""
+  ).trim();
+}
+var GEMINI_ADAPTER = {
+  id: "gemini",
+  matches: (entry) => entry.provider === "gemini",
+  oneShot: true,
+  async chatOnce(entry, payload) {
+    const r = await fetch(geminiEndpoint(entry.model, "generateContent", entry.key), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    if (!r.ok) {
+      const bad = r.status === 401 || r.status === 402 || r.status === 429 || r.status >= 500;
+      throw new ProviderError(`Gemini HTTP ${r.status} (${entry.model})`, { retryable: r.status >= 500 || r.status === 429, bad });
+    }
+    return geminiFirstText(await r.json().catch(() => ({})));
+  },
+  chatStream: (entry, payload) => geminiStream(entry.key, entry.model, payload)
+};
+var GROQ_ADAPTER = {
+  id: "groq",
+  matches: (entry) => entry.provider === "groq",
+  /* Groq is stream-only here: the non-stream route has always been Gemini-only,
+     and adding a Groq one-shot path would change behaviour (M2 forbids that).
+     Fail honestly instead of inventing a fallback. */
+  oneShot: false,
+  async chatOnce() {
+    throw new ProviderError("groq-এ non-stream পথ এখনো নেই", { retryable: false, bad: false });
+  },
+  chatStream: (entry, payload) => groqStream(entry.key, entry.model, payload)
+};
+var PROVIDER_ADAPTERS = [GEMINI_ADAPTER, GROQ_ADAPTER];
+function adapterFor(entry) {
+  return PROVIDER_ADAPTERS.find((a) => a.matches(entry)) || null;
+}
+function providerChain(env, tier = "FAST", badSet = /* @__PURE__ */ new Set()) {
+  return routerChain(env, tier, badSet).filter((c) => {
+    const adapter = adapterFor(c);
+    return Boolean(adapter) && adapter.oneShot === true;
+  });
+}
 function routerChain(env, tier, badSet = /* @__PURE__ */ new Set()) {
   const geminiModels = String(env && env.AGENT_GEMINI_MODELS || "").split(",").map((s) => s.trim()).filter(Boolean);
   const chain = [];
@@ -490,24 +538,17 @@ async function agentChat(request, env, uid, opts = {}) {
   };
   if (!stream) {
     let lastErr = "";
-    for (const c of chain) {
+    for (const c of providerChain(env, tier, badSet)) {
       try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${c.model}:generateContent?key=${encodeURIComponent(c.key)}`;
-        const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payloadG()) });
-        if (r.ok) {
-          const d = await r.json().catch(() => ({}));
-          const t = String(d.candidates && d.candidates[0] && d.candidates[0].content && d.candidates[0].content.parts && d.candidates[0].content.parts.map((x) => x.text || "").join("") || "").trim();
-          if (t) {
-            await finalize(c.model, c.provider, t);
-            return jsonResp({ text: t, model: c.model, intent, pv: SYSTEM_PROMPT_V, latencyMs: Date.now() - startedAt, agent: AGENT_VERSION });
-          }
-          lastErr = "empty-" + c.model;
-        } else {
-          lastErr = "HTTP " + r.status + " " + c.model;
-          if (r.status === 401 || r.status === 402 || r.status === 429 || r.status >= 500) await putKv(env.PUB_KV, badKeyName(c.key, c.model), "1", 86400);
+        const t = await GEMINI_ADAPTER.chatOnce(c, payloadG());
+        if (t) {
+          await finalize(c.model, c.provider, t);
+          return jsonResp({ text: t, model: c.model, intent, pv: SYSTEM_PROMPT_V, latencyMs: Date.now() - startedAt, agent: AGENT_VERSION });
         }
+        lastErr = "empty-" + c.model;
       } catch (e) {
         lastErr = String(e.message || e);
+        if (e instanceof ProviderError && e.bad) await putKv(env.PUB_KV, badKeyName(c.key, c.model), "1", 86400);
       }
     }
     return jsonResp({ error: "provider_failed", message: "AI একটু ব্যস্ত — কয়েক সেকেন্ড পরে আবার চেষ্টা করো।", detail: lastErr, retryable: true }, 502);
@@ -527,20 +568,14 @@ async function agentChat(request, env, uid, opts = {}) {
         for (const c of chain) {
           try {
             let full = "";
-            if (c.provider === "groq") {
-              for await (const t of groqStream(c.key, c.model, payloadO())) {
-                full += t;
-                push(`data: ${JSON.stringify({ text: t })}
+            const adapter = adapterFor(c);
+            if (!adapter) throw new ProviderError("unknown-provider:" + c.provider, { retryable: false, bad: false });
+            const payload = adapter.id === "gemini" ? payloadG() : payloadO();
+            for await (const t of adapter.chatStream(c, payload)) {
+              full += t;
+              push(`data: ${JSON.stringify({ text: t })}
 
 `);
-              }
-            } else {
-              for await (const t of geminiStream(c.key, c.model, payloadG())) {
-                full += t;
-                push(`data: ${JSON.stringify({ text: t })}
-
-`);
-              }
             }
             if (full.trim()) {
               ok = true;
