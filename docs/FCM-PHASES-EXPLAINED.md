@@ -23,8 +23,25 @@ stages, five phases — the grouping is below.
 | 4 | Foreground/background display, click→deep-link routing, hidden test panel | 1 · Foundation | ✅ done |
 | 5 | Global fanout: `all_students` topic + admin composer (instant/scheduled/preview) | 2 · Global | ✅ done |
 | 6 | Personalization: user signals → eligibility engine → batching → FCM | 3 · Personalized | ✅ done |
-| 7 | Event + automation + analytics: cron (daily/weekly/monthly), event notifications | 4 · Automation | ⏳ next |
-| 8 | AI + scale + production hardening: quota-aware sends, cleanup at size | 5 · Scale | ⏳ later |
+| 7 | Event + automation + analytics: cron (daily/weekly/monthly), event notifications | 4 · Automation | ✅ done |
+| 8 | AI + scale + production hardening: quota-aware sends, cleanup at size | 5 · Scale | ✅ done |
+
+## Stage 7, in detail (what shipped)
+
+Three engines run from the same cron tick, each with its own dedup guard so a
+repeated tick is harmless:
+
+- **`event-notifications.mjs`** — celebrates something the student just did:
+  streak milestone, personal best, exam completed, mastery milestone, backlog
+  cleared. It compares a stored snapshot to the current one, so it fires once
+  per event, not once per cron tick.
+- **`digest-notifications.mjs`** — recaps what was already done, on three
+  periods: daily (evening), weekly (Sunday), monthly (the 1st). A period key is
+  claimed before sending, so a period can never go out twice, and at most one
+  digest per student per day fires — rarest wins.
+- **`analytics-notifications.mjs`** — reads the Phase 1–2 rows back as a
+  funnel: Sent → Delivered → Opened → Clicked, plus Failed and dead tokens,
+  with CTR and engagement. Surfaced in the admin Sent tab, no new collection.
 
 ## Why stage 3 and stage 5 matter most for "users get push with no steps"
 
@@ -54,8 +71,14 @@ Stage 7–8  cron triggers the sends; quota + cleanup keep them in budget
 
 ## What is left
 
-- **Stage 7 (Phase 4):** cron-driven event notifications — lesson completed,
-  achievement unlocked, streak milestone — plus weekly/monthly digests and
-  open/click analytics.
-- **Stage 8 (Phase 5):** quota-aware fanout for very large audiences and
-  AI-scored send timing.
+Nothing on the five-phase FCM roadmap: all eight stages are in place. The two
+Phase 5 pieces landed as `send-planner.mjs`:
+
+- **Quota-aware fanout.** A blast larger than the per-run budget is sliced and
+  the cursor is persisted, so the next cron tick resumes the tail instead of
+  re-sending to everyone below the cursor. A changed audience size restarts
+  rather than skips, and the topic leg fires once — never again on resume.
+- **AI-scored send timing.** The digest engine reads the student's own opening
+  hours and sends the daily recap when they actually open things. Below the
+  confidence floor it keeps the fixed default, so a student with no history
+  sees no behaviour change at all.

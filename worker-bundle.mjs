@@ -4902,11 +4902,11 @@ var CloudflareNativeAuthEngine = class {
   // High-dynamic blueprint §01/§04/§05/§13/§14 — deterministic rule table.
   // No AI, no behavioral inference; only real account/profile state.
   profileContext({ profile = null, completion = 0, lastLoginAt = null, now = Date.now() }) {
-    const DAY_MS4 = 864e5;
+    const DAY_MS6 = 864e5;
     const createdAt = profile?.createdAt ? Number(profile.createdAt) : null;
     const hasTarget = Array.isArray(profile?.targets) && profile.targets.length > 0 && Boolean(profile.targets[0]?.name);
-    const ageDays = createdAt ? (now - createdAt) / DAY_MS4 : Number.POSITIVE_INFINITY;
-    const gapDays = lastLoginAt ? (now - Number(lastLoginAt)) / DAY_MS4 : Number.POSITIVE_INFINITY;
+    const ageDays = createdAt ? (now - createdAt) / DAY_MS6 : Number.POSITIVE_INFINITY;
+    const gapDays = lastLoginAt ? (now - Number(lastLoginAt)) / DAY_MS6 : Number.POSITIVE_INFINITY;
     let context = "DEFAULT";
     let greeting = "আগে থেকেই চলো";
     if (!profile || Number(completion) < 60) {
@@ -8158,6 +8158,277 @@ var __publicAuthTest = Object.freeze({
   passkeyPublished
 });
 
+// analytics-notifications.mjs
+var asInt = (v, fallback = 0) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : fallback;
+};
+var pct = (part, whole) => whole > 0 ? Math.round(part / whole * 1e3) / 10 : 0;
+function computeAnalytics(rows = [], readCounts = {}, inactiveDevices = 0) {
+  const items = [];
+  let sent = 0;
+  let delivered = 0;
+  let failed = 0;
+  let opened = 0;
+  let clicked = 0;
+  for (const row of rows) {
+    const status = String(row?.status || "");
+    const wasSent = status === "sent";
+    const didFail = status === "failed";
+    const reach = Math.max(0, asInt(row?.delivered, 0));
+    const clicks = Math.max(0, asInt(row?.clicks, 0));
+    const reads = Math.max(0, asInt(readCounts[String(row?.id)], 0));
+    if (wasSent) sent += 1;
+    if (didFail) failed += 1;
+    delivered += reach;
+    clicked += clicks;
+    opened += reads;
+    items.push({
+      id: String(row?.id || ""),
+      title: String(row?.title || ""),
+      type: String(row?.type || ""),
+      status,
+      audience: String(row?.audience || ""),
+      sentAt: row?.sentAt ? asInt(row.sentAt) : null,
+      reachEstimate: row?.reachEstimate == null ? null : asInt(row.reachEstimate, null),
+      delivered: reach,
+      opened: reads,
+      clicked: clicks,
+      openRate: pct(reads, reach),
+      ctr: pct(clicks, reach),
+      error: row?.error ? String(row.error).slice(0, 200) : null
+    });
+  }
+  return {
+    totals: {
+      notifications: rows.length,
+      sent,
+      failed,
+      delivered,
+      opened,
+      clicked,
+      /* Dead tokens are a health signal, not a send failure: they are the
+       * registrations FCM rejected and the worker already deactivated. */
+      invalidTokens: Math.max(0, asInt(inactiveDevices, 0)),
+      ctr: pct(clicked, delivered),
+      engagement: pct(opened, delivered)
+    },
+    items
+  };
+}
+function summarizeHistory(rows = [], readCounts = {}) {
+  return computeAnalytics(rows, readCounts).items.map((item) => ({
+    id: item.id,
+    title: item.title,
+    status: item.status,
+    audience: item.audience,
+    sentAt: item.sentAt,
+    delivered: item.delivered,
+    opened: item.opened,
+    clicked: item.clicked,
+    ctr: item.ctr,
+    openRate: item.openRate
+  }));
+}
+var AnalyticsStore = class {
+  #d1;
+  #ready = null;
+  constructor(d1) {
+    this.#d1 = d1 || null;
+  }
+  available() {
+    return Boolean(this.#d1);
+  }
+  async init() {
+    if (!this.#d1) return;
+    if (!this.#ready) {
+      this.#ready = (async () => {
+        await this.#d1.prepare(`CREATE TABLE IF NOT EXISTS notification_reads (
+          notification_id TEXT NOT NULL,
+          user_id TEXT NOT NULL,
+          read_at INTEGER NOT NULL,
+          PRIMARY KEY (notification_id, user_id)
+        )`).run();
+      })().catch((err) => {
+        this.#ready = null;
+        throw err;
+      });
+    }
+    await this.#ready;
+  }
+  /* Distinct readers per notification, for the ids given. */
+  async readCounts(ids = []) {
+    await this.init();
+    if (!ids.length) return {};
+    const placeholders = ids.map(() => "?").join(",");
+    const res = await this.#d1.prepare(
+      `SELECT notification_id, COUNT(DISTINCT user_id) AS n
+       FROM notification_reads WHERE notification_id IN (${placeholders})
+       GROUP BY notification_id`
+    ).bind(...ids).all();
+    const out = {};
+    for (const row of res?.results || []) out[String(row.notification_id)] = asInt(row.n, 0);
+    return out;
+  }
+  /* Registrations FCM has told us are dead and the worker deactivated. */
+  async inactiveDeviceCount() {
+    await this.init();
+    const row = await this.#d1.prepare("SELECT COUNT(*) AS n FROM fcm_devices WHERE is_active=0").first();
+    return asInt(row?.n, 0);
+  }
+};
+var __analyticsTest = Object.freeze({ computeAnalytics, summarizeHistory, pct });
+
+// send-planner.mjs
+var clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
+var asInt2 = (v, fallback = 0) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.trunc(n) : fallback;
+};
+var DEFAULT_WINDOW_BUDGET = 400;
+var DEFAULT_CONCURRENCY = 10;
+function planFanout(total, { budget = DEFAULT_WINDOW_BUDGET, cursor = 0 } = {}) {
+  const size = Math.max(0, asInt2(total));
+  const budgetRaw = asInt2(budget, DEFAULT_WINDOW_BUDGET);
+  const limit = budgetRaw > 0 ? budgetRaw : DEFAULT_WINDOW_BUDGET;
+  const start = clamp(asInt2(cursor), 0, size);
+  const take = Math.min(limit, size - start);
+  return {
+    start,
+    take,
+    end: start + take,
+    remaining: Math.max(0, size - (start + take)),
+    batches: Math.ceil(take / Math.max(1, DEFAULT_CONCURRENCY)),
+    complete: start + take >= size
+  };
+}
+function backoffMs(attempt, { base = 250, cap = 3e4, jitter = 0 } = {}) {
+  const n = Math.max(1, asInt2(attempt, 1));
+  const raw = Math.min(Math.max(1, asInt2(cap, 3e4)), Math.max(1, asInt2(base, 250)) * 2 ** (n - 1));
+  const j = jitter > 0 ? Math.floor(Math.random() * Math.max(1, asInt2(jitter))) : 0;
+  return raw + j;
+}
+function isRetryable(reason2) {
+  const r = String(reason2 || "").toLowerCase();
+  return r === "rate-limited" || r === "unavailable" || r === "error" || r === "timeout";
+}
+function retryDecision({ reason: reason2, attempt, maxAttempts = 4 }) {
+  if (!isRetryable(reason2)) return { retry: false, waitMs: 0 };
+  if (asInt2(attempt, 1) >= Math.max(1, asInt2(maxAttempts, 4))) return { retry: false, waitMs: 0 };
+  return { retry: true, waitMs: backoffMs(asInt2(attempt, 1)) };
+}
+function classifyFcmError(status, code) {
+  const s = asInt2(status, 0);
+  const c = code == null ? s : asInt2(code, 0);
+  const n = c || s;
+  if (n === 429) return "rate-limited";
+  if (n === 503 || n === 500 || n === 502 || n === 504) return "unavailable";
+  if (n === 404 || n === 400) return "unusable-token";
+  return "error";
+}
+var TIMING_DEFAULTS = Object.freeze({
+  min_samples: 12,
+  default_hour: 20,
+  // evening, when study tends to happen
+  floor: 0.15
+});
+function hourHistogram(events = []) {
+  const hist = Array.from({ length: 24 }, () => ({ sent: 0, opened: 0 }));
+  for (const e of events) {
+    const h = asInt2(e?.hour, -1);
+    if (h < 0 || h > 23) continue;
+    hist[h].sent += 1;
+    if (e?.opened) hist[h].opened += 1;
+  }
+  return hist;
+}
+function scoreHours(events = []) {
+  const hist = hourHistogram(events);
+  const weights = hist.map((h) => h.sent + 2 * h.opened);
+  const total = weights.reduce((a, b) => a + b, 0);
+  const floor = TIMING_DEFAULTS.floor;
+  if (total <= 0) return hist.map(() => floor);
+  const peak = Math.max(...weights);
+  return weights.map((w) => Math.round((floor + (1 - floor) * (peak > 0 ? w / peak : 0)) * 1e3) / 1e3);
+}
+function bestSendHour(events = [], opts = {}) {
+  const minSamples = Math.max(1, asInt2(opts.min_samples, TIMING_DEFAULTS.min_samples));
+  const defaultHour = clamp(asInt2(opts.default_hour, TIMING_DEFAULTS.default_hour), 0, 23);
+  const usable = events.filter((e) => asInt2(e?.hour, -1) >= 0 && asInt2(e?.hour, -1) <= 23);
+  if (usable.length < minSamples) {
+    return { hour: defaultHour, score: TIMING_DEFAULTS.floor, confident: false, samples: usable.length };
+  }
+  const scores = scoreHours(usable);
+  let best = defaultHour;
+  for (let h = 0; h < 24; h += 1) if (scores[h] > scores[best]) best = h;
+  return { hour: best, score: scores[best], confident: true, samples: usable.length };
+}
+var FanoutStore = class {
+  #d1;
+  #ready = null;
+  constructor(d1) {
+    this.#d1 = d1 || null;
+  }
+  available() {
+    return Boolean(this.#d1);
+  }
+  async init() {
+    if (!this.#d1) return;
+    if (!this.#ready) {
+      this.#ready = (async () => {
+        await this.#d1.prepare(`CREATE TABLE IF NOT EXISTS notification_fanout (
+          id TEXT PRIMARY KEY,
+          cursor INTEGER NOT NULL DEFAULT 0,
+          total INTEGER NOT NULL DEFAULT 0,
+          status TEXT NOT NULL DEFAULT 'pending',
+          updated_at INTEGER NOT NULL
+        )`).run();
+      })().catch((err) => {
+        this.#ready = null;
+        throw err;
+      });
+    }
+    await this.#ready;
+  }
+  async getState(id) {
+    await this.init();
+    const row = await this.#d1.prepare("SELECT * FROM notification_fanout WHERE id=?").bind(id).first();
+    return row ? { id: row.id, cursor: asInt2(row.cursor), total: asInt2(row.total), status: String(row.status) } : null;
+  }
+  async saveState(id, { cursor, total, status }, now = Date.now()) {
+    await this.init();
+    await this.#d1.prepare(
+      `INSERT INTO notification_fanout(id, cursor, total, status, updated_at) VALUES (?,?,?,?,?)
+       ON CONFLICT(id) DO UPDATE SET cursor=excluded.cursor, total=excluded.total,
+         status=excluded.status, updated_at=excluded.updated_at`
+    ).bind(id, asInt2(cursor), asInt2(total), String(status), now).run();
+  }
+};
+async function advanceFanout(store, id, total, opts = {}) {
+  const plan = planFanout(total, opts);
+  const prev = store.available() ? await store.getState(id) : null;
+  const cursor = prev && prev.total === total ? Math.max(prev.cursor, plan.start) : plan.start;
+  const effective = planFanout(total, { ...opts, cursor });
+  if (store.available()) {
+    await store.saveState(id, {
+      cursor: effective.end,
+      total,
+      status: effective.complete ? "complete" : "in-progress"
+    }, opts.now ? opts.now() : Date.now());
+  }
+  return effective;
+}
+var __plannerTest = Object.freeze({
+  planFanout,
+  backoffMs,
+  isRetryable,
+  retryDecision,
+  classifyFcmError,
+  hourHistogram,
+  scoreHours,
+  bestSendHour
+});
+
 // fcm-notification.mjs
 var FCM_API_SCOPE = "https://www.googleapis.com/auth/firebase.messaging";
 var FCM_TOKEN_URL = "https://oauth2.googleapis.com/token";
@@ -8818,7 +9089,6 @@ var subscribeDeviceToTopic = (env, token, topic) => iidBatch(env, IID_BATCH_ADD_
 var unsubscribeDeviceFromTopic = (env, token, topic) => iidBatch(env, IID_BATCH_REMOVE_URL, token, topic);
 var FCM_SEND_URL = (project) => `https://fcm.googleapis.com/v1/projects/${project}/messages:send`;
 var FCM_SEND_CONCURRENCY = 10;
-var FCM_FANOUT_MAX = 2e4;
 async function fcmSendOne(env, accessToken, target, { title, body, imageUrl, iconUrl, badgeUrl, data: messageData }) {
   const notification = { title, body };
   if (imageUrl) notification.image = imageUrl;
@@ -8871,20 +9141,36 @@ async function fcmSendToTokens(env, targets, { title, body, imageUrl, iconUrl, b
     if (cur) cur.ids.push(t.id);
     else byToken.set(key, { id: t.id, ids: [t.id], token: t.token });
   }
-  const batch = [...byToken.values()].slice(0, FCM_FANOUT_MAX);
+  const batch = [...byToken.values()];
   const idToIds = new Map(batch.map((b) => [b.id, b.ids]));
   let sent = 0;
   let failedTotal = 0;
+  let rateLimited = 0;
   const failed = [];
   const badIds = [];
   for (let i = 0; i < batch.length; i += FCM_SEND_CONCURRENCY) {
-    const results = await Promise.all(
-      batch.slice(i, i + FCM_SEND_CONCURRENCY).map((t) => fcmSendOne(env, accessToken, t, { title, body, imageUrl, iconUrl, badgeUrl, data: messageData }))
+    const slice = batch.slice(i, i + FCM_SEND_CONCURRENCY);
+    let results = await Promise.all(
+      slice.map((t) => fcmSendOne(env, accessToken, t, { title, body, imageUrl, iconUrl, badgeUrl, data: messageData }))
     );
+    let attempt = 1;
+    for (; ; ) {
+      const stuck = results.map((r, idx) => ({ r, idx })).filter(({ r }) => retryDecision({ reason: r.reason, attempt, maxAttempts: 2 }).retry);
+      if (!stuck.length) break;
+      await new Promise((resolve) => setTimeout(resolve, retryDecision({ reason: stuck[0].r.reason, attempt, maxAttempts: 2 }).waitMs));
+      const again = await Promise.all(
+        stuck.map(({ r }) => fcmSendOne(env, accessToken, slice.find((t) => t.id === r.id) || slice[0], { title, body, imageUrl, iconUrl, badgeUrl, data: messageData }))
+      );
+      again.forEach((r, k) => {
+        results[stuck[k].idx] = r;
+      });
+      attempt += 1;
+    }
     for (const r of results) {
       if (r.ok) sent += 1;
       else {
         failedTotal += 1;
+        if (isRetryable(r.reason)) rateLimited += 1;
         if (failed.length < 20) failed.push({ id: r.id, reason: r.reason });
         if (r.reason === "unregistered" || r.reason === "invalid") {
           for (const id of idToIds.get(r.id) || [r.id]) badIds.push(id);
@@ -8892,25 +9178,53 @@ async function fcmSendToTokens(env, targets, { title, body, imageUrl, iconUrl, b
       }
     }
   }
-  return { sent, failed: failedTotal, failedSample: failed, badIds, truncated: [...byToken.values()].length > batch.length };
+  return { sent, failed: failedTotal, failedSample: failed, badIds, rateLimited };
 }
 async function sendGlobal(env, store, row, request) {
   const data = { gid: row.id, link: row.targetUrl || "notifications", type: row.type, src: "fcm-global" };
   const iconUrl = iconAbsolute(request);
   const visual = { imageUrl: row.imageUrl, iconUrl, badgeUrl: iconUrl };
-  const topicRes = await fcmSendToTopic(env, row.topic, { title: row.title, body: row.body, ...visual, data });
+  const budget = Math.max(0, Number(env?.FCM_FANOUT_BUDGET || DEFAULT_WINDOW_BUDGET));
+  const ledger = new FanoutStore(env?.PROFILE_DB);
+  const prior = store.available() && ledger.available() ? await ledger.getState(row.id) : null;
+  const resuming = Boolean(prior && prior.cursor > 0 && prior.status !== "complete");
+  let topicRes = { ok: resuming, name: null, detail: resuming ? "resumed" : null };
   let fallbackSent = 0;
   let fallbackFailed = 0;
+  let deferred = 0;
+  let reach = await store.activeDeviceCount();
+  if (!resuming) {
+    topicRes = await fcmSendToTopic(env, row.topic, { title: row.title, body: row.body, ...visual, data });
+  }
   const targets = topicRes.ok ? await store.activeDevicesMissingTopic(row.topic) : await store.allActiveTokens();
   if (targets.length) {
-    const out = await fcmSendToTokens(env, targets, { title: row.title, body: row.body, ...visual, data });
-    fallbackSent = out.sent;
-    fallbackFailed = out.failed;
-    if (out.badIds.length) await store.markInactive(out.badIds, Date.now());
+    if (budget > 0 && targets.length > budget) {
+      const plan = await advanceFanout(ledger, row.id, targets.length, { budget });
+      const slice = targets.slice(plan.start, plan.end);
+      const out = await fcmSendToTokens(env, slice, { title: row.title, body: row.body, ...visual, data });
+      fallbackSent = out.sent;
+      fallbackFailed = out.failed;
+      deferred = plan.remaining;
+      if (out.badIds.length) await store.markInactive(out.badIds, Date.now());
+    } else {
+      const out = await fcmSendToTokens(env, targets, { title: row.title, body: row.body, ...visual, data });
+      fallbackSent = out.sent;
+      fallbackFailed = out.failed;
+      if (out.badIds.length) await store.markInactive(out.badIds, Date.now());
+    }
   }
-  const reach = await store.activeDeviceCount();
+  reach = await store.activeDeviceCount();
   const ok = topicRes.ok || fallbackSent > 0;
   const delivered = topicRes.ok ? reach : fallbackSent;
+  if (deferred > 0) {
+    await store.updateGlobalStatus(row.id, {
+      status: "scheduled",
+      error: null,
+      reachEstimate: reach,
+      delivered
+    });
+    return { ok, topicOk: topicRes.ok, fallbackSent, fallbackFailed, reach, delivered, deferred };
+  }
   await store.updateGlobalStatus(row.id, {
     status: ok ? "sent" : "failed",
     sentAt: Date.now(),
@@ -8919,7 +9233,20 @@ async function sendGlobal(env, store, row, request) {
     delivered,
     error: ok ? null : String(topicRes.detail || "send-failed").slice(0, 200)
   });
-  return { ok, topicOk: topicRes.ok, fallbackSent, fallbackFailed, reach, delivered };
+  return { ok, topicOk: topicRes.ok, fallbackSent, fallbackFailed, reach, delivered, deferred: 0 };
+}
+async function analyticsFor(env, items) {
+  const store = new AnalyticsStore(env?.PROFILE_DB);
+  if (!store.available()) return computeAnalytics(items, {}, 0);
+  try {
+    const [readCounts, invalidTokens] = await Promise.all([
+      store.readCounts(items.map((r) => r.id)),
+      store.inactiveDeviceCount()
+    ]);
+    return computeAnalytics(items, readCounts, invalidTokens);
+  } catch (_) {
+    return computeAnalytics(items, {}, 0);
+  }
 }
 async function runScheduledGlobalNotifications(env) {
   if (!fcmConfigured(env)) return { processed: 0 };
@@ -8979,6 +9306,7 @@ async function handleFcmNotificationRequest(request, env) {
     "/api/notifications/global/cancel",
     "/api/notifications/global/image",
     "/api/notifications/history",
+    "/api/notifications/analytics",
     "/api/notifications/templates"
   ]);
   if (ADMIN_PATHS.has(path)) {
@@ -9101,12 +9429,21 @@ async function handleFcmNotificationRequest(request, env) {
     }
     if (path === "/api/notifications/history" && request.method === "GET") {
       if (!store.available()) return jsonResponse(request, { error: "storage-unavailable" }, 503);
+      const items = await store.recentGlobals(50);
+      const analytics = await analyticsFor(env, items);
       return jsonResponse(request, {
         ok: true,
-        items: await store.recentGlobals(50),
+        items,
+        analytics,
         reachEstimate: await store.activeDeviceCount(),
         dailyCap: GLOBAL_DAILY_CAP
       });
+    }
+    if (path === "/api/notifications/analytics" && request.method === "GET") {
+      if (!store.available()) return jsonResponse(request, { error: "storage-unavailable" }, 503);
+      const items = await store.recentGlobals(50);
+      const analytics = await analyticsFor(env, items);
+      return jsonResponse(request, { ok: true, ...analytics });
     }
     if (path === "/api/notifications/templates" && request.method === "GET") {
       return jsonResponse(request, { ok: true, templates: GLOBAL_TEMPLATES });
@@ -10140,6 +10477,608 @@ var __personalizedTest = Object.freeze({
   handlePersonalizedNotificationRequest
 });
 
+// event-notifications.mjs
+var DAY_MS2 = 24 * 3600 * 1e3;
+var EVENT_KINDS = Object.freeze([
+  "streak-milestone",
+  "personal-best",
+  "backlog-cleared",
+  "mastery-milestone",
+  "exam-completed"
+]);
+var STREAK_MILESTONES = Object.freeze([3, 7, 14, 30, 50, 100, 365]);
+var MASTERY_MILESTONES = Object.freeze([25, 50, 100, 250, 500]);
+var DEFAULTS4 = Object.freeze({
+  max_per_day: 3,
+  seen_exam_cap: 20,
+  send_after_hour: 8,
+  send_before_hour: 22,
+  quiet_hours_enabled: 1,
+  quiet_start: "23:00",
+  quiet_end: "07:00"
+});
+var MSG2 = {
+  "streak-milestone": {
+    bn: (n) => ({ title: `🔥 ${n} দিনের স্ট্রিক!`, body: `${n} দিন টানা পড়ছো — এই অভ্যাসটাই তোমাকে এগিয়ে নেবে` }),
+    en: (n) => ({ title: `🔥 ${n}-day streak!`, body: `${n} days in a row — that habit is what moves you forward` })
+  },
+  "personal-best": {
+    bn: (n) => ({ title: "🏆 নতুন ব্যক্তিগত সেরা", body: `সর্বোচ্চ স্কোর এখন ${n}% — আগের সেরাটাও তুমিই ভেঙেছো` }),
+    en: (n) => ({ title: "🏆 New personal best", body: `Your top score is now ${n}% — you broke your own record` })
+  },
+  "backlog-cleared": {
+    bn: () => ({ title: "✅ রিভিশন শেষ", body: "অপেক্ষমাণ ভুল প্রশ্নগুলো সব ঝালাই হয়ে গেছে — দুর্দান্ত!" }),
+    en: () => ({ title: "✅ Backlog cleared", body: "Every pending revision is cleared — excellent work!" })
+  },
+  "mastery-milestone": {
+    bn: (n) => ({ title: `🎖️ ${n}টি প্রশ্নে দক্ষ`, body: `${n}টি প্রশ্ন এখন তোমার মুঠোয় — পরের ধাপে যাওয়ার সময়` }),
+    en: (n) => ({ title: `🎖️ ${n} mastered`, body: `${n} questions mastered — time for the next milestone` })
+  },
+  "exam-completed": {
+    bn: (n) => ({ title: "📝 পরীক্ষা সম্পন্ন", body: `তোমার স্কোর ${n}% — ফলাফল দেখে দুর্বল topic গুলোয় নজর দাও` }),
+    en: (n) => ({ title: "📝 Exam completed", body: `You scored ${n}% — check the weak topics in your result` })
+  }
+};
+function buildEventMessage(event, lang = "bn") {
+  const set = MSG2[event?.kind];
+  if (!set) return null;
+  const pick = set[lang] || set.bn;
+  const out = typeof pick === "function" ? pick(event.value) : pick;
+  return out ? { ...out, kind: event.kind, link: event.link || "dashboard" } : null;
+}
+var reachedMilestone = (value, table) => {
+  let hit = null;
+  for (const m of table) {
+    if (value >= m) hit = m;
+    else break;
+  }
+  return hit;
+};
+function emptySnapshot() {
+  return { streak: 0, bestScore: null, mastered: 0, pending: 0, exams: [] };
+}
+var examIds = (list) => (Array.isArray(list) ? list : []).map((e) => e && typeof e === "object" ? e.id : e).filter((v) => v !== void 0 && v !== null && String(v) !== "").map(String);
+function detectEvents(prev, curr, nowMs = Date.now()) {
+  if (!prev) return { events: [], baseline: true };
+  const events = [];
+  const p = { ...emptySnapshot(), ...prev };
+  const c = { ...emptySnapshot(), ...curr };
+  const hitStreak = reachedMilestone(Number(c.streak || 0), STREAK_MILESTONES);
+  if (hitStreak && Number(p.streak || 0) < hitStreak) {
+    events.push({ kind: "streak-milestone", key: `streak:${hitStreak}`, value: hitStreak, link: "dashboard" });
+  }
+  const best = Number(c.bestScore);
+  const prevBest = p.bestScore == null ? null : Number(p.bestScore);
+  if (Number.isFinite(best) && prevBest != null && best > prevBest) {
+    events.push({ kind: "personal-best", key: `pb:${Math.round(best)}`, value: Math.round(best), link: "dashboard" });
+  }
+  if (Number(p.pending || 0) > 0 && Number(c.pending || 0) === 0) {
+    events.push({ kind: "backlog-cleared", key: `backlog:${dhakaParts(nowMs).date}`, value: 0, link: "smart-revision" });
+  }
+  const hitMastery = reachedMilestone(Number(c.mastered || 0), MASTERY_MILESTONES);
+  if (hitMastery && Number(p.mastered || 0) < hitMastery) {
+    events.push({ kind: "mastery-milestone", key: `mastery:${hitMastery}`, value: hitMastery, link: "dashboard" });
+  }
+  const seen = new Set(examIds(p.exams));
+  for (const exam of Array.isArray(c.exams) ? c.exams : []) {
+    const id = String(exam?.id || "");
+    if (!id || seen.has(id)) continue;
+    if (!Number.isFinite(Number(exam.score))) continue;
+    events.push({ kind: "exam-completed", key: `exam:${id}`, value: Math.round(Number(exam.score)), link: "dashboard" });
+  }
+  const record = events.find((e) => e.kind === "personal-best");
+  return {
+    events: record ? events.filter((e) => !(e.kind === "exam-completed" && e.value === record.value)) : events,
+    baseline: false
+  };
+}
+function trimSnapshot(snapshot, cap = DEFAULTS4.seen_exam_cap) {
+  const s = { ...emptySnapshot(), ...snapshot || {} };
+  const exams = examIds(s.exams);
+  return { ...s, exams: exams.slice(Math.max(0, exams.length - cap)) };
+}
+var EventStore = class {
+  #d1;
+  #ready = null;
+  constructor(d1) {
+    this.#d1 = d1 || null;
+  }
+  available() {
+    return Boolean(this.#d1);
+  }
+  async init() {
+    if (!this.#d1) return;
+    if (!this.#ready) {
+      this.#ready = (async () => {
+        await this.#d1.prepare(`CREATE TABLE IF NOT EXISTS notification_event_state (
+          user_id TEXT PRIMARY KEY,
+          snapshot_json TEXT NOT NULL,
+          updated_at INTEGER NOT NULL
+        )`).run();
+        await this.#d1.prepare(`CREATE TABLE IF NOT EXISTS notification_event_sends (
+          user_id TEXT NOT NULL,
+          event_key TEXT NOT NULL,
+          kind TEXT NOT NULL,
+          sent_at INTEGER NOT NULL,
+          PRIMARY KEY (user_id, event_key)
+        )`).run();
+        await this.#d1.prepare("CREATE INDEX IF NOT EXISTS idx_nes_user_day ON notification_event_sends(user_id, sent_at)").run();
+      })().catch((err) => {
+        this.#ready = null;
+        throw err;
+      });
+    }
+    await this.#ready;
+  }
+  async getSnapshot(userId) {
+    await this.init();
+    const row = await this.#d1.prepare("SELECT snapshot_json FROM notification_event_state WHERE user_id=?").bind(userId).first();
+    if (!row?.snapshot_json) return null;
+    try {
+      return JSON.parse(String(row.snapshot_json));
+    } catch {
+      return null;
+    }
+  }
+  async putSnapshot(userId, snapshot, now) {
+    await this.init();
+    await this.#d1.prepare(
+      `INSERT INTO notification_event_state(user_id, snapshot_json, updated_at) VALUES (?,?,?)
+       ON CONFLICT(user_id) DO UPDATE SET snapshot_json=excluded.snapshot_json, updated_at=excluded.updated_at`
+    ).bind(userId, JSON.stringify(trimSnapshot(snapshot)), now).run();
+  }
+  /* Claim an event before sending: a duplicate key means it already went out. */
+  async claimEvent(userId, eventKey, kind, now) {
+    await this.init();
+    const res = await this.#d1.prepare(
+      `INSERT INTO notification_event_sends(user_id, event_key, kind, sent_at) VALUES (?,?,?,?)
+       ON CONFLICT(user_id, event_key) DO NOTHING`
+    ).bind(userId, eventKey, kind, now).run();
+    return Number(res?.meta?.changes || 0) > 0;
+  }
+  async sentToday(userId, sinceMs) {
+    await this.init();
+    const row = await this.#d1.prepare(
+      "SELECT COUNT(*) AS n FROM notification_event_sends WHERE user_id=? AND sent_at>=?"
+    ).bind(userId, sinceMs).first();
+    return Number(row?.n || 0);
+  }
+  /* Everyone who currently has an active device. */
+  async audience() {
+    await this.init();
+    const rows = await this.#d1.prepare("SELECT DISTINCT user_id FROM fcm_devices WHERE is_active=1").all();
+    return (rows?.results || []).map((r) => String(r.user_id));
+  }
+  async prefs(userId) {
+    await this.init();
+    const row = await this.#d1.prepare("SELECT * FROM notification_settings WHERE user_id=?").bind(userId).first();
+    if (!row) return { ...DEFAULTS4, event_enabled: 1 };
+    return {
+      event_enabled: Number(row.event_enabled ?? 1),
+      quiet_hours_enabled: Number(row.quiet_hours_enabled ?? 1),
+      quiet_start: String(row.quiet_start || DEFAULTS4.quiet_start),
+      quiet_end: String(row.quiet_end || DEFAULTS4.quiet_end)
+    };
+  }
+  /* The student's real progress, straight from the Phase B–F tables. */
+  async learningState(userId, today) {
+    await this.init();
+    const daily = await this.#d1.prepare(
+      `SELECT day, payload_json FROM user_daily_stats
+       WHERE user_id=? AND deleted_at IS NULL AND day<=? ORDER BY day DESC LIMIT 400`
+    ).bind(userId, today).all();
+    const stats = (daily?.results || []).map((r) => {
+      let doc = null;
+      try {
+        doc = JSON.parse(String(r.payload_json));
+      } catch {
+        doc = null;
+      }
+      return { day: String(r.day), questions: Number(doc?.questions || 0) };
+    }).filter((s) => s.questions > 0);
+    const activeDays = new Set(stats.map((s) => s.day));
+    const dayAt = (offset) => new Date(Date.parse(today + "T00:00:00Z") - offset * DAY_MS2).toISOString().slice(0, 10);
+    let streak = 0;
+    let cursor = activeDays.has(today) ? 0 : 1;
+    if (activeDays.has(dayAt(cursor))) {
+      while (activeDays.has(dayAt(cursor))) {
+        streak += 1;
+        cursor += 1;
+      }
+    }
+    const exams = await this.#d1.prepare(
+      `SELECT id, payload_json FROM user_exam_results
+       WHERE user_id=? AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT 200`
+    ).bind(userId).all();
+    const examRows = (exams?.results || []).map((r) => {
+      let doc = null;
+      try {
+        doc = JSON.parse(String(r.payload_json));
+      } catch {
+        doc = null;
+      }
+      const score = Number(doc?.score ?? doc?.percentage ?? NaN);
+      return { id: String(r.id), score };
+    }).filter((e) => Number.isFinite(e.score));
+    const masteredRow = await this.#d1.prepare(
+      `SELECT COUNT(*) AS n FROM user_mistakes
+       WHERE user_id=? AND deleted_at IS NULL AND (COALESCE(mastered,0)=1 OR revision_status='mastered')`
+    ).bind(userId).first();
+    const pendingRow = await this.#d1.prepare(
+      `SELECT COUNT(*) AS n FROM user_mistakes
+       WHERE user_id=? AND deleted_at IS NULL AND COALESCE(mastered,0)=0
+         AND (revision_status IS NULL OR revision_status<>'mastered')`
+    ).bind(userId).first();
+    return {
+      streak,
+      mastered: Number(masteredRow?.n || 0),
+      pending: Number(pendingRow?.n || 0),
+      bestScore: examRows.length ? Math.max(...examRows.map((e) => e.score)) : null,
+      exams: examRows.slice(0, DEFAULTS4.seen_exam_cap).map((e) => ({ id: e.id, score: Math.round(e.score) }))
+    };
+  }
+};
+async function defaultSend(env, userId, message) {
+  const fcm = new FcmStore(env?.PROFILE_DB);
+  const targets = await fcm.activeTokens(userId);
+  if (!targets.length) return { ok: false, reason: "no-devices", sent: 0 };
+  const out = await fcmSendToTokens(env, targets, {
+    title: message.title,
+    body: message.body,
+    data: { link: message.link, src: "fcm-event", kind: message.kind }
+  });
+  if (out.badIds?.length) await fcm.markInactive(out.badIds, Date.now());
+  return { ok: out.sent > 0, sent: out.sent, failed: out.failed };
+}
+async function runScheduledEventNotifications(env, deps = {}) {
+  const now = deps.now ? deps.now() : Date.now();
+  const store = deps.store || new EventStore(env?.PROFILE_DB);
+  if (!store.available()) return { processed: 0, sent: 0, baseline: 0 };
+  if (!env?.__skipFcmCheck && deps.requireFcm !== false && !fcmConfigured(env)) {
+    return { processed: 0, sent: 0, baseline: 0, reason: "fcm-not-configured" };
+  }
+  const send = deps.send || ((userId, message) => defaultSend(env, userId, message));
+  const { date, hour, minute } = dhakaParts(now);
+  const dayStart = Date.parse(date + "T00:00:00Z") - 6 * 3600 * 1e3;
+  const users = await store.audience();
+  let sent = 0;
+  let baseline = 0;
+  const results = [];
+  for (const userId of users) {
+    try {
+      const prefs = await store.prefs(userId);
+      if (!Number(prefs.event_enabled)) {
+        continue;
+      }
+      const curr = await store.learningState(userId, date);
+      const prev = await store.getSnapshot(userId);
+      if (!prev) {
+        await store.putSnapshot(userId, curr, now);
+        baseline += 1;
+        continue;
+      }
+      const { events } = detectEvents(prev, curr, now);
+      if (!events.length) {
+        await store.putSnapshot(userId, curr, now);
+        continue;
+      }
+      let budget = Math.max(0, Number(deps.maxPerDay ?? DEFAULTS4.max_per_day) - await store.sentToday(userId, dayStart));
+      const rank2 = { "streak-milestone": 0, "personal-best": 1, "mastery-milestone": 2, "backlog-cleared": 3, "exam-completed": 4 };
+      events.sort((a, b) => (rank2[a.kind] ?? 9) - (rank2[b.kind] ?? 9));
+      for (const event of events) {
+        if (budget <= 0) break;
+        const message = buildEventMessage(event);
+        if (!message) continue;
+        if (inQuietHours(hour, minute, prefs)) break;
+        if (!inSendWindow(hour, { ...prefs, ...DEFAULTS4 })) break;
+        const claimed = await store.claimEvent(userId, event.key, event.kind, now);
+        if (!claimed) continue;
+        const outcome = await send(userId, message);
+        budget -= 1;
+        if (outcome?.ok) sent += 1;
+        results.push({ userId, kind: event.kind, ok: Boolean(outcome?.ok) });
+      }
+      await store.putSnapshot(userId, curr, now);
+    } catch (err) {
+      results.push({ userId, ok: false, error: String(err?.message || err).slice(0, 120) });
+    }
+  }
+  return { processed: users.length, sent, baseline, date, results };
+}
+var __eventTest = Object.freeze({
+  detectEvents,
+  buildEventMessage,
+  trimSnapshot,
+  emptySnapshot,
+  reachedMilestone,
+  MSG: MSG2
+});
+
+// digest-notifications.mjs
+var DAY_MS3 = 24 * 3600 * 1e3;
+var DHAKA_OFFSET_MS2 = 6 * 3600 * 1e3;
+var DIGEST_KINDS = Object.freeze(["monthly", "weekly", "daily"]);
+var DEFAULTS5 = Object.freeze({
+  daily_after_hour: 20,
+  weekly_after_hour: 8,
+  monthly_after_hour: 8,
+  max_per_day: 1,
+  send_after_hour: 8,
+  send_before_hour: 23,
+  quiet_hours_enabled: 1,
+  quiet_start: "23:30",
+  quiet_end: "06:30"
+});
+var pad2 = (n) => String(n).padStart(2, "0");
+var utcDay = (ms) => new Date(ms).toISOString().slice(0, 10);
+var shiftDays = (dateStr, days) => utcDay(Date.parse(dateStr + "T00:00:00Z") + days * DAY_MS3);
+function isoWeek(dateStr) {
+  const d = /* @__PURE__ */ new Date(dateStr + "T00:00:00Z");
+  const day = (d.getUTCDay() + 6) % 7;
+  d.setUTCDate(d.getUTCDate() - day + 3);
+  const isoYear = d.getUTCFullYear();
+  const jan4 = new Date(Date.UTC(isoYear, 0, 4));
+  const jan4Day = (jan4.getUTCDay() + 6) % 7;
+  const week1Monday = Date.UTC(isoYear, 0, 4 - jan4Day);
+  const week = Math.round((d.getTime() - week1Monday) / (7 * DAY_MS3)) + 1;
+  return { isoYear, week };
+}
+function dhakaCalendar(nowMs) {
+  const { date, hour, minute } = dhakaParts(nowMs);
+  const d = new Date(Date.parse(date + "T00:00:00Z"));
+  const { isoYear, week } = isoWeek(date);
+  return {
+    date,
+    hour,
+    minute,
+    weekday: (d.getUTCDay() + 6) % 7,
+    // Mon=0 … Sun=6
+    dayOfMonth: d.getUTCDate(),
+    monthKey: date.slice(0, 7),
+    weekKey: `${isoYear}-W${pad2(week)}`,
+    prevMonthKey: new Date(Date.parse(date.slice(0, 8) + "01T00:00:00Z") - DAY_MS3).toISOString().slice(0, 7)
+  };
+}
+function dueDigests(cal, prefs = {}) {
+  const out = [];
+  if (cal.dayOfMonth === 1 && cal.hour >= Number(prefs.monthly_after_hour ?? DEFAULTS5.monthly_after_hour)) {
+    out.push({ kind: "monthly", periodKey: cal.prevMonthKey });
+  }
+  if (cal.weekday === 6 && cal.hour >= Number(prefs.weekly_after_hour ?? DEFAULTS5.weekly_after_hour)) {
+    out.push({ kind: "weekly", periodKey: cal.weekKey });
+  }
+  if (cal.hour >= Number(prefs.daily_after_hour ?? DEFAULTS5.daily_after_hour)) {
+    out.push({ kind: "daily", periodKey: cal.date });
+  }
+  return out;
+}
+function digestRange(kind, cal) {
+  if (kind === "monthly") {
+    const start = `${cal.prevMonthKey}-01`;
+    const nextMonthStart = `${cal.monthKey}-01`;
+    return { from: start, to: shiftDays(nextMonthStart, -1) };
+  }
+  if (kind === "weekly") {
+    return { from: shiftDays(cal.date, -7), to: shiftDays(cal.date, -1) };
+  }
+  return { from: cal.date, to: cal.date };
+}
+function summarize(stats = []) {
+  let questions = 0;
+  let correct = 0;
+  let activeDays = 0;
+  for (const s of stats) {
+    const q = Number(s?.questions || 0);
+    if (q <= 0) continue;
+    questions += q;
+    correct += Number(s?.correct || 0);
+    activeDays += 1;
+  }
+  return {
+    questions,
+    correct,
+    activeDays,
+    accuracy: questions > 0 ? Math.round(correct / questions * 100) : 0
+  };
+}
+var MSG3 = {
+  daily: {
+    bn: (s) => ({ title: "📊 আজকের হিসাব", body: `আজ ${s.questions}টি প্রশ্ন, শুদ্ধতা ${s.accuracy}% — এই ছন্দ ধরে রাখো` }),
+    en: (s) => ({ title: "📊 Today in numbers", body: `${s.questions} questions today at ${s.accuracy}% accuracy — keep the rhythm` })
+  },
+  weekly: {
+    bn: (s) => ({ title: "🗓️ সপ্তাহের রিপোর্ট", body: `গত সপ্তাহে ${s.questions}টি প্রশ্ন, ${s.activeDays} দিন পড়া, শুদ্ধতা ${s.accuracy}%` }),
+    en: (s) => ({ title: "🗓️ Your week", body: `Last week: ${s.questions} questions on ${s.activeDays} days at ${s.accuracy}% accuracy` })
+  },
+  monthly: {
+    bn: (s) => ({ title: "📅 মাসের রিপোর্ট", body: `গত মাসে ${s.questions}টি প্রশ্ন, ${s.activeDays} দিন পড়া, শুদ্ধতা ${s.accuracy}%` }),
+    en: (s) => ({ title: "📅 Your month", body: `Last month: ${s.questions} questions on ${s.activeDays} days at ${s.accuracy}% accuracy` })
+  }
+};
+function buildDigestMessage(kind, summary, lang = "bn") {
+  const set = MSG3[kind];
+  if (!set) return null;
+  const pick = set[lang] || set.bn;
+  const out = pick(summary || summarize([]));
+  return out ? { ...out, kind: `digest-${kind}`, link: "dashboard" } : null;
+}
+var DigestStore = class {
+  #d1;
+  #ready = null;
+  constructor(d1) {
+    this.#d1 = d1 || null;
+  }
+  available() {
+    return Boolean(this.#d1);
+  }
+  async init() {
+    if (!this.#d1) return;
+    if (!this.#ready) {
+      this.#ready = (async () => {
+        await this.#d1.prepare(`CREATE TABLE IF NOT EXISTS notification_digest_sends (
+          user_id TEXT NOT NULL,
+          period_key TEXT NOT NULL,
+          kind TEXT NOT NULL,
+          sent_at INTEGER NOT NULL,
+          PRIMARY KEY (user_id, period_key)
+        )`).run();
+        await this.#d1.prepare("CREATE INDEX IF NOT EXISTS idx_nds_user_day ON notification_digest_sends(user_id, sent_at)").run();
+      })().catch((err) => {
+        this.#ready = null;
+        throw err;
+      });
+    }
+    await this.#ready;
+  }
+  /* Claim a period before sending: a duplicate key means it already went out. */
+  async claimPeriod(userId, periodKey, kind, now) {
+    await this.init();
+    const res = await this.#d1.prepare(
+      `INSERT INTO notification_digest_sends(user_id, period_key, kind, sent_at) VALUES (?,?,?,?)
+       ON CONFLICT(user_id, period_key) DO NOTHING`
+    ).bind(userId, periodKey, kind, now).run();
+    return Number(res?.meta?.changes || 0) > 0;
+  }
+  async sentToday(userId, sinceMs) {
+    await this.init();
+    const row = await this.#d1.prepare(
+      "SELECT COUNT(*) AS n FROM notification_digest_sends WHERE user_id=? AND sent_at>=?"
+    ).bind(userId, sinceMs).first();
+    return Number(row?.n || 0);
+  }
+  async audience() {
+    await this.init();
+    const rows = await this.#d1.prepare("SELECT DISTINCT user_id FROM fcm_devices WHERE is_active=1").all();
+    return (rows?.results || []).map((r) => String(r.user_id));
+  }
+  async prefs(userId) {
+    await this.init();
+    const row = await this.#d1.prepare("SELECT * FROM notification_settings WHERE user_id=?").bind(userId).first();
+    if (!row) return { ...DEFAULTS5, digest_enabled: 1 };
+    return {
+      /* Reuses the Phase G daily switch as the master opt-out: a student who
+       * turned nudges off does not want recaps either. */
+      digest_enabled: Number(row.personalized_enabled ?? 1),
+      quiet_hours_enabled: Number(row.quiet_hours_enabled ?? 1),
+      quiet_start: String(row.quiet_start || DEFAULTS5.quiet_start),
+      quiet_end: String(row.quiet_end || DEFAULTS5.quiet_end)
+    };
+  }
+  /* Daily totals for one student inside [from, to], deleted rows excluded. */
+  async rangeStats(userId, from, to) {
+    await this.init();
+    const res = await this.#d1.prepare(
+      `SELECT day, payload_json FROM user_daily_stats
+       WHERE user_id=? AND deleted_at IS NULL AND day>=? AND day<=? ORDER BY day ASC`
+    ).bind(userId, from, to).all();
+    return (res?.results || []).map((r) => {
+      let doc = null;
+      try {
+        doc = JSON.parse(String(r.payload_json));
+      } catch {
+        doc = null;
+      }
+      return { day: String(r.day), questions: Number(doc?.questions || 0), correct: Number(doc?.correct || 0) };
+    });
+  }
+  /* When this student tends to open things, as `{hour, opened}` events for the
+   * timing model. The read timestamp is the honest signal: it is when they
+   * actually looked, not when we sent. Dhaka local hour, last 60 reads. */
+  async openHours(userId) {
+    await this.init();
+    const res = await this.#d1.prepare(
+      `SELECT read_at FROM notification_reads WHERE user_id=? ORDER BY read_at DESC LIMIT 60`
+    ).bind(userId).all();
+    return (res?.results || []).map((r) => {
+      const t = Number(r.read_at) + DHAKA_OFFSET_MS2;
+      return { hour: new Date(t).getUTCHours(), opened: true };
+    });
+  }
+};
+async function defaultSend2(env, userId, message) {
+  const fcm = new FcmStore(env?.PROFILE_DB);
+  const targets = await fcm.activeTokens(userId);
+  if (!targets.length) return { ok: false, reason: "no-devices", sent: 0 };
+  const out = await fcmSendToTokens(env, targets, {
+    title: message.title,
+    body: message.body,
+    data: { link: message.link, src: "fcm-digest", kind: message.kind }
+  });
+  if (out.badIds?.length) await fcm.markInactive(out.badIds, Date.now());
+  return { ok: out.sent > 0, sent: out.sent, failed: out.failed };
+}
+async function runScheduledDigests(env, deps = {}) {
+  const now = deps.now ? deps.now() : Date.now();
+  const store = deps.store || new DigestStore(env?.PROFILE_DB);
+  if (!store.available()) return { processed: 0, sent: 0, skipped: 0 };
+  if (!env?.__skipFcmCheck && deps.requireFcm !== false && !fcmConfigured(env)) {
+    return { processed: 0, sent: 0, skipped: 0, reason: "fcm-not-configured" };
+  }
+  const send = deps.send || ((userId, message) => defaultSend2(env, userId, message));
+  const cal = dhakaCalendar(now);
+  const dayStart = Date.parse(cal.date + "T00:00:00Z") - DHAKA_OFFSET_MS2;
+  const maxPerDay = Number(deps.maxPerDay ?? DEFAULTS5.max_per_day);
+  const users = await store.audience();
+  let sent = 0;
+  let skipped = 0;
+  const results = [];
+  for (const userId of users) {
+    try {
+      const prefs = await store.prefs(userId);
+      if (!Number(prefs.digest_enabled)) {
+        skipped += 1;
+        continue;
+      }
+      let timedPrefs = prefs;
+      try {
+        const events = await store.openHours(userId);
+        const best = bestSendHour(events, { default_hour: Number(prefs.daily_after_hour ?? DEFAULTS5.daily_after_hour) });
+        if (best.confident) timedPrefs = { ...prefs, daily_after_hour: best.hour };
+      } catch (_) {
+      }
+      if (inQuietHours(cal.hour, cal.minute, timedPrefs)) {
+        skipped += 1;
+        continue;
+      }
+      if (!inSendWindow(cal.hour, { ...DEFAULTS5, ...timedPrefs })) {
+        skipped += 1;
+        continue;
+      }
+      let budget = Math.max(0, maxPerDay - await store.sentToday(userId, dayStart));
+      if (budget <= 0) {
+        skipped += 1;
+        continue;
+      }
+      for (const due of dueDigests(cal, timedPrefs)) {
+        if (budget <= 0) break;
+        const { from, to } = digestRange(due.kind, cal);
+        const summary = summarize(await store.rangeStats(userId, from, to));
+        if (summary.questions <= 0) continue;
+        const message = buildDigestMessage(due.kind, summary);
+        if (!message) continue;
+        const claimed = await store.claimPeriod(userId, due.periodKey, due.kind, now);
+        if (!claimed) continue;
+        const outcome = await send(userId, message);
+        budget -= 1;
+        if (outcome?.ok) sent += 1;
+        results.push({ userId, kind: due.kind, periodKey: due.periodKey, ok: Boolean(outcome?.ok) });
+      }
+    } catch (err) {
+      results.push({ userId, ok: false, error: String(err?.message || err).slice(0, 120) });
+    }
+  }
+  return { processed: users.length, sent, skipped, date: cal.date, results };
+}
+var __digestTest = Object.freeze({
+  dhakaCalendar,
+  dueDigests,
+  digestRange,
+  summarize,
+  buildDigestMessage,
+  isoWeek,
+  MSG: MSG3
+});
+
 // files-storage.mjs
 var AUTHORITY_NAME4 = "admission-hub-global-auth-v1";
 var SESSION_COOKIE3 = "__Host-ah_session";
@@ -10155,7 +11094,10 @@ var UPLOAD_TYPES = Object.freeze({
 });
 var BUCKET_HARD_LIMIT_BYTES = 9 * 1024 * 1024 * 1024;
 var USAGE_KEY = "fs:bucket:bytes";
-var R2_HOST = "abb783e456e51a5d338419de93d5e576.r2.cloudflarestorage.com";
+var r2Host = (env) => {
+  const acct = String(env?.R2_ACCOUNT_ID || env?.CLOUDFLARE_ACCOUNT_ID || "").trim();
+  return /^[a-f0-9]{32}$/i.test(acct) ? `${acct}.r2.cloudflarestorage.com` : null;
+};
 var FOLDER_RE = /^[a-z][a-z0-9-]{0,31}$/;
 var KEY_RE = /^[a-z][a-z0-9-]{0,31}\/[A-Za-z0-9_-]{1,64}\/\d{4}-\d{2}-\d{2}\/[a-z0-9]{10,24}\.[a-z0-9]{2,4}$/;
 var readSessionToken3 = (request) => {
@@ -10212,6 +11154,8 @@ async function s3ListTotalBytes(env) {
   const sk = String(env.R2_SECRET_KEY || "");
   if (!ak || !sk) return null;
   const bucketName = String(env?.FILE_BUCKET?.name || "admission-hub");
+  const R2_HOST = r2Host(env);
+  if (!R2_HOST) return null;
   try {
     let total = 0;
     let token = "";
@@ -10444,6 +11388,7 @@ async function handleFilesStorageRequest(request, env) {
 }
 var __filesStorageTest = Object.freeze({
   BUCKET_HARD_LIMIT_BYTES,
+  r2Host,
   s3ListTotalBytes,
   bucketUsage,
   sessionUser: sessionUser3,
@@ -10778,8 +11723,8 @@ function summarizeIdentityHealth(result) {
 }
 
 // auth-native/storage/sqlite-auth-repository.mjs
-var DAY_MS2 = 24 * 60 * 60 * 1e3;
-var EVENT_RETENTION_MS = 90 * DAY_MS2;
+var DAY_MS4 = 24 * 60 * 60 * 1e3;
+var EVENT_RETENTION_MS = 90 * DAY_MS4;
 function joinedYearOf(ts) {
   const t = Number(ts);
   if (!Number.isFinite(t) || t <= 0) return null;
@@ -12428,13 +13373,13 @@ var SqliteAuthRepository = class _SqliteAuthRepository {
   async cleanup(now) {
     return this.#transaction(() => {
       this.sql.exec("UPDATE auth_account_verification_tickets SET state='expired',refresh_cipher='' WHERE state='active' AND expires_at<=?", now);
-      this.sql.exec("DELETE FROM auth_account_verification_tickets WHERE expires_at<?", now - DAY_MS2);
+      this.sql.exec("DELETE FROM auth_account_verification_tickets WHERE expires_at<?", now - DAY_MS4);
       this.sql.exec("DELETE FROM auth_passkey_challenges WHERE expires_at<=?", now);
       this.sql.exec("DELETE FROM auth_passkey_tickets WHERE expires_at<=?", now);
       this.sql.exec("DELETE FROM auth_passkey_credentials WHERE status='revoked' AND revoked_at<?", now - EVENT_RETENTION_MS);
       this.sql.exec("DELETE FROM auth_rate_limits WHERE expires_at<=?", now);
-      this.sql.exec("DELETE FROM auth_trusted_devices WHERE expires_at<?", now - DAY_MS2);
-      this.sql.exec("DELETE FROM auth_security_challenges WHERE expires_at<?", now - DAY_MS2);
+      this.sql.exec("DELETE FROM auth_trusted_devices WHERE expires_at<?", now - DAY_MS4);
+      this.sql.exec("DELETE FROM auth_security_challenges WHERE expires_at<?", now - DAY_MS4);
       this.sql.exec("DELETE FROM auth_sessions WHERE expires_at<=? OR revoked_at IS NOT NULL", now);
       this.sql.exec("DELETE FROM auth_security_events WHERE occurred_at<?", now - EVENT_RETENTION_MS);
       this.sql.exec("INSERT INTO auth_meta(key,value) VALUES('last_cleanup',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", String(now));
@@ -14451,8 +15396,8 @@ async function dispatchSecurityNotifications({
 }
 
 // auth-native/verification/sqlite-verification-repository.mjs
-var DAY_MS3 = 864e5;
-var EVENT_RETENTION_MS2 = 90 * DAY_MS3;
+var DAY_MS5 = 864e5;
+var EVENT_RETENTION_MS2 = 90 * DAY_MS5;
 var safeReason = (value) => String(value || "UNKNOWN").toUpperCase().replace(/[^A-Z0-9_-]/g, "_").slice(0, 64) || "UNKNOWN";
 var SqliteVerificationRepository = class {
   constructor(storage) {
@@ -15107,8 +16052,8 @@ var SqliteVerificationRepository = class {
     });
   }
   async dailyQuotaSnapshot({ providerId, dailyQuota, now }) {
-    const dayStart = Math.floor(now / DAY_MS3) * DAY_MS3;
-    const resetAt = dayStart + DAY_MS3;
+    const dayStart = Math.floor(now / DAY_MS5) * DAY_MS5;
+    const resetAt = dayStart + DAY_MS5;
     const row = this.#one(
       "SELECT used FROM auth_verification_daily_quota WHERE provider_id=? AND day_start=?",
       providerId,
@@ -15119,8 +16064,8 @@ var SqliteVerificationRepository = class {
   }
   async reserveDailyQuota({ providerId, dailyQuota, now }) {
     return this.#transaction(() => {
-      const dayStart = Math.floor(now / DAY_MS3) * DAY_MS3;
-      const resetAt = dayStart + DAY_MS3;
+      const dayStart = Math.floor(now / DAY_MS5) * DAY_MS5;
+      const resetAt = dayStart + DAY_MS5;
       this.sql.exec(
         `INSERT INTO auth_verification_daily_quota(provider_id,day_start,used,quota_limit,reset_at,updated_at)
          VALUES(?,?,0,?,?,?) ON CONFLICT(provider_id,day_start)
@@ -16315,6 +17260,14 @@ var gk_agent_worker_default = {
     }
     try {
       await runScheduledPersonalizedNotifications(env);
+    } catch (_) {
+    }
+    try {
+      await runScheduledEventNotifications(env);
+    } catch (_) {
+    }
+    try {
+      await runScheduledDigests(env);
     } catch (_) {
     }
     if (!env.GK_KV || !keys(env).length) return;

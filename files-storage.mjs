@@ -28,7 +28,14 @@ const UPLOAD_TYPES = Object.freeze({
  * with a KV usage counter, reconciled through the S3 API when missing. */
 const BUCKET_HARD_LIMIT_BYTES = 9 * 1024 * 1024 * 1024;
 const USAGE_KEY = 'fs:bucket:bytes';
-const R2_HOST = 'abb783e456e51a5d338419de93d5e576.r2.cloudflarestorage.com';
+/* The R2 account id is a deployment binding, never a literal: hardcoding it
+ * here put a real account id in the source and the shipped bundle. Read it
+ * from the Worker secret and return null when unbound, so the S3 usage probe
+ * fails soft (usage unknown) instead of shipping a credential-shaped value. */
+const r2Host = env => {
+  const acct = String(env?.R2_ACCOUNT_ID || env?.CLOUDFLARE_ACCOUNT_ID || '').trim();
+  return /^[a-f0-9]{32}$/i.test(acct) ? `${acct}.r2.cloudflarestorage.com` : null;
+};
 const FOLDER_RE = /^[a-z][a-z0-9-]{0,31}$/;
 /* User segment stays deliberately permissive (production user ids vary in
  * shape) — unguessability comes from the 12-char random key + date, not
@@ -96,6 +103,8 @@ async function s3ListTotalBytes(env) {
   const sk = String(env.R2_SECRET_KEY || '');
   if (!ak || !sk) return null;
   const bucketName = String(env?.FILE_BUCKET?.name || 'admission-hub');
+  const R2_HOST = r2Host(env);
+  if (!R2_HOST) return null;
   try {
     let total = 0;
     let token = '';
@@ -357,6 +366,7 @@ export async function handleFilesStorageRequest(request, env) {
 
 export const __filesStorageTest = Object.freeze({
   BUCKET_HARD_LIMIT_BYTES,
+  r2Host,
   s3ListTotalBytes,
   bucketUsage,
   sessionUser,

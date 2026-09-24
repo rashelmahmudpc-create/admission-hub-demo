@@ -4,6 +4,8 @@ import { handleInternalEmailRequest } from './email-gateway/worker/handler.mjs';
 import { createNativeAuthHandler } from './auth-native/worker/public-auth-handler.mjs';
 import { handleFcmNotificationRequest, runScheduledGlobalNotifications } from './fcm-notification.mjs';
 import { handlePersonalizedNotificationRequest, runScheduledPersonalizedNotifications } from './personalized-notification.mjs';
+import { runScheduledEventNotifications } from './event-notifications.mjs';
+import { runScheduledDigests } from './digest-notifications.mjs';
 import { handleUserDataRequest } from './userdata-api.mjs';
 import { handleFilesStorageRequest } from './files-storage.mjs';
 export { EmailGatewayCoordinator } from './email-gateway/worker/email-coordinator.mjs';
@@ -523,6 +525,11 @@ export default {
     /* Phase G — one personalized nudge per student per day (restraint built in:
      * daily cap, quiet hours, duplicate guard). Runs after the global send. */
     try { await runScheduledPersonalizedNotifications(env); } catch (_) {}
+    /* Phase 4 — event notifications (streak/best/mastery/exam achievements) and
+     * the daily/weekly/monthly digests. Both are dedup-guarded, so a repeated
+     * cron tick is harmless. */
+    try { await runScheduledEventNotifications(env); } catch (_) {}
+    try { await runScheduledDigests(env); } catch (_) {}
     if (!env.GK_KV || !keys(env).length) return;
     const date = dhakaToday();
     try { if ((await env.GK_KV.get('gkDay')) === date) return; } catch (_) {}

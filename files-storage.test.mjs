@@ -233,6 +233,17 @@ test('usage counter: fresh JSON short-circuits S3; legacy number falls back inex
   assert.equal(corrupt.exact, false);
 });
 
+test('R2 account id is a binding, never a hardcoded literal', async () => {
+  /* Regression guard: a real account id was committed in the source and the
+   * bundle. The host must come from the Worker secret, and nothing at all when
+   * the secret is absent. */
+  assert.equal(T.r2Host({}), null, 'no binding → no host');
+  assert.equal(T.r2Host({ R2_ACCOUNT_ID: 'not-hex' }), null, 'junk is rejected');
+  const acct = 'a'.repeat(32);
+  assert.equal(T.r2Host({ R2_ACCOUNT_ID: acct }), acct + '.r2.cloudflarestorage.com');
+  assert.equal(T.r2Host({ CLOUDFLARE_ACCOUNT_ID: acct }), acct + '.r2.cloudflarestorage.com');
+});
+
 test('units: KEY_RE shape + KV prefix', async () => {
   assert.ok(T.KEY_RE.test('profile/user-files-1/2026-09-18/abcdefghijkl.png'));
   assert.ok(!T.KEY_RE.test('profile/user-files-1/2026-09-18/../../etc.png'));
