@@ -11,6 +11,7 @@ const REAL_FILES = new Map([
   ['/splash-preview.html', 'text/html; charset=utf-8'],
   ['/verification-control-center.html', 'text/html; charset=utf-8'],
   ['/ai-performance-analysis-live.html', 'text/html; charset=utf-8'],
+  ['/notification-command-center.html', 'text/html; charset=utf-8'],
   ['/courses/prottoy/index.html', 'text/html; charset=utf-8'],
   ['/courses/prottoy-master/index.html', 'text/html; charset=utf-8'],
   ['/courses/sandhi/index.html', 'text/html; charset=utf-8'],
@@ -136,7 +137,7 @@ test('retired and server-only paths keep their original status codes', async () 
 
 test('preview surfaces are reachable but marked noindex', async () => {
   for (const path of ['/splash-preview.html', '/ai-performance-analysis-live.html',
-    '/verification-control-center.html']) {
+    '/verification-control-center.html', '/notification-command-center.html']) {
     const res = await get(path);
     assert.equal(res.status, 200, `${path} must stay reachable`);
   }

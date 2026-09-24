@@ -1457,7 +1457,10 @@ function render(){
   }
   if(p.startsWith('notes') && window.renderNotesTool) return window.renderNotesTool();
   if(p==='notifications' && window.renderNotificationsInbox) return window.renderNotificationsInbox();
-  if(p==='notif-admin' && window.renderNotificationAdmin) return window.renderNotificationAdmin();
+  if(p==='notif-admin'){
+    if(window.NotificationCenterRoute && window.NotificationCenterRoute.render) return window.NotificationCenterRoute.render();
+    return renderShell('<div class="empty" style="padding:64px 20px;text-align:center"><b>Opening the Notification Command Center…</b></div>',{hideNav:true,topbar:false});
+  }
   if(p==='dictionary' && window.renderDictionaryV2) return window.renderDictionaryV2();
   if(p==='ai'){ if(window.renderAiAgentPage) return window.renderAiAgentPage(); return renderLazyToolFallback(p); }
   if((p==='question-bank'||p.startsWith('question-bank/')) && window.renderQuestionBankV2) return window.renderQuestionBankV2();
@@ -5493,7 +5496,7 @@ setTimeout(() => { if (location.hash.replace(/^#/, '').split('?')[0] === 'dictio
 <script defer src="./notification-hub.js?v=notify-v121"></script>
 <script defer src="./notification-fcm.js?v=fcm-p1-v14"></script>
 <script defer src="./notification-inbox.js?v=notif-inbox-v6"></script>
-<script defer src="./notification-admin.js?v=admin-notif-v8"></script>
+<script defer src="./notification-center-route.js?v=ns-cc-route-v1"></script>
 <script src="./memorizing-match-tool.js?v=memorizing-match-v8-stable-cards" defer></script>
 <script src="./question-card-game-visual.js?v=question-card-game-v2-persistent" defer></script>
 <script src="./result-analysis-500.js?v=result-analysis-500-deep-matched-v2" defer></script>
