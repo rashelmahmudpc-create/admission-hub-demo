@@ -148,6 +148,30 @@ A real id was committed in `files-storage.mjs` + `worker-bundle.mjs`; both
 are scrubbed and `files-storage.test.mjs` guards the binding. Do not print or
 paste any `ADMISSIONHUB_*` secret value.
 
+### Admin Notification Command Center (v2) — standalone page, never injected
+
+The admin composer is `notification-command-center.html`: a self-contained
+page with its own sidebar, top bar, mobile tabs and 4 themes. `#notif-admin`
+routes to it via `notification-center-route.js`, which does a full-document
+hand-off (`window.location.assign`) and keeps the legacy
+`window.renderNotificationAdmin` contract.
+
+Do NOT render it inside `#app`. The first v2 attempt did, and it broke
+navigation and themes: the page redefines `:root` theme tokens, and its mount
+path cleared `navRoot`/`app.innerHTML`. A separate document is what keeps the
+two shells from colliding.
+
+Data layer: all admin calls go through `NS.api` with a `Bearer` token stored in
+`sessionStorage` (`ahAdminTok`). Auth is a live `GET /api/notifications/history`;
+send/schedule/cancel POST to `/api/notifications/global/*`. Typing in the
+composer must only call `refreshPreviewOnly()` (patches `.ns-compose-side` in
+place) — a full `render()` on `input` closes the mobile keyboard.
+
+The page is a public route in `_worker.js` and `noindex` in `_headers`. The
+route shim is shell-precached; run `node scripts/sw-manifest.mjs` after
+touching it. Tests: `notification-command-center-backend.test.mjs` (jsdom,
+real page, only `fetch` stubbed) + `notification-admin-keyboard.test.mjs`.
+
 
  Phases are gated: a phase is done only when its
 Output is verified on production, tests are added and green, the full gate
