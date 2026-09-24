@@ -18,6 +18,7 @@
 import { buildContext, renderContext, describeContext, CONTEXT_VERSION } from './context-engine.js';
 import { getPromptText, BASE_PROMPT_ID } from './prompt-registry.js';
 import { listTools, TOOL_REGISTRY_VERSION } from './tool-registry.js';
+import { extractMemoryCandidates, makeMemory, upsertMemory, parseMemory, renderMemory, resolveMemoryOwner, MEMORY_VERSION } from './memory-engine.js';
 
 export const AGENT_VERSION = 'agent-f1';
 export const SYSTEM_PROMPT_V = 'sys-f1-3-ai-personalization';
@@ -151,15 +152,16 @@ export function capStats(stats) {
 }
 
 /* ── AI Personalization (blueprint §19-20) — per-user, allowlisted, bounded ── */
-export const AI_PREFS_DEFAULT = Object.freeze({ langStyle: "bn", tone: "friendly", responseLen: "balanced", memory: true });
+export const AI_PREFS_DEFAULT = Object.freeze({ langStyle: "bn", tone: "friendly", responseLen: "balanced" });
 export function sanitizeAiPrefs(value) {
   if (!value || typeof value !== "object") return null;
   const pick = (v, set, dflt) => (set.has(String(v)) ? String(v) : dflt);
+  /* No `memory` field: M7 removed the toggle. Memory is automatic for a signed-in
+     student and cannot be switched off from the client. */
   return {
     langStyle: pick(value.langStyle, new Set(["bn", "en", "mix"]), AI_PREFS_DEFAULT.langStyle),
     tone: pick(value.tone, new Set(["friendly", "professional", "simple", "motivating", "direct"]), AI_PREFS_DEFAULT.tone),
-    responseLen: pick(value.responseLen, new Set(["short", "balanced", "detailed"]), AI_PREFS_DEFAULT.responseLen),
-    memory: value.memory === false ? false : true
+    responseLen: pick(value.responseLen, new Set(["short", "balanced", "detailed"]), AI_PREFS_DEFAULT.responseLen)
   };
 }
 
@@ -594,6 +596,12 @@ export async function agentChat(request, env, uid, opts = {}) {
   const persistMemory = opts?.persistMemory !== false;
   const startedAt = Date.now();
   const sendCtx = { uid: String(uid || ''), stream };
+  /* M7: AI chat is for signed-in students only. A guest has no durable identity,
+     so it can neither personalise nor be remembered — it is refused up front. */
+  if (!sendCtx.uid.startsWith('account-')) {
+    const msg = { error: 'sign_in_required', message: 'AI চ্যাট ব্যবহার করতে লগইন করো।' };
+    return stream ? sseError(msg, 401) : jsonResp(msg, 401);
+  }
   const body = await request.json().catch(() => null);
   const v = validateChatReq(body);
   if (!v.ok) return jsonResp({ error: v.code, message: v.message }, 400);
@@ -628,7 +636,9 @@ export async function agentChat(request, env, uid, opts = {}) {
     const rawPrefs = await getKv(env.PUB_KV, 'aiprefs:' + sendCtx.uid);
     aiPrefs = rawPrefs ? sanitizeAiPrefs(JSON.parse(rawPrefs)) : null;
   } catch (_) { aiPrefs = null; }
-  const memoryOn = persistMemory && !(aiPrefs && aiPrefs.memory === false);
+  /* M7: long-term memory is automatic for a signed-in student — no toggle and no
+     prompt. Guests never reach here (refused above), so persistMemory is true. */
+  const memoryOn = persistMemory;
 
   /* conversation memory: পুরনো কনভো (KV) + সাম্প্রতিক message */
   let mem = [];
@@ -671,7 +681,19 @@ export async function agentChat(request, env, uid, opts = {}) {
   /* The rolling summary carries older topics too, so it is suppressed with
      memory — otherwise the stale subject leaks back through the system prompt. */
   let summaryText = memoryOn && !freshThread ? await getKv(env.PUB_KV, 'chatmemsum:' + sendCtx.uid) : '';
-  const sys = [systemPrompt, ctxText, summaryText].filter(Boolean).join('\n\n');
+
+  /* M7 long-term memory: read the caller's own records, render only the newest,
+     most confident few. Storage is bounded by the engine and the owner is the
+     server-validated account uid — a record for anyone else is dropped on parse. */
+  let memRecords = [];
+  if (memoryOn) {
+    try {
+      const rawLong = await getKv(env.PUB_KV, 'mem:' + MEMORY_VERSION + ':' + sendCtx.uid);
+      memRecords = parseMemory(rawLong, sendCtx.uid);
+    } catch (_) { memRecords = []; }
+  }
+  const memoryText = memoryOn ? renderMemory(memRecords, MEMORY_VERSION) : '';
+  const sys = [systemPrompt, ctxText, memoryText, summaryText].filter(Boolean).join('\n\n');
 
   const hasImage = msgs.some(m => m.image);
   const partsOf = (m) => {
@@ -707,13 +729,33 @@ export async function agentChat(request, env, uid, opts = {}) {
 
   const failures = [];
   const finalize = async (model, provider, text) => {
-    /* Guest content is never persisted. Signed-in memory is keyed only by the
-       server-validated account identity and has no client-controlled UID.
-       Memory-off preference (blueprint §19) also disables all writes. */
+    /* Guests are refused before this point; a signed-in student's memory is keyed
+       only by the server-validated account identity and has no client UID. */
     if (!memoryOn) return;
     try {
       const next = msgs.concat([{ role: 'user', content: v.messages[v.messages.length - 1].content }, { role: 'assistant', content: text }]).slice(-24).map(x => ({ role: x.role, content: x.content }));
       await putKv(env.PUB_KV, 'chatmem:' + sendCtx.uid, JSON.stringify(next));
+    } catch (_) {}
+
+    /* M7: both triggers the owner asked for — an explicit "মনে রাখো" and a
+       study/preference/habit fact stated in passing — are extracted from the
+       latest user turn. Each candidate must still clear makeMemory(), so a weak
+       signal never stores, and no PII can enter a record. */
+    try {
+      const latest = String(v.messages[v.messages.length - 1].content || '');
+      const candidates = extractMemoryCandidates(latest);
+      if (candidates.length) {
+        const key = 'mem:' + MEMORY_VERSION + ':' + sendCtx.uid;
+        let list = parseMemory(await getKv(env.PUB_KV, key), sendCtx.uid);
+        let changed = false;
+        for (const candidate of candidates) {
+          const record = makeMemory(candidate, sendCtx.uid);
+          if (!record) continue;
+          list = upsertMemory(list, record, sendCtx.uid);
+          changed = true;
+        }
+        if (changed) await putKv(env.PUB_KV, key, JSON.stringify(list));
+      }
     } catch (_) {}
   };
 
@@ -797,6 +839,7 @@ export async function agentStatus(request, env, uid) {
     limits: { perDay: Math.max(10, Math.min(500, Number(env.AGENT_DAILY_CAP || 80))) },
     streaming: true,
     tools: { version: TOOL_REGISTRY_VERSION, declared: listTools() },
+    memory: { version: MEMORY_VERSION, mode: 'auto', scope: 'account-only' },
     context: ctxOn
       ? describeContext(buildContext({ uid, prefs: null, stats: null, onboarding: null, memoryOn: true }))
       : { enabled: false }
@@ -825,5 +868,6 @@ export const __test = {
   adapterFor, providerChain, PROVIDER_ADAPTERS, GEMINI_ADAPTER, GROQ_ADAPTER, CLOUDFLARE_ADAPTER,
   INTENTS, TIER, GEMINI_MODELS, AGENT_VERSION, SYSTEM_PROMPT_V,
   contextEngineEnabled, buildContext, renderContext, describeContext, CONTEXT_VERSION, sanitizeProfileContext,
-  listTools, TOOL_REGISTRY_VERSION
+  listTools, TOOL_REGISTRY_VERSION,
+  extractMemoryCandidates, makeMemory, upsertMemory, parseMemory, renderMemory, MEMORY_VERSION
 };

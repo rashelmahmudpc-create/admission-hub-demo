@@ -211,6 +211,158 @@ function listTools() {
   );
 }
 
+// memory-engine.js
+var MEMORY_VERSION = "mem-v1";
+var KIND = Object.freeze({
+  STUDIES: "studies",
+  // subjects, weak/strong topics, goals
+  PREFERENCE: "preference",
+  // language style, tone, how they like answers
+  HABIT: "habit"
+  // when/how they study, routine
+});
+var SOURCE = Object.freeze({
+  USER_STATED: "user_stated",
+  AI_INFERRED: "ai_inferred"
+});
+var CONFIDENCE_MIN = 0.7;
+var MAX_RECORDS = 500;
+var RENDER_LIMIT = 24;
+var MAX_VALUE_LEN = 160;
+var MAX_REASON_LEN = 160;
+var PII_PATTERNS = Object.freeze([
+  /[\w.+-]+@[\w-]+\.[\w.]+/,
+  // email
+  /(?:\+?880|0)1[3-9]\d{8}/,
+  // BD mobile
+  /\b\d{10,}\b/,
+  // long digit run (ids, cards)
+  /\b\d{4}-\d{2}-\d{2}\b/,
+  // ISO date
+  /\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/,
+  // dd/mm/yyyy
+  /\b(?:password|passwd|otp|pin|cvv)\b/i,
+  /\b(?:verification|verify|varification)\s*code\b/i
+]);
+function getKinds() {
+  return Object.values(KIND);
+}
+function sanitizeMemoryText(text, maxLen = MAX_VALUE_LEN) {
+  const value = String(text == null ? "" : text).replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim();
+  return value.slice(0, maxLen);
+}
+function isPiiFree(text) {
+  const value = String(text == null ? "" : text);
+  if (!value) return true;
+  return !PII_PATTERNS.some((re) => re.test(value));
+}
+function resolveMemoryOwner(uid) {
+  const value = String(uid || "");
+  return value.startsWith("account-") ? value : null;
+}
+function makeMemory(input = {}, ownerUid) {
+  const owner = resolveMemoryOwner(ownerUid);
+  if (!owner) return null;
+  const kind = String(input.kind || "");
+  if (!getKinds().includes(kind)) return null;
+  const source = String(input.source || "");
+  if (!Object.values(SOURCE).includes(source)) return null;
+  const confidence = Number(input.confidence);
+  if (!Number.isFinite(confidence) || confidence < CONFIDENCE_MIN || confidence > 1) return null;
+  const key = sanitizeMemoryText(input.key, 60);
+  const value = sanitizeMemoryText(input.value);
+  const reason2 = sanitizeMemoryText(input.reason, MAX_REASON_LEN);
+  if (!key || !value || !reason2) return null;
+  if (!isPiiFree(value) || !isPiiFree(reason2) || !isPiiFree(key)) return null;
+  const rawTs = Number(input.ts);
+  const ts = Number.isFinite(rawTs) && rawTs > 0 ? rawTs : Date.now();
+  return Object.freeze({ kind, key, value, source, confidence, reason: reason2, ts, ownerUid: owner });
+}
+function upsertMemory(list, record, ownerUid) {
+  const owner = resolveMemoryOwner(ownerUid);
+  const items = Array.isArray(list) ? list.filter((r) => r && r.ownerUid === owner) : [];
+  if (!record || record.ownerUid !== owner) return items.map((r) => Object.freeze({ ...r })).slice(0, MAX_RECORDS);
+  const rest = items.filter((r) => !(r.kind === record.kind && r.key === record.key));
+  const next = [record, ...rest].sort((a, b) => (b.ts || 0) - (a.ts || 0));
+  return next.slice(0, MAX_RECORDS).map((r) => Object.freeze({ ...r }));
+}
+function parseMemory(raw, ownerUid) {
+  const owner = resolveMemoryOwner(ownerUid);
+  if (!owner) return [];
+  let parsed;
+  try {
+    parsed = typeof raw === "string" ? JSON.parse(raw || "[]") : raw;
+  } catch (_) {
+    return [];
+  }
+  if (!Array.isArray(parsed)) return [];
+  return parsed.filter((r) => r && r.ownerUid === owner && getKinds().includes(r.kind) && isPiiFree(r.value)).map((r) => Object.freeze({ ...r })).slice(0, MAX_RECORDS);
+}
+var RETAIN_TRIGGERS = Object.freeze([
+  "মনে রাখো",
+  "মনে রাখ",
+  "মনে রেখো",
+  "remember this",
+  "remember that",
+  "note this"
+]);
+var FRAG = "[\\p{L}\\p{M}\\p{N} ,.।-]";
+var SIGNALS = Object.freeze([
+  { kind: KIND.STUDIES, key: "weak-topic", re: /((?:\S+\s+){0,3})(?:দুর্বল|পারি না|কঠিন লাগে|weak in|struggl\w* with)/iu, confidence: 0.8 },
+  { kind: KIND.STUDIES, key: "strong-topic", re: /((?:\S+\s+){0,3})(?:ভালো|strong in|good at)/iu, confidence: 0.75 },
+  { kind: KIND.STUDIES, key: "goal", re: new RegExp(`(?:লক্ষ্য|টার্গেট|goal|target)\\s*[:\\-–]?\\s*(${FRAG}{2,60})`, "iu"), confidence: 0.8 },
+  // The trigger itself is the preference — trailing words add nothing.
+  { kind: KIND.PREFERENCE, key: "answer-style", re: /(ছোট করে|বিস্তারিত|detailed|short answers?|সহজ করে|simple করে)/iu, confidence: 0.75 },
+  { kind: KIND.HABIT, key: "study-time", re: /((?:রাতে|সকালে|বিকেলে|দুপুরে|at night|in the morning|evening)\s*(?:পড়ি|পড়াশোনা|study)[\p{L}\p{M}\p{N} ,.।-]{0,40})/iu, confidence: 0.75 }
+]);
+var FILLER_WORDS = Object.freeze(["আমি", "আমার", "আমাকে", "we", "i", "my", "me", "মনে", "রাখো", "রাখ", "রেখো"]);
+function cleanCapture(text) {
+  const cleaned = String(text || "").replace(/[\u0000-\u001f\u007f]/g, " ").split(/\s+/).map((word) => word.replace(/[,।]/g, "")).filter((word) => word && !FILLER_WORDS.includes(word.toLowerCase())).join(" ");
+  return sanitizeMemoryText(cleaned, 80);
+}
+function isRetentionRequest(text) {
+  const value = String(text || "");
+  return RETAIN_TRIGGERS.some((trigger) => value.includes(trigger));
+}
+function extractMemoryCandidates(text) {
+  const value = sanitizeMemoryText(text, 600);
+  if (!value) return [];
+  const out = [];
+  const explicit = isRetentionRequest(value);
+  for (const signal of SIGNALS) {
+    const match = value.match(signal.re);
+    if (!match) continue;
+    const captured = cleanCapture(match[1] || match[0]);
+    if (!captured) continue;
+    out.push({
+      kind: signal.kind,
+      key: signal.key,
+      value: captured,
+      source: explicit ? SOURCE.USER_STATED : SOURCE.AI_INFERRED,
+      confidence: explicit ? Math.min(1, signal.confidence + 0.1) : signal.confidence,
+      reason: explicit ? "ইউজার নিজে মনে রাখতে বলেছে" : "কথার মধ্যে থেকে অনুমান করা হয়েছে"
+    });
+  }
+  return out;
+}
+var KIND_LABEL = Object.freeze({
+  [KIND.STUDIES]: "পড়াশোনা",
+  [KIND.PREFERENCE]: "পছন্দ",
+  [KIND.HABIT]: "অভ্যাস"
+});
+function renderMemory(records, viewVersion = "") {
+  const items = Array.isArray(records) ? records.slice() : [];
+  if (!items.length) return "";
+  const ranked = items.sort((a, b) => b.confidence - a.confidence || (b.ts || 0) - (a.ts || 0)).slice(0, RENDER_LIMIT);
+  const lines = ranked.map((r) => `- ${KIND_LABEL[r.kind] || r.kind}: ${r.value}`);
+  const v = viewVersion ? " — " + viewVersion : "";
+  return `
+
+LONG-TERM MEMORY${v}:
+${lines.join("\n")}
+এই তথ্য শুধু এই শিক্ষার্থীর নিজেরই। স্বাভাবিকভাবে কাজে লাগাও; কখনো বলো না তুমি আলাদা করে কিছু মনে রেখেছ।`;
+}
+
 // ai-agent.js
 var AGENT_VERSION = "agent-f1";
 var SYSTEM_PROMPT_V = "sys-f1-3-ai-personalization";
@@ -332,15 +484,14 @@ function capStats(stats) {
   if (stats.mistakes != null) s.mistakes = num(stats.mistakes, 0, 1e5);
   return Object.keys(s).length ? s : null;
 }
-var AI_PREFS_DEFAULT = Object.freeze({ langStyle: "bn", tone: "friendly", responseLen: "balanced", memory: true });
+var AI_PREFS_DEFAULT = Object.freeze({ langStyle: "bn", tone: "friendly", responseLen: "balanced" });
 function sanitizeAiPrefs(value) {
   if (!value || typeof value !== "object") return null;
   const pick = (v, set, dflt) => set.has(String(v)) ? String(v) : dflt;
   return {
     langStyle: pick(value.langStyle, /* @__PURE__ */ new Set(["bn", "en", "mix"]), AI_PREFS_DEFAULT.langStyle),
     tone: pick(value.tone, /* @__PURE__ */ new Set(["friendly", "professional", "simple", "motivating", "direct"]), AI_PREFS_DEFAULT.tone),
-    responseLen: pick(value.responseLen, /* @__PURE__ */ new Set(["short", "balanced", "detailed"]), AI_PREFS_DEFAULT.responseLen),
-    memory: value.memory === false ? false : true
+    responseLen: pick(value.responseLen, /* @__PURE__ */ new Set(["short", "balanced", "detailed"]), AI_PREFS_DEFAULT.responseLen)
   };
 }
 var PROFILE_TEXT = (value, max) => String(value ?? "").normalize("NFKC").replace(/[\r\n\u0000<>]/g, "").trim().slice(0, max);
@@ -725,6 +876,10 @@ async function agentChat(request, env, uid, opts = {}) {
   const persistMemory = opts?.persistMemory !== false;
   const startedAt = Date.now();
   const sendCtx = { uid: String(uid || ""), stream };
+  if (!sendCtx.uid.startsWith("account-")) {
+    const msg = { error: "sign_in_required", message: "AI চ্যাট ব্যবহার করতে লগইন করো।" };
+    return stream ? sseError(msg, 401) : jsonResp(msg, 401);
+  }
   const body = await request.json().catch(() => null);
   const v = validateChatReq(body);
   if (!v.ok) return jsonResp({ error: v.code, message: v.message }, 400);
@@ -758,7 +913,7 @@ async function agentChat(request, env, uid, opts = {}) {
   } catch (_) {
     aiPrefs = null;
   }
-  const memoryOn = persistMemory && !(aiPrefs && aiPrefs.memory === false);
+  const memoryOn = persistMemory;
   let mem = [];
   if (memoryOn) {
     try {
@@ -783,7 +938,17 @@ async function agentChat(request, env, uid, opts = {}) {
   const ctxBundle = contextEngineEnabled(env) ? buildContext({ uid: sendCtx.uid, prefs: aiPrefs, stats, onboarding, profile: profileCtx, memoryOn }) : null;
   const ctxText = ctxBundle ? renderContext(ctxBundle) : "";
   let summaryText = memoryOn && !freshThread ? await getKv(env.PUB_KV, "chatmemsum:" + sendCtx.uid) : "";
-  const sys = [systemPrompt, ctxText, summaryText].filter(Boolean).join("\n\n");
+  let memRecords = [];
+  if (memoryOn) {
+    try {
+      const rawLong = await getKv(env.PUB_KV, "mem:" + MEMORY_VERSION + ":" + sendCtx.uid);
+      memRecords = parseMemory(rawLong, sendCtx.uid);
+    } catch (_) {
+      memRecords = [];
+    }
+  }
+  const memoryText = memoryOn ? renderMemory(memRecords, MEMORY_VERSION) : "";
+  const sys = [systemPrompt, ctxText, memoryText, summaryText].filter(Boolean).join("\n\n");
   const hasImage = msgs.some((m) => m.image);
   const partsOf = (m) => {
     const p = [{ text: m.content }];
@@ -822,6 +987,23 @@ async function agentChat(request, env, uid, opts = {}) {
     try {
       const next = msgs.concat([{ role: "user", content: v.messages[v.messages.length - 1].content }, { role: "assistant", content: text }]).slice(-24).map((x) => ({ role: x.role, content: x.content }));
       await putKv(env.PUB_KV, "chatmem:" + sendCtx.uid, JSON.stringify(next));
+    } catch (_) {
+    }
+    try {
+      const latest = String(v.messages[v.messages.length - 1].content || "");
+      const candidates = extractMemoryCandidates(latest);
+      if (candidates.length) {
+        const key = "mem:" + MEMORY_VERSION + ":" + sendCtx.uid;
+        let list = parseMemory(await getKv(env.PUB_KV, key), sendCtx.uid);
+        let changed = false;
+        for (const candidate of candidates) {
+          const record = makeMemory(candidate, sendCtx.uid);
+          if (!record) continue;
+          list = upsertMemory(list, record, sendCtx.uid);
+          changed = true;
+        }
+        if (changed) await putKv(env.PUB_KV, key, JSON.stringify(list));
+      }
     } catch (_) {
     }
   };
@@ -925,6 +1107,7 @@ async function agentStatus(request, env, uid) {
     limits: { perDay: Math.max(10, Math.min(500, Number(env.AGENT_DAILY_CAP || 80))) },
     streaming: true,
     tools: { version: TOOL_REGISTRY_VERSION, declared: listTools() },
+    memory: { version: MEMORY_VERSION, mode: "auto", scope: "account-only" },
     context: ctxOn ? describeContext(buildContext({ uid, prefs: null, stats: null, onboarding: null, memoryOn: true })) : { enabled: false }
   });
 }

@@ -69,11 +69,14 @@ test('AI backend derives separate account identities from HttpOnly sessions and 
   const env = { PUB_KV: kv, AUTH_AUTHORITY: authority };
   assert.equal((await publicWorker.fetch(chatRequest('A'.repeat(48)), env)).status, 503);
   assert.equal((await publicWorker.fetch(chatRequest('B'.repeat(48)), env)).status, 503);
-  assert.equal((await publicWorker.fetch(chatRequest('', 'ephemeral-guest-00000002'), env)).status, 503);
+  // M7: a guest is refused before any processing — it never reaches the provider,
+  // so it is 401 rather than the account-only 503 (no-key) path.
+  assert.equal((await publicWorker.fetch(chatRequest('', 'ephemeral-guest-00000002'), env)).status, 401);
   const keys = [...kv.data.keys()];
   const accountRateKeys = keys.filter(key => key.startsWith('airl:account-'));
   assert.equal(accountRateKeys.length, 2);
   assert.notEqual(accountRateKeys[0], accountRateKeys[1]);
   assert.equal(keys.some(key => key.includes('usr_account_alpha') || key.includes('usr_account_beta')), false);
   assert.equal(keys.some(key => key.startsWith('chatmem:guest-') || key.startsWith('chatmemsum:guest-')), false);
+  assert.equal(keys.some(key => key.includes('ephemeral-guest-00000002')), false);
 });

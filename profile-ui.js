@@ -1233,7 +1233,7 @@
       <div class="pp-sheet-actions"><button class="pp-btn-ghost" data-role="sheet-close" type="button">বাতিল</button></div>`);
   }
 
-  const AI_PREFS_DEFAULT = { langStyle: 'bn', tone: 'friendly', responseLen: 'balanced', memory: true };
+  const AI_PREFS_DEFAULT = { langStyle: 'bn', tone: 'friendly', responseLen: 'balanced' };
   const aiOpt = (role, val, label, current) => `
       <button class="pp-vopt ${current === val ? 'on' : ''}" data-role="${role}" data-value="${val}" type="button">
         <span class="pp-vradio" aria-hidden="true">${current === val ? '●' : '○'}</span>
@@ -1262,16 +1262,6 @@
         ${aiOpt('pick-ai-len', 'short', 'Short', pf.responseLen)}
         ${aiOpt('pick-ai-len', 'balanced', 'Balanced', pf.responseLen)}
         ${aiOpt('pick-ai-len', 'detailed', 'Detailed', pf.responseLen)}
-      </div>
-      <div class="pp-kicker" style="margin-top:14px">MEMORY</div>
-      <div class="pp-vlist">
-        <div class="pp-priv-row">
-          <div>
-            <div class="pp-value">Conversation Memory</div>
-            <p class="pp-fine">AI তোমার আগের কথা মনে রাখবে (device+account-এ save হয়)</p>
-          </div>
-          <button class="pp-switch ${pf.memory ? 'on' : ''}" data-role="toggle-ai-memory" type="button" role="switch" aria-checked="${pf.memory}" aria-label="AI memory"><i></i></button>
-        </div>
       </div>
       <p class="pp-fine" data-role="ai-prefs-status" hidden></p>
       <div class="pp-sheet-actions"><button class="pp-btn-ghost" data-role="sheet-close" type="button">বাতিল</button></div>`);
@@ -1798,13 +1788,6 @@
       if (!state.aiPrefs) state.aiPrefs = { ...AI_PREFS_DEFAULT };
       const key = role === 'pick-ai-style' ? 'langStyle' : role === 'pick-ai-tone' ? 'tone' : 'responseLen';
       state.aiPrefs[key] = el.dataset.value;
-      refreshAiPrefsSheet();
-      saveAiPrefs();
-      return;
-    }
-    else if (role === 'toggle-ai-memory') {
-      if (!state.aiPrefs) state.aiPrefs = { ...AI_PREFS_DEFAULT };
-      state.aiPrefs.memory = !state.aiPrefs.memory;
       refreshAiPrefsSheet();
       saveAiPrefs();
       return;
