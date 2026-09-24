@@ -2,6 +2,10 @@
 // Active routes: public content · Firebase-account/ephemeral-guest AI · content admin.
 // The former login/profile/onboarding/session/state APIs are intentionally absent.
 import { agentChat, agentStatus, sanitizeAiPrefs, AI_PREFS_DEFAULT } from './ai-agent.js';
+import {
+  authorizeAction, makeProposal, confirmProposal, proposalSummary,
+  makeAuditRecord, parseAudit, appendAudit, STATUS, ENABLED as ACTIONS_ENABLED
+} from './action-engine.js';
 
 const JSONH = {
   'Content-Type': 'application/json',
@@ -150,6 +154,17 @@ export const publishGlobal = async (env, full) => {
   return { published: true, v: doc.v, counts: meta.counts };
 };
 
+const readAudit = async (env, uid) => {
+  try {
+    const raw = await env.PUB_KV.get('actaudit:' + uid);
+    return parseAudit(raw, uid);
+  } catch (_) { return []; }
+};
+
+const writeAudit = async (env, uid, records) => {
+  await env.PUB_KV.put('actaudit:' + uid, JSON.stringify(records));
+};
+
 const admin = async (request, env, path) => {
   const token = String(request.headers.get('Authorization') || '').replace('Bearer ', '').trim();
   if (!env.ADMIN_TOKEN || token !== env.ADMIN_TOKEN) return json({ error: 'forbidden' }, 403);
@@ -222,6 +237,65 @@ export default {
           return json({ error: 'save_failed', message: 'এখন save করা গেল না — আবার চেষ্টা করো।' }, 500);
         }
         return json({ ok: true, prefs });
+      }
+      /* M9: write/execute actions. The layer is OFF by default (action-engine
+         `ENABLED`), so both routes refuse with `layer-disabled` until the owner
+         turns it on. Confirmation is mandatory and single-use. */
+      if (path === '/api/ai/actions/propose' && request.method === 'POST') {
+        const identity = await aiRequestIdentity(request, env, false);
+        if (!identity.authenticated) return json({ error: 'sign_in_required', message: 'AI action ব্যবহার করতে লগইন করো।' }, 401);
+        const body = await request.json().catch(() => null);
+        const name = String(body?.action || '');
+        const auth = authorizeAction(name, { uid: identity.uid, args: body?.args });
+        if (!auth.allowed) return json({ error: 'action_denied', reason: auth.reason }, 403);
+        const proposal = makeProposal(name, { uid: identity.uid, args: auth.args, id: crypto.randomUUID() });
+        if (!proposal) return json({ error: 'action_denied', reason: 'no-proposal' }, 403);
+        try {
+          await env.PUB_KV.put('actprop:' + identity.uid, JSON.stringify(proposal), { expirationTtl: Math.ceil((proposal.expiresAt - Date.now()) / 1000) });
+          const audit = await readAudit(env, identity.uid);
+          await writeAudit(env, identity.uid, appendAudit(audit, makeAuditRecord({ proposal, status: STATUS.PROPOSED, uid: identity.uid }), identity.uid));
+        } catch (_) {
+          return json({ error: 'propose_failed', message: 'এখন proposal তৈরি করা গেল না — আবার চেষ্টা করো।' }, 500);
+        }
+        return json({ ok: true, proposal: { id: proposal.id, action: proposal.action, permission: proposal.permission, riskLevel: proposal.riskLevel, summary: proposal.summary, expiresAt: proposal.expiresAt } });
+      }
+      if (path === '/api/ai/actions/confirm' && request.method === 'POST') {
+        const identity = await aiRequestIdentity(request, env, false);
+        if (!identity.authenticated) return json({ error: 'sign_in_required', message: 'AI action ব্যবহার করতে লগইন করো।' }, 401);
+        const body = await request.json().catch(() => null);
+        const token = String(body?.token || '');
+        let stored = null;
+        try {
+          const raw = await env.PUB_KV.get('actprop:' + identity.uid);
+          stored = raw ? JSON.parse(raw) : null;
+        } catch (_) { stored = null; }
+        const decision = confirmProposal(stored, token, identity.uid);
+        if (!decision.ok) {
+          const audit = await readAudit(env, identity.uid);
+          if (stored) await writeAudit(env, identity.uid, appendAudit(audit, makeAuditRecord({ proposal: stored, status: decision.status, uid: identity.uid, detail: decision.reason }), identity.uid));
+          return json({ error: 'confirm_denied', reason: decision.reason }, 403);
+        }
+        // Single-use: consume the proposal before the write so a replay finds nothing.
+        try {
+          await env.PUB_KV.delete('actprop:' + identity.uid);
+          if (decision.action === 'prefs.write') {
+            const prefs = sanitizeAiPrefs(decision.args);
+            await env.PUB_KV.put('aiprefs:' + identity.uid, JSON.stringify(prefs));
+          }
+        } catch (_) {
+          const audit = await readAudit(env, identity.uid);
+          await writeAudit(env, identity.uid, appendAudit(audit, makeAuditRecord({ proposal: stored, status: STATUS.FAILED, uid: identity.uid, detail: 'write-failed' }), identity.uid));
+          return json({ error: 'action_failed', message: 'কাজটা সম্পন্ন করা গেল না — আবার চেষ্টা করো।' }, 500);
+        }
+        const audit = await readAudit(env, identity.uid);
+        const record = makeAuditRecord({ proposal: stored, status: STATUS.CONFIRMED, uid: identity.uid });
+        await writeAudit(env, identity.uid, appendAudit(audit, record, identity.uid));
+        return json({ ok: true, action: decision.action, status: STATUS.CONFIRMED });
+      }
+      if (path === '/api/ai/actions/audit' && request.method === 'GET') {
+        const identity = await aiRequestIdentity(request, env, false);
+        if (!identity.authenticated) return json({ error: 'sign_in_required', message: 'AI action ব্যবহার করতে লগইন করো।' }, 401);
+        return json({ ok: true, actionsEnabled: ACTIONS_ENABLED, audit: await readAudit(env, identity.uid) });
       }
       if (path === '/api/ai/chat' && request.method === 'POST') {
         const identity = await aiRequestIdentity(request, env, false);
