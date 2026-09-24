@@ -7,6 +7,7 @@ import {
   BrevoOtpVerificationProvider,
   BridgeOtpVerificationProvider,
   createConfiguredVerificationProviders,
+  DeadSimpleEmailOtpVerificationProvider,
   MailjetOtpVerificationProvider,
   MailerSendOtpVerificationProvider,
   OfficialWhatsAppVerificationProvider,
@@ -22,7 +23,7 @@ const KEY = `provider-key-${'k'.repeat(32)}`;
 
 test('six OTP slots implement the shared contract and fail closed when not securely configured', async () => {
   const providers = createConfiguredVerificationProviders({});
-  assert.deepEqual(providers.map(row => row.id), ['otp-a', 'otp-b', 'otp-c', 'otp-d', 'otp-e', 'otp-f', 'whatsapp', 'telegram']);
+  assert.deepEqual(providers.map(row => row.id), ['otp-a', 'otp-b', 'otp-c', 'otp-d', 'otp-e', 'otp-f', 'otp-g', 'whatsapp', 'telegram']);
   for (const provider of providers) {
     assert.equal((await provider.checkAvailability()).available, false);
     assert.equal((await provider.getRemainingQuota()).remaining, 0);
@@ -579,7 +580,7 @@ test('OTP slots prefer Brevo and Apps Script and fall back to bridge bindings', 
   assert.equal(bridged[1].constructor.name, 'BridgeOtpVerificationProvider');
 
   const empty = createConfiguredVerificationProviders({});
-  assert.deepEqual(empty.map(row => row.id), ['otp-a', 'otp-b', 'otp-c', 'otp-d', 'otp-e', 'otp-f', 'whatsapp', 'telegram']);
+  assert.deepEqual(empty.map(row => row.id), ['otp-a', 'otp-b', 'otp-c', 'otp-d', 'otp-e', 'otp-f', 'otp-g', 'whatsapp', 'telegram']);
   for (const provider of empty) assert.equal((await provider.getProviderStatus()).configured, false);
 });
 
@@ -673,3 +674,75 @@ test('MailerSend accepts on a 202 with an empty body and rejects a malformed cod
     error => error.code === 'INVALID_DESTINATION'
   );
 });
+
+test('Dead Simple Email owns otp-g and sends from a provider-signed inbox', async () => {
+  const bound = createConfiguredVerificationProviders({
+    DEADSIMPLEEMAIL_API_KEY: KEY,
+    DEADSIMPLEEMAIL_INBOX_ID: '15ba6686-acd5-46e5-9923-8556720fb0fb',
+    OTP_G_DAILY_QUOTA: '150'
+  });
+  assert.equal(bound[6] instanceof DeadSimpleEmailOtpVerificationProvider, true);
+  assert.equal(bound[6].id, 'otp-g');
+  assert.equal(bound[6].configured, true);
+  // No from-address is involved: the sending inbox is the sender, so a missing
+  // inbox id falls back to the bridge rather than sending from nowhere.
+  const halfBound = createConfiguredVerificationProviders({ DEADSIMPLEEMAIL_API_KEY: KEY, OTP_G_DAILY_QUOTA: '150' });
+  assert.equal(halfBound[6].constructor.name, 'BridgeOtpVerificationProvider');
+  assert.equal(halfBound[6].configured, false);
+});
+
+test('Dead Simple Email reports READY only while its inbox is active', async () => {
+  const inboxId = '15ba6686-acd5-46e5-9923-8556720fb0fb';
+  const make = payload => new DeadSimpleEmailOtpVerificationProvider({
+    id: 'otp-g',
+    apiKey: KEY,
+    inboxId,
+    declaredDailyQuota: 150,
+    fetchImpl: async () => new Response(JSON.stringify(payload), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  });
+
+  const active = await make({ data: { inbox_id: inboxId, status: 'active' } }).checkAvailability();
+  assert.deepEqual(active, { available: true, code: 'READY' });
+
+  const paused = await make({ data: { inbox_id: inboxId, status: 'paused' } }).checkAvailability();
+  assert.deepEqual(paused, { available: false, code: 'INBOX_NOT_AVAILABLE' });
+});
+
+test('Dead Simple Email sends to /messages and requires a message id back', async () => {
+  const calls = [];
+  const provider = new DeadSimpleEmailOtpVerificationProvider({
+    id: 'otp-g',
+    apiKey: KEY,
+    inboxId: '15ba6686-acd5-46e5-9923-8556720fb0fb',
+    declaredDailyQuota: 150,
+    fetchImpl: async (url, init) => {
+      calls.push({ url, init });
+      return new Response(JSON.stringify({ data: { message_id: 'e094b083-ad0a-46b9-98a8-390f7e6c4a2f' } }), { status: 201, headers: { 'Content-Type': 'application/json' } });
+    }
+  });
+  const sent = await provider.sendVerification({ destination: 'student@example.com', code: '123456', expiresAt: Date.now() + 300_000 });
+  assert.deepEqual(sent, { accepted: true });
+  assert.equal(calls[0].url, 'https://api.deadsimple.email/v1/inboxes/15ba6686-acd5-46e5-9923-8556720fb0fb/messages');
+  const body = JSON.parse(calls[0].init.body);
+  assert.equal(body.to, 'student@example.com');
+  assert.equal(typeof body.html_body, 'string');
+  assert.equal(typeof body.text_body, 'string');
+
+  const silent = new DeadSimpleEmailOtpVerificationProvider({
+    id: 'otp-g',
+    apiKey: KEY,
+    inboxId: '15ba6686-acd5-46e5-9923-8556720fb0fb',
+    declaredDailyQuota: 150,
+    fetchImpl: async () => new Response(JSON.stringify({ data: {} }), { status: 201, headers: { 'Content-Type': 'application/json' } })
+  });
+  await assert.rejects(
+    () => silent.sendVerification({ destination: 'student@example.com', code: '123456', expiresAt: Date.now() + 300_000 }),
+    error => error.code === 'INVALID_PROVIDER_RESPONSE'
+  );
+
+  await assert.rejects(
+    () => provider.sendVerification({ destination: 'student@example.com', code: '12' }),
+    error => error.code === 'INVALID_DESTINATION'
+  );
+});
+

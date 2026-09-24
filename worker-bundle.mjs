@@ -5988,6 +5988,7 @@ var SLOT_DEFINITIONS = Object.freeze({
   "otp-d": Object.freeze({ channel: VERIFICATION_CHANNELS.OTP, verificationMode: VERIFICATION_MODES.LOCAL_CODE, priority: 35 }),
   "otp-e": Object.freeze({ channel: VERIFICATION_CHANNELS.OTP, verificationMode: VERIFICATION_MODES.LOCAL_CODE, priority: 37 }),
   "otp-f": Object.freeze({ channel: VERIFICATION_CHANNELS.OTP, verificationMode: VERIFICATION_MODES.LOCAL_CODE, priority: 38 }),
+  "otp-g": Object.freeze({ channel: VERIFICATION_CHANNELS.OTP, verificationMode: VERIFICATION_MODES.LOCAL_CODE, priority: 39 }),
   whatsapp: Object.freeze({ channel: VERIFICATION_CHANNELS.WHATSAPP, verificationMode: VERIFICATION_MODES.LOCAL_CODE, priority: 40 }),
   telegram: Object.freeze({ channel: VERIFICATION_CHANNELS.TELEGRAM, verificationMode: VERIFICATION_MODES.LOCAL_CODE, priority: 50 })
 });
@@ -12095,6 +12096,7 @@ var safeInteger = (value, min = 0, max = Number.MAX_SAFE_INTEGER) => {
 var validSecret = (value) => typeof value === "string" && value.length >= 20 && value.length <= 4096 && !/[\r\n\u0000]/.test(value);
 var validTelegramBotToken = (value) => /^[1-9]\d{5,19}:[A-Za-z0-9_-]{30,100}$/.test(String(value || ""));
 var validTelegramBotUsername = (value) => /^(?=.{5,32}$)[A-Za-z][A-Za-z0-9_]*bot$/i.test(String(value || ""));
+var validInboxId = (value) => /^[A-Za-z0-9_-]{8,64}$/.test(String(value || ""));
 function httpsOrigin(value) {
   try {
     const url = new URL(String(value || ""));
@@ -12612,6 +12614,76 @@ var MailerSendOtpVerificationProvider = class {
   }
   async getProviderStatus() {
     return { status: this.configured ? "configured" : "disabled", configured: this.configured, officialApi: true, mailer: "mailersend" };
+  }
+};
+var DeadSimpleEmailOtpVerificationProvider = class {
+  // Dead Simple Email's inbox domain (box*.deadsimple.email) is signed by the
+  // provider itself, so like AgentMail this slot carries real recipients without
+  // the owner owning a domain. The inbox it sends from is the sender, so there is
+  // no from-address to verify; a read of the inbox is the cheapest proof the key
+  // is live and scoped to an inbox this worker may send from.
+  constructor({ id = "otp-g", apiKey, inboxId, declaredDailyQuota, fetchImpl = globalThis.fetch, now = Date.now } = {}) {
+    this.id = String(id || "");
+    this.channel = VERIFICATION_CHANNELS.OTP;
+    this.verificationMode = VERIFICATION_MODES.LOCAL_CODE;
+    this.apiKey = String(apiKey || "");
+    this.inboxId = validInboxId(inboxId) ? String(inboxId) : "";
+    this.declaredDailyQuota = safeInteger(declaredDailyQuota, 1, 1e7);
+    this.fetch = typeof fetchImpl === "function" ? fetchImpl.bind(globalThis) : null;
+    this.now = typeof now === "function" ? now : Date.now;
+    this.configured = Boolean(validSecret(this.apiKey) && this.inboxId && this.declaredDailyQuota && this.fetch);
+  }
+  #headers(content = false) {
+    return {
+      Accept: "application/json",
+      "Cache-Control": "no-store",
+      Authorization: `Bearer ${this.apiKey}`,
+      ...content ? { "Content-Type": "application/json" } : {}
+    };
+  }
+  async checkAvailability() {
+    if (!this.configured) return { available: false, code: "NOT_CONFIGURED" };
+    const payload = await fetchJson(this.fetch, `https://api.deadsimple.email/v1/inboxes/${encodeURIComponent(this.inboxId)}`, { method: "GET", headers: this.#headers() });
+    const inbox = payload?.data || payload;
+    const ready = String(inbox?.inbox_id || "") === this.inboxId && inbox?.status === "active";
+    return { available: ready, code: ready ? "READY" : "INBOX_NOT_AVAILABLE" };
+  }
+  async getRemainingQuota() {
+    if (!this.configured) return { remaining: 0, limit: 0, resetAt: 0, source: "not-configured" };
+    const limit = this.declaredDailyQuota;
+    return { remaining: limit, limit, resetAt: nextUtcMidnight(this.now()), source: "deadsimpleemail-declared-daily-quota" };
+  }
+  async sendVerification(input = {}) {
+    if (!this.configured) throw new VerificationProviderError("NOT_CONFIGURED", VERIFICATION_FAILURE_CLASS.HARD);
+    const destination = String(input.destination || "");
+    const code = String(input.code || "");
+    if (!validEmailAddress(destination) || !/^\d{6}$/.test(code)) {
+      throw new VerificationProviderError("INVALID_DESTINATION", VERIFICATION_FAILURE_CLASS.USER);
+    }
+    const expiresAt = Number(input.expiresAt || 0);
+    const minutes = expiresAt > 0 ? Math.max(1, Math.round((expiresAt - Number(this.now())) / 6e4)) : 5;
+    const { text, html } = otpEmailBody(code, minutes, input.recipientName);
+    const payload = await fetchJson(this.fetch, `https://api.deadsimple.email/v1/inboxes/${encodeURIComponent(this.inboxId)}/messages`, {
+      method: "POST",
+      headers: this.#headers(true),
+      body: JSON.stringify({
+        to: destination,
+        subject: "Admission Hub — আপনার যাচাইকরণ কোড",
+        html_body: html,
+        text_body: text
+      })
+    });
+    const reference = payload?.data?.message_id;
+    if (typeof reference !== "string" || !reference) {
+      throw new VerificationProviderError("INVALID_PROVIDER_RESPONSE", VERIFICATION_FAILURE_CLASS.HARD);
+    }
+    return { accepted: true };
+  }
+  async verifyCode() {
+    throw new VerificationProviderError("LOCAL_VERIFICATION_ONLY", VERIFICATION_FAILURE_CLASS.USER);
+  }
+  async getProviderStatus() {
+    return { status: this.configured ? "configured" : "disabled", configured: this.configured, officialApi: true, mailer: "deadsimpleemail" };
   }
 };
 var MailjetOtpVerificationProvider = class {
@@ -13165,6 +13237,14 @@ function createConfiguredVerificationProviders(env = {}, { fetchImpl = globalThi
     fetchImpl
   });
   const bridgeOtpF = new BridgeOtpVerificationProvider({ id: "otp-f", origin: env.OTP_F_PROVIDER_ORIGIN, apiKey: env.OTP_F_PROVIDER_KEY, declaredDailyQuota: env.OTP_F_DAILY_QUOTA, fetchImpl });
+  const deadSimpleOtpG = new DeadSimpleEmailOtpVerificationProvider({
+    id: "otp-g",
+    apiKey: env.DEADSIMPLEEMAIL_API_KEY,
+    inboxId: env.DEADSIMPLEEMAIL_INBOX_ID,
+    declaredDailyQuota: env.OTP_G_DAILY_QUOTA,
+    fetchImpl
+  });
+  const bridgeOtpG = new BridgeOtpVerificationProvider({ id: "otp-g", origin: env.OTP_G_PROVIDER_ORIGIN, apiKey: env.OTP_G_PROVIDER_KEY, declaredDailyQuota: env.OTP_G_DAILY_QUOTA, fetchImpl });
   return [
     brevoOtpA.configured ? brevoOtpA : bridgeOtpA,
     appsScriptOtpB.configured ? appsScriptOtpB : bridgeOtpB,
@@ -13172,6 +13252,7 @@ function createConfiguredVerificationProviders(env = {}, { fetchImpl = globalThi
     resendOtpD.configured ? resendOtpD : bridgeOtpD,
     agentMailOtpE.configured ? agentMailOtpE : bridgeOtpE,
     mailerSendOtpF.configured ? mailerSendOtpF : bridgeOtpF,
+    deadSimpleOtpG.configured ? deadSimpleOtpG : bridgeOtpG,
     new OfficialWhatsAppVerificationProvider({
       graphVersion: env.WHATSAPP_GRAPH_VERSION,
       phoneNumberId: env.WHATSAPP_PHONE_NUMBER_ID,
