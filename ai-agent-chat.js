@@ -799,23 +799,10 @@
       return hasAny ? out : null;
     } catch (_) { return null; }
   };
-  // Mirror of the account's AI prefs, kept by profile-ui so the chat client knows
-  // whether the student opted in to name sharing without an extra round-trip.
-  const localAiPrefs = () => {
-    if (!accountScope) return null;
-    try { return JSON.parse(localStorage.getItem('ah-ai-prefs-cache') || 'null'); } catch (_) { return null; }
-  };
-  // What actually goes on the wire. The first name leaves the device only when
-  // the student turned on name sharing; the server enforces the same rule from
-  // its stored prefs, so this is the outer of two gates, not the only one.
-  const profilePayload = () => {
-    const p = localProfile();
-    if (!p) return null;
-    const prefs = localAiPrefs();
-    if (prefs && prefs.shareName === true && p.firstName) return p;
-    const { firstName, ...rest } = p;
-    return Object.keys(rest).length ? rest : null;
-  };
+  // What actually goes on the wire. The first name is always included for a
+  // signed-in student so the AI greets them by name with no setup; the server
+  // re-sanitizes and keeps only a single name token. Never any other identity.
+  const profilePayload = () => localProfile();
   const curTitle = () => (sessions[cur] && sessions[cur].name ? sessions[cur].name : T.title);
   const fmtDay = (ts) => { try { const d = new Date(ts), n = new Date(); return d.toDateString() === n.toDateString() ? fmtTime(ts) : d.toLocaleDateString(lang === 'bn' ? 'bn-BD' : 'en-US', { day: 'numeric', month: 'short' }); } catch (_) { return ''; } };
   const fmtTime = (ts) => { try { return new Date(ts).toLocaleTimeString(lang === 'bn' ? 'bn-BD' : 'en-US', { hour: '2-digit', minute: '2-digit' }); } catch (_) { return ''; } };

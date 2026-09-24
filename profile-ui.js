@@ -1233,7 +1233,7 @@
       <div class="pp-sheet-actions"><button class="pp-btn-ghost" data-role="sheet-close" type="button">বাতিল</button></div>`);
   }
 
-  const AI_PREFS_DEFAULT = { langStyle: 'bn', tone: 'friendly', responseLen: 'balanced', memory: true, shareName: false };
+  const AI_PREFS_DEFAULT = { langStyle: 'bn', tone: 'friendly', responseLen: 'balanced', memory: true };
   const aiOpt = (role, val, label, current) => `
       <button class="pp-vopt ${current === val ? 'on' : ''}" data-role="${role}" data-value="${val}" type="button">
         <span class="pp-vradio" aria-hidden="true">${current === val ? '●' : '○'}</span>
@@ -1273,16 +1273,6 @@
           <button class="pp-switch ${pf.memory ? 'on' : ''}" data-role="toggle-ai-memory" type="button" role="switch" aria-checked="${pf.memory}" aria-label="AI memory"><i></i></button>
         </div>
       </div>
-      <div class="pp-kicker" style="margin-top:14px">NAME</div>
-      <div class="pp-vlist">
-        <div class="pp-priv-row">
-          <div>
-            <div class="pp-value">AI আমার নাম জানবে</div>
-            <p class="pp-fine">শুধু প্রথম নাম AI-কে পাঠানো হবে — পুরো নাম, mobile, email বা জন্মতারিখ কখনো নয়। বন্ধ থাকলে AI নাম ছাড়াই সব কিছু বুঝবে।</p>
-          </div>
-          <button class="pp-switch ${pf.shareName ? 'on' : ''}" data-role="toggle-ai-name" type="button" role="switch" aria-checked="${pf.shareName === true}" aria-label="AI name sharing"><i></i></button>
-        </div>
-      </div>
       <p class="pp-fine" data-role="ai-prefs-status" hidden></p>
       <div class="pp-sheet-actions"><button class="pp-btn-ghost" data-role="sheet-close" type="button">বাতিল</button></div>`);
   }
@@ -1297,19 +1287,12 @@
     }
   }
 
-  // The chat client runs in its own module and reads this mirror to decide
-  // whether the first name may leave the device. Server re-checks regardless.
-  function mirrorAiPrefs(pf) {
-    try { localStorage.setItem('ah-ai-prefs-cache', JSON.stringify({ shareName: pf?.shareName === true })); } catch (_) {}
-  }
-
   async function saveAiPrefs() {
     if (state.aiSaving) return;
     state.aiSaving = true;
     try {
       const body = await api('/api/ai/prefs', { method: 'POST', body: JSON.stringify(state.aiPrefs) });
       state.aiPrefs = body?.prefs || state.aiPrefs;
-      mirrorAiPrefs(state.aiPrefs);
       refreshAiPrefsSheet('Save হয়েছে ✓ — পরের chat-এই প্রয়োগ হবে।');
     } catch (e) {
       refreshAiPrefsSheet('Save fail — আবার চেষ্টা করো।');
@@ -1325,7 +1308,6 @@
     } catch (_) {
       state.aiPrefs = { ...AI_PREFS_DEFAULT };
     }
-    mirrorAiPrefs(state.aiPrefs);
   }
 
   function visibilitySheet() {
@@ -1823,13 +1805,6 @@
     else if (role === 'toggle-ai-memory') {
       if (!state.aiPrefs) state.aiPrefs = { ...AI_PREFS_DEFAULT };
       state.aiPrefs.memory = !state.aiPrefs.memory;
-      refreshAiPrefsSheet();
-      saveAiPrefs();
-      return;
-    }
-    else if (role === 'toggle-ai-name') {
-      if (!state.aiPrefs) state.aiPrefs = { ...AI_PREFS_DEFAULT };
-      state.aiPrefs.shareName = !state.aiPrefs.shareName;
       refreshAiPrefsSheet();
       saveAiPrefs();
       return;

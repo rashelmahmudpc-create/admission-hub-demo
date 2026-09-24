@@ -149,7 +149,7 @@ export function capStats(stats) {
 }
 
 /* ── AI Personalization (blueprint §19-20) — per-user, allowlisted, bounded ── */
-export const AI_PREFS_DEFAULT = Object.freeze({ langStyle: "bn", tone: "friendly", responseLen: "balanced", memory: true, shareName: false });
+export const AI_PREFS_DEFAULT = Object.freeze({ langStyle: "bn", tone: "friendly", responseLen: "balanced", memory: true });
 export function sanitizeAiPrefs(value) {
   if (!value || typeof value !== "object") return null;
   const pick = (v, set, dflt) => (set.has(String(v)) ? String(v) : dflt);
@@ -157,24 +157,21 @@ export function sanitizeAiPrefs(value) {
     langStyle: pick(value.langStyle, new Set(["bn", "en", "mix"]), AI_PREFS_DEFAULT.langStyle),
     tone: pick(value.tone, new Set(["friendly", "professional", "simple", "motivating", "direct"]), AI_PREFS_DEFAULT.tone),
     responseLen: pick(value.responseLen, new Set(["short", "balanced", "detailed"]), AI_PREFS_DEFAULT.responseLen),
-    memory: value.memory === false ? false : true,
-    // Opt-in: the AI may greet the student by first name. Off unless explicitly on.
-    shareName: value.shareName === true
+    memory: value.memory === false ? false : true
   };
 }
 
 /* ── Student profile context (academic structure only — never PII) ──────────
    Allowlist, not blocklist: any key not named here is dropped, so a hand-built
-   request cannot smuggle an identity field into the model. First name is kept
-   only when the student explicitly opted in (`shareName`), enforced server-side
-   from the stored prefs — not from the request body. */
+   request cannot smuggle an identity field into the model. The first name is
+   always included for a signed-in student (no setup needed); only a single name
+   token is kept, and no other identity field is ever read. */
 const PROFILE_TEXT = (value, max) => String(value ?? '').normalize('NFKC').replace(/[\r\n\u0000<>]/g, '').trim().slice(0, max);
 export function sanitizeProfileContext(value, opts = {}) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-  const shareName = opts.shareName === true;
   const out = {};
 
-  if (shareName) {
+  {
     const firstName = PROFILE_TEXT(value.firstName, 40);
     // A single name token only — never a full name, never any other identity field.
     if (firstName && !/\s/.test(firstName)) out.firstName = firstName;
@@ -673,10 +670,10 @@ export async function agentChat(request, env, uid, opts = {}) {
      is rendered and appended; when disabled the prompt above is byte-identical
      to the pre-M4 output, so the legacy path stays intact.
      The student's academic profile is attached only for a signed-in account and
-     only after server-side sanitization; the first name additionally requires the
-     student's stored opt-in (`aiprefs.shareName`), never the request body. */
+     only after server-side sanitization; the first name is included by default,
+     with no setting to switch it on. */
   const profileCtx = sendCtx.uid.startsWith('account-')
-    ? sanitizeProfileContext(body?.context?.profile, { shareName: aiPrefs?.shareName === true })
+    ? sanitizeProfileContext(body?.context?.profile)
     : null;
   const ctxBundle = contextEngineEnabled(env)
     ? buildContext({ uid: sendCtx.uid, prefs: aiPrefs, stats, onboarding, profile: profileCtx, memoryOn })

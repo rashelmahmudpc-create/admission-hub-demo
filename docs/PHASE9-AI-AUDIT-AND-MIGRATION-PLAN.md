@@ -257,26 +257,25 @@ Engine at SUMMARY scope, with identity fields stripped by two independent gates.
 
 1. **Client** (`ai-agent-chat.js`) — `localProfile()` projects the cached profile
    to an academic-only shape. It never reads `fullName`/`email`/`mobile`/`dob`/
-   `bio`/`publicId`/avatar beyond the first-name token; `profilePayload()` drops
-   even that token unless the account opted in. Guests get `null`.
-2. **Server** (`ai-agent.js`) — `sanitizeProfileContext(payload, { shareName })`
-   re-sanitizes the request body with an allowlist (unknown keys are dropped, not
-   filtered), and the payload is only built when `uid.startsWith('account-')`.
-   `shareName` is read from the stored `aiprefs`, never from the request body.
+   `bio`/`publicId`/avatar beyond the first-name token; `profilePayload()` then
+   sends that shape as-is. Guests get `null`.
+2. **Server** (`ai-agent.js`) — `sanitizeProfileContext(payload)` re-sanitizes the
+   request body with an allowlist (unknown keys are dropped, not filtered), and
+   the payload is only built when `uid.startsWith('account-')`.
 
-**Name consent (opt-in, default off):** the AI may learn the student's first name
-only when `aiprefs.shareName === true`, toggled in Profile → Preferences → AI
-Personalization ("AI আমার নাম জানবে"). Only a single name token passes; a full
-name is rejected. Everything else in the profile (institution, district, session,
-goal, subjects, targets) is always shared at SUMMARY.
+**Name is automatic (no setting):** the AI learns the student's first name with
+no setup at all — there is no toggle to switch on. Only a single name token
+passes; a full name is rejected. Everything else in the profile (institution,
+district, session, goal, subjects, targets) is shared at SUMMARY alongside it.
+Other identity fields (mobile, email, DOB, bio, public AH-ID) never leave the
+device.
 
 **Scope + rendering:** `resolveScopes` resolves `profile: SUMMARY` only for an
 `account-` uid carrying a sanitized payload — a guest stays NONE even if a payload
 is smuggled in. `renderContext` emits one `profile (academic)` line.
 
-**Verification:** `phase9-m4-context-engine.test.mjs` **29/29** (adds M4-২০…২৯,
-including the E2E pair proving the name is absent without opt-in and present with
-it); `language-engine.test.mjs` 11/11 (new UI copy translated); `ai-agent-f1`
-44/44; full native-auth suite 497/499 — the two failures (`profile-core`,
-`session-recovery-chaos`) also fail on a clean tree (better-sqlite3/Node v24
-native crash), unrelated to this change.
+**Verification:** `phase9-m4-context-engine.test.mjs` **29/29** (M4-২৮ proves the
+name reaches the provider with no setup; M4-২৯ proves a full name still cannot);
+`language-engine.test.mjs` 11/11; `ai-agent-f1` 44/44; full native-auth suite
+497/499 — the two failures (`profile-core`, `session-recovery-chaos`) also fail on
+a clean tree (better-sqlite3/Node v24 native crash), unrelated to this change.
