@@ -24,6 +24,7 @@
     emptyUnread: { bn: 'সব পড়া হয়েছে', en: 'You are all caught up' },
     emptyUnreadSub: { bn: 'নতুন কিছু এলে এখানে দেখাবে', en: 'New notifications will appear here' },
     yesterday: { bn: 'গতকাল', en: 'Yesterday' },
+    earlier: { bn: 'আগে', en: 'Earlier' },
     today: { bn: 'আজ', en: 'Today' }
   };
 
@@ -91,6 +92,26 @@
 
   const state = { tab: 'all' };
 
+  const dayBucket = (ts, now) => {
+    const d = new Date(Number(ts));
+    if (Number.isNaN(d.getTime())) return 'earlier';
+    if (d.toDateString() === now.toDateString()) return 'today';
+    const y = new Date(now); y.setDate(now.getDate() - 1);
+    if (d.toDateString() === y.toDateString()) return 'yesterday';
+    return 'earlier';
+  };
+
+  /* The blueprint asks for a Notification Center grouped Today / Yesterday /
+   * Earlier. Buckets follow the rows' existing order, so a newest-first list
+   * keeps its order inside each section. */
+  const groupRows = (list, now = new Date()) => {
+    const buckets = { today: [], yesterday: [], earlier: [] };
+    for (const row of list) buckets[dayBucket(row.createdAt, now)].push(row);
+    return buckets;
+  };
+
+  const sectionHeading = (key) => `<div class="nif-section"><span>${esc(t(key))}</span></div>`;
+
   const renderList = (list) => {
     if (!list.length) {
       const main = state.tab === 'unread' ? t('emptyUnread') : t('emptyAll');
@@ -101,9 +122,11 @@
         <div class="nif-empty-s">${esc(sub)}</div>
       </div>`;
     }
-    return `<div class="nif-list">` + list.slice(0, 60).map((row, i) => {
+    let idx = 0;
+    const rowHtml = (row) => {
       const icon = CAT_ICON[row.category] || '🔔';
       const unread = !row.readAt;
+      const i = idx++;
       return `<button class="nif-item fade-in stagger-${Math.min(i + 1, 6)} ${unread ? 'nif-unread' : ''}"
         data-nif-id="${esc(row.id)}" data-nif-global="${row.source === 'global' ? '1' : '0'}" data-nif-link="${esc(row.targetUrl || '')}"
         onclick="window.__nifTap(this)" ${unread ? '' : 'aria-label="read"'}>
@@ -114,7 +137,13 @@
         </span>
         ${unread ? '<span class="nif-dot" aria-hidden="true"></span>' : ''}
       </button>`;
-    }).join('') + `</div>`;
+    };
+    const buckets = groupRows(list.slice(0, 60));
+    const sections = ['today', 'yesterday', 'earlier']
+      .filter(key => buckets[key].length)
+      .map(key => sectionHeading(key) + buckets[key].map(rowHtml).join(''))
+      .join('');
+    return `<div class="nif-list">${sections}</div>`;
   };
 
   const styles = () => `<style>
@@ -133,6 +162,8 @@
   .nif-tab.active{background:var(--card,#fff);color:#0c3b2a;box-shadow:0 2px 8px rgba(12,59,42,.10);}
   .nif-tab .nif-count{display:inline-block;min-width:18px;padding:1px 5px;margin-left:4px;border-radius:9px;background:var(--emerald,#0f6b4f);color:#fff;font-size:10.5px;text-align:center;}
   .nif-list{display:flex;flex-direction:column;gap:10px;}
+  .nif-section{display:flex;align-items:center;gap:8px;padding:6px 2px 0;font-size:12px;font-weight:800;letter-spacing:.02em;text-transform:uppercase;color:#7b8a83;}
+  .nif-section::after{content:"";flex:1;height:1px;background:var(--line,#e3e8e5);}
   .nif-item{display:flex;align-items:flex-start;gap:12px;width:100%;text-align:left;border:1px solid var(--line,#e3e8e5);background:var(--card,#fff);border-radius:16px;padding:14px;cursor:pointer;transition:transform .12s ease,box-shadow .12s ease;}
   .nif-item:active{transform:scale(.985);}
   .nif-unread{box-shadow:0 2px 14px rgba(15,107,79,.08);border-color:#cfe4da;}

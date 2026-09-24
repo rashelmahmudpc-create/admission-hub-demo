@@ -117,7 +117,7 @@ advanced-mode Pages worker that proxies `/api/*` and gates asset serving.
   empty and the populated data states: the two branches render different
   sentences, and a state-blind audit misses half of them.
 
-## FCM notification system (locked blueprint — Phase 1 built, deploy pending)
+## FCM notification system (all 5 phases / 8 stages built)
 
 `FCM-NOTIFICATION-BLUEPRINT.md` is the owner-locked 5-phase blueprint for
 the FCM + Cloudflare smart notification system (Foundation → Global
@@ -127,7 +127,24 @@ Telegram stays backup. **Phase 1 is DEPLOYED to production (Pages 70220493,
 admission-gk 1406fb48)** and awaiting the owner's on-device confirmation
 (enable FCM push → receive test notification).
 Do NOT start Phase 2 work before the owner confirms Phase 1 works on a
-real device. Phases are gated: a phase is done only when its
+real device.
+
+All eight stages are implemented and green in-repo: foundation (permission +
+token lifecycle), global fanout, personalization, event notifications,
+daily/weekly/monthly digests, open/click analytics, and the Phase 5 pair —
+quota-aware resumable fanout + AI-scored send timing (`send-planner.mjs`).
+`docs/FCM-PHASES-EXPLAINED.md` maps the owner's 8 stages onto the 5 blueprint
+phases. The production-deploy gate still stands: a phase is only "done" once
+its output is verified on production and the owner confirms.
+
+SECURITY: the R2 account id must NEVER be hardcoded — read it from the
+`R2_ACCOUNT_ID`/`CLOUDFLARE_ACCOUNT_ID` Worker secret via `r2Host(env)`.
+A real id was committed in `files-storage.mjs` + `worker-bundle.mjs`; both
+are scrubbed and `files-storage.test.mjs` guards the binding. Do not print or
+paste any `ADMISSIONHUB_*` secret value.
+
+
+ Phases are gated: a phase is done only when its
 Output is verified on production, tests are added and green, the full gate
 passes, and the
 owner confirms — only then may the next phase begin. It extends (never

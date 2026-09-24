@@ -70,6 +70,15 @@
     sending: { bn: 'পাঠানো হচ্ছে…', en: 'Sending…' },
     cancelSchedule: { bn: 'বাতিল করুন', en: 'Cancel' },
     clicks: { bn: 'ক্লিক', en: 'clicks' },
+    perfTitle: { bn: 'পারফরম্যান্স', en: 'Performance' },
+    perfSent: { bn: 'পাঠানো', en: 'Sent' },
+    perfDelivered: { bn: 'পৌঁছেছে', en: 'Delivered' },
+    perfOpened: { bn: 'খোলা', en: 'Opened' },
+    perfClicked: { bn: 'ক্লিক', en: 'Clicked' },
+    perfFailed: { bn: 'ব্যর্থ', en: 'Failed' },
+    perfInvalid: { bn: 'মৃত টোকেন', en: 'Invalid tokens' },
+    perfCtr: { bn: 'CTR', en: 'CTR' },
+    perfEngagement: { bn: 'এনগেজমেন্ট', en: 'Engagement' },
     errDuplicate: { bn: 'একই নোটিফিকেশন আগেই পাঠানো/শিডিউল করা আছে (১০ দিনের সুরক্ষা)।', en: 'This notification was already sent or scheduled (10-day protection).' },
     errRate: { bn: 'আজকের সীমা শেষ — কাল আবার চেষ্টা করুন।', en: 'Daily limit reached — try again tomorrow.' },
     errGeneric: { bn: 'পাঠানো যায়নি — আবার চেষ্টা করুন।', en: 'Could not send — please try again.' },
@@ -164,6 +173,7 @@
   /* ── composer state ────────────────────────────────────────────────────── */
   const state = {
     history: [],
+    analytics: null,
     reachEstimate: 0,
     dailyCap: 10,
     templates: [],
@@ -235,6 +245,11 @@
   .ns-label{display:block;font-size:12px;font-weight:600;color:var(--sub);margin:0 0 8px;}
   .ns-card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px;}
   .ns-card+.ns-card{margin-top:10px;}
+  .ns-perf-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:13px;}
+  .ns-stat{background:var(--bg,#f6f8f7);border:1px solid var(--line);border-radius:12px;padding:10px 8px;text-align:center;display:flex;flex-direction:column;gap:1px;}
+  .ns-stat b{font-size:19px;font-weight:800;color:#0c3b2a;line-height:1.1;}
+  .ns-stat span{font-size:10.5px;font-weight:700;color:#7b8a83;text-transform:uppercase;letter-spacing:.02em;}
+  .ns-stat small{font-size:10px;color:#9aa8a1;}
   .ns-row{display:flex;align-items:center;gap:12px;}
   .ns-row-main{flex:1;min-width:0;}
   .ns-row-top{display:flex;align-items:center;gap:8px;margin-bottom:4px;}
@@ -296,7 +311,11 @@
   .ns-meta{display:flex;flex-wrap:wrap;gap:12px;font-size:11.5px;color:var(--sub);margin-top:6px;align-items:center;}
   .ns-meta span{display:inline-flex;align-items:center;gap:4px;}
   .ns-mini{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--card);color:var(--red,#c0392b);font:inherit;font-size:12px;font-weight:600;border-radius:10px;padding:8px 11px;cursor:pointer;}
-  .ns-sheet{position:fixed;inset:0;z-index:2000;background:rgba(12,59,42,.42);display:grid;place-items:center;padding:20px;animation:ns-in .15s ease;}
+  /* keyboard-inset keeps the card above the on-screen keyboard: a fixed sheet
+   * is laid out against the full viewport, so without this the card centres
+   * behind the keyboard and its focused field is unreachable. */
+  .ns-sheet{position:fixed;inset:0;z-index:2000;background:rgba(12,59,42,.42);display:grid;place-items:center;padding:20px 20px calc(20px + var(--keyboard-inset,0px));overflow-y:auto;animation:ns-in .15s ease;}
+  .ns-sheet-card{max-height:calc(100% - 4px);overflow-y:auto;-webkit-overflow-scrolling:touch;}
   .ns-sheet-card{background:var(--card);border-radius:18px;padding:20px;width:100%;max-width:360px;color:var(--text);}
   .ns-sheet-card h3{margin:0 0 4px;font-size:16.5px;font-weight:600;}
   .ns-sheet-card .sub{margin:0 0 14px;font-size:12.5px;color:var(--sub);word-break:break-word;}
@@ -452,9 +471,40 @@
     if (state.tab === 'queue') return queued.length
       ? queued.map(queueItem).join('')
       : `<div class="ns-empty">${icon('queue', 34)}<b>${esc(t('queueEmpty'))}</b><p>${esc(t('queueEmptyHint'))}</p></div>`;
-    return sent.length
+    return (perfPanel() + (sent.length
       ? sent.map(sentItem).join('')
-      : `<div class="ns-empty">${icon('sent', 34)}<b>${esc(t('sentEmpty'))}</b><p>${esc(t('sentEmptyHint'))}</p></div>`;
+      : `<div class="ns-empty">${icon('sent', 34)}<b>${esc(t('sentEmpty'))}</b><p>${esc(t('sentEmptyHint'))}</p></div>`));
+  };
+
+  /* Phase 4 analytics: the funnel the blueprint asks to see, computed server-side
+   * from the real rows. Hidden until there is at least one sent notification, so
+   * an unused Admin Center is not cluttered with zeros. */
+  const perfPanel = () => {
+    const a = state.analytics;
+    if (!a || !a.totals || !a.totals.sent) return '';
+    const tt = a.totals;
+    const stat = (label, value, sub) => `<div class="ns-stat">
+      <b>${esc(String(value))}</b>
+      <span>${esc(label)}</span>
+      ${sub ? `<small>${esc(sub)}</small>` : ''}
+    </div>`;
+    return `<div class="ns-card ns-perf">
+      <div class="ns-row">
+        <div class="ns-avatar">${icon('check', 18)}</div>
+        <div class="ns-row-main">
+          <div class="ns-row-title">${esc(t('perfTitle'))}</div>
+          <div class="ns-row-sub">${esc(t('perfCtr'))} ${tt.ctr}% · ${esc(t('perfEngagement'))} ${tt.engagement}%</div>
+        </div>
+      </div>
+      <div class="ns-perf-grid">
+        ${stat(t('perfSent'), tt.sent)}
+        ${stat(t('perfDelivered'), tt.delivered)}
+        ${stat(t('perfOpened'), tt.opened)}
+        ${stat(t('perfClicked'), tt.clicked)}
+        ${stat(t('perfFailed'), tt.failed)}
+        ${stat(t('perfInvalid'), tt.invalidTokens)}
+      </div>
+    </div>`;
   };
 
   const tabsBar = () => {
@@ -524,6 +574,7 @@
       return;
     }
     state.history = out.data.items || [];
+    if (out.data.analytics) state.analytics = out.data.analytics;
     state.reachEstimate = Number(out.data.reachEstimate || 0);
     state.dailyCap = Number(out.data.dailyCap || 10);
     reRender();

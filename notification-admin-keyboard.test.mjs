@@ -63,6 +63,17 @@ test('template apply and audience/type changes still re-render deliberately', ()
   }
 });
 
+test('the send sheet stays above the on-screen keyboard', () => {
+  /* The sheet is position:fixed, so it is laid out against the full viewport.
+   * Without the keyboard inset its card centres behind the keyboard and the
+   * focused field cannot be reached. */
+  const css = ADMIN.slice(ADMIN.indexOf('.ns-sheet{'), ADMIN.indexOf('.ns-sheet-card{'));
+  assert.match(css, /var\(--keyboard-inset/, 'the sheet reserves the keyboard height');
+  assert.match(css, /overflow-y:auto/, 'and can scroll when the card is taller than the space');
+  const card = ADMIN.slice(ADMIN.indexOf('.ns-sheet-card{'));
+  assert.match(card.slice(0, 200), /max-height:calc\(100% - 4px\)/, 'the card is bounded, not clipped');
+});
+
 /* Phase G — the student's daily-reminder switch lives in the same sheet. */
 test('the settings sheet mounts a slot for the personalized row', () => {
   assert.match(HUB, /id="ahPersonalRow"/, 'a mount point exists next to the FCM row');

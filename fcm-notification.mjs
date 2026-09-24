@@ -22,6 +22,8 @@
  * Storage: D1 binding PROFILE_DB (fcm_devices + notification_settings tables).
  * Rate limits: KV binding GK_KV (registration burst + test sends).
  */
+import { computeAnalytics, AnalyticsStore } from './analytics-notifications.mjs';
+import { retryDecision, isRetryable, advanceFanout, FanoutStore, DEFAULT_WINDOW_BUDGET } from './send-planner.mjs';
 
 const FCM_API_SCOPE = 'https://www.googleapis.com/auth/firebase.messaging';
 const FCM_TOKEN_URL = 'https://oauth2.googleapis.com/token';
@@ -776,20 +778,38 @@ async function fcmSendToTokens(env, targets, { title, body, imageUrl, iconUrl, b
     if (cur) cur.ids.push(t.id);
     else byToken.set(key, { id: t.id, ids: [t.id], token: t.token });
   }
-  const batch = [...byToken.values()].slice(0, FCM_FANOUT_MAX);
+  const batch = [...byToken.values()];
   const idToIds = new Map(batch.map(b => [b.id, b.ids]));
   let sent = 0;
   let failedTotal = 0;
+  let rateLimited = 0;
   const failed = [];
   const badIds = [];
   for (let i = 0; i < batch.length; i += FCM_SEND_CONCURRENCY) {
-    const results = await Promise.all(
-      batch.slice(i, i + FCM_SEND_CONCURRENCY).map(t => fcmSendOne(env, accessToken, t, { title, body, imageUrl, iconUrl, badgeUrl, data: messageData }))
+    const slice = batch.slice(i, i + FCM_SEND_CONCURRENCY);
+    let results = await Promise.all(
+      slice.map(t => fcmSendOne(env, accessToken, t, { title, body, imageUrl, iconUrl, badgeUrl, data: messageData }))
     );
+    /* A rate-limited or unavailable device is worth one backoff retry: FCM's
+     * 429/503 means "later", not "never", and dropping it would silently
+     * under-deliver a valid send. A dead token is never retried. */
+    let attempt = 1;
+    for (;;) {
+      const stuck = results.map((r, idx) => ({ r, idx }))
+        .filter(({ r }) => retryDecision({ reason: r.reason, attempt, maxAttempts: 2 }).retry);
+      if (!stuck.length) break;
+      await new Promise(resolve => setTimeout(resolve, retryDecision({ reason: stuck[0].r.reason, attempt, maxAttempts: 2 }).waitMs));
+      const again = await Promise.all(
+        stuck.map(({ r }) => fcmSendOne(env, accessToken, slice.find(t => t.id === r.id) || slice[0], { title, body, imageUrl, iconUrl, badgeUrl, data: messageData }))
+      );
+      again.forEach((r, k) => { results[stuck[k].idx] = r; });
+      attempt += 1;
+    }
     for (const r of results) {
       if (r.ok) sent += 1;
       else {
         failedTotal += 1;
+        if (isRetryable(r.reason)) rateLimited += 1;
         /* Keep the sample small: it is diagnostic detail, the count is truth. */
         if (failed.length < 20) failed.push({ id: r.id, reason: r.reason });
         if (r.reason === 'unregistered' || r.reason === 'invalid') {
@@ -798,16 +818,29 @@ async function fcmSendToTokens(env, targets, { title, body, imageUrl, iconUrl, b
       }
     }
   }
-  return { sent, failed: failedTotal, failedSample: failed, badIds, truncated: [...byToken.values()].length > batch.length };
+  return { sent, failed: failedTotal, failedSample: failed, badIds, rateLimited };
 }
 
 async function sendGlobal(env, store, row, request) {
   const data = { gid: row.id, link: row.targetUrl || 'notifications', type: row.type, src: 'fcm-global' };
   const iconUrl = iconAbsolute(request);
   const visual = { imageUrl: row.imageUrl, iconUrl, badgeUrl: iconUrl };
-  const topicRes = await fcmSendToTopic(env, row.topic, { title: row.title, body: row.body, ...visual, data });
+  const budget = Math.max(0, Number(env?.FCM_FANOUT_BUDGET || DEFAULT_WINDOW_BUDGET));
+  const ledger = new FanoutStore(env?.PROFILE_DB);
+  const prior = store.available() && ledger.available() ? await ledger.getState(row.id) : null;
+  /* A row still 'scheduled' with progress means an earlier tick sliced it and
+   * owes more. The topic send already reached every subscriber on that first
+   * tick, so resuming must NOT re-fire it — it continues the per-device tail. */
+  const resuming = Boolean(prior && prior.cursor > 0 && prior.status !== 'complete');
+  let topicRes = { ok: resuming, name: null, detail: resuming ? 'resumed' : null };
   let fallbackSent = 0;
   let fallbackFailed = 0;
+  let deferred = 0;
+  let reach = await store.activeDeviceCount();
+
+  if (!resuming) {
+    topicRes = await fcmSendToTopic(env, row.topic, { title: row.title, body: row.body, ...visual, data });
+  }
   /* Hybrid (spec §23 + iOS topic support varies by browser): topic first;
    * only devices WITHOUT the topic get the per-device fallback. If the topic
    * send itself failed, every active device goes through the fallback. */
@@ -815,19 +848,47 @@ async function sendGlobal(env, store, row, request) {
     ? await store.activeDevicesMissingTopic(row.topic)
     : await store.allActiveTokens();
   if (targets.length) {
-    const out = await fcmSendToTokens(env, targets, { title: row.title, body: row.body, ...visual, data });
-    fallbackSent = out.sent;
-    fallbackFailed = out.failed;
-    if (out.badIds.length) await store.markInactive(out.badIds, Date.now());
+    /* Phase 5: a fanout past the per-run budget is sliced and the cursor is
+     * persisted, so the next tick resumes it instead of re-sending to everyone
+     * below the cursor. Small sends fit in one tick and are unchanged. The
+     * cursor is positional, which is why the ledger also records `total`: a
+     * size change restarts rather than skips. */
+    if (budget > 0 && targets.length > budget) {
+      /* advanceFanout reads its own ledger state: a resume continues from the
+       * stored cursor, and a changed audience size restarts from the top. */
+      const plan = await advanceFanout(ledger, row.id, targets.length, { budget });
+      const slice = targets.slice(plan.start, plan.end);
+      const out = await fcmSendToTokens(env, slice, { title: row.title, body: row.body, ...visual, data });
+      fallbackSent = out.sent;
+      fallbackFailed = out.failed;
+      deferred = plan.remaining;
+      if (out.badIds.length) await store.markInactive(out.badIds, Date.now());
+    } else {
+      const out = await fcmSendToTokens(env, targets, { title: row.title, body: row.body, ...visual, data });
+      fallbackSent = out.sent;
+      fallbackFailed = out.failed;
+      if (out.badIds.length) await store.markInactive(out.badIds, Date.now());
+    }
   }
   /* Distinct physical devices, not user rows: the same phone under several
    * accounts is one device and must not inflate the delivered count. */
-  const reach = await store.activeDeviceCount();
+  reach = await store.activeDeviceCount();
   const ok = topicRes.ok || fallbackSent > 0;
   /* A "sent" row must mean at least one device really accepted the message.
    * The delivered count is stored so a future "users get nothing" report can
    * be answered from the row itself instead of re-deriving it from code. */
   const delivered = topicRes.ok ? reach : fallbackSent;
+  /* More ticks are owed: leave the row scheduled so the next cron resumes it
+   * instead of marking it sent and silently dropping the deferred tail. */
+  if (deferred > 0) {
+    await store.updateGlobalStatus(row.id, {
+      status: 'scheduled',
+      error: null,
+      reachEstimate: reach,
+      delivered
+    });
+    return { ok, topicOk: topicRes.ok, fallbackSent, fallbackFailed, reach, delivered, deferred };
+  }
   await store.updateGlobalStatus(row.id, {
     status: ok ? 'sent' : 'failed',
     sentAt: Date.now(),
@@ -836,7 +897,25 @@ async function sendGlobal(env, store, row, request) {
     delivered,
     error: ok ? null : String(topicRes.detail || 'send-failed').slice(0, 200)
   });
-  return { ok, topicOk: topicRes.ok, fallbackSent, fallbackFailed, reach, delivered };
+  return { ok, topicOk: topicRes.ok, fallbackSent, fallbackFailed, reach, delivered, deferred: 0 };
+}
+
+/* Read the effectiveness numbers for a set of global rows: distinct readers per
+ * notification plus the dead-token count. Kept out of the routes so the history
+ * and the analytics endpoint cannot compute the funnel two different ways. */
+async function analyticsFor(env, items) {
+  const store = new AnalyticsStore(env?.PROFILE_DB);
+  if (!store.available()) return computeAnalytics(items, {}, 0);
+  try {
+    const [readCounts, invalidTokens] = await Promise.all([
+      store.readCounts(items.map(r => r.id)),
+      store.inactiveDeviceCount()
+    ]);
+    return computeAnalytics(items, readCounts, invalidTokens);
+  } catch (_) {
+    /* Analytics must never break the history the admin came for. */
+    return computeAnalytics(items, {}, 0);
+  }
 }
 
 /* Cron entry (Cloudflare Cron Triggers): send every due scheduled global.
@@ -914,6 +993,7 @@ export async function handleFcmNotificationRequest(request, env) {
     '/api/notifications/global/cancel',
     '/api/notifications/global/image',
     '/api/notifications/history',
+    '/api/notifications/analytics',
     '/api/notifications/templates'
   ]);
   if (ADMIN_PATHS.has(path)) {
@@ -1033,12 +1113,24 @@ export async function handleFcmNotificationRequest(request, env) {
 
     if (path === '/api/notifications/history' && request.method === 'GET') {
       if (!store.available()) return jsonResponse(request, { error: 'storage-unavailable' }, 503);
+      const items = await store.recentGlobals(50);
+      /* Phase 4 analytics ride along with the history the admin already loads,
+       * so the Sent tab shows real effectiveness with no extra request. */
+      const analytics = await analyticsFor(env, items);
       return jsonResponse(request, {
         ok: true,
-        items: await store.recentGlobals(50),
+        items,
+        analytics,
         reachEstimate: await store.activeDeviceCount(),
         dailyCap: GLOBAL_DAILY_CAP
       });
+    }
+
+    if (path === '/api/notifications/analytics' && request.method === 'GET') {
+      if (!store.available()) return jsonResponse(request, { error: 'storage-unavailable' }, 503);
+      const items = await store.recentGlobals(50);
+      const analytics = await analyticsFor(env, items);
+      return jsonResponse(request, { ok: true, ...analytics });
     }
 
     if (path === '/api/notifications/templates' && request.method === 'GET') {
