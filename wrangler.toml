@@ -31,6 +31,11 @@ OTP_F_DAILY_QUOTA = "100"
 OTP_G_DAILY_QUOTA = "150"
 TELEGRAM_AUTH_WEBHOOK_URL = "https://admission-gk.admissionhub.workers.dev/api/auth/v1/telegram/webhook"
 TELEGRAM_AUTH_DAILY_QUOTA = "172800"
+# Cloudflare Workers AI backup list (Phase 9 M2.5). Free 10,000 Neurons/day. Only
+# model names live here; CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_AI_API_KEY are
+# secrets (wrangler secret put) and never belong in [vars]. Leaving either
+# secret unbound simply removes the provider from the chain.
+AGENT_CLOUDFLARE_MODELS = "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
 
 [triggers]
 crons = ["* * * * *"]

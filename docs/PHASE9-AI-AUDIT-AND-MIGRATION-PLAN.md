@@ -100,7 +100,8 @@ Missing → required before Phase 9 completes:
 | Step | Deliverable | Risk | Reversible | Status |
 |---|---|---|---|---|
 | **M1** | This audit | none | n/a | **DONE** |
-| **M2** | Adapter boundary — normalized provider interface; zero behaviour change | low | yes | **DONE** (see §8) |
+| **M2** | Adapter boundary — normalized provider interface; zero behaviour change | low | yes | **DONE** (see §7) |
+| **M2.5** | Cloudflare Workers AI backup — first non-Gemini/Groq provider on the new boundary | low | yes | **DONE** (see §8) |
 | **M3** | Formal Gateway — single internal entry with feature flag `USE_AI_GATEWAY` | low | yes | pending |
 | **M4** | Context Engine — typed, permission-scoped, minimum-necessary; legacy path kept | medium | yes | pending |
 | **M5** | Prompt Registry — existing prompt becomes `v1`; A/B before replacing | low | yes | pending |
@@ -112,7 +113,7 @@ Missing → required before Phase 9 completes:
 
 Rule (§49): no step starts until the previous step is stable and approved.
 
-## 8. M2 completion record — Provider Adapter layer
+## 7. M2 completion record — Provider Adapter layer
 
 **Where:** `ai-agent.js` (stays with the orchestrator deliberately — a separate module
 would create a circular import, since adapters reuse `geminiStream` / `groqStream` /
@@ -157,6 +158,40 @@ loop, the bad-set marking and the response shapes are unchanged.
 else in the repo imports it.
 
 **Next gate:** M3 (formal Gateway with `USE_AI_GATEWAY` feature flag) — awaiting approval.
+
+## 8. M2.5 completion record — Cloudflare Workers AI backup
+
+Added the first non-Gemini/Groq provider on top of the M2 boundary, to prove the
+boundary actually makes provider expansion cheap.
+
+**What was added:**
+
+| Symbol | Purpose |
+|---|---|
+| `openAiCompatStream({url,key,model,payload,signal})` | one shared SSE reader for every OpenAI-wire-format provider; the next such provider is a URL + model list, not another copy-pasted reader |
+| `CLOUDFLARE_ADAPTER` | `chatStream()` against `api.cloudflare.com/client/v4/accounts/<id>/ai/v1/chat/completions`; `chatOnce()` rejects (`oneShot: false`), same honesty rule as Groq |
+
+**Router:** Cloudflare is appended **after** Gemini and Groq, and only when
+**both** `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_AI_API_KEY` are bound. Either
+missing → the slot is simply absent, exactly like a missing `GEMINI_KEYS`.
+`AGENT_CLOUDFLARE_MODELS` (in `[vars]`, comma-separated) overrides the model
+list because Cloudflare rotates its catalogue.
+
+**Secrets:** account id and API token go in via `wrangler secret put` or the
+dashboard (encrypted) — never in `[vars]`. Test M2.5-৯ asserts the token never
+appears in the request URL.
+
+**Verification:** `ai-provider-adapters.test.mjs` 27/27 (10 new M2.5 cases,
+including an E2E where Gemini *and* Groq both return 500 and Cloudflare streams
+the answer); `ai-agent-f1.test.mjs` 44/44; bundle + sw-manifest clean.
+
+**Known, unrelated:** `startup-ai-regression.test.mjs` case ১৫ fails on the
+current `origin/main` base as well — reproduced with every M2.5 change stashed,
+so it is pre-existing and not caused by this work.
+
+**To activate:** bind the two secrets, then the provider joins the chain
+automatically — no further code change.
+
 
 
 ## 9. Mandatory STOP (§54)
