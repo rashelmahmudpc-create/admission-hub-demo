@@ -14,7 +14,7 @@
     "test:session": "node --test --test-concurrency=1 session-recovery-api.test.mjs session-recovery-chaos.test.mjs",
     "test:phase2": "npm run test:auth && npm run test:email",
     "test:production-auth": "npm run test:auth && npm run test:email && npm run test:native-auth && npm run test:fcm",
-    "test:fcm": "node --test fcm-notification.test.mjs notif-sheet.test.mjs"
+    "test:fcm": "node --test --test-concurrency=1 fcm-notification.test.mjs fcm-global.test.mjs fcm-global-contract.test.mjs notif-sheet.test.mjs"
   },
   "dependencies": {
     "jsdom": "^29.1.1"

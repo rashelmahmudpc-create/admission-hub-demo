@@ -13,6 +13,13 @@ import {
 const VALID_SESSION = `sess-${'a'.repeat(40)}`.slice(0, 64); // 40–96 chars, [A-Za-z0-9_-]
 const USER_ID = 'user-fcm-1';
 
+/* Registration now also subscribes the device to the topic server-side (an
+ * extra outbound call). Default the transport to "offline" so the suite stays
+ * hermetic: the subscribe is designed to be best-effort, and every test that
+ * needs FCM/OAuth stubs fetch itself and still restores to this offline stub. */
+const OFFLINE_FETCH = async () => { throw new Error('offline-test-transport'); };
+globalThis.fetch = OFFLINE_FETCH;
+
 // ── in-memory D1 (pattern-matched on the module's fixed SQL) ───────────────
 function makeFakeD1() {
   const devices = new Map(); // id → row

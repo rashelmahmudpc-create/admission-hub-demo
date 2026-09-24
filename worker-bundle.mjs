@@ -8071,6 +8071,8 @@ var __publicAuthTest = Object.freeze({
 // fcm-notification.mjs
 var FCM_API_SCOPE = "https://www.googleapis.com/auth/firebase.messaging";
 var FCM_TOKEN_URL = "https://oauth2.googleapis.com/token";
+var IID_BATCH_ADD_URL = "https://iid.googleapis.com/iid/v1:batchAdd";
+var IID_BATCH_REMOVE_URL = "https://iid.googleapis.com/iid/v1:batchRemove";
 var AUTHORITY_NAME2 = "admission-hub-global-auth-v1";
 var SESSION_COOKIE = "__Host-ah_session";
 var SESSION_TOKEN_RE = /^[A-Za-z0-9_-]{40,96}$/;
@@ -8192,6 +8194,10 @@ var FcmStore = class {
     ]);
     try {
       await this.#d1.prepare("ALTER TABLE fcm_devices ADD COLUMN topics TEXT").run();
+    } catch (_) {
+    }
+    try {
+      await this.#d1.prepare("ALTER TABLE global_notifications ADD COLUMN delivered INTEGER").run();
     } catch (_) {
     }
     this.#ready = true;
@@ -8336,6 +8342,10 @@ var FcmStore = class {
       sets.push("reach_estimate=?");
       binds.push(patch.reachEstimate);
     }
+    if (patch.delivered !== void 0) {
+      sets.push("delivered=?");
+      binds.push(patch.delivered);
+    }
     if (patch.error !== void 0) {
       sets.push("error=?");
       binds.push(patch.error);
@@ -8364,7 +8374,7 @@ var FcmStore = class {
   async recentGlobals(limit = 50) {
     await this.#ensureTables();
     const res = await this.#d1.prepare(
-      `SELECT id, type, title, body, audience, topic, status, scheduled_at, sent_at, reach_estimate, clicks, error, created_at
+      `SELECT id, type, title, body, audience, topic, status, scheduled_at, sent_at, reach_estimate, delivered, clicks, error, created_at
        FROM global_notifications ORDER BY created_at DESC, id DESC LIMIT ?`
     ).bind(limit).all();
     return (res?.results || []).map((row) => ({
@@ -8378,6 +8388,7 @@ var FcmStore = class {
       scheduledAt: row.scheduled_at ? Number(row.scheduled_at) : null,
       sentAt: row.sent_at ? Number(row.sent_at) : null,
       reachEstimate: row.reach_estimate ? Number(row.reach_estimate) : null,
+      delivered: row.delivered === null || row.delivered === void 0 ? null : Number(row.delivered),
       clicks: Number(row.clicks || 0),
       error: row.error,
       createdAt: Number(row.created_at)
@@ -8586,6 +8597,7 @@ var GLOBAL_DAILY_CAP = 10;
 var GLOBAL_MAX_SCHEDULE_DAYS = 30;
 var GN_ID_RE = /^gn-[a-z0-9]{12}$/;
 var TOPIC_RE = /^[a-z][a-z0-9_-]{0,63}$/;
+var GLOBAL_TOPIC = "all_students";
 var GLOBAL_TEMPLATES = Object.freeze([
   {
     key: "new-content",
@@ -8647,9 +8659,35 @@ async function fcmSendToTopic(env, topic, { title, body, imageUrl, data }) {
   if (res.ok && out?.name) return { ok: true, name: out.name };
   return { ok: false, reason: "error", detail: String(out?.error?.message || "").slice(0, 200) };
 }
+async function iidBatch(env, url, token, topic) {
+  if (!TOPIC_RE.test(topic)) return { ok: false, reason: "invalid-topic" };
+  let accessToken;
+  try {
+    accessToken = await fcmAccessToken(env);
+  } catch {
+    return { ok: false, reason: "auth" };
+  }
+  let res;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({ to: `/topics/${topic}`, registration_tokens: [token] })
+    });
+  } catch {
+    return { ok: false, reason: "network" };
+  }
+  const out = await res.json().catch(() => ({}));
+  if (!res.ok) return { ok: false, reason: "error", detail: String(out?.error || "").slice(0, 200) };
+  const entry = (out?.results || [])[0];
+  if (entry && entry.error) return { ok: false, reason: String(entry.error).slice(0, 60) };
+  return { ok: true };
+}
+var subscribeDeviceToTopic = (env, token, topic) => iidBatch(env, IID_BATCH_ADD_URL, token, topic);
+var unsubscribeDeviceFromTopic = (env, token, topic) => iidBatch(env, IID_BATCH_REMOVE_URL, token, topic);
 var FCM_SEND_URL = (project) => `https://fcm.googleapis.com/v1/projects/${project}/messages:send`;
 var FCM_SEND_CONCURRENCY = 10;
-var FCM_FALLBACK_MAX = 200;
+var FCM_FANOUT_MAX = 2e4;
 async function fcmSendOne(env, accessToken, target, { title, body, data: messageData }) {
   const message = { token: target.token, notification: { title, body }, data: messageData };
   let res;
@@ -8677,19 +8715,25 @@ async function fcmSendOne(env, accessToken, target, { title, body, data: message
 async function fcmSendToTokens(env, targets, { title, body, data }) {
   const accessToken = await fcmAccessToken(env);
   const messageData = Object.fromEntries(Object.entries(data || {}).map(([k, v]) => [k, String(v)]));
-  const batch = targets.slice(0, FCM_FALLBACK_MAX);
+  const batch = targets.slice(0, FCM_FANOUT_MAX);
   let sent = 0;
+  let failedTotal = 0;
   const failed = [];
+  const badIds = [];
   for (let i = 0; i < batch.length; i += FCM_SEND_CONCURRENCY) {
     const results = await Promise.all(
       batch.slice(i, i + FCM_SEND_CONCURRENCY).map((t) => fcmSendOne(env, accessToken, t, { title, body, data: messageData }))
     );
     for (const r of results) {
       if (r.ok) sent += 1;
-      else failed.push({ id: r.id, reason: r.reason });
+      else {
+        failedTotal += 1;
+        if (failed.length < 20) failed.push({ id: r.id, reason: r.reason });
+        if (r.reason === "unregistered" || r.reason === "invalid") badIds.push(r.id);
+      }
     }
   }
-  return { sent, failed };
+  return { sent, failed: failedTotal, failedSample: failed, badIds, truncated: targets.length > batch.length };
 }
 async function sendGlobal(env, store, row) {
   const data = { gid: row.id, link: row.targetUrl || "notifications", type: row.type, src: "fcm-global" };
@@ -8700,20 +8744,21 @@ async function sendGlobal(env, store, row) {
   if (targets.length) {
     const out = await fcmSendToTokens(env, targets, { title: row.title, body: row.body, data });
     fallbackSent = out.sent;
-    fallbackFailed = out.failed.length;
-    const badIds = out.failed.filter((f) => f.reason === "unregistered" || f.reason === "invalid").map((f) => f.id);
-    if (badIds.length) await store.markInactive(badIds, Date.now());
+    fallbackFailed = out.failed;
+    if (out.badIds.length) await store.markInactive(out.badIds, Date.now());
   }
   const reach = await store.activeDeviceCount();
   const ok = topicRes.ok || fallbackSent > 0;
+  const delivered = topicRes.ok ? reach : fallbackSent;
   await store.updateGlobalStatus(row.id, {
     status: ok ? "sent" : "failed",
     sentAt: Date.now(),
     fcmMessageId: topicRes.name || null,
     reachEstimate: reach,
+    delivered,
     error: ok ? null : String(topicRes.detail || "send-failed").slice(0, 200)
   });
-  return { ok, topicOk: topicRes.ok, fallbackSent, fallbackFailed, reach };
+  return { ok, topicOk: topicRes.ok, fallbackSent, fallbackFailed, reach, delivered };
 }
 async function runScheduledGlobalNotifications(env) {
   if (!fcmConfigured(env)) return { processed: 0 };
@@ -8817,13 +8862,15 @@ async function handleFcmNotificationRequest(request, env) {
       };
       await store.insertGlobal(row);
       if (body.deviceToken) {
+        const adminDeviceToken = String(body.deviceToken);
         try {
-          await store.setDeviceTopics(adminUserId, String(body.deviceToken), topic);
+          const sub = await subscribeDeviceToTopic(env, adminDeviceToken, topic);
+          if (sub.ok) await store.setDeviceTopics(adminUserId, adminDeviceToken, topic);
         } catch (_) {
         }
       }
       const result = await sendGlobal(env, store, row);
-      return jsonResponse(request, { ok: result.ok, id, status: result.ok ? "sent" : "failed", reachEstimate: result.reach }, result.ok ? 201 : 502);
+      return jsonResponse(request, { ok: result.ok, id, status: result.ok ? "sent" : "failed", reachEstimate: result.reach, delivered: result.delivered }, result.ok ? 201 : 502);
     }
     if (path === "/api/notifications/global/schedule" && request.method === "POST") {
       if (!store.available()) return jsonResponse(request, { error: "storage-unavailable" }, 503);
@@ -8922,7 +8969,14 @@ async function handleFcmNotificationRequest(request, env) {
     const deviceInfo = String(body.deviceInfo || "").slice(0, 120);
     const now = Date.now();
     await store.upsertDevice({ userId, token, platform, browser, deviceInfo, now });
-    return jsonResponse(request, { ok: true, registered: true, devices: (await store.activeDevices(userId)).length }, 201);
+    let topicOk = false;
+    try {
+      const sub = await subscribeDeviceToTopic(env, token, GLOBAL_TOPIC);
+      topicOk = sub.ok;
+      if (sub.ok) await store.setDeviceTopics(userId, token, GLOBAL_TOPIC);
+    } catch (_) {
+    }
+    return jsonResponse(request, { ok: true, registered: true, topicSubscribed: topicOk, devices: (await store.activeDevices(userId)).length }, 201);
   }
   if (path === "/api/notifications/unregister-token" && request.method === "POST") {
     if (!store.available()) return jsonResponse(request, { error: "storage-unavailable" }, 503);
@@ -9021,8 +9075,13 @@ async function handleFcmNotificationRequest(request, env) {
     const token = String(body.token || "");
     const topics = Array.isArray(body.topics) ? body.topics.map((t) => String(t)).filter((t) => TOPIC_RE.test(t)).slice(0, 10) : [];
     if (token.length < TOKEN_MIN_LEN || topics.length < 1) return jsonResponse(request, { error: "invalid-payload" }, 400);
-    await store.setDeviceTopics(userId, token, topics.join(","));
-    return jsonResponse(request, { ok: true, topics });
+    const accepted = [];
+    for (const topic of topics) {
+      const sub = await subscribeDeviceToTopic(env, token, topic);
+      if (sub.ok) accepted.push(topic);
+    }
+    if (accepted.length) await store.setDeviceTopics(userId, token, accepted.join(","));
+    return jsonResponse(request, { ok: accepted.length === topics.length, topics: accepted });
   }
   if (path === "/api/notifications/topics/unsubscribe" && request.method === "POST") {
     if (!store.available()) return jsonResponse(request, { error: "storage-unavailable" }, 503);
@@ -9030,6 +9089,8 @@ async function handleFcmNotificationRequest(request, env) {
     if (!body) return jsonResponse(request, { error: "invalid-json" }, 400);
     const token = String(body.token || "");
     if (token.length < TOKEN_MIN_LEN) return jsonResponse(request, { error: "invalid-payload" }, 400);
+    const topics = Array.isArray(body.topics) && body.topics.length ? body.topics.map((t) => String(t)).filter((t) => TOPIC_RE.test(t)).slice(0, 10) : [GLOBAL_TOPIC];
+    for (const topic of topics) await unsubscribeDeviceFromTopic(env, token, topic);
     await store.setDeviceTopics(userId, token, "");
     return jsonResponse(request, { ok: true });
   }

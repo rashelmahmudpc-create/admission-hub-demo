@@ -196,10 +196,12 @@
 
   /* Phase 2: subscribe this device to the global topic (spec §2). Best
    * effort — a topic failure never breaks enablement; the server's
-   * multi-token fallback still reaches non-topic devices. */
+   * multi-token fallback still reaches non-topic devices. The server call is
+   * independent of `subscribeToTopic` because the client-side call can throw
+   * without a custom VAPID key, and the server-side subscribe is what makes
+   * the topic path real (it records the topic only if FCM accepts it). */
   const ensureTopic = async (messaging, token) => {
     try {
-      await messaging.subscribeToTopic(GLOBAL_TOPIC);
       await boundedFetch('/topics/subscribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -207,6 +209,7 @@
       });
       stateSet({ topic: GLOBAL_TOPIC });
     } catch (_) { /* server fallback covers this device */ }
+    try { await messaging.subscribeToTopic(GLOBAL_TOPIC); } catch (_) { /* server-side subscribe already done */ }
   };
 
   /* User taps Enable → browser permission → FCM token → register on server.

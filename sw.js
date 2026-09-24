@@ -30,7 +30,7 @@ const APP_SHELL = [
   './data-protection.js?v=dp-v3-fastboot',
   './dashboard-v2.js?v=dash2f15-inbox',
   './ai-agent-chat.js?v=agent-f1-ui-chatv18-fresh',
-  './notification-fcm.js?v=fcm-p1-v10',
+  './notification-fcm.js?v=fcm-p1-v11',
   './notification-inbox.js?v=notif-inbox-v6',
   './notification-admin.js?v=admin-notif-v4',
   './icons/icon-192.png',
@@ -41,7 +41,7 @@ const APP_SHELL = [
 // A truncated/corrupt download is NEVER written to the shell cache.
 const ASSET_DIGESTS = {
 /* sw-manifest:start */
-  "./index.html": "93903989b2fcac5a71e4a950afb62d3780d37d9f588aaae169be410df0fe3fdb",
+  "./index.html": "19f3640b9a5f9f933278c822993a1a33fde6dd13025fecc8559fd677f8c6d429",
   "./manifest.json": "11a85ae594fc629b11605daeda3f9afe4ef95215a55a29f9cc423314bfb275a4",
   "./manifest.webmanifest": "5be476009a140eabd088bd972bd4d345b9c4f4a055cd6e4f08774b9cb4afaf52",
   "./dashboard-v2.css?v=dash2f13-theme": "4f4c9295b487b8186fd45c006a96a43bcaf896a1a5b871f506a05874a8e00c99",
@@ -57,7 +57,7 @@ const ASSET_DIGESTS = {
   "./data-protection.js?v=dp-v3-fastboot": "359dc907ade4bcb3a6a722385969ebb6af47f7e436e6cdf2cce0dd6b7343723d",
   "./dashboard-v2.js?v=dash2f15-inbox": "bea4ccad52b85c482d3fef5a7f2b2eec54dcdb125597a22411c4839b81783a49",
   "./ai-agent-chat.js?v=agent-f1-ui-chatv18-fresh": "36a11f8d5dec5a5bf1b8fa86db06b9a34e01ad27c931f37aadbffe6e6f4930e5",
-  "./notification-fcm.js?v=fcm-p1-v10": "5459b90d360cdf30cf818fa9791f6f4e92bf23b49b4e7b824710624b96be6ac8",
+  "./notification-fcm.js?v=fcm-p1-v11": "55f6b466151aef92317d78c99b682bcc484a37734cf6027b650ff61747773aaf",
   "./notification-inbox.js?v=notif-inbox-v6": "ab3a57740d96311c57086af3e0893e356257b093d09560ce8110b731e702d995",
   "./notification-admin.js?v=admin-notif-v4": "65d78f73f16c972559bc71706b3aad714a607c1c47246639549dcf2a066bac98",
   "./icons/icon-192.png": "777ce5566fbeff0f2e384c787c8dde4f47d7c869e455c6e577a503decd4f1683",
