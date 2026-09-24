@@ -41,6 +41,11 @@ TELEGRAM_AUTH_DAILY_QUOTA = "172800"
 # flip to "enabled" to append the scoped context bundle to the system prompt.
 USE_CONTEXT_ENGINE = "enabled"
 
+# Phase 9 M9 Write/Execute actions. The layer starts inert; "enabled" turns on
+# /api/ai/actions/* for signed-in students. Every action still needs an explicit
+# single-use confirmation (propose → confirm), and every attempt is audited.
+USE_WRITE_ACTIONS = "enabled"
+
 [triggers]
 crons = ["* * * * *"]
 

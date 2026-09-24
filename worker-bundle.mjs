@@ -572,6 +572,9 @@ function describeResponseValidation() {
 // action-engine.js
 var ACTION_VERSION = "act-v1";
 var ENABLED = false;
+function actionsEnabled(env) {
+  return String(env?.USE_WRITE_ACTIONS || "").toLowerCase() === "enabled";
+}
 var PERMISSION2 = Object.freeze({
   WRITE: "write",
   EXECUTE: "execute"
@@ -745,12 +748,13 @@ function appendAudit(list, record, callerUid) {
   if (!record || record.ownerUid !== owner) return base;
   return [Object.freeze({ ...record }), ...base].slice(0, MAX_AUDIT);
 }
-function describeActions() {
+function describeActions(env) {
+  const on = actionsEnabled(env);
   return Object.freeze({
     version: ACTION_VERSION,
-    enabled: ENABLED,
+    enabled: on,
     confirmTtlMs: CONFIRM_TTL_MS,
-    declared: listActions()
+    declared: listActions().map((a) => ({ ...a, enabled: on && a.enabled }))
   });
 }
 
@@ -1515,7 +1519,7 @@ async function agentStatus(request, env, uid) {
     tools: { version: TOOL_REGISTRY_VERSION, declared: listTools() },
     memory: { version: MEMORY_VERSION, mode: "auto", scope: "account-only" },
     response: describeResponseValidation(),
-    actions: describeActions(),
+    actions: describeActions(env),
     context: ctxOn ? describeContext(buildContext({ uid, prefs: null, stats: null, onboarding: null, memoryOn: true })) : { enabled: false }
   });
 }
@@ -1783,9 +1787,9 @@ var public_worker_default = {
         if (!identity.authenticated) return json({ error: "sign_in_required", message: "AI action ব্যবহার করতে লগইন করো।" }, 401);
         const body = await request.json().catch(() => null);
         const name = String(body?.action || "");
-        const auth = authorizeAction(name, { uid: identity.uid, args: body?.args });
+        const auth = authorizeAction(name, { uid: identity.uid, args: body?.args, enabled: actionsEnabled(env) });
         if (!auth.allowed) return json({ error: "action_denied", reason: auth.reason }, 403);
-        const proposal = makeProposal(name, { uid: identity.uid, args: auth.args, id: crypto.randomUUID() });
+        const proposal = makeProposal(name, { uid: identity.uid, args: auth.args, id: crypto.randomUUID(), enabled: actionsEnabled(env) });
         if (!proposal) return json({ error: "action_denied", reason: "no-proposal" }, 403);
         try {
           await env.PUB_KV.put("actprop:" + identity.uid, JSON.stringify(proposal), { expirationTtl: Math.ceil((proposal.expiresAt - Date.now()) / 1e3) });
@@ -1808,7 +1812,7 @@ var public_worker_default = {
         } catch (_) {
           stored = null;
         }
-        const decision = confirmProposal(stored, token, identity.uid);
+        const decision = confirmProposal(stored, token, identity.uid, { enabled: actionsEnabled(env) });
         if (!decision.ok) {
           const audit2 = await readAudit(env, identity.uid);
           if (stored) await writeAudit(env, identity.uid, appendAudit(audit2, makeAuditRecord({ proposal: stored, status: decision.status, uid: identity.uid, detail: decision.reason }), identity.uid));
@@ -1833,7 +1837,7 @@ var public_worker_default = {
       if (path === "/api/ai/actions/audit" && request.method === "GET") {
         const identity = await aiRequestIdentity(request, env, false);
         if (!identity.authenticated) return json({ error: "sign_in_required", message: "AI action ব্যবহার করতে লগইন করো।" }, 401);
-        return json({ ok: true, actionsEnabled: ENABLED, audit: await readAudit(env, identity.uid) });
+        return json({ ok: true, actionsEnabled: actionsEnabled(env), audit: await readAudit(env, identity.uid) });
       }
       if (path === "/api/ai/chat" && request.method === "POST") {
         const identity = await aiRequestIdentity(request, env, false);

@@ -866,7 +866,7 @@ export async function agentStatus(request, env, uid) {
     tools: { version: TOOL_REGISTRY_VERSION, declared: listTools() },
     memory: { version: MEMORY_VERSION, mode: 'auto', scope: 'account-only' },
     response: describeResponseValidation(),
-    actions: describeActions(),
+    actions: describeActions(env),
     context: ctxOn
       ? describeContext(buildContext({ uid, prefs: null, stats: null, onboarding: null, memoryOn: true }))
       : { enabled: false }
