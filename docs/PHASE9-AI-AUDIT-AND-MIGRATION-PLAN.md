@@ -102,8 +102,8 @@ Missing → required before Phase 9 completes:
 | **M1** | This audit | none | n/a | **DONE** |
 | **M2** | Adapter boundary — normalized provider interface; zero behaviour change | low | yes | **DONE** (see §7) |
 | **M2.5** | Cloudflare Workers AI backup — first non-Gemini/Groq provider on the new boundary | low | yes | **DONE** (see §8) |
-| **M3** | Formal Gateway — single internal entry with feature flag `USE_AI_GATEWAY` | low | yes | pending |
-| **M4** | Context Engine — typed, permission-scoped, minimum-necessary; legacy path kept | medium | yes | pending |
+| **M3** | Formal Gateway — single internal entry with feature flag `USE_AI_GATEWAY` | low | yes | superseded by M4 |
+| **M4** | Context Engine — typed, permission-scoped, minimum-necessary; legacy path kept | medium | yes | **DONE** (see §10) |
 | **M5** | Prompt Registry — existing prompt becomes `v1`; A/B before replacing | low | yes | pending |
 | **M6** | Tool Registry — READ-ONLY tools only; cross-user isolation enforced at the tool boundary | high | yes | pending |
 | **M7** | Memory Engine — long-term layer, default OFF, explicit consent | medium | yes | pending |
@@ -201,9 +201,48 @@ automatically.
 
 ## 9. Mandatory STOP (§54)
 
-Per the blueprint, implementation must not begin without owner approval. M2 was
-implemented only after that approval; **M3 onward is not started**.
+Per the blueprint, implementation must not begin without owner approval. The
+owner approved continuing, so **M4 was implemented** while M3 (a formal Gateway
+entry point) was folded into it: the Context Engine, not a renamed entry
+function, is what the "AI must recognise the student" capability actually needs,
+and the flag pattern M3 called for (`USE_AI_GATEWAY`) is carried by
+`USE_CONTEXT_ENGINE` instead.
 
-**Awaiting decision:** approve M3 (formal Gateway behind `USE_AI_GATEWAY`),
-reorder the plan, jump to M4 (Context Engine, the "AI must recognise the student"
-work), or stop here.
+**Next gate:** M5 (Prompt Registry) — awaiting approval.
+
+## 10. M4 completion record — Context Engine
+
+**Deliverable:** `context-engine.js` — a typed, permission-scoped, minimum-necessary
+context layer, wired into `agentChat` behind `USE_CONTEXT_ENGINE` (default
+`disabled`).
+
+**What was added:**
+
+| Symbol | Purpose |
+|---|---|
+| `CATEGORY` | typed categories: identity / profile / academic / performance / activity / preference / onboarding / memory |
+| `SCOPE` + `scopeAtLeast` | ordered permission ladder NONE → MINIMAL → SUMMARY → FULL_ALLOWED |
+| `identityKind(uid)` | reads the server-side uid prefix (`account-` / `guest-`); the client can never claim a kind |
+| `resolveScopes({uid, prefs, stats, onboarding, memoryOn})` | decides each category's scope; a category with no legitimate source resolves to NONE rather than being guessed at |
+| `buildContext(input)` | immutable bundle; a NONE category carries no payload at all; the raw uid is never included, only its kind |
+| `renderContext(bundle)` | renders only the allowed lines, and states the minimum-necessary rule to the model |
+| `describeContext(bundle)` | PII-free allowed/denied summary, surfaced in `agentStatus.context` |
+
+**Scopes today:** a signed-in `account-` uid gets identity SUMMARY (the AI knows
+it is talking to a signed-in student, never who); a `guest-` uid gets identity
+NONE. `profile` and `activity` are NONE until a real source exists. `preference`
+and `onboarding` are FULL_ALLOWED only when they were actually supplied.
+
+**Legacy path preserved:** with the flag `disabled`, `buildSystemPrompt` output is
+byte-identical to the pre-M4 prompt — asserted by test M4-১৬ and the E2E pair
+M4-১৮/১৯ (flag off → no context block reaches the provider; flag on → it does).
+
+**Variables:** `USE_CONTEXT_ENGINE = "disabled"` in `[vars]`. The Worker sits on
+the Workers Free 64-variable ceiling, so `AGENT_CLOUDFLARE_MODELS` was removed
+from `[vars]` in exchange — the router falls back to the identical default
+`@cf/meta/llama-3.3-70b-instruct-fp8-fast`, so the Cloudflare backup is unaffected.
+
+**Verification:** `phase9-m4-context-engine.test.mjs` **19/19**; regression
+`ai-agent-f1` 44/44, `ai-provider-adapters` 27/27, `account-retirement` 31/31;
+bundle in sync; deployed version `e950512f` reports
+`providers.cloudflare: true` and `context: { enabled: false }`; guest chat E2E OK.
