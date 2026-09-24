@@ -159,6 +159,58 @@ function getPromptText(id) {
   return entry ? entry.text : null;
 }
 
+// tool-registry.js
+var TOOL_REGISTRY_VERSION = "tr-v1";
+var PERMISSION = Object.freeze({
+  READ: "read",
+  WRITE: "write",
+  EXECUTE: "execute"
+});
+var RISK = Object.freeze({
+  LOW: "low",
+  MEDIUM: "medium",
+  HIGH: "high"
+});
+var REQUIRED_TOOL_FIELDS = Object.freeze([
+  "name",
+  "description",
+  "permission",
+  "inputSchema",
+  "outputSchema",
+  "riskLevel",
+  "enabled"
+]);
+var schema = (type, properties, required = []) => Object.freeze({ type, properties: Object.freeze({ ...properties }), required: Object.freeze([...required]) });
+var REGISTRY2 = Object.freeze({
+  "student.progress.read": Object.freeze({
+    name: "student.progress.read",
+    description: "Read the signed-in student's own practice stats (exams, questions, accuracy, streak, mistakes).",
+    permission: PERMISSION.READ,
+    inputSchema: schema("object", {}, []),
+    outputSchema: schema("object", {
+      ownerUid: { type: "string" },
+      exams: { type: "number" },
+      questions: { type: "number" },
+      accuracy: { type: "number" },
+      streak: { type: "number" },
+      mistakes: { type: "number" }
+    }, ["ownerUid"]),
+    riskLevel: RISK.LOW,
+    // Isolation marker: this tool may only ever run against the caller's own data.
+    ownerScoped: true,
+    // Enabled because it is READ-only and owner-scoped — the one class of tool
+    // Phase 9 permits. Enabled ≠ wired: the chat path does not call it yet, so
+    // this grants no runtime capability. WRITE/EXECUTE stay disabled until M9.
+    enabled: true
+  })
+});
+var OWNER_ARG_KEYS = Object.freeze(["uid", "owneruid", "owner", "userid", "accountid", "user", "account", "deviceid"]);
+function listTools() {
+  return Object.values(REGISTRY2).map(
+    ({ name, description, permission, riskLevel, enabled, ownerScoped }) => ({ name, description, permission, riskLevel, enabled, ownerScoped: ownerScoped !== false })
+  );
+}
+
 // ai-agent.js
 var AGENT_VERSION = "agent-f1";
 var SYSTEM_PROMPT_V = "sys-f1-3-ai-personalization";
@@ -872,6 +924,7 @@ async function agentStatus(request, env, uid) {
     models: { fast: GEMINI_MODELS.FAST, smart: GEMINI_MODELS.SMART },
     limits: { perDay: Math.max(10, Math.min(500, Number(env.AGENT_DAILY_CAP || 80))) },
     streaming: true,
+    tools: { version: TOOL_REGISTRY_VERSION, declared: listTools() },
     context: ctxOn ? describeContext(buildContext({ uid, prefs: null, stats: null, onboarding: null, memoryOn: true })) : { enabled: false }
   });
 }
@@ -13553,8 +13606,8 @@ var SqliteAuthRepository = class _SqliteAuthRepository {
   }
   async ping() {
     const row = this.#one("SELECT value FROM auth_meta WHERE key='schema_version'");
-    const schema = Number(row?.value || 0);
-    return { ok: schema >= 3, storage: "sqlite-durable-object", schema };
+    const schema2 = Number(row?.value || 0);
+    return { ok: schema2 >= 3, storage: "sqlite-durable-object", schema: schema2 };
   }
   async cleanup(now) {
     return this.#transaction(() => {

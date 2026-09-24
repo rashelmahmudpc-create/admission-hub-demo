@@ -527,3 +527,23 @@ to `SYSTEM_PROMPT_V`.
   registry.
 - `prompt-registry.js` is pure data plus helpers: no `env`, no I/O, no worker API.
 
+## Tools are declared, never executed yet (Phase 9 M6)
+
+`tool-registry.js` declares tools and enforces cross-user isolation at the tool
+boundary (finding S6). It is pure data plus pure guards — no `env`, no I/O.
+
+- **Nothing executes.** The chat path in `ai-agent.js` must not call
+  `authorizeToolCall()` until a later, owner-approved step wires execution. A test
+  (M6-১৩) fails if `executeTool`/`runTool`/`invokeTool`/`authorizeToolCall`
+  appears in `ai-agent.js`.
+- **Owner comes from the uid alone.** `resolveToolOwner()` accepts only an
+  `account-` uid. Never trust an owner supplied by the model or the request body;
+  `authorizeToolCall()` rejects eight owner-ish argument keys and returns the
+  caller as the owner, and `guardToolResult()` blocks any result whose `ownerUid`
+  does not match the caller.
+- **READ-only is the ceiling.** `validateToolRegistry()` fails if any non-READ
+  tool is enabled; WRITE/EXECUTE stay off until M9. Every tool must be
+  `ownerScoped: true`.
+- Adding a tool means adding a full declaration (name/description/permission/
+  inputSchema/outputSchema/riskLevel/enabled); the validator rejects partial ones.
+

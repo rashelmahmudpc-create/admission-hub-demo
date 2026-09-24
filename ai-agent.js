@@ -17,6 +17,7 @@
  */
 import { buildContext, renderContext, describeContext, CONTEXT_VERSION } from './context-engine.js';
 import { getPromptText, BASE_PROMPT_ID } from './prompt-registry.js';
+import { listTools, TOOL_REGISTRY_VERSION } from './tool-registry.js';
 
 export const AGENT_VERSION = 'agent-f1';
 export const SYSTEM_PROMPT_V = 'sys-f1-3-ai-personalization';
@@ -795,6 +796,7 @@ export async function agentStatus(request, env, uid) {
     models: { fast: GEMINI_MODELS.FAST, smart: GEMINI_MODELS.SMART },
     limits: { perDay: Math.max(10, Math.min(500, Number(env.AGENT_DAILY_CAP || 80))) },
     streaming: true,
+    tools: { version: TOOL_REGISTRY_VERSION, declared: listTools() },
     context: ctxOn
       ? describeContext(buildContext({ uid, prefs: null, stats: null, onboarding: null, memoryOn: true }))
       : { enabled: false }
@@ -822,5 +824,6 @@ export const __test = {
   safetyGate, authVerificationGuidance, routerChain, geminiTextFromChunk, sseParse, ProviderError,
   adapterFor, providerChain, PROVIDER_ADAPTERS, GEMINI_ADAPTER, GROQ_ADAPTER, CLOUDFLARE_ADAPTER,
   INTENTS, TIER, GEMINI_MODELS, AGENT_VERSION, SYSTEM_PROMPT_V,
-  contextEngineEnabled, buildContext, renderContext, describeContext, CONTEXT_VERSION, sanitizeProfileContext
+  contextEngineEnabled, buildContext, renderContext, describeContext, CONTEXT_VERSION, sanitizeProfileContext,
+  listTools, TOOL_REGISTRY_VERSION
 };
