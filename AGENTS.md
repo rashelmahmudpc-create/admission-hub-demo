@@ -617,3 +617,36 @@ text); the client learned one new SSE frame.
 - `agentStatus` advertises `response: { version: 'rv-v1', enforced: true,
   classes, blocking }`.
 
+## Write/execute actions ship OFF and need a single-use confirmation (Phase 9 M9)
+
+`action-engine.js` is the write/execute permission layer the audit called missing:
+READ/WRITE/EXECUTE are separate classes, WRITE/EXECUTE are off by default, every
+action needs an explicit confirmation, and every attempt is audited. Like M6/M7 it
+is pure data plus pure guards — no `env`, no I/O, no model call. The Worker's
+`/api/ai/actions/*` routes do the KV writes; the engine only decides whether they
+may happen.
+
+- **The layer is OFF.** `ENABLED` is `false`, so the three routes refuse with
+  `layer-disabled` and the chat advertises `actions.enabled: false`. Do not flip
+  it without an owner decision. `validateActionEngine()` fails if any action would
+  be live while the switch is off.
+- **`ready` ≠ enabled.** `prefs.write` is declared `ready: true` (the declaration
+  is complete) but `listActions()` reports `enabled: ENABLED && ready`, so it stays
+  inert. Turning it on is a separate, owner-approved step that also needs a
+  confirmation UI in the chat.
+- **Confirmation is mandatory, short-lived, single-use.** A proposal carries
+  `expiresAt = now + 5 min`. `confirmProposal()` checks the layer, the caller's
+  ownership, the token and the expiry. The Worker deletes the stored proposal
+  *before* the write, so a replayed token finds nothing (`no-proposal`).
+- **Owner is the server-validated uid, never the body.** `resolveActionOwner()`
+  only accepts an `account-` prefix. `sanitizeActionArgs()` *rejects* (does not
+  strip) a payload naming an owner, and keeps only declared argument keys.
+- **Every attempt is audited** under `actaudit:<uid>`: `proposed`, then
+  `confirmed` / `denied` / `expired` / `failed`. `parseAudit()` keeps only the
+  caller's own records and treats corrupt history as empty; history is bounded at
+  `MAX_AUDIT` (200).
+- **Guests leave no trace** — all three routes return `401 sign_in_required`
+  before reading a body or touching KV.
+- `agentStatus` advertises `actions: { version: 'act-v1', enabled: false,
+  confirmTtlMs, declared }` — shape only, never a capability.
+

@@ -108,7 +108,7 @@ Missing ‚Üí required before Phase 9 completes:
 | **M6** | Tool Registry ‚Äî READ-ONLY tools only; cross-user isolation enforced at the tool boundary | high | yes | **DONE** (see ¬ß13) |
 | **M7** | Memory Engine — long-term layer (owner override: automatic, no toggle) | medium | yes | **DONE** (see §14) |
 | **M8** | Response validation + structured output | medium | yes | **DONE** (see §15) |
-| **M9** | Write/Execute actions ‚Äî disabled by default, confirmation required | high | yes | pending |
+| **M9** | Write/Execute actions ‚Äî disabled by default, confirmation required | high | yes | **DONE** (see §16) |
 | **M10** | Observability, cost engine, full regression + hardening | low | yes | pending |
 
 Rule (¬ß49): no step starts until the previous step is stable and approved.
@@ -491,3 +491,57 @@ pre-existing, unrelated failures (`profile-core`, `session-recovery-chaos`).
 
 **Next gate:** awaiting owner direction for the milestone after M8 (M9 is
 write/execute actions — high risk, disabled by default).
+
+## 16. M9 completion record — Write / Execute Actions
+
+**Where:** `action-engine.js` (pure data + pure guards — no `env`, no I/O, no
+model call). `public-worker.js` owns the three routes and the only KV writes;
+`ai-agent.js` exposes the metadata through `agentStatus`.
+
+**The layer is OFF.** `ENABLED` is `false`, exactly as the blueprint demands
+("no write/execute enabled by default"). This milestone ships the *mechanism* —
+declaration, proposal, single-use confirmation, audit trail — without granting a
+live capability. Turning it on is a separate, owner-approved step: flip `ENABLED`
+in one place. `validateActionEngine()` encodes the rule, so a future addition
+cannot be live while the switch is off.
+
+**WRITE and EXECUTE are separate classes.** `PERMISSION` carries both; `read` is
+deliberately absent (READ lives in the M6 tool registry). `prefs.write` is the one
+declared WRITE action; no EXECUTE action is declared yet.
+
+**Confirmation is mandatory, short-lived and single-use.**
+`makeProposal()` refuses to build anything unless authorization passes, and stamps
+`expiresAt = now + 5 min`. `confirmProposal()` checks the layer, the caller's
+ownership, the token match and the expiry before approving. The Worker deletes the
+stored proposal *before* performing the write, so a replayed token finds nothing
+(`already-consumed` → `no-proposal`). An old "yes" can never act on a stale
+proposal.
+
+**Owner is the server-validated uid, never the body.** `resolveActionOwner()`
+returns a uid only for an `account-` prefix, so a guest owns nothing and is
+refused before any argument is read. `sanitizeActionArgs()` rejects — rather than
+silently strips — a payload naming an owner, keeping only declared argument keys,
+so the attempt stays visible.
+
+**Every attempt is audited.** `makeAuditRecord()` stamps the owner and bounds the
+summary; `parseAudit()` keeps only the caller's own records and treats corrupt
+history as empty; `appendAudit()` keeps the newest `MAX_AUDIT` (200). The pipeline
+records `proposed`, then `confirmed` (or `denied` / `expired` / `failed`).
+
+**Guests leave no trace.** All three routes (`/api/ai/actions/propose`,
+`/confirm`, `/audit`) return `401 sign_in_required` for a guest before reading a
+body or touching KV — the same gate M7 added for chat.
+
+**Verification:** `phase9-m9-action-engine.test.mjs` **40/40** — engine shape and
+the default-OFF rule (M9-১…৫), authorization including the layer-off refusal
+(M9-৬…৮), owner isolation (M9-৯…১৩), proposal construction and expiry
+(M9-১৪…১৭), the confirmation gates — layer, owner, token, expiry, missing,
+replay (M9-১৮…২৪), the audit trail (M9-২৫…৩০), route wiring (M9-৩১…৩৩), and
+end-to-end route behaviour while the layer is off (M9-৩৪…৩৯). M8 33/33, M7 33/33,
+M6 15/15, M5 10/10, M4 29/29, `ai-agent-f1` 44/44, adapters 27/27, guards and
+`check:worker-bundle` stay green; the full native-auth suite keeps its two
+pre-existing, unrelated failures (`profile-core`, `session-recovery-chaos`).
+
+**Next gate:** M9 ships inert. Enabling `prefs.write` (or adding an EXECUTE
+action) is a separate owner decision, and needs a confirmation UI in the chat
+before it can be used live.

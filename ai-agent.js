@@ -20,6 +20,7 @@ import { getPromptText, BASE_PROMPT_ID } from './prompt-registry.js';
 import { listTools, TOOL_REGISTRY_VERSION } from './tool-registry.js';
 import { extractMemoryCandidates, makeMemory, upsertMemory, parseMemory, renderMemory, resolveMemoryOwner, MEMORY_VERSION } from './memory-engine.js';
 import { validateResponse, describeResponseValidation, RESPONSE_VALIDATION_VERSION } from './response-validator.js';
+import { describeActions, ACTION_VERSION } from './action-engine.js';
 
 export const AGENT_VERSION = 'agent-f1';
 export const SYSTEM_PROMPT_V = 'sys-f1-3-ai-personalization';
@@ -865,6 +866,7 @@ export async function agentStatus(request, env, uid) {
     tools: { version: TOOL_REGISTRY_VERSION, declared: listTools() },
     memory: { version: MEMORY_VERSION, mode: 'auto', scope: 'account-only' },
     response: describeResponseValidation(),
+    actions: describeActions(),
     context: ctxOn
       ? describeContext(buildContext({ uid, prefs: null, stats: null, onboarding: null, memoryOn: true }))
       : { enabled: false }
@@ -895,5 +897,6 @@ export const __test = {
   contextEngineEnabled, buildContext, renderContext, describeContext, CONTEXT_VERSION, sanitizeProfileContext,
   listTools, TOOL_REGISTRY_VERSION,
   extractMemoryCandidates, makeMemory, upsertMemory, parseMemory, renderMemory, MEMORY_VERSION,
-  validateResponse, describeResponseValidation, RESPONSE_VALIDATION_VERSION
+  validateResponse, describeResponseValidation, RESPONSE_VALIDATION_VERSION,
+  describeActions, ACTION_VERSION
 };

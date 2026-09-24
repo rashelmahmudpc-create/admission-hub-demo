@@ -569,6 +569,191 @@ function describeResponseValidation() {
   };
 }
 
+// action-engine.js
+var ACTION_VERSION = "act-v1";
+var ENABLED = false;
+var PERMISSION2 = Object.freeze({
+  WRITE: "write",
+  EXECUTE: "execute"
+});
+var RISK2 = Object.freeze({
+  LOW: "low",
+  MEDIUM: "medium",
+  HIGH: "high"
+});
+var STATUS = Object.freeze({
+  PROPOSED: "proposed",
+  CONFIRMED: "confirmed",
+  DENIED: "denied",
+  EXPIRED: "expired",
+  REPLAYED: "replayed",
+  FAILED: "failed"
+});
+var CONFIRM_TTL_MS = 5 * 60 * 1e3;
+var MAX_AUDIT = 200;
+var REQUIRED_ACTION_FIELDS = Object.freeze([
+  "name",
+  "description",
+  "permission",
+  "riskLevel",
+  "ready",
+  "args"
+]);
+var OWNER_ARG_KEYS2 = Object.freeze(["uid", "owneruid", "owner", "userid", "accountid", "user", "account", "deviceid"]);
+var MAX_SUMMARY_LEN = 220;
+var MAX_ARG_LEN = 160;
+var ARG_SPECS = Object.freeze({
+  "prefs.write": Object.freeze(["langStyle", "tone", "responseLen"])
+});
+var REGISTRY3 = Object.freeze({
+  "prefs.write": Object.freeze({
+    name: "prefs.write",
+    description: "Save the signed-in student's own AI personalization (language style, tone, response length).",
+    permission: PERMISSION2.WRITE,
+    riskLevel: RISK2.LOW,
+    // Isolation marker: only ever applied to the caller's own account.
+    ownerScoped: true,
+    args: Object.freeze([...ARG_SPECS["prefs.write"]]),
+    // Declared and ready, but inert: the master `ENABLED` switch above is off,
+    // so nothing here runs until the owner turns the layer on. `ready` means the
+    // declaration is complete, not that the action may run.
+    ready: true
+  })
+});
+function getAction(name) {
+  const entry = REGISTRY3[String(name || "")];
+  return entry || null;
+}
+function listActions() {
+  return Object.values(REGISTRY3).map(
+    ({ name, description, permission, riskLevel, ready, ownerScoped, args }) => ({ name, description, permission, riskLevel, enabled: ENABLED && ready === true, ownerScoped: ownerScoped !== false, args: [...args] })
+  );
+}
+function resolveActionOwner(uid) {
+  return String(uid || "").startsWith("account-") ? String(uid) : null;
+}
+function sanitizeActionArgs(name, args) {
+  const spec = ARG_SPECS[String(name || "")];
+  if (!spec) return { ok: false, reason: "unknown-action", args: null };
+  if (args === void 0 || args === null) return { ok: true, reason: "ok", args: Object.freeze({}) };
+  if (typeof args !== "object" || Array.isArray(args)) return { ok: false, reason: "bad-args", args: null };
+  for (const key of Object.keys(args)) {
+    if (OWNER_ARG_KEYS2.includes(String(key).toLowerCase())) {
+      return { ok: false, reason: "owner-from-args-rejected", args: null };
+    }
+  }
+  const out = {};
+  for (const key of spec) {
+    if (args[key] === void 0) continue;
+    if (typeof args[key] !== "string") return { ok: false, reason: "bad-arg-type", args: null };
+    out[key] = args[key].slice(0, MAX_ARG_LEN);
+  }
+  return { ok: true, reason: "ok", args: Object.freeze(out) };
+}
+function authorizeAction(name, { uid, args, enabled = ENABLED } = {}) {
+  if (!enabled) return { allowed: false, reason: "layer-disabled", owner: null, args: null };
+  const action = getAction(name);
+  if (!action) return { allowed: false, reason: "unknown-action", owner: null, args: null };
+  if (action.ready !== true) return { allowed: false, reason: "action-not-ready", owner: null, args: null };
+  const owner = resolveActionOwner(uid);
+  if (!owner) return { allowed: false, reason: "no-owner-identity", owner: null, args: null };
+  const clean = sanitizeActionArgs(name, args);
+  if (!clean.ok) return { allowed: false, reason: clean.reason, owner: null, args: null };
+  return { allowed: true, reason: "ok", owner, args: clean.args };
+}
+function makeProposal(name, { uid, args, now = Date.now(), id, enabled = ENABLED } = {}) {
+  const auth = authorizeAction(name, { uid, args, enabled });
+  if (!auth.allowed) return null;
+  const action = getAction(name);
+  const proposalId = String(id || "").trim();
+  if (!proposalId) return null;
+  return Object.freeze({
+    id: proposalId,
+    action: action.name,
+    permission: action.permission,
+    riskLevel: action.riskLevel,
+    args: auth.args,
+    ownerUid: auth.owner,
+    summary: proposalSummary(action.name, auth.args),
+    status: STATUS.PROPOSED,
+    createdAt: now,
+    expiresAt: now + CONFIRM_TTL_MS
+  });
+}
+function proposalSummary(name, args = {}) {
+  const a = args || {};
+  let line;
+  if (name === "prefs.write") {
+    const bits = [];
+    if (a.langStyle) bits.push("ভাষা: " + a.langStyle);
+    if (a.tone) bits.push("সুর: " + a.tone);
+    if (a.responseLen) bits.push("উত্তরের দৈর্ঘ্য: " + a.responseLen);
+    line = bits.length ? "তোমার AI পছন্দ সেভ করব — " + bits.join(", ") : "তোমার AI পছন্দ সেভ করব।";
+  } else {
+    line = "এই কাজটা করব: " + String(name || "");
+  }
+  return line.slice(0, MAX_SUMMARY_LEN);
+}
+function confirmProposal(proposal, token, callerUid, { now = Date.now(), enabled = ENABLED } = {}) {
+  if (!enabled) return { ok: false, reason: "layer-disabled", status: STATUS.DENIED };
+  if (!proposal || typeof proposal !== "object") return { ok: false, reason: "no-proposal", status: STATUS.DENIED };
+  const owner = resolveActionOwner(callerUid);
+  if (!owner) return { ok: false, reason: "no-owner-identity", status: STATUS.DENIED };
+  if (String(proposal.ownerUid || "") !== owner) return { ok: false, reason: "owner-mismatch", status: STATUS.DENIED };
+  const wanted = String(proposal.id || "");
+  if (!wanted || String(token || "") !== wanted) return { ok: false, reason: "bad-token", status: STATUS.DENIED };
+  if (!Number.isFinite(proposal.expiresAt) || now > proposal.expiresAt) {
+    return { ok: false, reason: "expired", status: STATUS.EXPIRED };
+  }
+  return {
+    ok: true,
+    reason: "ok",
+    status: STATUS.CONFIRMED,
+    action: proposal.action,
+    args: proposal.args || Object.freeze({}),
+    owner
+  };
+}
+function makeAuditRecord({ proposal, status, uid, at = Date.now(), detail = "" } = {}) {
+  const owner = resolveActionOwner(uid);
+  if (!owner) return null;
+  return Object.freeze({
+    action: String(proposal?.action || "").slice(0, 64),
+    status: Object.values(STATUS).includes(status) ? status : STATUS.FAILED,
+    ownerUid: owner,
+    args: Object.freeze({ ...proposal?.args || {} }),
+    summary: String(proposal?.summary || "").slice(0, MAX_SUMMARY_LEN),
+    detail: String(detail || "").slice(0, MAX_SUMMARY_LEN),
+    at
+  });
+}
+function parseAudit(raw, callerUid) {
+  const owner = resolveActionOwner(callerUid);
+  if (!owner) return [];
+  let list = [];
+  try {
+    const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+    if (Array.isArray(parsed)) list = parsed;
+  } catch (_) {
+    list = [];
+  }
+  return list.filter((r) => r && String(r.ownerUid || "") === owner).slice(0, MAX_AUDIT).map((r) => Object.freeze({ ...r, ownerUid: owner }));
+}
+function appendAudit(list, record, callerUid) {
+  const owner = resolveActionOwner(callerUid);
+  const base = parseAudit(list, callerUid);
+  if (!record || record.ownerUid !== owner) return base;
+  return [Object.freeze({ ...record }), ...base].slice(0, MAX_AUDIT);
+}
+function describeActions() {
+  return Object.freeze({
+    version: ACTION_VERSION,
+    enabled: ENABLED,
+    confirmTtlMs: CONFIRM_TTL_MS,
+    declared: listActions()
+  });
+}
+
 // ai-agent.js
 var AGENT_VERSION = "agent-f1";
 var SYSTEM_PROMPT_V = "sys-f1-3-ai-personalization";
@@ -1330,6 +1515,7 @@ async function agentStatus(request, env, uid) {
     tools: { version: TOOL_REGISTRY_VERSION, declared: listTools() },
     memory: { version: MEMORY_VERSION, mode: "auto", scope: "account-only" },
     response: describeResponseValidation(),
+    actions: describeActions(),
     context: ctxOn ? describeContext(buildContext({ uid, prefs: null, stats: null, onboarding: null, memoryOn: true })) : { enabled: false }
   });
 }
@@ -1508,6 +1694,17 @@ var publishGlobal = async (env, full) => {
   await env.PUB_KV.put("pubContentMeta", JSON.stringify(meta));
   return { published: true, v: doc.v, counts: meta.counts };
 };
+var readAudit = async (env, uid) => {
+  try {
+    const raw = await env.PUB_KV.get("actaudit:" + uid);
+    return parseAudit(raw, uid);
+  } catch (_) {
+    return [];
+  }
+};
+var writeAudit = async (env, uid, records) => {
+  await env.PUB_KV.put("actaudit:" + uid, JSON.stringify(records));
+};
 var admin = async (request, env, path) => {
   const token = String(request.headers.get("Authorization") || "").replace("Bearer ", "").trim();
   if (!env.ADMIN_TOKEN || token !== env.ADMIN_TOKEN) return json({ error: "forbidden" }, 403);
@@ -1580,6 +1777,63 @@ var public_worker_default = {
           return json({ error: "save_failed", message: "এখন save করা গেল না — আবার চেষ্টা করো।" }, 500);
         }
         return json({ ok: true, prefs });
+      }
+      if (path === "/api/ai/actions/propose" && request.method === "POST") {
+        const identity = await aiRequestIdentity(request, env, false);
+        if (!identity.authenticated) return json({ error: "sign_in_required", message: "AI action ব্যবহার করতে লগইন করো।" }, 401);
+        const body = await request.json().catch(() => null);
+        const name = String(body?.action || "");
+        const auth = authorizeAction(name, { uid: identity.uid, args: body?.args });
+        if (!auth.allowed) return json({ error: "action_denied", reason: auth.reason }, 403);
+        const proposal = makeProposal(name, { uid: identity.uid, args: auth.args, id: crypto.randomUUID() });
+        if (!proposal) return json({ error: "action_denied", reason: "no-proposal" }, 403);
+        try {
+          await env.PUB_KV.put("actprop:" + identity.uid, JSON.stringify(proposal), { expirationTtl: Math.ceil((proposal.expiresAt - Date.now()) / 1e3) });
+          const audit = await readAudit(env, identity.uid);
+          await writeAudit(env, identity.uid, appendAudit(audit, makeAuditRecord({ proposal, status: STATUS.PROPOSED, uid: identity.uid }), identity.uid));
+        } catch (_) {
+          return json({ error: "propose_failed", message: "এখন proposal তৈরি করা গেল না — আবার চেষ্টা করো।" }, 500);
+        }
+        return json({ ok: true, proposal: { id: proposal.id, action: proposal.action, permission: proposal.permission, riskLevel: proposal.riskLevel, summary: proposal.summary, expiresAt: proposal.expiresAt } });
+      }
+      if (path === "/api/ai/actions/confirm" && request.method === "POST") {
+        const identity = await aiRequestIdentity(request, env, false);
+        if (!identity.authenticated) return json({ error: "sign_in_required", message: "AI action ব্যবহার করতে লগইন করো।" }, 401);
+        const body = await request.json().catch(() => null);
+        const token = String(body?.token || "");
+        let stored = null;
+        try {
+          const raw = await env.PUB_KV.get("actprop:" + identity.uid);
+          stored = raw ? JSON.parse(raw) : null;
+        } catch (_) {
+          stored = null;
+        }
+        const decision = confirmProposal(stored, token, identity.uid);
+        if (!decision.ok) {
+          const audit2 = await readAudit(env, identity.uid);
+          if (stored) await writeAudit(env, identity.uid, appendAudit(audit2, makeAuditRecord({ proposal: stored, status: decision.status, uid: identity.uid, detail: decision.reason }), identity.uid));
+          return json({ error: "confirm_denied", reason: decision.reason }, 403);
+        }
+        try {
+          await env.PUB_KV.delete("actprop:" + identity.uid);
+          if (decision.action === "prefs.write") {
+            const prefs = sanitizeAiPrefs(decision.args);
+            await env.PUB_KV.put("aiprefs:" + identity.uid, JSON.stringify(prefs));
+          }
+        } catch (_) {
+          const audit2 = await readAudit(env, identity.uid);
+          await writeAudit(env, identity.uid, appendAudit(audit2, makeAuditRecord({ proposal: stored, status: STATUS.FAILED, uid: identity.uid, detail: "write-failed" }), identity.uid));
+          return json({ error: "action_failed", message: "কাজটা সম্পন্ন করা গেল না — আবার চেষ্টা করো।" }, 500);
+        }
+        const audit = await readAudit(env, identity.uid);
+        const record = makeAuditRecord({ proposal: stored, status: STATUS.CONFIRMED, uid: identity.uid });
+        await writeAudit(env, identity.uid, appendAudit(audit, record, identity.uid));
+        return json({ ok: true, action: decision.action, status: STATUS.CONFIRMED });
+      }
+      if (path === "/api/ai/actions/audit" && request.method === "GET") {
+        const identity = await aiRequestIdentity(request, env, false);
+        if (!identity.authenticated) return json({ error: "sign_in_required", message: "AI action ব্যবহার করতে লগইন করো।" }, 401);
+        return json({ ok: true, actionsEnabled: ENABLED, audit: await readAudit(env, identity.uid) });
       }
       if (path === "/api/ai/chat" && request.method === "POST") {
         const identity = await aiRequestIdentity(request, env, false);
