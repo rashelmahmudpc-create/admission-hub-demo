@@ -570,9 +570,9 @@ boundary (finding S6). It is pure data plus pure guards — no `env`, no I/O.
   `authorizeToolCall()` rejects eight owner-ish argument keys and returns the
   caller as the owner, and `guardToolResult()` blocks any result whose `ownerUid`
   does not match the caller.
-- **READ-only is the ceiling.** `validateToolRegistry()` fails if any non-READ
-  tool is enabled; WRITE/EXECUTE stay off until M9. Every tool must be
-  `ownerScoped: true`.
+- **READ-only is the ceiling for the tool registry.** `validateToolRegistry()`
+  fails if any non-READ tool is enabled; write/execute live in the separate M9
+  action layer (`action-engine.js`). Every tool must be `ownerScoped: true`.
 - Adding a tool means adding a full declaration (name/description/permission/
   inputSchema/outputSchema/riskLevel/enabled); the validator rejects partial ones.
 
@@ -637,27 +637,31 @@ text); the client learned one new SSE frame.
   `done`; the client swaps it in via `textContent` (never `innerHTML`). A clean
   stream emits no `replace` frame.
 - **Shape stays backward compatible.** `text`/`intent`/`pv`/`agent`/`authoritative`
-  are unchanged; `structured` is additive. Envelope `actions` stays empty until M9.
+  are unchanged; `structured` is additive. Envelope `actions` comes from the M9
+  action layer.
 - `agentStatus` advertises `response: { version: 'rv-v1', enforced: true,
   classes, blocking }`.
 
-## Write/execute actions ship OFF and need a single-use confirmation (Phase 9 M9)
+## Write/execute actions are live, gated by a config kill-switch (Phase 9 M9)
 
 `action-engine.js` is the write/execute permission layer the audit called missing:
-READ/WRITE/EXECUTE are separate classes, WRITE/EXECUTE are off by default, every
-action needs an explicit confirmation, and every attempt is audited. Like M6/M7 it
-is pure data plus pure guards — no `env`, no I/O, no model call. The Worker's
-`/api/ai/actions/*` routes do the KV writes; the engine only decides whether they
-may happen.
+READ/WRITE/EXECUTE are separate classes, every action needs an explicit
+confirmation, and every attempt is audited. Like M6/M7 it is pure data plus pure
+guards — no `env`, no I/O, no model call. The Worker's `/api/ai/actions/*` routes
+do the KV writes; the engine only decides whether they may happen.
 
-- **The layer is OFF.** `ENABLED` is `false`, so the three routes refuse with
-  `layer-disabled` and the chat advertises `actions.enabled: false`. Do not flip
-  it without an owner decision. `validateActionEngine()` fails if any action would
-  be live while the switch is off.
+- **The layer is live.** `ENABLED` is `true` (owner decision, 2026-09-24), so the
+  routes work for signed-in students and the chat advertises
+  `actions.enabled: true`. `validateActionEngine()` still fails if a declaration
+  is inconsistent.
+- **Turning it off needs no code change.** `actionsEnabled(env)` is the
+  kill-switch: it returns `false` only for `USE_WRITE_ACTIONS = "disabled"`, and
+  `true` for any other value including unset. The variable **must not** be added
+  to `wrangler.toml`: the Worker already sits on the Workers Free ceiling of 64
+  variables and a 65th is rejected on deploy (`code: 10055`). Bind it as a
+  dashboard secret instead.
 - **`ready` ≠ enabled.** `prefs.write` is declared `ready: true` (the declaration
-  is complete) but `listActions()` reports `enabled: ENABLED && ready`, so it stays
-  inert. Turning it on is a separate, owner-approved step that also needs a
-  confirmation UI in the chat.
+  is complete); `listActions()` reports `enabled: ENABLED && ready`.
 - **Confirmation is mandatory, short-lived, single-use.** A proposal carries
   `expiresAt = now + 5 min`. `confirmProposal()` checks the layer, the caller's
   ownership, the token and the expiry. The Worker deletes the stored proposal
@@ -671,6 +675,9 @@ may happen.
   `MAX_AUDIT` (200).
 - **Guests leave no trace** — all three routes return `401 sign_in_required`
   before reading a body or touching KV.
-- `agentStatus` advertises `actions: { version: 'act-v1', enabled: false,
-  confirmTtlMs, declared }` — shape only, never a capability.
+- `agentStatus` advertises `actions: { version: 'act-v1', enabled, confirmTtlMs,
+  declared }` — shape only, never a capability.
+- **Not yet usable end to end:** there is no in-chat confirmation UI, so a
+  student cannot confirm a proposal from the interface. Building that UI is the
+  next step.
 
