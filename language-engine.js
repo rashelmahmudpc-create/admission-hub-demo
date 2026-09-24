@@ -270,6 +270,8 @@
     'বাতিল': 'Cancel',
     'এই পছন্দ শুধু তোমার AI চ্যাটে প্রয়োগ হয় — অন্য user-এর সাথে কখনো share হয় না।': 'This preference applies only to your AI chat — it is never shared with another user.',
     'AI তোমার আগের কথা মনে রাখবে (device+account-এ save হয়)': 'The AI remembers your earlier conversation (saved to this device and account)',
+    'AI আমার নাম জানবে': 'The AI knows my name',
+    'শুধু প্রথম নাম AI-কে পাঠানো হবে — পুরো নাম, mobile, email বা জন্মতারিখ কখনো নয়। বন্ধ থাকলে AI নাম ছাড়াই সব কিছু বুঝবে।': 'Only your first name is shared with the AI — never your full name, mobile, email or date of birth. When this is off the AI still understands everything, just without your name.',
     'ছবি ঠিক করো': 'Adjust photo',
     'ছবি ধরে টানুন · দুই আঙুলে বা +/− দিয়ে বড়-ছোট করুন': 'Drag the photo · pinch or use +/− to zoom',
     'Sign in to create your profile — এক identity, সব device-এ।': 'Sign in to create your profile — one identity across all your devices.',

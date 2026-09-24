@@ -26,15 +26,18 @@ function identityKind(uid) {
   if (value.startsWith("guest-")) return "guest";
   return "unknown";
 }
-function resolveScopes({ uid, prefs, stats, onboarding, memoryOn } = {}) {
+function resolveScopes({ uid, prefs, stats, onboarding, profile, memoryOn } = {}) {
   const kind = identityKind(uid);
   const hasPrefs = !!prefs && typeof prefs === "object";
   const hasStats = !!stats && typeof stats === "object" && Object.keys(stats).length > 0;
   const hasOnboarding = !!onboarding && typeof onboarding === "object";
+  const hasProfile = !!profile && typeof profile === "object" && Object.keys(profile).length > 0;
   return Object.freeze({
     identity: kind === "account" ? SCOPE.SUMMARY : SCOPE.NONE,
-    profile: SCOPE.NONE,
-    // no server-side profile source wired yet
+    // Academic profile is SUMMARY only for a signed-in account that supplied an
+    // already-sanitized payload. Defence in depth: the caller also gates the
+    // payload by uid prefix, so a guest request can never resolve here.
+    profile: kind === "account" && hasProfile ? SCOPE.SUMMARY : SCOPE.NONE,
     academic: hasOnboarding ? SCOPE.SUMMARY : SCOPE.NONE,
     performance: hasStats ? SCOPE.SUMMARY : SCOPE.NONE,
     activity: SCOPE.NONE,
@@ -49,6 +52,7 @@ function buildContext(input = {}) {
   const kind = identityKind(input.uid);
   const data = {};
   if (scopeAtLeast(scope.identity, SCOPE.MINIMAL)) data.identity = Object.freeze({ kind });
+  if (allowed(scope.profile) && input.profile) data.profile = Object.freeze({ ...input.profile });
   if (allowed(scope.performance) && input.stats) data.performance = Object.freeze({ ...input.stats });
   if (allowed(scope.preference) && input.prefs) data.preference = Object.freeze({ ...input.prefs });
   if (allowed(scope.onboarding) && input.onboarding) data.onboarding = input.onboarding;
@@ -87,6 +91,21 @@ function renderContext(bundle) {
     if (s.streak != null) bits.push(`streak=${s.streak}d`);
     if (s.mistakes != null) bits.push(`mistakes=${s.mistakes}`);
     if (bits.length) lines.push(`- performance: ${bits.join(" ")}`);
+  }
+  if (scopeAtLeast(scope.profile, SCOPE.MINIMAL) && data.profile) {
+    const p = data.profile;
+    const bits = [];
+    if (p.firstName) bits.push(`name: ${p.firstName}`);
+    if (p.institutionName) bits.push(`${p.institutionType || "institution"}: ${p.institutionName}`);
+    if (p.district) bits.push(`district: ${p.district}`);
+    if (p.admissionSession) bits.push(`session: ${p.admissionSession}`);
+    if (p.academicGoal) bits.push(`goal: ${p.academicGoal}`);
+    if (Array.isArray(p.subjects) && p.subjects.length) bits.push(`subjects: ${p.subjects.join(", ")}`);
+    if (Array.isArray(p.targets) && p.targets.length) {
+      const t = p.targets[0];
+      bits.push(`target: ${[t.name, t.unit, t.year].filter(Boolean).join(" / ")}`);
+    }
+    if (bits.length) lines.push(`- profile (academic): ${bits.join(" | ")}`);
   }
   if (scopeAtLeast(scope.academic, SCOPE.MINIMAL) && data.onboarding) {
     const q = String(data.onboarding.institutionQuery || "").trim();
@@ -221,7 +240,7 @@ function capStats(stats) {
   if (stats.mistakes != null) s.mistakes = num(stats.mistakes, 0, 1e5);
   return Object.keys(s).length ? s : null;
 }
-var AI_PREFS_DEFAULT = Object.freeze({ langStyle: "bn", tone: "friendly", responseLen: "balanced", memory: true });
+var AI_PREFS_DEFAULT = Object.freeze({ langStyle: "bn", tone: "friendly", responseLen: "balanced", memory: true, shareName: false });
 function sanitizeAiPrefs(value) {
   if (!value || typeof value !== "object") return null;
   const pick = (v, set, dflt) => set.has(String(v)) ? String(v) : dflt;
@@ -229,9 +248,45 @@ function sanitizeAiPrefs(value) {
     langStyle: pick(value.langStyle, /* @__PURE__ */ new Set(["bn", "en", "mix"]), AI_PREFS_DEFAULT.langStyle),
     tone: pick(value.tone, /* @__PURE__ */ new Set(["friendly", "professional", "simple", "motivating", "direct"]), AI_PREFS_DEFAULT.tone),
     responseLen: pick(value.responseLen, /* @__PURE__ */ new Set(["short", "balanced", "detailed"]), AI_PREFS_DEFAULT.responseLen),
-    memory: value.memory === false ? false : true
+    memory: value.memory === false ? false : true,
+    // Opt-in: the AI may greet the student by first name. Off unless explicitly on.
+    shareName: value.shareName === true
   };
 }
+var PROFILE_TEXT = (value, max) => String(value ?? "").normalize("NFKC").replace(/[\r\n\u0000<>]/g, "").trim().slice(0, max);
+function sanitizeProfileContext(value, opts = {}) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const shareName = opts.shareName === true;
+  const out = {};
+  if (shareName) {
+    const firstName = PROFILE_TEXT(value.firstName, 40);
+    if (firstName && !/\s/.test(firstName)) out.firstName = firstName;
+  }
+  const institutionName = PROFILE_TEXT(value.institutionName, 120);
+  if (institutionName) out.institutionName = institutionName;
+  const institutionType = pickInstitutionType(value.institutionType);
+  if (institutionType) out.institutionType = institutionType;
+  const district = PROFILE_TEXT(value.district, 60);
+  if (district) out.district = district;
+  const admissionSession = PROFILE_TEXT(value.admissionSession, 40);
+  if (admissionSession) out.admissionSession = admissionSession;
+  const academicGoal = PROFILE_TEXT(value.academicGoal, 80);
+  if (academicGoal) out.academicGoal = academicGoal;
+  if (Array.isArray(value.subjects)) {
+    const subjects = value.subjects.slice(0, 10).map((s) => PROFILE_TEXT(s, 40)).filter(Boolean);
+    if (subjects.length) out.subjects = Array.from(new Set(subjects));
+  }
+  if (Array.isArray(value.targets) && value.targets.length) {
+    const t = value.targets[0] || {};
+    const name = PROFILE_TEXT(t.name, 120);
+    if (name) out.targets = [{ name, unit: PROFILE_TEXT(t.unit, 40), year: PROFILE_TEXT(t.year, 40) }];
+  }
+  return Object.keys(out).length ? Object.freeze(out) : null;
+}
+var pickInstitutionType = (value) => {
+  const v = String(value || "").trim().toLowerCase();
+  return ["school", "college", "university", "madrasa", "other"].includes(v) ? v : "";
+};
 function buildSystemPrompt(opts = {}) {
   const stats = capStats(opts.stats);
   const examMode = String(opts.examMode || "");
@@ -651,7 +706,8 @@ async function agentChat(request, env, uid, opts = {}) {
   }
   msgs = msgs.slice(-24);
   const systemPrompt = buildSystemPrompt({ stats, examMode, quiz: quizMode, onboarding, prefs: aiPrefs });
-  const ctxBundle = contextEngineEnabled(env) ? buildContext({ uid: sendCtx.uid, prefs: aiPrefs, stats, onboarding, memoryOn }) : null;
+  const profileCtx = sendCtx.uid.startsWith("account-") ? sanitizeProfileContext(body?.context?.profile, { shareName: aiPrefs?.shareName === true }) : null;
+  const ctxBundle = contextEngineEnabled(env) ? buildContext({ uid: sendCtx.uid, prefs: aiPrefs, stats, onboarding, profile: profileCtx, memoryOn }) : null;
   const ctxText = ctxBundle ? renderContext(ctxBundle) : "";
   let summaryText = memoryOn && !freshThread ? await getKv(env.PUB_KV, "chatmemsum:" + sendCtx.uid) : "";
   const sys = [systemPrompt, ctxText, summaryText].filter(Boolean).join("\n\n");

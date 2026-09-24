@@ -481,3 +481,31 @@ Adding a var therefore requires removing one; `AGENT_CLOUDFLARE_MODELS` was
 dropped in favour of `USE_CONTEXT_ENGINE` because the router already defaults to
 the identical `@cf/meta/llama-3.3-70b-instruct-fp8-fast`.
 
+## Student profile → AI context: sanitize twice, consent once (Phase 9 M4.1)
+
+The signed-in student's academic profile reaches the Context Engine at SUMMARY,
+but identity fields must never leave the browser. Two gates, both required:
+
+1. **Client** (`ai-agent-chat.js` → `localProfile()`/`profilePayload()`) projects
+   the cached profile down to academic fields. A projection is an allowlist: it
+   reads named fields only, so a new PII field on the profile cannot leak by
+   default.
+2. **Server** (`ai-agent.js` → `sanitizeProfileContext()`) re-sanitizes the
+   request body, drops every unknown key, and only runs for an `account-` uid.
+   A hand-crafted request cannot smuggle a field past the client, and a guest
+   uid resolves `profile` to NONE even with a payload attached.
+
+A client-side projection is never sufficient on its own — the server is the only
+gate the user cannot edit.
+
+**Name sharing is opt-in and enforced server-side.** `aiprefs.shareName` (default
+`false`) is read from KV, not from the request body; only a single name token
+passes, so a full name is rejected even when sharing is on. The toggle lives in
+Profile → Preferences → AI Personalization ("AI আমার নাম জানবে"); the chat client
+reads a `localStorage` mirror (`ah-ai-prefs-cache`) only to decide whether to put
+the token on the wire, and the server re-checks regardless.
+
+**New UI copy must be added to `language-engine.js`'s `DICT` in the same change** —
+`language-engine.test.mjs` scans `profile-ui.js` and fails on any Bengali literal
+without an English key.
+
