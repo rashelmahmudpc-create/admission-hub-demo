@@ -571,9 +571,9 @@ function describeResponseValidation() {
 
 // action-engine.js
 var ACTION_VERSION = "act-v1";
-var ENABLED = false;
+var ENABLED = true;
 function actionsEnabled(env) {
-  return String(env?.USE_WRITE_ACTIONS || "").toLowerCase() === "enabled";
+  return String(env?.USE_WRITE_ACTIONS || "").toLowerCase() !== "disabled";
 }
 var PERMISSION2 = Object.freeze({
   WRITE: "write",

@@ -19,16 +19,23 @@
 
 export const ACTION_VERSION = 'act-v1';
 
-/** Master switch default. `false` = the whole write/execute layer is inert. */
-export const ENABLED = false;
+/**
+ * Master switch. `true` as of the owner's 2026-09-24 decision to enable M9, so
+ * `/api/ai/actions/*` is live for signed-in students. Every action still needs a
+ * single-use confirmation, and every attempt is audited.
+ *
+ * The kill-switch is `USE_WRITE_ACTIONS = "disabled"` (see `actionsEnabled`), so
+ * the layer can be turned back off from configuration without a code change.
+ */
+export const ENABLED = true;
 
 /**
- * Whether the write/execute layer is on for this deployment. Off unless the
- * environment explicitly opts in, mirroring `USE_CONTEXT_ENGINE`: production
- * starts inert, and turning it on is a deliberate, visible config change.
+ * Whether the write/execute layer is on for this deployment. On by default, since
+ * the owner enabled it; set `USE_WRITE_ACTIONS = "disabled"` to turn the whole
+ * layer off from configuration alone. Any other value keeps the default.
  */
 export function actionsEnabled(env) {
-  return String(env?.USE_WRITE_ACTIONS || '').toLowerCase() === 'enabled';
+  return String(env?.USE_WRITE_ACTIONS || '').toLowerCase() !== 'disabled';
 }
 
 /** Permission classes an action may carry. READ stays in the M6 tool registry. */

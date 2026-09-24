@@ -41,10 +41,11 @@ TELEGRAM_AUTH_DAILY_QUOTA = "172800"
 # flip to "enabled" to append the scoped context bundle to the system prompt.
 USE_CONTEXT_ENGINE = "enabled"
 
-# Phase 9 M9 Write/Execute actions. The layer starts inert; "enabled" turns on
-# /api/ai/actions/* for signed-in students. Every action still needs an explicit
-# single-use confirmation (propose → confirm), and every attempt is audited.
-USE_WRITE_ACTIONS = "enabled"
+# Phase 9 M9 Write/Execute actions. Live by default (code-level `ENABLED = true`).
+# Do NOT add a variable here: the Worker already sits on the Workers Free ceiling
+# of 64 variables (secrets + text), and a 65th is rejected on deploy. To turn the
+# layer off, bind a secret `USE_WRITE_ACTIONS = "disabled"` from the dashboard —
+# any other value keeps it on.
 
 [triggers]
 crons = ["* * * * *"]
