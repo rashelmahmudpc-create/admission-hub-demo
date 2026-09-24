@@ -4,7 +4,7 @@ Which mailers can carry a login OTP when the owner does **not** own a custom dom
 
 ## Why this matters
 
-The email OTP slots (`otp-a`/`otp-b`/`otp-e`/`otp-f`) are the ones that actually deliver login
+The email OTP slots (`otp-a`/`otp-b`/`otp-e`/`otp-f`/`otp-g`) are the ones that actually deliver login
 codes. They are configured in `VERIFICATION_ORCHESTRATOR_CONFIG` in `wrangler.toml` and
 built by `createConfiguredVerificationProviders` in
 `auth-native/verification/providers.mjs`.
@@ -42,6 +42,7 @@ Gmail's DMARC record. That is why SMTP2GO rejects it. Brevo accepts it and deliv
 | `otp-d` | Resend | 100 | needs a verified domain; dormant without one |
 | `otp-e` | AgentMail | 100 | needs neither a domain nor a from-address |
 | `otp-f` | MailerSend | 100 | sends from MailerSend's own verified trial domain |
+| `otp-g` | Dead Simple Email | 150 | **last resort**: inbox lives on a shared domain, so Gmail filters it to spam. Use only after every earlier slot is exhausted |
 | `telegram` | Telegram bot | 172,800 | unchanged |
 
 ## Senders that reach arbitrary recipients without a custom domain
@@ -52,6 +53,7 @@ student OTPs. Measured by reading the receiving mailbox and its authentication h
 | Sender | Cross-recipient | Evidence |
 |---|---|---|
 | AgentMail | works | recipient inbox received it |
+| Dead Simple Email | spam | `delivered` to Gmail's servers, but the recipient found it in spam (shared `box*.deadsimple.email` domain, no sender reputation) |
 | MailerSend trial domain | works | received with `spf=pass`, `dkim=pass`, `dmarc=pass` |
 | Resend `onboarding@resend.dev` | owner only | acceptable, never delivered off-account |
 | Elastic Email | fails | recipient MTA refused: `DKIM authentication didn't pass` |
@@ -69,9 +71,11 @@ no-domain senders we rely on. Mailjet would need a domain the owner controls.
 
 
 
-Total reachable email OTP capacity: **600/day** from the signed no-domain senders
-(`otp-a` Brevo, `otp-b` Apps Script, `otp-e` AgentMail, `otp-f` MailerSend), plus
-whatever Gmail accepts from `otp-b`. `otp-c` and `otp-d` stay dormant until their
+Total reachable email OTP capacity: **750/day** across the five no-domain senders
+(`otp-a` Brevo, `otp-b` Apps Script, `otp-e` AgentMail, `otp-f` MailerSend, `otp-g`
+Dead Simple Email), plus whatever Gmail accepts from `otp-b`. `otp-g` is the last
+resort: its shared inbox domain lands in spam, so it only carries traffic once the
+trusted senders above are exhausted. `otp-c` and `otp-d` stay dormant until their
 senders are verified.
 
 ## Mailjet is disabled
