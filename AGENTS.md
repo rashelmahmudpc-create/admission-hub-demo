@@ -340,6 +340,22 @@ CLOUDFLARE_API_TOKEN=... npx wrangler@4.35.0 pages deploy dist \
 Without `--branch=main` the deploy lands as a preview and `admissionhub.pages.dev`
 keeps serving the old bundle. Verify with
 `curl -s https://admissionhub.pages.dev/ | grep -o 'notification-admin.js?v=[^"]*'`.
+An asset can keep the same `?v=` query across a real content change, so a
+plain edit ships stale behind the browser/service-worker cache. **Bump the
+query string** (`notification-admin.js?v=admin-notif-v7` -> `v8`) and run
+`npm run sw:manifest` before every client deploy, then confirm the change is
+really live (`curl -s https://admissionhub.pages.dev/notification-admin.js?v=admin-notif-v8 | grep -c keyboard-inset`).
+
+## Deploys shipped (2026-09-24)
+
+| Half | Version | Notes |
+|---|---|---|
+| Worker `admission-gk` | `1caafb52-bcea-4077-8212-72650ae516ef` | FCM Phases 4-5 + `R2_ACCOUNT_ID` secret set |
+| Pages `admissionhub` | main (v8 assets) | admin keyboard fix + cache bump |
+
+Set `R2_ACCOUNT_ID` on the worker (`wrangler secret put`) or the R2 usage
+probe reports "unknown" (fail-soft; uploads still work).
+
 
 The working credential pair (verified 2026-09-24) is the injected secret
 `ADMISSIONHUB_CLOUDFLARE_API` as the token and `ADMISSIONHUB_CLODFLARE_ACCOUNT_ID`
