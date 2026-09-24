@@ -156,27 +156,35 @@
         for (const r of results) ack.set(r.store + '\u0000' + String(r.id), r);
 
         /* Remove exactly the batch we sent; keep anything newer that arrived
-         * while the request was in flight. */
+         * while the request was in flight, and keep anything the server did
+         * not explicitly acknowledge — a missing ack means "not persisted",
+         * not "done", so dropping it would lose the write silently. */
         const sentKeys = new Set(batch.map(op => op.store + '\u0000' + String(op.id)));
         const leftover = [];
+        let acked = 0;
         for (const op of queue) {
           const key = op.store + '\u0000' + String(op.id);
           if (sentKeys.has(key)) {
             const r = ack.get(key);
-            /* A newer local write may have replaced this op mid-flight. */
-            if (r && Number(r.updated_at) > Number(op.updated_at)) continue;
-            if (r && r.applied === false) {
-              /* The server already had a newer row. Re-pull that store from the
-               * start so this device converges instead of retrying forever. */
-              reconcileStores.add(r.store);
-            }
+            if (!r) { leftover.push(op); continue; }
+            /* A newer local write replaced this op mid-flight: the staged op is
+             * newer than what the server acked, so keep it and push it next. */
+            if (Number(r.updated_at) < Number(op.updated_at)) { leftover.push(op); continue; }
+            /* The server already held a newer row than ours; re-pull so this
+             * device converges instead of retrying an op it can never win. */
+            if (r.applied === false) reconcileStores.add(r.store);
+            /* Acknowledged at least this version → safe to drop. */
+            acked += 1;
           } else {
             leftover.push(op);
           }
         }
         queue = leftover;
         persistQueue();
-        sent += batch.length;
+        sent += acked;
+        /* If the batch made no progress — nothing acked, everything requeued —
+         * stop instead of hammering the server with the same ops forever. */
+        if (acked === 0) break;
         if (batch.length < BATCH_MAX) break;
       }
       if (sent) {
@@ -213,6 +221,7 @@
     let cursor = String((meta.cursors || {})[store] || '');
     let applied = 0;
     for (let guard = 0; guard < 50; guard += 1) {
+      const prevCursor = cursor;
       const q = 'store=' + encodeURIComponent(store) + '&since=0&limit=' + PULL_PAGE_LIMIT + '&cursor=' + encodeURIComponent(cursor);
       const res = await api('/api/userdata/pull?' + q);
       if (res.status === 401) { state.active = false; return { store, applied }; }
@@ -230,7 +239,9 @@
       cursor = String(res.body.cursor || cursor);
       meta.cursors = Object.assign({}, meta.cursors, { [store]: cursor });
       persistMeta();
-      if (!res.body.hasMore || !items.length) break;
+      /* A server that keeps claiming hasMore=true without advancing the cursor
+       * would spin forever; stop when the page adds nothing new. */
+      if (!res.body.hasMore || !items.length || cursor === prevCursor) break;
     }
     return { store, applied };
   }

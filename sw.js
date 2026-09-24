@@ -61,7 +61,7 @@ const ASSET_DIGESTS = {
   "./notification-fcm.js?v=fcm-p1-v11": "d834a849c0f4851b191e8b309ef3f96d0ebd7e6a194283ac45fd61db4d971156",
   "./notification-inbox.js?v=notif-inbox-v6": "ab3a57740d96311c57086af3e0893e356257b093d09560ce8110b731e702d995",
   "./notification-admin.js?v=admin-notif-v5": "ffe831ca25fbfa151a4aacd1a41c0fa1e5acb277d7a9412b6f7e0fe162516366",
-  "./student-data-sync.js?v=student-sync-v1": "84d38df31739dccad05f40d2f57890ae46da39cd6bed0806bde6ca5963537ab9",
+  "./student-data-sync.js?v=student-sync-v1": "8a8b93fc710b39fa22b92dce6cf5036102cdd688a852a5bd448a3a9c9edcf2aa",
   "./icons/icon-192.png": "777ce5566fbeff0f2e384c787c8dde4f47d7c869e455c6e577a503decd4f1683",
   "./icons/icon-512.png": "86459109582f82b1d891a3e5a82723fefd21a3c65e9d0d22ab4dae33bb540520",
 /* sw-manifest:end */
