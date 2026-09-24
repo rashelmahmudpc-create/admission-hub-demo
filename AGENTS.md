@@ -581,3 +581,39 @@ It is pure data plus pure guards — no `env`, no I/O, no model call.
   scope: 'account-only' }` — metadata only; the prompt base and its SHA-256 are
   untouched.
 
+## Responses are validated before render, high-precision only (Phase 9 M8)
+
+`response-validator.js` checks every model response on four dimensions — schema,
+safety, data, action — and returns a structured envelope
+`{version, type, message, insights, recommendations, actions, confidence}`. It is
+pure data plus pure guards — no `env`, no I/O, no model call. `ai-agent.js` runs it
+inside `finalize()` (persist decision) and around the provider loop (returned
+text); the client learned one new SSE frame.
+
+- **Rewriting is deliberately rare.** Only six classes replace the text: schema,
+  internal-leak, credential-request, secret-material, action-claim, false-success.
+  `invented-stats` and `quiz-contract` are recorded, never rewritten. A guard that
+  rewrites a legitimate academic answer is worse than the risk it covers — so if
+  you add a pattern, it must be self-disclosure shaped, not keyword shaped, and
+  must ship with a passing counterpart test.
+  - "My system prompt is …" blocks; *"System prompt কী?"* passes.
+  - "তোমার OTP দাও" blocks; "লগইন করতে password দাও" passes (`APP_TARGET_RE`
+    recognizes instructions aimed at the app's own field).
+  - "ভেরিফিকেশন হয়ে গেছে" blocks; "ভেরিফিকেশন সফল হলে ইমেইল পাবে" passes.
+  - `invented-stats` needs a *provided* value to contradict; with no stats the
+    claim is a guess, not proof.
+- **No new Worker variable.** `wrangler.toml` is at the 64-var cap, so enforcement
+  is the `ENFORCE` constant in the module (currently `true`), not a binding.
+- **A blocked reply is never persisted.** `finalize()` returns early unless
+  `validateResponse(...).persistable`; an unsafe reply cannot become a conversation
+  turn or a memory record. Guards run after the guest `401` gate, so guests are
+  still refused before anything is parsed.
+- **Streaming uses `event: replace`.** Text is already on the wire when the full
+  reply is known, so the server sends the safe text in a `replace` frame before
+  `done`; the client swaps it in via `textContent` (never `innerHTML`). A clean
+  stream emits no `replace` frame.
+- **Shape stays backward compatible.** `text`/`intent`/`pv`/`agent`/`authoritative`
+  are unchanged; `structured` is additive. Envelope `actions` stays empty until M9.
+- `agentStatus` advertises `response: { version: 'rv-v1', enforced: true,
+  classes, blocking }`.
+
