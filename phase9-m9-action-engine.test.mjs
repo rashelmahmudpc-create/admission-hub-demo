@@ -16,15 +16,17 @@ const {
   ACTION_VERSION, ENABLED, PERMISSION, RISK, STATUS, CONFIRM_TTL_MS, MAX_AUDIT,
   getAction, listActions, validateActionEngine, resolveActionOwner, sanitizeActionArgs,
   authorizeAction, makeProposal, proposalSummary, confirmProposal,
-  makeAuditRecord, parseAudit, appendAudit, describeActions
+  makeAuditRecord, parseAudit, appendAudit, describeActions, actionsEnabled
 } = E;
 
 /* ── ১. Engine shape and the default-OFF rule ── */
 t('M9-১. engine self-validation passes and the version is stamped',
   Array.isArray(validateActionEngine()) && validateActionEngine().length === 0
   && ACTION_VERSION === 'act-v1');
-t('M9-২. the layer is OFF by default — no write/execute capability ships live',
-  ENABLED === false && describeActions().enabled === false);
+t('M9-২. the layer is OFF by default and needs an explicit env opt-in',
+  ENABLED === false && describeActions().enabled === false
+  && actionsEnabled({}) === false && actionsEnabled({ USE_WRITE_ACTIONS: 'enabled' }) === true
+  && actionsEnabled({ USE_WRITE_ACTIONS: 'yes' }) === false);
 t('M9-৩. WRITE and EXECUTE are separate permission classes',
   Object.values(PERMISSION).length === 2
   && PERMISSION.WRITE === 'write' && PERMISSION.EXECUTE === 'execute'
@@ -221,6 +223,66 @@ t('M9-৩৯. agentStatus advertises the action layer as disabled, shape only',
     const d = await r.json();
     return d.actions && d.actions.version === 'act-v1' && d.actions.enabled === false
       && Array.isArray(d.actions.declared) && d.actions.declared.every(a => a.enabled === false);
+  })(), { timeout: 5000 });
+
+/* ── ৯. E2E: the full flow with the layer ON ── */
+t('M9-৪০. E2E ON: propose → confirm → write → audit succeeds end to end',
+  (async () => {
+    const { env, store } = stubEnv({ USE_WRITE_ACTIONS: 'enabled' });
+    const p = await W.fetch(authPost('/api/ai/actions/propose', { action: 'prefs.write', args: { tone: 'direct', responseLen: 'short' } }), env);
+    const pd = await p.json();
+    if (p.status !== 200 || !pd.proposal?.id || !pd.proposal.summary) return false;
+    const c = await W.fetch(authPost('/api/ai/actions/confirm', { token: pd.proposal.id }), env);
+    const cd = await c.json();
+    const prefsKey = [...store.keys()].find(k => k.startsWith('aiprefs:'));
+    const auditKey = [...store.keys()].find(k => k.startsWith('actaudit:'));
+    const saved = prefsKey ? JSON.parse(store.get(prefsKey)) : null;
+    return c.status === 200 && cd.ok === true && cd.status === 'confirmed'
+      && ![...store.keys()].some(k => k.startsWith('actprop:')) // proposal consumed
+      && saved && saved.tone === 'direct' && saved.responseLen === 'short'
+      && auditKey && JSON.parse(store.get(auditKey)).some(r => r.status === 'confirmed');
+  })(), { timeout: 5000 });
+t('M9-৪১. E2E ON: a replayed confirm token is refused and changes nothing',
+  (async () => {
+    const { env, store } = stubEnv({ USE_WRITE_ACTIONS: 'enabled' });
+    const p = await W.fetch(authPost('/api/ai/actions/propose', { action: 'prefs.write', args: { tone: 'direct' } }), env);
+    const pd = await p.json();
+    await W.fetch(authPost('/api/ai/actions/confirm', { token: pd.proposal.id }), env);
+    const before = store.get([...store.keys()].find(k => k.startsWith('aiprefs:')));
+    const replay = await W.fetch(authPost('/api/ai/actions/confirm', { token: pd.proposal.id }), env);
+    const rd = await replay.json();
+    const after = store.get([...store.keys()].find(k => k.startsWith('aiprefs:')));
+    return replay.status === 403 && rd.error === 'confirm_denied' && before === after;
+  })(), { timeout: 5000 });
+t('M9-৪২. E2E ON: a wrong token is refused and writes nothing',
+  (async () => {
+    const { env, store } = stubEnv({ USE_WRITE_ACTIONS: 'enabled' });
+    await W.fetch(authPost('/api/ai/actions/propose', { action: 'prefs.write', args: { tone: 'direct' } }), env);
+    const bad = await W.fetch(authPost('/api/ai/actions/confirm', { token: 'wrong-token' }), env);
+    const bd = await bad.json();
+    return bad.status === 403 && bd.reason === 'bad-token' && ![...store.keys()].some(k => k.startsWith('aiprefs:'));
+  })(), { timeout: 5000 });
+t('M9-৪৩. E2E ON: an owner-naming payload is refused before any proposal is stored',
+  (async () => {
+    const { env, store } = stubEnv({ USE_WRITE_ACTIONS: 'enabled' });
+    const r = await W.fetch(authPost('/api/ai/actions/propose', { action: 'prefs.write', args: { uid: 'account-other', tone: 'direct' } }), env);
+    const d = await r.json();
+    return r.status === 403 && d.reason === 'owner-from-args-rejected' && ![...store.keys()].some(k => k.startsWith('actprop:'));
+  })(), { timeout: 5000 });
+t('M9-৪৪. E2E ON: a guest is still refused even when the layer is on',
+  (async () => {
+    const { env, store } = stubEnv({ USE_WRITE_ACTIONS: 'enabled' });
+    const r = await W.fetch(new Request('https://x/api/ai/actions/propose', { method: 'POST', body: JSON.stringify({ action: 'prefs.write' }) }), env);
+    const d = await r.json();
+    return r.status === 401 && d.error === 'sign_in_required' && store.size === 0;
+  })(), { timeout: 5000 });
+t('M9-৪৫. E2E ON: agentStatus and the audit route both report the layer on',
+  (async () => {
+    const { env } = stubEnv({ USE_WRITE_ACTIONS: 'enabled' });
+    const s = await W.fetch(new Request('https://x/api/ai/status', { headers: { Cookie: '__Host-ah_session=' + SESSION } }), env).then(r => r.json());
+    const a = await W.fetch(new Request('https://x/api/ai/actions/audit', { headers: { Cookie: '__Host-ah_session=' + SESSION } }), env).then(r => r.json());
+    return s.actions.enabled === true && s.actions.declared.every(x => x.enabled === true)
+      && a.actionsEnabled === true;
   })(), { timeout: 5000 });
 
 console.log('\n🔐 PHASE9-M9-ACTION-ENGINE: ' + pass + ' pass / ' + fail + ' fail');

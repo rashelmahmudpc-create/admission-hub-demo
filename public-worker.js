@@ -4,7 +4,7 @@
 import { agentChat, agentStatus, sanitizeAiPrefs, AI_PREFS_DEFAULT } from './ai-agent.js';
 import {
   authorizeAction, makeProposal, confirmProposal, proposalSummary,
-  makeAuditRecord, parseAudit, appendAudit, STATUS, ENABLED as ACTIONS_ENABLED
+  makeAuditRecord, parseAudit, appendAudit, STATUS, actionsEnabled
 } from './action-engine.js';
 
 const JSONH = {
@@ -246,9 +246,9 @@ export default {
         if (!identity.authenticated) return json({ error: 'sign_in_required', message: 'AI action ব্যবহার করতে লগইন করো।' }, 401);
         const body = await request.json().catch(() => null);
         const name = String(body?.action || '');
-        const auth = authorizeAction(name, { uid: identity.uid, args: body?.args });
+        const auth = authorizeAction(name, { uid: identity.uid, args: body?.args, enabled: actionsEnabled(env) });
         if (!auth.allowed) return json({ error: 'action_denied', reason: auth.reason }, 403);
-        const proposal = makeProposal(name, { uid: identity.uid, args: auth.args, id: crypto.randomUUID() });
+        const proposal = makeProposal(name, { uid: identity.uid, args: auth.args, id: crypto.randomUUID(), enabled: actionsEnabled(env) });
         if (!proposal) return json({ error: 'action_denied', reason: 'no-proposal' }, 403);
         try {
           await env.PUB_KV.put('actprop:' + identity.uid, JSON.stringify(proposal), { expirationTtl: Math.ceil((proposal.expiresAt - Date.now()) / 1000) });
@@ -269,7 +269,7 @@ export default {
           const raw = await env.PUB_KV.get('actprop:' + identity.uid);
           stored = raw ? JSON.parse(raw) : null;
         } catch (_) { stored = null; }
-        const decision = confirmProposal(stored, token, identity.uid);
+        const decision = confirmProposal(stored, token, identity.uid, { enabled: actionsEnabled(env) });
         if (!decision.ok) {
           const audit = await readAudit(env, identity.uid);
           if (stored) await writeAudit(env, identity.uid, appendAudit(audit, makeAuditRecord({ proposal: stored, status: decision.status, uid: identity.uid, detail: decision.reason }), identity.uid));
@@ -295,7 +295,7 @@ export default {
       if (path === '/api/ai/actions/audit' && request.method === 'GET') {
         const identity = await aiRequestIdentity(request, env, false);
         if (!identity.authenticated) return json({ error: 'sign_in_required', message: 'AI action ব্যবহার করতে লগইন করো।' }, 401);
-        return json({ ok: true, actionsEnabled: ACTIONS_ENABLED, audit: await readAudit(env, identity.uid) });
+        return json({ ok: true, actionsEnabled: actionsEnabled(env), audit: await readAudit(env, identity.uid) });
       }
       if (path === '/api/ai/chat' && request.method === 'POST') {
         const identity = await aiRequestIdentity(request, env, false);

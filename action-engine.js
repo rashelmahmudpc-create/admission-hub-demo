@@ -19,8 +19,17 @@
 
 export const ACTION_VERSION = 'act-v1';
 
-/** Master switch. `false` = the whole write/execute layer is inert. */
+/** Master switch default. `false` = the whole write/execute layer is inert. */
 export const ENABLED = false;
+
+/**
+ * Whether the write/execute layer is on for this deployment. Off unless the
+ * environment explicitly opts in, mirroring `USE_CONTEXT_ENGINE`: production
+ * starts inert, and turning it on is a deliberate, visible config change.
+ */
+export function actionsEnabled(env) {
+  return String(env?.USE_WRITE_ACTIONS || '').toLowerCase() === 'enabled';
+}
 
 /** Permission classes an action may carry. READ stays in the M6 tool registry. */
 export const PERMISSION = Object.freeze({
@@ -293,11 +302,12 @@ export function appendAudit(list, record, callerUid) {
 }
 
 /** Metadata for `agentStatus` — shape only, never a capability. */
-export function describeActions() {
+export function describeActions(env) {
+  const on = actionsEnabled(env);
   return Object.freeze({
     version: ACTION_VERSION,
-    enabled: ENABLED,
+    enabled: on,
     confirmTtlMs: CONFIRM_TTL_MS,
-    declared: listActions()
+    declared: listActions().map(a => ({ ...a, enabled: on && a.enabled }))
   });
 }
