@@ -510,3 +510,20 @@ name off for existing accounts.
 `language-engine.test.mjs` scans `profile-ui.js` and fails on any Bengali literal
 without an English key.
 
+## System prompt lives in the registry, not inline (Phase 9 M5)
+
+`buildSystemPrompt()` in `ai-agent.js` starts from `getPromptText(BASE_PROMPT_ID)`;
+the actual wording lives in `prompt-registry.js` as a frozen `v1` entry with
+`promptId / version / purpose / createdAt / status`, plus a `legacyVersion` alias
+to `SYSTEM_PROMPT_V`.
+
+- **Never edit the prompt text in `ai-agent.js`** — it is no longer there. Change
+  `prompt-registry.js`, and add a new version entry rather than overwriting `v1`.
+- The composed base prompt is pinned by SHA-256 in
+  `phase9-m5-prompt-registry.test.mjs` (2044 bytes). Any wording change must
+  update that hash deliberately — an accidental drift fails the suite.
+- Conditional blocks (onboarding, exam mode, quiz, prefs, stats) still append on
+  top of the shared base in `buildSystemPrompt()`; keep them there, not in the
+  registry.
+- `prompt-registry.js` is pure data plus helpers: no `env`, no I/O, no worker API.
+
