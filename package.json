@@ -16,7 +16,8 @@
     "test:production-auth": "npm run test:auth && npm run test:email && npm run test:native-auth && npm run test:fcm",
     "test:fcm": "node --test --test-concurrency=1 fcm-notification.test.mjs fcm-global.test.mjs fcm-global-contract.test.mjs notif-sheet.test.mjs",
     "test:userdata": "node --test userdata-api.test.mjs",
-    "test:student-data": "node --test userdata-api.test.mjs"
+    "test:student-data": "node --test --test-concurrency=1 userdata-api.test.mjs student-data-sync.test.mjs",
+    "test:sync": "node --test --test-concurrency=1 userdata-api.test.mjs student-data-sync.test.mjs"
   },
   "dependencies": {
     "jsdom": "^29.1.1"

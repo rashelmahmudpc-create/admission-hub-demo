@@ -91,6 +91,20 @@ class FakeD1 {
 
 const makeEnv = () => ({ PROFILE_DB: new FakeD1() });
 
+/* R2 double backed by an in-memory Map. */
+class FakeR2 {
+  constructor() { this.objects = new Map(); }
+  async put(key, body, opts = {}) {
+    this.objects.set(key, { body: new Uint8Array(body), customMetadata: opts.customMetadata || {} });
+  }
+  async head(key) { return this.objects.has(key) ? { customMetadata: this.objects.get(key).customMetadata } : null; }
+  async get(key) {
+    const o = this.objects.get(key);
+    if (!o) return null;
+    return { async arrayBuffer() { return o.body.buffer.slice(o.body.byteOffset, o.body.byteOffset + o.body.byteLength); } };
+  }
+}
+
 /* Auth authority double: token 'A'.repeat(48) → alpha, 'B'.repeat(48) → beta. */
 const makeAuthEnv = () => ({
   PROFILE_DB: new FakeD1(),
@@ -246,4 +260,78 @@ test('userdata: non-userdata path is ignored by the handler', async () => {
   const env = makeEnv();
   const res = await handleUserDataRequest(new Request('https://x.test/api/other'), env, {});
   assert.equal(res, null);
+});
+
+/* ── R2 spillover ──────────────────────────────────────────────────────── */
+
+const heavyExam = (id, questions = 120) => ({
+  id,
+  examId: 'e1',
+  score: 80,
+  correct: 80,
+  wrong: 40,
+  createdAt: 1000,
+  /* Each entry mimics one question's snapshot + timing records. */
+  snapshot: Array.from({ length: questions }, (_, i) => ({ questionId: 'q' + i, status: i % 2 ? 'correct' : 'wrong', subjectId: 's1' })),
+  timing: Object.fromEntries(Array.from({ length: questions }, (_, i) => ['q' + i, { ms: 1200 + i }])),
+  timeAnalysis: { classified: Array.from({ length: questions }, (_, i) => ({ questionId: 'q' + i, seconds: 1.2 })) }
+});
+
+test('r2: a heavy exam keeps only its summary in D1', async () => {
+  const env = { ...makeAuthEnv(), FILE_BUCKET: new FakeR2() };
+  const exam = heavyExam('r-heavy');
+  const res = await sync(env, 'A'.repeat(48), [{ store: 'examResults', id: exam.id, op: 'put', updated_at: 1000, doc: exam }]);
+  assert.equal((await res.json()).results[0].ok, true);
+
+  const store = new UserDataStore(env.PROFILE_DB, env.FILE_BUCKET);
+  await store.init();
+  const raw = env.PROFILE_DB.tables.get('user_exam_results');
+  const row = [...raw.values()][0];
+  const inD1 = JSON.parse(row.payload_json);
+  assert.equal(inD1.score, 80, 'the queryable summary stays in D1');
+  assert.equal(inD1.snapshot, undefined, 'the heavy snapshot is not in D1');
+  assert.equal(inD1.timing, undefined);
+  assert.ok([...env.FILE_BUCKET.objects.keys()][0].startsWith('examResults/usr_alpha/'), 'the blob is per-account');
+});
+
+test('r2: pull rehydrates the full exam from the archive', async () => {
+  const env = { ...makeAuthEnv(), FILE_BUCKET: new FakeR2() };
+  const exam = heavyExam('r-heavy');
+  await sync(env, 'A'.repeat(48), [{ store: 'examResults', id: exam.id, op: 'put', updated_at: 1000, doc: exam }]);
+
+  const store = new UserDataStore(env.PROFILE_DB, env.FILE_BUCKET);
+  await store.init();
+  const page = await store.listSince('usr_alpha', 'examResults', 0, 50, '');
+  assert.equal(page.items.length, 1);
+  assert.equal(page.items[0].doc.score, 80);
+  assert.equal(page.items[0].doc.snapshot.length, exam.snapshot.length, 'the heavy fields came back');
+  assert.equal(page.items[0].doc.timing.q5.ms, 1205);
+});
+
+test('r2: a small exam is not offloaded', async () => {
+  const env = { ...makeAuthEnv(), FILE_BUCKET: new FakeR2() };
+  const small = { id: 'r-small', examId: 'e1', score: 5, snapshot: [{ questionId: 'q1', status: 'correct' }] };
+  await sync(env, 'A'.repeat(48), [{ store: 'examResults', id: small.id, op: 'put', updated_at: 1000, doc: small }]);
+  assert.equal(env.FILE_BUCKET.objects.size, 0, 'no archive write for a small payload');
+  const row = [...env.PROFILE_DB.tables.get('user_exam_results').values()][0];
+  assert.ok(JSON.parse(row.payload_json).snapshot, 'the whole doc stays in D1');
+});
+
+test('r2: a failed archive write keeps the heavy fields in D1 rather than losing them', async () => {
+  const failing = { async put() { throw new Error('r2 down'); }, head: async () => null, get: async () => null };
+  const env = { ...makeAuthEnv(), FILE_BUCKET: failing };
+  const exam = heavyExam('r-heavy');
+  await sync(env, 'A'.repeat(48), [{ store: 'examResults', id: exam.id, op: 'put', updated_at: 1000, doc: exam }]);
+  const row = [...env.PROFILE_DB.tables.get('user_exam_results').values()][0];
+  assert.equal(JSON.parse(row.payload_json).snapshot.length, exam.snapshot.length, 'no data loss on archive failure');
+});
+
+test('r2: one account cannot read another account archive blob', async () => {
+  const env = { ...makeAuthEnv(), FILE_BUCKET: new FakeR2() };
+  const exam = heavyExam('r-heavy');
+  await sync(env, 'A'.repeat(48), [{ store: 'examResults', id: exam.id, op: 'put', updated_at: 1000, doc: exam }]);
+  const res = await pull(env, 'B'.repeat(48), 'store=examResults&since=0');
+  const body = await res.json();
+  assert.equal(body.items.length, 0);
+  assert.ok([...env.FILE_BUCKET.objects.keys()].every(k => k.includes('usr_alpha')), 'blob keys are account-scoped');
 });
