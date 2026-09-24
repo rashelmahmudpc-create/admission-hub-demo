@@ -32,10 +32,14 @@ OTP_G_DAILY_QUOTA = "150"
 TELEGRAM_AUTH_WEBHOOK_URL = "https://admission-gk.admissionhub.workers.dev/api/auth/v1/telegram/webhook"
 TELEGRAM_AUTH_DAILY_QUOTA = "172800"
 # Cloudflare Workers AI backup list (Phase 9 M2.5). Free 10,000 Neurons/day.
-# Only model names live here. The account id and the credential the provider
-# needs are Worker secrets (wrangler secret put) and never belong in [vars].
-# Leaving either unbound simply removes the provider from the chain.
-AGENT_CLOUDFLARE_MODELS = "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
+# The model list is NOT set here: the router falls back to the identical default
+# @cf/meta/llama-3.3-70b-instruct-fp8-fast, and Workers Free caps a Worker at 64
+# variables (secrets + text), which this Worker already sits on. Bind
+# AGENT_CLOUDFLARE_MODELS as a secret only if a catalogue change demands it.
+#
+# Phase 9 M4 Context Engine — typed, permission-scoped context. Off by default;
+# flip to "enabled" to append the scoped context bundle to the system prompt.
+USE_CONTEXT_ENGINE = "disabled"
 
 [triggers]
 crons = ["* * * * *"]

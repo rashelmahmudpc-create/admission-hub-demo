@@ -15,8 +15,15 @@
  * Test-যোগ্যতা: module-import-এ কোনো worker-API নেই — pure ফাংশন + handler,
  * env/fetch পরীক্ষায় mock করা যায় (ai-agent-f1.test.mjs)।
  */
+import { buildContext, renderContext, describeContext, CONTEXT_VERSION } from './context-engine.js';
+
 export const AGENT_VERSION = 'agent-f1';
 export const SYSTEM_PROMPT_V = 'sys-f1-3-ai-personalization';
+
+/* ── M4 Context Engine feature flag (default off) ------------------------ */
+export function contextEngineEnabled(env) {
+  return String((env && env.USE_CONTEXT_ENGINE) || '').trim() === 'enabled';
+}
 
 export const INTENTS = {
   GENERAL_CHAT: 'GENERAL_CHAT',
@@ -618,10 +625,17 @@ export async function agentChat(request, env, uid, opts = {}) {
   msgs = msgs.slice(-24);
 
   const systemPrompt = buildSystemPrompt({ stats, examMode, quiz: quizMode, onboarding, prefs: aiPrefs });
+  /* M4 Context Engine (opt-in). When enabled, a typed permission-scoped bundle
+     is rendered and appended; when disabled the prompt above is byte-identical
+     to the pre-M4 output, so the legacy path stays intact. */
+  const ctxBundle = contextEngineEnabled(env)
+    ? buildContext({ uid: sendCtx.uid, prefs: aiPrefs, stats, onboarding, memoryOn })
+    : null;
+  const ctxText = ctxBundle ? renderContext(ctxBundle) : '';
   /* The rolling summary carries older topics too, so it is suppressed with
      memory — otherwise the stale subject leaks back through the system prompt. */
   let summaryText = memoryOn && !freshThread ? await getKv(env.PUB_KV, 'chatmemsum:' + sendCtx.uid) : '';
-  const sys = summaryText ? systemPrompt + '\n\n' + String(summaryText) : systemPrompt;
+  const sys = [systemPrompt, ctxText, summaryText].filter(Boolean).join('\n\n');
 
   const hasImage = msgs.some(m => m.image);
   const partsOf = (m) => {
@@ -739,12 +753,16 @@ export async function agentStatus(request, env, uid) {
   const hasGemini = !!String(env.GEMINI_KEYS || '').trim();
   const hasGroq = !!String(env.GROQ_API_KEY || '').trim();
   const hasCloudflare = !!String(env.CLOUDFLARE_ACCOUNT_ID || '').trim() && !!String(env.CLOUDFLARE_AI_API_KEY || '').trim();
+  const ctxOn = contextEngineEnabled(env);
   return jsonResp({
     ok: true, agent: AGENT_VERSION, pv: SYSTEM_PROMPT_V,
     providers: { gemini: hasGemini, groq: hasGroq, cloudflare: hasCloudflare },
     models: { fast: GEMINI_MODELS.FAST, smart: GEMINI_MODELS.SMART },
     limits: { perDay: Math.max(10, Math.min(500, Number(env.AGENT_DAILY_CAP || 80))) },
-    streaming: true
+    streaming: true,
+    context: ctxOn
+      ? describeContext(buildContext({ uid, prefs: null, stats: null, onboarding: null, memoryOn: true }))
+      : { enabled: false }
   });
 }
 
@@ -768,5 +786,6 @@ export const __test = {
   classifyIntent, validateChatReq, capStats, buildSystemPrompt, summarizeTo,
   safetyGate, authVerificationGuidance, routerChain, geminiTextFromChunk, sseParse, ProviderError,
   adapterFor, providerChain, PROVIDER_ADAPTERS, GEMINI_ADAPTER, GROQ_ADAPTER, CLOUDFLARE_ADAPTER,
-  INTENTS, TIER, GEMINI_MODELS, AGENT_VERSION, SYSTEM_PROMPT_V
+  INTENTS, TIER, GEMINI_MODELS, AGENT_VERSION, SYSTEM_PROMPT_V,
+  contextEngineEnabled, buildContext, renderContext, describeContext, CONTEXT_VERSION
 };

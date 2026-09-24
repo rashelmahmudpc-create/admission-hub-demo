@@ -1,6 +1,111 @@
+// context-engine.js
+var CONTEXT_VERSION = "ctx-v1";
+var CATEGORY = Object.freeze({
+  IDENTITY: "identity",
+  PROFILE: "profile",
+  ACADEMIC: "academic",
+  PERFORMANCE: "performance",
+  ACTIVITY: "activity",
+  PREFERENCE: "preference",
+  ONBOARDING: "onboarding",
+  MEMORY: "memory"
+});
+var SCOPE = Object.freeze({
+  NONE: "none",
+  MINIMAL: "minimal",
+  SUMMARY: "summary",
+  FULL_ALLOWED: "full_allowed"
+});
+var RANK = Object.freeze({ none: 0, minimal: 1, summary: 2, full_allowed: 3 });
+function scopeAtLeast(scope, minimum) {
+  return (RANK[String(scope)] || 0) >= (RANK[String(minimum)] || 0);
+}
+function identityKind(uid) {
+  const value = String(uid || "");
+  if (value.startsWith("account-")) return "account";
+  if (value.startsWith("guest-")) return "guest";
+  return "unknown";
+}
+function resolveScopes({ uid, prefs, stats, onboarding, memoryOn } = {}) {
+  const kind = identityKind(uid);
+  const hasPrefs = !!prefs && typeof prefs === "object";
+  const hasStats = !!stats && typeof stats === "object" && Object.keys(stats).length > 0;
+  const hasOnboarding = !!onboarding && typeof onboarding === "object";
+  return Object.freeze({
+    identity: kind === "account" ? SCOPE.SUMMARY : SCOPE.NONE,
+    profile: SCOPE.NONE,
+    // no server-side profile source wired yet
+    academic: hasOnboarding ? SCOPE.SUMMARY : SCOPE.NONE,
+    performance: hasStats ? SCOPE.SUMMARY : SCOPE.NONE,
+    activity: SCOPE.NONE,
+    // reserved
+    preference: hasPrefs ? SCOPE.FULL_ALLOWED : SCOPE.NONE,
+    onboarding: hasOnboarding ? SCOPE.FULL_ALLOWED : SCOPE.NONE,
+    memory: memoryOn ? SCOPE.FULL_ALLOWED : SCOPE.NONE
+  });
+}
+function buildContext(input = {}) {
+  const scope = resolveScopes(input);
+  const kind = identityKind(input.uid);
+  const data = {};
+  if (scopeAtLeast(scope.identity, SCOPE.MINIMAL)) data.identity = Object.freeze({ kind });
+  if (allowed(scope.performance) && input.stats) data.performance = Object.freeze({ ...input.stats });
+  if (allowed(scope.preference) && input.prefs) data.preference = Object.freeze({ ...input.prefs });
+  if (allowed(scope.onboarding) && input.onboarding) data.onboarding = input.onboarding;
+  return Object.freeze({ version: CONTEXT_VERSION, scope, data: Object.freeze(data) });
+}
+function allowed(scopeValue) {
+  return scopeAtLeast(scopeValue, SCOPE.MINIMAL);
+}
+function describeContext(bundle) {
+  const scope = bundle && bundle.scope || {};
+  const allowed2 = Object.keys(scope).filter((key) => scopeAtLeast(scope[key], SCOPE.MINIMAL)).sort();
+  const denied = Object.keys(scope).filter((key) => !scopeAtLeast(scope[key], SCOPE.MINIMAL)).sort();
+  return Object.freeze({
+    version: bundle && bundle.version || CONTEXT_VERSION,
+    allowed: Object.freeze(allowed2),
+    denied: Object.freeze(denied)
+  });
+}
+function renderContext(bundle) {
+  if (!bundle || bundle.version !== CONTEXT_VERSION) return "";
+  const { scope, data } = bundle;
+  const lines = [];
+  if (scopeAtLeast(scope.identity, SCOPE.MINIMAL)) {
+    lines.push(`- identity: ${data.identity.kind === "account" ? "signed-in student" : "anonymous guest"}`);
+  }
+  if (scopeAtLeast(scope.preference, SCOPE.MINIMAL) && data.preference) {
+    const p = data.preference;
+    lines.push(`- preference: ${p.langStyle}/${p.tone}/${p.responseLen}, memory=${p.memory !== false}`);
+  }
+  if (scopeAtLeast(scope.performance, SCOPE.MINIMAL) && data.performance) {
+    const s = data.performance;
+    const bits = [];
+    if (s.exams != null) bits.push(`exams=${s.exams}`);
+    if (s.questions != null) bits.push(`questions=${s.questions}`);
+    if (s.accuracy != null) bits.push(`accuracy=${s.accuracy}%`);
+    if (s.streak != null) bits.push(`streak=${s.streak}d`);
+    if (s.mistakes != null) bits.push(`mistakes=${s.mistakes}`);
+    if (bits.length) lines.push(`- performance: ${bits.join(" ")}`);
+  }
+  if (scopeAtLeast(scope.academic, SCOPE.MINIMAL) && data.onboarding) {
+    const q = String(data.onboarding.institutionQuery || "").trim();
+    if (q) lines.push(`- academic: institution search "${q}"`);
+  }
+  if (!lines.length) return "";
+  return `
+
+CONTEXT ENGINE (permission-scoped — ${CONTEXT_VERSION}):
+${lines.join("\n")}
+Only the categories above were shared with you. Never ask for or infer anything outside them.`;
+}
+
 // ai-agent.js
 var AGENT_VERSION = "agent-f1";
 var SYSTEM_PROMPT_V = "sys-f1-3-ai-personalization";
+function contextEngineEnabled(env) {
+  return String(env && env.USE_CONTEXT_ENGINE || "").trim() === "enabled";
+}
 var INTENTS = {
   GENERAL_CHAT: "GENERAL_CHAT",
   ACADEMIC_EXPLAIN: "ACADEMIC_EXPLAIN",
@@ -67,7 +172,7 @@ var ONBOARDING_ACTIONS = /* @__PURE__ */ new Set([
   "explain-email",
   "explain-telegram"
 ]);
-var oneOf = (value, allowed, fallback) => allowed.includes(String(value || "")) ? String(value) : fallback;
+var oneOf = (value, allowed2, fallback) => allowed2.includes(String(value || "")) ? String(value) : fallback;
 function onboardingSecretDetected(value) {
   const text = String(value || "").trim();
   if (!text) return false;
@@ -546,8 +651,10 @@ async function agentChat(request, env, uid, opts = {}) {
   }
   msgs = msgs.slice(-24);
   const systemPrompt = buildSystemPrompt({ stats, examMode, quiz: quizMode, onboarding, prefs: aiPrefs });
+  const ctxBundle = contextEngineEnabled(env) ? buildContext({ uid: sendCtx.uid, prefs: aiPrefs, stats, onboarding, memoryOn }) : null;
+  const ctxText = ctxBundle ? renderContext(ctxBundle) : "";
   let summaryText = memoryOn && !freshThread ? await getKv(env.PUB_KV, "chatmemsum:" + sendCtx.uid) : "";
-  const sys = summaryText ? systemPrompt + "\n\n" + String(summaryText) : systemPrompt;
+  const sys = [systemPrompt, ctxText, summaryText].filter(Boolean).join("\n\n");
   const hasImage = msgs.some((m) => m.image);
   const partsOf = (m) => {
     const p = [{ text: m.content }];
@@ -679,6 +786,7 @@ async function agentStatus(request, env, uid) {
   const hasGemini = !!String(env.GEMINI_KEYS || "").trim();
   const hasGroq = !!String(env.GROQ_API_KEY || "").trim();
   const hasCloudflare = !!String(env.CLOUDFLARE_ACCOUNT_ID || "").trim() && !!String(env.CLOUDFLARE_AI_API_KEY || "").trim();
+  const ctxOn = contextEngineEnabled(env);
   return jsonResp({
     ok: true,
     agent: AGENT_VERSION,
@@ -686,7 +794,8 @@ async function agentStatus(request, env, uid) {
     providers: { gemini: hasGemini, groq: hasGroq, cloudflare: hasCloudflare },
     models: { fast: GEMINI_MODELS.FAST, smart: GEMINI_MODELS.SMART },
     limits: { perDay: Math.max(10, Math.min(500, Number(env.AGENT_DAILY_CAP || 80))) },
-    streaming: true
+    streaming: true,
+    context: ctxOn ? describeContext(buildContext({ uid, prefs: null, stats: null, onboarding: null, memoryOn: true })) : { enabled: false }
   });
 }
 function jsonResp(d, s = 200) {
@@ -3028,8 +3137,8 @@ var normalizeVariables = (variables, config) => {
 };
 function normalizeEmailRequest(input, config) {
   if (!isPlainObject(input)) fail3("Email request must be an object.");
-  const allowed = /* @__PURE__ */ new Set(["type", "recipient", "subject", "template", "variables", "requestId", "idempotencyKey", "priority", "context"]);
-  for (const key of Object.keys(input)) if (!allowed.has(key)) fail3(`Unknown email request field: ${key}`);
+  const allowed2 = /* @__PURE__ */ new Set(["type", "recipient", "subject", "template", "variables", "requestId", "idempotencyKey", "priority", "context"]);
+  for (const key of Object.keys(input)) if (!allowed2.has(key)) fail3(`Unknown email request field: ${key}`);
   if (!Object.values(EMAIL_TYPES).includes(input.type)) fail3("Email type is invalid.");
   const recipient = normalizeEmail(input.recipient);
   const requestId = String(input.requestId || "").trim();
@@ -3064,8 +3173,8 @@ function normalizeEmailRequest(input, config) {
 }
 function normalizeDeliveryEvent(input) {
   if (!isPlainObject(input)) fail3("Delivery event must be an object.");
-  const allowed = /* @__PURE__ */ new Set(["requestId", "idempotencyKey", "providerId", "providerEventId", "status", "occurredAt"]);
-  for (const key of Object.keys(input)) if (!allowed.has(key)) fail3(`Unknown delivery event field: ${key}`);
+  const allowed2 = /* @__PURE__ */ new Set(["requestId", "idempotencyKey", "providerId", "providerEventId", "status", "occurredAt"]);
+  for (const key of Object.keys(input)) if (!allowed2.has(key)) fail3(`Unknown delivery event field: ${key}`);
   const requestId = String(input.requestId || "").trim();
   const idempotencyKey = String(input.idempotencyKey || "").trim();
   const providerId = String(input.providerId || "").trim();
@@ -3992,8 +4101,8 @@ function derEcdsaToRaw(value) {
   return concatBytes(r, s);
 }
 function normalizeTransportList(value) {
-  const allowed = /* @__PURE__ */ new Set(["ble", "cable", "hybrid", "internal", "nfc", "smart-card", "usb"]);
-  return Object.freeze((Array.isArray(value) ? value : []).map((item) => String(item || "")).filter((item) => allowed.has(item)).slice(0, 8));
+  const allowed2 = /* @__PURE__ */ new Set(["ble", "cable", "hybrid", "internal", "nfc", "smart-card", "usb"]);
+  return Object.freeze((Array.isArray(value) ? value : []).map((item) => String(item || "")).filter((item) => allowed2.has(item)).slice(0, 8));
 }
 async function verifyPasskeyRegistration({ response: response3, expectedChallenge, rpId, allowedOrigins, cryptoImpl = globalThis.crypto } = {}) {
   const normalizedRpId = normalizeRpId(rpId);
@@ -6500,8 +6609,8 @@ var assertProviderUser = (signed, user) => {
   if (signed.subject !== user.subject) throw new NativeAuthError(AUTH_ERROR_CODES.AUTH_PROVIDER_UNAVAILABLE);
   if (user.disabled) throw new NativeAuthError(AUTH_ERROR_CODES.ACCOUNT_DISABLED);
 };
-var telegramVerificationStatus = async ({ env, user, context, allowed }) => {
-  if (!allowed) return false;
+var telegramVerificationStatus = async ({ env, user, context, allowed: allowed2 }) => {
+  if (!allowed2) return false;
   try {
     const result = await callAuthority(env, "/internal/verification/telegram/status", {
       input: { email: user.email, subject: user.subject },
@@ -6512,8 +6621,8 @@ var telegramVerificationStatus = async ({ env, user, context, allowed }) => {
     return false;
   }
 };
-var telegramVerificationAvailable = async (env, allowed) => {
-  if (!allowed) return false;
+var telegramVerificationAvailable = async (env, allowed2) => {
+  if (!allowed2) return false;
   try {
     const result = await callAuthority(env, "/internal/verification/capabilities", {});
     return result?.telegramAvailable === true;
@@ -6521,8 +6630,8 @@ var telegramVerificationAvailable = async (env, allowed) => {
     return false;
   }
 };
-var emailOwnershipProven = async ({ env, user, context, allowed }) => {
-  if (!allowed) return false;
+var emailOwnershipProven = async ({ env, user, context, allowed: allowed2 }) => {
+  if (!allowed2) return false;
   try {
     const result = await callAuthority(env, "/internal/verification/ownership/status", {
       input: { email: user.email, subject: user.subject },
