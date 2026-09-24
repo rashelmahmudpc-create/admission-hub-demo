@@ -567,7 +567,7 @@ test('image upload: R2 key matches the public files key shape (regression)', asy
   const key = res.data.key;
   const KEY_RE = /^[a-z][a-z0-9-]{0,31}\/[A-Za-z0-9_-]{1,64}\/\d{4}-\d{2}-\d{2}\/[a-z0-9]{10,24}\.[a-z0-9]{2,4}$/;
   assert.match(key, KEY_RE, `R2 key must pass files-storage KEY_RE, got ${key}`);
-  assert.equal(res.data.url, `https://admission-gk.admissionhub.workers.dev/api/files/${key}`);
+  assert.equal(res.data.url, `https://admissionhub.pages.dev/api/files/${key}`);
 });
 
 test('schedule: valid window accepted, past and >30d rejected', async () => {

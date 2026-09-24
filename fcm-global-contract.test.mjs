@@ -63,6 +63,12 @@ test('fcm send: app-logo icon/badge on every path + distinct-token fanout', () =
    * icon at all. Both the topic and per-device paths must set it from the live
    * logo URL, so a logo swap reaches every future push with no redeploy. */
   assert.match(FCM, /const APP_ICON_PATH = '\/icons\/icon-192\.png';/);
+  /* The icon must point at the Pages origin, NOT the worker origin: the Pages
+   * proxy forwards /api/* to the worker with the worker's own URL, and
+   * /icons/* on the worker host answers 403 → Android draws "A". */
+  assert.match(FCM, /const publicOrigin = request =>/, 'a public-origin resolver exists');
+  assert.match(FCM, /const iconAbsolute = request => `\$\{publicOrigin\(request\)\}\$\{APP_ICON_PATH\}`;/, 'icon is built on the public origin');
+  assert.ok(!/new URL\(APP_ICON_PATH, request/.test(FCM), 'never derive the icon from request.url (worker origin)');
   assert.match(FCM, /webpush: \{ notification: \{/, 'webpush block present');
   assert.match(FCM, /android: \{ notification: \{/, 'android block present');
   assert.equal((FCM.match(/iconUrl \? \{ icon: iconUrl \}/g) || []).length, 4, 'icon set on both paths (webpush+android each)');

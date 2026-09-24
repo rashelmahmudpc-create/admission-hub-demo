@@ -591,10 +591,21 @@ const GLOBAL_TOPIC = 'all_students';
  * Referenced (not inlined) so changing icons/icon-192.png changes every future
  * push automatically, with no redeploy and no per-message asset handling. */
 const APP_ICON_PATH = '/icons/icon-192.png';
-const iconAbsolute = request => {
-  try { return new URL(APP_ICON_PATH, request?.url || 'https://admissionhub.pages.dev/').toString(); }
-  catch { return `https://admissionhub.pages.dev${APP_ICON_PATH}`; }
+/* Absolute, publicly reachable app origin for notification assets.
+ * `request.url` cannot be trusted for this: every /api/* call is proxied from
+ * Pages to the worker, so inside the worker it is the worker's own origin
+ * (admission-gk...workers.dev) — which does NOT serve /icons/* and returns 403.
+ * Android then drew the OS default "A" avatar. The Pages origin is the one that
+ * serves the real logo and the R2 image read path. Overridable for staging. */
+const publicOrigin = request => {
+  try {
+    const h = new URL(request?.url || '');
+    /* A non-proxied call on our own public host keeps that host. */
+    if (h.hostname === 'admissionhub.pages.dev' || /\.pages\.dev$/.test(h.hostname)) return h.origin;
+  } catch (_) {}
+  return 'https://admissionhub.pages.dev';
 };
+const iconAbsolute = request => `${publicOrigin(request)}${APP_ICON_PATH}`;
 /* Notification image uploads (admin → R2). Images only, and small enough that a
  * phone photo re-encoded by the client fits well under the FCM limits. */
 const IMAGE_TYPES = Object.freeze({ jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp' });
@@ -1058,7 +1069,7 @@ export async function handleFcmNotificationRequest(request, env) {
       const key = `notify/${owner}/${day}/${randKey(12)}.${ext}`;
       try { await bucket.put(key, bytes, { httpMetadata: { contentType: type } }); }
       catch { return jsonResponse(request, { error: 'storage-error' }, 503); }
-      const url = `${new URL(request.url).origin}/api/files/${key}`;
+      const url = `${publicOrigin(request)}/api/files/${key}`;
       return jsonResponse(request, { ok: true, url, key }, 201);
     }
 

@@ -8608,13 +8608,15 @@ var GN_ID_RE = /^gn-[a-z0-9]{12}$/;
 var TOPIC_RE = /^[a-z][a-z0-9_-]{0,63}$/;
 var GLOBAL_TOPIC = "all_students";
 var APP_ICON_PATH = "/icons/icon-192.png";
-var iconAbsolute = (request) => {
+var publicOrigin = (request) => {
   try {
-    return new URL(APP_ICON_PATH, request?.url || "https://admissionhub.pages.dev/").toString();
-  } catch {
-    return `https://admissionhub.pages.dev${APP_ICON_PATH}`;
+    const h = new URL(request?.url || "");
+    if (h.hostname === "admissionhub.pages.dev" || /\.pages\.dev$/.test(h.hostname)) return h.origin;
+  } catch (_) {
   }
+  return "https://admissionhub.pages.dev";
 };
+var iconAbsolute = (request) => `${publicOrigin(request)}${APP_ICON_PATH}`;
 var IMAGE_TYPES = Object.freeze({ jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp" });
 var NOTIFY_IMAGE_MAX_BYTES = 4 * 1024 * 1024;
 var randKey = (len) => {
@@ -9043,7 +9045,7 @@ async function handleFcmNotificationRequest(request, env) {
       } catch {
         return jsonResponse(request, { error: "storage-error" }, 503);
       }
-      const url2 = `${new URL(request.url).origin}/api/files/${key}`;
+      const url2 = `${publicOrigin(request)}/api/files/${key}`;
       return jsonResponse(request, { ok: true, url: url2, key }, 201);
     }
   }
