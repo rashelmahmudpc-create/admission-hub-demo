@@ -334,6 +334,15 @@ export class FcmStore {
     return row ? row.id : null;
   }
 
+  async failStaleSending(beforeMs) {
+    await this.#ensureTables();
+    const res = await this.#d1.prepare(
+      `UPDATE global_notifications SET status='failed', sent_at=?, error='stale-sending'
+       WHERE status='sending' AND created_at<=?`
+    ).bind(Date.now(), beforeMs).run();
+    return Number(res?.meta?.changes || 0);
+  }
+
   async markRead(notificationId, userId, now) {
     await this.#ensureTables();
     await this.#d1.prepare(
@@ -401,7 +410,10 @@ export class FcmStore {
 
   async activeDeviceCount() {
     await this.#ensureTables();
-    const row = await this.#d1.prepare('SELECT COUNT(*) AS n FROM fcm_devices WHERE is_active=1').first();
+    /* Count physical devices, not account rows: one phone signed into three
+     * accounts is three rows but one device, and the reach number the admin
+     * sees must match how many phones actually ring. */
+    const row = await this.#d1.prepare('SELECT COUNT(DISTINCT fcm_token) AS n FROM fcm_devices WHERE is_active=1').first();
     return Number(row?.n || 0);
   }
 }
@@ -575,6 +587,25 @@ const GN_ID_RE = /^gn-[a-z0-9]{12}$/;
 const TOPIC_RE = /^[a-z][a-z0-9_-]{0,63}$/;
 /* Phase 2 global audience topic. Mirrors the client's GLOBAL_TOPIC. */
 const GLOBAL_TOPIC = 'all_students';
+/* Stable same-origin URL of the app logo, used as the notification icon/badge.
+ * Referenced (not inlined) so changing icons/icon-192.png changes every future
+ * push automatically, with no redeploy and no per-message asset handling. */
+const APP_ICON_PATH = '/icons/icon-192.png';
+const iconAbsolute = request => {
+  try { return new URL(APP_ICON_PATH, request?.url || 'https://admissionhub.pages.dev/').toString(); }
+  catch { return `https://admissionhub.pages.dev${APP_ICON_PATH}`; }
+};
+/* Notification image uploads (admin → R2). Images only, and small enough that a
+ * phone photo re-encoded by the client fits well under the FCM limits. */
+const IMAGE_TYPES = Object.freeze({ jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp' });
+const NOTIFY_IMAGE_MAX_BYTES = 4 * 1024 * 1024;
+const randKey = len => {
+  const bytes = crypto.getRandomValues(new Uint8Array(len));
+  const alphabet = 'abcdefghijklmnopqrstuvwxyz0123456789';
+  let s = '';
+  for (const b of bytes) s += alphabet[b % alphabet.length];
+  return s;
+};
 
 /* Dual-language preset templates (spec §13). Variables: {{title}} {{lesson}}
  * {{course}} {{feature}} {{date}} — the admin replaces them in the composer. */
@@ -599,13 +630,26 @@ const GLOBAL_TEMPLATES = Object.freeze([
     en: { title: '🚨 Important', body: '{{title}}' } }
 ]);
 
-async function fcmSendToTopic(env, topic, { title, body, imageUrl, data }) {
+async function fcmSendToTopic(env, topic, { title, body, imageUrl, iconUrl, badgeUrl, data }) {
   const accessToken = await fcmAccessToken(env);
   const notification = { title, body };
   if (imageUrl) notification.image = imageUrl;
   const message = {
     topic,
     notification,
+    /* Explicit platform blocks so the app logo (not the OS default "A" avatar)
+     * shows on Android and the web fallback. `iconUrl` is the live logo URL, so
+     * a logo swap propagates to every future push with no code change. */
+    webpush: { notification: {
+      title, body,
+      ...(iconUrl ? { icon: iconUrl } : {}),
+      ...(badgeUrl ? { badge: badgeUrl } : {}),
+      ...(imageUrl ? { image: imageUrl } : {})
+    } },
+    android: { notification: {
+      ...(iconUrl ? { icon: iconUrl } : {}),
+      ...(imageUrl ? { image: imageUrl } : {})
+    } },
     data: Object.fromEntries(Object.entries(data || {}).map(([k, v]) => [k, String(v)]))
   };
   let res;
@@ -663,8 +707,24 @@ const FCM_SEND_CONCURRENCY = 10;
  * row still read "sent" — the exact class of bug this path exists to avoid. */
 const FCM_FANOUT_MAX = 20_000;
 
-async function fcmSendOne(env, accessToken, target, { title, body, data: messageData }) {
-  const message = { token: target.token, notification: { title, body }, data: messageData };
+async function fcmSendOne(env, accessToken, target, { title, body, imageUrl, iconUrl, badgeUrl, data: messageData }) {
+  const notification = { title, body };
+  if (imageUrl) notification.image = imageUrl;
+  const message = {
+    token: target.token,
+    notification,
+    webpush: { notification: {
+      title, body,
+      ...(iconUrl ? { icon: iconUrl } : {}),
+      ...(badgeUrl ? { badge: badgeUrl } : {}),
+      ...(imageUrl ? { image: imageUrl } : {})
+    } },
+    android: { notification: {
+      ...(iconUrl ? { icon: iconUrl } : {}),
+      ...(imageUrl ? { image: imageUrl } : {})
+    } },
+    data: messageData
+  };
   let res;
   try {
     res = await fetch(FCM_SEND_URL(env.FIREBASE_PROJECT_ID), {
@@ -689,17 +749,31 @@ async function fcmSendOne(env, accessToken, target, { title, body, data: message
   return { id: target.id, ok: false, reason: 'error' };
 }
 
-async function fcmSendToTokens(env, targets, { title, body, data }) {
+async function fcmSendToTokens(env, targets, { title, body, imageUrl, iconUrl, badgeUrl, data }) {
   const accessToken = await fcmAccessToken(env);
   const messageData = Object.fromEntries(Object.entries(data || {}).map(([k, v]) => [k, String(v)]));
-  const batch = targets.slice(0, FCM_FANOUT_MAX);
+  /* One physical device is one FCM token. When the same phone is used by more
+   * than one account, `fcm_devices` holds one row per (user,token), so the raw
+   * list repeats the token and the device receives the same push N times. Send
+   * once per distinct token; keep every row id so all of them can be retired
+   * when the token turns out to be dead. */
+  const byToken = new Map();
+  for (const t of targets) {
+    const key = String(t.token || '');
+    if (!key) continue;
+    const cur = byToken.get(key);
+    if (cur) cur.ids.push(t.id);
+    else byToken.set(key, { id: t.id, ids: [t.id], token: t.token });
+  }
+  const batch = [...byToken.values()].slice(0, FCM_FANOUT_MAX);
+  const idToIds = new Map(batch.map(b => [b.id, b.ids]));
   let sent = 0;
   let failedTotal = 0;
   const failed = [];
   const badIds = [];
   for (let i = 0; i < batch.length; i += FCM_SEND_CONCURRENCY) {
     const results = await Promise.all(
-      batch.slice(i, i + FCM_SEND_CONCURRENCY).map(t => fcmSendOne(env, accessToken, t, { title, body, data: messageData }))
+      batch.slice(i, i + FCM_SEND_CONCURRENCY).map(t => fcmSendOne(env, accessToken, t, { title, body, imageUrl, iconUrl, badgeUrl, data: messageData }))
     );
     for (const r of results) {
       if (r.ok) sent += 1;
@@ -707,16 +781,20 @@ async function fcmSendToTokens(env, targets, { title, body, data }) {
         failedTotal += 1;
         /* Keep the sample small: it is diagnostic detail, the count is truth. */
         if (failed.length < 20) failed.push({ id: r.id, reason: r.reason });
-        if (r.reason === 'unregistered' || r.reason === 'invalid') badIds.push(r.id);
+        if (r.reason === 'unregistered' || r.reason === 'invalid') {
+          for (const id of (idToIds.get(r.id) || [r.id])) badIds.push(id);
+        }
       }
     }
   }
-  return { sent, failed: failedTotal, failedSample: failed, badIds, truncated: targets.length > batch.length };
+  return { sent, failed: failedTotal, failedSample: failed, badIds, truncated: [...byToken.values()].length > batch.length };
 }
 
-async function sendGlobal(env, store, row) {
+async function sendGlobal(env, store, row, request) {
   const data = { gid: row.id, link: row.targetUrl || 'notifications', type: row.type, src: 'fcm-global' };
-  const topicRes = await fcmSendToTopic(env, row.topic, { title: row.title, body: row.body, imageUrl: row.imageUrl, data });
+  const iconUrl = iconAbsolute(request);
+  const visual = { imageUrl: row.imageUrl, iconUrl, badgeUrl: iconUrl };
+  const topicRes = await fcmSendToTopic(env, row.topic, { title: row.title, body: row.body, ...visual, data });
   let fallbackSent = 0;
   let fallbackFailed = 0;
   /* Hybrid (spec §23 + iOS topic support varies by browser): topic first;
@@ -726,11 +804,13 @@ async function sendGlobal(env, store, row) {
     ? await store.activeDevicesMissingTopic(row.topic)
     : await store.allActiveTokens();
   if (targets.length) {
-    const out = await fcmSendToTokens(env, targets, { title: row.title, body: row.body, data });
+    const out = await fcmSendToTokens(env, targets, { title: row.title, body: row.body, ...visual, data });
     fallbackSent = out.sent;
     fallbackFailed = out.failed;
     if (out.badIds.length) await store.markInactive(out.badIds, Date.now());
   }
+  /* Distinct physical devices, not user rows: the same phone under several
+   * accounts is one device and must not inflate the delivered count. */
   const reach = await store.activeDeviceCount();
   const ok = topicRes.ok || fallbackSent > 0;
   /* A "sent" row must mean at least one device really accepted the message.
@@ -754,13 +834,17 @@ export async function runScheduledGlobalNotifications(env) {
   if (!fcmConfigured(env)) return { processed: 0 };
   const store = new FcmStore(env?.PROFILE_DB);
   if (!store.available()) return { processed: 0 };
+  /* Recover sends that died mid-flight: a row left in 'sending' (worker killed
+   * between insert and update) would otherwise sit there forever, counted
+   * neither as sent nor failed. Mark it failed so the history is truthful. */
+  try { await store.failStaleSending(Date.now() - 10 * 60_000); } catch (_) { /* best effort */ }
   const due = await store.dueGlobals(Date.now());
   let processed = 0;
   for (const row of due) {
     try {
       await sendGlobal(env, store, row);
     } catch (e) {
-      await store.updateGlobalStatus(row.id, { status: 'failed', error: String(e?.message || e).slice(0, 200) });
+      await store.updateGlobalStatus(row.id, { status: 'failed', sentAt: Date.now(), error: String(e?.message || e).slice(0, 200) });
     }
     processed += 1;
   }
@@ -817,6 +901,7 @@ export async function handleFcmNotificationRequest(request, env) {
     '/api/notifications/global/send',
     '/api/notifications/global/schedule',
     '/api/notifications/global/cancel',
+    '/api/notifications/global/image',
     '/api/notifications/history',
     '/api/notifications/templates'
   ]);
@@ -843,8 +928,12 @@ export async function handleFcmNotificationRequest(request, env) {
       const audience = GLOBAL_AUDIENCES[body.audience] ? body.audience : 'all_students';
       const topic = GLOBAL_AUDIENCES[audience].topic;
       if (!TOPIC_RE.test(topic)) return jsonResponse(request, { error: 'invalid-topic' }, 500);
-      /* Rule (spec §17): duplicate protection — same content within 10 days. */
-      const dedup = (await sha256Hex(`${type}|${title}|${text}`)).slice(0, 40);
+      /* Rule (spec §17): duplicate protection — the same *send* within 10 days.
+       * The mode is part of the key: scheduling a message is a different intent
+       * from sending it, so an earlier test-send of identical text must not
+       * make the real scheduled message impossible to create (that 409 was why
+       * no scheduled notification could ever be saved). */
+      const dedup = (await sha256Hex(`${type}|${title}|${text}|now`)).slice(0, 40);
       const dup = await store.duplicateRecent(dedup, Date.now() - 10 * 86400000);
       if (dup) return jsonResponse(request, { error: 'duplicate', existingId: dup }, 409);
       /* Rule (spec §17): daily spam cap. */
@@ -869,7 +958,15 @@ export async function handleFcmNotificationRequest(request, env) {
           if (sub.ok) await store.setDeviceTopics(adminUserId, adminDeviceToken, topic);
         } catch (_) { /* fallback covers this device */ }
       }
-      const result = await sendGlobal(env, store, row);
+      let result;
+      try {
+        result = await sendGlobal(env, store, row, request);
+      } catch (e) {
+        /* Never leave a row stuck in 'sending': a thrown fanout used to strand
+         * it there forever, invisible to both the history view and the cron. */
+        await store.updateGlobalStatus(id, { status: 'failed', sentAt: Date.now(), error: String(e?.message || e).slice(0, 200) });
+        result = { ok: false, reach: 0, delivered: 0 };
+      }
       return jsonResponse(request, { ok: result.ok, id, status: result.ok ? 'sent' : 'failed', reachEstimate: result.reach, delivered: result.delivered }, result.ok ? 201 : 502);
     }
 
@@ -894,7 +991,10 @@ export async function handleFcmNotificationRequest(request, env) {
       if (when > Date.now() + GLOBAL_MAX_SCHEDULE_DAYS * 86400000) {
         return jsonResponse(request, { error: 'schedule-too-far' }, 400);
       }
-      const dedup = (await sha256Hex(`${type}|${title}|${text}`)).slice(0, 40);
+      /* Same mode-aware key as /global/send. Scheduled rows also carry the
+       * target time so re-scheduling the same text for a different slot is
+       * allowed rather than silently rejected as a duplicate. */
+      const dedup = (await sha256Hex(`${type}|${title}|${text}|scheduled|${Math.floor(when)}`)).slice(0, 40);
       const dup = await store.duplicateRecent(dedup, Date.now() - 10 * 86400000);
       if (dup) return jsonResponse(request, { error: 'duplicate', existingId: dup }, 409);
       const id = `gn-${Math.random().toString(36).slice(2, 8)}${Math.random().toString(36).slice(2, 8)}`;
@@ -932,6 +1032,29 @@ export async function handleFcmNotificationRequest(request, env) {
 
     if (path === '/api/notifications/templates' && request.method === 'GET') {
       return jsonResponse(request, { ok: true, templates: GLOBAL_TEMPLATES });
+    }
+
+    if (path === '/api/notifications/global/image' && request.method === 'POST') {
+      /* Lets the admin attach a picture straight from the phone instead of
+       * pasting a URL. Stored in the same R2 bucket and served from our own
+       * /api/files/<key> path, so the FCM `image` field gets a stable https URL
+       * with no egress cost. Auth is the admin Bearer token (ADMIN_PATHS). */
+      const bucket = env?.FILE_BUCKET;
+      if (!bucket || typeof bucket.put !== 'function') return jsonResponse(request, { error: 'storage-unavailable' }, 503);
+      const ext = String(request.headers.get('X-File-Ext') || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const type = IMAGE_TYPES[ext];
+      if (!type) return jsonResponse(request, { error: 'invalid-type' }, 400);
+      const declared = Number(request.headers.get('Content-Length') || 0);
+      if (!declared || declared > NOTIFY_IMAGE_MAX_BYTES) return jsonResponse(request, { error: 'too-large' }, 413);
+      let bytes;
+      try { bytes = new Uint8Array(await request.arrayBuffer()); } catch { return jsonResponse(request, { error: 'read-failed' }, 400); }
+      if (!bytes.length || bytes.length > NOTIFY_IMAGE_MAX_BYTES) return jsonResponse(request, { error: 'too-large' }, 413);
+      const day = new Date().toISOString().slice(0, 10);
+      const key = `notify/${day}/${randKey(12)}.${ext}`;
+      try { await bucket.put(key, bytes, { httpMetadata: { contentType: type } }); }
+      catch { return jsonResponse(request, { error: 'storage-error' }, 503); }
+      const url = `${new URL(request.url).origin}/api/files/${key}`;
+      return jsonResponse(request, { ok: true, url, key }, 201);
     }
 
   }

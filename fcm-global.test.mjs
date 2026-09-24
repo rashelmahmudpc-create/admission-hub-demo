@@ -111,6 +111,9 @@ function makeFakeD1() {
       if (sql.includes('SELECT COUNT(*) AS n FROM fcm_devices WHERE user_id=?')) {
         return { n: activeDevices().filter(r => r.userId === args[0]).length };
       }
+      if (sql.includes('COUNT(DISTINCT fcm_token) AS n FROM fcm_devices WHERE is_active=1')) {
+        return { n: new Set(activeDevices().map(r => r.fcmToken)).size };
+      }
       if (sql.includes('SELECT COUNT(*) AS n FROM fcm_devices WHERE is_active=1')) {
         return { n: activeDevices().length };
       }
@@ -510,6 +513,27 @@ test('daily spam cap: 10th send of the day succeeds, 11th → 429', async () => 
     }), env);
     assert.equal(eleventh.response.status, 429);
     assert.equal(eleventh.data.error, 'rate-limited');
+  } finally { stub.restore(); }
+});
+
+test('schedule: send-then-schedule the same text is allowed (regression)', async () => {
+  const env = await makeEnv();
+  await registerDevice(env, 'schedreg');
+  const stub = withFcmStub(env);
+  try {
+    /* The dedup key used to be type|title|body only, so a test-send of a
+     * message made the real scheduled copy impossible to create (409) for 10
+     * days — no scheduled notification could ever be saved. Intent (send vs
+     * schedule) is now part of the key. */
+    const sent = await call(cookieRequest('/api/notifications/global/send', {
+      method: 'POST', body: { type: 'announcement', title: 'same text', body: 'same body' }
+    }), env);
+    assert.equal(sent.response.status, 201);
+    const scheduled = await call(cookieRequest('/api/notifications/global/schedule', {
+      method: 'POST', body: { type: 'announcement', title: 'same text', body: 'same body', scheduledAt: Date.now() + 5 * 60_000 }
+    }), env);
+    assert.equal(scheduled.response.status, 201, 'scheduling after a send must not be blocked');
+    assert.equal(scheduled.data.status, 'scheduled');
   } finally { stub.restore(); }
 });
 

@@ -55,7 +55,16 @@
     titlePh: { bn: '🚀 New Lesson Available', en: '🚀 New Lesson Available' },
     bodyLabel: { bn: 'Message', en: 'Message' },
     bodyPh: { bn: 'নতুন lesson এখন available।', en: 'A new lesson is now available.' },
-    imageLabel: { bn: 'Image URL (optional)', en: 'Image URL (optional)' },
+    imageLabel: { bn: 'ছবি (optional)', en: 'Image (optional)' },
+    imageUpload: { bn: '📷 ফোন থেকে ছবি দিন', en: '📷 Choose a photo' },
+    imageOr: { bn: 'অথবা ছবির লিংক (URL)', en: 'or paste an image URL' },
+    imageUploading: { bn: 'আপলোড হচ্ছে…', en: 'Uploading…' },
+    imageTooLarge: { bn: 'ছবি বড় — ৪ MB এর নিচের ছবি দিন', en: 'Image too large — choose one under 4 MB' },
+    imageBadType: { bn: 'শুধু JPG / PNG / WebP ছবি', en: 'Only JPG / PNG / WebP images' },
+    imageUploadFailed: { bn: 'ছবি আপলোড ব্যর্থ — আবার চেষ্টা করুন', en: 'Image upload failed — please try again' },
+    imageRemove: { bn: '✕ সরান', en: '✕ Remove' },
+    imageChangeHint: { bn: 'নোটিফিকেশনে দেখানো app logo বদলাতে চাইলে শুধু icons/icon-192.png বদলালেই হবে — নতুন push-এ অটোমেটিক দেখাবে।', en: 'To change the app logo shown in notifications just replace icons/icon-192.png — every new push picks it up automatically.' },
+    lengthLeft: { bn: 'বাকি', en: 'left' },
     targetLabel: { bn: 'Deep link — notification click-এ কোন page খুলবে', en: 'Deep link — which page opens on notification click' },
     targetPh: { bn: '/dashboard', en: '/dashboard' },
     sendModeLabel: { bn: 'Send', en: 'Send' },
@@ -142,6 +151,7 @@
     title: '',
     body: '',
     imageUrl: '',
+    imageUploading: false,
     targetUrl: '',
     mode: 'now',           // now | schedule
     when: '',              // datetime-local value (Asia/Dhaka local)
@@ -171,12 +181,64 @@
     const L = lang() === 'bn' ? 'bn-BD' : 'en-GB';
     return `<div class="gn-preview">
       <div class="gn-preview-card">
-        <div class="gn-preview-top"><span class="gn-preview-app">🔔 ${esc(t('appHeader'))}</span><span class="gn-preview-time">${esc(now.toLocaleTimeString(L, { hour: '2-digit', minute: '2-digit' }))}</span></div>
+        <div class="gn-preview-top"><span class="gn-preview-app"><img class="gn-preview-logo" src="./icons/icon-192.png" alt=""> ${esc(t('appHeader'))}</span><span class="gn-preview-time">${esc(now.toLocaleTimeString(L, { hour: '2-digit', minute: '2-digit' }))}</span></div>
+        ${state.imageUrl ? `<img class="gn-preview-img" src="${esc(state.imageUrl)}" alt="" loading="lazy">` : ''}
         <b class="gn-preview-title" id="gnPrevTitle">${esc(state.title || '…')}</b>
         <p class="gn-preview-body" id="gnPrevBody">${esc(state.body || '…')}</p>
         <div class="gn-preview-link" id="gnPrevLink" style="${state.targetUrl ? '' : 'display:none'}">↗ ${esc(state.targetUrl)}</div>
       </div>
     </div>`;
+  };
+
+  /* Upload a photo chosen on the phone. The worker stores it in R2 and returns
+   * a same-origin URL, which becomes the FCM `image`. The file is re-encoded on
+   * a canvas first so a multi-MB camera shot becomes a small JPEG — faster on
+   * mobile data and always under the server's 4 MB cap. */
+  const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+  const shrinkImage = (file) => new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const max = 1200;
+        const scale = Math.min(1, max / Math.max(img.width, img.height));
+        const w = Math.max(1, Math.round(img.width * scale));
+        const h = Math.max(1, Math.round(img.height * scale));
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        canvas.toBlob(blob => {
+          URL.revokeObjectURL(url);
+          blob ? resolve(blob) : reject(new Error('encode-failed'));
+        }, 'image/jpeg', 0.85);
+      } catch (e) { URL.revokeObjectURL(url); reject(e); }
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('decode-failed')); };
+    img.src = url;
+  });
+  const uploadImage = async (file) => {
+    if (!file) return;
+    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) { state.error = t('imageBadType'); reRender(); return; }
+    state.imageUploading = true; state.error = ''; reRender();
+    try {
+      let blob = file;
+      try { blob = await shrinkImage(file); } catch (_) { blob = file; }
+      if (blob.size > 4 * 1024 * 1024) { state.imageUploading = false; state.error = t('imageTooLarge'); reRender(); return; }
+      const res = await fetch('/api/notifications/global/image', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/octet-stream', Authorization: `Bearer ${tok()}`, 'X-File-Ext': 'jpg' },
+        body: blob
+      });
+      const data = await res.json().catch(() => ({}));
+      state.imageUploading = false;
+      if (res.ok && data.url) { state.imageUrl = data.url; state.error = ''; }
+      else { state.error = t('imageUploadFailed') + (data && data.error ? ` [${data.error}]` : ''); }
+    } catch (_) {
+      state.imageUploading = false;
+      state.error = t('imageUploadFailed');
+    }
+    reRender();
   };
 
   /* ── views ──────────────────────────────────────────────────────────────── */
@@ -218,10 +280,22 @@
   .gn-preview{margin-top:6px;}
   .gn-preview-card{background:#fff;border:1px solid var(--line,#e3e8e5);border-radius:16px;padding:13px 14px;box-shadow:0 2px 12px rgba(12,59,42,.06);}
   .gn-preview-top{display:flex;justify-content:space-between;align-items:center;font-size:11.5px;color:#8a988f;margin-bottom:7px;}
-  .gn-preview-app{font-weight:800;color:#54655d;}
+  .gn-preview-app{font-weight:800;color:#54655d;display:flex;align-items:center;gap:6px;}
+  .gn-preview-logo{width:18px;height:18px;border-radius:5px;display:block;}
+  .gn-preview-img{width:100%;border-radius:11px;margin:2px 0 9px;display:block;max-height:180px;object-fit:cover;}
   .gn-preview-title{display:block;font-size:14.5px;color:#10352a;margin-bottom:3px;}
   .gn-preview-body{margin:0;font-size:13px;color:#54655d;line-height:1.5;}
   .gn-preview-link{margin-top:8px;font-size:11.5px;color:var(--emerald,#0f6b4f);font-weight:700;}
+  .gn-imgbox{display:block;}
+  .gn-imgpreview{position:relative;margin-bottom:9px;}
+  .gn-imgpreview img{width:100%;border-radius:12px;display:block;max-height:200px;object-fit:cover;border:1px solid var(--line,#e3e8e5);}
+  .gn-imgremove{position:absolute;top:8px;right:8px;border:none;background:rgba(12,59,42,.82);color:#fff;font-size:11.5px;font-weight:700;border-radius:9px;padding:7px 10px;cursor:pointer;}
+  .gn-imgrow{display:flex;}
+  .gn-imgbtn{flex:1;text-align:center;border:1.5px dashed var(--emerald,#0f6b4f);background:#f2f8f5;color:var(--emerald,#0f6b4f);font-weight:800;font-size:13.5px;border-radius:12px;padding:12px;cursor:pointer;position:relative;}
+  .gn-imgbtn:active{transform:scale(.99);}
+  .gn-imgbtn.busy{opacity:.6;border-style:solid;}
+  .gn-imgbtn input{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;}
+  .gn-imgsep{text-align:center;font-size:11px;color:#8a988f;margin:9px 0;text-transform:uppercase;letter-spacing:.4px;}
   .gn-note{font-size:11px;color:#8a988f;line-height:1.6;margin-top:10px;}
   .gn-center-confirm{position:fixed;inset:0;z-index:2000;background:rgba(12,59,42,.45);display:grid;place-items:center;padding:20px;}
   .gn-center-confirm-card{background:#fff;border-radius:18px;padding:20px;width:100%;max-width:360px;}
@@ -281,7 +355,18 @@
     <span class="gn-label">${esc(t('bodyLabel'))}</span>
     <textarea id="gnBody" class="gn-input gn-textarea" maxlength="400" placeholder="${esc(t('bodyPh'))}" oninput="window.__gnLive('body', this.value)">${esc(state.body)}</textarea>
     <span class="gn-label">${esc(t('imageLabel'))}</span>
-    <input class="gn-input" maxlength="500" value="${esc(state.imageUrl)}" oninput="window.__gnLive('imageUrl', this.value)" inputmode="url">
+    <div class="gn-imgbox">
+      ${state.imageUrl ? `<div class="gn-imgpreview"><img src="${esc(state.imageUrl)}" alt=""><button class="gn-imgremove" onclick="window.__gnClearImage()">${esc(t('imageRemove'))}</button></div>` : ''}
+      <div class="gn-imgrow">
+        <label class="gn-imgbtn ${state.imageUploading ? 'busy' : ''}">
+          ${esc(state.imageUploading ? t('imageUploading') : t('imageUpload'))}
+          <input type="file" accept="image/jpeg,image/png,image/webp" onchange="window.__gnPickImage(this)">
+        </label>
+      </div>
+      <div class="gn-imgsep">${esc(t('imageOr'))}</div>
+      <input class="gn-input" maxlength="500" placeholder="https://…" value="${esc(state.imageUrl)}" oninput="window.__gnLive('imageUrl', this.value)" inputmode="url">
+    </div>
+    <div class="gn-note">${esc(t('imageChangeHint'))}</div>
     <span class="gn-label">${esc(t('targetLabel'))}</span>
     <input class="gn-input" maxlength="200" placeholder="${esc(t('targetPh'))}" value="${esc(state.targetUrl)}" oninput="window.__gnLive('targetUrl', this.value)">
     <span class="gn-label">${esc(t('sendModeLabel'))}</span>
@@ -404,6 +489,14 @@
     }
   };
   window.__gnField = (field, value) => { state[field] = value; reRender(); };
+  /* Photo pick from the phone. Only this control re-renders (a chosen file is a
+   * deliberate, one-off change, not per-keystroke typing). */
+  window.__gnPickImage = (inputEl) => {
+    const file = inputEl && inputEl.files && inputEl.files[0];
+    if (inputEl) inputEl.value = '';
+    uploadImage(file);
+  };
+  window.__gnClearImage = () => { state.imageUrl = ''; state.error = ''; reRender(); };
 
   window.__gnCancel = async (id) => {
     const out = await api('/api/notifications/global/cancel', { method: 'POST', body: JSON.stringify({ id }) });

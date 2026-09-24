@@ -8402,6 +8402,14 @@ var FcmStore = class {
     ).bind(dedup, sinceMs).first();
     return row ? row.id : null;
   }
+  async failStaleSending(beforeMs) {
+    await this.#ensureTables();
+    const res = await this.#d1.prepare(
+      `UPDATE global_notifications SET status='failed', sent_at=?, error='stale-sending'
+       WHERE status='sending' AND created_at<=?`
+    ).bind(Date.now(), beforeMs).run();
+    return Number(res?.meta?.changes || 0);
+  }
   async markRead(notificationId, userId, now) {
     await this.#ensureTables();
     await this.#d1.prepare(
@@ -8463,7 +8471,7 @@ var FcmStore = class {
   }
   async activeDeviceCount() {
     await this.#ensureTables();
-    const row = await this.#d1.prepare("SELECT COUNT(*) AS n FROM fcm_devices WHERE is_active=1").first();
+    const row = await this.#d1.prepare("SELECT COUNT(DISTINCT fcm_token) AS n FROM fcm_devices WHERE is_active=1").first();
     return Number(row?.n || 0);
   }
 };
@@ -8599,6 +8607,23 @@ var GLOBAL_MAX_SCHEDULE_DAYS = 30;
 var GN_ID_RE = /^gn-[a-z0-9]{12}$/;
 var TOPIC_RE = /^[a-z][a-z0-9_-]{0,63}$/;
 var GLOBAL_TOPIC = "all_students";
+var APP_ICON_PATH = "/icons/icon-192.png";
+var iconAbsolute = (request) => {
+  try {
+    return new URL(APP_ICON_PATH, request?.url || "https://admissionhub.pages.dev/").toString();
+  } catch {
+    return `https://admissionhub.pages.dev${APP_ICON_PATH}`;
+  }
+};
+var IMAGE_TYPES = Object.freeze({ jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp" });
+var NOTIFY_IMAGE_MAX_BYTES = 4 * 1024 * 1024;
+var randKey = (len) => {
+  const bytes = crypto.getRandomValues(new Uint8Array(len));
+  const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
+  let s = "";
+  for (const b of bytes) s += alphabet[b % alphabet.length];
+  return s;
+};
 var GLOBAL_TEMPLATES = Object.freeze([
   {
     key: "new-content",
@@ -8637,13 +8662,27 @@ var GLOBAL_TEMPLATES = Object.freeze([
     en: { title: "🚨 Important", body: "{{title}}" }
   }
 ]);
-async function fcmSendToTopic(env, topic, { title, body, imageUrl, data }) {
+async function fcmSendToTopic(env, topic, { title, body, imageUrl, iconUrl, badgeUrl, data }) {
   const accessToken = await fcmAccessToken(env);
   const notification = { title, body };
   if (imageUrl) notification.image = imageUrl;
   const message = {
     topic,
     notification,
+    /* Explicit platform blocks so the app logo (not the OS default "A" avatar)
+     * shows on Android and the web fallback. `iconUrl` is the live logo URL, so
+     * a logo swap propagates to every future push with no code change. */
+    webpush: { notification: {
+      title,
+      body,
+      ...iconUrl ? { icon: iconUrl } : {},
+      ...badgeUrl ? { badge: badgeUrl } : {},
+      ...imageUrl ? { image: imageUrl } : {}
+    } },
+    android: { notification: {
+      ...iconUrl ? { icon: iconUrl } : {},
+      ...imageUrl ? { image: imageUrl } : {}
+    } },
     data: Object.fromEntries(Object.entries(data || {}).map(([k, v]) => [k, String(v)]))
   };
   let res;
@@ -8689,8 +8728,25 @@ var unsubscribeDeviceFromTopic = (env, token, topic) => iidBatch(env, IID_BATCH_
 var FCM_SEND_URL = (project) => `https://fcm.googleapis.com/v1/projects/${project}/messages:send`;
 var FCM_SEND_CONCURRENCY = 10;
 var FCM_FANOUT_MAX = 2e4;
-async function fcmSendOne(env, accessToken, target, { title, body, data: messageData }) {
-  const message = { token: target.token, notification: { title, body }, data: messageData };
+async function fcmSendOne(env, accessToken, target, { title, body, imageUrl, iconUrl, badgeUrl, data: messageData }) {
+  const notification = { title, body };
+  if (imageUrl) notification.image = imageUrl;
+  const message = {
+    token: target.token,
+    notification,
+    webpush: { notification: {
+      title,
+      body,
+      ...iconUrl ? { icon: iconUrl } : {},
+      ...badgeUrl ? { badge: badgeUrl } : {},
+      ...imageUrl ? { image: imageUrl } : {}
+    } },
+    android: { notification: {
+      ...iconUrl ? { icon: iconUrl } : {},
+      ...imageUrl ? { image: imageUrl } : {}
+    } },
+    data: messageData
+  };
   let res;
   try {
     res = await fetch(FCM_SEND_URL(env.FIREBASE_PROJECT_ID), {
@@ -8713,37 +8769,50 @@ async function fcmSendOne(env, accessToken, target, { title, body, data: message
   }
   return { id: target.id, ok: false, reason: "error" };
 }
-async function fcmSendToTokens(env, targets, { title, body, data }) {
+async function fcmSendToTokens(env, targets, { title, body, imageUrl, iconUrl, badgeUrl, data }) {
   const accessToken = await fcmAccessToken(env);
   const messageData = Object.fromEntries(Object.entries(data || {}).map(([k, v]) => [k, String(v)]));
-  const batch = targets.slice(0, FCM_FANOUT_MAX);
+  const byToken = /* @__PURE__ */ new Map();
+  for (const t of targets) {
+    const key = String(t.token || "");
+    if (!key) continue;
+    const cur = byToken.get(key);
+    if (cur) cur.ids.push(t.id);
+    else byToken.set(key, { id: t.id, ids: [t.id], token: t.token });
+  }
+  const batch = [...byToken.values()].slice(0, FCM_FANOUT_MAX);
+  const idToIds = new Map(batch.map((b) => [b.id, b.ids]));
   let sent = 0;
   let failedTotal = 0;
   const failed = [];
   const badIds = [];
   for (let i = 0; i < batch.length; i += FCM_SEND_CONCURRENCY) {
     const results = await Promise.all(
-      batch.slice(i, i + FCM_SEND_CONCURRENCY).map((t) => fcmSendOne(env, accessToken, t, { title, body, data: messageData }))
+      batch.slice(i, i + FCM_SEND_CONCURRENCY).map((t) => fcmSendOne(env, accessToken, t, { title, body, imageUrl, iconUrl, badgeUrl, data: messageData }))
     );
     for (const r of results) {
       if (r.ok) sent += 1;
       else {
         failedTotal += 1;
         if (failed.length < 20) failed.push({ id: r.id, reason: r.reason });
-        if (r.reason === "unregistered" || r.reason === "invalid") badIds.push(r.id);
+        if (r.reason === "unregistered" || r.reason === "invalid") {
+          for (const id of idToIds.get(r.id) || [r.id]) badIds.push(id);
+        }
       }
     }
   }
-  return { sent, failed: failedTotal, failedSample: failed, badIds, truncated: targets.length > batch.length };
+  return { sent, failed: failedTotal, failedSample: failed, badIds, truncated: [...byToken.values()].length > batch.length };
 }
-async function sendGlobal(env, store, row) {
+async function sendGlobal(env, store, row, request) {
   const data = { gid: row.id, link: row.targetUrl || "notifications", type: row.type, src: "fcm-global" };
-  const topicRes = await fcmSendToTopic(env, row.topic, { title: row.title, body: row.body, imageUrl: row.imageUrl, data });
+  const iconUrl = iconAbsolute(request);
+  const visual = { imageUrl: row.imageUrl, iconUrl, badgeUrl: iconUrl };
+  const topicRes = await fcmSendToTopic(env, row.topic, { title: row.title, body: row.body, ...visual, data });
   let fallbackSent = 0;
   let fallbackFailed = 0;
   const targets = topicRes.ok ? await store.activeDevicesMissingTopic(row.topic) : await store.allActiveTokens();
   if (targets.length) {
-    const out = await fcmSendToTokens(env, targets, { title: row.title, body: row.body, data });
+    const out = await fcmSendToTokens(env, targets, { title: row.title, body: row.body, ...visual, data });
     fallbackSent = out.sent;
     fallbackFailed = out.failed;
     if (out.badIds.length) await store.markInactive(out.badIds, Date.now());
@@ -8765,13 +8834,17 @@ async function runScheduledGlobalNotifications(env) {
   if (!fcmConfigured(env)) return { processed: 0 };
   const store = new FcmStore(env?.PROFILE_DB);
   if (!store.available()) return { processed: 0 };
+  try {
+    await store.failStaleSending(Date.now() - 10 * 6e4);
+  } catch (_) {
+  }
   const due = await store.dueGlobals(Date.now());
   let processed = 0;
   for (const row of due) {
     try {
       await sendGlobal(env, store, row);
     } catch (e) {
-      await store.updateGlobalStatus(row.id, { status: "failed", error: String(e?.message || e).slice(0, 200) });
+      await store.updateGlobalStatus(row.id, { status: "failed", sentAt: Date.now(), error: String(e?.message || e).slice(0, 200) });
     }
     processed += 1;
   }
@@ -8813,6 +8886,7 @@ async function handleFcmNotificationRequest(request, env) {
     "/api/notifications/global/send",
     "/api/notifications/global/schedule",
     "/api/notifications/global/cancel",
+    "/api/notifications/global/image",
     "/api/notifications/history",
     "/api/notifications/templates"
   ]);
@@ -8839,7 +8913,7 @@ async function handleFcmNotificationRequest(request, env) {
       const audience = GLOBAL_AUDIENCES[body.audience] ? body.audience : "all_students";
       const topic = GLOBAL_AUDIENCES[audience].topic;
       if (!TOPIC_RE.test(topic)) return jsonResponse(request, { error: "invalid-topic" }, 500);
-      const dedup = (await sha256Hex2(`${type}|${title}|${text}`)).slice(0, 40);
+      const dedup = (await sha256Hex2(`${type}|${title}|${text}|now`)).slice(0, 40);
       const dup = await store.duplicateRecent(dedup, Date.now() - 10 * 864e5);
       if (dup) return jsonResponse(request, { error: "duplicate", existingId: dup }, 409);
       if (!await kvRateAllow(env, `global:day:${dhakaDayKey()}`, GLOBAL_DAILY_CAP, 86400)) {
@@ -8870,7 +8944,13 @@ async function handleFcmNotificationRequest(request, env) {
         } catch (_) {
         }
       }
-      const result = await sendGlobal(env, store, row);
+      let result;
+      try {
+        result = await sendGlobal(env, store, row, request);
+      } catch (e) {
+        await store.updateGlobalStatus(id, { status: "failed", sentAt: Date.now(), error: String(e?.message || e).slice(0, 200) });
+        result = { ok: false, reach: 0, delivered: 0 };
+      }
       return jsonResponse(request, { ok: result.ok, id, status: result.ok ? "sent" : "failed", reachEstimate: result.reach, delivered: result.delivered }, result.ok ? 201 : 502);
     }
     if (path === "/api/notifications/global/schedule" && request.method === "POST") {
@@ -8894,7 +8974,7 @@ async function handleFcmNotificationRequest(request, env) {
       if (when > Date.now() + GLOBAL_MAX_SCHEDULE_DAYS * 864e5) {
         return jsonResponse(request, { error: "schedule-too-far" }, 400);
       }
-      const dedup = (await sha256Hex2(`${type}|${title}|${text}`)).slice(0, 40);
+      const dedup = (await sha256Hex2(`${type}|${title}|${text}|scheduled|${Math.floor(when)}`)).slice(0, 40);
       const dup = await store.duplicateRecent(dedup, Date.now() - 10 * 864e5);
       if (dup) return jsonResponse(request, { error: "duplicate", existingId: dup }, 409);
       const id = `gn-${Math.random().toString(36).slice(2, 8)}${Math.random().toString(36).slice(2, 8)}`;
@@ -8939,6 +9019,31 @@ async function handleFcmNotificationRequest(request, env) {
     }
     if (path === "/api/notifications/templates" && request.method === "GET") {
       return jsonResponse(request, { ok: true, templates: GLOBAL_TEMPLATES });
+    }
+    if (path === "/api/notifications/global/image" && request.method === "POST") {
+      const bucket = env?.FILE_BUCKET;
+      if (!bucket || typeof bucket.put !== "function") return jsonResponse(request, { error: "storage-unavailable" }, 503);
+      const ext = String(request.headers.get("X-File-Ext") || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+      const type = IMAGE_TYPES[ext];
+      if (!type) return jsonResponse(request, { error: "invalid-type" }, 400);
+      const declared = Number(request.headers.get("Content-Length") || 0);
+      if (!declared || declared > NOTIFY_IMAGE_MAX_BYTES) return jsonResponse(request, { error: "too-large" }, 413);
+      let bytes;
+      try {
+        bytes = new Uint8Array(await request.arrayBuffer());
+      } catch {
+        return jsonResponse(request, { error: "read-failed" }, 400);
+      }
+      if (!bytes.length || bytes.length > NOTIFY_IMAGE_MAX_BYTES) return jsonResponse(request, { error: "too-large" }, 413);
+      const day = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+      const key = `notify/${day}/${randKey(12)}.${ext}`;
+      try {
+        await bucket.put(key, bytes, { httpMetadata: { contentType: type } });
+      } catch {
+        return jsonResponse(request, { error: "storage-error" }, 503);
+      }
+      const url2 = `${new URL(request.url).origin}/api/files/${key}`;
+      return jsonResponse(request, { ok: true, url: url2, key }, 201);
     }
   }
   const session = await sessionUser(env, request);
@@ -10121,7 +10226,7 @@ var jsonResponse4 = (request, obj, status = 200) => new Response(JSON.stringify(
     "Access-Control-Allow-Credentials": "true"
   }
 });
-var randKey = (len) => {
+var randKey2 = (len) => {
   const bytes = crypto.getRandomValues(new Uint8Array(len));
   const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
   let s = "";
@@ -10212,7 +10317,7 @@ async function handleFilesStorageRequest(request, env) {
       return jsonResponse4(request, { error: "bucket-limit", limitBytes: BUCKET_HARD_LIMIT_BYTES, usedBytes: usage.bytes }, 507);
     }
     const day = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
-    const key = `${folder}/${userId}/${day}/${randKey(12)}.${ext}`;
+    const key = `${folder}/${userId}/${day}/${randKey2(12)}.${ext}`;
     try {
       await bucket.put(key, bytes, { httpMetadata: { contentType } });
       await bumpUsage(env, bytes.length);

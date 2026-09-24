@@ -53,9 +53,23 @@ test('worker: topic-first hybrid send (no per-user loop), single-token fallback,
   /* The fallback must use the single-send contract (`token:`), not the batch
    * `tokens:` array — that array belongs to a different FCM endpoint and every
    * non-topic device silently received nothing while the row read "sent". */
-  assert.match(FCM, /const message = \{ token: target\.token, notification: \{ title, body \}, data: messageData \};/);
+  assert.match(FCM, /const message = \{\s*\n\s*token: target\.token,/, 'single-send uses token:');
   assert.ok(!/message: \{ tokens:/.test(FCM), 'never batch-send to the single-send endpoint');
   assert.ok(FCM.includes("status IN ('sent','scheduled')"), 'dedup window covers sent + scheduled');
+});
+
+test('fcm send: app-logo icon/badge on every path + distinct-token fanout', () => {
+  /* Android showed the OS default "A" avatar because the payload carried no
+   * icon at all. Both the topic and per-device paths must set it from the live
+   * logo URL, so a logo swap reaches every future push with no redeploy. */
+  assert.match(FCM, /const APP_ICON_PATH = '\/icons\/icon-192\.png';/);
+  assert.match(FCM, /webpush: \{ notification: \{/, 'webpush block present');
+  assert.match(FCM, /android: \{ notification: \{/, 'android block present');
+  assert.equal((FCM.match(/iconUrl \? \{ icon: iconUrl \}/g) || []).length, 4, 'icon set on both paths (webpush+android each)');
+  /* One physical device = one FCM token. Several accounts on the same phone
+   * must not make it ring several times. */
+  assert.match(FCM, /const byToken = new Map\(\);/);
+  assert.match(FCM, /COUNT\(DISTINCT fcm_token\) AS n FROM fcm_devices WHERE is_active=1/);
 });
 
 test('client fcm: subscribes the device to all_students after register + on refresh', () => {
@@ -149,16 +163,16 @@ test('admin create form: typing never re-renders the form (mobile keyboard stays
 });
 
 test('index.html: admin script tag + route dispatch (hidden route, not in nav)', () => {
-  assert.match(INDEX, /<script defer src="\.\/notification-admin\.js\?v=admin-notif-v5"><\/script>/);
+  assert.match(INDEX, /<script defer src="\.\/notification-admin\.js\?v=admin-notif-v6"><\/script>/);
   assert.match(INDEX, /if\(p==='notif-admin' && window\.renderNotificationAdmin\) return window\.renderNotificationAdmin\(\);/);
 });
 
 test('pin consistency: index.html script pins match sw.js cache entries + digests', () => {
   const pins = {
-    'notification-fcm.js': 'fcm-p1-v11',
+    'notification-fcm.js': 'fcm-p1-v12',
     'notification-inbox.js': 'notif-inbox-v6',
     'notification-hub.js': 'notify-v119',
-    'notification-admin.js': 'admin-notif-v5'
+    'notification-admin.js': 'admin-notif-v6'
   };
   for (const [file, pin] of Object.entries(pins)) {
     assert.match(INDEX, new RegExp(`<script defer src="\\./${file}\\?v=${pin}">`), `${file} pin in index.html`);
@@ -179,7 +193,7 @@ test('pin consistency: index.html script pins match sw.js cache entries + digest
 });
 
 test('sw-manifest digest of the admin file is correct', () => {
-  const m = SW.match(/"\/?\.\/notification-admin\.js\?v=admin-notif-v5": "([0-9a-f]{64})"/);
+  const m = SW.match(/"\/?\.\/notification-admin\.js\?v=admin-notif-v6": "([0-9a-f]{64})"/);
   assert.ok(m, 'digest present');
   const actual = createHash('sha256').update(readFileSync('notification-admin.js')).digest('hex');
   assert.equal(m[1], actual, 'digest matches the file on disk');

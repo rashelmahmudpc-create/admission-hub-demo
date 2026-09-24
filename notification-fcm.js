@@ -382,10 +382,14 @@
       const res = await boundedFetch('/personal-pref');
       if (res.data && typeof res.data.personalized_enabled !== 'undefined') on = Number(res.data.personalized_enabled) === 1;
     } catch (_) { /* leave default */ }
-    return `<div style="padding:10px 0;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px">
-      <span style="flex:1;font-size:12px">⭐ ${st('দৈনিক স্মার্ট রিমাইন্ডার', 'Daily smart reminder')}
-        <span style="opacity:.7">— ${st('প্রতিদিন একবার, পড়ার অবস্থা অনুযায়ী', 'once a day, based on your study')}</span></span>
-      <button class="btn ${on ? 'ghost' : ''} sm" onclick="AhFcm.togglePersonal()">${on ? st('বন্ধ করুন', 'Turn off') : st('চালু করুন', 'Turn on')}</button>
+    return `<div id="ahPersonalCard" style="margin:10px 0;padding:13px 14px;border:1.5px solid ${on ? 'var(--emerald,#0f6b4f)' : 'var(--line)'};border-radius:14px;background:${on ? '#f2f8f5' : 'transparent'}">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="font-size:15px">⭐</span>
+        <b style="flex:1;font-size:13.5px">${st('দৈনিক স্মার্ট রিমাইন্ডার', 'Daily smart reminder')}</b>
+        <span class="chip ${on ? 'active' : ''}" style="pointer-events:none">${on ? st('চালু', 'ON') : st('বন্ধ', 'OFF')}</span>
+      </div>
+      <p style="margin:7px 0 0;font-size:12px;color:var(--sub,#6b7a72);line-height:1.6">${st('প্রতিদিন একবার, আপনার পড়ার অবস্থা অনুযায়ী — কখনো অনুমান নয়, শুধু আসল তথ্য।', 'Once a day, based on your study — never guessed data, only real.')}</p>
+      <button class="btn ${on ? 'ghost' : ''} sm" style="margin-top:10px" onclick="AhFcm.togglePersonal()">${on ? st('বন্ধ করুন', 'Turn off') : st('চালু করুন', 'Turn on')}</button>
     </div>`;
   };
 
