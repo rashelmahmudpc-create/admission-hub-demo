@@ -104,7 +104,7 @@ Missing ‚Üí required before Phase 9 completes:
 | **M2.5** | Cloudflare Workers AI backup ‚Äî first non-Gemini/Groq provider on the new boundary | low | yes | **DONE** (see ¬ß8) |
 | **M3** | Formal Gateway ‚Äî single internal entry with feature flag `USE_AI_GATEWAY` | low | yes | superseded by M4 |
 | **M4** | Context Engine ‚Äî typed, permission-scoped, minimum-necessary; legacy path kept | medium | yes | **DONE** (see ¬ß10) |
-| **M5** | Prompt Registry ‚Äî existing prompt becomes `v1`; A/B before replacing | low | yes | pending |
+| **M5** | Prompt Registry ‚Äî existing prompt becomes `v1`; A/B before replacing | low | yes | **DONE** (see ¬ß12) |
 | **M6** | Tool Registry ‚Äî READ-ONLY tools only; cross-user isolation enforced at the tool boundary | high | yes | pending |
 | **M7** | Memory Engine ‚Äî long-term layer, default OFF, explicit consent | medium | yes | pending |
 | **M8** | Response validation + structured output | medium | yes | pending |
@@ -208,7 +208,7 @@ function, is what the "AI must recognise the student" capability actually needs,
 and the flag pattern M3 called for (`USE_AI_GATEWAY`) is carried by
 `USE_CONTEXT_ENGINE` instead.
 
-**Next gate:** M5 (Prompt Registry) ‚Äî awaiting approval.
+**Next gate:** M6 (Tool Registry — READ-ONLY tools) — awaiting approval.
 
 ## 10. M4 completion record ‚Äî Context Engine
 
@@ -279,3 +279,34 @@ name reaches the provider with no setup; M4-২৯ proves a full name still cann
 `language-engine.test.mjs` 11/11; `ai-agent-f1` 44/44; full native-auth suite
 497/499 — the two failures (`profile-core`, `session-recovery-chaos`) also fail on
 a clean tree (better-sqlite3/Node v24 native crash), unrelated to this change.
+
+## 12. M5 completion record — Prompt Registry
+
+**Deliverable:** `prompt-registry.js` — the master system prompt text now lives in
+a frozen registry entry instead of an inline template literal, carrying
+`promptId / version / purpose / createdAt / status` plus a `legacyVersion` alias
+back to `SYSTEM_PROMPT_V`. Old revisions are never deleted, so a future wording
+change adds a new entry rather than overwriting `v1`.
+
+**Public surface:** `getPrompt(id)`, `getPromptText(id)`, `listPrompts()`,
+`validatePromptRegistry()`, `BASE_PROMPT_ID`, `PROMPT_REGISTRY_VERSION`.
+
+**Zero behaviour change (the whole point).** `buildSystemPrompt()` now starts from
+`getPromptText(BASE_PROMPT_ID)`; every conditional block (onboarding, exam mode,
+quiz, prefs, stats) still appends on top, byte-for-byte as before. The composed
+base prompt is SHA-256 `29f59a3e48ab27a7d284004cb784d457a7cd8f6378f3618ff724c1c2bcd01b7e`
+(2044 bytes) — unchanged from the pre-M5 output, and pinned by a test so drift
+fails loudly. The provider model, `SYSTEM_PROMPT_V`, `AGENT_VERSION` and the
+`pv/agent` fields in every response are all untouched.
+
+No A/B switch is exposed yet: M5 only establishes the registry and records `v1` as
+active. An A/B harness is a later, separately-approved step.
+
+**Verification:** `phase9-m5-prompt-registry.test.mjs` **10/10** — M5-৭/৮ lock the
+byte-identical output and its hash, M5-৯ proves conditional blocks still extend
+the shared base, M5-১০ counts the twelve hard rules. `ai-agent-f1` 44/44 and the
+M4 suite 29/29 stay green; the full native-auth suite keeps its two pre-existing,
+unrelated failures.
+
+**Next gate:** M6 (Tool Registry — READ-ONLY) — awaiting owner approval.
+
