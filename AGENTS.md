@@ -367,3 +367,36 @@ invariants when touching `fcm-notification.mjs` / `notification-admin.js`:
   `/api/files/<key>` URL. The admin panel picks a photo from the phone and
   re-encodes it on a canvas first (max 1200px, JPEG 0.85) so a camera shot fits
   the server's 4 MB cap.
+
+
+## Client button integrity (owner bug report 2026-09-24)
+
+Buttons that "do nothing" are almost always inline handlers calling a function
+that no longer exists after a refactor. `dead-handler-guard.test.mjs` scans all
+shipped client JS plus `index.html` for `onclick`/`oninput`/etc. attributes that
+reference an undefined global, and fails the build on a match. Run it via
+`npm run test:ui-guards` (also folded into `test:production-auth`).
+
+- When you remove or rename a global that inline HTML calls, the guard catches
+  it. Never silence it by adding a name to `BUILTINS` unless it truly is a
+  browser builtin.
+- The guard found `openQuestionDetail` (Question Bank "Show Answer") — defined
+  nowhere, so every feed card's button was dead. Its real implementation now
+  lives in `urgent-fix.js` and renders the answer in the shared `openModal`.
+- Inline handlers resolve names at click time from the global scope, so a
+  handler defined inside an IIFE is invisible unless it is assigned to `window`.
+
+## Student data: account scoping hides legacy rows (open issue)
+
+`index.html` scopes every IndexedDB record as `DATA_SCOPE::id` with `__ahOwner`,
+and `fromScopedRecord` returns `null` for rows owned by a different (or empty)
+scope. Consequences to keep in mind:
+
+- **Legacy unscoped rows** (written before per-account scoping) are invisible to
+  the authenticated user and are not adopted by any migration. Only the sync
+  engine's `migrateLocal` runs, and it uses `dbGetAll`, which hides them.
+- **Guest rows** live in `MEMORY_DB` (session-only) and are dropped on sign-in;
+  nothing carries them into the account.
+- Do NOT change `fromScopedRecord` to accept unscoped rows without an explicit
+  owner decision — that would leak one account's data to another. Adoption must
+  be a deliberate, one-time, opt-in step.
