@@ -51,14 +51,18 @@ export function identityKind(uid) {
  * know it is talking to a signed-in student, never who they are); a guest gets
  * NONE because there is no durable identity to expose.
  */
-export function resolveScopes({ uid, prefs, stats, onboarding, memoryOn } = {}) {
+export function resolveScopes({ uid, prefs, stats, onboarding, profile, memoryOn } = {}) {
   const kind = identityKind(uid);
   const hasPrefs = !!prefs && typeof prefs === 'object';
   const hasStats = !!stats && typeof stats === 'object' && Object.keys(stats).length > 0;
   const hasOnboarding = !!onboarding && typeof onboarding === 'object';
+  const hasProfile = !!profile && typeof profile === 'object' && Object.keys(profile).length > 0;
   return Object.freeze({
     identity: kind === 'account' ? SCOPE.SUMMARY : SCOPE.NONE,
-    profile: SCOPE.NONE,                  // no server-side profile source wired yet
+    // Academic profile is SUMMARY only for a signed-in account that supplied an
+    // already-sanitized payload. Defence in depth: the caller also gates the
+    // payload by uid prefix, so a guest request can never resolve here.
+    profile: (kind === 'account' && hasProfile) ? SCOPE.SUMMARY : SCOPE.NONE,
     academic: hasOnboarding ? SCOPE.SUMMARY : SCOPE.NONE,
     performance: hasStats ? SCOPE.SUMMARY : SCOPE.NONE,
     activity: SCOPE.NONE,                 // reserved
@@ -79,6 +83,7 @@ export function buildContext(input = {}) {
   const data = {};
 
   if (scopeAtLeast(scope.identity, SCOPE.MINIMAL)) data.identity = Object.freeze({ kind });
+  if (allowed(scope.profile) && input.profile) data.profile = Object.freeze({ ...input.profile });
   if (allowed(scope.performance) && input.stats) data.performance = Object.freeze({ ...input.stats });
   if (allowed(scope.preference) && input.prefs) data.preference = Object.freeze({ ...input.prefs });
   if (allowed(scope.onboarding) && input.onboarding) data.onboarding = input.onboarding;
@@ -128,6 +133,21 @@ export function renderContext(bundle) {
     if (s.streak != null) bits.push(`streak=${s.streak}d`);
     if (s.mistakes != null) bits.push(`mistakes=${s.mistakes}`);
     if (bits.length) lines.push(`- performance: ${bits.join(' ')}`);
+  }
+  if (scopeAtLeast(scope.profile, SCOPE.MINIMAL) && data.profile) {
+    const p = data.profile;
+    const bits = [];
+    if (p.firstName) bits.push(`name: ${p.firstName}`);
+    if (p.institutionName) bits.push(`${p.institutionType || 'institution'}: ${p.institutionName}`);
+    if (p.district) bits.push(`district: ${p.district}`);
+    if (p.admissionSession) bits.push(`session: ${p.admissionSession}`);
+    if (p.academicGoal) bits.push(`goal: ${p.academicGoal}`);
+    if (Array.isArray(p.subjects) && p.subjects.length) bits.push(`subjects: ${p.subjects.join(', ')}`);
+    if (Array.isArray(p.targets) && p.targets.length) {
+      const t = p.targets[0];
+      bits.push(`target: ${[t.name, t.unit, t.year].filter(Boolean).join(' / ')}`);
+    }
+    if (bits.length) lines.push(`- profile (academic): ${bits.join(' | ')}`);
   }
   if (scopeAtLeast(scope.academic, SCOPE.MINIMAL) && data.onboarding) {
     const q = String(data.onboarding.institutionQuery || '').trim();

@@ -149,7 +149,7 @@ export function capStats(stats) {
 }
 
 /* ── AI Personalization (blueprint §19-20) — per-user, allowlisted, bounded ── */
-export const AI_PREFS_DEFAULT = Object.freeze({ langStyle: "bn", tone: "friendly", responseLen: "balanced", memory: true });
+export const AI_PREFS_DEFAULT = Object.freeze({ langStyle: "bn", tone: "friendly", responseLen: "balanced", memory: true, shareName: false });
 export function sanitizeAiPrefs(value) {
   if (!value || typeof value !== "object") return null;
   const pick = (v, set, dflt) => (set.has(String(v)) ? String(v) : dflt);
@@ -157,9 +157,53 @@ export function sanitizeAiPrefs(value) {
     langStyle: pick(value.langStyle, new Set(["bn", "en", "mix"]), AI_PREFS_DEFAULT.langStyle),
     tone: pick(value.tone, new Set(["friendly", "professional", "simple", "motivating", "direct"]), AI_PREFS_DEFAULT.tone),
     responseLen: pick(value.responseLen, new Set(["short", "balanced", "detailed"]), AI_PREFS_DEFAULT.responseLen),
-    memory: value.memory === false ? false : true
+    memory: value.memory === false ? false : true,
+    // Opt-in: the AI may greet the student by first name. Off unless explicitly on.
+    shareName: value.shareName === true
   };
 }
+
+/* ── Student profile context (academic structure only — never PII) ──────────
+   Allowlist, not blocklist: any key not named here is dropped, so a hand-built
+   request cannot smuggle an identity field into the model. First name is kept
+   only when the student explicitly opted in (`shareName`), enforced server-side
+   from the stored prefs — not from the request body. */
+const PROFILE_TEXT = (value, max) => String(value ?? '').normalize('NFKC').replace(/[\r\n\u0000<>]/g, '').trim().slice(0, max);
+export function sanitizeProfileContext(value, opts = {}) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const shareName = opts.shareName === true;
+  const out = {};
+
+  if (shareName) {
+    const firstName = PROFILE_TEXT(value.firstName, 40);
+    // A single name token only — never a full name, never any other identity field.
+    if (firstName && !/\s/.test(firstName)) out.firstName = firstName;
+  }
+  const institutionName = PROFILE_TEXT(value.institutionName, 120);
+  if (institutionName) out.institutionName = institutionName;
+  const institutionType = pickInstitutionType(value.institutionType);
+  if (institutionType) out.institutionType = institutionType;
+  const district = PROFILE_TEXT(value.district, 60);
+  if (district) out.district = district;
+  const admissionSession = PROFILE_TEXT(value.admissionSession, 40);
+  if (admissionSession) out.admissionSession = admissionSession;
+  const academicGoal = PROFILE_TEXT(value.academicGoal, 80);
+  if (academicGoal) out.academicGoal = academicGoal;
+  if (Array.isArray(value.subjects)) {
+    const subjects = value.subjects.slice(0, 10).map(s => PROFILE_TEXT(s, 40)).filter(Boolean);
+    if (subjects.length) out.subjects = Array.from(new Set(subjects));
+  }
+  if (Array.isArray(value.targets) && value.targets.length) {
+    const t = value.targets[0] || {};
+    const name = PROFILE_TEXT(t.name, 120);
+    if (name) out.targets = [{ name, unit: PROFILE_TEXT(t.unit, 40), year: PROFILE_TEXT(t.year, 40) }];
+  }
+  return Object.keys(out).length ? Object.freeze(out) : null;
+}
+const pickInstitutionType = value => {
+  const v = String(value || '').trim().toLowerCase();
+  return ['school', 'college', 'university', 'madrasa', 'other'].includes(v) ? v : '';
+};
 
 /* ── Master System Prompt (মালিক-স্পেক §9) ------------------------------- */
 export function buildSystemPrompt(opts = {}) {
@@ -627,9 +671,15 @@ export async function agentChat(request, env, uid, opts = {}) {
   const systemPrompt = buildSystemPrompt({ stats, examMode, quiz: quizMode, onboarding, prefs: aiPrefs });
   /* M4 Context Engine (opt-in). When enabled, a typed permission-scoped bundle
      is rendered and appended; when disabled the prompt above is byte-identical
-     to the pre-M4 output, so the legacy path stays intact. */
+     to the pre-M4 output, so the legacy path stays intact.
+     The student's academic profile is attached only for a signed-in account and
+     only after server-side sanitization; the first name additionally requires the
+     student's stored opt-in (`aiprefs.shareName`), never the request body. */
+  const profileCtx = sendCtx.uid.startsWith('account-')
+    ? sanitizeProfileContext(body?.context?.profile, { shareName: aiPrefs?.shareName === true })
+    : null;
   const ctxBundle = contextEngineEnabled(env)
-    ? buildContext({ uid: sendCtx.uid, prefs: aiPrefs, stats, onboarding, memoryOn })
+    ? buildContext({ uid: sendCtx.uid, prefs: aiPrefs, stats, onboarding, profile: profileCtx, memoryOn })
     : null;
   const ctxText = ctxBundle ? renderContext(ctxBundle) : '';
   /* The rolling summary carries older topics too, so it is suppressed with
@@ -787,5 +837,5 @@ export const __test = {
   safetyGate, authVerificationGuidance, routerChain, geminiTextFromChunk, sseParse, ProviderError,
   adapterFor, providerChain, PROVIDER_ADAPTERS, GEMINI_ADAPTER, GROQ_ADAPTER, CLOUDFLARE_ADAPTER,
   INTENTS, TIER, GEMINI_MODELS, AGENT_VERSION, SYSTEM_PROMPT_V,
-  contextEngineEnabled, buildContext, renderContext, describeContext, CONTEXT_VERSION
+  contextEngineEnabled, buildContext, renderContext, describeContext, CONTEXT_VERSION, sanitizeProfileContext
 };

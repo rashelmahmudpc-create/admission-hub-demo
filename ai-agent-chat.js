@@ -770,6 +770,52 @@
     } catch (_) { return null; }
   };
   const save = () => { if (!accountScope) return; try { sessions[cur].msgs = msgs.slice(-MAX_MSGS); sessions[cur].ts = Date.now(); scopedWrite(STORE, JSON.stringify({ v: 2, list: sessions, cur: cur })); } catch (_) {} };
+  // Academic-only projection of the cached profile. Identity fields (full name,
+  // email, mobile, dob, bio, publicId, avatar) are deliberately never read here;
+  // the server re-sanitizes regardless. Guests get null.
+  const localProfile = () => {
+    if (!accountScope) return null;
+    try {
+      const pid = localStorage.getItem('ah-profile-cache-key');
+      if (!pid) return null;
+      const entry = JSON.parse(localStorage.getItem('ah-profile-cache:' + pid) || 'null');
+      const p = entry && entry.profile;
+      if (!p || typeof p !== 'object') return null;
+      const text = (v, max) => (typeof v === 'string' ? v.replace(/[\r\n\u0000<>]/g, '').trim().slice(0, max) : '');
+      const school = p.school && typeof p.school === 'object' && p.school.name ? p.school : null;
+      const higher = p.higherInstitution && typeof p.higherInstitution === 'object' && p.higherInstitution.name ? p.higherInstitution : null;
+      const inst = higher || school;
+      const out = {
+        firstName: text(String(p.fullName || '').split(/\s+/)[0], 40),
+        institutionName: inst ? text(inst.name, 120) : '',
+        institutionType: inst ? (inst === higher ? 'college' : 'school') : '',
+        district: inst ? text(inst.district, 60) : '',
+        admissionSession: text(p.admissionSession, 40),
+        academicGoal: text(p.academicGoal, 80),
+        subjects: Array.isArray(p.subjects) ? p.subjects.slice(0, 10).map(s => text(s, 40)).filter(Boolean) : [],
+        targets: Array.isArray(p.targets) && p.targets[0] ? [{ name: text(p.targets[0].name, 120), unit: text(p.targets[0].unit, 40), year: text(p.targets[0].year, 40) }] : []
+      };
+      const hasAny = out.firstName || out.institutionName || out.admissionSession || out.academicGoal || out.subjects.length || out.targets.length;
+      return hasAny ? out : null;
+    } catch (_) { return null; }
+  };
+  // Mirror of the account's AI prefs, kept by profile-ui so the chat client knows
+  // whether the student opted in to name sharing without an extra round-trip.
+  const localAiPrefs = () => {
+    if (!accountScope) return null;
+    try { return JSON.parse(localStorage.getItem('ah-ai-prefs-cache') || 'null'); } catch (_) { return null; }
+  };
+  // What actually goes on the wire. The first name leaves the device only when
+  // the student turned on name sharing; the server enforces the same rule from
+  // its stored prefs, so this is the outer of two gates, not the only one.
+  const profilePayload = () => {
+    const p = localProfile();
+    if (!p) return null;
+    const prefs = localAiPrefs();
+    if (prefs && prefs.shareName === true && p.firstName) return p;
+    const { firstName, ...rest } = p;
+    return Object.keys(rest).length ? rest : null;
+  };
   const curTitle = () => (sessions[cur] && sessions[cur].name ? sessions[cur].name : T.title);
   const fmtDay = (ts) => { try { const d = new Date(ts), n = new Date(); return d.toDateString() === n.toDateString() ? fmtTime(ts) : d.toLocaleDateString(lang === 'bn' ? 'bn-BD' : 'en-US', { day: 'numeric', month: 'short' }); } catch (_) { return ''; } };
   const fmtTime = (ts) => { try { return new Date(ts).toLocaleTimeString(lang === 'bn' ? 'bn-BD' : 'en-US', { hour: '2-digit', minute: '2-digit' }); } catch (_) { return ''; } };
@@ -1553,7 +1599,7 @@
        Flag it so the server does not answer it from the stored cross-session
        memory — that is what made "হাই" reply with an old, unrelated topic. */
     const fresh = prior.length === 0;
-    const payload = { messages: hist, fresh, context: { stats: localStats(), examMode: null } };
+    const payload = { messages: hist, fresh, context: { stats: localStats(), profile: profilePayload(), examMode: null } };
     const ctrl = new AbortController();
     activeReq = ctrl;
     const r = await fetch('/api/ai/chat', {
@@ -1814,7 +1860,7 @@
     const r = await fetch('/api/ai/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-AH-Guest': guestId() },
-      body: JSON.stringify({ messages: [{ role: 'user', content: prompt }], context: { mode: 'quiz_gen', stats: localStats() } })
+      body: JSON.stringify({ messages: [{ role: 'user', content: prompt }], context: { mode: 'quiz_gen', stats: localStats(), profile: profilePayload() } })
     });
     if (!r.ok || !r.body) throw new Error('http');
     const rd = r.body.getReader(); const dec = new TextDecoder(); let full = ''; let buf = '';

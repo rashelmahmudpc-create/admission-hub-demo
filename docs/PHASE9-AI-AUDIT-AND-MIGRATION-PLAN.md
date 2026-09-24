@@ -1,50 +1,50 @@
-# PHASE 9 — AI AUDIT & MIGRATION PLAN (STOP POINT)
+# PHASE 9 ‚Äî AI AUDIT & MIGRATION PLAN (STOP POINT)
 
-> Status: **AUDIT ONLY — awaiting owner approval**
-> Scope: Phase 9 blueprint, migration steps M1–M4. No code changed in this PR.
+> Status: **AUDIT ONLY ‚Äî awaiting owner approval**
+> Scope: Phase 9 blueprint, migration steps M1‚ÄìM4. No code changed in this PR.
 > Baseline preserved: `AGENT_VERSION = agent-f1`, `SYSTEM_PROMPT_V = sys-f1-3-ai-personalization`.
 > Baseline tests: `ai-agent-f1.test.mjs` **44/44 pass** (run before auditing).
 
 ---
 
-## 1. Inventory (§4) — what already exists
+## 1. Inventory (¬ß4) ‚Äî what already exists
 
-| Question (§4) | Finding |
+| Question (¬ß4) | Finding |
 |---|---|
 | AI UI | `ai-agent-chat.js` (client, SSE), `ai-agent.js` (agent core, worker-side) |
 | AI endpoints | `POST /api/ai` (non-stream), `POST /api/ai/chat` (SSE), `GET /api/ai/status`, `GET\|POST /api/ai/prefs` |
 | Gateway | Single entry, both routes funnel into `agentChat()` |
-| Provider adapters | `geminiStream()`, `groqStream()` — generator interface with shared `ProviderError` |
+| Provider adapters | `geminiStream()`, `groqStream()` ‚Äî generator interface with shared `ProviderError` |
 | Providers | Google Gemini (primary, multi-key), Groq (fallback, text-only) |
-| Model router | `routerChain(env, tier, badSet)` → `GEMINI_MODELS.FAST/SMART` + Groq pair |
+| Model router | `routerChain(env, tier, badSet)` ‚Üí `GEMINI_MODELS.FAST/SMART` + Groq pair |
 | Prompts | `buildSystemPrompt()` composed per-request; versioned by `SYSTEM_PROMPT_V` |
 | Context | `buildSystemPrompt({stats, examMode, quiz, onboarding, prefs})` + `sanitizeOnboardingContext()` allowlist |
 | Memory | `chatmem:<uid>` (KV), client-supplied history, `summarizeTo()` compaction |
 | Personalization | `aiprefs:<uid>` (KV), `sanitizeAiPrefs()` allowlist, memory on/off honoured |
-| Rate limit | `airl:<uid>:<day>` — `AGENT_DAILY_CAP` (default 80/day) |
+| Rate limit | `airl:<uid>:<day>` ‚Äî `AGENT_DAILY_CAP` (default 80/day) |
 | Failover | `aibad:<provider>:<model>` mark, 24h TTL, per-request chain exclusion |
-| Error handling | `ProviderError` → 429 backoff, 502 retryable, 503 no-key |
+| Error handling | `ProviderError` ‚Üí 429 backoff, 502 retryable, 503 no-key |
 | Streaming | SSE parser `sseParse()` + `geminiTextFromChunk()` |
 | Safety gates | `safetyGate()` (mock-exam integrity), `authVerificationGuidance()`, `onboardingSecretDetected()` |
-| Secrets | `GEMINI_KEYS`, `GROQ_API_KEY` — worker env only, never in client |
+| Secrets | `GEMINI_KEYS`, `GROQ_API_KEY` ‚Äî worker env only, never in client |
 | Tests | `ai-agent-f1.test.mjs` (44), `p21-ai-agent-ui.test.mjs`, `startup-ai-regression.test.mjs` |
 
-## 2. Capability map (§5)
+## 2. Capability map (¬ß5)
 
 | Capability | State |
 |---|---|
 | Chat + streaming | **WORKING** |
 | Intent classification (`classifyIntent`) | **WORKING** |
 | Model routing (FAST/SMART) | **WORKING** |
-| Provider failover (Gemini → Groq) | **WORKING** |
+| Provider failover (Gemini ‚Üí Groq) | **WORKING** |
 | Per-user rate limit | **WORKING** |
 | Exam-integrity gate | **WORKING** |
 | Onboarding assistant (strict mode) | **WORKING** |
 | Per-user AI preferences | **WORKING** |
-| Conversation memory | **PARTIALLY WORKING** — session-scoped, no explicit long-term layer |
-| Context engine | **PARTIALLY WORKING** — flat stats/onboarding/prefs, no typed context categories |
-| Prompt registry | **PARTIALLY WORKING** — single version constant, no registry with `promptId/version/status` |
-| Cost/quota tracking | **PARTIALLY WORKING** — only a daily request counter |
+| Conversation memory | **PARTIALLY WORKING** ‚Äî session-scoped, no explicit long-term layer |
+| Context engine | **PARTIALLY WORKING** ‚Äî flat stats/onboarding/prefs, no typed context categories |
+| Prompt registry | **PARTIALLY WORKING** ‚Äî single version constant, no registry with `promptId/version/status` |
+| Cost/quota tracking | **PARTIALLY WORKING** ‚Äî only a daily request counter |
 | Tool registry | **MISSING** |
 | Action permission layer (READ/WRITE/EXECUTE) | **MISSING** |
 | Action confirmation + audit trail | **MISSING** |
@@ -52,70 +52,70 @@
 | Memory metadata (reason/source/permission/timestamp/confidence) | **MISSING** |
 | Formal short/long-term memory split | **MISSING** |
 
-## 3. Existing AI → target mapping (§6, §7, §30)
+## 3. Existing AI ‚Üí target mapping (¬ß6, ¬ß7, ¬ß30)
 
 ```
 CURRENT                                   TARGET (Phase 9)
-POST /api/ai, /api/ai/chat        →       AI Gateway (keep both paths)
-agentChat()                       →       AI Orchestrator
-routerChain()                     →       Model Router (behind adapter)
-geminiStream/groqStream           →       Provider Adapters (keep signature)
-buildSystemPrompt()               →       Context Engine + Prompt Registry
-chatmem:<uid>                     →       Memory Engine (short-term first)
-aiprefs:<uid>                     →       Personalization Bridge (keep)
-airl:<uid>:<day>                  →       Rate/Cost layer (extend)
+POST /api/ai, /api/ai/chat        ‚Üí       AI Gateway (keep both paths)
+agentChat()                       ‚Üí       AI Orchestrator
+routerChain()                     ‚Üí       Model Router (behind adapter)
+geminiStream/groqStream           ‚Üí       Provider Adapters (keep signature)
+buildSystemPrompt()               ‚Üí       Context Engine + Prompt Registry
+chatmem:<uid>                     ‚Üí       Memory Engine (short-term first)
+aiprefs:<uid>                     ‚Üí       Personalization Bridge (keep)
+airl:<uid>:<day>                  ‚Üí       Rate/Cost layer (extend)
 ```
 
 Backward compatibility is required: `chat()` / `ask()` / `generate()`-style callers and the
 `/api/ai*` response shape (`text`, `intent`, `pv`, `agent`, `authoritative`) must not change.
 
-## 4. Security findings (§28, §45, §47)
+## 4. Security findings (¬ß28, ¬ß45, ¬ß47)
 
 | # | Finding | Severity |
 |---|---|---|
-| S1 | AI provider keys are worker-env only; client requests carry no key (`ai-agent-chat.js` header note confirms). **PASS** | — |
-| S2 | Outbound Gemini key sits in a URL query string (`:streamGenerateContent?alt=sse&key=…`). Never logged by this code, but URL-borne secrets can leak via proxy/error logs. Recommend header-based auth (`x-goog-api-key`) before Phase 9 hardening. | **MEDIUM** |
-| S3 | `firebase-messaging-sw.js` embeds a Firebase web `apiKey`. This is a **public Firebase config key**, not a secret — it is required client-side and safe by design. Flagged only because the Phase 9 §28 checklist mentions client-visible keys. **No action required**; documented so the checklist item is explicitly closed. | INFO |
-| S4 | Memory and prefs are keyed by `identity.uid` from `aiRequestIdentity`; `tests assert no shared/leaked keys between users`. **PASS** | — |
-| S5 | Onboarding secret detection fails closed before the model/rate/memory path. **PASS** | — |
+| S1 | AI provider keys are worker-env only; client requests carry no key (`ai-agent-chat.js` header note confirms). **PASS** | ‚Äî |
+| S2 | Outbound Gemini key sits in a URL query string (`:streamGenerateContent?alt=sse&key=‚Ä¶`). Never logged by this code, but URL-borne secrets can leak via proxy/error logs. Recommend header-based auth (`x-goog-api-key`) before Phase 9 hardening. | **MEDIUM** |
+| S3 | `firebase-messaging-sw.js` embeds a Firebase web `apiKey`. This is a **public Firebase config key**, not a secret ‚Äî it is required client-side and safe by design. Flagged only because the Phase 9 ¬ß28 checklist mentions client-visible keys. **No action required**; documented so the checklist item is explicitly closed. | INFO |
+| S4 | Memory and prefs are keyed by `identity.uid` from `aiRequestIdentity`; `tests assert no shared/leaked keys between users`. **PASS** | ‚Äî |
+| S5 | Onboarding secret detection fails closed before the model/rate/memory path. **PASS** | ‚Äî |
 | S6 | No cross-user context path exists today because tools do not exist yet. This risk must be designed in **at** M6, not retrofitted. | **HIGH (future)** |
 
-## 5. Phase 9 gap analysis (§52 target vs today)
+## 5. Phase 9 gap analysis (¬ß52 target vs today)
 
-Missing → required before Phase 9 completes:
+Missing ‚Üí required before Phase 9 completes:
 
-1. **AI Gateway formalisation** — extract an adapter boundary so callers stop touching providers.
-2. **Context Engine** — typed categories (Identity/Profile/Academic/Performance/Activity/Preference) with minimum-necessary + permission scope (NONE→FULL_ALLOWED).
-3. **Prompt Registry** — `promptId / version / purpose / createdAt / status`, existing `SYSTEM_PROMPT_V` becomes `v1` (never deleted).
-4. **Tool Registry** — name/description/permission/inputSchema/outputSchema/riskLevel/enabled.
-5. **READ / WRITE / EXECUTE separation** — default READ-ONLY; no write/execute enabled by default.
-6. **Action confirmation + audit trail** — for any future write action.
-7. **Response validation layer** — schema/safety/data/action validation before UI render; structured `{type,message,insights,recommendations,actions,confidence}` where needed.
-8. **Memory Engine** — short-term + long-term with reason/source/permission/timestamp/confidence; long-term default empty.
-9. **Cost/quota engine** — token usage, request count, estimated cost, provider quota.
-10. **Observability** — request id, provider, model, latency, tokens, fallback reason, context/prompt version.
+1. **AI Gateway formalisation** ‚Äî extract an adapter boundary so callers stop touching providers.
+2. **Context Engine** ‚Äî typed categories (Identity/Profile/Academic/Performance/Activity/Preference) with minimum-necessary + permission scope (NONE‚ÜíFULL_ALLOWED).
+3. **Prompt Registry** ‚Äî `promptId / version / purpose / createdAt / status`, existing `SYSTEM_PROMPT_V` becomes `v1` (never deleted).
+4. **Tool Registry** ‚Äî name/description/permission/inputSchema/outputSchema/riskLevel/enabled.
+5. **READ / WRITE / EXECUTE separation** ‚Äî default READ-ONLY; no write/execute enabled by default.
+6. **Action confirmation + audit trail** ‚Äî for any future write action.
+7. **Response validation layer** ‚Äî schema/safety/data/action validation before UI render; structured `{type,message,insights,recommendations,actions,confidence}` where needed.
+8. **Memory Engine** ‚Äî short-term + long-term with reason/source/permission/timestamp/confidence; long-term default empty.
+9. **Cost/quota engine** ‚Äî token usage, request count, estimated cost, provider quota.
+10. **Observability** ‚Äî request id, provider, model, latency, tokens, fallback reason, context/prompt version.
 
-## 6. Migration plan (§48) — one step at a time, approval-gated
+## 6. Migration plan (¬ß48) ‚Äî one step at a time, approval-gated
 
 | Step | Deliverable | Risk | Reversible | Status |
 |---|---|---|---|---|
 | **M1** | This audit | none | n/a | **DONE** |
-| **M2** | Adapter boundary — normalized provider interface; zero behaviour change | low | yes | **DONE** (see §7) |
-| **M2.5** | Cloudflare Workers AI backup — first non-Gemini/Groq provider on the new boundary | low | yes | **DONE** (see §8) |
-| **M3** | Formal Gateway — single internal entry with feature flag `USE_AI_GATEWAY` | low | yes | superseded by M4 |
-| **M4** | Context Engine — typed, permission-scoped, minimum-necessary; legacy path kept | medium | yes | **DONE** (see §10) |
-| **M5** | Prompt Registry — existing prompt becomes `v1`; A/B before replacing | low | yes | pending |
-| **M6** | Tool Registry — READ-ONLY tools only; cross-user isolation enforced at the tool boundary | high | yes | pending |
-| **M7** | Memory Engine — long-term layer, default OFF, explicit consent | medium | yes | pending |
+| **M2** | Adapter boundary ‚Äî normalized provider interface; zero behaviour change | low | yes | **DONE** (see ¬ß7) |
+| **M2.5** | Cloudflare Workers AI backup ‚Äî first non-Gemini/Groq provider on the new boundary | low | yes | **DONE** (see ¬ß8) |
+| **M3** | Formal Gateway ‚Äî single internal entry with feature flag `USE_AI_GATEWAY` | low | yes | superseded by M4 |
+| **M4** | Context Engine ‚Äî typed, permission-scoped, minimum-necessary; legacy path kept | medium | yes | **DONE** (see ¬ß10) |
+| **M5** | Prompt Registry ‚Äî existing prompt becomes `v1`; A/B before replacing | low | yes | pending |
+| **M6** | Tool Registry ‚Äî READ-ONLY tools only; cross-user isolation enforced at the tool boundary | high | yes | pending |
+| **M7** | Memory Engine ‚Äî long-term layer, default OFF, explicit consent | medium | yes | pending |
 | **M8** | Response validation + structured output | medium | yes | pending |
-| **M9** | Write/Execute actions — disabled by default, confirmation required | high | yes | pending |
+| **M9** | Write/Execute actions ‚Äî disabled by default, confirmation required | high | yes | pending |
 | **M10** | Observability, cost engine, full regression + hardening | low | yes | pending |
 
-Rule (§49): no step starts until the previous step is stable and approved.
+Rule (¬ß49): no step starts until the previous step is stable and approved.
 
-## 7. M2 completion record — Provider Adapter layer
+## 7. M2 completion record ‚Äî Provider Adapter layer
 
-**Where:** `ai-agent.js` (stays with the orchestrator deliberately — a separate module
+**Where:** `ai-agent.js` (stays with the orchestrator deliberately ‚Äî a separate module
 would create a circular import, since adapters reuse `geminiStream` / `groqStream` /
 `ProviderError` / `routerChain`, which live here).
 
@@ -123,10 +123,10 @@ would create a circular import, since adapters reuse `geminiStream` / `groqStrea
 
 | Symbol | Purpose |
 |---|---|
-| `GEMINI_ADAPTER` | `chatOnce()` (one-shot) + `chatStream()`; owns the `generateContent` URL and status→`ProviderError` mapping |
+| `GEMINI_ADAPTER` | `chatOnce()` (one-shot) + `chatStream()`; owns the `generateContent` URL and status‚Üí`ProviderError` mapping |
 | `GROQ_ADAPTER` | `chatStream()` only; `chatOnce()` deliberately rejects (`oneShot: false`) because the non-stream route has always been Gemini-only |
-| `PROVIDER_ADAPTERS` / `adapterFor(entry)` | registry + chain-entry → adapter lookup; unknown providers return `null` instead of misrouting |
-| `providerChain(env, tier, badSet)` | non-stream chain = router chain ∩ adapters with a one-shot path |
+| `PROVIDER_ADAPTERS` / `adapterFor(entry)` | registry + chain-entry ‚Üí adapter lookup; unknown providers return `null` instead of misrouting |
+| `providerChain(env, tier, badSet)` | non-stream chain = router chain ‚à© adapters with a one-shot path |
 
 **What changed at the call sites:** the orchestrator now dispatches via
 `adapterFor(c)` / `GEMINI_ADAPTER.chatOnce()` / `adapter.chatStream()` instead of
@@ -138,28 +138,28 @@ loop, the bad-set marking and the response shapes are unchanged.
 - Public API and response shapes identical (`text`, `model`, `intent`, `pv`, `agent`, `authoritative`).
 - Error codes and user-facing messages identical (`no_providers` 503, `provider_failed` 502/SSE, `mock_refused` 403).
 - Prompt text, `SYSTEM_PROMPT_V`, `AGENT_VERSION`, model names and `GEMINI_KEYS`/`GROQ_API_KEY` handling identical.
-- `routerChain` untouched and still exported (baseline test #16–18 depend on it).
+- `routerChain` untouched and still exported (baseline test #16‚Äì18 depend on it).
 - One internal detail line changed: a failed non-stream Gemini call now reports
   `detail: "Gemini HTTP 500 (<model>)"` instead of `"HTTP 500 <model>"`. This is a
   diagnostic-only field, not asserted by any test and not shown to students.
 
 **Verification:**
 
-- `ai-agent-f1.test.mjs` — **44/44 pass** (baseline, unchanged).
-- `ai-provider-adapters.test.mjs` — **17/17 pass** (new: registry contract, chain
+- `ai-agent-f1.test.mjs` ‚Äî **44/44 pass** (baseline, unchanged).
+- `ai-provider-adapters.test.mjs` ‚Äî **17/17 pass** (new: registry contract, chain
   filtering, honest Groq failure, structural "no raw URL in the orchestrator",
   and 3 E2E behaviour-parity checks).
-- `startup-ai-regression.test.mjs` — 22/22; `p21-ai-agent-ui.test.mjs`, `phase23-core.test.mjs`,
-  `auth-protection.test.mjs`, `account-retirement.test.mjs` — pass.
-- `npm run build:worker` + `npm run check:worker-bundle` — bundle in sync (738.2 kb).
-- `npm run check:sw-manifest` — sw.js digests regenerated.
+- `startup-ai-regression.test.mjs` ‚Äî 22/22; `p21-ai-agent-ui.test.mjs`, `phase23-core.test.mjs`,
+  `auth-protection.test.mjs`, `account-retirement.test.mjs` ‚Äî pass.
+- `npm run build:worker` + `npm run check:worker-bundle` ‚Äî bundle in sync (738.2 kb).
+- `npm run check:sw-manifest` ‚Äî sw.js digests regenerated.
 
 **Rollback:** revert this one commit; the adapter layer is additive and nothing
 else in the repo imports it.
 
-**Next gate:** M3 (formal Gateway with `USE_AI_GATEWAY` feature flag) — awaiting approval.
+**Next gate:** M3 (formal Gateway with `USE_AI_GATEWAY` feature flag) ‚Äî awaiting approval.
 
-## 8. M2.5 completion record — Cloudflare Workers AI backup
+## 8. M2.5 completion record ‚Äî Cloudflare Workers AI backup
 
 Added the first non-Gemini/Groq provider on top of the M2 boundary, to prove the
 boundary actually makes provider expansion cheap.
@@ -173,20 +173,20 @@ boundary actually makes provider expansion cheap.
 
 **Router:** Cloudflare is appended **after** Gemini and Groq, and only when
 **both** `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_AI_API_KEY` are bound. Either
-missing → the slot is simply absent, exactly like a missing `GEMINI_KEYS`.
+missing ‚Üí the slot is simply absent, exactly like a missing `GEMINI_KEYS`.
 `AGENT_CLOUDFLARE_MODELS` (in `[vars]`, comma-separated) overrides the model
 list because Cloudflare rotates its catalogue.
 
 **Secrets:** account id and API token go in via `wrangler secret put` or the
-dashboard (encrypted) — never in `[vars]`. Test M2.5-৯ asserts the token never
+dashboard (encrypted) ‚Äî never in `[vars]`. Test M2.5-ýßØ asserts the token never
 appears in the request URL.
 
 **Verification:** `ai-provider-adapters.test.mjs` 27/27 (10 new M2.5 cases,
 including an E2E where Gemini *and* Groq both return 500 and Cloudflare streams
 the answer); `ai-agent-f1.test.mjs` 44/44; bundle + sw-manifest clean.
 
-**Known, unrelated:** `startup-ai-regression.test.mjs` case ১৫ fails on the
-current `origin/main` base as well — reproduced with every M2.5 change stashed,
+**Known, unrelated:** `startup-ai-regression.test.mjs` case ýßßýß´ fails on the
+current `origin/main` base as well ‚Äî reproduced with every M2.5 change stashed,
 so it is pre-existing and not caused by this work.
 
 **To activate:** bind the two secrets **and** make sure the dispatcher in
@@ -199,7 +199,7 @@ automatically.
 
 
 
-## 9. Mandatory STOP (§54)
+## 9. Mandatory STOP (¬ß54)
 
 Per the blueprint, implementation must not begin without owner approval. The
 owner approved continuing, so **M4 was implemented** while M3 (a formal Gateway
@@ -208,11 +208,11 @@ function, is what the "AI must recognise the student" capability actually needs,
 and the flag pattern M3 called for (`USE_AI_GATEWAY`) is carried by
 `USE_CONTEXT_ENGINE` instead.
 
-**Next gate:** M5 (Prompt Registry) — awaiting approval.
+**Next gate:** M5 (Prompt Registry) ‚Äî awaiting approval.
 
-## 10. M4 completion record — Context Engine
+## 10. M4 completion record ‚Äî Context Engine
 
-**Deliverable:** `context-engine.js` — a typed, permission-scoped, minimum-necessary
+**Deliverable:** `context-engine.js` ‚Äî a typed, permission-scoped, minimum-necessary
 context layer, wired into `agentChat` behind `USE_CONTEXT_ENGINE` (default
 `disabled`).
 
@@ -221,7 +221,7 @@ context layer, wired into `agentChat` behind `USE_CONTEXT_ENGINE` (default
 | Symbol | Purpose |
 |---|---|
 | `CATEGORY` | typed categories: identity / profile / academic / performance / activity / preference / onboarding / memory |
-| `SCOPE` + `scopeAtLeast` | ordered permission ladder NONE → MINIMAL → SUMMARY → FULL_ALLOWED |
+| `SCOPE` + `scopeAtLeast` | ordered permission ladder NONE ‚Üí MINIMAL ‚Üí SUMMARY ‚Üí FULL_ALLOWED |
 | `identityKind(uid)` | reads the server-side uid prefix (`account-` / `guest-`); the client can never claim a kind |
 | `resolveScopes({uid, prefs, stats, onboarding, memoryOn})` | decides each category's scope; a category with no legitimate source resolves to NONE rather than being guessed at |
 | `buildContext(input)` | immutable bundle; a NONE category carries no payload at all; the raw uid is never included, only its kind |
@@ -234,15 +234,49 @@ NONE. `profile` and `activity` are NONE until a real source exists. `preference`
 and `onboarding` are FULL_ALLOWED only when they were actually supplied.
 
 **Legacy path preserved:** with the flag `disabled`, `buildSystemPrompt` output is
-byte-identical to the pre-M4 prompt — asserted by test M4-১৬ and the E2E pair
-M4-১৮/১৯ (flag off → no context block reaches the provider; flag on → it does).
+byte-identical to the pre-M4 prompt ‚Äî asserted by test M4-ýßßýß¨ and the E2E pair
+M4-ýßßýßÆ/ýßßýßØ (flag off ‚Üí no context block reaches the provider; flag on ‚Üí it does).
 
 **Variables:** `USE_CONTEXT_ENGINE = "disabled"` in `[vars]`. The Worker sits on
 the Workers Free 64-variable ceiling, so `AGENT_CLOUDFLARE_MODELS` was removed
-from `[vars]` in exchange — the router falls back to the identical default
+from `[vars]` in exchange ‚Äî the router falls back to the identical default
 `@cf/meta/llama-3.3-70b-instruct-fp8-fast`, so the Cloudflare backup is unaffected.
 
 **Verification:** `phase9-m4-context-engine.test.mjs` **19/19**; regression
 `ai-agent-f1` 44/44, `ai-provider-adapters` 27/27, `account-retirement` 31/31;
 bundle in sync; deployed version `e950512f` reports
 `providers.cloudflare: true` and `context: { enabled: false }`; guest chat E2E OK.
+
+## 11. M4.1 — real student profile wiring
+
+**Deliverable:** the signed-in student's academic profile now reaches the Context
+Engine at SUMMARY scope, with identity fields stripped by two independent gates.
+`profile` was NONE in M4 ("no source yet"); it is SUMMARY now that a source exists.
+
+**Two gates, both required:**
+
+1. **Client** (`ai-agent-chat.js`) — `localProfile()` projects the cached profile
+   to an academic-only shape. It never reads `fullName`/`email`/`mobile`/`dob`/
+   `bio`/`publicId`/avatar beyond the first-name token; `profilePayload()` drops
+   even that token unless the account opted in. Guests get `null`.
+2. **Server** (`ai-agent.js`) — `sanitizeProfileContext(payload, { shareName })`
+   re-sanitizes the request body with an allowlist (unknown keys are dropped, not
+   filtered), and the payload is only built when `uid.startsWith('account-')`.
+   `shareName` is read from the stored `aiprefs`, never from the request body.
+
+**Name consent (opt-in, default off):** the AI may learn the student's first name
+only when `aiprefs.shareName === true`, toggled in Profile → Preferences → AI
+Personalization ("AI আমার নাম জানবে"). Only a single name token passes; a full
+name is rejected. Everything else in the profile (institution, district, session,
+goal, subjects, targets) is always shared at SUMMARY.
+
+**Scope + rendering:** `resolveScopes` resolves `profile: SUMMARY` only for an
+`account-` uid carrying a sanitized payload — a guest stays NONE even if a payload
+is smuggled in. `renderContext` emits one `profile (academic)` line.
+
+**Verification:** `phase9-m4-context-engine.test.mjs` **29/29** (adds M4-২০…২৯,
+including the E2E pair proving the name is absent without opt-in and present with
+it); `language-engine.test.mjs` 11/11 (new UI copy translated); `ai-agent-f1`
+44/44; full native-auth suite 497/499 — the two failures (`profile-core`,
+`session-recovery-chaos`) also fail on a clean tree (better-sqlite3/Node v24
+native crash), unrelated to this change.
