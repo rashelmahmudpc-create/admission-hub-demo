@@ -1606,7 +1606,7 @@ const T = {
   auth_invalid:{bn:"টোকেন অবৈধ",en:"Invalid token"},
   auth_invalid_desc:{bn:"টোকেনটি স্বীকৃত নয়। আবার চেক করে চেষ্টা করুন।",en:"That token is not recognized. Check it and try again."},
   auth_success:{bn:"যাচাই সম্পন্ন",en:"Verified"},
-  auth_note:{en:"প্রেজেন্টেশন-মাত্র গেট — এই প্রোটোটাইপে প্রকৃত অথেন্টিকেশন নেই।",bn:"Presentation-only gate — this prototype has no real authentication."},
+  auth_note:{bn:"টোকেন সেশন-মাত্র; প্রবেশের আগে লাইভ সার্ভিসে যাচাই করা হয়।",en:"Session-only token, verified against the live service before entry."},
   auth_demo:{bn:"ডেমো টোকেন ব্যবহার করুন",en:"Use demo token"},
   audit_title:{bn:"অডিট লগ",en:"Audit log"},
   act_created:{bn:"তৈরি করেছে",en:"created"},
@@ -4075,7 +4075,8 @@ function enableDragDismiss(handle,sheet){
 function doOverlayClose(){ closeOverlay(); afterOverlayClose(); }
 
 /* ============================================================
-   AUTH GATE (presentation only)
+   AUTH GATE — token verified against the live Worker
+   (/api/notifications/history) before the shell opens.
    ============================================================ */
 function authGateHTML(){
   return '<div class="ns-gate-page ns-auth" id="nsAuthGate">'+
