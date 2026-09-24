@@ -1,0 +1,79 @@
+name: Deploy Pages UI + Worker (manual)
+
+# Manual, deploy-only workflow. Mirrors the deploy steps of native-auth-activate.yml
+# without any Firebase/mailbox/secret mutation: it publishes the committed Worker
+# bundle and the sanitized Pages shell, nothing else.
+#
+# Required repository secrets: CLOUDFLARE_API_TOKEN (Pages:Edit + Workers Scripts:Edit),
+# CLOUDFLARE_ACCOUNT_ID.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type DEPLOY to publish the committed Worker bundle and Pages UI
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: admission-hub-pages-deploy
+  cancel-in-progress: false
+
+jobs:
+  worker:
+    if: ${{ inputs.confirmation == 'DEPLOY' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Verify the committed Worker bundle matches its sources
+        run: npm run check:worker-bundle
+      - name: Deploy Worker
+        uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd # v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: '4.35.0'
+          command: deploy --config wrangler.toml
+
+  pages:
+    if: ${{ inputs.confirmation == 'DEPLOY' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Confirm the service-worker manifest is in sync
+        run: npm run check:sw-manifest
+      - name: Build sanitized Pages bundle
+        run: |
+          set -eu
+          rm -rf dist
+          mkdir -p dist
+          rsync -a --exclude='.git' --exclude='node_modules' --exclude='docs' --exclude='AGENT_RESUME' --exclude='ai-proxy' --exclude='auth' --exclude='auth-native' --exclude='email-gateway' --exclude='apps-script' --exclude='uploads' --exclude='.github' --exclude='gk-agent-worker.js' --exclude='public-worker.js' --exclude='ai-agent.js' --exclude='worker-bundle.mjs' --exclude='voice-worker.js' --exclude='notification-worker.js' --exclude='fcm-notification.mjs' --exclude='wrangler.toml' --exclude='package.json' --exclude='package-lock.json' --exclude='*.test.mjs' --exclude='*.md' ./ dist/
+          test -s dist/index.html
+          test -s dist/sw.js
+          test -s dist/account-access.js
+          ! test -e dist/onboarding-welcome-hero.webp
+          ! test -e dist/onboarding-personal-hero.webp
+      - name: Deploy Pages UI
+        uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd # v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: '4.35.0'
+          command: pages deploy dist --project-name admissionhub --branch main
