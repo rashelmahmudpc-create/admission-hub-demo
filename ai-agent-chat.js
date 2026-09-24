@@ -55,7 +55,8 @@
     feedbackQ: 'What went wrong?', fb1: 'Incorrect', fb2: 'Not helpful', fb3: 'Too complicated', fb4: 'Missing information', fb5: 'Other',
     confirmDel: 'Delete this conversation?', cancel: 'Cancel', del: 'Delete', delDone: 'Conversation deleted',
     searchPh: 'Search conversations...', noResults: 'No matches found', emptySearch: 'Clear search', connected: 'Student data connected', publicMode: 'Public mode',
-    stop: 'Stop', send: 'Send', attach: 'Add to conversation', savedTip: 'Saved', welcomeSub: 'Ask me anything about your admission preparation.', studying: 'What are we studying today?', themeGreen: 'Premium Green'
+    stop: 'Stop', send: 'Send', attach: 'Add to conversation', savedTip: 'Saved', welcomeSub: 'Ask me anything about your admission preparation.', studying: 'What are we studying today?', themeGreen: 'Premium Green',
+    actTitle: 'Confirm change', actConfirmQ: 'Apply this setting?', actYes: 'Yes, apply', actNo: 'No', actApplied: '✓ Applied', actCancelled: 'Cancelled', actExpired: 'This request expired.', actFail: 'Could not apply — try again.', actOffline: 'You are offline.', actOnly: 'Saved to your account only.', actPending: 'Confirming…'
   };
   const T_BN = {
     title: 'Admission Hub AI', sub: 'AI Study Assistant', online: 'Online',
@@ -90,7 +91,8 @@
     feedbackQ: 'কী ভুল ছিল?', fb1: 'ভুল', fb2: 'কাজের না', fb3: 'খুব জটিল', fb4: 'তথ্য অনুপস্থিত', fb5: 'অন্যান্য',
     confirmDel: 'এই কথোপকথনটা ডিলিট করবে?', cancel: 'Cancel', del: 'Delete', delDone: 'কথোপকথন ডিলিট হয়েছে',
     searchPh: 'কথোপকথনে খোঁজো…', noResults: 'কিছু পাওয়া যায়নি', emptySearch: 'খোঁজা বন্ধ করো', connected: 'Student data connected', publicMode: 'Public mode',
-    stop: 'Stop', send: 'Send', attach: 'Add to conversation', savedTip: 'সেভ হয়েছে', welcomeSub: 'তোমার admission প্রস্তুতি নিয়ে যেকোনো প্রশ্ন করো।', studying: 'আজ কী পড়বো?', themeGreen: 'Premium Green'
+    stop: 'Stop', send: 'Send', attach: 'Add to conversation', savedTip: 'সেভ হয়েছে', welcomeSub: 'তোমার admission প্রস্তুতি নিয়ে যেকোনো প্রশ্ন করো।', studying: 'আজ কী পড়বো?', themeGreen: 'Premium Green',
+    actTitle: 'পরিবর্তন নিশ্চিত করো', actConfirmQ: 'এই সেটিংটা সেভ করবো?', actYes: 'হ্যাঁ, সেভ করো', actNo: 'না', actApplied: '✓ সেভ হয়েছে', actCancelled: 'বাতিল করেছি', actExpired: 'এই অনুরোধের সময় শেষ।', actFail: 'সেভ করা গেল না — আবার চেষ্টা করো।', actOffline: 'তুমি এখন অফলাইনে।', actOnly: 'শুধু তোমার নিজের অ্যাকাউন্টে সেভ হবে।', actPending: 'সেভ করছি…'
   };
   let T = lang === 'en' ? T_EN : T_BN;
   try { window.addEventListener('ah:lang', () => { try { lang = (localStorage.getItem('ahLang') === 'en') ? 'en' : 'bn'; } catch (_) { lang = 'bn'; } T = lang === 'en' ? T_EN : T_BN; try { if (typeof render === 'function') render(); } catch (_) {} }); } catch (_) {}
@@ -288,6 +290,25 @@
     .ai-agent-root[data-theme=dark] .ai-msg-bar .ab:hover{background:rgba(47,191,143,.12);color:#5FE6BD}
     .ai-msg-bar .sp{margin-left:auto}
     .ai-msg-bar .abtxt{display:inline-flex;align-items:center;gap:5px;border:0;background:none;color:#0E6B4F;font:700 12px inherit;cursor:pointer;padding:5px 10px;border-radius:999px}
+    /* ── M9 action confirmation card ── */
+    .ai-act{border:1px solid rgba(15,107,79,.22);border-radius:var(--r-l);background:var(--ai-card,#fff);padding:13px 15px;margin:10px 0 2px}
+    .ai-act-h{display:flex;align-items:center;gap:7px;font-size:12.5px;font-weight:800;color:#0E6B4F;letter-spacing:.01em}
+    .ai-act-q{font-size:14px;font-weight:700;color:var(--ai-ink,#16302A);margin:8px 0 6px;line-height:1.6}
+    .ai-act-sum{font-size:12.5px;color:var(--ai-sub,#5F7A72);line-height:1.7;margin:0 0 11px}
+    .ai-act-note{font-size:11.5px;color:var(--ai-sub,#7A948B);margin-top:10px}
+    .ai-act-btns{display:flex;gap:8px;flex-wrap:wrap}
+    .ai-act-btns button{border-radius:var(--r-pill);font:700 12.5px inherit;padding:9px 16px;cursor:pointer;border:1px solid transparent;transition:transform .12s,background .15s}
+    .ai-act-btns button:active{transform:scale(.97)}
+    .ai-act-yes{background:#0E6B4F;color:#fff}
+    .ai-act-no{background:transparent;border-color:rgba(15,107,79,.25);color:#0E6B4F}
+    .ai-agent-root[data-theme=dark] .ai-act{border-color:rgba(47,191,143,.25)}
+    .ai-agent-root[data-theme=dark] .ai-act-h{color:#5FE6BD}
+    .ai-agent-root[data-theme=dark] .ai-act-q{color:#E4F5EE}
+    .ai-agent-root[data-theme=dark] .ai-act-no{color:#5FE6BD;border-color:rgba(47,191,143,.35)}
+    .ai-act-done{display:flex;align-items:center;gap:7px;font-size:13px;font-weight:700;color:#0E6B4F}
+    .ai-agent-root[data-theme=dark] .ai-act-done{color:#5FE6BD}
+    .ai-act-done.bad{color:#B23B48}
+    .ai-act-btns button[disabled]{opacity:.55;cursor:default}
     /* ── quiz card ── */
     .ai-quiz{border:1px solid rgba(15,107,79,.16);border-radius:var(--r-l);overflow:hidden;background:var(--ai-card,#fff);margin:9px 0 2px}
     .ai-quiz-head{display:flex;align-items:center;gap:8px;padding:11px 14px;font-size:12.5px;font-weight:800;color:#0E6B4F;border-bottom:1px solid rgba(15,107,79,.1)}
@@ -1392,7 +1413,93 @@
       <div class="ai-try">${esc(T.tryAsking)}</div>
       <div class="ai-chips">${T.chips.map((c) => `<button class="ai-chip" data-q="${esc(c[2])}"><span class="ic">${c[0]}</span><b>${esc(c[1])}</b><span>${esc(c[0] + ' ' + (c[1]))}</span></button>`).join('')}</div>`;
   }
+  /* ── M9 action confirmation card ──
+     The interface never executes a write on its own. It proposes one to the
+     Worker, renders the server-built summary, and waits for the student to tap
+     "yes"; only then does it confirm with the single-use token. */
+  const ACT_ACTIONS = { 'prefs.write': { bn: 'তোমার AI পছন্দ সেভ করা', en: 'Save your AI preferences' } };
+  function actLabel(action) {
+    const k = ACT_ACTIONS[action];
+    return k ? (lang === 'en' ? k.en : k.bn) : String(action || '');
+  }
+  function actionCardHtml(m, idx) {
+    if (m.actDone) {
+      return `<div class="ai-msg ai"><div class="ai-msg-head"><span class="mini"></span>${esc(T.title)}</div><div class="ai-act"><div class="ai-act-done ${m.actDone === 'cancelled' || m.actDone === 'error' ? 'bad' : ''}">${esc(m.actDoneText || T.actApplied)}</div></div></div>`;
+    }
+    return `<div class="ai-msg ai"><div class="ai-msg-head"><span class="mini"></span>${esc(T.title)}</div><div class="ai-act">
+      <div class="ai-act-h">⚙️ ${esc(T.actTitle)} · ${esc(actLabel(m.actAction))}</div>
+      <div class="ai-act-q">${esc(m.actWhy || T.actConfirmQ)}</div>
+      ${m.actSummary ? `<div class="ai-act-sum">${esc(m.actSummary)}</div>` : ''}
+      <div class="ai-act-btns"><button class="ai-act-yes" onclick="window.__AiActDecide(${idx},1)">✔ ${esc(T.actYes)}</button><button class="ai-act-no" onclick="window.__AiActDecide(${idx},0)">✖ ${esc(T.actNo)}</button></div>
+      <div class="ai-act-note">🔒 ${esc(T.actOnly)}</div></div></div>`;
+  }
+  function actionExpired(m) {
+    return !m.actDone && m.actExpiresAt && Date.now() > m.actExpiresAt;
+  }
+  function dropExpiredAction() {
+    const last = msgs[msgs.length - 1];
+    if (!last || !last.pending || !actionExpired(last)) return false;
+    last.pending = false; last.actDone = 'error'; last.actDoneText = T.actExpired;
+    save(); return true;
+  }
+  function postAction(path, payload) {
+    return fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload || {}) })
+      .then((r) => r.json().catch(() => null).then((j) => ({ status: r.status, body: j })))
+      .catch(() => ({ status: 0, body: null }));
+  }
+  async function decideAction(idx, yes) {
+    const m = msgs[idx];
+    if (!m || !m.pending || m.actBusy) return;
+    if (actionExpired(m)) { m.pending = false; m.actDone = 'error'; m.actDoneText = T.actExpired; save(); renderMsgs(); return; }
+    m.actBusy = true; renderMsgs();
+    if (!yes) {
+      m.pending = false; m.actDone = 'cancelled'; m.actDoneText = T.actCancelled;
+      m.actBusy = false; save(); renderMsgs(); return;
+    }
+    const res = await postAction('/api/ai/actions/confirm', { token: m.actId });
+    if (res.status === 200 && res.body && res.body.ok) {
+      m.pending = false; m.actDone = 'applied'; m.actDoneText = T.actApplied;
+    } else if (res.status === 0) {
+      m.actBusy = false; save(); renderMsgs(); toast(T.actOffline); return;
+    } else {
+      const reason = res.body && (res.body.reason || res.body.error);
+      m.pending = false; m.actDone = 'error';
+      m.actDoneText = reason === 'expired' ? T.actExpired : T.actFail;
+    }
+    m.actBusy = false; save(); renderMsgs();
+  }
+  window.__AiActDecide = decideAction;
+  /* Detect an explicit personalization request in the student's own words and map
+     it to declared args. Keep it deliberately narrow: only clear, first-person
+     requests, and never when a preference is already being offered. */
+  function actParseIntent(q) {
+    const s = String(q || '');
+    const args = {};
+    if (/(উত্তর\s*(ছোট|সংক্ষিপ্ত|short)|সংক্ষেপে\s*উত্তর|keep\s+(it|answers?|responses?)\s+short|short(er)?\s+answers?|concise)/i.test(s)) args.responseLen = 'short';
+    if (/(বিস্তারিত|ডিটেইল|detailed|in\s+detail|elaborate)/i.test(s)) args.responseLen = 'detailed';
+    if (/(আরও\s*সহজ|সহজ\s*(করে|ভাষায়)|simple\s+(words|language)|simpler)/i.test(s)) args.tone = 'simple';
+    if (/(professional|আনুষ্ঠানিক|formal)/i.test(s)) args.tone = 'professional';
+    if (/(উৎসাহ|motivat|inspir)/i.test(s)) args.tone = 'motivating';
+    if (/(সরাসরি|সংক্ষেপে\s*বলো|direct|straight\s*to)/i.test(s)) args.tone = 'direct';
+    if (/(ইংরেজিতে\s*উত্তর|answer\s+in\s+english|reply\s+in\s+english|english\s*-?এ\s*উত্তর)/i.test(s)) args.langStyle = 'en';
+    if (/(বাংলায়\s*উত্তর|answer\s+in\s+bangla|reply\s+in\s+bangla)/i.test(s)) args.langStyle = 'bn';
+    if (!Object.keys(args).length) return null;
+    return { action: 'prefs.write', args };
+  }
+  async function offerAction(intent) {
+    const res = await postAction('/api/ai/actions/propose', { action: intent.action, args: intent.args });
+    if (res.status === 200 && res.body && res.body.ok && res.body.proposal) {
+      const p = res.body.proposal;
+      msgs.push({ role: 'ai', text: '', ts: Date.now(), pending: true, actId: p.id, actAction: p.action, actSummary: p.summary || '', actExpiresAt: p.expiresAt || (Date.now() + 300000) });
+      save(); renderMsgs();
+      return true;
+    }
+    if (res.status === 401) { toast(T.needLogin, true); return true; }
+    /* Anything else (layer off, denied) falls through: the normal answer proceeds. */
+    return false;
+  }
   function msgHtml(m, idx) {
+    if (m.pending) return actionCardHtml(m, idx);
     if (m.role === 'user') {
       const ub = m.text.length > 460 ? `<details class="ai-u-fold"><summary>${esc(m.text.slice(0, 150))}… <em>${esc(T.seeMore)}</em></summary><div>${esc(m.text)}</div></details>` : esc(m.text);
       return `<div class="ai-msg user"><div><div class="bubble">${ub}${m.image ? `<img class="thumb" src="${m.image}" alt="">` : ''}</div><div class="meta">${esc(fmtTime(m.ts))} <span class="ai-tick">✓✓</span></div></div></div>`;
@@ -2220,6 +2327,11 @@
     /* ── Quiz intent → interactive configuration engine (কোনো বাটন লাগবে না) ── */
     const qi = qzParseIntent(fullText);
     if (qi) { msgs.push({ role: 'ai', text: '', ts: Date.now(), qz: qi }); save(); renderMsgs(); return; }
+    /* ── M9: an explicit personalization request becomes a proposal the student
+       confirms. If the layer is off or the action is denied, fall through and
+       answer normally. */
+    const aiReq = actParseIntent(fullText);
+    if (aiReq) { dropExpiredAction(); if (await offerAction(aiReq)) return; }
     stopVoice(true);
     stoppedEarly = false;
     streamingEl = null;
