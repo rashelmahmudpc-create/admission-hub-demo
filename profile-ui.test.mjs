@@ -330,7 +330,9 @@ test('V2: preferences = centralized i18n + 4-theme appearance + AI personalizati
   assert.match(UI, /pick-ai-style/);
   assert.match(UI, /pick-ai-tone/);
   assert.match(UI, /pick-ai-len/);
-  assert.match(UI, /toggle-ai-memory/);
+  // M7: the memory toggle is gone — memory is automatic and has no UI switch.
+  assert.doesNotMatch(UI, /toggle-ai-memory/);
+  assert.doesNotMatch(UI, /Conversation Memory/);
   assert.match(UI, /\/api\/ai\/prefs/);
 });
 

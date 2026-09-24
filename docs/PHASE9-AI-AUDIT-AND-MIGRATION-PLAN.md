@@ -41,7 +41,7 @@
 | Exam-integrity gate | **WORKING** |
 | Onboarding assistant (strict mode) | **WORKING** |
 | Per-user AI preferences | **WORKING** |
-| Conversation memory | **PARTIALLY WORKING** ‚Äî session-scoped, no explicit long-term layer |
+| Conversation memory | **WORKING** — short-term (`chatmem:<uid>`) plus a typed long-term `mem-v1` layer |
 | Context engine | **PARTIALLY WORKING** ‚Äî flat stats/onboarding/prefs, no typed context categories |
 | Prompt registry | **PARTIALLY WORKING** ‚Äî single version constant, no registry with `promptId/version/status` |
 | Cost/quota tracking | **PARTIALLY WORKING** ‚Äî only a daily request counter |
@@ -49,8 +49,8 @@
 | Action permission layer (READ/WRITE/EXECUTE) | **MISSING** |
 | Action confirmation + audit trail | **MISSING** |
 | Response schema/validation layer | **MISSING** (free text except quiz JSON mode) |
-| Memory metadata (reason/source/permission/timestamp/confidence) | **MISSING** |
-| Formal short/long-term memory split | **MISSING** |
+| Memory metadata (reason/source/permission/timestamp/confidence) | **WORKING** — every `mem-v1` record carries source/confidence/reason/ts/ownerUid |
+| Formal short/long-term memory split | **WORKING** — `chatmem:<uid>` short-term + typed `mem-v1` long-term |
 
 ## 3. Existing AI ‚Üí target mapping (¬ß6, ¬ß7, ¬ß30)
 
@@ -106,7 +106,7 @@ Missing ‚Üí required before Phase 9 completes:
 | **M4** | Context Engine ‚Äî typed, permission-scoped, minimum-necessary; legacy path kept | medium | yes | **DONE** (see ¬ß10) |
 | **M5** | Prompt Registry ‚Äî existing prompt becomes `v1`; A/B before replacing | low | yes | **DONE** (see ¬ß12) |
 | **M6** | Tool Registry ‚Äî READ-ONLY tools only; cross-user isolation enforced at the tool boundary | high | yes | **DONE** (see ¬ß13) |
-| **M7** | Memory Engine ‚Äî long-term layer, default OFF, explicit consent | medium | yes | pending |
+| **M7** | Memory Engine — long-term layer (owner override: automatic, no toggle) | medium | yes | **DONE** (see §14) |
 | **M8** | Response validation + structured output | medium | yes | pending |
 | **M9** | Write/Execute actions ‚Äî disabled by default, confirmation required | high | yes | pending |
 | **M10** | Observability, cost engine, full regression + hardening | low | yes | pending |
@@ -350,4 +350,71 @@ result, and M6-১৩ asserts the chat path wires no execution. M4 29/29, M5 10/
 native-auth suite keeps its two pre-existing, unrelated failures.
 
 **Next gate:** M7 (Memory Engine) — awaiting owner approval.
+
+## 14. M7 completion record — Memory Engine (long-term layer)
+
+**Deliverable:** `memory-engine.js` — the long-term half of the memory split the
+audit flagged as missing (finding: *"Formal short/long-term memory split —
+MISSING"*, *"Memory metadata (reason/source/permission/timestamp/confidence) —
+MISSING"*). The short-term layer is unchanged (`chatmem:<uid>`, rolling window,
+`summarizeTo` compaction). The long-term layer is typed: every record carries
+`kind / key / value / source / confidence / reason / ts / ownerUid`.
+
+**Owner decision — deliberate deviation from the plan.** The plan's M7 gate read
+*"long-term layer, default OFF, explicit consent"*. The owner overrode it: memory
+is **automatic** for a signed-in student, with **no toggle, no consent prompt and
+no expiry**. That is what `mem-v1` implements. The change is a product decision,
+not a relaxation of the safety boundary — everything below still holds.
+
+**Public surface:** `MEMORY_VERSION`, `KIND`, `SOURCE`, `CONFIDENCE_MIN`,
+`MAX_RECORDS`, `RENDER_LIMIT`, `getKinds`, `sanitizeMemoryText`, `isPiiFree`,
+`resolveMemoryOwner`, `makeMemory`, `upsertMemory`, `parseMemory`,
+`guardMemoryRecord`, `validateMemoryEngine`, `isRetentionRequest`,
+`extractMemoryCandidates`, `renderMemory`.
+
+**What is remembered.** Exactly three kinds — `studies` (weak/strong topics,
+goals), `preference` (answer style), `habit` (study routine). Nothing else is
+storable, and `makeMemory()` rejects anything outside that set.
+
+**How memory gets in.** Both triggers the owner asked for are recognised in
+`extractMemoryCandidates()`: an explicit *"মনে রাখো"* (source `user_stated`,
+confidence ≥ 0.8) and a study/preference/habit fact stated in passing (source
+`ai_inferred`, confidence 0.7–0.8). A candidate still has to clear
+`makeMemory()` — weak signals never store.
+
+**Boundaries that did not change with the owner override.**
+
+- **Guests have no memory at all.** A guest has no durable identity, so
+  `resolveMemoryOwner()` returns `null` for anything that is not `account-`.
+  Guest AI is now refused outright: `agentChat` returns `401 sign_in_required`
+  before any parsing, and the chat client plus the quiz generator both stop
+  before the request. `identity.uid` alone is the owner — nothing the request
+  body or the model claims can set it.
+- **No PII, ever.** `isPiiFree()` flags email, BD mobile, long digit runs, ISO
+  and slash dates, and password/OTP/PIN/CVV wording. A record whose value or
+  reason trips any pattern is refused at both write and read.
+- **Cross-user isolation is a second gate.** `parseMemory()`,
+  `upsertMemory()` and `guardMemoryRecord()` all drop a record whose `ownerUid`
+  is not the caller; `upsertMemory` never merges a foreign record.
+- **Bounded storage, not a retention policy.** Records never expire; a safety
+  valve trims the oldest beyond `MAX_RECORDS` (500) so a KV value cannot grow
+  without bound. Rendering caps at `RENDER_LIMIT` (24) so the prompt stays clean.
+
+**No toggle, no metadata surface.** M7 is invisible by design: the AI
+Personalization sheet's MEMORY switch and its `memory` preference field are
+removed (`sanitizeAiPrefs` no longer accepts `memory`), and `agentStatus` merely
+advertises `memory: { version: 'mem-v1', mode: 'auto', scope: 'account-only' }`.
+The base prompt text and its SHA-256 are untouched (`29f59a3e…01b7e`).
+
+**Verification:** `phase9-m7-memory-engine.test.mjs` **33/33** — the engine
+shape (M7-১/২), PII rejection (M7-৪/১১), guest/foreign isolation (M7-৬/৭/৮/১৩/
+১৪/১৫), confidence and kind gates (M7-৯/১০), both extraction triggers
+(M7-১৭…২২), the removal of the toggle (M7-২৪), the unchanged prompt hash
+(M7-২৭), and end-to-end store/recall plus a refused guest write (M7-২৯…৩৩).
+M4 29/29, M5 10/10, M6 15/15, `ai-agent-f1` 44/44, `account-data-isolation`
+3/3, guards and `check:worker-bundle` stay green; the full native-auth suite
+keeps its two pre-existing, unrelated failures (`profile-core`,
+`session-recovery-chaos`).
+
+**Next gate:** awaiting owner direction for the milestone after M7.
 

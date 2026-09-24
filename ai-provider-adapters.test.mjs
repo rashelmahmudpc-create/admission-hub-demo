@@ -72,7 +72,7 @@ t('M2-১৪. E2E: gemini-500 → groq-fallback still streams through adapters',
     return new Response('unexpected', { status: 500 });
   };
   try {
-    const r = await agentChat(new Request('https://x/api/ai/chat', { method: 'POST', body: JSON.stringify({ messages: [{ role: 'user', content: 'বুঝাও' }] }) }), env, 'uid_m2');
+    const r = await agentChat(new Request('https://x/api/ai/chat', { method: 'POST', body: JSON.stringify({ messages: [{ role: 'user', content: 'বুঝাও' }] }) }), env, 'account-um2');
     const text = await r.text();
     return r.status === 200 && text.includes('গ্রক-উত্তর') && text.includes('"provider":"groq"');
   } finally { globalThis.fetch = real; }
@@ -86,7 +86,7 @@ t('M2-১৫. E2E: non-stream path still returns gemini text through GEMINI_ADAP
     return new Response('boom', { status: 500 });
   };
   try {
-    const r = await agentChat(new Request('https://x/api/ai', { method: 'POST', body: JSON.stringify({ messages: [{ role: 'user', content: 'বুঝাও' }] }) }), env, 'uid_m2b');
+    const r = await agentChat(new Request('https://x/api/ai', { method: 'POST', body: JSON.stringify({ messages: [{ role: 'user', content: 'বুঝাও' }] }) }), env, 'account-um2b');
     const d = await r.json();
     return r.status === 200 && d.text === 'সরাসরি-উত্তর' && d.provider === undefined && d.model === 'gemini-3-flash-preview';
   } finally { globalThis.fetch = real; }
@@ -94,7 +94,7 @@ t('M2-১৫. E2E: non-stream path still returns gemini text through GEMINI_ADAP
 
 t('M2-১৬. E2E: no-provider env still yields 503 (wording unchanged)', (async () => {
   const { env } = stubEnv({ GEMINI_KEYS: '', GROQ_API_KEY: '' });
-  const r = await agentChat(new Request('https://x/api/ai', { method: 'POST', body: JSON.stringify({ messages: [{ role: 'user', content: 'হ্যালো' }] }) }), env, 'uid_m2c');
+  const r = await agentChat(new Request('https://x/api/ai', { method: 'POST', body: JSON.stringify({ messages: [{ role: 'user', content: 'হ্যালো' }] }) }), env, 'account-um2c');
   const d = await r.json();
   return r.status === 503 && d.error === 'no_providers';
 })(), { timeout: 10000 });
@@ -138,7 +138,7 @@ t('M2.5-৮. E2E: gemini+groq down → cloudflare streams the answer', (async ()
     return new Response('unexpected ' + u, { status: 500 });
   };
   try {
-    const r = await agentChat(new Request('https://x/api/ai/chat', { method: 'POST', body: JSON.stringify({ messages: [{ role: 'user', content: 'বুঝাও' }] }) }), env, 'uid_cf');
+    const r = await agentChat(new Request('https://x/api/ai/chat', { method: 'POST', body: JSON.stringify({ messages: [{ role: 'user', content: 'বুঝাও' }] }) }), env, 'account-ucf');
     const text = await r.text();
     return r.status === 200 && text.includes('সিএফ-উত্তর') && text.includes('"provider":"cloudflare"');
   } finally { globalThis.fetch = real; }

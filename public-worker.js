@@ -224,11 +224,15 @@ export default {
         return json({ ok: true, prefs });
       }
       if (path === '/api/ai/chat' && request.method === 'POST') {
-        const identity = await aiRequestIdentity(request, env);
+        const identity = await aiRequestIdentity(request, env, false);
+        /* M7: AI chat is signed-in only. Refuse the guest here, before the
+           public rate-limit counter or any KV write, so a guest leaves no trace. */
+        if (!identity.authenticated) return json({ error: 'sign_in_required', message: 'AI চ্যাট ব্যবহার করতে লগইন করো।' }, 401);
         return await agentChat(request, env, identity.uid, { persistMemory: identity.persistMemory });
       }
       if (path === '/api/ai' && request.method === 'POST') {
-        const identity = await aiRequestIdentity(request, env);
+        const identity = await aiRequestIdentity(request, env, false);
+        if (!identity.authenticated) return json({ error: 'sign_in_required', message: 'AI চ্যাট ব্যবহার করতে লগইন করো।' }, 401);
         return await agentChat(request, env, identity.uid, { stream: false, persistMemory: identity.persistMemory });
       }
       return json({ error: 'not-found' }, 404);

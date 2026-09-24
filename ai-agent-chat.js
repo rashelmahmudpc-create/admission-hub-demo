@@ -50,6 +50,7 @@
     listening: 'Listening', transcribing: 'Transcribing', voiceNope: 'Voice input not supported on this device', msgTooLong: 'Message is too long — please keep it under 4,000 characters', shareBtn: 'Share', copyFail: 'Copy unavailable', more: 'More',
     retry: 'Try again',
     err: 'Something went wrong.', errHttp: 'We had trouble processing your request. Please try again shortly.', offline: 'You are offline', imgTooBig: 'Image must be 3.5MB or smaller', editBtn: 'Edit', seeMore: 'See more', themeSys: 'System',
+    needLogin: 'Please sign in to use AI chat.',
     docSoon: 'Document understanding is coming soon — I answered based on your text.', liked: 'Thanks for feedback!',
     feedbackQ: 'What went wrong?', fb1: 'Incorrect', fb2: 'Not helpful', fb3: 'Too complicated', fb4: 'Missing information', fb5: 'Other',
     confirmDel: 'Delete this conversation?', cancel: 'Cancel', del: 'Delete', delDone: 'Conversation deleted',
@@ -84,6 +85,7 @@
     listening: 'Listening', transcribing: 'Transcribing…', voiceNope: 'এই ডিভাইসে ভয়েস-ইনপুট নেই', msgTooLong: 'মেসেজ খুব বড় — সর্বোচ্চ ৪,০০০ অক্ষর। ছোট করে আবার পাঠান।', shareBtn: 'শেয়ার', copyFail: 'কপি করা যায়নি', more: 'আরও',
     retry: 'আবার চেষ্টা করো',
     err: 'একটু সমস্যা হয়েছে।', errHttp: 'requestটি প্রক্রিয়া করতে সমস্যা হয়েছে — একটু পরে আবার চেষ্টা করো।', offline: 'ইন্টারনেট সংযোগ নেই', imgTooBig: 'ছবি ৩.৫MB-এর বেশি হবে না', editBtn: 'সম্পাদনা', seeMore: 'আরও দেখুন', themeSys: 'সিস্টেম',
+    needLogin: 'AI চ্যাট ব্যবহার করতে লগইন করো।',
     docSoon: 'ডকুমেন্ট-বিশ্লেষণ শীঘ্রই আসছে — আপাতত তোমার লেখা থেকে উত্তর দিয়েছি।', liked: 'ফিডব্যাকের জন্য ধন্যবাদ!',
     feedbackQ: 'কী ভুল ছিল?', fb1: 'ভুল', fb2: 'কাজের না', fb3: 'খুব জটিল', fb4: 'তথ্য অনুপস্থিত', fb5: 'অন্যান্য',
     confirmDel: 'এই কথোপকথনটা ডিলিট করবে?', cancel: 'Cancel', del: 'Delete', delDone: 'কথোপকথন ডিলিট হয়েছে',
@@ -1844,6 +1846,8 @@
 
   /* ── generation pipeline: bank first → AI fills missing → finalize ── */
   async function qzStreamText(prompt) {
+    /* M7: quiz generation is also AI and is signed-in only. */
+    if (!accountScope) throw new Error('sign_in_required');
     const r = await fetch('/api/ai/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-AH-Guest': guestId() },
@@ -2184,6 +2188,10 @@
     const q = String(prefill ?? inputVal()).trim();
     if (!q && !attachments.length) return;
     if (activeReq) return;
+    /* M7: AI chat is signed-in only. A guest has no durable identity, so the
+       server refuses the request anyway — stop it here with a clear message
+       instead of letting it round-trip to a 401. */
+    if (!accountScope) { toast(T.needLogin, true); return; }
     if (q.length > 4000) { toast(T.msgTooLong); inputEl() && inputEl().focus(); return; }
     const imgItem = attachments.find((a) => a.kind === 'image' && a.dataUrl);
     const docItem = attachments.find((a) => a.kind !== 'image');

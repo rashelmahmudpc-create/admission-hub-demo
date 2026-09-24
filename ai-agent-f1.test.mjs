@@ -100,27 +100,27 @@ t('১৯. E2E-stream: SSE text + done-event (model/intent) + memory-রাই�
     'streamGenerateContent': sseRes(gChunk('হ্যালো ') + gChunk('ভাই!') + 'data: {}\n\n')
   });
   const req = new Request('https://x/api/ai/chat', { method: 'POST', body: JSON.stringify({ messages: [{ role: 'user', content: 'হ্যালো' }] }) });
-  const r = await A.agentChat(req, env, 'uid_77');
+  const r = await A.agentChat(req, env, 'account-u77');
   const text = await r.text();
   restore();
-  return r.status === 200 && text.includes('হ্যালো ভাই!') && text.includes('event: done') && text.includes('"intent":"GENERAL_CHAT"') && store.has('chatmem:uid_77') && store.get('airl:uid_77:' + new Date().toISOString().slice(0, 10)) === '1';
+  return r.status === 200 && text.includes('হ্যালো ভাই!') && text.includes('event: done') && text.includes('"intent":"GENERAL_CHAT"') && store.has('chatmem:account-u77') && store.get('airl:account-u77:' + new Date().toISOString().slice(0, 10)) === '1';
 })(), { timeout: 10000 });
 
 t('২০. E2E: রেট-লিমিট — cap-এর পর 429 (KV-রাইট মাত্র ২/চ্যাট)', (async () => {
   const { env } = stubEnv({ AGENT_DAILY_CAP: 2 });
   const restore = fakeFetch({ 'streamGenerateContent': sseRes(gChunk('x')) });
   const mk = () => new Request('https://x/api/ai/chat', { method: 'POST', body: JSON.stringify({ messages: [{ role: 'user', content: 'হ্যালো' }] }) });
-  const r1 = await A.agentChat(mk(), env, 'uid_rl');
-  const r2 = await A.agentChat(mk(), env, 'uid_rl');
-  const r3 = await A.agentChat(mk(), env, 'uid_rl');
+  const r1 = await A.agentChat(mk(), env, 'account-url');
+  const r2 = await A.agentChat(mk(), env, 'account-url');
+  const r3 = await A.agentChat(mk(), env, 'account-url');
   restore();
   return r1.status === 200 && r2.status === 200 && r3.status === 429;
 })(), { timeout: 10000 });
 
 t('২১. E2E: invalid-body → 400; no-key → 503; uid-isolation (KV-কী-তে uid)', (async () => {
   const { env } = stubEnv({});
-  const bad = await A.agentChat(new Request('https://x/api/ai/chat', { method: 'POST', body: 'not-json' }), env, 'uid_a');
-  const nokey = await A.agentChat(new Request('https://x/api/ai/chat', { method: 'POST', body: JSON.stringify({ messages: [{ role: 'user', content: 'হ্যালো' }] }) }), stubEnv({ GEMINI_KEYS: '', GROQ_API_KEY: '' }).env, 'uid_b');
+  const bad = await A.agentChat(new Request('https://x/api/ai/chat', { method: 'POST', body: 'not-json' }), env, 'account-ua');
+  const nokey = await A.agentChat(new Request('https://x/api/ai/chat', { method: 'POST', body: JSON.stringify({ messages: [{ role: 'user', content: 'হ্যালো' }] }) }), stubEnv({ GEMINI_KEYS: '', GROQ_API_KEY: '' }).env, 'account-ub');
   return bad.status === 400 && nokey.status === 503;
 })(), { timeout: 10000 });
 
@@ -131,7 +131,7 @@ t('২২. E2E: gemini-ব্যর্থ → groq-fallback (provider-চেই�
     'api.groq.com': sseRes('data: ' + JSON.stringify({ choices: [{ delta: { content: 'গ্রক-উত্তর' } }] }) + '\n\ndata: [DONE]\n\n')
   });
   const req = new Request('https://x/api/ai/chat', { method: 'POST', body: JSON.stringify({ messages: [{ role: 'user', content: 'বুঝাও' }] }) });
-  const r = await A.agentChat(req, env, 'uid_g');
+  const r = await A.agentChat(req, env, 'account-ug');
   const text = await r.text();
   restore();
   return r.status === 200 && text.includes('গ্রক-উত্তর') && text.includes('"provider":"groq"');
@@ -141,7 +141,7 @@ t('২৩. E2E: সব-provider-ব্যর্থ → SSE error-event (retryabl
   const { env } = stubEnv({});
   const restore = fakeFetch({ 'streamGenerateContent': new Response('boom', { status: 500 }) });
   const req = new Request('https://x/api/ai/chat', { method: 'POST', body: JSON.stringify({ messages: [{ role: 'user', content: 'হ্যালো' }] }) });
-  const r = await A.agentChat(req, env, 'uid_f');
+  const r = await A.agentChat(req, env, 'account-uf');
   const text = await r.text();
   restore();
   return r.status === 200 && text.includes('event: error') && text.includes('retryable');
@@ -151,7 +151,7 @@ t('২৪. E2E: mock-running-এ explain → 403 sse-error', (async () => {
   const { env } = stubEnv({});
   const restore = fakeFetch({ 'streamGenerateContent': sseRes(gChunk('x')) });
   const req = new Request('https://x/api/ai/chat', { method: 'POST', body: JSON.stringify({ messages: [{ role: 'user', content: 'এই প্রশ্নের উত্তরটা বুঝাও' }], context: { examMode: 'mock-running' } }) });
-  const r = await A.agentChat(req, env, 'uid_m');
+  const r = await A.agentChat(req, env, 'account-um');
   const text = await r.text();
   restore();
   return r.status === 403 && text.includes('mock_refused');
@@ -177,10 +177,10 @@ t('২৯. E2E-vision: gemini-payload-এ inline_data + memory-তে base64-ন
   });
   const img = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==';
   const req = new Request('https://x/api/ai/chat', { method: 'POST', body: JSON.stringify({ messages: [{ role: 'user', content: 'এই ছবিটা বুঝাও', image: img }] }) });
-  const r = await A.agentChat(req, env, 'uid_v');
+  const r = await A.agentChat(req, env, 'account-uv');
   const text = await r.text();
   restore();
-  return captured.includes('inline_data') && captured.includes('iVBORw0KGgo') && captured.includes('mime_type') && r.status === 200 && text.includes('ছবিতে প্রশ্ন') && !String(store.get('chatmem:uid_v') || '').includes('iVBORw0KGgo');
+  return captured.includes('inline_data') && captured.includes('iVBORw0KGgo') && captured.includes('mime_type') && r.status === 200 && text.includes('ছবিতে প্রশ্ন') && !String(store.get('chatmem:account-uv') || '').includes('iVBORw0KGgo');
 })(), { timeout: 10000 });
 t('৩০. Vision-এ chain-শুধু-gemini (groq-ফলব্যাক নিষিদ্ধ — ভুল উত্তর-দেওয়া থেকে বাঁচা)', (async () => {
   const { env } = stubEnv({ GROQ_API_KEY: 'grok' });
@@ -190,7 +190,7 @@ t('৩০. Vision-এ chain-শুধু-gemini (groq-ফলব্যাক ন�
   });
   const img = 'data:image/jpeg;base64,AAAA';
   const req = new Request('https://x/api/ai/chat', { method: 'POST', body: JSON.stringify({ messages: [{ role: 'user', content: 'বুঝাও', image: img }] }) });
-  const r = await A.agentChat(req, env, 'uid_vg');
+  const r = await A.agentChat(req, env, 'account-uvg');
   const text = await r.text();
   restore();
   return r.status === 200 && text.includes('event: error') && !text.includes('গ্রক-উত্তর');
@@ -206,13 +206,13 @@ const aiSafety = stubEnv({ GEMINI_KEYS: '', GROQ_API_KEY: '', AGENT_DAILY_CAP: 8
 const aiSafetyResponse = await A.agentChat(new Request('https://x/api/ai/chat', {
   method: 'POST',
   body: JSON.stringify({ messages: [{ role: 'user', content: 'আমার Telegram OTP 123456, এটা কি সফল?' }] })
-}), aiSafety.env, 'uid_otp_safety');
+}), aiSafety.env, 'account-uotp_safety');
 const aiSafetyText = await aiSafetyResponse.text();
 t('৩২. AI gateway OTP input model/memory-তে পাঠায় না, code repeat করে না, backend ছাড়া success বলে না',
   aiSafetyResponse.status === 200
   && aiSafetyText.includes('আমি OTP তৈরি, অনুমান, দেখা, পুনরাবৃত্তি বা যাচাই করতে পারি না')
   && !aiSafetyText.includes('123456')
-  && !aiSafety.store.has('chatmem:uid_otp_safety'));
+  && !aiSafety.store.has('chatmem:account-uotp_safety'));
 
 const onboardingContext = sanitizeOnboardingContext({
   surface: 'premium-onboarding', view: 'signup', step: 'education', field: 'school',
@@ -254,21 +254,21 @@ const onboardingSafetyResponse = await A.agentChat(new Request('https://x/api/ai
     messages: [{ role: 'user', content: 'my password is hunter2' }],
     context: { onboarding: { surface: 'premium-onboarding', view: 'signup', step: 'security', field: 'sensitive-field' } }
   })
-}), onboardingSafety.env, 'uid_onboarding_safety');
+}), onboardingSafety.env, 'account-uonboarding_safety');
 const onboardingSafetyText = await onboardingSafetyResponse.text();
 t('৩৬. onboarding password model, rate-memory ও response history-র আগেই reject হয়',
   onboardingSafetyResponse.status === 200
   && onboardingSafetyText.includes('Password, verification code বা গোপন তথ্য Assistant নেয় না')
   && !onboardingSafetyText.includes('hunter2')
-  && ![...onboardingSafety.store.keys()].some(key => key.includes('uid_onboarding_safety')));
+  && ![...onboardingSafety.store.keys()].some(key => key.includes('account-uonboarding_safety')));
 
 /* ── AI Personalization (blueprint §19-20) ── */
-t('৩৮. sanitizeAiPrefs: allowlist-চেক + memory শুধু explicit false-এ off',
-  sanitizeAiPrefs({ langStyle: 'xx', tone: 'ok', responseLen: 'short', memory: false }).langStyle === 'bn'
-  && sanitizeAiPrefs({ langStyle: 'xx', tone: 'ok', responseLen: 'short', memory: false }).tone === 'friendly'
-  && sanitizeAiPrefs({ langStyle: 'xx', tone: 'ok', responseLen: 'short', memory: false }).memory === false
+t('৩৮. sanitizeAiPrefs: allowlist only — the memory field is gone (M7)',
+  sanitizeAiPrefs({ langStyle: 'xx', tone: 'ok', responseLen: 'short' }).langStyle === 'bn'
+  && sanitizeAiPrefs({ langStyle: 'xx', tone: 'ok', responseLen: 'short' }).tone === 'friendly'
+  && sanitizeAiPrefs({ memory: false }).memory === undefined
   && sanitizeAiPrefs(null) === null
-  && sanitizeAiPrefs({}).langStyle === 'bn' && sanitizeAiPrefs({}).memory === true);
+  && sanitizeAiPrefs({}).langStyle === 'bn');
 const ppPrefs = buildSystemPrompt({ prefs: { langStyle: 'en', tone: 'direct', responseLen: 'short' } });
 t('৩৯. SystemPrompt: STUDENT PREFERENCES block — lang/tone/len directive',
   ppPrefs.includes('STUDENT PREFERENCES') && ppPrefs.includes('Reply in English.')
@@ -279,27 +279,26 @@ t('৩৯. SystemPrompt: STUDENT PREFERENCES block — lang/tone/len directive',
   // drain their pending turns so the fake below is the only one in play.
   await new Promise((r) => setTimeout(r, 100));
   const { env, store } = stubEnv();
-  store.set('aiprefs:uid_pref_on', JSON.stringify({ langStyle: 'mix', tone: 'motivating', responseLen: 'detailed', memory: true }));
+  store.set('aiprefs:account-upref_on', JSON.stringify({ langStyle: 'mix', tone: 'motivating', responseLen: 'detailed', memory: true }));
   let captured = '';
   const restore = fakeFetch({ 'streamGenerateContent': (url, init) => { captured = String(init.body || ''); return sseRes(gChunk('প্রশ্ন ভালো!')); } });
-  const r1 = await A.agentChat(new Request('https://x/api/ai/chat', { method: 'POST', body: JSON.stringify({ messages: [{ role: 'user', content: 'নবজাতক টেটানাস কী?' }] }) }), env, 'uid_pref_on');
+  const r1 = await A.agentChat(new Request('https://x/api/ai/chat', { method: 'POST', body: JSON.stringify({ messages: [{ role: 'user', content: 'নবজাতক টেটানাস কী?' }] }) }), env, 'account-upref_on');
   restore();
   await r1.text(); // consume the stream — memory write happens on stream completion
   const sysSent = JSON.parse(captured).system_instruction?.parts?.[0]?.text || '';
   t('৪০. agentChat: saved user prefs reach the model request (per-user KV)',
     r1.status === 200 && sysSent.includes('STUDENT PREFERENCES')
     && sysSent.includes('natural mix of Bangla and English') && sysSent.includes('uplifting, motivating')
-    && !!store.get('chatmem:uid_pref_on'));
+    && !!store.get('chatmem:account-upref_on'));
   const { env: env2, store: store2 } = stubEnv();
-  store2.set('aiprefs:uid_pref_off', JSON.stringify({ langStyle: 'bn', tone: 'simple', responseLen: 'balanced', memory: false }));
   const restore2 = fakeFetch({ 'streamGenerateContent': sseRes(gChunk('চালিয়ে যাও!')) });
-  const r2 = await A.agentChat(new Request('https://x/api/ai/chat', { method: 'POST', body: JSON.stringify({ messages: [{ role: 'user', content: 'হ্যালো' }] }) }), env2, 'uid_pref_off');
+  const r2 = await A.agentChat(new Request('https://x/api/ai/chat', { method: 'POST', body: JSON.stringify({ messages: [{ role: 'user', content: 'হ্যালো' }] }) }), env2, 'account-upref_off');
   restore2();
   const r2body = await r2.text();
   void r2body;
-  t('৪১. agentChat: memory-off preference → zero chatmem writes (no leak)',
-    r2.status === 200 && ![...store2.keys()].some(k => k.includes('chatmem:uid_pref_off'))
-    && [...store2.keys()].some(k => k.startsWith('airl:uid_pref_off:')));
+  t('৪১. agentChat: memory is automatic now — a saved pref cannot switch it off',
+    r2.status === 200 && [...store2.keys()].some(k => k.includes('chatmem:account-upref_off'))
+    && [...store2.keys()].some(k => k.startsWith('airl:account-upref_off:')));
 }
 
 {
@@ -314,12 +313,12 @@ t('৩৯. SystemPrompt: STUDENT PREFERENCES block — lang/tone/len directive',
     { role: 'user', content: 'VOICE CHANGE এর নিয়ম বলো' },
     { role: 'assistant', content: 'Voice change এর নিয়ম হলো…' }
   ]);
-  store.set('chatmem:uid_fresh', stale);
+  store.set('chatmem:account-ufresh', stale);
   let captured = '';
   const restore = fakeFetch({ 'streamGenerateContent': (url, init) => { captured = String(init.body || ''); return sseRes(gChunk('হ্যালো! কীভাবে সাহায্য করি?')); } });
   const r = await A.agentChat(new Request('https://x/api/ai/chat', { method: 'POST', body: JSON.stringify({
     messages: [{ role: 'user', content: 'হাই' }], fresh: true
-  }) }), env, 'uid_fresh');
+  }) }), env, 'account-ufresh');
   restore();
   const body = await r.text();
   const sent = JSON.parse(captured);
@@ -333,12 +332,12 @@ t('৩৯. SystemPrompt: STUDENT PREFERENCES block — lang/tone/len directive',
   // A genuine continuation keeps working: without the fresh flag, a short
   // thread still receives the stored memory.
   const { env: env3, store: store3 } = stubEnv();
-  store3.set('chatmem:uid_follow', JSON.stringify([{ role: 'user', content: 'দ্বিঘাত সমীকরণ শেখাও' }]));
+  store3.set('chatmem:account-ufollow', JSON.stringify([{ role: 'user', content: 'দ্বিঘাত সমীকরণ শেখাও' }]));
   let captured3 = '';
   const restore3 = fakeFetch({ 'streamGenerateContent': (url, init) => { captured3 = String(init.body || ''); return sseRes(gChunk('ঠিক আছে')); } });
   const r3 = await A.agentChat(new Request('https://x/api/ai/chat', { method: 'POST', body: JSON.stringify({
     messages: [{ role: 'user', content: 'আরেকটা উদাহরণ দাও' }]
-  }) }), env3, 'uid_follow');
+  }) }), env3, 'account-ufollow');
   restore3();
   await r3.text();
   t('৪৪. agentChat: a continuation without the fresh flag still receives stored memory',

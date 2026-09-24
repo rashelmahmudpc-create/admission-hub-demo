@@ -547,3 +547,32 @@ boundary (finding S6). It is pure data plus pure guards — no `env`, no I/O.
 - Adding a tool means adding a full declaration (name/description/permission/
   inputSchema/outputSchema/riskLevel/enabled); the validator rejects partial ones.
 
+## Memory is a typed engine, automatic for accounts, closed to guests (Phase 9 M7)
+
+`memory-engine.js` adds the long-term memory layer the audit called missing. The
+short-term layer (`chatmem:<uid>`, rolling window, `summarizeTo`) is unchanged.
+It is pure data plus pure guards — no `env`, no I/O, no model call.
+
+- **Owner override.** The plan's M7 gate was "default OFF, explicit consent"; the
+  owner overrode it. Long-term memory is automatic for a signed-in student with
+  **no toggle, no prompt and no expiry**. `sanitizeAiPrefs()` no longer accepts a
+  `memory` field, and the AI Personalization sheet has no MEMORY switch. Do not
+  reintroduce a toggle without an owner decision.
+- **Guests have no memory.** `resolveMemoryOwner()` returns a uid only for an
+  `account-` prefix. Guest AI is refused outright: `agentChat` returns
+  `401 sign_in_required` before parsing, and the chat client + quiz generator stop
+  before the request. `identity.uid` alone is the owner — never the body.
+- **No PII.** `isPiiFree()` rejects email, BD mobile, long digit runs, dates and
+  password/OTP/PIN/CVV wording. A record is checked at both write and read.
+- **Isolation is a second gate.** `parseMemory()`/`upsertMemory()`/
+  `guardMemoryRecord()` drop any record whose `ownerUid` is not the caller.
+- **Only three kinds** are storable: `studies`, `preference`, `habit`. Confidence
+  must be ≥ `CONFIDENCE_MIN` (0.7); `MAX_RECORDS` (500) bounds storage and
+  `RENDER_LIMIT` (24) bounds the prompt.
+- **Both extraction triggers** live in `extractMemoryCandidates()`: an explicit
+  "মনে রাখো" and a study/preference/habit fact stated in passing. A candidate
+  still has to clear `makeMemory()`.
+- `agentStatus` advertises `memory: { version: 'mem-v1', mode: 'auto',
+  scope: 'account-only' }` — metadata only; the prompt base and its SHA-256 are
+  untouched.
+
