@@ -545,3 +545,27 @@ pre-existing, unrelated failures (`profile-core`, `session-recovery-chaos`).
 **Next gate:** M9 ships inert. Enabling `prefs.write` (or adding an EXECUTE
 action) is a separate owner decision, and needs a confirmation UI in the chat
 before it can be used live.
+
+## 17. M9 enablement — the layer is now live (with a config kill-switch)
+
+The owner enabled M9 on 2026-09-24. `ENABLED` is now `true`, so `/api/ai/actions/*`
+works for signed-in students. Every safety property from §16 is unchanged: a write
+still needs a single-use confirmation, the proposal is consumed before the write,
+the owner is the server-validated uid, guests are refused, and every attempt is
+audited.
+
+**Why the switch lives in code, not `wrangler.toml`.** The Worker already sits on
+the Workers Free ceiling of 64 variables (secrets + text); adding
+`USE_WRITE_ACTIONS` made the deploy 65 and Cloudflare rejected it
+(`code: 10055`). So the default is in code and the *off* switch is
+`USE_WRITE_ACTIONS = "disabled"`, which `actionsEnabled(env)` reads: any value
+other than `disabled` keeps the layer on. Turning the layer off now needs no code
+change — bind that one variable.
+
+**Verification:** `phase9-m9-action-engine.test.mjs` **47/47**, including the
+kill-switch cases (config-off refuses propose/confirm/audit and reports
+`enabled: false`) and the live flow (propose → confirm → write → audit).
+
+**Still open (owner decision):** there is no in-chat confirmation UI yet, so the
+routes work but a student cannot confirm from the interface. That UI is the next
+step before the action is usable end to end.

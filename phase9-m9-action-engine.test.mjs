@@ -23,31 +23,36 @@ const {
 t('M9-১. engine self-validation passes and the version is stamped',
   Array.isArray(validateActionEngine()) && validateActionEngine().length === 0
   && ACTION_VERSION === 'act-v1');
-t('M9-২. the layer is OFF by default and needs an explicit env opt-in',
-  ENABLED === false && describeActions().enabled === false
-  && actionsEnabled({}) === false && actionsEnabled({ USE_WRITE_ACTIONS: 'enabled' }) === true
-  && actionsEnabled({ USE_WRITE_ACTIONS: 'yes' }) === false);
+t('M9-২. the layer is live by default and has an env kill-switch',
+  ENABLED === true && describeActions().enabled === true
+  && actionsEnabled({}) === true
+  && actionsEnabled({ USE_WRITE_ACTIONS: 'disabled' }) === false
+  && actionsEnabled({ USE_WRITE_ACTIONS: 'DISABLED' }) === false);
+t('M9-২খ. the layer can be turned off by configuration alone (kill-switch)',
+  describeActions({ USE_WRITE_ACTIONS: 'disabled' }).enabled === false
+  && describeActions({ USE_WRITE_ACTIONS: 'disabled' }).declared.every(a => a.enabled === false)
+  && authorizeAction('prefs.write', { uid: 'account-a', args: { tone: 'direct' }, enabled: actionsEnabled({ USE_WRITE_ACTIONS: 'disabled' }) }).reason === 'layer-disabled');
 t('M9-৩. WRITE and EXECUTE are separate permission classes',
   Object.values(PERMISSION).length === 2
   && PERMISSION.WRITE === 'write' && PERMISSION.EXECUTE === 'execute'
   && !Object.values(PERMISSION).includes('read'));
-t('M9-৪. every declared action is inert while the layer is off',
-  listActions().length > 0 && listActions().every(a => a.enabled === false && a.ownerScoped === true));
+t('M9-৪. every declared action is owner-scoped and follows the master switch',
+  listActions().length > 0 && listActions().every(a => a.enabled === ENABLED && a.ownerScoped === true));
 t('M9-৫. every declared action carries all required fields with a known risk',
   listActions().every(a => a.name && a.description && Object.values(RISK).includes(a.riskLevel)
     && Array.isArray(a.args) && a.args.length > 0));
 
 /* ── ২. Authorization: layer OFF refuses everything ── */
-t('M9-৬. with the layer off every action is refused as layer-disabled',
-  authorizeAction('prefs.write', { uid: 'account-a', args: { tone: 'direct' } }).allowed === false
-  && authorizeAction('prefs.write', { uid: 'account-a' }).reason === 'layer-disabled');
+t('M9-৬. with the kill-switch on, every action is refused as layer-disabled',
+  authorizeAction('prefs.write', { uid: 'account-a', args: { tone: 'direct' }, enabled: false }).allowed === false
+  && authorizeAction('prefs.write', { uid: 'account-a', enabled: false }).reason === 'layer-disabled');
 t('M9-৭. even with the layer on, an unknown action is refused',
   authorizeAction('nope.nope', { uid: 'account-a', enabled: true }).reason === 'unknown-action');
 t('M9-৮. a ready action still needs the layer on, and the engine self-check locks it',
   getAction('prefs.write').ready === true
   && validateActionEngine().length === 0
   && authorizeAction('prefs.write', { uid: 'account-a', enabled: true }).allowed === true
-  && authorizeAction('prefs.write', { uid: 'account-a' }).allowed === false);
+  && authorizeAction('prefs.write', { uid: 'account-a', enabled: false }).allowed === false);
 
 /* ── ৩. Owner comes from the uid alone (cross-user isolation) ── */
 t('M9-৯. only a signed-in account owns an action; a guest never does',
@@ -76,8 +81,8 @@ t('M9-১৪. a proposal is built only when authorization succeeds',
   proposal && proposal.action === 'prefs.write' && proposal.ownerUid === 'account-a'
   && proposal.status === STATUS.PROPOSED && makeProposal('prefs.write', { uid: 'guest-x', id: 'x', enabled: true }) === null
   && makeProposal('prefs.write', { uid: 'account-a', id: '', enabled: true }) === null);
-t('M9-১৪খ. with the layer off no proposal can be built at all',
-  makeProposal('prefs.write', { uid: 'account-a', args: { tone: 'direct' }, id: 'p-9' }) === null);
+t('M9-১৪খ. with the kill-switch on no proposal can be built at all',
+  makeProposal('prefs.write', { uid: 'account-a', args: { tone: 'direct' }, id: 'p-9', enabled: false }) === null);
 t('M9-১৫. a proposal expires — an old yes must not act on a stale proposal',
   proposal.expiresAt === 1000 + CONFIRM_TTL_MS && CONFIRM_TTL_MS > 0);
 t('M9-১৬. the proposal summary is a short Bangla line describing the change',
@@ -91,8 +96,8 @@ t('M9-১৭. the proposal carries no capability — no executor, only a descrip
 t('M9-১৮. a valid confirmation from the owner is accepted',
   confirmProposal(proposal, 'p-1', 'account-a', { now: 2000, enabled: true }).ok === true
   && confirmProposal(proposal, 'p-1', 'account-a', { now: 2000, enabled: true }).action === 'prefs.write');
-t('M9-১৯. a confirmation is refused while the layer is off',
-  confirmProposal(proposal, 'p-1', 'account-a', { now: 2000 }).reason === 'layer-disabled');
+t('M9-১৯. a confirmation is refused while the kill-switch is on',
+  confirmProposal(proposal, 'p-1', 'account-a', { now: 2000, enabled: false }).reason === 'layer-disabled');
 t('M9-২০. only the owner may confirm — another account is refused',
   confirmProposal(proposal, 'p-1', 'account-b', { now: 2000, enabled: true }).reason === 'owner-mismatch'
   && confirmProposal(proposal, 'p-1', 'guest-x', { now: 2000, enabled: true }).reason === 'no-owner-identity');
@@ -184,25 +189,25 @@ t('M9-৩৪. E2E: a guest is refused at the action routes with sign_in_required
     const d = await r.json();
     return r.status === 401 && d.error === 'sign_in_required';
   })(), { timeout: 5000 });
-t('M9-৩৫. E2E: with the layer off a propose is denied and writes nothing',
+t('M9-৩৫. E2E: with the kill-switch on a propose is denied and writes nothing',
   (async () => {
-    const { env, store } = stubEnv();
+    const { env, store } = stubEnv({ USE_WRITE_ACTIONS: 'disabled' });
     const r = await W.fetch(authPost('/api/ai/actions/propose', { action: 'prefs.write', args: { tone: 'direct' } }), env);
     const d = await r.json();
     return r.status === 403 && d.error === 'action_denied'
       && ![...store.keys()].some(k => k.startsWith('actprop:') || k.startsWith('aiprefs:') || k.startsWith('actaudit:'));
   })(), { timeout: 5000 });
-t('M9-৩৬. E2E: with the layer off a confirm is denied and writes nothing',
+t('M9-৩৬. E2E: with the kill-switch on a confirm is denied and writes nothing',
   (async () => {
-    const { env, store } = stubEnv();
+    const { env, store } = stubEnv({ USE_WRITE_ACTIONS: 'disabled' });
     const r = await W.fetch(authPost('/api/ai/actions/confirm', { token: 'anything' }), env);
     const d = await r.json();
     return r.status === 403 && d.error === 'confirm_denied'
       && ![...store.keys()].some(k => k.startsWith('actprop:') || k.startsWith('aiprefs:'));
   })(), { timeout: 5000 });
-t('M9-৩৭. E2E: the audit route reports the layer is off and returns no records',
+t('M9-৩৭. E2E: the audit route reports the kill-switch state and returns no records',
   (async () => {
-    const { env } = stubEnv();
+    const { env } = stubEnv({ USE_WRITE_ACTIONS: 'disabled' });
     const req = new Request('https://x/api/ai/actions/audit', { headers: { Cookie: '__Host-ah_session=' + SESSION } });
     const r = await W.fetch(req, env);
     const d = await r.json();
@@ -215,9 +220,9 @@ t('M9-৩৮. E2E guest check on the audit route also refuses without sign-in',
     const d = await r.json();
     return r.status === 401 && d.error === 'sign_in_required';
   })(), { timeout: 5000 });
-t('M9-৩৯. agentStatus advertises the action layer as disabled, shape only',
+t('M9-৩৯. agentStatus reflects the kill-switch, shape only',
   (async () => {
-    const { env } = stubEnv();
+    const { env } = stubEnv({ USE_WRITE_ACTIONS: 'disabled' });
     const req = new Request('https://x/api/ai/status', { headers: { Cookie: '__Host-ah_session=' + SESSION } });
     const r = await W.fetch(req, env);
     const d = await r.json();
@@ -228,7 +233,7 @@ t('M9-৩৯. agentStatus advertises the action layer as disabled, shape only',
 /* ── ৯. E2E: the full flow with the layer ON ── */
 t('M9-৪০. E2E ON: propose → confirm → write → audit succeeds end to end',
   (async () => {
-    const { env, store } = stubEnv({ USE_WRITE_ACTIONS: 'enabled' });
+    const { env, store } = stubEnv();
     const p = await W.fetch(authPost('/api/ai/actions/propose', { action: 'prefs.write', args: { tone: 'direct', responseLen: 'short' } }), env);
     const pd = await p.json();
     if (p.status !== 200 || !pd.proposal?.id || !pd.proposal.summary) return false;
@@ -244,7 +249,7 @@ t('M9-৪০. E2E ON: propose → confirm → write → audit succeeds end to en
   })(), { timeout: 5000 });
 t('M9-৪১. E2E ON: a replayed confirm token is refused and changes nothing',
   (async () => {
-    const { env, store } = stubEnv({ USE_WRITE_ACTIONS: 'enabled' });
+    const { env, store } = stubEnv();
     const p = await W.fetch(authPost('/api/ai/actions/propose', { action: 'prefs.write', args: { tone: 'direct' } }), env);
     const pd = await p.json();
     await W.fetch(authPost('/api/ai/actions/confirm', { token: pd.proposal.id }), env);
@@ -256,7 +261,7 @@ t('M9-৪১. E2E ON: a replayed confirm token is refused and changes nothing',
   })(), { timeout: 5000 });
 t('M9-৪২. E2E ON: a wrong token is refused and writes nothing',
   (async () => {
-    const { env, store } = stubEnv({ USE_WRITE_ACTIONS: 'enabled' });
+    const { env, store } = stubEnv();
     await W.fetch(authPost('/api/ai/actions/propose', { action: 'prefs.write', args: { tone: 'direct' } }), env);
     const bad = await W.fetch(authPost('/api/ai/actions/confirm', { token: 'wrong-token' }), env);
     const bd = await bad.json();
@@ -264,21 +269,21 @@ t('M9-৪২. E2E ON: a wrong token is refused and writes nothing',
   })(), { timeout: 5000 });
 t('M9-৪৩. E2E ON: an owner-naming payload is refused before any proposal is stored',
   (async () => {
-    const { env, store } = stubEnv({ USE_WRITE_ACTIONS: 'enabled' });
+    const { env, store } = stubEnv();
     const r = await W.fetch(authPost('/api/ai/actions/propose', { action: 'prefs.write', args: { uid: 'account-other', tone: 'direct' } }), env);
     const d = await r.json();
     return r.status === 403 && d.reason === 'owner-from-args-rejected' && ![...store.keys()].some(k => k.startsWith('actprop:'));
   })(), { timeout: 5000 });
 t('M9-৪৪. E2E ON: a guest is still refused even when the layer is on',
   (async () => {
-    const { env, store } = stubEnv({ USE_WRITE_ACTIONS: 'enabled' });
+    const { env, store } = stubEnv();
     const r = await W.fetch(new Request('https://x/api/ai/actions/propose', { method: 'POST', body: JSON.stringify({ action: 'prefs.write' }) }), env);
     const d = await r.json();
     return r.status === 401 && d.error === 'sign_in_required' && store.size === 0;
   })(), { timeout: 5000 });
 t('M9-৪৫. E2E ON: agentStatus and the audit route both report the layer on',
   (async () => {
-    const { env } = stubEnv({ USE_WRITE_ACTIONS: 'enabled' });
+    const { env } = stubEnv();
     const s = await W.fetch(new Request('https://x/api/ai/status', { headers: { Cookie: '__Host-ah_session=' + SESSION } }), env).then(r => r.json());
     const a = await W.fetch(new Request('https://x/api/ai/actions/audit', { headers: { Cookie: '__Host-ah_session=' + SESSION } }), env).then(r => r.json());
     return s.actions.enabled === true && s.actions.declared.every(x => x.enabled === true)
