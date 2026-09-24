@@ -189,8 +189,13 @@ the answer); `ai-agent-f1.test.mjs` 44/44; bundle + sw-manifest clean.
 current `origin/main` base as well — reproduced with every M2.5 change stashed,
 so it is pre-existing and not caused by this work.
 
-**To activate:** bind the two secrets, then the provider joins the chain
-automatically — no further code change.
+**To activate:** bind the two secrets **and** make sure the dispatcher in
+`gk-agent-worker.js` forwards them. `/api/ai/*` is served by `public-worker.js`,
+which the `gk` worker invokes with a narrow `envPub` allowlist; a provider whose
+bindings are not on that list is invisible however many secrets are bound. The
+Cloudflare pair plus `AGENT_CLOUDFLARE_MODELS` are forwarded there, and
+`account-retirement` guards the list. Then the provider joins the chain
+automatically.
 
 
 

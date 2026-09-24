@@ -137,6 +137,8 @@ await test('deploy bundle contains no retired route literals or insecure impleme
 await test('dispatcher forwards only content/admin/anonymous-AI environment',
   DISPATCH.includes('AGENT_PUBLIC_DAILY_CAP') &&
   !/GOOGLE_CLIENT_ID|GOOGLE_CLIENT_SECRET|TWILIO|RESEND|BREVO|BULKSMS|GREENWEB/.test(DISPATCH));
+await test('dispatcher forwards every anonymous-AI provider binding, including the Cloudflare backup',
+  ['GEMINI_KEYS', 'GROQ_API_KEY', 'CLOUDFLARE_ACCOUNT_ID', 'CLOUDFLARE_AI_API_KEY', 'AGENT_CLOUDFLARE_MODELS'].every(name => DISPATCH.includes(name + ': env.')));
 await test('non-account Worker capabilities remain bundled',
   ['GK_SCHEMA', 'NEWS_SCHEMA', 'GK_PROMPT', 'ASK_PROMPT', 'createWithFailover', 'bankUpload', 'scheduled(event, env, ctx)'].every(marker => BUNDLE.includes(marker)));
 await test('Pages same-origin API proxy preserves request headers', PAGES.includes("url.pathname.startsWith('/api/')") && PAGES.includes('new Headers(request.headers)') && PAGES.includes("headers.set('x-ah-pages-proxy', '1')"));
