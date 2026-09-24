@@ -677,7 +677,13 @@ do the KV writes; the engine only decides whether they may happen.
   before reading a body or touching KV.
 - `agentStatus` advertises `actions: { version: 'act-v1', enabled, confirmTtlMs,
   declared }` — shape only, never a capability.
-- **Not yet usable end to end:** there is no in-chat confirmation UI, so a
-  student cannot confirm a proposal from the interface. Building that UI is the
-  next step.
+- **The confirmation UI is the chat's "yes/no" card.** An explicit
+  personalization request in the student's own words (`actParseIntent`) is sent to
+  `/api/ai/actions/propose`; the reply becomes a pending card that shows the
+  *server-built* `summary` and two choices. Nothing is written until the student
+  taps "yes", which confirms with the single-use token; "no" resolves locally and
+  calls nothing. `offerAction()` falls back to a normal answer when the layer is
+  off or the action is denied, so the chat still works without writes. A proposal
+  older than its TTL is retired locally rather than round-tripped. The UI never
+  touches `aiprefs:` itself — the Worker is the only writer.
 
