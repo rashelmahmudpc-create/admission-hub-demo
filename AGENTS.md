@@ -341,3 +341,29 @@ The `workflow_dispatch` deploy pipelines currently cannot run: the repo and both
 environments (`github-pages`, `email-gateway-production`) have zero Actions
 secrets, so `verify-firebase-config.mjs` aborts with `code=API_KEY_MISSING`. Do
 not rely on those workflows until the owner configures secrets.
+
+## Notification delivery invariants (owner bug reports 2026-09-24)
+
+Three production bugs were root-caused from live D1 data and fixed. Keep these
+invariants when touching `fcm-notification.mjs` / `notification-admin.js`:
+
+- **One phone = one push.** `fcm_devices.id` is `hash(userId|token)`, so one
+  physical device signed into several accounts is several rows. `fcmSendToTokens`
+  now de-dupes by `fcm_token` before sending and `activeDeviceCount` counts
+  `COUNT(DISTINCT fcm_token)`. Never fan out on raw rows.
+- **Icon is the live logo, never a literal.** The FCM payload carries no icon by
+  default, so Android showed the OS default "A" avatar. Both send paths set
+  `webpush.notification` + `android.notification` icon/badge from the absolute URL
+  of `/icons/icon-192.png` (`iconAbsolute(request)`). To change the logo shown in
+  notifications, replace that file — no code change, no redeploy.
+- **Send and schedule are different dedup intents.** The dedup key used to be
+  `type|title|body`, so a test-send of some text made the real scheduled copy of
+  the same text impossible to create (409) for 10 days; as a result the
+  `global_notifications` table had zero `scheduled_at` rows ever. The key now
+  includes the mode (`|now` / `|scheduled|<time>`). A cron sweep also fails rows
+  stuck in `status='sending'` (worker killed mid-send) so history never lies.
+- **Notification images come from R2.** `POST /api/notifications/global/image`
+  (admin Bearer) stores the bytes under `notify/<day>/` and returns a same-origin
+  `/api/files/<key>` URL. The admin panel picks a photo from the phone and
+  re-encodes it on a canvas first (max 1200px, JPEG 0.85) so a camera shot fits
+  the server's 4 MB cap.
