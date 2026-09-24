@@ -386,17 +386,31 @@ reference an undefined global, and fails the build on a match. Run it via
 - Inline handlers resolve names at click time from the global scope, so a
   handler defined inside an IIFE is invisible unless it is assigned to `window`.
 
-## Student data: account scoping hides legacy rows (open issue)
+## Student data: pre-account (legacy) record adoption
 
 `index.html` scopes every IndexedDB record as `DATA_SCOPE::id` with `__ahOwner`,
 and `fromScopedRecord` returns `null` for rows owned by a different (or empty)
-scope. Consequences to keep in mind:
+scope. Rows written before per-account scoping therefore looked wiped on sign-in.
 
-- **Legacy unscoped rows** (written before per-account scoping) are invisible to
-  the authenticated user and are not adopted by any migration. Only the sync
-  engine's `migrateLocal` runs, and it uses `dbGetAll`, which hides them.
-- **Guest rows** live in `MEMORY_DB` (session-only) and are dropped on sign-in;
-  nothing carries them into the account.
-- Do NOT change `fromScopedRecord` to accept unscoped rows without an explicit
-  owner decision — that would leak one account's data to another. Adoption must
-  be a deliberate, one-time, opt-in step.
+`legacy-adoption.js` (`window.AHLegacyAdoption`) runs once per account, from the
+`admissionhub:authchange` handler **before** `seedIfEmpty`, and relabels unscoped
+rows in place. Invariants to keep:
+
+- **Relabel, never copy/delete.** The adopted doc is exactly what
+  `toScopedRecord` produces, so the physical row count per store is unchanged.
+- **Never overwrite account rows.** Same bare id already owned by the account
+  means the legacy row is skipped, not merged.
+- **Never cross accounts.** Only rows with `__ahOwner === undefined` are
+  eligible. Guest rows live in `MEMORY_DB` (session-only) and are cleared on
+  sign-out without being adopted.
+- **Idempotent + retryable.** A per-account localStorage flag
+  (`ahLegacyAdopt:v1:<scope>`) stops re-runs; a store whose write fails is left
+  untouched and retried on the next sign-in.
+- **Snapshot first, then sync.** A `pre-legacy-adoption` snapshot is taken
+  before writes, and each adopted row is announced via `announceLocalWrite` so
+  the rescue reaches the cloud instead of staying local-only.
+- Raw access lives in `dbScanRaw` / `dbRelabelRaw`, kept separate from the
+  scoped `dbGet*` API. Do not loosen `fromScopedRecord` to accept unscoped rows
+  -- that would leak one account's data to another.
+- Tests: `npm run test:legacy-adoption` (unit + integration against the real
+  scoping functions + real IndexedDB via fake-indexeddb).
