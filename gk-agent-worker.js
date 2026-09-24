@@ -3,6 +3,7 @@ import pubHandler, { publishGlobal } from './public-worker.js';
 import { handleInternalEmailRequest } from './email-gateway/worker/handler.mjs';
 import { createNativeAuthHandler } from './auth-native/worker/public-auth-handler.mjs';
 import { handleFcmNotificationRequest, runScheduledGlobalNotifications } from './fcm-notification.mjs';
+import { handleUserDataRequest } from './userdata-api.mjs';
 import { handleFilesStorageRequest } from './files-storage.mjs';
 export { EmailGatewayCoordinator } from './email-gateway/worker/email-coordinator.mjs';
 export { AdmissionAuthAuthority } from './auth-native/worker/auth-authority-do.mjs';
@@ -439,6 +440,9 @@ export default {
     // Phase 1 — FCM notification foundation (owns /api/notifications/* + /internal/notifications/health).
     const fcmResponse = await handleFcmNotificationRequest(request, env, ctx);
     if (fcmResponse) return fcmResponse;
+    // Student data sync (server-backed student learning data) — owns /api/userdata/*.
+    const userDataResponse = await handleUserDataRequest(request, env, ctx);
+    if (userDataResponse) return userDataResponse;
     // R2 file storage (owner-approved 2026-09-18) — owns /api/files/*.
     // Must run before the /api/* pubHandler catch-all.
     const filesResponse = await handleFilesStorageRequest(request, env, ctx);
