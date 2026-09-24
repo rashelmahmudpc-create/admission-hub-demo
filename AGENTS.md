@@ -447,3 +447,37 @@ rows in place. Invariants to keep:
   -- that would leak one account's data to another.
 - Tests: `npm run test:legacy-adoption` (unit + integration against the real
   scoping functions + real IndexedDB via fake-indexeddb).
+
+## AI routes: the gk → public dispatcher env allowlist
+
+`/api/ai/*` is served by `public-worker.js`, but the live Worker is
+`gk-agent-worker.js` (name `admission-gk`). Requests are forwarded, and the
+`env` the public handler receives is a **hand-built allowlist** (`envPub` in
+`gk-agent-worker.js`), not the Worker's full environment.
+
+Consequence: **binding a secret or var is not enough — its name must also be in
+`envPub`.** A binding missing there reads as `undefined` downstream no matter
+how correctly it was set. This bit twice in one session:
+
+- `CLOUDFLARE_ACCOUNT_ID` / `CLOUDFLARE_AI_API_KEY` / `AGENT_CLOUDFLARE_MODELS`
+  (Phase 9 M2.5) — the Cloudflare backup stayed invisible
+  (`providers.cloudflare: false`) after the secrets were bound and redeployed.
+- `USE_CONTEXT_ENGINE` (Phase 9 M4) — enabling the Context Engine had no effect;
+  `agentStatus.context` stayed `{ enabled: false }`.
+
+When adding anything the AI path reads from `env`, add it to `envPub` in the
+same change, and extend the `account-retirement` guard
+(`dispatcher forwards every anonymous-AI provider binding`) so it cannot
+regress. Keep the list minimal: it is also the boundary that keeps account
+secrets (`GOOGLE_CLIENT_SECRET`, Twilio, mail providers) away from the public AI
+handler.
+
+**Deploy propagation:** a `wrangler deploy` can take a minute or two before the
+new version serves every edge. A status probe right after deploy may still show
+the previous behaviour; re-check before concluding a change did nothing.
+
+**Workers Free variable ceiling is 64** (secrets + text). This Worker sits on it.
+Adding a var therefore requires removing one; `AGENT_CLOUDFLARE_MODELS` was
+dropped in favour of `USE_CONTEXT_ENGINE` because the router already defaults to
+the identical `@cf/meta/llama-3.3-70b-instruct-fp8-fast`.
+
