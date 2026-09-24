@@ -105,7 +105,7 @@ Missing ‚Üí required before Phase 9 completes:
 | **M3** | Formal Gateway ‚Äî single internal entry with feature flag `USE_AI_GATEWAY` | low | yes | superseded by M4 |
 | **M4** | Context Engine ‚Äî typed, permission-scoped, minimum-necessary; legacy path kept | medium | yes | **DONE** (see ¬ß10) |
 | **M5** | Prompt Registry ‚Äî existing prompt becomes `v1`; A/B before replacing | low | yes | **DONE** (see ¬ß12) |
-| **M6** | Tool Registry ‚Äî READ-ONLY tools only; cross-user isolation enforced at the tool boundary | high | yes | pending |
+| **M6** | Tool Registry ‚Äî READ-ONLY tools only; cross-user isolation enforced at the tool boundary | high | yes | **DONE** (see ¬ß13) |
 | **M7** | Memory Engine ‚Äî long-term layer, default OFF, explicit consent | medium | yes | pending |
 | **M8** | Response validation + structured output | medium | yes | pending |
 | **M9** | Write/Execute actions ‚Äî disabled by default, confirmation required | high | yes | pending |
@@ -208,7 +208,7 @@ function, is what the "AI must recognise the student" capability actually needs,
 and the flag pattern M3 called for (`USE_AI_GATEWAY`) is carried by
 `USE_CONTEXT_ENGINE` instead.
 
-**Next gate:** M6 (Tool Registry — READ-ONLY tools) — awaiting approval.
+**Next gate:** M7 (Memory Engine — long-term, default OFF) — awaiting approval.
 
 ## 10. M4 completion record ‚Äî Context Engine
 
@@ -308,5 +308,46 @@ the shared base, M5-১০ counts the twelve hard rules. `ai-agent-f1` 44/44 and
 M4 suite 29/29 stay green; the full native-auth suite keeps its two pre-existing,
 unrelated failures.
 
-**Next gate:** M6 (Tool Registry — READ-ONLY) — awaiting owner approval.
+**Next gate:** M7 (Memory Engine — long-term layer, default OFF) — awaiting owner approval.
+
+## 13. M6 completion record — Tool Registry
+
+**Deliverable:** `tool-registry.js` — a typed tool declaration layer plus the
+cross-user isolation guard that finding S6 required at M6 rather than later.
+`tool-registry.js` is pure data and pure guards: no `env`, no I/O, no worker API,
+and **nothing executes**. One tool is declared —
+`student.progress.read`, READ-only, owner-scoped, low risk, schema'd on both
+sides — and registered as enabled because READ-only is the one class Phase 9
+permits. Enabled is not wired: the chat path in `ai-agent.js` never calls the
+registry, so no capability is reachable at runtime.
+
+**Public surface:** `PERMISSION`, `RISK`, `REQUIRED_TOOL_FIELDS`,
+`getTool`, `listTools`, `validateToolRegistry`, `resolveToolOwner`,
+`authorizeToolCall`, `guardToolResult`, `TOOL_REGISTRY_VERSION`.
+
+**Cross-user isolation (the high-risk part).** The owner of a tool call is
+derived from the server-validated uid alone, never merged with anything the model
+or the request body supplied:
+
+- `resolveToolOwner(uid)` returns the uid only for an `account-` prefix; a guest
+  returns `null`, so a guest can never own a call.
+- `authorizeToolCall()` denies unless the tool exists, is enabled, is READ-only,
+  has a resolvable owner, **and** the arguments carry no owner-ish key
+  (`uid`/`ownerUid`/`owner`/`userId`/`accountId`/`user`/`account`/`deviceId`).
+  The `owner` it returns is always the caller.
+- `guardToolResult()` is the second gate: a result whose `ownerUid` is missing or
+  differs from the caller is treated as a leak and blocked, not trusted.
+
+**No behaviour change.** The prompt text and its SHA-256 are untouched
+(`29f59a3e…01b7e`), and no new env binding is required — `agentStatus` now also
+advertises the declared tools under `tools: { version, declared }`, metadata only.
+
+**Verification:** `phase9-m6-tool-registry.test.mjs` **15/15** — M6-৭/৮ deny a
+guest and an unknown tool, M6-৯ rejects all eight owner-ish argument keys, M6-১০
+proves the returned owner is the caller, M6-১১/১২ block a mismatched or empty
+result, and M6-১৩ asserts the chat path wires no execution. M4 29/29, M5 10/10,
+`ai-agent-f1` 44/44, guards and `check:worker-bundle` stay green; the full
+native-auth suite keeps its two pre-existing, unrelated failures.
+
+**Next gate:** M7 (Memory Engine) — awaiting owner approval.
 
