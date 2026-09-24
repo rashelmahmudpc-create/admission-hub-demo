@@ -11,6 +11,17 @@
 (() => {
   'use strict';
 
+  /* Inline SVG line icons — the settings chrome used to be emoji-led (📡⭐🛠️);
+   * one stroke set reads as a product, not a chat. */
+  const ICONS = {
+    signal: '<path d="M2 20h.01"/><path d="M7 20v-4"/><path d="M12 20v-8"/><path d="M17 20V8"/><path d="M22 4v16"/>',
+    star: '<path d="m12 2 3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1Z"/>',
+    tool: '<path d="M14.7 6.3a4 4 0 0 0 5 5l-9.4 9.4a2.8 2.8 0 1 1-4-4Z"/>',
+    dot: '<circle cx="12" cy="12" r="4"/>'
+  };
+  const iconSvg = (name, size = 16) =>
+    `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-3px;flex:0 0 auto">${ICONS[name] || ''}</svg>`;
+
   const API = '/api/notifications';
   const SDK_BASE = 'https://www.gstatic.com/firebasejs/10.12.2';
   const SDK_LOCAL = './sdk'; /* self-hosted copy on our own domain (Cloudflare stack); gstatic is the fallback */
@@ -361,15 +372,15 @@
     const L = (() => { try { return window.AhI18n ? window.AhI18n.get() : 'bn'; } catch (_) { return 'bn'; } })();
     const st = (bn, en) => (L === 'en' ? en : bn);
     if (!s.fcmConfigured) {
-      return `<div style="${pad}font-size:12px;color:var(--sub)"><span>📡 FCM Push</span> <span style="opacity:.7">${st('সংযোগ হচ্ছে না — configuration আসার অপেক্ষায়', 'Connecting — waiting for server settings')}</span></div>`;
+      return `<div style="${pad}font-size:12px;color:var(--sub)"><span>${iconSvg('signal',15)} FCM Push</span> <span style="opacity:.7">${st('সংযোগ হচ্ছে না — configuration আসার অপেক্ষায়', 'Connecting — waiting for server settings')}</span></div>`;
     }
     if (s.permission === 'denied') {
-      return `<div style="${pad}font-size:12px;color:var(--red)">📡 FCM Push — ${st('browser-এ অনুমতি বন্ধ আছে (Settings → Site settings → Notifications থেকে খুলতে হবে)', 'permission is blocked (enable in Settings → Site settings → Notifications)')}</div>`;
+      return `<div style="${pad}font-size:12px;color:var(--red)">${iconSvg('signal',15)} FCM Push — ${st('browser-এ অনুমতি বন্ধ আছে (Settings → Site settings → Notifications থেকে খুলতে হবে)', 'permission is blocked (enable in Settings → Site settings → Notifications)')}</div>`;
     }
     if (s.registered) {
-      return `<div style="${pad}display:flex;align-items:center;gap:10px"><span style="flex:1;font-size:12px">📡 FCM Push <b style="color:var(--green)">✓ ${st('চলছে', 'Active')}</b></span><button class="btn ghost sm" onclick="AhFcm.disable().then(()=>NotificationHub.openSettings())">${st('বন্ধ করুন', 'Turn off')}</button></div>`;
+      return `<div style="${pad}display:flex;align-items:center;gap:10px"><span style="flex:1;font-size:12px">${iconSvg('signal',15)} FCM Push <b style="color:var(--green)">✓ ${st('চলছে', 'Active')}</b></span><button class="btn ghost sm" onclick="AhFcm.disable().then(()=>NotificationHub.openSettings())">${st('বন্ধ করুন', 'Turn off')}</button></div>`;
     }
-    return `<div style="${pad}display:flex;align-items:center;gap:10px"><span style="flex:1;font-size:12px">📡 FCM Push</span><button class="btn sm" onclick="closeModal();NotificationHub.openAllowDialog()">${st('চালু করুন', 'Turn on')}</button></div>`;
+    return `<div style="${pad}display:flex;align-items:center;gap:10px"><span style="flex:1;font-size:12px">${iconSvg('signal',15)} FCM Push</span><button class="btn sm" onclick="closeModal();NotificationHub.openAllowDialog()">${st('চালু করুন', 'Turn on')}</button></div>`;
   };
 
   /* Student's own switch for the personalized daily reminder (Phase G).
@@ -384,7 +395,7 @@
     } catch (_) { /* leave default */ }
     return `<div id="ahPersonalCard" style="margin:10px 0;padding:13px 14px;border:1.5px solid ${on ? 'var(--emerald,#0f6b4f)' : 'var(--line)'};border-radius:14px;background:${on ? '#f2f8f5' : 'transparent'}">
       <div style="display:flex;align-items:center;gap:8px">
-        <span style="font-size:15px">⭐</span>
+        <span style="color:var(--emerald,#0f6b4f)">${iconSvg('star',16)}</span>
         <b style="flex:1;font-size:13.5px">${st('দৈনিক স্মার্ট রিমাইন্ডার', 'Daily smart reminder')}</b>
         <span class="chip ${on ? 'active' : ''}" style="pointer-events:none">${on ? st('চালু', 'ON') : st('বন্ধ', 'OFF')}</span>
       </div>
@@ -415,17 +426,17 @@
       const s = await status();
       const cfgOut = await boundedFetch('/config');
       const html = `
-        <h3>🛠️ FCM Test Center</h3>
+        <h3>${iconSvg('tool',18)} FCM Test Center</h3>
         <p style="font-size:12px;margin-top:4px;line-height:1.7">
-          FCM: <b id="ahFcmDevStatus">${s.fcmConfigured ? '🟢 Configured' : '🔴 Not configured'}</b><br>
-          Device: ${s.registered ? `🟢 Registered (${s.devices})` : '🔴 Not registered'} · Permission: ${s.permission}<br>
-          Web config: ${cfgOut.data.webConfig ? '🟢 present' : '🔴 missing'}
+          FCM: <b id="ahFcmDevStatus">${s.fcmConfigured ? '<b style="color:var(--green)">Configured</b>' : '<b style="color:var(--red)">Not configured</b>'}</b><br>
+          Device: ${s.registered ? `<b style="color:var(--green)">Registered</b> (${s.devices})` : '<b style="color:var(--red)">Not registered</b>'} · Permission: ${s.permission}<br>
+          Web config: ${cfgOut.data.webConfig ? '<b style="color:var(--green)">present</b>' : '<b style="color:var(--red)">missing</b>'}
         </p>
         ${s.fcmConfigured && s.registered ? `
         <label class="flabel" style="margin-top:10px">Admin token (Bearer — store করা হয় না)</label>
         <input id="ahFcmDevToken" type="password" placeholder="ADMIN_TOKEN" style="width:100%;box-sizing:border-box">
         <label class="flabel" style="margin-top:8px">Test message</label>
-        <input id="ahFcmDevBody" type="text" value="🔔 Admission Hub — FCM test successful" style="width:100%;box-sizing:border-box">
+        <input id="ahFcmDevBody" type="text" value="Admission Hub — FCM test successful" style="width:100%;box-sizing:border-box">
         <button class="btn sm" style="margin-top:10px" id="ahFcmDevSend"> Send Test</button>
         <pre id="ahFcmDevOut" style="font-size:11px;white-space:pre-wrap;margin-top:10px;color:var(--sub)"></pre>` : ''}
         <button class="btn ghost sm" style="margin-top:14px" onclick="closeModal()">Close</button>`;

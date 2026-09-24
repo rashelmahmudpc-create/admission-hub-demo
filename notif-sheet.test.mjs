@@ -14,13 +14,18 @@ test('dashboard bell: bellTap (inbox/one-time sheet), never history', () => {
   assert.ok(!/dv2-bell[^>]*navigate\('history'\)/.test(DASH), 'bell must not navigate to history');
 });
 
-test('dashboard card gear opens the sheet', () => {
-  assert.match(HUB, /onclick="NotificationHub\.openSheet\(\)">⚙️<\/button>/);
+test('dashboard card gear opens the real settings modal (owner fix 2026-09-24)', () => {
+  /* The gear used to open openSheet() — a near-empty panel — so it read as a
+   * dead button. It must open the full settings modal that holds FCM, the
+   * daily reminder, categories and quiet hours. */
+  assert.match(HUB, /onclick="NotificationHub\.openSettings\(\)">\$\{icon\('gear'/);
+  const dashboardBlock = HUB.slice(HUB.indexOf('const dashboardHtml ='), HUB.indexOf('const globalUnreadCount'));
+  assert.ok(!dashboardBlock.includes('openSheet()'), 'the dashboard gear must not open the empty sheet');
 });
 
 test('sheet exists with close affordances', () => {
   assert.match(HUB, /const openSheet = async/);
-  assert.match(HUB, /onclick="closeModal\(\)"[^>]*>✕<\/button>/, 'header close button');
+  assert.match(HUB, /onclick="closeModal\(\)" aria-label="\$\{sheetT\('closeAria'\)\}">\$\{icon\('close'/, 'header close button (SVG)');
   assert.match(HUB, /class="btn" style="width:100%[^"]*" onclick="closeModal\(\)"/, 'bottom close button');
   assert.ok(HUB.includes('toggleMasterSheet'), 'master toggle re-renders the sheet');
 });
@@ -110,8 +115,8 @@ test('inbox: CLEAN full-screen list — no status bar, no test button, back work
 test('router: #notifications route + script tags + SW pin (round 8 pins)', () => {
   assert.match(INDEX, /p==='notifications' && window\.renderNotificationsInbox/);
   assert.match(INDEX, /notification-inbox\.js\?v=notif-inbox-v6/);
-  assert.match(INDEX, /notification-hub\.js\?v=notify-v119/);
-  assert.match(INDEX, /notification-fcm\.js\?v=fcm-p1-v12/);
+  assert.match(INDEX, /notification-hub\.js\?v=notify-v121/);
+  assert.match(INDEX, /notification-fcm\.js\?v=fcm-p1-v14/);
   assert.match(INDEX, /profile-ui\.js\?v=profile-v17-uni-tap/);
   assert.match(SW, /notification-inbox\.js\?v=notif-inbox-v6/);
   assert.match(SW, /dashboard-v2\.js\?v=dash2f15-inbox/);

@@ -13,6 +13,19 @@
   const LS_ENDPOINT = 'ahNotifyUrl';
   const VAPID_PUBLIC = 'BJtpFY7isSDAQy7ck7zNQjNfmhAu4w-bcQ3_eFUTQbITSHBJO5f6n5ayYm_-TE7vNcnZ_1Ib45DVmxQkyLIFDsY';
   const APP_HEADER = 'admission-hub';
+  /* Inline SVG line icons — the student chrome is emoji-led too; premium look
+   * comes from one consistent stroke set, not pictographs. */
+  const ICON = {
+    bell: '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
+    gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.9 1.2V23a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 7 21.4a1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0-1.2-2.9H1a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 2.6 7a1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 2.9-1.2V1a2 2 0 1 1 4 0v.1A1.7 1.7 0 0 0 17 7a1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0 1.2 2.9H23a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/>',
+    close: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+    phone: '<rect x="6" y="2" width="12" height="20" rx="2"/><path d="M11 18h2"/>',
+    shield: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/>',
+    check: '<path d="M20 6 9 17l-5-5"/>',
+    alert: '<path d="M12 9v4"/><path d="M12 17h.01"/><circle cx="12" cy="12" r="9"/>'
+  };
+  const icon = (name, size = 18) =>
+    `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex:0 0 auto">${ICON[name] || ''}</svg>`;
   /* Owner directive 2026-09-17 (round 8): auto-generated notifications are
    * OFF ("সেকেন্ডের পর সেকেন্ড অটোমেটিক নোটিফিকেশন আসছে — বন্ধ করতে হবে").
    * The candidate/decision engine below stays in place; real announcements
@@ -27,7 +40,7 @@
     dailyCap: 3,
     cooldownH: 3
   });
-  const CAT_LABEL = { study: '📚 Study Reminder', streak: '🔥 Streak', revision: '🔁 Revision', mistake: '🧠 Mistake Bank', achievement: '🏆 Progress & Achievement', exam: '📝 Exam Reminder', admission: '🎓 Admission Alert', update: '📢 Important Update' };
+  const CAT_LABEL = { study: 'Study Reminder', streak: 'Streak', revision: 'Revision', mistake: 'Mistake Bank', achievement: 'Progress & Achievement', exam: 'Exam Reminder', admission: 'Admission Alert', update: 'Important Update' };
   const CAT_SOON = { admission: true, update: true, exam: true }; // জেনারেটর আসছে — আসল ডেটা ছাড়া কিছু পাঠানো হবে না
 
   let endpoint = DEFAULT_ENDPOINT;
@@ -97,27 +110,27 @@
     const hour = now.getHours();
     const today = todayKey(now);
     if (prefs.cats.streak && streak >= 2 && todayQ === 0 && hour >= 17 && hour < 23) {
-      list.push({ category: 'streak', priority: 4, dedup: `streak-risk-${today}`, title: '🔥 Streak ভাঙার ঝুঁকি', body: `তোর ${streak} দিনের streak আজ ভেঙে যেতে পারে 😶 চল অন্তত 10টা MCQ দিয়ে বাঁচিয়ে রাখি।` });
+      list.push({ category: 'streak', priority: 4, dedup: `streak-risk-${today}`, title: `Streak ভাঙার ঝুঁকি (${streak} দিন)`, body: 'তোর streak আজ ভেঙে যেতে পারে। চল অন্তত 10টা MCQ দিয়ে বাঁচিয়ে রাখি।' });
     }
     if (prefs.cats.study && todayQ === 0 && prefHour !== null && hour >= Math.max(12, prefHour - 1) && hour < Math.min(23, prefHour + 2)) {
-      list.push({ category: 'study', priority: 3, dedup: `study-${today}`, title: '📚 পড়ার সময় হয়ে গেছে', body: 'এই সময়টায় তুই সাধারণত পড়া শুরু করিস 🔥 চল আজকের practice দিয়ে শুরু করি।' });
+      list.push({ category: 'study', priority: 3, dedup: `study-${today}`, title: 'পড়ার সময় হয়ে গেছে', body: 'এই সময়টায় তুই সাধারণত পড়া শুরু করিস। চল আজকের practice দিয়ে শুরু করি।' });
     }
     if (prefs.cats.study && todayQ === 0 && hour >= 10 && hour < 12 && state.morningPrompt !== today) {
-      list.push({ category: 'study', priority: 2, dedup: `study-am-${today}`, title: '📚 দিনটা শুরু করবি?', body: 'সকালের একটা ছোট practice সারাদিনের মুড ঠিক করে দেয় — 10টা MCQ দিয়ে শুরু করি!' });
+      list.push({ category: 'study', priority: 2, dedup: `study-am-${today}`, title: 'দিনটা শুরু করবি?', body: 'সকালের একটা ছোট practice সারাদিনের মুড ঠিক করে দেয় — 10টা MCQ দিয়ে শুরু করি!' });
     }
     if (prefs.cats.study && todayQ > 0 && todayQ < target && hour >= 21 && hour < 23) {
-      list.push({ category: 'study', priority: 2, dedup: `study-eve-${today}`, title: '🎯 একটু বাকি রয়ে গেছে', body: `আজ ${todayQ}টা হয়েছে, target ${target}। আর ${target - todayQ}টা দিলেই আজকেরটা complete!` });
+      list.push({ category: 'study', priority: 2, dedup: `study-eve-${today}`, title: 'একটু বাকি রয়ে গেছে', body: `আজ ${todayQ}টা হয়েছে, target ${target}। আর ${target - todayQ}টা দিলেই আজকেরটা complete!` });
     }
     if (prefs.cats.mistake && mistakes >= 25 && (state.lastMistakeSent || 0) <= mistakes - 5) {
-      list.push({ category: 'mistake', priority: 3, dedup: `mistake-${mistakes}`, title: '🧠 Mistake Bank ভর্তি', body: `${mistakes}টা ভুল জমেছে। আজ 10 মিনিট এগুলো ঘেঁটে দেখলে অনেক লাভ হবে 💪` });
+      list.push({ category: 'mistake', priority: 3, dedup: `mistake-${mistakes}`, title: 'Mistake Bank ভর্তি', body: `${mistakes}টা ভুল জমেছে। আজ 10 মিনিট এগুলো ঘেঁটে দেখলে অনেক লাভ হবে।` });
     }
     for (const m of [50, 100, 200, 300, 500]) {
       if (prefs.cats.achievement && todayQ >= m && (state.lastMilestone || 0) < m && todayQ - 5 < m) {
-        list.push({ category: 'achievement', priority: 2, dedup: `milestone-${today}-${m}`, title: `🔥 আজ ${m} MCQ complete!`, body: 'দুর্দান্ত গতি! এভাবেই চালিয়ে যা 🚀', milestone: m });
+        list.push({ category: 'achievement', priority: 2, dedup: `milestone-${today}-${m}`, title: `আজ ${m} MCQ complete!`, body: 'দুর্দান্ত গতি! এভাবেই চালিয়ে যা', milestone: m });
       }
     }
     if (prefs.cats.achievement && todayQ >= target && (state.lastTargetDone || '') !== today && todayQ - 5 < target) {
-      list.push({ category: 'achievement', priority: 3, dedup: `target-${today}`, title: '🎯 আজকের target complete!', body: `${todayQ}/${target} — আজকের প্রস্তুতি নিশ্চিত। শুভকামনা! 🚀` });
+      list.push({ category: 'achievement', priority: 3, dedup: `target-${today}`, title: 'আজকের target complete!', body: `${todayQ}/${target} — আজকের প্রস্তুতি নিশ্চিত। শুভকামনা!` });
     }
     return list;
   };
@@ -199,7 +212,7 @@
   const pushReady = () => typeof Notification !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window;
   const standalone = () => window.matchMedia?.('(display-mode: standalone)')?.matches || window.navigator.standalone === true;
   const enablePush = async () => {
-    if (!pushReady()) { window.toast?.('এই device-এ web push নেই — Telegram-এ notification আসবে ✈️'); return 'unsupported'; }
+    if (!pushReady()) { window.toast?.('এই device-এ web push নেই — Telegram-এ notification আসবে'); return 'unsupported'; }
     const permission = await Notification.requestPermission();
     if (permission !== 'granted') { window.toast?.('নোটিফিকেশন চালু হয়নি — পরে Settings → Notifications থেকে চালু করতে পারবে।'); return permission; }
     try {
@@ -208,10 +221,10 @@
       subscription = subscription || await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64uToU8(VAPID_PUBLIC) });
       const sub = subscription.toJSON();
       await fetch(endpoint + '/api/push/subscribe', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-AH-App': APP_HEADER }, body: JSON.stringify(sub) });
-      window.toast?.('🔔 Notification চালু! আর iPhone push-এর জন্য অ্যাপটা Home Screen থেকে খেলে সবচেয়ে ভালো চলে।');
+      window.toast?.('Notification চালু হয়েছে! iPhone push-এর জন্য অ্যাপটা Home Screen থেকে খুললে সবচেয়ে ভালো চলে।');
       return 'granted';
     } catch (_) {
-      window.toast?.('Push subscribe হয়নি — তবু Telegram notification চলবে ✈️');
+      window.toast?.('Push subscribe হয়নি — তবু Telegram notification চলবে');
       return 'subscribe-failed';
     }
   };
@@ -265,11 +278,13 @@
   const fmtTime = ts => { try { return new Date(ts).toLocaleString('bn-BD', { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' }); } catch (_) { return ''; } };
   const dashboardHtml = () => `
     <div id="ahNotifCard" class="card premium-card fade-in stagger-1" style="display:flex;align-items:center;gap:12px">
-      <div id="ahNotifIcon" style="position:relative;font-size:22px;flex:0 0 auto">🔔
-        <span id="ahNotifBadge" style="display:none;position:absolute;top:-6px;right:-10px;background:var(--red);color:#fff;border-radius:99px;font-size:10px;font-weight:800;padding:1px 5px"></span>
+      <div id="ahNotifIcon" style="position:relative;color:var(--emerald);flex:0 0 auto;display:grid;place-items:center">${icon('bell', 22)}
+        <span id="ahNotifBadge" style="display:none;position:absolute;top:-7px;right:-9px;background:var(--red);color:#fff;border-radius:99px;font-size:10px;font-weight:800;padding:1px 5px"></span>
       </div>
       <div id="ahNotifCopy" style="flex:1;min-width:0;font-size:13px;line-height:1.45"></div>
-      <button class="iconbtn" style="flex:0 0 auto" title="Notification settings" onclick="NotificationHub.openSheet()">⚙️</button>
+      <!-- Owner fix 2026-09-24: the gear used to open a near-empty sheet,
+           so it felt like a dead button. It now opens the real settings modal. -->
+      <button class="iconbtn" style="flex:0 0 auto" title="Notification settings" aria-label="Notification settings" onclick="NotificationHub.openSettings()">${icon('gear', 18)}</button>
     </div>`;
   /* Phase 2: unread global notifications from the server feed (for the bell
    * badge). Bounded + fail-soft — the badge must never break the dashboard. */
@@ -292,22 +307,22 @@
       if (permission === 'default') {
         /* No auto-prompt (owner directive 2026-09-17): a calm single action
          * that opens the premium centered allow dialog. */
-        copy.innerHTML = `<b>🔔 নোটিফিকেশন</b><br><span style="opacity:.75;font-size:11.5px">খবর এলে যেন মিস না হয়</span>
+        copy.innerHTML = `<b>Notifications</b><br><span style="opacity:.75;font-size:11.5px">খবর এলে যেন মিস না হয়</span>
           <div style="display:flex;gap:8px;margin-top:8px"><button class="btn sm" onclick="NotificationHub.openAllowDialog()">চালু করুন</button></div>`;
       } else {
         const unread = (await unreadCount()) + (await globalUnreadCount());
         const badge = document.getElementById('ahNotifBadge');
         if (badge) { badge.style.display = unread ? 'inline-block' : 'none'; badge.textContent = unread > 9 ? '9+' : unread; }
-        copy.innerHTML = `<b>Notifications</b> <span style="opacity:.7;font-size:11.5px">${unread ? `${unread}টি নতুন` : 'সব পড়া হয়ে গেছে ✓'}</span><br><button class="btn ghost sm" style="margin-top:6px" onclick="NotificationHub.goInbox()">🔔 ইনবক্স খোলো</button>`;
+        copy.innerHTML = `<b>Notifications</b> <span style="opacity:.7;font-size:11.5px">${unread ? `${unread}টি নতুন` : 'সব পড়া হয়ে গেছে'}</span><br><button class="btn ghost sm" style="margin-top:6px" onclick="NotificationHub.goInbox()">ইনবক্স খোলো</button>`;
       }
     } catch (_) {}
   };
-  const dismissPrompt = async () => { await saveState({ ...(await getState()), promptDismissed: todayKey() }); window.toast?.('ঠিক আছে — Settings → Notifications থেকে যখন চাও চালু করতে পারবে 😊'); const copy = document.getElementById('ahNotifCopy'); if (copy) copy.innerHTML = '<b>Notifications</b><br><button class="btn ghost sm" style="margin-top:6px" onclick="NotificationHub.openCenter()">🔔 Notification Center খোলো</button>'; };
+  const dismissPrompt = async () => { await saveState({ ...(await getState()), promptDismissed: todayKey() }); window.toast?.('ঠিক আছে — Settings → Notifications থেকে যখন চাও চালু করতে পারবে।'); const copy = document.getElementById('ahNotifCopy'); if (copy) copy.innerHTML = '<b>Notifications</b><br><button class="btn ghost sm" style="margin-top:6px" onclick="NotificationHub.openCenter()">Notification Center খোলো</button>'; };
   const promptEnable = async () => { const status = await enablePush(); if (status === 'granted') hydrateDashboard(); };
 
   const openCenter = async () => {
     const rows = (await logRows()).sort((a, b) => b.createdAt - a.createdAt).slice(0, 20);
-    openModal(`<h3>🔔 Notification Center</h3><p class="muted" style="margin-top:4px;font-size:12px">শুধু আসল কারণ থাকলেই কিছু আসে — নীরবতাও একটা ফিচার 😄</p>${rows.length ? `<div style="display:grid;gap:9px;margin-top:12px">${rows.map(row => `<div style="padding:11px;border:1px solid var(--line);border-radius:12px;background:${row.readAt ? 'transparent' : 'var(--mint)'}"><div style="display:flex;gap:8px;align-items:center"><b style="font-size:13px;flex:1">${escapeHtml(row.title)}</b>${row.readAt ? '' : '<span style="width:8px;height:8px;border-radius:99px;background:var(--emerald)"></span>'}</div><div style="font-size:12.5px;margin-top:3px;line-height:1.5">${escapeHtml(row.body)}</div><small style="color:var(--sub);font-size:10.5px">${fmtTime(row.createdAt)} · ${CAT_LABEL[row.category] || row.category}</small></div>`).join('')}</div>` : '<p class="muted" style="margin-top:12px">এখনো কোনো notification পাঠানো হয়নি।</p>'}<div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap"><button class="btn ghost sm" onclick="NotificationHub.markAllRead();closeModal()">Mark all as read</button><button class="btn ghost sm" onclick="NotificationHub.openSettings()">⚙️ Settings</button><button class="btn sm" onclick="closeModal()">Close</button></div>`);
+    openModal(`<h3>Notification Center</h3><p class="muted" style="margin-top:4px;font-size:12px">শুধু আসল কারণ থাকলেই কিছু আসে — নীরবতাও একটা ফিচার।</p>${rows.length ? `<div style="display:grid;gap:9px;margin-top:12px">${rows.map(row => `<div style="padding:11px;border:1px solid var(--line);border-radius:12px;background:${row.readAt ? 'transparent' : 'var(--mint)'}"><div style="display:flex;gap:8px;align-items:center"><b style="font-size:13px;flex:1">${escapeHtml(row.title)}</b>${row.readAt ? '' : '<span style="width:8px;height:8px;border-radius:99px;background:var(--emerald)"></span>'}</div><div style="font-size:12.5px;margin-top:3px;line-height:1.5">${escapeHtml(row.body)}</div><small style="color:var(--sub);font-size:10.5px">${fmtTime(row.createdAt)} · ${CAT_LABEL[row.category] || row.category}</small></div>`).join('')}</div>` : '<p class="muted" style="margin-top:12px">এখনো কোনো notification পাঠানো হয়নি।</p>'}<div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap"><button class="btn ghost sm" onclick="NotificationHub.markAllRead();closeModal()">Mark all as read</button><button class="btn ghost sm" onclick="NotificationHub.openSettings()">Settings</button><button class="btn sm" onclick="closeModal()">Close</button></div>`);
     await markAllRead();
   };
   const markAllRead = async () => {
@@ -403,7 +418,7 @@
     try { if (window.AhFcm && typeof window.AhFcm.status === 'function') fcm = await window.AhFcm.status(); } catch (_) {}
     openModal(`<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
         <h3 style="margin:0">${sheetT('title')}</h3>
-        <button class="iconbtn" style="flex:0 0 auto" onclick="closeModal()" aria-label="${sheetT('closeAria')}">✕</button>
+        <button class="iconbtn" style="flex:0 0 auto" onclick="closeModal()" aria-label="${sheetT('closeAria')}">${icon('close', 16)}</button>
       </div>
       ${fcmSheetRow(fcm)}
       <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 0">
@@ -555,7 +570,7 @@
       }
     };
     openModal(`<div style="display:flex;flex-direction:column;align-items:center;text-align:center;padding:12px 6px 6px">
-      <div style="width:64px;height:64px;border-radius:22px;background:#eef5f1;display:grid;place-items:center;font-size:30px">🔔</div>
+      <div style="width:64px;height:64px;border-radius:22px;background:var(--mint,#eef5f1);color:var(--emerald);display:grid;place-items:center">${icon('bell', 30)}</div>
       <h3 style="margin:14px 0 6px;font-size:17px">${allowT('title')}</h3>
       <p style="font-size:13px;color:var(--sub,#64748b);margin:0 0 18px;line-height:1.6">${allowT('sub')}</p>
       <button class="btn" id="ahAllowBtn" style="width:100%;font-weight:800" onclick="window.__ahAllowFlow()">${allowT('allow')}</button>
@@ -603,12 +618,12 @@
     const prefs = await getPrefs();
     const soon = Object.entries(CAT_SOON).filter(([, v]) => v).map(([k]) => CAT_LABEL[k]).join(' · ');
     const perm = typeof Notification !== 'undefined' ? Notification.permission : 'unsupported';
-    const fcmRow = '<div id="ahFcmRow" style="padding:10px 0;border-bottom:1px solid var(--line);font-size:12px;color:var(--sub)">📡 FCM Push — checking…</div><div id="ahPersonalRow"></div>';
-    const pushRow = !pushReady() ? '<div style="padding:9px 0;border-bottom:1px solid var(--line);font-size:12px;color:var(--sub)">📱 এই device-এ web push নেই — Telegram-এ notification যাবে ✈️</div>'
-      : perm === 'granted' ? `<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)"><span style="flex:1;font-size:13px">📱 iPhone push</span><span class="chip active" style="pointer-events:none">চালু ✓</span></div>`
-      : perm === 'denied' ? '<div style="padding:9px 0;border-bottom:1px solid var(--line);font-size:12px;color:var(--red)">⚠️ Push অনুমতি ব্লকড — iOS Settings → Safari/Home-অ্যাপ → Notifications থেকে চালু করো</div>'
-      : `<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)"><span style="flex:1;font-size:13px">📱 iPhone push</span><button class="btn sm" onclick="NotificationHub.enablePush().then(() => NotificationHub.openSettings())">চালু করি</button></div>`;
-    openModal(`<h3>⚙️ Notifications</h3>${fcmRow}${pushRow}
+    const fcmRow = '<div id="ahFcmRow" style="padding:10px 0;border-bottom:1px solid var(--line);font-size:12px;color:var(--sub)">FCM Push — checking…</div><div id="ahPersonalRow"></div>';
+    const pushRow = !pushReady() ? '<div style="padding:9px 0;border-bottom:1px solid var(--line);font-size:12px;color:var(--sub)">এই device-এ web push নেই — Telegram-এ notification যাবে</div>'
+      : perm === 'granted' ? `<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)"><span style="flex:1;font-size:13px">iPhone push</span><span class="chip active" style="pointer-events:none">চালু</span></div>`
+      : perm === 'denied' ? '<div style="padding:9px 0;border-bottom:1px solid var(--line);font-size:12px;color:var(--red)">Push অনুমতি ব্লকড — iOS Settings → Safari/Home-অ্যাপ → Notifications থেকে চালু করো</div>'
+      : `<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)"><span style="flex:1;font-size:13px">iPhone push</span><button class="btn sm" onclick="NotificationHub.enablePush().then(() => NotificationHub.openSettings())">চালু করি</button></div>`;
+    openModal(`<h3>Notifications</h3>${fcmRow}${pushRow}
       <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)"><span style="flex:1;font-weight:700">Master Notification</span><button class="chip ${prefs.master ? 'active' : ''}" onclick="NotificationHub.toggleMaster()">${prefs.master ? 'ON' : 'OFF'}</button></div>
       ${Object.keys(DEFAULT_PREFS.cats).map(key => toggleRow(CAT_LABEL[key] + (CAT_SOON[key] ? ' <span style="color:var(--sub);font-size:10px">(শীঘ্রই)</span>' : ''), key, prefs)).join('')}
       <label class="flabel" style="margin-top:10px">Quiet hours (এই সময়ে কিছু আসবে না)</label>
@@ -620,7 +635,7 @@
         ${pushReady() && Notification.permission === 'granted' ? '<button class="btn ghost sm" onclick="NotificationHub.disablePush();closeModal()">Push বন্ধ করো</button>' : ''}
         <button class="btn ghost sm" onclick="closeModal()">Close</button>
       </div>
-      <small style="display:block;margin-top:10px;color:var(--sub);font-size:11px;line-height:1.5">Telegram (✈️ @myadmihubbot) + iPhone push দুটোতেই যায়। Active থাকলে অ্যাপের ভেতরেই দেখায় — push বিরক্ত করে না।</small>`);
+      <small style="display:block;margin-top:10px;color:var(--sub);font-size:11px;line-height:1.5">Telegram (@myadmihubbot) + iPhone push দুটোতেই যায়। Active থাকলে অ্যাপের ভেতরেই দেখায় — push বিরক্ত করে না।</small>`);
     // FCM row hydrates async (config fetch) — replace the placeholder when ready.
     try {
       window.AhFcm?.settingsRow?.().then(html => {
@@ -640,8 +655,8 @@
   const testNow = async () => {
     closeModal();
     window.toast?.('টেস্ট পাঠানো হচ্ছে…');
-    const okSend = await dispatch({ title: '🔔 Admission Hub টেস্ট', body: 'বাহ! Notification চ্যানেল কাজ করছে — এখন থেকে ঠিক সময়ে আমি মনে করিয়ে দেব 😄', category: 'update' }, { streak: streakNow(), todayQ: todayQuestions() });
-    if (okSend !== 'off') await logRow({ id: uid(), category: 'update', title: '🔔 টেস্ট notification', body: 'চ্যানেল যাচাই সম্পন্ন ✓', priority: 1, dedup: 'test-' + Date.now(), status: 'sent', readAt: null, createdAt: Date.now() });
+    const okSend = await dispatch({ title: 'Admission Hub টেস্ট', body: 'বাহ! Notification চ্যানেল কাজ করছে — এখন থেকে ঠিক সময়ে আমি মনে করিয়ে দেব', category: 'update' }, { streak: streakNow(), todayQ: todayQuestions() });
+    if (okSend !== 'off') await logRow({ id: uid(), category: 'update', title: 'টেস্ট notification', body: 'চ্যানেল যাচাই সম্পন্ন ✓', priority: 1, dedup: 'test-' + Date.now(), status: 'sent', readAt: null, createdAt: Date.now() });
     window.toast?.(okSend === 'off' ? 'Endpoint বন্ধ আছে' : 'টেস্ট পাঠানো হয়েছে — Telegram/push দেখো!');
   };
   const toastShort = text => { try { window.toast?.(text); } catch (_) {} };

@@ -175,9 +175,9 @@ test('index.html: admin script tag + route dispatch (hidden route, not in nav)',
 
 test('pin consistency: index.html script pins match sw.js cache entries + digests', () => {
   const pins = {
-    'notification-fcm.js': 'fcm-p1-v12',
+    'notification-fcm.js': 'fcm-p1-v14',
     'notification-inbox.js': 'notif-inbox-v6',
-    'notification-hub.js': 'notify-v119',
+    'notification-hub.js': 'notify-v121',
     'notification-admin.js': 'admin-notif-v7'
   };
   for (const [file, pin] of Object.entries(pins)) {
