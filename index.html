@@ -5,6 +5,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Admission Hub — ভর্তি প্রস্তুতি, প্রশ্নব্যাংক ও বিজ্ঞপ্তি</title>
+<link rel="stylesheet" href="./notification-command-center.css?v=ns-cc-v1">
 <link rel="stylesheet" href="./dashboard-v2.css?v=dash2f13-theme">
 
 <link rel="manifest" href="manifest.json">
@@ -4439,7 +4440,7 @@ async function boot(){
     try{await loadCache();}catch(_){}
   }
   try{applyTheme();}catch(_){}
-  Router.path=location.hash.slice(1)||'dashboard';
+  Router.path=location.hash.replace(/^#\/?/,'').split('?')[0]||'dashboard';
   window.__admissionDataReady=true;
   window.__admissionBootStatus='ready';
   document.body.classList.remove('app-booting');
@@ -5055,16 +5056,16 @@ window.__admissionBootPromise.catch(error => console.error('[Admission Hub] boot
     // The updated worker takes control now; the current document remains usable and the next launch uses the new shell.
     try{
 
-      const expectedSwVersion = 'v283-single-email-button-20260921';
+      const expectedSwVersion = 'v284-notification-command-center-20260924';
       // register() on the same scope performs an in-place update. Never unregister
       // the active iOS worker first: that discards the instant offline shell.
-      const registration=await navigator.serviceWorker.register('./sw.js?v=v283-single-email-button-20260921',{scope:'./',updateViaCache:'none'});
+      const registration=await navigator.serviceWorker.register('./sw.js?v=v284-notification-command-center-20260924',{scope:'./',updateViaCache:'none'});
       await registration.update().catch(()=>{});
       // Purge every old app-shell cache (any build id ≠ current). This guarantees
       // stale pre-retirement application shells can never be served from cache again.
       try {
 
-        const cur = 'admission-hub-shell-v283-single-email-button-20260921';
+        const cur = 'admission-hub-shell-v284-notification-command-center-20260924';
         const names = await caches.keys();
         for (const name of names) {
           if (name.startsWith('admission-hub-shell-') && name !== cur) await caches.delete(name).catch(()=>{});
@@ -5493,7 +5494,7 @@ setTimeout(() => { if (location.hash.replace(/^#/, '').split('?')[0] === 'dictio
 <script defer src="./notification-hub.js?v=notify-v121"></script>
 <script defer src="./notification-fcm.js?v=fcm-p1-v14"></script>
 <script defer src="./notification-inbox.js?v=notif-inbox-v6"></script>
-<script defer src="./notification-admin.js?v=admin-notif-v8"></script>
+<script defer src="./notification-command-center.js?v=admin-notif-v9"></script>
 <script src="./memorizing-match-tool.js?v=memorizing-match-v8-stable-cards" defer></script>
 <script src="./question-card-game-visual.js?v=question-card-game-v2-persistent" defer></script>
 <script src="./result-analysis-500.js?v=result-analysis-500-deep-matched-v2" defer></script>
