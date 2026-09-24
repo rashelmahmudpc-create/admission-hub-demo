@@ -1,6 +1,6 @@
 const CACHE_PREFIX = 'admission-hub-shell-';
 
-const BUILD_ID = 'v283-single-email-button-20260921';
+const BUILD_ID = 'v284-notification-command-center-20260924';
 const CACHE_NAME = `${CACHE_PREFIX}${BUILD_ID}`;
 const VERSION_HEADER = 'X-Admission-Hub-Build';
 const DOCUMENT_NETWORK_TIMEOUT_MS = 2500;
@@ -32,7 +32,8 @@ const APP_SHELL = [
   './ai-agent-chat.js?v=agent-f1-ui-chatv18-fresh',
   './notification-fcm.js?v=fcm-p1-v14',
   './notification-inbox.js?v=notif-inbox-v6',
-  './notification-admin.js?v=admin-notif-v8',
+  './notification-command-center.js?v=admin-notif-v9',
+  './notification-command-center.css?v=ns-cc-v1',
   './student-data-sync.js?v=student-sync-v1',
   './icons/icon-192.png',
   './icons/icon-512.png'
@@ -42,7 +43,7 @@ const APP_SHELL = [
 // A truncated/corrupt download is NEVER written to the shell cache.
 const ASSET_DIGESTS = {
 /* sw-manifest:start */
-  "./index.html": "d5ed5a30d300bec781fac0561a49b7becd7b603835e0baf629f4b1ba33774538",
+  "./index.html": "69b0a26d5779af91955c97a7fa820d6d7798b371be0638d1245fc8fbb863870f",
   "./manifest.json": "11a85ae594fc629b11605daeda3f9afe4ef95215a55a29f9cc423314bfb275a4",
   "./manifest.webmanifest": "5be476009a140eabd088bd972bd4d345b9c4f4a055cd6e4f08774b9cb4afaf52",
   "./dashboard-v2.css?v=dash2f13-theme": "4f4c9295b487b8186fd45c006a96a43bcaf896a1a5b871f506a05874a8e00c99",
@@ -57,10 +58,11 @@ const ASSET_DIGESTS = {
   "./profile-ui.css?v=profile-v15-uni-tap": "6408a4b7ac8acf6845cd0148c58377a4953c8ff879d30b2c520eafae0314b98a",
   "./data-protection.js?v=dp-v3-fastboot": "359dc907ade4bcb3a6a722385969ebb6af47f7e436e6cdf2cce0dd6b7343723d",
   "./dashboard-v2.js?v=dash2f15-inbox": "bea4ccad52b85c482d3fef5a7f2b2eec54dcdb125597a22411c4839b81783a49",
-  "./ai-agent-chat.js?v=agent-f1-ui-chatv18-fresh": "36a11f8d5dec5a5bf1b8fa86db06b9a34e01ad27c931f37aadbffe6e6f4930e5",
+  "./ai-agent-chat.js?v=agent-f1-ui-chatv18-fresh": "29628a6cba690852a78c75a83898a67d4c4cadaa72b9c504538edc6fa750ce82",
   "./notification-fcm.js?v=fcm-p1-v14": "4b8b34d09a87392de152408fc8d4ae998c9bc91b49f03f106b36df3f3063eb16",
   "./notification-inbox.js?v=notif-inbox-v6": "dff5b28685fd28091f1e6a263bcb60ffc85863fce965074a19e759e6eec887d3",
-  "./notification-admin.js?v=admin-notif-v8": "3fdfea375c9f4f64e2398d88a7860d67b44648beaeefa54c249a80242a344e9e",
+  "./notification-command-center.js?v=admin-notif-v9": "fe670f34fe3027fcc2a652f1047fd5c24c843c4a2b4d93adf55eff21c00a0807",
+  "./notification-command-center.css?v=ns-cc-v1": "45f10ac5a9b7c51e20579d4d0f5bc436d312c60f32b54ea225b89d975c9f8f2f",
   "./student-data-sync.js?v=student-sync-v1": "8a8b93fc710b39fa22b92dce6cf5036102cdd688a852a5bd448a3a9c9edcf2aa",
   "./icons/icon-192.png": "777ce5566fbeff0f2e384c787c8dde4f47d7c869e455c6e577a503decd4f1683",
   "./icons/icon-512.png": "86459109582f82b1d891a3e5a82723fefd21a3c65e9d0d22ab4dae33bb540520",
