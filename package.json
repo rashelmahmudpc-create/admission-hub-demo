@@ -16,10 +16,11 @@
     "test:production-auth": "npm run test:auth && npm run test:email && npm run test:native-auth && npm run test:fcm && npm run test:ui-guards",
     "test:fcm": "node --test --test-concurrency=1 fcm-notification.test.mjs fcm-global.test.mjs fcm-global-contract.test.mjs notif-sheet.test.mjs notification-admin-keyboard.test.mjs",
     "test:userdata": "node --test userdata-api.test.mjs",
-    "test:student-data": "node --test --test-concurrency=1 userdata-api.test.mjs student-data-sync.test.mjs student-data-sync-chaos.test.mjs personalized-notification.test.mjs",
+    "test:student-data": "node --test --test-concurrency=1 userdata-api.test.mjs student-data-sync.test.mjs student-data-sync-chaos.test.mjs personalized-notification.test.mjs && npm run test:legacy-adoption",
     "test:sync": "node --test --test-concurrency=1 userdata-api.test.mjs student-data-sync.test.mjs student-data-sync-chaos.test.mjs",
     "test:personalized": "node --test --test-concurrency=1 personalized-notification.test.mjs",
-    "test:ui-guards": "node --test --test-concurrency=1 dead-handler-guard.test.mjs"
+    "test:ui-guards": "node --test --test-concurrency=1 dead-handler-guard.test.mjs",
+    "test:legacy-adoption": "node --test --test-concurrency=1 legacy-adoption.test.mjs legacy-adoption.integration.test.mjs legacy-adoption.e2e.test.mjs"
   },
   "dependencies": {
     "jsdom": "^29.1.1"

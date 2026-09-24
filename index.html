@@ -927,6 +927,7 @@ textarea{min-height:96px}
 })();
 </script>
 
+<script src="legacy-adoption.js?v=legacy-v1"></script>
 <script src="data-protection.js?v=dp-v3-fastboot"></script>
 <script>
 'use strict';
@@ -1078,6 +1079,17 @@ function dbGet(store,id){
   if(!persistentDataScope()) return Promise.resolve(MEMORY_DB.get(store)?.get(id));
   if(!DB)return Promise.resolve(undefined);
   return runDbRequest(store,'readonly',objectStore=>objectStore.get(scopedRecordId(id))).then(fromScopedRecord);
+}
+/* Raw (unscoped-hiding) access, used only by the one-time legacy adoption. */
+function dbScanRaw(store){
+  if(!DB)return Promise.resolve([]);
+  return runDbRequest(store,'readonly',objectStore=>objectStore.getAll()).then(rows=>(rows||[]));
+}
+function dbRelabelRaw(store,ops){
+  return runDbRequest(store,'readwrite',objectStore=>{
+    for(const op of ops){ if(op.from!==undefined&&op.from!==null) objectStore.delete(op.from); objectStore.put(op.doc); }
+    return true;
+  });
 }
 function waitForBootStorage(work){
   if(!persistentDataScope()) return null;
@@ -1243,6 +1255,27 @@ async function seedIfEmpty(){
 }
 
 let DATA_SCOPE_CHANGE=0;
+/* One-time adoption of pre-account (unscoped) local records into the account
+ * that just signed in. Relabels in place, never overwrites account rows, never
+ * touches another account's rows. See legacy-adoption.js. */
+async function adoptLegacyRecords(scope){
+  try{
+    if(!scope||typeof window.AHLegacyAdoption!=='object')return;
+    if(!persistentDataScope())return;
+    await waitForBootStorage(()=>true);
+    await window.AHLegacyAdoption.migrate({
+      scope,
+      stores:STORES,
+      scanStore:dbScanRaw,
+      writeStore:dbRelabelRaw,
+      flagStore:{read:k=>{try{return JSON.parse(localStorage.getItem(k)||'null')}catch{return null}},write:(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch{}}},
+      snapshot:()=>window.AdmissionDataProtection&&window.AdmissionDataProtection.snapshot?window.AdmissionDataProtection.snapshot(DB_NAME,'pre-legacy-adoption'):null,
+      onAdopted:(store,ops)=>{for(const op of ops){const bare={...op.doc,id:op.doc.__ahId};delete bare.__ahOwner;delete bare.__ahId;announceLocalWrite(store,bare.id,'put',bare,op.doc.updatedAt||Date.now());}},
+      log:(...a)=>console.info('[LegacyAdoption]',...a),
+      warn:(...a)=>console.warn('[LegacyAdoption]',...a)
+    });
+  }catch(error){console.warn('[LegacyAdoption] skipped safely.',error);}
+}
 window.addEventListener('admissionhub:authchange',event=>{
   const detail=event&&event.detail||{};
   const next=detail.authenticated===true&&/^[A-Za-z0-9_-]{8,128}$/.test(String(detail.user&&detail.user.id||''))?String(detail.user.id):'';
@@ -1251,7 +1284,9 @@ window.addEventListener('admissionhub:authchange',event=>{
   DATA_SCOPE=next;
   try{sessionStorage.removeItem('admissionHub:performance:activeExamBackup:v1');}catch(_){}
   if(!next) MEMORY_DB.forEach(store=>store.clear());
-  Promise.resolve().then(seedIfEmpty).then(loadCache).then(()=>{
+  Promise.resolve()
+    .then(()=>adoptLegacyRecords(next))
+    .then(seedIfEmpty).then(loadCache).then(()=>{
     if(change!==DATA_SCOPE_CHANGE)return;
     try{if(typeof ActiveExam!=='undefined')ActiveExam=null;}catch(_){}
     try{if(typeof render==='function')render();}catch(_){}
