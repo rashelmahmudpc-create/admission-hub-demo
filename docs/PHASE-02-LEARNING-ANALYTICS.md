@@ -1,6 +1,7 @@
 # PHASE 2 — LEARNING & STUDENT BEHAVIOR ANALYTICS
 
-**Status:** In progress — M1 (Learning Instrumentation) complete.
+**Status:** In progress — M1 (Learning Instrumentation), M2 (Course & Lesson
+Analytics) and M3 (Quiz & Practice Analytics) complete.
 **Module:** `analytics-service.js` + the learning surfaces that emit on the
 `admission:activity` bus.
 **Depends on:** Phase 1 (`docs/ANALYTICS-FOUNDATION.md`).
@@ -119,20 +120,106 @@ Full suite: `npm run test:native-auth` → **535/535**. Shell build bumped to
 
 ---
 
-## 3. Remaining milestones
+## 3. M2 + M3 completion record — Course/Lesson and Quiz/Practice depth
+
+**Goal:** the two granularity gaps M1 left open — real per-lesson signals on the
+live course surface, and per-question depth for every quiz mode.
+
+### A live regression found and fixed on the way
+
+M1's audit assumed `source-course-tool.js` had "one MCQ set per course, no
+lesson partition". That was wrong on both counts, and looking properly surfaced
+a **production outage**:
+
+- The supplied course HTML *does* have real lessons —
+  `section.lesson-sec#lessonN` plus the source's own "পড়া শেষ ✓" buttons
+  (`button.done-btn[data-lesson]`). Sandhi has 8, prottoy 10, somas 13.
+- `loadSource()` concatenated **every** `<script>` block into the payload and ran
+  it through `new Function()`. The SEO commit (`24f6ade`) added a
+  `<script type="application/ld+json">` block, so the concatenation became
+  `{"@context":...}` + real JS → `SyntaxError: Unexpected token ':'` → **no course
+  opened at all** on the live site. Confirmed in a headless browser against
+  `admissionhub.pages.dev` before fixing.
+
+The fix filters to executable script types only
+(`''`/`text/javascript`/`application/javascript`/`module`), so the JSON-LD SEO
+block is skipped. `source-course-lessons.test.mjs` m2-3…m2-5 fail if a non-JS
+script ever gets concatenated again.
+
+### Per-lesson instrumentation (M2)
+
+`installLessonTracking(host)` in `source-course-tool.js` never re-implements
+completion. It mirrors the source's own UI:
+
+- An `IntersectionObserver` on each `section.lesson-sec` fires
+  `LESSON_VIEW` + `LESSON_START` once per lesson, the first time it is scrolled
+  into view. No observer (old browser / test DOM) falls back to counting all
+  lessons as viewed.
+- A delegated `click` listener on the host reads `button.done-btn[data-lesson]`
+  after the source's own handler toggles `.on`, and fires `LESSON_COMPLETE`
+  with `lesson_number`, `completion_percent: 100` and a `duration` (seconds since
+  the lesson was first seen).
+- When every `.done-btn` is `.on`, it fires `COURSE_COMPLETE` once
+  (`lesson_count`, `completion_percent: 100`).
+- Un-marking a lesson does not re-emit; a second full-pass does not re-fire
+  `course_complete`.
+
+### Per-question instrumentation (M3)
+
+`index.html` now dispatches `QUESTION_ATTEMPT` from `selectMockAnswer` and
+`selectFlashAnswer`. The exam `id` is the `quiz_id`, so attempts join their
+`quiz_complete` row. The event carries `correct`, `duration` (seconds from the
+existing `timing[questionId]`), `question_number`, `subject_id`, `topic_id` and
+`mode`. It is repeatable (`once: false`) and is emitted only when an answer is
+actually committed — re-clicking to clear an answer does not fire.
+
+### Dictionary + dedupe changes
+
+Two new events were added, so `EVENT_VERSION` moves to `ev2`
+(`MAX_QUEUE` 200 → 400 to hold the higher event volume offline):
+
+| Event | Required | Optional |
+|---|---|---|
+| `course_complete` | `course_id` | `course_type`, `lesson_count`, `completion_percent` |
+| `question_attempt` | `quiz_id`, `question_id` | `quiz_type`, `correct`, `duration`, `question_number`, `subject_id`, `topic_id`, `attempt_no`, `mode` |
+
+`LEARNING_BUS_TYPES` gained `COURSE_COMPLETE` and `QUESTION_ATTEMPT`.
+
+**Dedupe bug fixed.** Once-only dedupe built its key from the *first* identity
+field present — `course_id` came first, so `lesson_complete` was suppressed after
+the first lesson of a course. The key now joins **every required parameter**
+(`course_id=…|lesson_id=…`), pinned by tests a28 (three lessons all fire) and a29
+(the same lesson twice still dedupes).
+
+### Verification
+
+- `analytics-service.test.mjs` **32/32** (was 27): a28–a32 cover per-lesson
+  dedupe, `course_complete`, repeatable `question_attempt` with timing, and the
+  missing-required-param rejection.
+- `source-course-lessons.test.mjs` **6/6**: boots the real tool against the real
+  sandhi HTML in jsdom, asserts the lesson selectors line up, and drives the
+  actual "পড়া শেষ" buttons to completion.
+- Full suite: `npm run test:native-auth` → **535/535 + 32/32 + 6/6**. Shell build
+  bumped to `v286-lesson-quiz-analytics-20260925`; `source-course-tool.js` cache
+  query bumped to `v24-lesson-analytics`.
+
+---
+
+## 4. Remaining milestones
 
 The rest of the blueprint is unchanged and still ahead. Each will land as its
 own completion record once the signals below exist to power it.
 
-- **M2 — Course & lesson analytics.** Drop-off, completion, average progress and
-  time per course and lesson. Needs a real lesson model on the live course
-  surface; `source-course-tool.js` currently has one MCQ set per course, no
-  lesson partition, so `lesson_*` cannot yet be derived there.
-- **M3 — Quiz & practice analytics.** Score/accuracy/retry/abandonment trends.
-  Quiz completion and Smart Practice start are instrumented; per-question and
-  time-on-task events still need dictionary entries.
+- **M2 — Course & lesson analytics.** ✅ Complete (§3). Drop-off, completion,
+  average progress and time per course and lesson now have their signals:
+  `course_view`, `course_start`, `lesson_view`, `lesson_start`,
+  `lesson_complete` (with `duration`), `course_complete`.
+- **M3 — Quiz & practice analytics.** ✅ Complete (§3). `question_attempt`
+  (per-question `correct` + `duration`), `quiz_start` and `quiz_complete` now
+  cover score/accuracy/retry/pace. Abandonment still has no explicit event — a
+  `quiz_start` with no matching `quiz_complete` is the current proxy.
 - **M4 — Funnel.** Course View → Start → Lesson Start → Lesson Complete → Quiz
-  Start → Quiz Complete. Buildable on M1 events once lesson granularity exists.
+  Start → Quiz Complete. Now fully buildable on M2/M3 events.
   Note that `trackScreen` collapses deep routes to their first segment (pinned by
   test a16), so funnel steps must come from events, not screen names.
 - **M5 — Drop-off intelligence.** Detect the unusually steep stage and surface it
@@ -145,14 +232,12 @@ own completion record once the signals below exist to power it.
   the future app admin panel, not a separate dashboard. Requires the Google
   Analytics Data API enabled and a numeric Property ID — neither exists yet.
 
-### Dictionary gaps to close in M2–M4
+### Dictionary gaps that remain
 
-These are deliberately not added yet — each needs its consumer designed first:
-
-- `course_complete` (only `course_start` exists).
-- A per-question event (attempt/reveal) for practice depth.
-- Time-on-task (`duration` rides `lesson_complete`/`quiz_complete` but there is
-  no standalone study-time event).
+- Quiz abandonment — no explicit event; inferred from a `quiz_start` without a
+  `quiz_complete`.
+- A standalone study-time event — `duration` now rides `lesson_complete`,
+  `question_attempt` and `quiz_complete`, which covers the current need.
 - Streak events (a `computeStreak()` exists; nothing emits).
 
 Any new event name requires bumping `EVENT_VERSION` and extending the a1

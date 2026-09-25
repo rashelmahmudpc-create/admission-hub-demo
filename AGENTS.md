@@ -877,6 +877,34 @@ learning behaviour data. Its first milestone ships in this build.
 - **Live course surface is `source-course-tool.js`.** `interactive-course-tool.js`
   is dead code — its `interactive-courses` route is in `index.html`'s
   `removedRoute` list. Do not instrument it.
-- **Privacy unchanged.** No message text, no search query, only opaque ids; no
-  new event names, so `EVENT_VERSION` stays `ev1` and the Worker ceiling is
-  untouched.
+- **Privacy unchanged.** No message text, no search query, only opaque ids.
+
+## Phase 2 — Course/Lesson + Quiz/Practice analytics (M2, M3)
+
+Milestones M2 and M3 ship in this build (`docs/PHASE-02-LEARNING-ANALYTICS.md`
+§3). `EVENT_VERSION` is now `ev2`.
+
+- **Course pages really do have lessons.** `courses/*/index.html` ships
+  `section.lesson-sec#lessonN` and the source's own `button.done-btn[data-lesson]`
+  ("পড়া শেষ ✓"). `source-course-tool.js` mirrors that UI (observer for
+  `lesson_view`/`lesson_start`, delegated click for `lesson_complete`) — never
+  re-implement completion.
+- **Filter scripts by type before `new Function()`.** Course HTML also carries a
+  `<script type="application/ld+json">` SEO block. Concatenating it into the
+  executable bundle throws `SyntaxError: Unexpected token ':'` and **no course
+  opens**. Only `''`/`text/javascript`/`application/javascript`/`module` may be
+  concatenated. This regressed live once (commit `24f6ade`); `m2-3`…`m2-5` in
+  `source-course-lessons.test.mjs` guard it.
+- **Per-question depth.** `selectMockAnswer`/`selectFlashAnswer` in `index.html`
+  dispatch `QUESTION_ATTEMPT` (exam id as `quiz_id`) with `correct`, `duration`,
+  `question_number`, `subject_id`, `topic_id`, `mode`. Emitted only on a
+  committed answer, and repeatable.
+- **Dedupe keys join every required param.** The old key used the first identity
+  field (`course_id`), so `lesson_complete` fired once per course. Build the key
+  from `EVENTS[name].required`. Pinned by `analytics-service.test.mjs` a28/a29.
+- **Adding an event means three edits.** Dictionary entry, `LEARNING_BUS_TYPES`
+  entry, and the a1 coverage list in `analytics-service.test.mjs`; bump
+  `EVENT_VERSION` too.
+- **Run the course test after touching the tool.** `node
+  source-course-lessons.test.mjs` boots the real tool against the real sandhi
+  HTML in jsdom; it is wired into `npm run test:native-auth`.

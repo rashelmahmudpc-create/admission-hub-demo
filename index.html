@@ -3619,6 +3619,9 @@ async function selectMockAnswer(qid,idx){
   else {
     e.selectedAnswers[qid]=idx;
     if(!e.timing[qid]) e.timing[qid]={ms:Math.max(0,Date.now()-(e.questionStartedAt&&e.questionStartedAt[qid]||e.startTime)),startedAt:e.questionStartedAt&&e.questionStartedAt[qid]||e.startTime,answeredAt:Date.now()};
+    /* Phase 2 M3: a committed answer is a per-question learning signal. The
+     * exam id is the quiz_id so attempts join the quiz_complete row. */
+    try{const q=e.questions.find(x=>x.id===qid)||{};const t=e.timing[qid]||{};window.dispatchEvent(new CustomEvent('admission:activity',{detail:{type:'QUESTION_ATTEMPT',quizId:e.id,questionId:String(qid),quizType:e.mode==='mock'?'mock':'practice',correct:idx===q.answerIndex,duration:t.ms?Math.round(t.ms/1000):undefined,questionNumber:e.questions.findIndex(x=>x.id===qid)+1,subjectId:q.subjectId,topicId:q.topicId,mode:e.mode}}))}catch(_){}
   }
   if(window.AdmissionHubPerformance?.queueExamPersist) window.AdmissionHubPerformance.queueExamPersist(); else void dbPut('exams',e).catch(()=>{});
   updateMockAnswerUI(qid);
@@ -3753,6 +3756,8 @@ async function selectFlashAnswer(qid,idx){
   e.flashResults[qid]={selected:idx, correct};
   e.selectedAnswers[qid]=idx;
   if(!e.timing[qid]) e.timing[qid]={ms:Math.max(0,Date.now()-(e.questionStartedAt&&e.questionStartedAt[qid]||e.startTime)),startedAt:e.questionStartedAt&&e.questionStartedAt[qid]||e.startTime,answeredAt:Date.now()};
+  /* Phase 2 M3: per-question signal for flash mode too. */
+  try{const t=e.timing[qid]||{};window.dispatchEvent(new CustomEvent('admission:activity',{detail:{type:'QUESTION_ATTEMPT',quizId:e.id,questionId:String(qid),quizType:'flash',correct,duration:t.ms?Math.round(t.ms/1000):undefined,questionNumber:e.questions.findIndex(x=>x.id===qid)+1,subjectId:q.subjectId,topicId:q.topicId,mode:e.mode}}))}catch(_){}
   await dbPut('exams',e);
   render();
   updateLiveScore();
@@ -5077,16 +5082,16 @@ window.__admissionBootPromise.catch(error => console.error('[Admission Hub] boot
     // The updated worker takes control now; the current document remains usable and the next launch uses the new shell.
     try{
 
-      const expectedSwVersion = 'v285-learning-instrumentation-20260925';
+      const expectedSwVersion = 'v286-lesson-quiz-analytics-20260925';
       // register() on the same scope performs an in-place update. Never unregister
       // the active iOS worker first: that discards the instant offline shell.
-      const registration=await navigator.serviceWorker.register('./sw.js?v=v285-learning-instrumentation-20260925',{scope:'./',updateViaCache:'none'});
+      const registration=await navigator.serviceWorker.register('./sw.js?v=v286-lesson-quiz-analytics-20260925',{scope:'./',updateViaCache:'none'});
       await registration.update().catch(()=>{});
       // Purge every old app-shell cache (any build id ≠ current). This guarantees
       // stale pre-retirement application shells can never be served from cache again.
       try {
 
-        const cur = 'admission-hub-shell-v285-learning-instrumentation-20260925';
+        const cur = 'admission-hub-shell-v286-lesson-quiz-analytics-20260925';
         const names = await caches.keys();
         for (const name of names) {
           if (name.startsWith('admission-hub-shell-') && name !== cur) await caches.delete(name).catch(()=>{});
@@ -5530,7 +5535,7 @@ setTimeout(() => { if (location.hash.replace(/^#/, '').split('?')[0] === 'dictio
 <script defer src="./progress-tool.js?v=progress-v6-live-score-ledger-reconcile"></script>
 <script defer src="./mistakes-bank-tool.js?v=mistakes-bank-v1"></script>
 <script defer src="./smart-revision-tool.js?v=smart-revision-v2-safe-session"></script>
-<script defer src="./source-course-tool.js?v=bangla-only-courses-v23-freshfetch"></script>
+<script defer src="./source-course-tool.js?v=bangla-only-courses-v24-lesson-analytics"></script>
 <script defer src="./android-runtime-fix.js?v=and-scroll-v1"></script>
 <script>window.AH_CLOUD_ROLE='public';</script>
 <script defer src="./cloud-content-sync.js?v=account-retired-v221"></script>

@@ -17,12 +17,12 @@ const analytics = new Function('self', 'module', 'window', `${src}\nreturn self.
 const { normalizeEvent, toSnake, coerceValue, isForbiddenKey } = analytics.__test;
 
 test('a1: the event dictionary is versioned and covers every phase-1 surface', () => {
-  assert.equal(analytics.__test.EVENT_VERSION, 'ev1');
+  assert.equal(analytics.__test.EVENT_VERSION, 'ev2');
   const names = Object.keys(analytics.EVENTS);
   for (const required of [
     'app_open', 'screen_view', 'session_start',
-    'course_view', 'course_start', 'lesson_view', 'lesson_start', 'lesson_complete',
-    'quiz_start', 'quiz_complete',
+    'course_view', 'course_start', 'lesson_view', 'lesson_start', 'lesson_complete', 'course_complete',
+    'quiz_start', 'quiz_complete', 'question_attempt',
     'search', 'feature_open', 'feature_use', 'feature_complete',
     'notification_open', 'notification_click',
     'auth_landing_view', 'sign_up', 'login', 'logout',
@@ -103,7 +103,7 @@ test('a11: diagnose() reports a disabled service before start, never throws', ()
   const st = analytics.status();
   assert.equal(st.mode, 'disabled');
   assert.equal(st.started, false);
-  assert.equal(st.version, 'ev1');
+  assert.equal(st.version, 'ev2');
   assert.ok(st.events >= 20);
 });
 
@@ -308,3 +308,62 @@ test('a27: an unknown bus type is ignored and never crashes the handler', async 
     assert.equal(h.seen.length, before, 'unknown types emit nothing');
   } finally { h.restore(); }
 });
+
+/* ── Phase 2 M2/M3 — lesson granularity + per-question depth ──────────────── */
+
+test('a28: a second lesson in the same course still emits (dedupe key is per lesson)', async () => {
+  const h = await busHarness();
+  try {
+    h.fire({ type: 'LESSON_COMPLETE', courseId: 'sandhi-exact-native-v1', lessonId: 'lesson1', lessonNumber: 1 });
+    h.fire({ type: 'LESSON_COMPLETE', courseId: 'sandhi-exact-native-v1', lessonId: 'lesson2', lessonNumber: 2 });
+    h.fire({ type: 'LESSON_COMPLETE', courseId: 'sandhi-exact-native-v1', lessonId: 'lesson3', lessonNumber: 3 });
+    const done = h.seen.filter(x => x.name === 'lesson_complete');
+    assert.equal(done.length, 3, 'every lesson fires; course_id alone must not suppress later lessons');
+    assert.deepEqual(done.map(x => x.params.lesson_id), ['lesson1', 'lesson2', 'lesson3']);
+  } finally { h.restore(); }
+});
+
+test('a29: a repeated lesson_complete for the SAME lesson is still deduped', async () => {
+  const h = await busHarness();
+  try {
+    h.fire({ type: 'LESSON_COMPLETE', courseId: 'c-1', lessonId: 'lesson1' });
+    h.fire({ type: 'LESSON_COMPLETE', courseId: 'c-1', lessonId: 'lesson1' });
+    assert.equal(h.seen.filter(x => x.name === 'lesson_complete').length, 1);
+  } finally { h.restore(); }
+});
+
+test('a30: COURSE_COMPLETE rides the bus and keeps the course id', async () => {
+  const h = await busHarness();
+  try {
+    h.fire({ type: 'COURSE_COMPLETE', courseId: 'somas-exact-native-v1', courseType: 'source', lessonCount: 13, completionPercent: 100 });
+    const evt = h.seen.find(x => x.name === 'course_complete');
+    assert.ok(evt, 'course_complete emitted');
+    assert.equal(evt.params.course_id, 'somas-exact-native-v1');
+    assert.equal(evt.params.lesson_count, 13);
+  } finally { h.restore(); }
+});
+
+test('a31: QUESTION_ATTEMPT is repeatable and carries per-question timing', async () => {
+  const h = await busHarness();
+  try {
+    h.fire({ type: 'QUESTION_ATTEMPT', quizId: 'exam-7', questionId: 'q-1', quizType: 'mock', correct: true, duration: 12, questionNumber: 1, subjectId: 's1', topicId: 't1' });
+    h.fire({ type: 'QUESTION_ATTEMPT', quizId: 'exam-7', questionId: 'q-2', quizType: 'mock', correct: false, duration: 40, questionNumber: 2 });
+    const attempts = h.seen.filter(x => x.name === 'question_attempt');
+    assert.equal(attempts.length, 2, 'per-question events are never deduped');
+    assert.equal(attempts[0].params.quiz_id, 'exam-7');
+    assert.equal(attempts[0].params.question_id, 'q-1');
+    assert.equal(attempts[0].params.correct, true);
+    assert.equal(attempts[0].params.duration, 12);
+    assert.equal(attempts[0].params.topic_id, 't1');
+    assert.equal(attempts[1].params.correct, false);
+  } finally { h.restore(); }
+});
+
+test('a32: QUESTION_ATTEMPT without a question_id is rejected (required param)', async () => {
+  const h = await busHarness();
+  try {
+    h.fire({ type: 'QUESTION_ATTEMPT', quizId: 'exam-7', correct: true });
+    assert.equal(h.seen.filter(x => x.name === 'question_attempt').length, 0, 'missing required question_id → dropped');
+  } finally { h.restore(); }
+});
+

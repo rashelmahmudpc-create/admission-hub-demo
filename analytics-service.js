@@ -27,13 +27,13 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
-  const EVENT_VERSION = 'ev1';
-  const APP_VERSION_FALLBACK = 'v284-analytics-foundation-20260924';
+  const EVENT_VERSION = 'ev2';
+  const APP_VERSION_FALLBACK = 'v286-lesson-quiz-analytics-20260925';
   const SDK_BASE = 'https://www.gstatic.com/firebasejs/10.12.2';
   const SDK_LOCAL = './sdk';
   const QUEUE_KEY = 'ahAnalyticsQueueV1';
   const PROD_HOSTS = ['admissionhub.pages.dev'];
-  const MAX_QUEUE = 200;
+  const MAX_QUEUE = 400;
   const SDK_TIMEOUT_MS = 20000;
 
   /* ── Master Event Dictionary ────────────────────────────────────────────────
@@ -100,6 +100,20 @@
       required: ['course_id', 'lesson_id'],
       optional: ['lesson_number', 'completion_percent', 'duration'],
       once: true
+    },
+    course_complete: {
+      purpose: 'Every lesson in a course was completed',
+      when: 'the last outstanding lesson is marked complete',
+      required: ['course_id'],
+      optional: ['course_type', 'lesson_count', 'completion_percent'],
+      once: true
+    },
+    question_attempt: {
+      purpose: 'A single question was answered',
+      when: 'an answer is committed',
+      required: ['quiz_id', 'question_id'],
+      optional: ['quiz_type', 'correct', 'duration', 'question_number', 'subject_id', 'topic_id', 'attempt_no', 'mode'],
+      once: false
     },
     quiz_start: {
       purpose: 'A quiz/practice/exam attempt started',
@@ -232,9 +246,11 @@
   const LEARNING_BUS_TYPES = {
     COURSE_VIEW: 'course_view',
     COURSE_START: 'course_start',
+    COURSE_COMPLETE: 'course_complete',
     LESSON_VIEW: 'lesson_view',
     LESSON_START: 'lesson_start',
     LESSON_COMPLETE: 'lesson_complete',
+    QUESTION_ATTEMPT: 'question_attempt',
     QUIZ_START: 'quiz_start',
     SEARCH: 'search',
     NOTIFICATION_OPEN: 'notification_open',
@@ -460,7 +476,15 @@
       const normalized = normalizeEvent(String(name), params);
       if (!normalized) { log.rejected++; noteDrop('unknown-or-invalid'); return { ok: false, reason: 'rejected' }; }
 
-      const dedupeKey = `${normalized.name}:${normalized.params.course_id || normalized.params.lesson_id || normalized.params.quiz_id || normalized.params.notification_id || normalized.params.feature_name || ''}`;
+      /* Once-only dedupe keys must include EVERY identity parameter, otherwise
+       * a per-lesson event would be suppressed after the first lesson of a
+       * course (course_id alone was the old key). Build from required params,
+       * falling back to the first identity param present. */
+      const identity = (EVENTS[normalized.name].required || [])
+        .map((k) => `${k}=${normalized.params[k]}`)
+        .join('|');
+      const fallbackIdentity = normalized.params.course_id || normalized.params.lesson_id || normalized.params.quiz_id || normalized.params.question_id || normalized.params.notification_id || normalized.params.feature_name || '';
+      const dedupeKey = `${normalized.name}:${identity || fallbackIdentity}`;
       if (EVENTS[normalized.name].once) {
         if (firedOnce.has(dedupeKey)) { noteDrop('duplicate'); return { ok: false, reason: 'duplicate' }; }
         firedOnce.add(dedupeKey);

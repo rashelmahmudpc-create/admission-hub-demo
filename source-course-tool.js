@@ -31,7 +31,7 @@
   const courseDef = () => COURSE_DEFS[courseKey()] || COURSE_DEFS.sandhi;
   const storagePrefix = () => `admissionHubNativeCourseV1:${courseDef().id}`;
   const SOURCE_STYLE_ID = 'source-course-native-style';
-  const state = { payload: null, loading: null, loadingKey: null, routeMounted: false, mountedCourseKey: null, flash: null, previousTheme: null, previousBodyTheme: null, quizFilterTouched: false, quizStarted: false, sourceListeners: [] };
+  const state = { payload: null, loading: null, loadingKey: null, routeMounted: false, mountedCourseKey: null, flash: null, previousTheme: null, previousBodyTheme: null, quizFilterTouched: false, quizStarted: false, seenLessons: new Set(), courseCompleted: false, lessonObserver: null, sourceListeners: [] };
   const scopedStorage = (prefix, base) => {
     const prefixed = key => `${prefix}${String(key)}`;
     const keys = () => { const out = []; for (let i = 0; i < base.length; i += 1) { const key = base.key(i); if (key && key.startsWith(prefix)) out.push(key.slice(prefix.length)); } return out; };
@@ -138,6 +138,9 @@
     state.flash = null;
     state.quizFilterTouched = false;
     state.quizStarted = false;
+    state.seenLessons = new Set();
+    state.courseCompleted = false;
+    if (state.lessonObserver) { try { state.lessonObserver.disconnect(); } catch (_) {} state.lessonObserver = null; }
     delete window.__sourceCourseMCQ;
     if (window.__sourceCourseActiveKey === 'prottoy-master') delete window.G;
     delete window.__sourceCourseActiveKey;
@@ -173,7 +176,15 @@
     }).then(text => {
       const doc = new DOMParser().parseFromString(text, 'text/html');
       const styles = Array.from(doc.querySelectorAll('style')).map(s => s.textContent || '').join('\n');
-      const scripts = Array.from(doc.querySelectorAll('script')).map(s => s.textContent || '').filter(text => !/__CF\$cv_params|cdn-cgi\/challenge-platform/.test(text)).join('\n');
+      /* Only executable scripts may be concatenated. Course pages carry a
+       * `type="application/ld+json"` SEO block; feeding that to new Function()
+       * threw "Unexpected token ':'" and no course would open at all. */
+      const JS_TYPES = new Set(['', 'text/javascript', 'application/javascript', 'module']);
+      const scripts = Array.from(doc.querySelectorAll('script'))
+        .filter(s => JS_TYPES.has(String(s.getAttribute('type') || '').trim().toLowerCase()))
+        .map(s => s.textContent || '')
+        .filter(text => !/__CF\$cv_params|cdn-cgi\/challenge-platform/.test(text))
+        .join('\n');
       const bodyHtml = Array.from(doc.body.childNodes).filter(node => node.nodeName !== 'SCRIPT').map(node => node.outerHTML || node.textContent || '').join('');
       const def = COURSE_DEFS[key] || COURSE_DEFS.sandhi;
       const transformed = scripts
@@ -238,6 +249,7 @@
     window.dispatchEvent(new Event('admission:source-load'));
     payload.mcq = normalizeQuestions(sourceWindow.__sourceCourseMCQ || []);
     replaceQuizSection(payload.mcq);
+    installLessonTracking(host);
     state.routeMounted = true;
     state.mountedCourseKey = courseKey();
   };
@@ -290,6 +302,60 @@
     const revealed = selected !== undefined;
     const store = { answers: f.answers, revealed: {}, bookmarks: [], notes: {} };
     return `<div class="native-course-flash"><h3>⚡ Temporary Flash Test</h3><p>এই round-এর কোনো answer, result, progress বা bookmark save হবে না।</p><div class="native-course-flash-actions"><button type="button" onclick="SourceCourse.exitFlash()">Exit Flash Test</button></div></div>${qbankCard(q, store, f.index, f.questions.length, 'flash')}<div class="native-course-quiz-nav"><button type="button" ${f.index === 0 ? 'disabled' : ''} onclick="SourceCourse.flashPrev()">← Previous</button><span>Flash ${f.index + 1} of ${f.questions.length}</span><button type="button" onclick="SourceCourse.flashNext()">${f.index === f.questions.length - 1 ? 'Finish' : 'Next →'}</button></div>`;
+  };
+
+  /* Phase 2 M2: the supplied course HTML ships real lesson sections
+   * (`section.lesson-sec#lessonN`) and its own "পড়া শেষ" buttons
+   * (`button.done-btn[data-lesson]`). We never re-implement completion — we
+   * observe the source's own UI and mirror it onto the analytics bus. */
+  const installLessonTracking = host => {
+    const sections = Array.from(host.querySelectorAll('section.lesson-sec[id]'));
+    if (!sections.length) return;
+    const lessonOf = el => {
+      const id = el.getAttribute('data-lesson') || el.id || '';
+      const m = /(\d+)\s*$/.exec(id);
+      return { lessonId: id, lessonNumber: m ? Number(m[1]) : undefined };
+    };
+    const firstSeenAt = new Map();
+    const markViewed = el => {
+      const { lessonId, lessonNumber } = lessonOf(el);
+      if (!lessonId || firstSeenAt.has(lessonId)) return;
+      firstSeenAt.set(lessonId, Date.now());
+      if (!state.seenLessons.has(lessonId)) state.seenLessons.add(lessonId);
+      track('LESSON_VIEW', { courseId: courseDef().id, lessonId, lessonNumber });
+      track('LESSON_START', { courseId: courseDef().id, lessonId, lessonNumber });
+    };
+    if (typeof IntersectionObserver === 'function') {
+      state.lessonObserver = new IntersectionObserver(entries => {
+        entries.forEach(entry => { if (entry.isIntersecting) markViewed(entry.target); });
+      }, { rootMargin: '0px 0px -40% 0px', threshold: 0.25 });
+      sections.forEach(section => state.lessonObserver.observe(section));
+    } else {
+      sections.forEach(markViewed); // no observer (old browser / test DOM) — count as viewed
+    }
+    /* Delegated: the source's own handler toggles `.on` first, so reading the
+     * class in the bubble phase reflects the post-click state. */
+    const onClick = event => {
+      const btn = event.target && event.target.closest ? event.target.closest('.done-btn[data-lesson]') : null;
+      if (!btn || !host.contains(btn) || !btn.classList.contains('on')) return;
+      const { lessonId, lessonNumber } = lessonOf(btn);
+      const seenAt = firstSeenAt.get(lessonId);
+      track('LESSON_COMPLETE', {
+        courseId: courseDef().id,
+        lessonId,
+        lessonNumber,
+        completionPercent: 100,
+        duration: seenAt ? Math.round((Date.now() - seenAt) / 1000) : undefined
+      });
+      const total = sections.length;
+      const done = host.querySelectorAll('.done-btn[data-lesson].on').length;
+      if (total && done >= total && !state.courseCompleted) {
+        state.courseCompleted = true;
+        track('COURSE_COMPLETE', { courseId: courseDef().id, courseType: 'source', lessonCount: total, completionPercent: 100 });
+      }
+    };
+    host.addEventListener('click', onClick);
+    state.sourceListeners.push({ target: host, type: 'click', listener: onClick });
   };
 
   const renderNativeQuiz = () => {
