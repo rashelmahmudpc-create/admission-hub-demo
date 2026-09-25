@@ -527,6 +527,56 @@ test('daily spam cap: 10th send of the day succeeds, 11th → 429', async () => 
   } finally { stub.restore(); }
 });
 
+test('history reports the limiter\u2019s real daily usage, not the history length', async () => {
+  const env = await makeEnv();
+  await registerDevice(env, 'quota');
+  const stub = withFcmStub(env);
+  try {
+    const before = await call(cookieRequest('/api/notifications/history'), env);
+    assert.equal(before.data.dailyCap, 10);
+    assert.equal(before.data.dailyUsed, 0, 'nothing sent yet');
+
+    for (let i = 1; i <= 3; i++) {
+      await call(cookieRequest('/api/notifications/global/send', {
+        method: 'POST', body: { type: 'announcement', title: `quota notice ${i}`, body: 'b' }
+      }), env);
+    }
+
+    /* Seed an older notification directly into the table. It must appear in the
+     * history list but must NOT count against today's cap — that conflation was
+     * the bug: the panel rendered items.length as "used", so a busy month showed
+     * e.g. "50 / 10" and looked permanently over quota. */
+    env.PROFILE_DB._globals.set('gn-older000001', {
+      id: 'gn-older000001', type: 'announcement', title: 'last month', body: 'b',
+      image_url: null, target_url: null, audience: 'all_students', topic: 'all',
+      status: 'sent', scheduled_at: null, sent_at: Date.now() - 30 * 86400000,
+      created_at: Date.now() - 30 * 86400000, reach_estimate: 1, delivered: 1,
+      clicks: 0, error: null
+    });
+
+    const after = await call(cookieRequest('/api/notifications/history'), env);
+    assert.equal(after.data.items.length, 4, 'history shows every send');
+    assert.equal(after.data.dailyUsed, 3, 'but only today\u2019s sends count against the cap');
+  } finally { stub.restore(); }
+});
+
+test('the daily cap counter is keyed to the UTC day', async () => {
+  const env = await makeEnv();
+  await registerDevice(env, 'daykey');
+  const stub = withFcmStub(env);
+  try {
+    await call(cookieRequest('/api/notifications/global/send', {
+      method: 'POST', body: { type: 'announcement', title: 'day key notice', body: 'b' }
+    }), env);
+    const today = new Date().toISOString().slice(0, 10);
+    const keys = [...env.GK_KV._map.keys()].filter(k => k.startsWith('fcm:global:day:'));
+    assert.deepEqual(keys, [`fcm:global:day:${today}`], 'counter lives under the UTC date');
+    /* Guard the mislabel this fixes: the key must NOT claim a Dhaka-local day,
+     * because the value is a UTC date and the two disagree for 6 hours daily. */
+    assert.ok(!keys.some(k => k.includes('dhaka')), 'no misleading dhaka-named key');
+  } finally { stub.restore(); }
+});
+
 test('schedule: send-then-schedule the same text is allowed (regression)', async () => {
   const env = await makeEnv();
   await registerDevice(env, 'schedreg');
@@ -648,7 +698,7 @@ test('cancel: scheduled → cancelled; sent → 409; bad id → 400', async () =
   assert.equal(rescheduled.response.status, 201);
 });
 
-test('history shape: items, reachEstimate, dailyCap', async () => {
+test('history shape: items, reachEstimate, dailyCap, dailyUsed', async () => {
   const env = await makeEnv();
   const token = await registerDevice(env, 'hist');
   void token;
@@ -657,6 +707,9 @@ test('history shape: items, reachEstimate, dailyCap', async () => {
   assert.deepEqual(data.items, []);
   assert.equal(data.reachEstimate, 1);
   assert.equal(data.dailyCap, 10);
+  /* The panel's quota widget reads this. Without it the widget fell back to the
+   * history length, which is the whole table, not the day. */
+  assert.equal(data.dailyUsed, 0);
 });
 
 test('templates: 6 dual-language presets with {{variables}}', async () => {

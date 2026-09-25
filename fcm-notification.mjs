@@ -317,11 +317,13 @@ export class FcmStore {
   async recentGlobals(limit = 50) {
     await this.#ensureTables();
     const res = await this.#d1.prepare(
-      `SELECT id, type, title, body, audience, topic, status, scheduled_at, sent_at, reach_estimate, delivered, clicks, error, created_at
+      `SELECT id, type, title, body, image_url, target_url, audience, topic, status, scheduled_at, sent_at, reach_estimate, delivered, clicks, error, created_at
        FROM global_notifications ORDER BY created_at DESC, id DESC LIMIT ?`
     ).bind(limit).all();
     return (res?.results || []).map(row => ({
       id: row.id, type: row.type, title: row.title, body: row.body,
+      imageUrl: row.image_url || '',
+      targetUrl: row.target_url || '',
       audience: row.audience, topic: row.topic, status: row.status,
       scheduledAt: row.scheduled_at ? Number(row.scheduled_at) : null,
       sentAt: row.sent_at ? Number(row.sent_at) : null,
@@ -437,6 +439,19 @@ async function kvRateAllow(env, key, limit, ttlSeconds) {
     return true;
   } catch {
     return true; // rate limiting must never break the API
+  }
+}
+
+/* Read the current counter for a rate-limit key without consuming it. Used to
+ * report real quota usage to the admin; a missing KV or a read error means "no
+ * data", never a fabricated number. */
+async function kvRatePeek(env, key) {
+  const kv = env?.GK_KV;
+  if (!kv || typeof kv.get !== 'function') return null;
+  try {
+    return Number(await kv.get(`fcm:${key}`) || 0);
+  } catch {
+    return null;
   }
 }
 
@@ -955,10 +970,12 @@ export async function runScheduledGlobalNotifications(env) {
   return { processed };
 }
 
-const dhakaDayKey = () => {
-  /* 10-day duplicate window key uses UTC day (stable, no TZ drift in tests). */
-  return new Date().toISOString().slice(0, 10);
-};
+/* Key for the daily global-send cap. The cap resets at 00:00 UTC: the KV entry
+ * lives under one UTC date with a 24h TTL, so counting a UTC day is what the
+ * limiter actually enforces. (This used to be called dhakaDayKey while also
+ * using the UTC date — the admin panel then labelled the window "Asia/Dhaka",
+ * which was wrong by 6 hours.) */
+const utcDayKey = () => new Date().toISOString().slice(0, 10);
 
 /* ── Route handler ───────────────────────────────────────────────────────── */
 export async function handleFcmNotificationRequest(request, env) {
@@ -1047,7 +1064,7 @@ export async function handleFcmNotificationRequest(request, env) {
       const dup = await store.duplicateRecent(dedup, Date.now() - 10 * 86400000);
       if (dup) return jsonResponse(request, { error: 'duplicate', existingId: dup }, 409);
       /* Rule (spec §17): daily spam cap. */
-      if (!(await kvRateAllow(env, `global:day:${dhakaDayKey()}`, GLOBAL_DAILY_CAP, 86400))) {
+      if (!(await kvRateAllow(env, `global:day:${utcDayKey()}`, GLOBAL_DAILY_CAP, 86400))) {
         return jsonResponse(request, { error: 'rate-limited' }, 429);
       }
       const id = `gn-${Math.random().toString(36).slice(2, 8)}${Math.random().toString(36).slice(2, 8)}`;
@@ -1141,7 +1158,11 @@ export async function handleFcmNotificationRequest(request, env) {
         items,
         analytics,
         reachEstimate: await store.activeDeviceCount(),
-        dailyCap: GLOBAL_DAILY_CAP
+        dailyCap: GLOBAL_DAILY_CAP,
+        /* Real sends counted against today's cap, straight from the limiter's own
+         * counter. The panel used to show the total history length here, so a
+         * busy month read as "50 / 10" and looked permanently over quota. */
+        dailyUsed: await kvRatePeek(env, `global:day:${utcDayKey()}`)
       });
     }
 
