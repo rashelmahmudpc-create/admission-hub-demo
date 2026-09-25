@@ -627,6 +627,35 @@ format is unchanged, so the existing counter tests still pass.
 **Rollback:** revert this one commit. The module is additive; `ai-agent.js` gains
 one import, one trace emitter and five call sites. Nothing else imports it.
 
+### 18a. Per-student daily cap = 10, on a rolling 24h window (M11)
+
+The owner asked for a hard daily ceiling: **one student sends 10 messages, then 10
+more 24 hours after the first of the window.** Two changes meet that.
+
+- **Cap default 80 → 10.** `AGENT_DAILY_CAP` still overrides it, but the code
+  default is now 10, so no new Worker variable is needed (the Worker sits on the
+  Workers Free 64-variable ceiling). The floor also dropped from 10 to 1, so a
+  smaller cap can be set deliberately instead of being silently raised to 10.
+- **Window is rolling, not calendar.** The counter key changed from
+  `airl:<uid>:<yyyy-mm-dd>` to `airl:<uid>`, and the value from a bare integer to
+  `{"n":<count>,"start":<epoch-ms>}`. `readQuota()` returns the count as long as
+  `now - start < 24h`, and otherwise resets to `0` with a fresh `start`. The old
+  key reset at **UTC midnight**, which is 6am in Dhaka — a student could send 10
+  in the morning, get another 10 at 6am the next day, i.e. a ~24h gap measured
+  from nothing in particular. The rolling window measures from the first message,
+  which is what "24 ঘণ্টা পর আবার ১০টি" means. Legacy integer values and fresh
+  objects both parse; corrupt JSON is treated as empty (never throws).
+
+**Storage:** still exactly one KV write per chat (`expirationTtl` 172800 s = 48h,
+so a window always expires before the key does). The per-anonymous-network public
+cap in `public-worker.js` is unchanged.
+
+**Message:** the `429` body keeps `error: 'rate_limited'` and `cap`, adds
+`remaining`, and now says "২৪ ঘণ্টা পর আবার চেষ্টা করো" rather than "কাল".
+
+**Verification:** `ai-agent-f1` grew from 44 to **48** tests, including
+`readQuota` parsing/reset and an end-to-end 11th-message `429` on the default cap.
+
 **Phase 9 is complete.** M1–M10 are all DONE. The remaining near-term work in the
 blueprint (passkey-gated admin sessions, one config surface for caps, a single
 context/permission matrix doc) is out of Phase 9 scope.

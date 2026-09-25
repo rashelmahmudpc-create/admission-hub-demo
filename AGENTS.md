@@ -752,3 +752,25 @@ provider-failure paths. Like M6/M7/M9 it is pure data plus pure guards.
 
 **Phase 9 (M1–M10) is complete.**
 
+## AI chat cap: 10 messages per student per rolling 24h (M11)
+
+The owner-set ceiling. A signed-in student gets **10 messages**, then 10 more 24
+hours after the *first message of the window* — not at UTC midnight.
+
+- `AGENT_DAILY_CAP` overrides the cap, but the **code default is 10** (was 80).
+  There is no variable in `wrangler.toml` on purpose: the Worker sits on the
+  Workers Free 64-variable ceiling. The floor is 1 (was 10), so a smaller cap set
+  from the dashboard is honoured rather than silently raised.
+- The counter key is `airl:<uid>` (no date suffix) and the value is
+  `{"n":<count>,"start":<epoch-ms>}`. `readQuota(raw, now)` keeps `n` while
+  `now - start < 24h` and otherwise resets to `0`/`now`. Legacy integer values and
+  corrupt JSON are both handled (corrupt ⇒ empty, never throws).
+- Why not the old calendar key: `airl:<uid>:<yyyy-mm-dd>` reset at UTC midnight =
+  6am Dhaka, so "daily" did not mean 24 hours from the student's first message.
+- Still **one KV write per chat** (`expirationTtl` 172800). The `429` keeps
+  `rate_limited` + `cap`, adds `remaining`, and says "২৪ ঘণ্টা পর আবার চেষ্টা করো".
+
+Run `node ai-agent-f1.test.mjs` after touching the limiter — its async cases
+share one mocked `globalThis.fetch`, so the harness runs them **sequentially**
+(they used to run concurrently and clobber each other's mocks).
+
