@@ -25,7 +25,7 @@ async function waitFor(predicate, label, timeout = 3000) {
   throw new Error(`Timed out waiting for: ${label}`);
 }
 
-async function boot(route = 'source-courses/sandhi') {
+async function boot(route = 'source-courses/sandhi', options = {}) {
   const dom = new JSDOM('<!doctype html><html><head></head><body><div id="app"><div class="page"><div class="topbar"></div></div></div></body></html>', {
     url: `https://admissionhub.pages.dev/#${route}`,
     runScripts: 'dangerously',
@@ -44,6 +44,22 @@ async function boot(route = 'source-courses/sandhi') {
     if (u.includes('/courses/sandhi/')) return { ok: true, status: 200, text: async () => COURSE_HTML };
     return { ok: false, status: 404, text: async () => '' };
   };
+  if (options.intersectionObserver) {
+    /* jsdom has no IntersectionObserver, so the real phone path (the observer,
+     * not the fallback) is otherwise never exercised. Capture the config and
+     * the observed sections so a tall-section threshold regression fails here. */
+    window.__io = { options: null, observed: [], fire: () => {} };
+    window.IntersectionObserver = class {
+      constructor(callback, opts) {
+        window.__io.options = opts;
+        window.__io.fire = () => this._cb([{ isIntersecting: true, target: window.__io.observed[0] }]);
+        this._cb = callback;
+      }
+      observe(el) { window.__io.observed.push(el); }
+      unobserve() {}
+      disconnect() {}
+    };
+  }
   window.eval(TOOL);
   assert.ok(window.renderSourceCourseTool, 'tool must install its renderer');
   window.renderSourceCourseTool();
@@ -121,4 +137,29 @@ test('m2-6: the courses library route emits no lesson signals', async () => {
   await sleep(30);
   assert.equal(typesOf(window, 'LESSON_COMPLETE').length, 0);
   assert.equal(typesOf(window, 'COURSE_COMPLETE').length, 0);
+});
+
+test('m2-7: the lesson observer uses threshold 0 so tall sections can ever fire', async () => {
+  const window = await boot('source-courses/sandhi', { intersectionObserver: true });
+  await waitFor(() => window.document.querySelector('.source-native-host .done-btn[data-lesson]'), 'course host');
+  const opts = window.__io.options;
+  assert.ok(opts, 'the tool must install an IntersectionObserver on the real DOM path');
+  /* A lesson section on a phone is taller than the viewport, so a non-zero
+   * ratio can never be reached — lesson_view would fire for nobody. */
+  assert.equal(opts.threshold, 0, 'threshold must be 0 for sections taller than the viewport');
+  assert.equal(window.__io.observed.length, 8, 'every lesson section must be observed');
+});
+
+test('m2-8: an intersecting lesson emits lesson_view and lesson_start', async () => {
+  const window = await boot('source-courses/sandhi', { intersectionObserver: true });
+  await waitFor(() => window.document.querySelector('.source-native-host .done-btn[data-lesson]'), 'course host');
+  window.__io.fire();
+  const view = await waitFor(() => typesOf(window, 'LESSON_VIEW')[0], 'lesson_view signal');
+  assert.equal(view.lessonId, 'lesson1');
+  assert.equal(view.lessonNumber, 1);
+  assert.equal(typesOf(window, 'LESSON_START').length, 1);
+  /* Intersecting again must not re-report the same lesson. */
+  window.__io.fire();
+  await sleep(30);
+  assert.equal(typesOf(window, 'LESSON_VIEW').length, 1);
 });

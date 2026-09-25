@@ -326,9 +326,12 @@
       track('LESSON_START', { courseId: courseDef().id, lessonId, lessonNumber });
     };
     if (typeof IntersectionObserver === 'function') {
+      /* threshold must be 0: a lesson section is routinely taller than the
+       * viewport (thousands of px), so any ratio > 0 with a shrunken root can
+       * never be reached and the event would never fire on a real phone. */
       state.lessonObserver = new IntersectionObserver(entries => {
         entries.forEach(entry => { if (entry.isIntersecting) markViewed(entry.target); });
-      }, { rootMargin: '0px 0px -40% 0px', threshold: 0.25 });
+      }, { rootMargin: '0px 0px -25% 0px', threshold: 0 });
       sections.forEach(section => state.lessonObserver.observe(section));
     } else {
       sections.forEach(markViewed); // no observer (old browser / test DOM) — count as viewed

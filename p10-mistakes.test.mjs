@@ -48,8 +48,8 @@ t('note-icon: openQuestionNoteEditor ইন্টিগ্রেশন', MN.incl
 
 /* ৬ — ভার্সন v194 */
 
-t('sw BUILD_ID current shell', SW.includes("const BUILD_ID = 'v286-lesson-quiz-analytics-20260925'"));
-t('index sw-marker current shell', H.includes('sw.js?v=v286-lesson-quiz-analytics-20260925'));
+t('sw BUILD_ID current shell', SW.includes("const BUILD_ID = 'v287-lesson-observer-threshold-20260925'"));
+t('index sw-marker current shell', H.includes('sw.js?v=v287-lesson-observer-threshold-20260925'));
 
 console.log(`\nP10-MISTAKES: ${pass} pass / ${fail} fail`);
 if (fail) process.exit(1);

@@ -23,7 +23,7 @@ test('heavy app seed and result analysis remain deferred', /app-seed\.js[^>]*def
 test('retired identity/onboarding scripts are no longer boot-critical or loaded', !/premium-auth|onboarding\.js|curriculum-config|accounts\.google\.com/.test(H));
 
 
-test('service-worker build marker is synchronized', SW.includes("const BUILD_ID = 'v286-lesson-quiz-analytics-20260925'") && H.includes('sw.js?v=v286-lesson-quiz-analytics-20260925'));
+test('service-worker build marker is synchronized', SW.includes("const BUILD_ID = 'v287-lesson-observer-threshold-20260925'") && H.includes('sw.js?v=v287-lesson-observer-threshold-20260925'));
 test('data protection summarizes stores with count rather than full reads', DP.includes('tx.objectStore(name).count()'));
 test('unprotected automatic Pages deploy stays retired', WF.includes('Cloudflare Pages Bundle Guard (No Deploy)') && !WF.includes('wrangler-action') && !WF.includes('pages deploy dist --project-name admissionhub'));
 

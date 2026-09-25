@@ -201,9 +201,9 @@ test('pin consistency: index.html script pins match sw.js cache entries + digest
     assert.match(SW, new RegExp(`"./${file}\\?v=${pin}": "[0-9a-f]{64}"`), `digest for ${file}`);
   }
   /* shell canary bumped together in both files */
-  assert.match(INDEX, /v286-lesson-quiz-analytics-20260925/g);
-  assert.match(SW, /const BUILD_ID = 'v286-lesson-quiz-analytics-20260925';/);
-  assert.ok((INDEX.match(/v286-lesson-quiz-analytics-20260925/g) || []).length >= 3, 'canary pinned in index.html (register + SW check)');
+  assert.match(INDEX, /v287-lesson-observer-threshold-20260925/g);
+  assert.match(SW, /const BUILD_ID = 'v287-lesson-observer-threshold-20260925';/);
+  assert.ok((INDEX.match(/v287-lesson-observer-threshold-20260925/g) || []).length >= 3, 'canary pinned in index.html (register + SW check)');
 });
 
 test('sw-manifest digest of the command-center route shim is correct', () => {
