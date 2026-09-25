@@ -693,3 +693,22 @@ do the KV writes; the engine only decides whether they may happen.
   round-tripped. The UI never touches `aiprefs:` itself — the Worker is the only
   writer, and the propose/confirm handshake is unchanged.
 
+
+## Admin auth (Notification Command Center)
+
+- Admin routes (`ADMIN_PATHS` in `fcm-notification.mjs`) accept either the
+  `ADMIN_TOKEN` bearer (break-glass) or an `X-Admin-Session` header minted by
+  `/api/admin/webauthn/assert`. Both paths are covered by `admin-passkey.test.mjs`.
+- Passkey implementation lives in `admin-passkey.mjs` and reuses
+  `auth-native/core/webauthn.mjs` (the student-passkey verifier) - do not add a
+  second WebAuthn implementation.
+- No new Worker variables: `ADMIN_TOKEN` doubles as the HMAC key for challenge
+  MACs, because Workers Free caps a Worker at 64 variables. Rotating
+  `ADMIN_TOKEN` invalidates all challenges and sessions; enrolled credentials
+  survive (they are public keys).
+- Sessions are stored hashed in `GK_KV` (`admin:pk:sess:<sha256>`), 30 min TTL.
+  Enrolled credentials: `admin:pk:cred:<credentialId>`. Challenges:
+  `admin:pk:chal:<challengeId>`, 120 s, single-use.
+- Enrollment requires the admin token by design; only assertion is token-free.
+- Run `npm run test:fcm` before touching auth code - it includes the passkey
+  suite. `npm run test:ui-guards` covers the NCC handler wiring.
