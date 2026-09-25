@@ -1031,4 +1031,25 @@ and (later) in an admin surface.
   it sees and the page routes each to its own endpoint.
 - **`scripts/cache-bump.mjs` also bumps `sw.js`'s `BUILD_ID`.** If you add a file
   that carries the `v###-…` build string, add it to the script's target list.
->>>>>>> a149edb (feat(notifications): Phase 3 notification & engagement intelligence)
+- **A fixture that invents the fields the API never returns hides contract
+  drift.** `notification-command-center-backend.test.mjs` stubbed
+  `/api/notifications/history` with a body that happened to include `opened`,
+  `imageUrl` and `targetUrl`, so it passed while the real Worker sent none of
+  them: `recentGlobals()` omitted `image_url`/`target_url` from its `SELECT`
+  (the expanded row showed "none") and per-item opens live in
+  `analytics.items`, not on the row (Opens always read 0). A stub is only
+  trustworthy if it is produced by the code under test. `notification-panel-history-seam.test.mjs`
+  runs the real `FcmStore` over an in-memory D1 and feeds its exact output into
+  the real page in jsdom; its D1 fake honours `SELECT` column projection, so a
+  dropped column disappears the same way it does in production. Reverting any of
+  the four fixes makes it fail.
+- **A rate limiter's counter is not the size of the history table.** The quota
+  widget rendered `state.sent.length` as "used", so any month with more than 10
+  notifications displayed e.g. "50 / 10". `/api/notifications/history` now
+  reports `dailyUsed`, read from the limiter's own KV counter (`kvRatePeek`,
+  non-consuming). The cap resets at 00:00 **UTC** — one UTC-dated KV entry with a
+  24h TTL — so the key is `utcDayKey` and the label says UTC; the old name
+  `dhakaDayKey` and an "Asia/Dhaka" label were both wrong for 6 hours a day.
+- **Check `test:fcm` membership when adding a notification test.** A test file
+  that is never listed in the script never runs in CI.
+  `notification-sw-routing.test.mjs` sat unwired until this change.
