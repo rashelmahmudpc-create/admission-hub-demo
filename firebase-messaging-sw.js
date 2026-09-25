@@ -29,8 +29,25 @@ const messaging = firebase.messaging();
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const nd = event.notification.data || {};
-  const route = String(nd.link || 'dashboard').replace(/^#?\/?/, '');
+  /* The SDK shows the notification itself whenever the payload carries a
+   * `notification` block (our senders always set one), and it does NOT hand our
+   * fields over at the top level — it wraps the whole FCM payload:
+   *   t.data = { FCM_MSG: <payload> }     (sdk/firebase-messaging-compat.js)
+   * Reading nd.gid / nd.link / nd.src directly therefore always found nothing,
+   * so every tap fell through to './' and lost the deep link (and global clicks
+   * were never logged). Unwrap first, then fall back to the flat shape for any
+   * payload that does arrive unwrapped. */
+  const wrapped = event.notification.data && event.notification.data.FCM_MSG;
+  const nd = (wrapped && typeof wrapped === 'object')
+    ? { ...(wrapped.data || {}), url: wrapped.fcmOptions && wrapped.fcmOptions.link }
+    : (event.notification.data || {});
+  /* Route precedence: our explicit data.link, else the hash of an
+   * fcmOptions.link, else the dashboard. */
+  const hashRoute = (u) => {
+    const m = String(u || '').match(/#\/?([\w./#-]+)/);
+    return m ? m[1] : '';
+  };
+  const route = String(nd.link || hashRoute(nd.url) || 'dashboard').replace(/^#?\/?/, '');
   /* Phase 2: global notifications carry `gid` — store the click for the app
    * (which logs it to /api/notifications/click on next boot/route).
    * Service workers have no localStorage, so this uses Cache Storage, which the
