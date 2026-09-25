@@ -230,8 +230,12 @@ async function parseAuthenticatorData(bytes, { rpId, registration, cryptoImpl })
 
 function derIntegerTo32(bytes) {
   let value = bytes;
+  /* DER may prefix a 0x00 sign byte when the magnitude's top bit is set. Strip
+   * it and the remaining bytes are the unsigned coordinate: after stripping, a
+   * high bit is a legitimate part of the magnitude, not a negative sign.
+   * Rejecting it here failed roughly half of all P-256 assertions. */
   while (value.length > 32 && value[0] === 0) value = value.slice(1);
-  if (!value.length || value.length > 32 || (value[0] & 0x80)) fail();
+  if (!value.length || value.length > 32) fail();
   const output = new Uint8Array(32);
   output.set(value, 32 - value.length);
   return output;

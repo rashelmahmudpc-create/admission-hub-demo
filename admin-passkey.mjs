@@ -26,6 +26,12 @@ import {
 } from './auth-native/core/webauthn.mjs';
 
 export const PASSKEY_RP_ID = 'admissionhub.pages.dev';
+export const PASSKEY_RP_NAME = 'AdmissionHub Admin';
+/* The single managed admin identity. It is echoed back by authenticators as
+ * `userHandle` on assertion, so it must be both offered at registration and
+ * persisted with the credential, otherwise every sign-in fails the handle
+ * comparison against an undefined stored value. */
+export const PASSKEY_USER_ID = 'admissionhub-admin';
 export const PASSKEY_ORIGINS = Object.freeze([
   'https://admissionhub.pages.dev',
   'https://admission-gk.admissionhub.workers.dev'
@@ -189,6 +195,7 @@ async function handleRegister(request, env) {
   }
   const record = {
     credentialId: verified.credentialId,
+    userHandle: bytesToBase64Url(encoder.encode(PASSKEY_USER_ID)),
     publicKeyJwk: verified.publicKeyJwk,
     counter: verified.counter,
     backupEligible: verified.backupEligible,
@@ -260,22 +267,26 @@ export async function handleAdminPasskeyRequest(request, env) {
       createdAt: Date.now()
     });
     const credentials = await listCredentials(env);
+    /* Registration needs `rp: {id, name}`; only assertions take a bare `rpId`.
+     * Sending the flat form for register made navigator.credentials.create()
+     * throw before the authenticator was ever reached. */
+    const rp = { id: PASSKEY_RP_ID, name: PASSKEY_RP_NAME };
     return json({
       challengeId,
       options: {
         challenge,
-        rpId: PASSKEY_RP_ID,
         timeout: 120_000,
         userVerification: 'required',
         ...(purpose === 'register'
           ? {
-            user: { id: bytesToBase64Url(encoder.encode('admissionhub-admin')), name: 'admin@admissionhub', displayName: 'AdmissionHub Admin' },
+            rp,
+            user: { id: bytesToBase64Url(encoder.encode(PASSKEY_USER_ID)), name: 'admin@admissionhub', displayName: 'AdmissionHub Admin' },
             pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }],
             authenticatorSelection: { residentKey: 'preferred', userVerification: 'required' },
             attestation: 'none',
             excludeCredentials: credentials.map(c => ({ type: 'public-key', id: c.credentialId }))
           }
-          : { allowCredentials: credentials.map(c => ({ type: 'public-key', id: c.credentialId, transports: c.transports || [] })) })
+          : { rpId: PASSKEY_RP_ID, allowCredentials: credentials.map(c => ({ type: 'public-key', id: c.credentialId, transports: c.transports || [] })) })
       }
     });
   }
