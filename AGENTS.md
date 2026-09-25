@@ -774,3 +774,43 @@ Run `node ai-agent-f1.test.mjs` after touching the limiter — its async cases
 share one mocked `globalThis.fetch`, so the harness runs them **sequentially**
 (they used to run concurrently and clobber each other's mocks).
 
+
+
+## Analytics Foundation (Phase 1 GA4) — `analytics-service.js`
+
+The app talks to Firebase Analytics **only** through `window.AhAnalytics`; no
+other module loads the Firebase SDK or calls `logEvent`. Full reference:
+`docs/ANALYTICS-FOUNDATION.md`.
+
+- **Dictionary-first.** Events and parameters are declared in the `EVENTS` map.
+  An event that is not declared is rejected, and a parameter that is not listed
+  for that event is dropped — that is what keeps the data queryable. Add to the
+  dictionary before tracking something new.
+- **Privacy is a hard filter.** `FORBIDDEN_PARAM` strips password/secret/token/
+  api-key/credential/cookie/email/phone/address/full-name/answer/message/free
+  text/etc. regardless of what the dictionary says. `setUserContext` stores only
+  an opaque id and the first name (read from `ah-profile-cache-key`, exactly like
+  `ai-agent-chat.js`) — never email, phone or full name.
+- **Never throws.** Every public call is wrapped; analytics failure is never app
+  failure. `status()` reports `reasons` for every dropped event.
+- **Environment separation.** Transmission requires the production origin
+  (`admissionhub.pages.dev`). Other origins are `disabled`; `?ahanalytics=debug`
+  traces to the console and sends nothing.
+- **Wiring.** `index.html` loads `analytics-service.js` right after
+  `session-persist.js`, then calls `attach()` + `start()`. Screen views ride
+  `admission:route-rendered`; session/user context rides
+  `admissionhub:authchange`; learning completions ride `admission:activity`
+  (`TEST_COMPLETED`, `REVISION_COMPLETED`).
+- **Dormant by default.** `FIREBASE_MEASUREMENT_ID` is not set, so
+  `/api/notifications/config` returns no `measurementId` and the service stays in
+  console mode — nothing is sent anywhere. Add the Worker var to switch GA4 on
+  with no code change (see `docs/ANALYTICS-FOUNDATION.md` §11).
+- **SDK.** `sdk/firebase-analytics-compat.js` is self-hosted (download from
+  gstatic 10.12.2), matching the messaging SDK pattern; gstatic is the fallback.
+- **Bump discipline.** `analytics-service.js` is in `APP_SHELL`, so after editing
+  it run `npm run sw:manifest`. The shell build id lives in `sw.js` (`BUILD_ID`),
+  `index.html` (`expectedSwVersion`, `sw.js?v=`, cache-purge literal) and the
+  version-pinned test suites — `scripts/cache-bump.mjs` lists them; a manual bump
+  always misses one.
+- Run `node analytics-service.test.mjs` after touching the service; it is part of
+  `npm run test:native-auth`.

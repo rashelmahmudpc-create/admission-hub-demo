@@ -1,6 +1,6 @@
 const CACHE_PREFIX = 'admission-hub-shell-';
 
-const BUILD_ID = 'v283-single-email-button-20260921';
+const BUILD_ID = 'v284-analytics-foundation-20260924';
 const CACHE_NAME = `${CACHE_PREFIX}${BUILD_ID}`;
 const VERSION_HEADER = 'X-Admission-Hub-Build';
 const DOCUMENT_NETWORK_TIMEOUT_MS = 2500;
@@ -20,6 +20,7 @@ const APP_SHELL = [
   './dashboard-v2.css?v=dash2f13-theme',
   './3d-loader.css?v=3d-v2',
   './session-persist.js?v=session-v2',
+  './analytics-service.js?v=analytics-p1-v1',
   './account-access.css?v=20260921-single-email-button-fallback',
   './institutions-bd.js?v=bd-institutions-v2',
   './language-engine.js?v=lang-v5-single-email-button',
@@ -42,12 +43,13 @@ const APP_SHELL = [
 // A truncated/corrupt download is NEVER written to the shell cache.
 const ASSET_DIGESTS = {
 /* sw-manifest:start */
-  "./index.html": "e5cfcf55b583fd628968ce8a47ce5a63e9715651c3c1c0bb959771f8e1b392b2",
+  "./index.html": "9b442fb1f4766430c508d265c06be79ce247445ed5cae380bc2e5639b98477b9",
   "./manifest.json": "11a85ae594fc629b11605daeda3f9afe4ef95215a55a29f9cc423314bfb275a4",
   "./manifest.webmanifest": "5be476009a140eabd088bd972bd4d345b9c4f4a055cd6e4f08774b9cb4afaf52",
   "./dashboard-v2.css?v=dash2f13-theme": "4f4c9295b487b8186fd45c006a96a43bcaf896a1a5b871f506a05874a8e00c99",
   "./3d-loader.css?v=3d-v2": "43ca21b0a41be5d223c317fd63582f19ff6ffab5d010639ef26349464550da63",
   "./session-persist.js?v=session-v2": "99f3d1f49f6d5714fd25f1c12b2aa978ca97a009d6caba9a690a0442d082593c",
+  "./analytics-service.js?v=analytics-p1-v1": "3ee5f3b4750f380bd89de982ff7e5c40795f17e679f70a0bbb7e59487fa4725b",
   "./account-access.css?v=20260921-single-email-button-fallback": "54d46ed598915409c72c5da480cde492f947928a21088d4ed7b2f9ad4d13682e",
   "./institutions-bd.js?v=bd-institutions-v2": "602c5549515e8207ad152b948ca9b8fe3ad0fbe429afb56380e4e21b662f779d",
   "./language-engine.js?v=lang-v5-single-email-button": "7e726c3cd194381201c7fdb2b1a49af78f4f48f38012e05ab68e13eee3ade3ad",

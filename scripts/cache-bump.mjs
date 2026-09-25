@@ -13,12 +13,12 @@ const relative = path => new URL(path, root);
 
 // The asset version string shared by account-access.{js,css} and the
 // language-engine table. Bump both when either file changes.
-const UI_VERSION_FROM = '20260921-relogin-device-challenge-fix';
+const UI_VERSION_FROM = '20260921-single-email-button-fallback';
 const UI_VERSION_TO = '20260921-single-email-button-fallback';
-const LANG_VERSION_FROM = 'lang-v4-device-challenge';
+const LANG_VERSION_FROM = 'lang-v5-single-email-button';
 const LANG_VERSION_TO = 'lang-v5-single-email-button';
-const SW_BUILD_FROM = 'v282-device-challenge-20260921';
-const SW_BUILD_TO = 'v283-single-email-button-20260921';
+const SW_BUILD_FROM = 'v283-single-email-button-20260921';
+const SW_BUILD_TO = 'v284-analytics-foundation-20260924';
 
 const targets = [
   'index.html',

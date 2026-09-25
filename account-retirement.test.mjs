@@ -109,10 +109,10 @@ await test('content hydration is public and account-independent',
 
 await test('service-worker build and HTML registration are synchronized',
 
-  SW.includes("const BUILD_ID = 'v283-single-email-button-20260921'") &&
-  H.includes("const expectedSwVersion = 'v283-single-email-button-20260921'") &&
-  H.includes('sw.js?v=v283-single-email-button-20260921') &&
-  H.includes('admission-hub-shell-v283-single-email-button-20260921'));
+  SW.includes("const BUILD_ID = 'v284-analytics-foundation-20260924'") &&
+  H.includes("const expectedSwVersion = 'v284-analytics-foundation-20260924'") &&
+  H.includes('sw.js?v=v284-analytics-foundation-20260924') &&
+  H.includes('admission-hub-shell-v284-analytics-foundation-20260924'));
 await test('service-worker shell cannot cache retired assets', retiredMarkers.every(marker => !SW.includes(marker)));
 await test('premium account and institution assets use synchronized cache-busting versions',
   ['account-access.css?v=20260921-single-email-button-fallback', 'account-access.js?v=20260921-single-email-button-fallback', 'institutions-bd.js?v=bd-institutions-v2']
