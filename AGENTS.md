@@ -952,3 +952,19 @@ and (later) in an admin surface.
 - **Data-quality checks reuse the dictionary.** `checkDataQuality()` reads
   `EVENTS[name].required`/`.once`, so it can never drift from what
   `normalizeEvent` enforces. Do not hardcode a second list.
+- **The ledger is cached in memory and flushed on a timer.** `recordLedger`
+  pushes into an in-memory array and schedules a single `flushLedger` (400 ms),
+  so a 60-question quiz is not 60 full re-parses of a 500-row array. `flushLedger`
+  is on the public API for tests and for any caller that must read it
+  immediately; `readLedger()` returns the same cached array.
+- **`sw.js` APP_SHELL and `index.html` must name the same query string.** The
+  deploy guard (`npm run check:sw-manifest`) regenerates `ASSET_DIGESTS` and fails
+  if `sw.js` changes — but it hashes the query that `APP_SHELL` lists. Bumping a
+  query in `index.html` without editing `APP_SHELL` produces a digest for the new
+  file under the old key, so the guard can never be satisfied. Change both, then
+  run `npm run sw:manifest`.
+- **Live verification needs the auth gate lifted.** Signed-out sessions keep
+  `#app` at `display:none` behind `ah-account-page-active`, which collapses every
+  lesson section to zero height and starves the lesson `IntersectionObserver`.
+  A headless check of `lesson_view`/`lesson_start` must remove that class and
+  un-hide `#app` first; otherwise it reports a false "missing events" failure.
