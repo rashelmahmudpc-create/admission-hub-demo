@@ -774,3 +774,44 @@ Run `node ai-agent-f1.test.mjs` after touching the limiter — its async cases
 share one mocked `globalThis.fetch`, so the harness runs them **sequentially**
 (they used to run concurrently and clobber each other's mocks).
 
+
+
+## Test suite health and the notification panel's i18n table
+
+The full suite must stay green: `node --test` (currently **1089/1089**). Four
+failures that used to sit on `main` were **test-toolchain gaps, not app bugs**:
+
+- **`better-sqlite3` on Node 24.** `profile-core` and `session-recovery-chaos`
+  asserted fine, then the process aborted *at exit* inside better-sqlite3
+  11.10.0's `Statement` destructor (`RemoveEnvironmentCleanupHook`). Node 24
+  needs **`better-sqlite3 ^12.11.1`**. If a sqlite-tied suite "fails" with every
+  assertion passing and a native teardown trace, suspect this first.
+- **`fake-indexeddb`** was imported by `legacy-adoption.e2e` but never declared,
+  so that suite could not run anywhere. It is a devDependency now.
+- **Wall-clock-dependent tests.** The `personalized-notification` decision tests
+  pass a fixed `NOW`, but the admin HTTP routes read the real clock, so
+  `preview` only failed *outside* the 08:00-22:00 Asia/Dhaka send window.
+  `handlePersonalizedNotificationRequest(request, env, deps)` now takes an
+  injectable `{ now }`; the worker passes its `ExecutionContext` (no `.now`), so
+  runtime is unchanged. **Any new route that reads `Date.now()` needs the same
+  seam** - otherwise its test is flaky by hour.
+
+### i18n: label strings with the language they are written in
+
+`notification-command-center.html` is the only file with a translation table
+(`const T = {...}`). `t()` returns `e.en` for English and `e.bn` for Bangla, so a
+mislabeled entry **fails silently**:
+
+- A Bangla string stored under `en:` shows Bengali in English mode, or - if the
+  key is duplicated as `en:` twice - renders **blank** in Bangla.
+- A fully swapped pair shows the wrong language in *both* modes.
+
+`i18n-guard.test.mjs` locks this down (no Bengali under `en:`, no duplicate
+language keys, no identical Bengali value under both). Run it after editing `T`.
+Sample-student fields follow the same rule: `initial` is now `{bn,en}` and is
+picked through `LANG`, not hardcoded Bengali.
+
+Verify panel changes in a real DOM, not just by reading the diff - a `jsdom`
+harness that stubs `fetch`, calls `NotificationStudio.setLang`/`setState`, and
+greps `#nsView` for the Bengali Unicode range catches leaks that source review
+misses.
