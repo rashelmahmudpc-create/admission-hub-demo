@@ -4,11 +4,41 @@ import { CloudflareNativeAuthEngine } from './auth-native/core/auth-engine.mjs';
 import { AuthSecretVault } from './auth-native/core/secret-vault.mjs';
 import {
   bytesToBase64Url,
+  derEcdsaToRaw,
   verifyPasskeyAuthentication,
   verifyPasskeyRegistration
 } from './auth-native/core/webauthn.mjs';
 import { AUTH_ERROR_CODES } from './auth-native/core/errors.mjs';
 import { MemoryAuthRepository } from './auth-native/testing/memory-auth-repository.mjs';
+
+
+/* DER ECDSA conversion must accept coordinates whose top bit is set. Roughly
+ * half of all P-256 signatures have a high bit in r or s, and DER prefixes a
+ * 0x00 sign byte for exactly those. Treating the stripped byte as a negative
+ * sign rejected about half of all real passkey sign-ins. */
+test('DER ECDSA conversion keeps 33-byte r/s coordinates with a high bit set', () => {
+  const signature = Uint8Array.from(Buffer.from(
+    '3045022044ca10e33d01d6f467839499b813522b93b8d1e6384c905fe53de139bcd99175' +
+    '02210082805b6889e818621a68ed4a8572028ed388a51398662323545474cd245d9f1c', 'hex'));
+  const raw = derEcdsaToRaw(signature);
+  assert.equal(raw.length, 64, 'r and s are each padded to 32 bytes');
+  /* r is unchanged, s drops the DER sign byte and keeps 0x82 as its top byte. */
+  assert.equal(raw[0], 0x44);
+  assert.equal(raw[31], 0x75);
+  assert.equal(raw[32], 0x82);
+  assert.equal(raw[63], 0x1c);
+});
+
+test('DER ECDSA conversion still rejects a genuinely negative coordinate', () => {
+  /* No sign byte before a high-bit byte: the value would be negative in DER. */
+  const malformed = Uint8Array.from(Buffer.from('3044021f44ca10e33d01d6f467839499b813522b93b8d1e6384c905fe53de139bcd99175021f0082805b6889e818621a68ed4a8572028ed388a51398662323545474cd245d9', 'hex'));
+  assert.throws(() => derEcdsaToRaw(malformed), error => error.code === AUTH_ERROR_CODES.PASSKEY_INVALID || Boolean(error.message));
+});
+
+test('DER ECDSA conversion passes a 64-byte raw signature straight through', () => {
+  const raw64 = new Uint8Array(64).fill(7);
+  assert.deepEqual(derEcdsaToRaw(raw64), raw64);
+});
 
 const SECRET = 'passkey-test-secret-0123456789-ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 const ORIGIN = 'https://admissionhub.pages.dev';

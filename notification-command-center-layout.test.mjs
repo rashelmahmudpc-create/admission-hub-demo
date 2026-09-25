@@ -1,16 +1,20 @@
-/* Notification Command Center — pinned-shell regression guard.
+/* Notification Command Center — shell layout regression guard.
  *
  * Owner bugs:
  * 1. "scroll করলে navigation hide হয়ে যায়" — the sidebar and the mobile tab
  *    bar scrolled away instead of staying pinned.
  * 2. "ড্রাফট সংরক্ষণ / টেস্ট পাঠান / পর্যালোচনা বাটন উপরে চলে আসে" — the
  *    Draft/Test/Review bar drifted up as the page scrolled.
+ * 3. "বাটনগুলো স্ক্রিনের ওপর ভেসে থাকছে এবং কন্টেন্ট ওভারল্যাপ করছে" — the
+ *    bar was then pinned to the viewport, which floated it over the form.
+ *    It now belongs to the normal document flow and is only reached by
+ *    scrolling to the end of the composer.
  *
- * Root cause: `contain: layout` on `.ns-app` / `.ns-view` makes those boxes the
- * containing block for `position: fixed` descendants, and the `.ns-view` fade
- * animation animated `transform` (identity included), which does the same. The
- * bottom bar therefore anchored to the tall page box instead of the viewport.
- * These are source contracts: they fail if the trap returns.
+ * Root cause of (1) and (2): `contain: layout` on `.ns-app` / `.ns-view` makes
+ * those boxes the containing block for `position: fixed` descendants, and the
+ * `.ns-view` fade animation animated `transform` (identity included), which
+ * does the same. The bottom bar therefore anchored to the tall page box instead
+ * of the viewport. Those contracts still hold and fail if the trap returns.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -37,13 +41,15 @@ test('the desktop sidebar stays pinned while the page scrolls', () => {
   assert.match(rule, /align-self:flex-start/, 'sidebar does not stretch with the flex row');
 });
 
-test('the mobile tab bar and the composer action bar are viewport-fixed', () => {
+test('the mobile tab bar stays viewport-fixed', () => {
   const mobileNav = ADMIN.slice(ADMIN.indexOf('.ns-mobile-nav{'));
   assert.match(mobileNav.slice(0, mobileNav.indexOf('}')), /position:fixed/, 'tab bar is fixed');
+});
+
+test('the composer action bar stays in the normal document flow', () => {
   const actions = ADMIN.slice(ADMIN.indexOf('.ns-sticky-actions{'));
   const rule = actions.slice(0, actions.indexOf('}'));
-  assert.match(rule, /position:fixed/, 'action bar is pinned to the viewport on phones');
-  assert.match(rule, /bottom:calc\(var\(--tabbar-h\)/, 'action bar sits above the tab bar');
-  /* Desktop keeps the in-flow bar beside the preview column. */
-  assert.match(ADMIN, /@media \(min-width:1024px\)\{\.ns-sticky-actions\{position:static/, 'desktop bar stays in flow');
+  assert.match(rule, /position:static/, 'action bar is in flow, not pinned to the viewport');
+  assert.ok(!/position:fixed/.test(rule), 'a fixed bar would overlay the composer content');
+  assert.ok(!/bottom:calc\(var\(--tabbar-h\)/.test(rule), 'no viewport anchoring');
 });

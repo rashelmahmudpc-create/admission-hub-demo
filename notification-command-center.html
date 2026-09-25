@@ -1040,14 +1040,16 @@ img,svg{max-width:100%}
 @media (min-width:768px){.ns-hide-sm{display:inline-flex}}
 .ns-only-sm{display:inline-flex}
 @media (min-width:768px){.ns-only-sm{display:none}}
+/* The compose action bar sits in the normal document flow at the end of the
+ * compose column: it is reached by scrolling to the bottom of the form and is
+ * never overlaid on top of content. (It used to be position:fixed, which kept
+ * Draft/Test/Review floating over the page while the user read the form.) */
 .ns-sticky-actions{
-  position:fixed;inset-inline:12px;bottom:calc(var(--tabbar-h) + 10px + env(safe-area-inset-bottom) + var(--keyboard-inset));
-  z-index:30;display:flex;gap:8px;padding:10px;background:color-mix(in srgb,var(--surface) 90%,transparent);
-  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow);
-  margin-top:14px;flex-wrap:wrap;
+  position:static;display:flex;gap:8px;padding:12px 0 4px;margin-top:16px;
+  border-top:1px solid var(--line);flex-wrap:wrap;
 }
 .ns-sticky-actions .ns-btn{flex:1;min-width:130px}
-@media (min-width:1024px){.ns-sticky-actions{position:static;inset-inline:auto;background:none;border:0;box-shadow:none;backdrop-filter:none;padding:0;margin-top:16px}.ns-sticky-actions .ns-btn{flex:0 1 auto}}
+@media (min-width:1024px){.ns-sticky-actions .ns-btn{flex:0 1 auto}}
 .ns-var-chip{font-family:var(--mono);font-size:12px;padding:10px 9px;border-radius:9px;display:inline-flex;align-items:center;min-height:40px;background:var(--surface-soft);border:1px solid var(--line);color:var(--ink-2);cursor:pointer;transition:background .14s,border-color .14s}
 .ns-var-chip:hover{background:var(--mint);border-color:var(--brand);color:var(--brand-deep)}
 .ns-var-chip.is-bad{border-color:var(--danger);color:var(--danger);background:var(--danger-bg)}
@@ -4171,14 +4173,18 @@ function passkeySupported(){
   return Boolean(window.PublicKeyCredential&&navigator.credentials&&navigator.credentials.get&&navigator.credentials.create);
 }
 function publicKeyOptions(options,forCreate){
-  const pk={challenge:b64uToBytes(options.challenge),rpId:options.rpId,timeout:options.timeout,userVerification:options.userVerification};
+  const pk={challenge:b64uToBytes(options.challenge),timeout:options.timeout,userVerification:options.userVerification};
   if(forCreate){
+    /* create() requires rp:{id,name} — a bare rpId is assertion-only and makes
+     * the browser throw before the Face ID / Touch ID prompt can appear. */
+    pk.rp={id:(options.rp&&options.rp.id)||options.rpId,name:(options.rp&&options.rp.name)||'AdmissionHub Admin'};
     pk.pubKeyCredParams=(options.pubKeyCredParams||[]).map(p=>({type:p.type,alg:p.alg}));
     if(options.user) pk.user={id:b64uToBytes(options.user.id),name:options.user.name,displayName:options.user.displayName};
     if(options.authenticatorSelection) pk.authenticatorSelection=options.authenticatorSelection;
     pk.attestation=options.attestation||'none';
     pk.excludeCredentials=(options.excludeCredentials||[]).map(c=>({type:c.type,id:b64uToBytes(c.id)}));
   }else{
+    pk.rpId=options.rpId||(options.rp&&options.rp.id);
     pk.allowCredentials=(options.allowCredentials||[]).map(c=>({type:c.type,id:b64uToBytes(c.id),transports:c.transports||[]}));
   }
   return pk;

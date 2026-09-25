@@ -181,6 +181,54 @@ test('register -> assert mints a session, and the session authorizes an admin ro
   assert.notEqual(history.status, 403, 'passkey session must not be forbidden');
 });
 
+/* navigator.credentials.create() needs `rp:{id,name}`; only assertions accept a
+ * bare `rpId`. Shipping the flat form made the browser throw before the
+ * authenticator ran, so no device could ever enrol. */
+test('register challenge returns an rp object, and assert challenge returns rpId', async () => {
+  const env = makeEnv();
+  const authenticator = await makeAuthenticator();
+  const begin = await call('/api/admin/webauthn/challenge', { body: { purpose: 'register' }, headers: adminHeaders }, env);
+  const { challengeId, options } = await begin.json();
+  assert.deepEqual(options.rp, { id: RP_ID, name: 'AdmissionHub Admin' });
+  assert.equal('rpId' in options, false, 'register options must not carry a bare rpId');
+  assert.ok(options.user && options.user.id, 'register options must carry a user handle');
+
+  const registered = await call('/api/admin/webauthn/register', {
+    body: { challengeId, response: await authenticator.register(options.challenge) },
+    headers: adminHeaders
+  }, env);
+  assert.equal(registered.status, 200, JSON.stringify(await registered.clone().json()));
+
+  const assertBegin = await call('/api/admin/webauthn/challenge', { body: { purpose: 'assert' } }, env);
+  const assertOptions = (await assertBegin.json()).options;
+  assert.equal(assertOptions.rpId, RP_ID);
+  assert.equal('rp' in assertOptions, false, 'assert options use rpId, not rp');
+});
+
+/* Authenticators echo the registration user handle back on every assertion.
+ * It has to be persisted with the credential or the comparison always fails. */
+test('registered credential persists the user handle that assertions echo back', async () => {
+  const env = makeEnv();
+  const authenticator = await makeAuthenticator();
+  const begin = await call('/api/admin/webauthn/challenge', { body: { purpose: 'register' }, headers: adminHeaders }, env);
+  const beginBody = await begin.json();
+  await call('/api/admin/webauthn/register', {
+    body: { challengeId: beginBody.challengeId, response: await authenticator.register(beginBody.options.challenge) },
+    headers: adminHeaders
+  }, env);
+
+  const stored = JSON.parse(await env.GK_KV.get(`admin:pk:cred:${authenticator.credentialId}`));
+  assert.equal(stored.userHandle, beginBody.options.user.id, 'stored handle must match the handle offered at registration');
+
+  /* An assertion that echoes that same handle must verify. */
+  const assertBegin = await call('/api/admin/webauthn/challenge', { body: { purpose: 'assert' } }, env);
+  const assertBody = await assertBegin.json();
+  const asserted = await call('/api/admin/webauthn/assert', {
+    body: { challengeId: assertBody.challengeId, response: { ...(await authenticator.assert(assertBody.options.challenge)), userHandle: stored.userHandle } }
+  }, env);
+  assert.equal(asserted.status, 200, JSON.stringify(await asserted.clone().json()));
+});
+
 test('a wrong challenge is rejected, and a challenge is single-use', async () => {
   const env = makeEnv();
   const authenticator = await makeAuthenticator();
