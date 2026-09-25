@@ -693,7 +693,6 @@ do the KV writes; the engine only decides whether they may happen.
   round-tripped. The UI never touches `aiprefs:` itself — the Worker is the only
   writer, and the propose/confirm handshake is unchanged.
 
-
 ## Admin auth (Notification Command Center)
 
 - Admin routes (`ADMIN_PATHS` in `fcm-notification.mjs`) accept either the
@@ -712,3 +711,44 @@ do the KV writes; the engine only decides whether they may happen.
 - Enrollment requires the admin token by design; only assertion is token-free.
 - Run `npm run test:fcm` before touching auth code - it includes the passkey
   suite. `npm run test:ui-guards` covers the NCC handler wiring.
+
+## Every AI request leaves a trace, and a cost is never invented (Phase 9 M10)
+
+`observability.js` closes the last two audit gaps (§52 items 9/10): per-request
+telemetry and a countable spend. It is wired into `ai-agent.js` where a request
+actually finishes — the one-shot reply, the streaming `done` event, and both
+provider-failure paths. Like M6/M7/M9 it is pure data plus pure guards.
+
+- **A trace is not a transcript.** `makeTrace()` records `rid`, an 8-hex
+  `callerRef`, provider, model, intent, tier, latency, token estimate, cost,
+  fallback reason and the prompt/context/agent versions — and nothing else.
+  `FORBIDDEN_TRACE_KEYS` (uid, text, content, messages, prompt, key, token, args,
+  summary, email, phone) is checked on build *and* on `renderTrace()`, so a call
+  site that passes a whole message object by mistake still cannot leak content
+  into the log. `renderTrace()` strips newlines so a trace cannot forge extra log
+  lines.
+- **A cost is never invented.** `PRICING` ships **empty on purpose**: the Gemini
+  aliases in `GEMINI_MODELS` are preview/lite and their rates move, so a guessed
+  rate would silently corrupt every total derived from it. An unpriced model
+  returns `costUsd: null, priced: false`; `addUsage()` counts those requests in a
+  separate `unpriced` bucket so a figure is never read as complete when part of it
+  is unknown. Fill `PRICING.<provider>.<model> = { in, out }` when the owner has
+  the current sheet — nothing else changes. A half-filled rate counts as absent.
+- **Token counts are estimates.** `estimateTokens()` is a ~4-chars-per-token
+  approximation (no tokeniser exists inside a Worker) and
+  `describeObservability().tokenCount` says so.
+- **It adds zero KV writes.** The chat path already spends its two-write budget on
+  the rate counter and memory, so traces go to the Worker's log sink instead. A
+  test asserts no `obs`-prefixed KV write appears in the orchestrator.
+- **`quotaState()`** turns the existing `airl:` counter into
+  used/remaining/exhausted plus an 80% warning. The `429 rate_limited` reply keeps
+  its code and `cap` and gains a `remaining` field; the `airl:` key format is
+  unchanged.
+- **History is bounded and corrupt-safe:** `appendTrace()` keeps the newest
+  `MAX_TRACES` (200); `parseTraces()` treats bad JSON as empty and filters to the
+  caller's own `callerRef`.
+- `agentStatus` advertises `observability: describeObservability()` — shape only,
+  never a capability.
+
+**Phase 9 (M1–M10) is complete.**
+

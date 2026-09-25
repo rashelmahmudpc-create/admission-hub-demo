@@ -21,6 +21,7 @@ import { listTools, TOOL_REGISTRY_VERSION } from './tool-registry.js';
 import { extractMemoryCandidates, makeMemory, upsertMemory, parseMemory, renderMemory, resolveMemoryOwner, MEMORY_VERSION } from './memory-engine.js';
 import { validateResponse, describeResponseValidation, RESPONSE_VALIDATION_VERSION } from './response-validator.js';
 import { describeActions, ACTION_VERSION } from './action-engine.js';
+import { makeTrace, makeRequestId, callerRef, quotaState, renderTrace, estimateTokens, FALLBACK, OBSERVABILITY_VERSION, describeObservability, parseTraces, appendTrace, addUsage, emptyUsage, estimateCost, validateObservability } from './observability.js';
 
 export const AGENT_VERSION = 'agent-f1';
 export const SYSTEM_PROMPT_V = 'sys-f1-3-ai-personalization';
@@ -617,7 +618,8 @@ export async function agentChat(request, env, uid, opts = {}) {
   const rlKey = 'airl:' + sendCtx.uid + ':' + dayKey();
   let n = 0;
   try { n = Number((await getKv(env.PUB_KV, rlKey)) || 0); } catch (_) { n = 0; }
-  if (n >= cap) return jsonResp({ error: 'rate_limited', message: 'আজকের AI-চ্যাট সীমা শেষ — কাল আবার চেষ্টা করো।', cap }, 429);
+  const quota = quotaState({ used: n, cap });
+  if (quota.exhausted) return jsonResp({ error: 'rate_limited', message: 'আজকের AI-চ্যাট সীমা শেষ — কাল আবার চেষ্টা করো।', cap, remaining: quota.remaining }, 429);
   await putKv(env.PUB_KV, rlKey, String(n + 1), 172800);
 
   const verificationGuidance = authVerificationGuidance(v.messages[v.messages.length - 1].content);
@@ -730,6 +732,32 @@ export async function agentChat(request, env, uid, opts = {}) {
   }
 
   const failures = [];
+  /* M10: one trace per request, emitted to the Worker log sink. It carries ids,
+     counts and durations only — never message text, prompt text or a raw uid —
+     and it costs no KV write, so the chat path keeps its two-write budget. */
+  const rid = makeRequestId(sendCtx.uid + ':' + startedAt);
+  const traceCtx = {
+    rid,
+    callerRef: callerRef(sendCtx.uid),
+    intent,
+    tier,
+    stream,
+    promptVersion: SYSTEM_PROMPT_V,
+    contextVersion: ctxBundle ? CONTEXT_VERSION : '',
+    agentVersion: AGENT_VERSION
+  };
+  const emitTrace = (extra = {}) => {
+    try {
+      console.log(renderTrace(makeTrace({
+        ...traceCtx,
+        at: Date.now(),
+        latencyMs: Date.now() - startedAt,
+        tokensIn: estimateTokens(sys),
+        tokensOut: estimateTokens(extra.text || ''),
+        ...extra
+      })));
+    } catch (_) {}
+  };
   /* M8: validate every model response before it is returned or stored. The
      context (intent, stats, quiz, exam mode) is what the checks compare against;
      nothing here reaches the model. */
@@ -785,6 +813,7 @@ export async function agentChat(request, env, uid, opts = {}) {
              output never leaves this function unchecked. */
           const check = validateResponse(raw, validationCtx);
           await finalize(c.model, c.provider, raw);
+          emitTrace({ provider: c.provider, model: c.model, text: raw, responseType: check.structured?.type, validated: !check.enforced });
           return jsonResp({ text: check.text, structured: check.structured, model: c.model, intent, pv: SYSTEM_PROMPT_V, latencyMs: Date.now() - startedAt, agent: AGENT_VERSION });
         }
         lastErr = 'empty-' + c.model;
@@ -793,6 +822,7 @@ export async function agentChat(request, env, uid, opts = {}) {
         if (e instanceof ProviderError && e.bad) await putKv(env.PUB_KV, badKeyName(c.key, c.model), '1', 86400);
       }
     }
+    emitTrace({ fallbackReason: FALLBACK.PROVIDER_ERROR, validated: false });
     return jsonResp({ error: 'provider_failed', message: 'AI একটু ব্যস্ত — কয়েক সেকেন্ড পরে আবার চেষ্টা করো।', detail: lastErr, retryable: true }, 502);
   }
 
@@ -820,6 +850,7 @@ export async function agentChat(request, env, uid, opts = {}) {
                  rewritten mid-stream. */
               const check = validateResponse(full, validationCtx);
               if (check.enforced) push(`event: replace\ndata: ${JSON.stringify({ text: check.text })}\n\n`);
+              emitTrace({ provider: c.provider, model: c.model, text: full, responseType: check.structured?.type, validated: !check.enforced });
               push(`event: done\ndata: ${JSON.stringify({ model: c.model, provider: c.provider, intent, quiz: quizMode, pv: SYSTEM_PROMPT_V, agent: AGENT_VERSION, latencyMs: Date.now() - startedAt, structured: check.structured })}\n\n`);
               break;
             }
@@ -831,7 +862,10 @@ export async function agentChat(request, env, uid, opts = {}) {
             } else lastErr = String(e.message || e);
           }
         }
-        if (!ok) push(`event: error\ndata: ${JSON.stringify({ error: 'provider_failed', message: 'AI একটু ব্যস্ত — কয়েক সেকেন্ড পরে আবার চেষ্টা করো।', detail: lastErr, retryable: true })}\n\n`);
+        if (!ok) {
+          emitTrace({ fallbackReason: FALLBACK.PROVIDER_ERROR, validated: false });
+          push(`event: error\ndata: ${JSON.stringify({ error: 'provider_failed', message: 'AI একটু ব্যস্ত — কয়েক সেকেন্ড পরে আবার চেষ্টা করো।', detail: lastErr, retryable: true })}\n\n`);
+        }
       } catch (e) {
         push(`event: error\ndata: ${JSON.stringify({ error: 'stream_failed', message: 'যুক্তি-বিচ্ছেদ ঘটেছে।', detail: String(e.message || e), retryable: true })}\n\n`);
       } finally {
@@ -867,6 +901,7 @@ export async function agentStatus(request, env, uid) {
     memory: { version: MEMORY_VERSION, mode: 'auto', scope: 'account-only' },
     response: describeResponseValidation(),
     actions: describeActions(env),
+    observability: describeObservability(),
     context: ctxOn
       ? describeContext(buildContext({ uid, prefs: null, stats: null, onboarding: null, memoryOn: true }))
       : { enabled: false }
@@ -898,5 +933,8 @@ export const __test = {
   listTools, TOOL_REGISTRY_VERSION,
   extractMemoryCandidates, makeMemory, upsertMemory, parseMemory, renderMemory, MEMORY_VERSION,
   validateResponse, describeResponseValidation, RESPONSE_VALIDATION_VERSION,
-  describeActions, ACTION_VERSION
+  describeActions, ACTION_VERSION,
+  makeTrace, makeRequestId, callerRef, estimateTokens, quotaState, renderTrace,
+  parseTraces, appendTrace, addUsage, emptyUsage, estimateCost, describeObservability,
+  validateObservability, OBSERVABILITY_VERSION, FALLBACK
 };
