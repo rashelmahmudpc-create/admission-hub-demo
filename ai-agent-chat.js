@@ -2348,6 +2348,8 @@
     attachments = []; renderAttach();
     const m = { role: 'user', text: fullText, ts: Date.now(), image: imgItem ? imgItem.dataUrl : '' };
     msgs.push(m); save(); renderMsgs();
+    /* Phase 2: AI tutor usage signal. Only counts — never the message text. */
+    try { window.dispatchEvent(new CustomEvent('admission:activity', { detail: { type: 'AI_MESSAGE_SENT' } })); } catch (_) {}
     /* ── Quiz intent → interactive configuration engine (কোনো বাটন লাগবে না) ── */
     const qi = qzParseIntent(fullText);
     if (qi) { msgs.push({ role: 'ai', text: '', ts: Date.now(), qz: qi }); save(); renderMsgs(); return; }

@@ -9810,6 +9810,7 @@ var FCM_TOKEN_URL = "https://oauth2.googleapis.com/token";
 var IID_BATCH_ADD_URL = "https://iid.googleapis.com/iid/v1:batchAdd";
 var IID_BATCH_REMOVE_URL = "https://iid.googleapis.com/iid/v1:batchRemove";
 var AUTHORITY_NAME2 = "admission-hub-global-auth-v1";
+var DEFAULT_MEASUREMENT_ID = "G-06DEZGLFJE";
 var SESSION_COOKIE = "__Host-ah_session";
 var SESSION_TOKEN_RE = /^[A-Za-z0-9_-]{40,96}$/;
 var MAX_DEVICES_PER_USER = 12;
@@ -10295,13 +10296,16 @@ function fcmConfigured(env) {
 }
 function publicWebConfig(env) {
   if (!fcmConfigured(env)) return null;
-  return {
+  const cfg = {
     apiKey: String(env.FIREBASE_API_KEY || ""),
     projectId: String(env.FIREBASE_PROJECT_ID || ""),
     messagingSenderId: String(env.FIREBASE_MESSAGING_SENDER_ID || ""),
     appId: String(env.FIREBASE_APP_ID || ""),
     vapidKey: String(env.FIREBASE_VAPID_KEY || "")
   };
+  const measurementId = String(env.FIREBASE_MEASUREMENT_ID || "").trim() || DEFAULT_MEASUREMENT_ID;
+  if (measurementId) cfg.measurementId = measurementId;
+  return cfg;
 }
 var jsonResponse = (request, obj, status = 200) => new Response(JSON.stringify(obj), {
   status,

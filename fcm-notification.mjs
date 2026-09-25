@@ -35,6 +35,10 @@ const FCM_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const IID_BATCH_ADD_URL = 'https://iid.googleapis.com/iid/v1:batchAdd';
 const IID_BATCH_REMOVE_URL = 'https://iid.googleapis.com/iid/v1:batchRemove';
 const AUTHORITY_NAME = 'admission-hub-global-auth-v1';
+/* GA4 web-stream measurement ID for the analytics-service.js foundation. Public
+ * by design and shipped as a default because this Worker sits on the Workers
+ * Free 64-variable ceiling; an FIREBASE_MEASUREMENT_ID secret overrides it. */
+const DEFAULT_MEASUREMENT_ID = 'G-06DEZGLFJE';
 const SESSION_COOKIE = '__Host-ah_session';
 const SESSION_TOKEN_RE = /^[A-Za-z0-9_-]{40,96}$/;
 const MAX_DEVICES_PER_USER = 12;
@@ -518,13 +522,22 @@ export { fcmConfigured, sessionUser, parseBody, fcmSendToTokens };
 
 function publicWebConfig(env) {
   if (!fcmConfigured(env)) return null;
-  return {
+  const cfg = {
     apiKey: String(env.FIREBASE_API_KEY || ''),
     projectId: String(env.FIREBASE_PROJECT_ID || ''),
     messagingSenderId: String(env.FIREBASE_MESSAGING_SENDER_ID || ''),
     appId: String(env.FIREBASE_APP_ID || ''),
     vapidKey: String(env.FIREBASE_VAPID_KEY || '')
   };
+  /* GA4 measurement ID (G-XXXXXXX) for the analytics-service.js foundation.
+   * This Worker sits on the Workers Free 64-variable ceiling, so the ID ships
+   * as a module default instead of a binding; an FIREBASE_MEASUREMENT_ID secret
+   * still wins when present, so a different GA4 stream needs no code change.
+   * A measurement ID is public by design (every browser receives it), so hard
+   * coding it leaks nothing. */
+  const measurementId = String(env.FIREBASE_MEASUREMENT_ID || '').trim() || DEFAULT_MEASUREMENT_ID;
+  if (measurementId) cfg.measurementId = measurementId;
+  return cfg;
 }
 
 const jsonResponse = (request, obj, status = 200) => new Response(JSON.stringify(obj), {

@@ -815,3 +815,68 @@ Verify panel changes in a real DOM, not just by reading the diff - a `jsdom`
 harness that stubs `fetch`, calls `NotificationStudio.setLang`/`setState`, and
 greps `#nsView` for the Bengali Unicode range catches leaks that source review
 misses.
+## Analytics Foundation (Phase 1 GA4) — `analytics-service.js`
+
+The app talks to Firebase Analytics **only** through `window.AhAnalytics`; no
+other module loads the Firebase SDK or calls `logEvent`. Full reference:
+`docs/ANALYTICS-FOUNDATION.md`.
+
+- **Dictionary-first.** Events and parameters are declared in the `EVENTS` map.
+  An event that is not declared is rejected, and a parameter that is not listed
+  for that event is dropped — that is what keeps the data queryable. Add to the
+  dictionary before tracking something new.
+- **Privacy is a hard filter.** `FORBIDDEN_PARAM` strips password/secret/token/
+  api-key/credential/cookie/email/phone/address/full-name/answer/message/free
+  text/etc. regardless of what the dictionary says. `setUserContext` stores only
+  an opaque id and the first name (read from `ah-profile-cache-key`, exactly like
+  `ai-agent-chat.js`) — never email, phone or full name.
+- **Never throws.** Every public call is wrapped; analytics failure is never app
+  failure. `status()` reports `reasons` for every dropped event.
+- **Environment separation.** Transmission requires the production origin
+  (`admissionhub.pages.dev`). Other origins are `disabled`; `?ahanalytics=debug`
+  traces to the console and sends nothing.
+- **Wiring.** `index.html` loads `analytics-service.js` right after
+  `session-persist.js`, then calls `attach()` + `start()`. Screen views ride
+  `admission:route-rendered`; session/user context rides
+  `admissionhub:authchange`; learning completions ride `admission:activity`
+  (`TEST_COMPLETED`, `REVISION_COMPLETED`).
+- **Live, via a code default.** `fcm-notification.mjs` ships
+  `DEFAULT_MEASUREMENT_ID = 'G-06DEZGLFJE'` (the `admission-hub-web` stream), so
+  `/api/notifications/config` returns a `measurementId` and GA4 transmits. The
+  planned `FIREBASE_MEASUREMENT_ID` binding is **not** used: the Worker sits on
+  the Workers Free 64-variable ceiling, and a 65th is rejected on deploy
+  (`code: 10055`). Bind `FIREBASE_MEASUREMENT_ID` as a dashboard secret only
+  after freeing a slot — an env value overrides the default. A measurement ID is
+  public, so the default leaks nothing.
+- **SDK.** `sdk/firebase-analytics-compat.js` is self-hosted (download from
+  gstatic 10.12.2), matching the messaging SDK pattern; gstatic is the fallback.
+- **Bump discipline.** `analytics-service.js` is in `APP_SHELL`, so after editing
+  it run `npm run sw:manifest`. The shell build id lives in `sw.js` (`BUILD_ID`),
+  `index.html` (`expectedSwVersion`, `sw.js?v=`, cache-purge literal) and the
+  version-pinned test suites — `scripts/cache-bump.mjs` lists them; a manual bump
+  always misses one.
+- Run `node analytics-service.test.mjs` after touching the service; it is part of
+  `npm run test:native-auth`.
+
+## Phase 2 — Learning Instrumentation (M1)
+
+Phase 2 (`docs/PHASE-02-LEARNING-ANALYTICS.md`) turns the Phase 1 foundation into
+learning behaviour data. Its first milestone ships in this build.
+
+- **Emit on the bus, not in the service.** No module imports `AhAnalytics`.
+  Learning surfaces dispatch `admission:activity` with a semantic `type`;
+  `analytics-service.js` owns the `LEARNING_BUS_TYPES` mapping (e.g.
+  `LESSON_COMPLETE` → `lesson_complete`) and relies on `normalizeEvent`'s
+  camelCase → snake_case pass. Add the bus type there, not a new caller.
+- **Quiz completions are explicit.** `TEST_COMPLETED`/`REVISION_COMPLETED` map
+  to `quiz_complete` by hand, because `resultId`/`sessionId` must become
+  `quiz_id` — the generic path would emit `result_id` and drop a required param.
+- **Full quiz summary.** The exam engine now sends `questionCount`, `correct`,
+  `wrong`, `skipped`, `accuracy`, `duration`, `mode`, `testType` on
+  `TEST_COMPLETED`; the Phase 1 handler always read them, but nothing sent them.
+- **Live course surface is `source-course-tool.js`.** `interactive-course-tool.js`
+  is dead code — its `interactive-courses` route is in `index.html`'s
+  `removedRoute` list. Do not instrument it.
+- **Privacy unchanged.** No message text, no search query, only opaque ids; no
+  new event names, so `EVENT_VERSION` stays `ev1` and the Worker ceiling is
+  untouched.
