@@ -28,7 +28,7 @@
   'use strict';
 
   const EVENT_VERSION = 'ev2';
-  const APP_VERSION_FALLBACK = 'v286-lesson-quiz-analytics-20260925';
+  const APP_VERSION_FALLBACK = 'v288-learning-insights-20260925';
   const SDK_BASE = 'https://www.gstatic.com/firebasejs/10.12.2';
   const SDK_LOCAL = './sdk';
   const QUEUE_KEY = 'ahAnalyticsQueueV1';
@@ -237,6 +237,222 @@
   const MAX_PARAM_STR = 120;
   const MAX_PARAMS = 24;
 
+  /* ── Phase 2 M4/M5 — learning funnel ──────────────────────────────────────
+   * The funnel is defined here, in one place, and every step is an EVENT name
+   * (never a screen name): trackScreen collapses deep routes to their first
+   * segment (pinned by test a16), so a screen-based funnel would silently
+   * merge every course into one step. */
+  const FUNNEL_STEPS = [
+    { key: 'course_view', event: 'course_view' },
+    { key: 'course_start', event: 'course_start' },
+    { key: 'lesson_start', event: 'lesson_start' },
+    { key: 'lesson_complete', event: 'lesson_complete' },
+    { key: 'quiz_start', event: 'quiz_start' },
+    { key: 'quiz_complete', event: 'quiz_complete' }
+  ];
+
+  /* A stage is "unusually steep" when it keeps far fewer students than the
+   * stages before it. 40% is the drop that has always meant a real problem in
+   * this app (a step that loses most of its traffic), and a step is only
+   * flagged once at least 5 students reached it — below that a percentage is
+   * noise, not a signal. */
+  const DROPOFF_ALERT_RATE = 0.4;
+  const DROPOFF_MIN_SAMPLE = 5;
+
+  /* ── Phase 2 M4–M7 — derived learning insights ────────────────────────────
+   * Pure: takes already-counted funnel counts (or raw events) and returns the
+   * funnel, the steepest drop-off, engagement/streak/retention and the data
+   * quality report. No DOM, no storage, no network — so the same function runs
+   * in the browser, in an admin panel, and in node:test. */
+  function buildLearningInsights(input = {}) {
+    const events = Array.isArray(input.events) ? input.events.filter(e => e && e.name) : [];
+    const counts = (input.counts && typeof input.counts === 'object') ? input.counts : countByEvent(events);
+    const dayCount = (input.dayCount && typeof input.dayCount === 'object') ? input.dayCount : countByDay(events);
+
+    /* M4 — funnel. Each step reports how many reached it, how many of the
+     * previous step survived, and the drop from the step before. */
+    const funnel = FUNNEL_STEPS.map((step, index) => {
+      const count = Number(counts[step.event]) || 0;
+      const previous = index === 0 ? count : (Number(counts[FUNNEL_STEPS[index - 1].event]) || 0);
+      return {
+        key: step.key,
+        event: step.event,
+        count,
+        reachRate: index === 0 ? 1 : (previous ? Number((count / previous).toFixed(4)) : 0),
+        dropRate: index === 0 ? 0 : (previous ? Number(((previous - count) / previous).toFixed(4)) : 0)
+      };
+    });
+
+    /* M5 — drop-off intelligence: the steepest step that has enough students
+     * to be meaningful. Ties break toward the earliest step, which is the one
+     * worth fixing first. */
+    const eligible = funnel.filter(step => step.count >= DROPOFF_MIN_SAMPLE && step.dropRate >= DROPOFF_ALERT_RATE);
+    const steepest = eligible.length
+      ? eligible.reduce((worst, step) => (step.dropRate > worst.dropRate ? step : worst), eligible[0])
+      : null;
+    const dropOff = {
+      hasAlert: Boolean(steepest),
+      steepest: steepest ? steepest.key : null,
+      dropRate: steepest ? steepest.dropRate : 0,
+      threshold: DROPOFF_ALERT_RATE,
+      minSample: DROPOFF_MIN_SAMPLE,
+      message: steepest ? dropOffMessage(steepest.key, steepest.dropRate) : ''
+    };
+
+    /* M6 — engagement, streak, retention. All derived from the same events;
+     * nothing new is collected. */
+    const days = Object.keys(dayCount).sort();
+    const activeDays = days.filter(day => (Number(dayCount[day]) || 0) > 0);
+    const engagement = {
+      activeDays: activeDays.length,
+      totalEvents: events.length,
+      firstDay: activeDays[0] || null,
+      lastDay: activeDays[activeDays.length - 1] || null,
+      streak: computeStreak(activeDays),
+      retention: retentionBuckets(activeDays)
+    };
+
+    /* M7 — data quality: which expected events never fired, and which rows are
+     * missing a required parameter or are duplicates. */
+    const quality = checkDataQuality(events, counts);
+
+    return { funnel, dropOff, engagement, quality };
+  }
+
+  const countByEvent = (events) => {
+    const out = {};
+    for (const e of events) out[e.name] = (out[e.name] || 0) + 1;
+    return out;
+  };
+
+  const countByDay = (events) => {
+    const out = {};
+    for (const e of events) {
+      const day = dayOf(e.at || e.timestamp || e.date);
+      if (day) out[day] = (out[day] || 0) + 1;
+    }
+    return out;
+  };
+
+  const dayOf = (value) => {
+    if (!value) return '';
+    try {
+      const d = (typeof value === 'number' || /^\d+$/.test(String(value))) ? new Date(Number(value)) : new Date(value);
+      if (isNaN(d.getTime())) return '';
+      return d.toISOString().slice(0, 10);
+    } catch (_) { return ''; }
+  };
+
+  /* Longest run of consecutive calendar days in an ascending day list. */
+  const computeStreak = (days) => {
+    if (!days.length) return 0;
+    let best = 1;
+    let run = 1;
+    for (let i = 1; i < days.length; i += 1) {
+      const gap = (new Date(days[i] + 'T00:00:00Z') - new Date(days[i - 1] + 'T00:00:00Z')) / 86400000;
+      run = gap === 1 ? run + 1 : 1;
+      if (run > best) best = run;
+    }
+    return best;
+  };
+
+  /* D1/D7/D30 buckets: of the students active on their first day, how many
+   * came back on a later day within the window. Days are the only key we hold,
+   * so this is a cohort count, not a per-student join. */
+  const retentionBuckets = (days) => {
+    const out = { d1: 0, d7: 0, d30: 0 };
+    if (!days.length) return out;
+    const first = days[0];
+    const start = new Date(first + 'T00:00:00Z').getTime();
+    for (const day of days) {
+      const diff = Math.round((new Date(day + 'T00:00:00Z').getTime() - start) / 86400000);
+      if (diff >= 1) out.d1 += 1;
+      if (diff >= 7) out.d7 += 1;
+      if (diff >= 30) out.d30 += 1;
+    }
+    return out;
+  };
+
+  /* M7 — expected-event validation. `expected` defaults to the learning events
+   * every funnel needs; `required` reuses the dictionary so this can never
+   * drift from what normalizeEvent enforces. */
+  function checkDataQuality(events, counts, options = {}) {
+    const expected = options.expected || ['course_view', 'lesson_start', 'lesson_complete', 'quiz_start', 'quiz_complete'];
+    const missing = expected.filter(name => !(Number(counts[name]) > 0));
+
+    let incomplete = 0;
+    let duplicates = 0;
+    const seen = new Set();
+    for (const e of events) {
+      const def = EVENTS[e.name];
+      if (def) {
+        const params = e.params || {};
+        const lacks = (def.required || []).some(key => params[key] === undefined || params[key] === null || params[key] === '');
+        if (lacks) incomplete += 1;
+      }
+      if (def && def.once) {
+        const key = `${e.name}:${JSON.stringify(e.params || {})}`;
+        if (seen.has(key)) duplicates += 1;
+        else seen.add(key);
+      }
+    }
+
+    return {
+      ok: missing.length === 0 && incomplete === 0 && duplicates === 0,
+      expected,
+      missing,
+      incomplete,
+      duplicates,
+      checked: events.length
+    };
+  }
+
+  const dropOffMessage = (key, rate) => {
+    const labels = {
+      course_start: 'Course খোলার পর শুরু করেনি',
+      lesson_start: 'Course শুরু করে পাঠ শুরু করেনি',
+      lesson_complete: 'পাঠ শুরু করে শেষ করেনি',
+      quiz_start: 'পাঠ শেষ করে কুইজ শুরু করেনি',
+      quiz_complete: 'কুইজ শুরু করে শেষ করেনি'
+    };
+    return `${labels[key] || key} — ${Math.round(rate * 100)}% এখানেই থেমে গেছে।`;
+  }
+
+  /* An append-only, bounded local trail of the learning events this device
+   * emitted. GA4 owns the aggregate view; this exists so the admin panel and
+   * the data-quality check have something to read on-device without waiting on
+   * the Data API (which is still not enabled). It stores the SAME already-
+   * filtered params that were sent — no new personal data. */
+  const LEDGER_KEY = 'ahLearningLedgerV1';
+  const MAX_LEDGER = 500;
+  /* Held in memory and flushed on a coalesced timer: re-parsing and re-writing
+   * up to 500 rows on every event is O(n²) across a quiz (40+ attempts), which
+   * is exactly the kind of work an analytics service must never charge the app
+   * for. */
+  let ledgerCache = null;
+  let ledgerFlushTimer = null;
+
+  const readLedger = () => {
+    if (ledgerCache) return ledgerCache;
+    try { ledgerCache = JSON.parse(localStorage.getItem(LEDGER_KEY) || '[]') || []; } catch (_) { ledgerCache = []; }
+    return ledgerCache;
+  };
+  const flushLedger = () => {
+    ledgerFlushTimer = null;
+    try { localStorage.setItem(LEDGER_KEY, JSON.stringify(readLedger().slice(-MAX_LEDGER))); } catch (_) {}
+  };
+  const recordLedger = (row) => {
+    const rows = readLedger();
+    rows.push({ name: row.name, params: row.params, at: row.at });
+    if (rows.length > MAX_LEDGER) rows.splice(0, rows.length - MAX_LEDGER);
+    if (ledgerFlushTimer) return;
+    try { ledgerFlushTimer = setTimeout(flushLedger, 400); } catch (_) { flushLedger(); }
+  };
+
+  function learningInsights(options = {}) {
+    return buildLearningInsights({ events: options.events || readLedger() });
+  }
+
   /* ── internal state ─────────────────────────────────────────────────────── */
   /* The app dispatches semantic learning signals on the `admission:activity`
    * bus (so emitters never import this service). Each bus type maps to a
@@ -252,6 +468,7 @@
     LESSON_COMPLETE: 'lesson_complete',
     QUESTION_ATTEMPT: 'question_attempt',
     QUIZ_START: 'quiz_start',
+    QUIZ_COMPLETE: 'quiz_complete',
     SEARCH: 'search',
     NOTIFICATION_OPEN: 'notification_open',
     NOTIFICATION_CLICK: 'notification_click',
@@ -504,14 +721,16 @@
       if (config.mode === 'debug') {
         try { console.info('[AhAnalytics]', row.name, row.params); } catch (_) {}
         log.sent++;
+        recordLedger(row);
         return { ok: true, reason: 'debug' };
       }
 
-      if (!isOnline()) { enqueue(row); return { ok: true, reason: 'queued' }; }
+      if (!isOnline()) { enqueue(row); recordLedger(row); return { ok: true, reason: 'queued' }; }
 
       /* Fire and forget: a rejected promise must never become an unhandled
        * rejection, and the caller must not wait for the network. */
       transmit(row).catch(() => false);
+      recordLedger(row);
       return { ok: true, reason: 'sent' };
     } catch (e) {
       noteDrop('exception');
@@ -763,7 +982,12 @@
     trackNotification,
     setUserContext,
     flushQueue,
+    learningInsights,
+    buildLearningInsights,
+    readLedger,
+    flushLedger,
     EVENTS,
-    __test: { normalizeEvent, toSnake, coerceValue, isForbiddenKey, FORBIDDEN_PARAM, EVENT_VERSION, MAX_PARAMS }
+    FUNNEL_STEPS,
+    __test: { normalizeEvent, toSnake, coerceValue, isForbiddenKey, FORBIDDEN_PARAM, EVENT_VERSION, MAX_PARAMS, buildLearningInsights, checkDataQuality, computeStreak, retentionBuckets }
   };
 });

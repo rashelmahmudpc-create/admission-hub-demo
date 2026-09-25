@@ -234,17 +234,19 @@ test('a20: the service never references a production-only global it cannot survi
 
 async function busHarness() {
   const listeners = {};
+  const store = {};
+  const ls = { getItem: k => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); }, removeItem: k => { delete store[k]; } };
   const fakeWindow = { addEventListener: (t, fn) => { (listeners[t] = listeners[t] || []).push(fn); }, matchMedia: () => ({ matches: false }) };
   const fakeDoc = { addEventListener: (t, fn) => { (listeners[t] = listeners[t] || []).push(fn); } };
   const svc = new Function('self', 'window', 'document', 'localStorage', 'navigator',
-    `${src}\nreturn self.AhAnalytics;`)({}, fakeWindow, fakeDoc, undefined, {});
+    `${src}\nreturn self.AhAnalytics;`)({}, fakeWindow, fakeDoc, ls, {});
   svc.attach();
   await svc.configure({ forceMode: 'debug' });
   const seen = [];
   const originalInfo = console.info;
   console.info = (...args) => { if (args[0] === '[AhAnalytics]') seen.push({ name: args[1], params: args[2] }); };
   const fire = (detail) => (listeners['admission:activity'] || []).forEach(fn => fn({ detail }));
-  return { svc, fire, seen, restore: () => { console.info = originalInfo; } };
+  return { svc, fire, seen, store, restore: () => { console.info = originalInfo; } };
 }
 
 test('a23: LESSON_COMPLETE on the bus becomes lesson_complete with snake_case params', async () => {
@@ -364,6 +366,199 @@ test('a32: QUESTION_ATTEMPT without a question_id is rejected (required param)',
   try {
     h.fire({ type: 'QUESTION_ATTEMPT', quizId: 'exam-7', correct: true });
     assert.equal(h.seen.filter(x => x.name === 'question_attempt').length, 0, 'missing required question_id → dropped');
+  } finally { h.restore(); }
+});
+
+/* ── Phase 2 M3 completion — the course MCQ engine is a quiz surface too ──── */
+
+test('a33: QUIZ_COMPLETE rides the bus with accuracy and attempt duration', async () => {
+  const h = await busHarness();
+  try {
+    h.fire({ type: 'QUIZ_COMPLETE', quizId: 'sandhi-exact-native-v1:course', questionCount: 40, correct: 30, wrong: 8, skipped: 2, accuracy: 75, quizType: 'practice', duration: 540 });
+    const evt = h.seen.find(x => x.name === 'quiz_complete');
+    assert.ok(evt, 'quiz_complete emitted from the course MCQ result');
+    assert.equal(evt.params.quiz_id, 'sandhi-exact-native-v1:course', 'the course MCQ result carries its quiz_id');
+    assert.equal(evt.params.accuracy, 75);
+    assert.equal(evt.params.duration, 540);
+  } finally { h.restore(); }
+});
+
+/* ── Phase 2 M4/M5 — funnel + drop-off intelligence ──────────────────────── */
+
+const { buildLearningInsights, checkDataQuality, computeStreak } = analytics.__test;
+
+/* Build a synthetic event trail: `n` events per funnel step, all on one day.
+ * Each row carries the dictionary-required params, so a "clean" trail is clean
+ * for the right reason rather than by accident. */
+const REQUIRED = {
+  course_view: { course_id: 'c1' },
+  course_start: { course_id: 'c1' },
+  lesson_view: { course_id: 'c1', lesson_id: 'l1' },
+  lesson_start: { course_id: 'c1', lesson_id: 'l1' },
+  lesson_complete: { course_id: 'c1', lesson_id: 'l1' },
+  course_complete: { course_id: 'c1' },
+  quiz_start: { quiz_id: 'q1' },
+  quiz_complete: { quiz_id: 'q1' }
+};
+function trail(counts, at = Date.parse('2026-09-20T09:00:00Z')) {
+  const out = [];
+  for (const [name, n] of Object.entries(counts)) {
+    const def = analytics.EVENTS[name];
+    const identity = def && def.once ? (def.required || [])[0] : null;
+    for (let i = 0; i < n; i += 1) {
+      const params = { ...(REQUIRED[name] || {}) };
+      /* once-only events must differ per row, otherwise the trail is duplicate
+       * by construction and the quality check correctly flags it. */
+      if (identity) params[identity] = `${params[identity]}-${i}`;
+      out.push({ name, params, at });
+    }
+  }
+  return out;
+}
+
+test('m4-1: the funnel reports every step in order with its reach and drop rate', () => {
+  const insights = buildLearningInsights({ events: trail({ course_view: 100, course_start: 80, lesson_start: 60, lesson_complete: 40, quiz_start: 30, quiz_complete: 20 }) });
+  assert.deepEqual(insights.funnel.map(s => s.key), ['course_view', 'course_start', 'lesson_start', 'lesson_complete', 'quiz_start', 'quiz_complete']);
+  assert.deepEqual(insights.funnel.map(s => s.count), [100, 80, 60, 40, 30, 20]);
+  assert.equal(insights.funnel[0].reachRate, 1, 'the first step is the baseline');
+  assert.equal(insights.funnel[1].reachRate, 0.8);
+  assert.equal(insights.funnel[1].dropRate, 0.2);
+});
+
+test('m4-2: the funnel is built from events, never from collapsed screen names', () => {
+  /* a16 pins that trackScreen collapses `source-courses/sandhi` to
+   * `source-courses`; a screen-based funnel would therefore merge every course
+   * into one step. The step list must be event names. */
+  assert.deepEqual(analytics.FUNNEL_STEPS.map(s => s.event), ['course_view', 'course_start', 'lesson_start', 'lesson_complete', 'quiz_start', 'quiz_complete']);
+});
+
+test('m5-1: the steepest stage is surfaced with a plain-language message', () => {
+  const insights = buildLearningInsights({ events: trail({ course_view: 100, course_start: 90, lesson_start: 85, lesson_complete: 20, quiz_start: 18, quiz_complete: 15 }) });
+  assert.equal(insights.dropOff.hasAlert, true);
+  assert.equal(insights.dropOff.steepest, 'lesson_complete', 'the 85→20 lesson drop is the steepest');
+  assert.equal(insights.dropOff.dropRate, 0.7647);
+  assert.match(insights.dropOff.message, /৭৬%|76%/, 'the message states the size of the drop');
+});
+
+test('m5-2: a small sample never raises an alert (a percentage of 3 students is noise)', () => {
+  const insights = buildLearningInsights({ events: trail({ course_view: 3, course_start: 1 }) });
+  assert.equal(insights.dropOff.hasAlert, false);
+  assert.equal(insights.dropOff.steepest, null);
+});
+
+test('m5-3: a healthy funnel raises no alert', () => {
+  const insights = buildLearningInsights({ events: trail({ course_view: 100, course_start: 95, lesson_start: 90, lesson_complete: 88, quiz_start: 85, quiz_complete: 82 }) });
+  assert.equal(insights.dropOff.hasAlert, false);
+});
+
+test('m5-4: ties break toward the earliest step, which is the one to fix first', () => {
+  const insights = buildLearningInsights({ events: trail({ course_view: 50, course_start: 25, lesson_start: 12, lesson_complete: 6, quiz_start: 3, quiz_complete: 3 }) });
+  assert.equal(insights.dropOff.steepest, 'lesson_start', '52% lost beats the 50% steps');
+});
+
+/* ── Phase 2 M6 — engagement, streak, retention ──────────────────────────── */
+
+test('m6-1: a streak counts the longest run of consecutive active days', () => {
+  assert.equal(computeStreak(['2026-09-01', '2026-09-02', '2026-09-03']), 3);
+  assert.equal(computeStreak(['2026-09-01', '2026-09-03', '2026-09-04']), 2, 'a gap restarts the run');
+  assert.equal(computeStreak([]), 0);
+});
+
+test('m6-2: engagement derives active days, streak and retention from the same events', () => {
+  const events = [
+    ...trail({ lesson_start: 2 }, Date.parse('2026-09-01T09:00:00Z')),
+    ...trail({ lesson_start: 1 }, Date.parse('2026-09-02T09:00:00Z')),
+    ...trail({ quiz_start: 1 }, Date.parse('2026-09-08T09:00:00Z'))
+  ];
+  const { engagement } = buildLearningInsights({ events });
+  assert.equal(engagement.activeDays, 3);
+  assert.equal(engagement.firstDay, '2026-09-01');
+  assert.equal(engagement.lastDay, '2026-09-08');
+  assert.equal(engagement.streak, 2, 'Sep 1–2 is the longest consecutive run');
+  assert.equal(engagement.retention.d1, 2, 'two later days are ≥1 day after the first');
+  assert.equal(engagement.retention.d7, 1);
+  assert.equal(engagement.retention.d30, 0);
+});
+
+/* ── Phase 2 M7 — data quality monitoring ────────────────────────────────── */
+
+test('m7-1: an expected event that never fired is reported as missing', () => {
+  const q = checkDataQuality(trail({ course_view: 5, lesson_start: 5 }), { course_view: 5, lesson_start: 5 });
+  assert.equal(q.ok, false);
+  assert.ok(q.missing.includes('lesson_complete'));
+  assert.ok(q.missing.includes('quiz_start'));
+  assert.ok(!q.missing.includes('course_view'));
+});
+
+test('m7-2: a row missing a dictionary-required parameter is counted incomplete', () => {
+  const events = [{ name: 'lesson_complete', params: { course_id: 'c1' } }]; // no lesson_id
+  const q = checkDataQuality(events, { lesson_complete: 1 });
+  assert.equal(q.incomplete, 1);
+  assert.equal(q.ok, false);
+});
+
+test('m7-3: a duplicated once-only event is flagged', () => {
+  const dup = { name: 'lesson_complete', params: { course_id: 'c1', lesson_id: 'l1' } };
+  const q = checkDataQuality([dup, { ...dup }], { lesson_complete: 2 });
+  assert.equal(q.duplicates, 1);
+});
+
+test('m7-4: a clean trail reports ok with nothing missing', () => {
+  const counts = { course_view: 10, lesson_start: 9, lesson_complete: 8, quiz_start: 7, quiz_complete: 6 };
+  const q = checkDataQuality(trail(counts), counts);
+  assert.equal(q.ok, true);
+  assert.deepEqual(q.missing, []);
+  assert.equal(q.checked, 40);
+});
+
+test('m7-5: an empty trail reports every expected event missing, and never throws', () => {
+  const q = checkDataQuality([], {});
+  assert.equal(q.ok, false);
+  assert.equal(q.missing.length, 5);
+  assert.equal(buildLearningInsights({}).funnel[0].count, 0);
+});
+
+/* ── Phase 2 M4–M7 — the ledger that feeds the reports ───────────────────── */
+
+test('m4-3: emitted learning events land in the on-device ledger and feed the funnel', async () => {
+  const h = await busHarness();
+  try {
+    for (let i = 0; i < 4; i += 1) {
+      h.fire({ type: 'COURSE_VIEW', courseId: 'c1', courseType: 'source' });
+      h.fire({ type: 'LESSON_START', courseId: 'c1', lessonId: `l${i}`, lessonNumber: i + 1 });
+      h.fire({ type: 'LESSON_COMPLETE', courseId: 'c1', lessonId: `l${i}`, lessonNumber: i + 1 });
+    }
+    h.svc.flushLedger();
+    const rows = h.svc.readLedger();
+    assert.equal(rows.length, 12, 'every emitted event is recorded');
+    const insights = h.svc.buildLearningInsights({ events: rows });
+    assert.equal(insights.funnel.find(s => s.key === 'course_view').count, 4);
+    assert.equal(insights.funnel.find(s => s.key === 'lesson_complete').count, 4);
+    assert.equal(insights.funnel.find(s => s.key === 'quiz_start').count, 0);
+    assert.equal(insights.quality.ok, false, 'quiz events never fired, so quality is not ok');
+  } finally { h.restore(); }
+});
+
+test('m4-4: the ledger holds only what was sent — a forbidden param never reaches it', async () => {
+  const h = await busHarness();
+  try {
+    h.fire({ type: 'LESSON_COMPLETE', courseId: 'c1', lessonId: 'l1', answer: 'the secret answer', email: 'a@b.c' });
+    h.svc.flushLedger();
+    const serialized = JSON.stringify(h.svc.readLedger());
+    assert.equal(serialized.includes('secret'), false, 'answer text is filtered before storage');
+    assert.equal(serialized.includes('a@b.c'), false, 'email is filtered before storage');
+  } finally { h.restore(); }
+});
+
+test('m4-5: the ledger stays bounded, dropping the oldest rows first', async () => {
+  const h = await busHarness();
+  try {
+    for (let i = 0; i < 520; i += 1) h.fire({ type: 'QUESTION_ATTEMPT', quizId: 'q', questionId: `q-${i}`, correct: true });
+    h.svc.flushLedger();
+    const rows = h.svc.readLedger();
+    assert.equal(rows.length, 500, 'the ledger never grows past its cap');
+    assert.equal(rows[rows.length - 1].params.question_id, 'q-519', 'the newest row survives');
+    assert.notEqual(rows[0].params.question_id, 'q-0', 'the oldest rows were dropped');
   } finally { h.restore(); }
 });
 

@@ -1,7 +1,10 @@
 # PHASE 2 — LEARNING & STUDENT BEHAVIOR ANALYTICS
 
-**Status:** In progress — M1 (Learning Instrumentation), M2 (Course & Lesson
-Analytics) and M3 (Quiz & Practice Analytics) complete.
+**Status:** ✅ Complete — M1 (Learning Instrumentation), M2 (Course & Lesson
+Analytics), M3 (Quiz & Practice Analytics), M4 (Funnel), M5 (Drop-off
+Intelligence, detection), M6 (Engagement/Streak/Retention) and M7 (Data Quality)
+all shipped. The admin *display* of these numbers remains parked with the rest of
+the admin panel (needs the GA4 Data API + a Property ID).
 **Module:** `analytics-service.js` + the learning surfaces that emit on the
 `admission:activity` bus.
 **Depends on:** Phase 1 (`docs/ANALYTICS-FOUNDATION.md`).
@@ -216,40 +219,140 @@ the first lesson of a course. The key now joins **every required parameter**
 
 ---
 
-## 4. Remaining milestones
+## 4. M3 completion — the course MCQ engine is instrumented
 
-The rest of the blueprint is unchanged and still ahead. Each will land as its
-own completion record once the signals below exist to power it.
+M3 was marked complete while one surface still emitted nothing: the course's own
+question bank (`SourceCourse.answer` in `source-course-tool.js`). The exam engine
+fired `question_attempt`; the course MCQ engine — the one students actually reach
+from `source-courses/*` — did not.
 
-- **M2 — Course & lesson analytics.** ✅ Complete (§3). Drop-off, completion,
-  average progress and time per course and lesson now have their signals:
-  `course_view`, `course_start`, `lesson_view`, `lesson_start`,
-  `lesson_complete` (with `duration`), `course_complete`.
-- **M3 — Quiz & practice analytics.** ✅ Complete (§3). `question_attempt`
-  (per-question `correct` + `duration`), `quiz_start` and `quiz_complete` now
-  cover score/accuracy/retry/pace. Abandonment still has no explicit event — a
-  `quiz_start` with no matching `quiz_complete` is the current proxy.
-- **M4 — Funnel.** Course View → Start → Lesson Start → Lesson Complete → Quiz
-  Start → Quiz Complete. Now fully buildable on M2/M3 events.
-  Note that `trackScreen` collapses deep routes to their first segment (pinned by
-  test a16), so funnel steps must come from events, not screen names.
-- **M5 — Drop-off intelligence.** Detect the unusually steep stage and surface it
-  to the admin panel.
-- **M6 — Engagement, streak, progress, retention, segmentation, behavioural and
-  at-risk signals.** Derived from M1–M5; no new collection where avoidable.
-- **M7 — Data quality monitoring.** Expected-event validation (fired? correct
-  params? duplicate? missing?) on top of the Phase 1 architecture.
-- **Admin panel display.** Parked by the owner: the GA4 numbers will live inside
-  the future app admin panel, not a separate dashboard. Requires the Google
-  Analytics Data API enabled and a numeric Property ID — neither exists yet.
+It does now:
 
-### Dictionary gaps that remain
+- Answering a course MCQ dispatches `QUESTION_ATTEMPT` with `quiz_id`
+  (`<course-id>:course`), `question_id`, `correct`, `question_number`,
+  `subject_id`/`topic_id` (the source's own question family) and a real
+  `duration`. Think-time comes from a `questionSeenAt` stamp taken when the
+  question first rendered, not from the click.
+- Reaching the result screen dispatches `QUIZ_COMPLETE` (via a new
+  `QUIZ_COMPLETE` bus mapping) with accuracy, counts and the attempt duration
+  measured from `quiz_start`. This replaced the old `TEST_COMPLETED` emission,
+  which is the *exam* engine's signal and was mislabelling a persisted course
+  attempt as `mode: 'flash'`.
+- Only which question and whether it was right leaves the browser. The option
+  text and explanation never do — pinned by `m3-2`.
 
-- Quiz abandonment — no explicit event; inferred from a `quiz_start` without a
-  `quiz_complete`.
-- A standalone study-time event — `duration` now rides `lesson_complete`,
-  `question_attempt` and `quiz_complete`, which covers the current need.
-- Streak events (a `computeStreak()` exists; nothing emits).
+---
 
-Any new event name requires bumping `EVENT_VERSION` and extending the a1
-coverage list in `analytics-service.test.mjs`.
+## 5. M4–M7 completion record — funnel, drop-off, engagement, data quality
+
+M4–M7 are one derived engine, `buildLearningInsights()`, in
+`analytics-service.js`. It is **pure**: it takes events (or pre-counted funnel
+counts) and returns the four reports. No DOM, no storage, no network — so the
+same function serves the browser, a future admin panel, and `node:test`.
+
+### M4 — Funnel
+
+`FUNNEL_STEPS` defines the funnel once:
+Course View → Course Start → Lesson Start → Lesson Complete → Quiz Start → Quiz
+Complete. Each step reports `count`, `reachRate` (share of the step before) and
+`dropRate`.
+
+Every step is an **event name**, never a screen name. `trackScreen` collapses
+`source-courses/sandhi` to `source-courses` (pinned by a16), so a screen-based
+funnel would silently merge every course into one bar. `m4-2` pins this.
+
+### M5 — Drop-off intelligence
+
+The steepest stage that matters is surfaced with a plain-language sentence a
+non-technical admin can act on — *"পাঠ শুরু করে শেষ করেনি — ৭৬% এখানেই থেমে
+গেছে।"*
+
+Two guards keep it from crying wolf:
+
+- **Minimum sample (5).** A 67% drop between 3 and 1 student is noise, not a
+  signal (`m5-2`).
+- **Threshold (40%).** A healthy funnel — every step above 90% — raises nothing
+  (`m5-3`).
+
+Ties break toward the earliest step, because that is the one worth fixing first
+(`m5-4`).
+
+### M6 — Engagement, streak, retention
+
+Derived entirely from the events already collected — no new collection:
+
+- `activeDays`, `firstDay`, `lastDay` — distinct calendar days with activity.
+- `streak` — the longest run of *consecutive* days (`m6-1`).
+- `retention` — D1/D7/D30 counts of later active days after the first (`m6-2`).
+
+### M7 — Data quality monitoring
+
+`checkDataQuality()` answers the three questions that matter, reusing the
+dictionary so it cannot drift from what `normalizeEvent` enforces:
+
+- **Missing** — an expected event that never fired (`m7-1`, `m7-5`).
+- **Incomplete** — a row missing a dictionary-required parameter (`m7-2`).
+- **Duplicate** — a once-only event seen twice (`m7-3`).
+
+`ok` is true only when all three are clean (`m7-4`).
+
+### The on-device ledger
+
+GA4 owns the aggregate view. For the admin panel and the quality check to read
+something before the Data API is enabled, `trackEvent` now also appends each
+already-filtered row to a bounded local trail (`ahLearningLedgerV1`, 500 rows,
+`readLedger()`). It stores exactly what was sent — no new personal data, no new
+Worker variable.
+
+### Honest limit — the admin display is still parked
+
+M5 says "surface it to the admin panel". The **detection** ships and is exposed
+as `AhAnalytics.learningInsights()`; the **display** does not, for the same
+reason the whole admin panel is parked: the GA4 numbers need the Google Analytics
+Data API enabled and a numeric Property ID, and neither exists yet. This was the
+owner's explicit decision. When that lands, the engine is ready — it already
+accepts `{ counts }`, so a Data API response can be fed straight in.
+
+---
+
+## 6. Verification
+
+- `analytics-service.test.mjs` **49/49** (was 32). New coverage: a33
+  (`QUIZ_COMPLETE` from the course result), m4-1/m4-2 (funnel shape + event-based
+  steps), m5-1…m5-4 (steepest stage, sample guard, healthy funnel, tie-break),
+  m6-1/m6-2 (streak + engagement), m7-1…m7-5 (missing/incomplete/duplicate/clean), and m4-3…m4-5 (the on-device ledger holds only sent rows, stays bounded, and feeds the reports).
+- `source-course-lessons.test.mjs` **12/12** (was 12): m3-1…m3-4 cover a course
+  MCQ attempt (verdict + real think-time), the privacy of that attempt, the
+  no-double-count on re-answer, and the `quiz_complete` on the result screen.
+- Full suite: `npm run test:native-auth` → **535/535 + 49/49 + 12/12**.
+- Shell build `v288-learning-insights-20260925`; `analytics-service.js` query
+  `analytics-p2-v2-insights`; `source-course-tool.js` query
+  `v26-course-mcq-analytics`. `scripts/cache-bump.mjs` now also bumps
+  `analytics-service.js`, which it had been missing.
+
+---
+
+## 7. Remaining gaps
+
+- **Admin panel display.** Parked by the owner; needs the GA4 Data API + a
+  numeric Property ID. The insights engine is ready to feed from it.
+- **Quiz abandonment.** Still no explicit event; a `quiz_start` with no matching
+  `quiz_complete` remains the proxy.
+- **Streak events.** `engagement.streak` is now derived, but nothing *emits* a
+  streak event to GA4. Deliberate — a derived number needs no event.
+
+---
+
+## 8. Blueprint status
+
+- **M2 — Course & lesson analytics.** ✅ Complete.
+- **M3 — Quiz & practice analytics.** ✅ Complete (course MCQ engine now
+  instrumented too).
+- **M4 — Funnel.** ✅ Complete.
+- **M5 — Drop-off intelligence.** ✅ Detection complete; display parked with the
+  admin panel.
+- **M6 — Engagement, streak, retention.** ✅ Complete.
+- **M7 — Data quality monitoring.** ✅ Complete.
+
+Any new event name still requires bumping `EVENT_VERSION` and extending the a1
+coverage list.

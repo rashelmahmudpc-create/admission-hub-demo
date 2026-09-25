@@ -17,12 +17,13 @@ const UI_VERSION_FROM = '20260921-single-email-button-fallback';
 const UI_VERSION_TO = '20260921-single-email-button-fallback';
 const LANG_VERSION_FROM = 'lang-v5-single-email-button';
 const LANG_VERSION_TO = 'lang-v5-single-email-button';
-const SW_BUILD_FROM = 'v286-lesson-quiz-analytics-20260925';
-const SW_BUILD_TO = 'v287-lesson-observer-threshold-20260925';
+const SW_BUILD_FROM = 'v287-lesson-observer-threshold-20260925';
+const SW_BUILD_TO = 'v288-learning-insights-20260925';
 
 const targets = [
   'index.html',
   'sw.js',
+  'analytics-service.js',
   'account-retirement.test.mjs',
   'interactive-native-personal-v1.test.mjs',
   'code-native-welcome-v1.test.mjs',

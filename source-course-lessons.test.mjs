@@ -163,3 +163,62 @@ test('m2-8: an intersecting lesson emits lesson_view and lesson_start', async ()
   await sleep(30);
   assert.equal(typesOf(window, 'LESSON_VIEW').length, 1);
 });
+
+/* ── Phase 2 M3 completion — the course MCQ engine is instrumented too ────── */
+
+test('m3-1: answering a course MCQ emits question_attempt with the verdict and think-time', async () => {
+  const window = await boot();
+  await waitFor(() => window.document.querySelector('#nativeCourseQuizMount .q-opt-v2'), 'first MCQ');
+  /* Let the question sit on screen so the duration is a real elapsed time. */
+  await sleep(1100);
+  const first = window.document.querySelector('#nativeCourseQuizMount .q-opt-v2');
+  clickOn(window, first);
+  const attempt = await waitFor(() => typesOf(window, 'QUESTION_ATTEMPT')[0], 'question_attempt signal');
+  assert.equal(attempt.quizId, 'sandhi-exact-native-v1:course');
+  assert.equal(attempt.quizType, 'practice');
+  assert.equal(typeof attempt.correct, 'boolean', 'the verdict is recorded');
+  assert.ok(attempt.questionId, 'the question id is recorded');
+  assert.ok(attempt.duration >= 1, `think-time must be real, got ${attempt.duration}`);
+});
+
+test('m3-2: a course MCQ attempt never carries the answer text or explanation', async () => {
+  const window = await boot();
+  await waitFor(() => window.document.querySelector('#nativeCourseQuizMount .q-opt-v2'), 'first MCQ');
+  clickOn(window, window.document.querySelector('#nativeCourseQuizMount .q-opt-v2'));
+  const attempt = await waitFor(() => typesOf(window, 'QUESTION_ATTEMPT')[0], 'question_attempt signal');
+  const serialized = JSON.stringify(attempt);
+  assert.equal(serialized.includes('options'), false);
+  assert.equal(serialized.includes('explanation'), false);
+  assert.equal('question' in attempt, false);
+});
+
+test('m3-3: re-answering an already-answered question does not emit a second attempt', async () => {
+  const window = await boot();
+  await waitFor(() => window.document.querySelector('#nativeCourseQuizMount .q-opt-v2'), 'first MCQ');
+  clickOn(window, window.document.querySelector('#nativeCourseQuizMount .q-opt-v2'));
+  await waitFor(() => typesOf(window, 'QUESTION_ATTEMPT').length === 1, 'first attempt');
+  clickOn(window, window.document.querySelector('#nativeCourseQuizMount .q-opt-v2'));
+  await sleep(30);
+  assert.equal(typesOf(window, 'QUESTION_ATTEMPT').length, 1, 'the source locks the answer; so must the count');
+});
+
+test('m3-4: reaching the result screen emits quiz_complete with accuracy and duration', async () => {
+  const window = await boot();
+  await waitFor(() => window.document.querySelector('#nativeCourseQuizMount .q-opt-v2'), 'first MCQ');
+  /* Walk the whole set: answer, then Next until the result renders. */
+  for (let i = 0; i < 60; i += 1) {
+    const opt = window.document.querySelector('#nativeCourseQuizMount .q-opt-v2:not([disabled])');
+    if (opt) clickOn(window, opt);
+    const next = [...window.document.querySelectorAll('.native-course-quiz-nav button')].find(b => /Next|Result/i.test(b.textContent || ''));
+    if (!next) break;
+    clickOn(window, next);
+    await sleep(5);
+    if (typesOf(window, 'QUIZ_COMPLETE').length) break;
+  }
+  const done = await waitFor(() => typesOf(window, 'QUIZ_COMPLETE')[0], 'quiz_complete signal');
+  assert.equal(done.quizId, 'sandhi-exact-native-v1:course');
+  assert.equal(done.quizType, 'practice');
+  assert.equal(typeof done.accuracy, 'number');
+  assert.ok(done.questionCount > 0);
+  assert.equal(typesOf(window, 'QUIZ_COMPLETE').length, 1, 'a result screen is reported once');
+});

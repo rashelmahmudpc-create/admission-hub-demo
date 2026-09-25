@@ -916,3 +916,39 @@ Milestones M2 and M3 ship in this build (`docs/PHASE-02-LEARNING-ANALYTICS.md`
 - **Run the course test after touching the tool.** `node
   source-course-lessons.test.mjs` boots the real tool against the real sandhi
   HTML in jsdom; it is wired into `npm run test:native-auth`.
+
+## Phase 2 — Funnel, Drop-off, Engagement, Data Quality (M4–M7)
+
+Milestones M4–M7 are one pure engine, `buildLearningInsights()`, in
+`analytics-service.js` (`docs/PHASE-02-LEARNING-ANALYTICS.md` §5). No DOM, no
+storage, no network — so the same function runs in the browser, in `node:test`,
+and (later) in an admin surface.
+
+- **Funnel steps are EVENTS, never screens.** `FUNNEL_STEPS` = `course_view →
+  course_start → lesson_start → lesson_complete → quiz_start → quiz_complete`.
+  `trackScreen` collapses `source-courses/sandhi` to `source-courses` (pinned by
+  a16), so a screen-based funnel merges every course into one bar. Pinned by
+  `m4-2`.
+- **Drop-off must not cry wolf.** Alert only when a step drops ≥ `0.4` AND at
+  least `DROPOFF_MIN_SAMPLE = 5` reached it; ties break toward the earliest step.
+  Three students losing two is noise, not a signal (`m5-2`).
+- **The engine is feedable from the GA4 Data API later.** It accepts either
+  `{ events }` or pre-counted `{ counts }`, so an admin panel can pass a Data API
+  response straight in without a second implementation.
+- **The on-device ledger is the only new storage.** `trackEvent` appends each
+  already-filtered row to `ahLearningLedgerV1` (500 rows, `readLedger()`), so the
+  admin/quality check has something to read before the Data API is enabled. It
+  stores exactly what was sent — never add a field that `normalizeEvent` would
+  strip.
+- **The course MCQ engine is a quiz surface too.** `SourceCourse.answer`
+  dispatches `QUESTION_ATTEMPT` and the result screen dispatches `QUIZ_COMPLETE`
+  (bus mapping `QUIZ_COMPLETE → quiz_complete`). Emit `quizId`, not `resultId`:
+  the generic bus path has no `resultId → quiz_id` mapping (only the legacy
+  `TEST_COMPLETED`/`EXAM_COMPLETED` rows do), so `resultId` would silently drop
+  the required `quiz_id` and the event with it.
+- **`scripts/cache-bump.mjs` bumps `analytics-service.js`** (added in v288). It
+  used to be missed, leaving `APP_VERSION_FALLBACK` stale behind the shell
+  version. If you add a file that carries a `v###` build string, add it there.
+- **Data-quality checks reuse the dictionary.** `checkDataQuality()` reads
+  `EVENTS[name].required`/`.once`, so it can never drift from what
+  `normalizeEvent` enforces. Do not hardcode a second list.

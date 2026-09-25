@@ -31,7 +31,7 @@
   const courseDef = () => COURSE_DEFS[courseKey()] || COURSE_DEFS.sandhi;
   const storagePrefix = () => `admissionHubNativeCourseV1:${courseDef().id}`;
   const SOURCE_STYLE_ID = 'source-course-native-style';
-  const state = { payload: null, loading: null, loadingKey: null, routeMounted: false, mountedCourseKey: null, flash: null, previousTheme: null, previousBodyTheme: null, quizFilterTouched: false, quizStarted: false, seenLessons: new Set(), courseCompleted: false, lessonObserver: null, sourceListeners: [] };
+  const state = { payload: null, loading: null, loadingKey: null, routeMounted: false, mountedCourseKey: null, flash: null, previousTheme: null, previousBodyTheme: null, quizFilterTouched: false, quizStarted: false, seenLessons: new Set(), courseCompleted: false, lessonObserver: null, sourceListeners: [], questionSeenAt: new Map(), quizSeenAt: 0 };
   const scopedStorage = (prefix, base) => {
     const prefixed = key => `${prefix}${String(key)}`;
     const keys = () => { const out = []; for (let i = 0; i < base.length; i += 1) { const key = base.key(i); if (key && key.startsWith(prefix)) out.push(key.slice(prefix.length)); } return out; };
@@ -364,7 +364,15 @@
   const renderNativeQuiz = () => {
     const qSection = document.getElementById('quiz');
     if (!qSection) return;
-    if (!state.flash && !state.quizStarted) { state.quizStarted = true; track('QUIZ_START', { quizId: courseDef().id + ':course', quizType: 'practice', questionCount: questions().length }); }
+    if (!state.flash && !state.quizStarted) { state.quizStarted = true; state.quizSeenAt = Date.now(); track('QUIZ_START', { quizId: courseDef().id + ':course', quizType: 'practice', questionCount: questions().length }); }
+    /* Stamp when the question currently on screen became visible, so the
+     * duration riding QUESTION_ATTEMPT is real think-time, not zero. */
+    if (!state.flash) {
+      const store = quizStore();
+      const visible = filteredQuestions(store);
+      const current = visible[Math.min(Math.max(0, Number(store.index) || 0), Math.max(0, visible.length - 1))];
+      if (current && !state.questionSeenAt.has(current.id)) state.questionSeenAt.set(current.id, Date.now());
+    }
     const heading = qSection.querySelector('.sec-head')?.outerHTML || '';
     const current = state.flash ? flashCard() : nativeQuiz(questions());
     const legacyGuard = `<div class="source-course-native-legacy-quiz-guard" aria-hidden="true"><div id="qCard"><div id="qMeta"></div><div id="qText"></div><div id="qOpts"></div><div id="qExplain"></div><button id="qPrev"></button><button id="qNext"></button><button id="quizReset"></button><span id="scCorrect"></span><span id="scWrong"></span><span id="scLeft"></span><span id="pbarFill"></span><div id="qGrid"></div></div></div>`;
@@ -426,6 +434,24 @@
         state.flash.answers[qid] = Number(option); renderNativeQuiz(); return;
       }
       const store = quizStore(); if (store.answers[qid] !== undefined) return;
+      /* M3: the course's own MCQ engine answers questions too, not just the exam
+       * engine. Mirror the attempt onto the bus so question_attempt is complete
+       * for every quiz surface. The answer text is never sent — only which
+       * question and whether it was right. */
+      const q = questions().find(item => item.id === qid);
+      const seenAt = state.questionSeenAt.get(qid);
+      track('QUESTION_ATTEMPT', {
+        quizId: `${courseDef().id}:course`,
+        questionId: qid,
+        quizType: 'practice',
+        correct: q ? Number(option) === Number(q.answer) : undefined,
+        duration: seenAt ? Math.round((Date.now() - seenAt) / 1000) : undefined,
+        questionNumber: q ? q.number : undefined,
+        subjectId: courseDef().id,
+        topicId: q ? q.family : undefined,
+        attemptNo: 1,
+        mode: 'course'
+      });
       store.answers[qid] = Number(option); store.revealed[qid] = true; setQuizStore(store); renderNativeQuiz();
     },
     bookmark(qid, mode = 'course') {
@@ -452,7 +478,10 @@
 
   function renderResult() {
     const store = quizStore(); const qs = questions(); const answered = answerCount(store); const correct = correctCount(store); const wrong = qs.filter(q => store.answers[q.id] !== undefined && Number(store.answers[q.id]) !== q.answer).length; const skipped = qs.length - answered; const accuracy = answered ? Math.round(correct / answered * 100) : 0;
-    track('TEST_COMPLETED', { resultId: courseDef().id + ':course', questionCount: qs.length, correct, wrong, skipped, accuracy, quizType: 'practice', mode: 'flash' });
+    /* The course MCQ result is a real quiz completion, not the temporary flash
+     * test: it persists, so it carries quiz_complete with the attempt duration
+     * measured from quiz_start. */
+    track('QUIZ_COMPLETE', { quizId: `${courseDef().id}:course`, questionCount: qs.length, correct, wrong, skipped, accuracy, quizType: 'practice', duration: state.quizSeenAt ? Math.round((Date.now() - state.quizSeenAt) / 1000) : undefined });
     const mountPoint = document.getElementById('nativeCourseQuizMount'); if (!mountPoint) return;
     mountPoint.innerHTML = `<section class="card"><div class="kicker">NATIVE QUESTION BANK RESULT</div><h3>${esc(courseDef().label)} MCQ Result</h3><div class="stats"><div class="stat"><div class="n">${accuracy}%</div><div class="l">Accuracy</div></div><div class="stat"><div class="n">${correct}</div><div class="l">Correct</div></div><div class="stat"><div class="n">${wrong}</div><div class="l">Wrong</div></div><div class="stat"><div class="n">${skipped}</div><div class="l">Skipped</div></div></div><div class="native-course-flash-actions"><button class="btn" type="button" onclick="SourceCourse.reset()">Retry MCQ</button><button class="btn secondary" type="button" onclick="document.getElementById('quiz')?.scrollIntoView({behavior:'smooth'})">Back to Quiz</button></div></section>`;
   }

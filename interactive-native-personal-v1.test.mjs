@@ -11,7 +11,7 @@ const RELEASE = read('.github/workflows/telegram-auth-canary-activate.yml');
 const BUNDLE_GUARD = read('.github/workflows/cf-pages.yml');
 const UI_VERSION = '20260921-single-email-button-fallback';
 
-const SHELL_VERSION = 'v287-lesson-observer-threshold-20260925';
+const SHELL_VERSION = 'v288-learning-insights-20260925';
 
 const signupStart = JS.indexOf('<form class="ah-account-view ah-signup-view"');
 const signupEnd = JS.indexOf('<div class="ah-account-view ah-created-view"', signupStart);
