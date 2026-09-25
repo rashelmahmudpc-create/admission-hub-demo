@@ -3,6 +3,7 @@ import pubHandler, { publishGlobal } from './public-worker.js';
 import { handleInternalEmailRequest } from './email-gateway/worker/handler.mjs';
 import { createNativeAuthHandler } from './auth-native/worker/public-auth-handler.mjs';
 import { handleFcmNotificationRequest, runScheduledGlobalNotifications } from './fcm-notification.mjs';
+import { handleAdminPasskeyRequest } from './admin-passkey.mjs';
 import { handlePersonalizedNotificationRequest, runScheduledPersonalizedNotifications } from './personalized-notification.mjs';
 import { runScheduledEventNotifications } from './event-notifications.mjs';
 import { runScheduledDigests } from './digest-notifications.mjs';
@@ -443,6 +444,9 @@ export default {
     // Phase 1 — FCM notification foundation (owns /api/notifications/* + /internal/notifications/health).
     const fcmResponse = await handleFcmNotificationRequest(request, env, ctx);
     if (fcmResponse) return fcmResponse;
+    // Admin passkey login (owns /api/admin/webauthn/*).
+    const adminPasskeyResponse = await handleAdminPasskeyRequest(request, env);
+    if (adminPasskeyResponse) return adminPasskeyResponse;
     // Phase G — personalized smart notifications (owns /api/notifications/personal/*).
     const personalResponse = await handlePersonalizedNotificationRequest(request, env, ctx);
     if (personalResponse) return personalResponse;

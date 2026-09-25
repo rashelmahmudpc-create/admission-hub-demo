@@ -1004,10 +1004,10 @@ function sseParse(raw) {
   for (const line of String(raw || "").split("\n")) {
     const s = line.trim();
     if (!s.startsWith("data:")) continue;
-    const json5 = s.slice(5).trim();
-    if (!json5 || json5 === "[DONE]") continue;
+    const json6 = s.slice(5).trim();
+    if (!json6 || json6 === "[DONE]") continue;
     try {
-      out.push(JSON.parse(json5));
+      out.push(JSON.parse(json6));
     } catch (_) {
     }
   }
@@ -1220,16 +1220,16 @@ function routerChain(env, tier, badSet = /* @__PURE__ */ new Set()) {
   return chain;
 }
 var dayKey = () => (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
-var getKv = async (kv, key) => {
+var getKv = async (kv2, key) => {
   try {
-    return await kv.get(key);
+    return await kv2.get(key);
   } catch (_) {
     return null;
   }
 };
-var putKv = async (kv, key, val, ttl) => {
+var putKv = async (kv2, key, val, ttl) => {
   try {
-    await kv.put(key, val, ttl ? { expirationTtl: ttl } : void 0);
+    await kv2.put(key, val, ttl ? { expirationTtl: ttl } : void 0);
   } catch (_) {
   }
 };
@@ -1249,13 +1249,13 @@ function authVerificationGuidance(text) {
 }
 function guidanceResponse(text, stream) {
   if (!stream) return jsonResp({ text, intent: INTENTS.GENERAL_CHAT, pv: SYSTEM_PROMPT_V, agent: AGENT_VERSION, authoritative: false });
-  const encoder5 = new TextEncoder();
+  const encoder6 = new TextEncoder();
   return new Response(new ReadableStream({
     start(controller) {
-      controller.enqueue(encoder5.encode(`data: ${JSON.stringify({ text })}
+      controller.enqueue(encoder6.encode(`data: ${JSON.stringify({ text })}
 
 `));
-      controller.enqueue(encoder5.encode(`event: done
+      controller.enqueue(encoder6.encode(`event: done
 data: ${JSON.stringify({ intent: INTENTS.GENERAL_CHAT, pv: SYSTEM_PROMPT_V, agent: AGENT_VERSION, authoritative: false })}
 
 `));
@@ -1429,12 +1429,12 @@ async function agentChat(request, env, uid, opts = {}) {
     }
     return jsonResp({ error: "provider_failed", message: "AI একটু ব্যস্ত — কয়েক সেকেন্ড পরে আবার চেষ্টা করো।", detail: lastErr, retryable: true }, 502);
   }
-  const encoder5 = new TextEncoder();
+  const encoder6 = new TextEncoder();
   const streamOut = new ReadableStream({
     async start(controller) {
       const push = (s) => {
         try {
-          controller.enqueue(encoder5.encode(s));
+          controller.enqueue(encoder6.encode(s));
         } catch (_) {
         }
       };
@@ -7069,15 +7069,15 @@ async function deriveTelegramWebhookSecret(rootSecret, cryptoImpl = globalThis.c
   const source = safeRootSecret(rootSecret);
   if (!source || !cryptoImpl?.subtle) return "";
   try {
-    const encoder5 = new TextEncoder();
+    const encoder6 = new TextEncoder();
     const key = await cryptoImpl.subtle.importKey(
       "raw",
-      encoder5.encode(source),
+      encoder6.encode(source),
       { name: "HMAC", hash: "SHA-256" },
       false,
       ["sign"]
     );
-    const signature = await cryptoImpl.subtle.sign("HMAC", key, encoder5.encode(WEBHOOK_CONTEXT));
+    const signature = await cryptoImpl.subtle.sign("HMAC", key, encoder6.encode(WEBHOOK_CONTEXT));
     const derived = base64Url(signature);
     return validTelegramWebhookSecret(derived) ? derived : "";
   } catch {
@@ -9333,6 +9333,247 @@ var __plannerTest = Object.freeze({
   bestSendHour
 });
 
+// admin-passkey.mjs
+var PASSKEY_RP_ID2 = "admissionhub.pages.dev";
+var PASSKEY_ORIGINS = Object.freeze([
+  "https://admissionhub.pages.dev",
+  "https://admission-gk.admissionhub.workers.dev"
+]);
+var CHALLENGE_TTL_MS = 12e4;
+var SESSION_TTL_MS2 = 30 * 6e4;
+var MAX_ADMIN_CREDENTIALS = 8;
+var encoder5 = new TextEncoder();
+var CRED_PREFIX = "admin:pk:cred:";
+var CHALLENGE_PREFIX = "admin:pk:chal:";
+var SESSION_PREFIX = "admin:pk:sess:";
+var ADMIN_PATHS = Object.freeze([
+  "/api/admin/webauthn/status",
+  "/api/admin/webauthn/challenge",
+  "/api/admin/webauthn/register",
+  "/api/admin/webauthn/assert"
+]);
+var isAdminPasskeyPath = (path) => ADMIN_PATHS.includes(path);
+var randomToken2 = (bytes = 32) => {
+  const value = new Uint8Array(bytes);
+  crypto.getRandomValues(value);
+  return bytesToBase64Url3(value);
+};
+var sha256Hex2 = async (value) => {
+  const digest = await crypto.subtle.digest("SHA-256", encoder5.encode(String(value)));
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+};
+var sessionKey = async (env) => {
+  const secret = String(env?.ADMIN_TOKEN || "");
+  if (!secret) return null;
+  const material = await crypto.subtle.importKey("raw", encoder5.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  return material;
+};
+var hmacHex = async (env, label, value) => {
+  const key = await sessionKey(env);
+  if (!key) return null;
+  const mac = await crypto.subtle.sign("HMAC", key, encoder5.encode(`${label}:${value}`));
+  return [...new Uint8Array(mac)].map((b) => b.toString(16).padStart(2, "0")).join("");
+};
+var json4 = (obj, status = 200) => new Response(JSON.stringify(obj), {
+  status,
+  headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" }
+});
+var readBody = async (request) => {
+  try {
+    const value = await request.json();
+    return value && typeof value === "object" ? value : null;
+  } catch {
+    return null;
+  }
+};
+var kv = (env) => env?.GK_KV || null;
+async function listCredentials(env) {
+  const store = kv(env);
+  if (!store) return [];
+  const listed = await store.list({ prefix: CRED_PREFIX });
+  const out = [];
+  for (const entry of listed.keys || []) {
+    const raw = await store.get(entry.name);
+    if (!raw) continue;
+    try {
+      out.push(JSON.parse(raw));
+    } catch {
+    }
+  }
+  return out;
+}
+var saveCredential = (env, record) => kv(env).put(`${CRED_PREFIX}${record.credentialId}`, JSON.stringify(record));
+async function putChallenge(env, challengeId, payload) {
+  await kv(env).put(`${CHALLENGE_PREFIX}${challengeId}`, JSON.stringify(payload), { expirationTtl: Math.ceil(CHALLENGE_TTL_MS / 1e3) });
+}
+async function takeChallenge(env, challengeId) {
+  const store = kv(env);
+  const key = `${CHALLENGE_PREFIX}${challengeId}`;
+  const raw = await store.get(key);
+  if (!raw) return null;
+  await store.delete(key);
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+async function mintSession(env, credentialId) {
+  const token = randomToken2(32);
+  const hash = await sha256Hex2(token);
+  await kv(env).put(`${SESSION_PREFIX}${hash}`, JSON.stringify({
+    credentialId,
+    createdAt: Date.now(),
+    expiresAt: Date.now() + SESSION_TTL_MS2
+  }), { expirationTtl: Math.ceil(SESSION_TTL_MS2 / 1e3) });
+  return token;
+}
+async function readAdminSession(env, request) {
+  const header = String(request.headers.get("X-Admin-Session") || "").trim();
+  if (!header || !kv(env)) return null;
+  const raw = await kv(env).get(`${SESSION_PREFIX}${await sha256Hex2(header)}`);
+  if (!raw) return null;
+  try {
+    const record = JSON.parse(raw);
+    if (Number(record.expiresAt || 0) <= Date.now()) return null;
+    return record;
+  } catch {
+    return null;
+  }
+}
+var statusPayload = async (env, request) => {
+  const session = await readAdminSession(env, request);
+  const credentials2 = await listCredentials(env);
+  return {
+    configured: Boolean(env?.ADMIN_TOKEN) && Boolean(kv(env)),
+    enrolled: credentials2.length > 0,
+    credentialCount: credentials2.length,
+    session: session ? { expiresAt: session.expiresAt } : null
+  };
+};
+async function handleRegister(request, env) {
+  const body = await readBody(request);
+  if (!body) return json4({ error: "invalid-json" }, 400);
+  const challengeId = String(body.challengeId || "");
+  const challenge = await takeChallenge(env, challengeId);
+  if (!challenge || challenge.purpose !== "register") return json4({ error: "challenge-expired" }, 400);
+  const credentials2 = await listCredentials(env);
+  if (credentials2.length >= MAX_ADMIN_CREDENTIALS) return json4({ error: "too-many-credentials" }, 409);
+  let verified;
+  try {
+    verified = await verifyPasskeyRegistration({
+      response: body.response,
+      expectedChallenge: challenge.challenge,
+      rpId: PASSKEY_RP_ID2,
+      allowedOrigins: PASSKEY_ORIGINS
+    });
+  } catch {
+    return json4({ error: "registration-failed" }, 400);
+  }
+  const record = {
+    credentialId: verified.credentialId,
+    publicKeyJwk: verified.publicKeyJwk,
+    counter: verified.counter,
+    backupEligible: verified.backupEligible,
+    backupState: verified.backupState,
+    transports: verified.transports,
+    label: String(body.label || "Admin device").slice(0, 60),
+    createdAt: Date.now()
+  };
+  await saveCredential(env, record);
+  return json4({ registered: true, credentialCount: (await listCredentials(env)).length });
+}
+async function handleAssert(request, env) {
+  const body = await readBody(request);
+  if (!body) return json4({ error: "invalid-json" }, 400);
+  const challengeId = String(body.challengeId || "");
+  const challenge = await takeChallenge(env, challengeId);
+  if (!challenge || challenge.purpose !== "assert") return json4({ error: "challenge-expired" }, 400);
+  const credentialId = String(body.response?.rawId || "");
+  const record = credentialId ? JSON.parse(await kv(env).get(`${CRED_PREFIX}${credentialId}`) || "null") : null;
+  if (!record) return json4({ error: "credential-not-found" }, 404);
+  let verified;
+  try {
+    verified = await verifyPasskeyAuthentication({
+      response: body.response,
+      expectedChallenge: challenge.challenge,
+      rpId: PASSKEY_RP_ID2,
+      allowedOrigins: PASSKEY_ORIGINS,
+      credential: record
+    });
+  } catch {
+    return json4({ error: "authentication-failed" }, 401);
+  }
+  await saveCredential(env, { ...record, counter: verified.counter, lastUsedAt: Date.now() });
+  const session = await mintSession(env, record.credentialId);
+  return json4({ authenticated: true, session, expiresAt: Date.now() + SESSION_TTL_MS2 });
+}
+async function handleAdminPasskeyRequest(request, env) {
+  const url = new URL(request.url);
+  if (!isAdminPasskeyPath(url.pathname)) return null;
+  if (!env?.ADMIN_TOKEN) return json4({ error: "not-configured" }, 503);
+  if (!kv(env)) return json4({ error: "storage-unavailable" }, 503);
+  const bearer = String(request.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "").trim();
+  const hasAdminToken = bearer && bearer === env.ADMIN_TOKEN;
+  if (url.pathname === "/api/admin/webauthn/status" && request.method === "GET") {
+    return json4(await statusPayload(env, request));
+  }
+  if (url.pathname === "/api/admin/webauthn/challenge" && request.method === "POST") {
+    const body = await readBody(request);
+    const purpose = body?.purpose === "register" ? "register" : "assert";
+    if (purpose === "register" && !hasAdminToken) return json4({ error: "forbidden" }, 403);
+    if (purpose === "assert" && !hasAdminToken && !(await listCredentials(env)).length) {
+      return json4({ error: "no-credential" }, 404);
+    }
+    const challengeId = randomToken2(24);
+    const challenge = randomToken2(32);
+    await putChallenge(env, challengeId, {
+      purpose,
+      challenge,
+      mac: await hmacHex(env, "admin-passkey-challenge", `${challengeId}:${challenge}`),
+      createdAt: Date.now()
+    });
+    const credentials2 = await listCredentials(env);
+    return json4({
+      challengeId,
+      options: {
+        challenge,
+        rpId: PASSKEY_RP_ID2,
+        timeout: 12e4,
+        userVerification: "required",
+        ...purpose === "register" ? {
+          user: { id: bytesToBase64Url3(encoder5.encode("admissionhub-admin")), name: "admin@admissionhub", displayName: "AdmissionHub Admin" },
+          pubKeyCredParams: [{ type: "public-key", alg: -7 }, { type: "public-key", alg: -257 }],
+          authenticatorSelection: { residentKey: "preferred", userVerification: "required" },
+          attestation: "none",
+          excludeCredentials: credentials2.map((c) => ({ type: "public-key", id: c.credentialId }))
+        } : { allowCredentials: credentials2.map((c) => ({ type: "public-key", id: c.credentialId, transports: c.transports || [] })) }
+      }
+    });
+  }
+  if (url.pathname === "/api/admin/webauthn/register" && request.method === "POST") {
+    if (!hasAdminToken) return json4({ error: "forbidden" }, 403);
+    return handleRegister(request, env);
+  }
+  if (url.pathname === "/api/admin/webauthn/assert" && request.method === "POST") {
+    return handleAssert(request, env);
+  }
+  return json4({ error: "method-not-allowed" }, 405);
+}
+var __adminPasskeyTest = Object.freeze({
+  sha256Hex: sha256Hex2,
+  hmacHex,
+  listCredentials,
+  putChallenge,
+  takeChallenge,
+  mintSession,
+  readAdminSession,
+  CRED_PREFIX,
+  CHALLENGE_PREFIX,
+  SESSION_PREFIX,
+  base64UrlToBytes
+});
+
 // fcm-notification.mjs
 var FCM_API_SCOPE = "https://www.googleapis.com/auth/firebase.messaging";
 var FCM_TOKEN_URL = "https://oauth2.googleapis.com/token";
@@ -9360,7 +9601,7 @@ var b64u = (bytes) => {
   for (const b of new Uint8Array(bytes)) s += String.fromCharCode(b);
   return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 };
-var sha256Hex2 = async (value) => {
+var sha256Hex3 = async (value) => {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(String(value)));
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
 };
@@ -9469,7 +9710,7 @@ var FcmStore = class {
   }
   async upsertDevice({ userId, token, platform, browser, deviceInfo, now }) {
     await this.#ensureTables();
-    const id = (await sha256Hex2(`${userId}|${token}`)).slice(0, 40);
+    const id = (await sha256Hex3(`${userId}|${token}`)).slice(0, 40);
     await this.#d1.prepare(
       `INSERT INTO fcm_devices(id, user_id, fcm_token, platform, browser, device_info, created_at, updated_at, last_seen, is_active)
        VALUES (?,?,?,?,?,?,?,?,?,1)
@@ -9491,7 +9732,7 @@ var FcmStore = class {
   }
   async deactivateToken(userId, token) {
     await this.#ensureTables();
-    const id = (await sha256Hex2(`${userId}|${token}`)).slice(0, 40);
+    const id = (await sha256Hex3(`${userId}|${token}`)).slice(0, 40);
     const res = await this.#d1.prepare("UPDATE fcm_devices SET is_active=0, updated_at=? WHERE id=? AND is_active=1").bind(Date.now(), id).run();
     return Boolean(res?.meta?.changes || 0);
   }
@@ -9740,13 +9981,13 @@ var FcmStore = class {
   }
 };
 async function kvRateAllow(env, key, limit, ttlSeconds) {
-  const kv = env?.GK_KV;
-  if (!kv || typeof kv.get !== "function") return true;
+  const kv2 = env?.GK_KV;
+  if (!kv2 || typeof kv2.get !== "function") return true;
   try {
     const k = `fcm:${key}`;
-    const n = Number(await kv.get(k) || 0);
+    const n = Number(await kv2.get(k) || 0);
     if (n >= limit) return false;
-    await kv.put(k, String(n + 1), { expirationTtl: ttlSeconds });
+    await kv2.put(k, String(n + 1), { expirationTtl: ttlSeconds });
     return true;
   } catch {
     return true;
@@ -10204,7 +10445,7 @@ async function handleFcmNotificationRequest(request, env) {
       at: Date.now()
     });
   }
-  const ADMIN_PATHS = /* @__PURE__ */ new Set([
+  const ADMIN_PATHS2 = /* @__PURE__ */ new Set([
     "/api/notifications/global/send",
     "/api/notifications/global/schedule",
     "/api/notifications/global/cancel",
@@ -10213,13 +10454,15 @@ async function handleFcmNotificationRequest(request, env) {
     "/api/notifications/analytics",
     "/api/notifications/templates"
   ]);
-  if (ADMIN_PATHS.has(path)) {
+  if (ADMIN_PATHS2.has(path)) {
     const adminToken = String(request.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "").trim();
-    if (!env.ADMIN_TOKEN || adminToken !== env.ADMIN_TOKEN) {
+    const tokenOk = Boolean(env.ADMIN_TOKEN) && adminToken === env.ADMIN_TOKEN;
+    const adminSession = tokenOk ? null : await readAdminSession(env, request);
+    if (!tokenOk && !adminSession) {
       return jsonResponse(request, { error: "forbidden" }, 403);
     }
     const maybeSession = await sessionUser(env, request);
-    const adminUserId = maybeSession ? String(maybeSession.user.id) : "admin";
+    const adminUserId = maybeSession ? String(maybeSession.user.id) : adminSession ? `passkey:${adminSession.credentialId.slice(0, 12)}` : "admin";
     if (path === "/api/notifications/global/send" && request.method === "POST") {
       if (!fcmConfigured(env)) return jsonResponse(request, { error: "fcm-not-configured" }, 503);
       if (!store.available()) return jsonResponse(request, { error: "storage-unavailable" }, 503);
@@ -10236,7 +10479,7 @@ async function handleFcmNotificationRequest(request, env) {
       const audience = GLOBAL_AUDIENCES[body.audience] ? body.audience : "all_students";
       const topic = GLOBAL_AUDIENCES[audience].topic;
       if (!TOPIC_RE.test(topic)) return jsonResponse(request, { error: "invalid-topic" }, 500);
-      const dedup = (await sha256Hex2(`${type}|${title}|${text}|now`)).slice(0, 40);
+      const dedup = (await sha256Hex3(`${type}|${title}|${text}|now`)).slice(0, 40);
       const dup = await store.duplicateRecent(dedup, Date.now() - 10 * 864e5);
       if (dup) return jsonResponse(request, { error: "duplicate", existingId: dup }, 409);
       if (!await kvRateAllow(env, `global:day:${dhakaDayKey()}`, GLOBAL_DAILY_CAP, 86400)) {
@@ -10297,7 +10540,7 @@ async function handleFcmNotificationRequest(request, env) {
       if (when > Date.now() + GLOBAL_MAX_SCHEDULE_DAYS * 864e5) {
         return jsonResponse(request, { error: "schedule-too-far" }, 400);
       }
-      const dedup = (await sha256Hex2(`${type}|${title}|${text}|scheduled|${Math.floor(when)}`)).slice(0, 40);
+      const dedup = (await sha256Hex3(`${type}|${title}|${text}|scheduled|${Math.floor(when)}`)).slice(0, 40);
       const dup = await store.duplicateRecent(dedup, Date.now() - 10 * 864e5);
       if (dup) return jsonResponse(request, { error: "duplicate", existingId: dup }, 409);
       const id = `gn-${Math.random().toString(36).slice(2, 8)}${Math.random().toString(36).slice(2, 8)}`;
@@ -10570,7 +10813,7 @@ var __fcmNotificationTest = Object.freeze({
   GLOBAL_AUDIENCES,
   GLOBAL_TEMPLATES,
   b64u,
-  sha256Hex: sha256Hex2,
+  sha256Hex: sha256Hex3,
   readSessionToken,
   pemToDer,
   FcmStore,
@@ -12031,13 +12274,13 @@ async function sessionUser3(env, request) {
   }
 }
 async function kvRateAllow2(env, key, limit, ttlSeconds) {
-  const kv = env?.GK_KV;
-  if (!kv || typeof kv.get !== "function") return true;
+  const kv2 = env?.GK_KV;
+  if (!kv2 || typeof kv2.get !== "function") return true;
   try {
     const k = `fs:${key}`;
-    const n = Number(await kv.get(k) || 0);
+    const n = Number(await kv2.get(k) || 0);
     if (n >= limit) return false;
-    await kv.put(k, String(n + 1), { expirationTtl: ttlSeconds });
+    await kv2.put(k, String(n + 1), { expirationTtl: ttlSeconds });
     return true;
   } catch {
     return true;
@@ -12047,7 +12290,7 @@ var sha256HexStr = async (s) => {
   const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
   return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, "0")).join("");
 };
-var hmacHex = async (keyBytes, msg) => {
+var hmacHex2 = async (keyBytes, msg) => {
   const key = await crypto.subtle.importKey("raw", keyBytes, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(msg));
   return [...new Uint8Array(sig)].map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -12081,11 +12324,11 @@ x-amz-date:${amzDate}
       const canonicalRequest = ["GET", path, queryStr, canonicalHeaders, signedHeaders, payloadHash].join("\n");
       const scope = `${shortDate}/${region}/${service}/aws4_request`;
       const stringToSign = ["AWS4-HMAC-SHA256", amzDate, scope, await sha256HexStr(canonicalRequest)].join("\n");
-      let k = await hmacHex(new TextEncoder().encode(`AWS4${sk}`), shortDate);
-      k = await hmacHex(hexToBytes(k), region);
-      k = await hmacHex(hexToBytes(k), service);
-      k = await hmacHex(hexToBytes(k), "aws4_request");
-      const signature = await hmacHex(hexToBytes(k), stringToSign);
+      let k = await hmacHex2(new TextEncoder().encode(`AWS4${sk}`), shortDate);
+      k = await hmacHex2(hexToBytes(k), region);
+      k = await hmacHex2(hexToBytes(k), service);
+      k = await hmacHex2(hexToBytes(k), "aws4_request");
+      const signature = await hmacHex2(hexToBytes(k), stringToSign);
       const res = await fetch(`https://${R2_HOST}/${bucketName}?${queryStr}`, {
         method: "GET",
         headers: {
@@ -12111,9 +12354,9 @@ x-amz-date:${amzDate}
   }
 }
 var RECONCILE_EVERY_SECONDS = 3600;
-var readCounter = async (kv) => {
+var readCounter = async (kv2) => {
   try {
-    const raw = await kv.get(USAGE_KEY);
+    const raw = await kv2.get(USAGE_KEY);
     if (raw == null) return null;
     if (raw.trim() === "") return null;
     if (raw.startsWith("{")) {
@@ -12129,31 +12372,31 @@ var readCounter = async (kv) => {
     return null;
   }
 };
-var writeCounter = async (kv, bytes) => {
+var writeCounter = async (kv2, bytes) => {
   try {
-    await kv.put(USAGE_KEY, JSON.stringify({ b: Math.max(0, Math.round(bytes)), t: Math.floor(Date.now() / 1e3) }));
+    await kv2.put(USAGE_KEY, JSON.stringify({ b: Math.max(0, Math.round(bytes)), t: Math.floor(Date.now() / 1e3) }));
   } catch {
   }
 };
 async function bucketUsage(env) {
-  const kv = env?.GK_KV;
-  const cached = kv ? await readCounter(kv) : null;
+  const kv2 = env?.GK_KV;
+  const cached = kv2 ? await readCounter(kv2) : null;
   const fresh = cached && Date.now() / 1e3 - cached.ts < RECONCILE_EVERY_SECONDS;
   if (fresh) return { bytes: cached.bytes, exact: true };
   const total = await s3ListTotalBytes(env);
   if (total != null) {
-    if (kv) await writeCounter(kv, total);
+    if (kv2) await writeCounter(kv2, total);
     return { bytes: total, exact: true };
   }
   if (cached) return { bytes: cached.bytes, exact: false };
   return { bytes: 0, exact: false };
 }
 var bumpUsage = async (env, delta) => {
-  const kv = env?.GK_KV;
-  if (!kv) return;
+  const kv2 = env?.GK_KV;
+  if (!kv2) return;
   try {
-    const c = await readCounter(kv);
-    await writeCounter(kv, (c ? c.bytes : 0) + delta);
+    const c = await readCounter(kv2);
+    await writeCounter(kv2, (c ? c.bytes : 0) + delta);
   } catch {
   }
 };
@@ -17688,7 +17931,7 @@ var cors = (request) => {
   if (ok) headers["Access-Control-Allow-Origin"] = origin;
   return headers;
 };
-var json4 = (request, obj, status = 200) => new Response(JSON.stringify(obj), { status, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", ...cors(request) } });
+var json5 = (request, obj, status = 200) => new Response(JSON.stringify(obj), { status, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", ...cors(request) } });
 var dhakaToday = () => new Date(Date.now() + 6 * 36e5).toISOString().slice(0, 10);
 var sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 var keys = (env) => String(env.BROWSER_USE_API_KEYS || "").split(",").map((k) => k.trim()).filter(Boolean);
@@ -17874,7 +18117,7 @@ var bankUpload = async (request, env) => {
     } catch (_) {
     }
     const bank = normalizeBank(body.questions, body.stats);
-    if (!bank.qs.length) return json4(request, { error: "empty-bank" }, 400);
+    if (!bank.qs.length) return json5(request, { error: "empty-bank" }, 400);
     await env.GK_KV.put("userBank", JSON.stringify({ ...bank, history: Array.isArray(body.history) ? body.history.slice(0, 500) : [], mistakes: Array.isArray(body.mistakes) ? body.mistakes.slice(0, 400) : [], vocabulary: Array.isArray(body.vocabulary) ? body.vocabulary.slice(0, 1500) : [], activity: body.activity && typeof body.activity === "object" ? body.activity : {}, ...body.full && typeof body.full === "object" ? { full: body.full } : {}, savedAt: Date.now() }));
     if (body.full && typeof body.full === "object" && env.PUB_KV) {
       try {
@@ -17882,23 +18125,23 @@ var bankUpload = async (request, env) => {
       } catch (_) {
       }
     }
-    return json4(request, { saved: true, count: bank.qs.length });
+    return json5(request, { saved: true, count: bank.qs.length });
   } catch (_) {
-    return json4(request, { error: "bank-failed" }, 500);
+    return json5(request, { error: "bank-failed" }, 500);
   }
 };
 var bankInfo = async (request, env) => {
   try {
     const raw = await env.GK_KV.get("userBank");
-    if (!raw) return json4(request, { saved: false });
+    if (!raw) return json5(request, { saved: false });
     try {
-      if (new URL(request.url).searchParams.get("full") === "1") return json4(request, { saved: true, bank: JSON.parse(raw) });
+      if (new URL(request.url).searchParams.get("full") === "1") return json5(request, { saved: true, bank: JSON.parse(raw) });
     } catch (_) {
     }
     const b = JSON.parse(raw);
-    return json4(request, { saved: true, count: b.qs.length, stats: b.stats, savedAt: b.savedAt, history: Array.isArray(b.history) ? b.history.length : 0, mistakes: Array.isArray(b.mistakes) ? b.mistakes.length : 0, vocabulary: Array.isArray(b.vocabulary) ? b.vocabulary.length : 0, activity: b.activity || {} });
+    return json5(request, { saved: true, count: b.qs.length, stats: b.stats, savedAt: b.savedAt, history: Array.isArray(b.history) ? b.history.length : 0, mistakes: Array.isArray(b.mistakes) ? b.mistakes.length : 0, vocabulary: Array.isArray(b.vocabulary) ? b.vocabulary.length : 0, activity: b.activity || {} });
   } catch (_) {
-    return json4(request, { saved: false });
+    return json5(request, { saved: false });
   }
 };
 var histBlock = (b) => {
@@ -17949,8 +18192,8 @@ var createAsk = async (request, env, ctx) => {
     }
     const question = String(body.question || "").trim().slice(0, 600);
     const context = String(body.context || "").trim().slice(0, 1200);
-    if (!question) return json4(request, { error: "empty-question" }, 400);
-    if (!keys(env).length) return json4(request, { error: "keys-not-configured" }, 503);
+    if (!question) return json5(request, { error: "empty-question" }, 400);
+    if (!keys(env).length) return json5(request, { error: "keys-not-configured" }, 503);
     const id = newId();
     const source = String(body.source || "auto").slice(0, 60);
     let bankBlock = "";
@@ -17976,33 +18219,33 @@ ${(q.o || []).map((o, oi) => `   ${"কখগঘঙ"[oi] || oi + 1}) ${o}`).join
     }
     const askBody = { task: ASK_PROMPT(question, context, bankBlock, histB), llm: env.BU_LLM || "browser-use-2.0", maxSteps: 14, structuredOutput: JSON.stringify(ASK_SCHEMA), flashMode: false };
     const askKey = String(env.ASK_API_KEY || "").trim();
-    if (!askKey) return json4(request, { error: "ask-key-not-configured" }, 503);
+    if (!askKey) return json5(request, { error: "ask-key-not-configured" }, 503);
     let job = await createWithFailover(env, date, askBody, 0, [askKey]);
     let dedicated = !!job;
     if (!job) job = await createWithFailover(env, date, askBody, Math.floor(Date.now() / 6e4));
-    if (!job) return json4(request, { error: "all-keys-exhausted" }, 429);
+    if (!job) return json5(request, { error: "all-keys-exhausted" }, 429);
     await env.GK_KV.put(`ask:${id}`, JSON.stringify({ id, jobId: job.id, keyIndex: job.keyIndex, dedicated, date, status: "running", createdAt: Date.now() }), { expirationTtl: 86400 * 3 });
-    return json4(request, { id, started: true });
+    return json5(request, { id, started: true });
   } catch (_) {
-    return json4(request, { error: "ask-failed" }, 500);
+    return json5(request, { error: "ask-failed" }, 500);
   }
 };
 var askStatus = async (request, env, id) => {
   try {
-    if (!/^[a-f0-9-]{8,40}$/i.test(id)) return json4(request, { error: "bad-id" }, 400);
+    if (!/^[a-f0-9-]{8,40}$/i.test(id)) return json5(request, { error: "bad-id" }, 400);
     const rec = await env.GK_KV.get(`ask:${id}`);
-    if (!rec) return json4(request, { error: "not-found" }, 404);
+    if (!rec) return json5(request, { error: "not-found" }, 404);
     const ask = JSON.parse(rec);
-    if (ask.status !== "running") return json4(request, ask);
+    if (ask.status !== "running") return json5(request, ask);
     const all = keys(env);
     const key = ask.dedicated ? String(env.ASK_API_KEY || "").trim() || all[0] : all[ask.keyIndex] || all[0];
     let task = await getTask(key, ask.jobId).catch(() => null);
     if (!task && String(env.ASK_API_KEY || "").trim() && key !== String(env.ASK_API_KEY).trim()) task = await getTask(String(env.ASK_API_KEY).trim(), ask.jobId).catch(() => null);
-    if (!task) return json4(request, { status: "running" });
+    if (!task) return json5(request, { status: "running" });
     if (task.status === "failed") {
       ask.status = "failed";
       await env.GK_KV.put(`ask:${id}`, JSON.stringify(ask));
-      return json4(request, { status: "failed" });
+      return json5(request, { status: "failed" });
     }
     const out = parseOutput(task);
     if (out && typeof out.answer === "string" && out.answer.trim()) {
@@ -18010,11 +18253,11 @@ var askStatus = async (request, env, id) => {
       ask.answer = String(out.answer).slice(0, 4e3);
       ask.sources = Array.isArray(out.sources) ? out.sources.map((x) => String(x).slice(0, 120)).slice(0, 6) : [];
       await env.GK_KV.put(`ask:${id}`, JSON.stringify(ask));
-      return json4(request, { status: "finished", answer: ask.answer, sources: ask.sources });
+      return json5(request, { status: "finished", answer: ask.answer, sources: ask.sources });
     }
-    return json4(request, { status: task.status === "finished" ? "failed" : "running" });
+    return json5(request, { status: task.status === "finished" ? "failed" : "running" });
   } catch (_) {
-    return json4(request, { error: "status-failed" }, 500);
+    return json5(request, { error: "status-failed" }, 500);
   }
 };
 var healTasks = async (env, date) => {
@@ -18042,9 +18285,9 @@ var healTasks = async (env, date) => {
 };
 var startNewsOnly = async (request, env, ctx, date) => {
   try {
-    if (!keys(env).length) return json4(request, { error: "keys-not-configured" }, 503);
+    if (!keys(env).length) return json5(request, { error: "keys-not-configured" }, 503);
     const newsJob = await createWithFailover(env, date, newsTaskBody(env, date), 1);
-    if (!newsJob) return json4(request, { error: "all-keys-exhausted" }, 429);
+    if (!newsJob) return json5(request, { error: "all-keys-exhausted" }, 429);
     const job = { kind: "news", id: newsJob.id, keyIndex: newsJob.keyIndex };
     const rec = await env.GK_KV.get(`gkTasks:${date}`);
     const tasksRec = rec ? JSON.parse(rec) : { jobs: [], startedAt: Date.now() };
@@ -18052,9 +18295,9 @@ var startNewsOnly = async (request, env, ctx, date) => {
     await env.GK_KV.put(`gkTasks:${date}`, JSON.stringify(tasksRec));
     if (ctx && ctx.waitUntil) ctx.waitUntil(runBackground(env, date, [job]));
     else runBackground(env, date, [job]);
-    return json4(request, { started: true, kind: "news" });
+    return json5(request, { started: true, kind: "news" });
   } catch (_) {
-    return json4(request, { error: "run-failed" }, 500);
+    return json5(request, { error: "run-failed" }, 500);
   }
 };
 var maybeStart = async (request, env, ctx) => {
@@ -18064,9 +18307,9 @@ var maybeStart = async (request, env, ctx) => {
     const lastDay = await env.GK_KV.get("gkDay");
     if (lastDay === date) {
       const stored = await env.GK_KV.get(`gkData:${date}`);
-      return json4(request, stored ? { already: true, ready: true } : { already: true, ready: false });
+      return json5(request, stored ? { already: true, ready: true } : { already: true, ready: false });
     }
-    if (!keys(env).length) return json4(request, { error: "keys-not-configured" }, 503);
+    if (!keys(env).length) return json5(request, { error: "keys-not-configured" }, 503);
     await env.GK_KV.put("gkDay", date);
     const gkJob = await createWithFailover(env, date, { task: GK_PROMPT(date), llm: env.BU_LLM || "browser-use-2.0", maxSteps: 45, structuredOutput: JSON.stringify(GK_SCHEMA), flashMode: false });
     const newsJob = await createWithFailover(env, date, newsTaskBody(env, date), 1);
@@ -18075,12 +18318,12 @@ var maybeStart = async (request, env, ctx) => {
       newsJob ? { kind: "news", id: newsJob.id, keyIndex: newsJob.keyIndex } : null
     ].filter(Boolean);
     await env.GK_KV.put(`gkTasks:${date}`, JSON.stringify({ jobs, startedAt: Date.now() }));
-    if (!jobs.length) return json4(request, { error: "all-keys-exhausted" }, 429);
+    if (!jobs.length) return json5(request, { error: "all-keys-exhausted" }, 429);
     if (ctx && ctx.waitUntil) ctx.waitUntil(runBackground(env, date, jobs));
     else runBackground(env, date, jobs);
-    return json4(request, { started: true, tasks: jobs.length });
+    return json5(request, { started: true, tasks: jobs.length });
   } catch (error) {
-    return json4(request, { error: "run-failed" }, 500);
+    return json5(request, { error: "run-failed" }, 500);
   }
 };
 var gk_agent_worker_default = {
@@ -18092,6 +18335,8 @@ var gk_agent_worker_default = {
     if (emailResponse) return emailResponse;
     const fcmResponse = await handleFcmNotificationRequest(request, env, ctx);
     if (fcmResponse) return fcmResponse;
+    const adminPasskeyResponse = await handleAdminPasskeyRequest(request, env);
+    if (adminPasskeyResponse) return adminPasskeyResponse;
     const personalResponse = await handlePersonalizedNotificationRequest(request, env, ctx);
     if (personalResponse) return personalResponse;
     const userDataResponse = await handleUserDataRequest(request, env, ctx);
@@ -18123,11 +18368,11 @@ var gk_agent_worker_default = {
       }
     }
     if (url.pathname === "/health") {
-      return json4(request, { ok: true, keys: keys(env).length, askKey: !!env.ASK_API_KEY, kv: !!env.GK_KV, tg: !!env.TG_BOT_TOKEN, agent: "agent-f1", gemini: !!env.GEMINI_KEYS, groq: !!env.GROQ_API_KEY, lastDay: env.GK_KV ? await env.GK_KV.get("gkDay") : null });
+      return json5(request, { ok: true, keys: keys(env).length, askKey: !!env.ASK_API_KEY, kv: !!env.GK_KV, tg: !!env.TG_BOT_TOKEN, agent: "agent-f1", gemini: !!env.GEMINI_KEYS, groq: !!env.GROQ_API_KEY, lastDay: env.GK_KV ? await env.GK_KV.get("gkDay") : null });
     }
     const isApp = request.headers.get("X-AH-App") === APP_HEADER;
     const beaconOk = !isApp && request.method === "POST" && url.pathname === "/api/bank" && request.headers.get("Origin") === "https://sheikhrashel47-stack.github.io";
-    if (!isApp && !beaconOk) return json4(request, { error: "forbidden" }, 403);
+    if (!isApp && !beaconOk) return json5(request, { error: "forbidden" }, 403);
     if (request.method === "POST" && url.pathname === "/api/ask") return await createAsk(request, env, ctx);
     if (request.method === "POST" && url.pathname === "/api/bank") return await bankUpload(request, env);
     if (request.method === "GET" && url.pathname === "/api/bank") return await bankInfo(request, env);
@@ -18138,9 +18383,9 @@ var gk_agent_worker_default = {
       } catch (_) {
       }
       const result = await publishGlobal(env, body);
-      if (result.error === "empty") return json4(request, { error: "empty-global" }, 400);
-      if (result.error) return json4(request, result, 500);
-      return json4(request, result);
+      if (result.error === "empty") return json5(request, { error: "empty-global" }, 400);
+      if (result.error) return json5(request, result, 500);
+      return json5(request, result);
     }
     if (request.method === "GET" && url.pathname.startsWith("/api/ask/")) return await askStatus(request, env, url.pathname.split("/").pop() || "");
     if (request.method === "POST" && url.pathname === "/api/gk/run") return maybeStart(request, env, ctx);
@@ -18150,16 +18395,16 @@ var gk_agent_worker_default = {
         const tasks = await env.GK_KV.get(`gkTasks:${date}`);
         if (tasks) {
           const healed = await healTasks(env, date);
-          if (healed) return json4(request, { ready: true, date, payload: healed });
+          if (healed) return json5(request, { ready: true, date, payload: healed });
         }
         const stored = await env.GK_KV.get(`gkData:${date}`);
-        if (stored) return json4(request, { ready: true, date, payload: JSON.parse(stored) });
-        return json4(request, { ready: false, date, running: !!tasks });
+        if (stored) return json5(request, { ready: true, date, payload: JSON.parse(stored) });
+        return json5(request, { ready: false, date, running: !!tasks });
       } catch (_) {
-        return json4(request, { ready: false, date, running: false });
+        return json5(request, { ready: false, date, running: false });
       }
     }
-    return json4(request, { error: "not_found" }, 404);
+    return json5(request, { error: "not_found" }, 404);
   },
   async scheduled(event, env, ctx) {
     try {

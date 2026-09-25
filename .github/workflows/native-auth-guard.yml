@@ -31,6 +31,8 @@ on:
       - 'wrangler.toml'
       - '_worker.js'
       - 'index.html'
+      - 'admin-passkey.mjs'
+      - 'admin-passkey.test.mjs'
       - 'notification-command-center.html'
       - 'notification-command-center-*.test.mjs'
       - 'notification-admin-keyboard.test.mjs'

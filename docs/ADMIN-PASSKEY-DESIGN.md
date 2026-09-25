@@ -48,7 +48,39 @@ leaked token is a full admin grant with no device binding.
 
 ## Work items
 
-1. Worker: challenge/assert handlers + admin session mint (new tests).
-2. Worker: accept admin session in `ADMIN_PATHS` (contract test).
-3. UI: passkey button on the gate, keep token as an optional fallback.
-4. Docs: recovery path if the passkey device is lost (break-glass token).
+1. ✅ Worker: challenge/assert handlers + admin session mint (`admin-passkey.mjs`).
+2. ✅ Worker: accept admin session in `ADMIN_PATHS` (contract test in
+   `admin-passkey.test.mjs`).
+3. ✅ UI: passkey button on the gate, keep token as an optional fallback.
+4. ✅ Docs: recovery path if the passkey device is lost (break-glass token).
+
+## Status: shipped
+
+`admin-passkey.mjs` implements the flow; `fcm-notification.mjs` accepts a
+passkey session for `ADMIN_PATHS`; `notification-command-center.html` shows a
+"Sign in with passkey" button when the worker reports an enrollment, plus an
+"Add a passkey to this device" action in Settings. Tests:
+`admin-passkey.test.mjs` (8 cases, real P-256 WebAuthn verification — no mocks).
+
+### Storage keys (`GK_KV`)
+
+| Key | Contents | TTL |
+| --- | --- | --- |
+| `admin:pk:cred:<credentialId>` | credential id, public JWK, counter, label | none |
+| `admin:pk:chal:<challengeId>` | purpose, challenge, MAC | 120 s |
+| `admin:pk:sess:<sha256(session)>` | credential id, expiry | 30 min |
+
+Sessions are stored hashed, so a KV dump does not yield a usable bearer.
+`ADMIN_TOKEN` doubles as the HMAC key for challenge MACs: rotating it
+invalidates every outstanding challenge and session, while enrolled credentials
+survive (they are public keys).
+
+### Deliberate limits
+
+- Enrollment requires `ADMIN_TOKEN`. Enrolling a new passkey is a privileged
+  change, so it is not reachable from an assert-only path.
+- At most 8 admin credentials (`MAX_ADMIN_CREDENTIALS`).
+- `attestation: 'none'` — we do not verify device provenance, only possession.
+- No per-credential revocation UI yet; delete the `admin:pk:cred:*` key to
+  revoke.
+
