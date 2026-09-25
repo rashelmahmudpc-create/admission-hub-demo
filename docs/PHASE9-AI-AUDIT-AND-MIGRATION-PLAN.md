@@ -109,7 +109,7 @@ Missing ‚Üí required before Phase 9 completes:
 | **M7** | Memory Engine — long-term layer (owner override: automatic, no toggle) | medium | yes | **DONE** (see §14) |
 | **M8** | Response validation + structured output | medium | yes | **DONE** (see §15) |
 | **M9** | Write/Execute actions ‚Äî disabled by default, confirmation required | high | yes | **DONE** (see §16) |
-| **M10** | Observability, cost engine, full regression + hardening | low | yes | pending |
+| **M10** | Observability, cost engine, full regression + hardening | low | yes | **DONE** (see §18) |
 
 Rule (¬ß49): no step starts until the previous step is stable and approved.
 
@@ -566,6 +566,67 @@ change — bind that one variable.
 kill-switch cases (config-off refuses propose/confirm/audit and reports
 `enabled: false`) and the live flow (propose → confirm → write → audit).
 
-**Still open (owner decision):** there is no in-chat confirmation UI yet, so the
-routes work but a student cannot confirm from the interface. That UI is the next
-step before the action is usable end to end.
+
+## 18. M10 completion record — Observability + Cost / Quota
+
+The last two audit gaps (§52 items 9 and 10). New module `observability.js`,
+wired into `ai-agent.js` at the two places a request actually finishes: the
+one-shot reply and the streaming `done` event, plus both provider-failure paths.
+
+**What was added:**
+
+| Symbol | Purpose |
+|---|---|
+| `makeTrace()` / `sanitizeTrace()` | one record per request: `rid`, `callerRef`, provider, model, intent, tier, latency, token estimate, cost, fallback reason, prompt/context/agent versions |
+| `renderTrace()` | single-line JSON for the Worker log sink; newlines stripped so a trace cannot forge extra log lines |
+| `estimateTokens()` | ~4-chars-per-token approximation — reported as an estimate, never as a tokeniser |
+| `estimateCost()` / `costFor()` | rate-sheet lookup; returns `priced: false` when no rate exists |
+| `addUsage()` / `emptyUsage()` | fold traces into totals, counting unpriced requests separately |
+| `appendTrace()` / `parseTraces()` | bounded history (200), corrupt-safe parse, caller-scoped filter |
+| `quotaState()` | used / remaining / exhausted / 80% warning view over the existing `airl:` counter |
+| `describeObservability()` | shape advertised by `agentStatus` |
+
+**Two rules that shaped it, and why they are the point:**
+
+1. **A trace is not a transcript.** It carries ids, counts and durations — never
+   message text, prompt text, keys or a raw uid. `FORBIDDEN_TRACE_KEYS` is checked
+   twice (on build *and* on render), so a call site that passes a whole message
+   object by mistake still cannot leak content. The caller is identified by an
+   8-hex `callerRef`, which groups traces without logging an account uid.
+2. **A cost is never invented.** `PRICING` ships **empty on purpose**: the Gemini
+   aliases in `GEMINI_MODELS` are preview/lite and their public rates move, so a
+   guessed rate would silently corrupt every total derived from it. An unpriced
+   model reports `costUsd: null, priced: false`; totals count those requests
+   separately so a figure is never read as complete when part of it is unknown.
+   Fill `PRICING.<provider>.<model> = { in, out }` when the owner has the current
+   sheet — nothing else changes.
+
+**Why this adds no KV write.** The chat path already spends its two-write budget
+on the rate counter and memory. Traces go to the Worker's log sink instead, so M10
+does not raise the per-chat cost the module header documents. A test asserts no
+`obs`-prefixed KV write appears in the orchestrator.
+
+**Deliberate non-changes (preserve-first):** every response shape is untouched —
+`text`, `model`, `intent`, `pv`, `agent`, `latencyMs`, `structured` all keep their
+names and values. The rate-limit reply still answers `429` with the same
+`rate_limited` code and `cap`; it only gains a `remaining` field. The `airl:` key
+format is unchanged, so the existing counter tests still pass.
+
+**Verification:**
+
+- `phase9-m10-observability.test.mjs` — **32/32** (whitelist/forbidden-key
+  leakage, unpriced-cost honesty, half-filled rate rejection, exact arithmetic
+  *when* a rate is injected, bounded history, corrupt-safe parse, quota edges).
+- Full Phase 9 regression: `ai-agent-f1` 44/44, `ai-provider-adapters` 27/27,
+  M4 29/29, M5 10/10, M6 15/15, M7 33/33, M8 33/33, M9 engine 47/47, M9 UI 21/21.
+- `p21-ai-agent-ui` 83/83, `startup-ai-regression` 22/22, `account-retirement`
+  31/31, `dead-handler-guard` 4/4.
+- `npm run build:worker` + `check:worker-bundle` — in sync (868.5 kb).
+- `npm run check:sw-manifest` — digests regenerated.
+
+**Rollback:** revert this one commit. The module is additive; `ai-agent.js` gains
+one import, one trace emitter and five call sites. Nothing else imports it.
+
+**Phase 9 is complete.** M1–M10 are all DONE. The remaining near-term work in the
+blueprint (passkey-gated admin sessions, one config surface for caps, a single
+context/permission matrix doc) is out of Phase 9 scope.

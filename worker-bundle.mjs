@@ -758,6 +758,176 @@ function describeActions(env) {
   });
 }
 
+// observability.js
+var OBSERVABILITY_VERSION = "obs-v1";
+var MAX_TRACES = 200;
+var FALLBACK = Object.freeze({
+  NONE: "none",
+  EMPTY: "empty",
+  PROVIDER_ERROR: "provider-error",
+  BAD_KEY: "bad-key",
+  NO_PROVIDERS: "no-providers",
+  BLOCKED: "blocked",
+  RATE_LIMITED: "rate-limited",
+  NOT_SIGNED_IN: "not-signed-in"
+});
+var PRICING = Object.freeze({
+  gemini: Object.freeze({}),
+  groq: Object.freeze({}),
+  cloudflare: Object.freeze({})
+});
+var QUOTA_WARN_AT = 0.8;
+function estimateTokens(text) {
+  const s = String(text == null ? "" : text);
+  if (!s.length) return 0;
+  return Math.ceil(s.length / 4);
+}
+function makeRequestId(seed) {
+  const s = String(seed == null ? "" : seed) || String(Date.now()) + Math.random();
+  return "r-" + fnv1a(s).toString(16).padStart(8, "0");
+}
+function callerRef(uid) {
+  const s = String(uid == null ? "" : uid);
+  if (!s) return "";
+  return fnv1a(s).toString(16).padStart(8, "0");
+}
+function fnv1a(str2) {
+  let h = 2166136261;
+  for (let i = 0; i < str2.length; i++) {
+    h ^= str2.charCodeAt(i);
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  return h >>> 0;
+}
+function costFor(provider, model, pricing = PRICING) {
+  const p = pricing && pricing[String(provider || "")];
+  if (!p) return null;
+  const rate = p[String(model || "")];
+  if (!rate || typeof rate.in !== "number" || typeof rate.out !== "number") return null;
+  return { in: rate.in, out: rate.out };
+}
+function estimateCost({ provider, model, tokensIn = 0, tokensOut = 0, pricing = PRICING } = {}) {
+  const rate = costFor(provider, model, pricing);
+  if (!rate) return { usd: null, priced: false, reason: "no-rate-for-model" };
+  const usd = (rate.in * Number(tokensIn || 0) + rate.out * Number(tokensOut || 0)) / 1e6;
+  return { usd: Math.round(usd * 1e6) / 1e6, priced: true, reason: "" };
+}
+var TRACE_FIELDS = Object.freeze([
+  "rid",
+  "at",
+  "callerRef",
+  "provider",
+  "model",
+  "intent",
+  "tier",
+  "stream",
+  "latencyMs",
+  "tokensIn",
+  "tokensOut",
+  "costUsd",
+  "priced",
+  "fallbackReason",
+  "promptVersion",
+  "contextVersion",
+  "agentVersion",
+  "responseType",
+  "validated"
+]);
+var FORBIDDEN_TRACE_KEYS = Object.freeze([
+  "uid",
+  "text",
+  "content",
+  "messages",
+  "prompt",
+  "key",
+  "token",
+  "args",
+  "summary",
+  "email",
+  "phone"
+]);
+var num = (v, min = 0) => {
+  const n = Number(v);
+  return Number.isFinite(n) && n >= min ? n : 0;
+};
+var str = (v, max = 120) => String(v == null ? "" : v).slice(0, max);
+function makeTrace(input = {}) {
+  const src = input && typeof input === "object" ? input : {};
+  const tokensIn = num(src.tokensIn);
+  const tokensOut = num(src.tokensOut);
+  const cost = estimateCost({
+    provider: src.provider,
+    model: src.model,
+    tokensIn,
+    tokensOut,
+    pricing: src.pricing
+  });
+  return sanitizeTrace({
+    rid: str(src.rid, 24) || makeRequestId(src.seed),
+    at: num(src.at) || Date.now(),
+    callerRef: str(src.callerRef, 16),
+    provider: str(src.provider, 24),
+    model: str(src.model, 64),
+    intent: str(src.intent, 32),
+    tier: str(src.tier, 16),
+    stream: !!src.stream,
+    latencyMs: num(src.latencyMs),
+    tokensIn,
+    tokensOut,
+    costUsd: cost.usd,
+    priced: cost.priced,
+    fallbackReason: str(src.fallbackReason, 32) || FALLBACK.NONE,
+    promptVersion: str(src.promptVersion, 48),
+    contextVersion: str(src.contextVersion, 32),
+    agentVersion: str(src.agentVersion, 32),
+    responseType: str(src.responseType, 32),
+    validated: src.validated !== false
+  });
+}
+function sanitizeTrace(raw) {
+  const src = raw && typeof raw === "object" ? raw : {};
+  const out = {};
+  for (const field of TRACE_FIELDS) {
+    if (!(field in src)) continue;
+    const v = src[field];
+    if (field === "stream" || field === "validated" || field === "priced") out[field] = !!v;
+    else if (field === "latencyMs" || field === "tokensIn" || field === "tokensOut" || field === "at") out[field] = num(v);
+    else if (field === "costUsd") out[field] = v === null || v === void 0 ? null : Number.isFinite(Number(v)) ? Number(v) : null;
+    else if (field === "rid") out[field] = str(v, 24) || makeRequestId();
+    else out[field] = str(v, field === "model" ? 64 : 48);
+  }
+  if (!out.rid) out.rid = makeRequestId();
+  if (!out.fallbackReason) out.fallbackReason = FALLBACK.NONE;
+  if (out.tokensIn === void 0) out.tokensIn = 0;
+  if (out.tokensOut === void 0) out.tokensOut = 0;
+  return out;
+}
+function quotaState({ used = 0, cap = 80, warnAt = QUOTA_WARN_AT } = {}) {
+  const u = num(used);
+  const c = num(cap, 1) || 1;
+  const remaining = Math.max(0, c - u);
+  return {
+    used: u,
+    cap: c,
+    remaining,
+    exhausted: u >= c,
+    warning: !(u >= c) && u >= Math.ceil(c * warnAt)
+  };
+}
+function renderTrace(trace) {
+  return JSON.stringify(sanitizeTrace(trace)).replace(/[\r\n]+/g, " ");
+}
+function describeObservability() {
+  return {
+    version: OBSERVABILITY_VERSION,
+    maxTraces: MAX_TRACES,
+    fields: TRACE_FIELDS.slice(),
+    fallbackReasons: Object.values(FALLBACK),
+    pricedProviders: Object.keys(PRICING).filter((p) => Object.keys(PRICING[p]).length > 0),
+    tokenCount: "estimate"
+  };
+}
+
 // ai-agent.js
 var AGENT_VERSION = "agent-f1";
 var SYSTEM_PROMPT_V = "sys-f1-3-ai-personalization";
@@ -866,17 +1036,17 @@ function sanitizeOnboardingContext(value) {
 }
 function capStats(stats) {
   if (!stats || typeof stats !== "object") return null;
-  const num = (v, min, max) => {
+  const num2 = (v, min, max) => {
     const n = Number(v);
     if (!isFinite(n) || n < 0) return 0;
     return Math.min(max, Math.round(n));
   };
   const s = {};
-  if (stats.exams != null) s.exams = num(stats.exams, 0, 1e5);
-  if (stats.questions != null) s.questions = num(stats.questions, 0, 1e6);
-  if (stats.accuracy != null) s.accuracy = num(stats.accuracy, 0, 100);
-  if (stats.streak != null) s.streak = num(stats.streak, 0, 3650);
-  if (stats.mistakes != null) s.mistakes = num(stats.mistakes, 0, 1e5);
+  if (stats.exams != null) s.exams = num2(stats.exams, 0, 1e5);
+  if (stats.questions != null) s.questions = num2(stats.questions, 0, 1e6);
+  if (stats.accuracy != null) s.accuracy = num2(stats.accuracy, 0, 100);
+  if (stats.streak != null) s.streak = num2(stats.streak, 0, 3650);
+  if (stats.mistakes != null) s.mistakes = num2(stats.mistakes, 0, 1e5);
   return Object.keys(s).length ? s : null;
 }
 var AI_PREFS_DEFAULT = Object.freeze({ langStyle: "bn", tone: "friendly", responseLen: "balanced" });
@@ -1290,7 +1460,8 @@ async function agentChat(request, env, uid, opts = {}) {
   } catch (_) {
     n = 0;
   }
-  if (n >= cap) return jsonResp({ error: "rate_limited", message: "আজকের AI-চ্যাট সীমা শেষ — কাল আবার চেষ্টা করো।", cap }, 429);
+  const quota = quotaState({ used: n, cap });
+  if (quota.exhausted) return jsonResp({ error: "rate_limited", message: "আজকের AI-চ্যাট সীমা শেষ — কাল আবার চেষ্টা করো।", cap, remaining: quota.remaining }, 429);
   await putKv(env.PUB_KV, rlKey, String(n + 1), 172800);
   const verificationGuidance = authVerificationGuidance(v.messages[v.messages.length - 1].content);
   if (verificationGuidance) return guidanceResponse(verificationGuidance, stream);
@@ -1377,6 +1548,30 @@ async function agentChat(request, env, uid, opts = {}) {
     return stream ? sseError(msg, 403) : jsonResp(msg, 403);
   }
   const failures = [];
+  const rid = makeRequestId(sendCtx.uid + ":" + startedAt);
+  const traceCtx = {
+    rid,
+    callerRef: callerRef(sendCtx.uid),
+    intent,
+    tier,
+    stream,
+    promptVersion: SYSTEM_PROMPT_V,
+    contextVersion: ctxBundle ? CONTEXT_VERSION : "",
+    agentVersion: AGENT_VERSION
+  };
+  const emitTrace = (extra = {}) => {
+    try {
+      console.log(renderTrace(makeTrace({
+        ...traceCtx,
+        at: Date.now(),
+        latencyMs: Date.now() - startedAt,
+        tokensIn: estimateTokens(sys),
+        tokensOut: estimateTokens(extra.text || ""),
+        ...extra
+      })));
+    } catch (_) {
+    }
+  };
   const validationCtx = {
     intent,
     intentConfidence: intentCls.confidence,
@@ -1419,6 +1614,7 @@ async function agentChat(request, env, uid, opts = {}) {
         if (raw) {
           const check = validateResponse(raw, validationCtx);
           await finalize(c.model, c.provider, raw);
+          emitTrace({ provider: c.provider, model: c.model, text: raw, responseType: check.structured?.type, validated: !check.enforced });
           return jsonResp({ text: check.text, structured: check.structured, model: c.model, intent, pv: SYSTEM_PROMPT_V, latencyMs: Date.now() - startedAt, agent: AGENT_VERSION });
         }
         lastErr = "empty-" + c.model;
@@ -1427,6 +1623,7 @@ async function agentChat(request, env, uid, opts = {}) {
         if (e instanceof ProviderError && e.bad) await putKv(env.PUB_KV, badKeyName(c.key, c.model), "1", 86400);
       }
     }
+    emitTrace({ fallbackReason: FALLBACK.PROVIDER_ERROR, validated: false });
     return jsonResp({ error: "provider_failed", message: "AI একটু ব্যস্ত — কয়েক সেকেন্ড পরে আবার চেষ্টা করো।", detail: lastErr, retryable: true }, 502);
   }
   const encoder6 = new TextEncoder();
@@ -1461,6 +1658,7 @@ async function agentChat(request, env, uid, opts = {}) {
 data: ${JSON.stringify({ text: check.text })}
 
 `);
+              emitTrace({ provider: c.provider, model: c.model, text: full, responseType: check.structured?.type, validated: !check.enforced });
               push(`event: done
 data: ${JSON.stringify({ model: c.model, provider: c.provider, intent, quiz: quizMode, pv: SYSTEM_PROMPT_V, agent: AGENT_VERSION, latencyMs: Date.now() - startedAt, structured: check.structured })}
 
@@ -1475,10 +1673,13 @@ data: ${JSON.stringify({ model: c.model, provider: c.provider, intent, quiz: qui
             } else lastErr = String(e.message || e);
           }
         }
-        if (!ok) push(`event: error
+        if (!ok) {
+          emitTrace({ fallbackReason: FALLBACK.PROVIDER_ERROR, validated: false });
+          push(`event: error
 data: ${JSON.stringify({ error: "provider_failed", message: "AI একটু ব্যস্ত — কয়েক সেকেন্ড পরে আবার চেষ্টা করো।", detail: lastErr, retryable: true })}
 
 `);
+        }
       } catch (e) {
         push(`event: error
 data: ${JSON.stringify({ error: "stream_failed", message: "যুক্তি-বিচ্ছেদ ঘটেছে।", detail: String(e.message || e), retryable: true })}
@@ -1520,6 +1721,7 @@ async function agentStatus(request, env, uid) {
     memory: { version: MEMORY_VERSION, mode: "auto", scope: "account-only" },
     response: describeResponseValidation(),
     actions: describeActions(env),
+    observability: describeObservability(),
     context: ctxOn ? describeContext(buildContext({ uid, prefs: null, stats: null, onboarding: null, memoryOn: true })) : { enabled: false }
   });
 }
