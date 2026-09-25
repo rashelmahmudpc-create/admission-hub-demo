@@ -5082,16 +5082,16 @@ window.__admissionBootPromise.catch(error => console.error('[Admission Hub] boot
     // The updated worker takes control now; the current document remains usable and the next launch uses the new shell.
     try{
 
-      const expectedSwVersion = 'v288-learning-insights-20260925';
+      const expectedSwVersion = 'v289-notification-intelligence-20260925';
       // register() on the same scope performs an in-place update. Never unregister
       // the active iOS worker first: that discards the instant offline shell.
-      const registration=await navigator.serviceWorker.register('./sw.js?v=v288-learning-insights-20260925',{scope:'./',updateViaCache:'none'});
+      const registration=await navigator.serviceWorker.register('./sw.js?v=v289-notification-intelligence-20260925',{scope:'./',updateViaCache:'none'});
       await registration.update().catch(()=>{});
       // Purge every old app-shell cache (any build id ≠ current). This guarantees
       // stale pre-retirement application shells can never be served from cache again.
       try {
 
-        const cur = 'admission-hub-shell-v288-learning-insights-20260925';
+        const cur = 'admission-hub-shell-v289-notification-intelligence-20260925';
         const names = await caches.keys();
         for (const name of names) {
           if (name.startsWith('admission-hub-shell-') && name !== cur) await caches.delete(name).catch(()=>{});
@@ -5517,8 +5517,8 @@ setTimeout(() => { if (location.hash.replace(/^#/, '').split('?')[0] === 'dictio
 <script src="./vocabulary-master-tool.js?v=vm-autoimg-v106" defer></script>
 <script src="./vocabulary-pronunciation.js?v=voice-el-v104" defer></script>
 <script src="./vocabulary-elevenlabs.js?v=el-voice-v106" defer></script>
-<script defer src="./notification-hub.js?v=notify-v121"></script>
-<script defer src="./notification-fcm.js?v=fcm-p1-v14"></script>
+<script defer src="./notification-hub.js?v=notify-p3-v122"></script>
+<script defer src="./notification-fcm.js?v=fcm-p3-v15"></script>
 <script defer src="./notification-inbox.js?v=notif-inbox-v6"></script>
 <script defer src="./notification-center-route.js?v=ns-cc-route-v1"></script>
 <script src="./memorizing-match-tool.js?v=memorizing-match-v8-stable-cards" defer></script>

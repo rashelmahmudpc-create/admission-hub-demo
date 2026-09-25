@@ -134,3 +134,40 @@ test('notificationclick: a global push logs the click for the app', async () => 
   assert.equal(parsed.id, 'row-9');
   assert.equal(parsed.link, 'dashboard');
 });
+
+/* Phase 3: an intelligence push carries no `gid`. Its engine key is what an
+ * open/click/learning outcome joins on, so it must survive the tap the same way
+ * a global id does — in both the flat and the SDK-wrapped shape. */
+test('notificationclick: an intel push opens its link and stores the engine key', async () => {
+  const tap = loadSw();
+  const { opened, stored } = await tap({ link: 'smart-revision', src: 'fcm-intel', kind: 'weak-topic', variant: 'B', key: 'weak-topic:u1:2026-09-25' });
+  assert.equal(opened, './#smart-revision');
+  assert.ok(stored, 'an intel click must be stored, or conversion attribution has nothing to join on');
+  const parsed = JSON.parse(stored.body);
+  assert.equal(parsed.intelKey, 'weak-topic:u1:2026-09-25');
+  assert.equal(parsed.id, undefined, 'an intel record must not masquerade as a global id');
+});
+
+test('notificationclick: SDK-wrapped intel push still stores the engine key', async () => {
+  /* This is the shape a real device delivers, so this is the assertion that
+   * actually protects conversion measurement. */
+  const tap = loadSw();
+  const { opened, stored } = await tap(wrap({ link: 'smart-revision', src: 'fcm-intel', kind: 'progress', variant: 'A', key: 'progress:u1:2026-09-25' }));
+  assert.equal(opened, './#smart-revision');
+  assert.ok(stored, 'the wrapped intel click must be stored too');
+  assert.equal(JSON.parse(stored.body).intelKey, 'progress:u1:2026-09-25');
+});
+
+test('notificationclick: a push with neither gid nor key stores nothing', async () => {
+  const tap = loadSw();
+  const { stored } = await tap({ link: 'dashboard', src: 'fcm-personal', kind: 'revision-due' });
+  assert.equal(stored, undefined, 'an unidentifiable push must not write an empty click record');
+});
+
+test('notificationclick: a global push keeps using its gid when a key is also present', async () => {
+  const tap = loadSw();
+  const { stored } = await tap({ gid: 'row-11', key: 'progress:u1:2026-09-25', link: 'dashboard', src: 'fcm-global' });
+  const parsed = JSON.parse(stored.body);
+  assert.equal(parsed.id, 'row-11', 'the global id wins, so the global click route keeps working');
+  assert.equal(parsed.intelKey, undefined);
+});

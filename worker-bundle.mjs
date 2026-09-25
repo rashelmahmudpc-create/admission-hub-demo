@@ -802,14 +802,14 @@ function fnv1a(str2) {
 function costFor(provider, model, pricing = PRICING) {
   const p = pricing && pricing[String(provider || "")];
   if (!p) return null;
-  const rate = p[String(model || "")];
-  if (!rate || typeof rate.in !== "number" || typeof rate.out !== "number") return null;
-  return { in: rate.in, out: rate.out };
+  const rate2 = p[String(model || "")];
+  if (!rate2 || typeof rate2.in !== "number" || typeof rate2.out !== "number") return null;
+  return { in: rate2.in, out: rate2.out };
 }
 function estimateCost({ provider, model, tokensIn = 0, tokensOut = 0, pricing = PRICING } = {}) {
-  const rate = costFor(provider, model, pricing);
-  if (!rate) return { usd: null, priced: false, reason: "no-rate-for-model" };
-  const usd = (rate.in * Number(tokensIn || 0) + rate.out * Number(tokensOut || 0)) / 1e6;
+  const rate2 = costFor(provider, model, pricing);
+  if (!rate2) return { usd: null, priced: false, reason: "no-rate-for-model" };
+  const usd = (rate2.in * Number(tokensIn || 0) + rate2.out * Number(tokensOut || 0)) / 1e6;
   return { usd: Math.round(usd * 1e6) / 1e6, priced: true, reason: "" };
 }
 var TRACE_FIELDS = Object.freeze([
@@ -6032,11 +6032,11 @@ var CloudflareNativeAuthEngine = class {
   // High-dynamic blueprint §01/§04/§05/§13/§14 — deterministic rule table.
   // No AI, no behavioral inference; only real account/profile state.
   profileContext({ profile = null, completion = 0, lastLoginAt = null, now = Date.now() }) {
-    const DAY_MS6 = 864e5;
+    const DAY_MS7 = 864e5;
     const createdAt = profile?.createdAt ? Number(profile.createdAt) : null;
     const hasTarget = Array.isArray(profile?.targets) && profile.targets.length > 0 && Boolean(profile.targets[0]?.name);
-    const ageDays = createdAt ? (now - createdAt) / DAY_MS6 : Number.POSITIVE_INFINITY;
-    const gapDays = lastLoginAt ? (now - Number(lastLoginAt)) / DAY_MS6 : Number.POSITIVE_INFINITY;
+    const ageDays = createdAt ? (now - createdAt) / DAY_MS7 : Number.POSITIVE_INFINITY;
+    const gapDays = lastLoginAt ? (now - Number(lastLoginAt)) / DAY_MS7 : Number.POSITIVE_INFINITY;
     let context = "DEFAULT";
     let greeting = "আগে থেকেই চলো";
     if (!profile || Number(completion) < 60) {
@@ -11859,8 +11859,1126 @@ var __personalizedTest = Object.freeze({
   handlePersonalizedNotificationRequest
 });
 
-// event-notifications.mjs
+// notification-intelligence.mjs
 var DAY_MS2 = 24 * 3600 * 1e3;
+var MIN_MS = 60 * 1e3;
+var DEFAULT_TZ_OFFSET_MIN = 360;
+var KIND_META = Object.freeze({
+  "certificate": { category: "achievement", priority: 88, celebration: true, emoji: "🎓" },
+  "achievement": { category: "achievement", priority: 85, celebration: true, emoji: "🏆" },
+  "streak-risk": { category: "streak", priority: 90, celebration: false, emoji: "🔥" },
+  "weak-topic": { category: "learning", priority: 65, celebration: false, emoji: "🧠" },
+  "progress": { category: "learning", priority: 60, celebration: true, emoji: "🎯" },
+  "pending-learning": { category: "learning", priority: 55, celebration: false, emoji: "📚" },
+  "comeback": { category: "streak", priority: 70, celebration: false, emoji: "👋" },
+  "challenge": { category: "challenge", priority: 45, celebration: false, emoji: "🚀" }
+});
+var KIND_ORDER = Object.freeze(
+  Object.keys(KIND_META).sort((a, b) => KIND_META[b].priority - KIND_META[a].priority)
+);
+var DEFAULTS4 = Object.freeze({
+  push_enabled: 1,
+  personalized_enabled: 1,
+  lang: "bn",
+  max_per_day: 1,
+  max_per_category_per_day: 1,
+  cooldown_hours: 6,
+  min_pending: 5,
+  inactive_days: 3,
+  weak_accuracy: 55,
+  weak_min_attempts: 12,
+  streak_risk_hour: 17,
+  milestone_gap: 2,
+  fatigue_window_days: 30,
+  fatigue_min_sent: 8,
+  fatigue_open_rate: 0.15,
+  fatigue_max_extra_cap: 0,
+  send_after_hour: 8,
+  send_before_hour: 22,
+  quiet_hours_enabled: 1,
+  quiet_start: "23:00",
+  quiet_end: "07:00"
+});
+var PREF_CATEGORIES = Object.freeze(["achievement", "challenge", "learning", "streak"]);
+var DEFAULT_PREFS2 = Object.freeze({
+  push_enabled: 1,
+  personalized_enabled: 1,
+  quiet_hours_enabled: 1,
+  quiet_start: "23:00",
+  quiet_end: "07:00",
+  categories: Object.freeze({ achievement: 1, challenge: 1, learning: 1, streak: 1 })
+});
+var AB_VARIANTS = Object.freeze(["A", "B", "C"]);
+var AB_COPY = Object.freeze({
+  "streak-risk": {
+    A: { bn: "🔥 স্ট্রিক বাঁচাও", body: "আজ এখনো পড়া শুরু হয়নি — কয়েকটা প্রশ্ন হলেও স্ট্রিক ধরে রাখো" },
+    B: { bn: "🔥 আজকের স্ট্রিক এখনো বাকি", body: "মাত্র ১০টা MCQ — দুই মিনিটের কাজ, কিন্তু স্ট্রিকটা থেকে যায়" },
+    C: { bn: "🔥 স্ট্রিক নিয়ে ভাবছ?", body: "আজ পড়া হয়নি। ছোট একটা সেশনই যথেষ্ট।" }
+  },
+  "comeback": {
+    A: { bn: "👋 ফিরে এসো", body: "কয়েকদিন পড়া হয়নি — আজ ছোট একটা সেশন দিয়ে আবার শুরু করো" },
+    B: { bn: "👋 আবার শুরু করি?", body: "যেখানে ছিলে সেখান থেকেই — একটা lesson হলেও আজ এগিয়ে যাও" },
+    C: { bn: "👋 তোমার জন্য অপেক্ষা করছি", body: "পড়ার ছন্দ ফেরাতে আজ একটা ছোট step নাও" }
+  },
+  "pending-learning": {
+    A: { bn: "📚 রিভিশনের সময়", body: "ভুল প্রশ্নগুলো রিভিশনের অপেক্ষায় — আজ ঝালাই করে ফেলো" },
+    B: { bn: "📚 জমে যাচ্ছে", body: "রিভিশন backlog বাড়ছে — আজ অর্ধেকটা শেষ করলেও লাভ" },
+    C: { bn: "📚 ১০ মিনিট রিভিশন", body: "যা ভুল করেছ, সেটাই সবচেয়ে দামি পড়া — আজ হাত দাও" }
+  },
+  "progress": {
+    A: { bn: "🎯 এগিয়ে চলছো", body: "তোমার course এগিয়ে চলেছে — এই গতি ধরে রাখো" },
+    B: { bn: "🎯 অর্ধেক পথ পেরিয়ে", body: "অর্ধেকের বেশি শেষ — পরের milestone খুব কাছেই" },
+    C: { bn: "🎯 পরের ধাপ", body: "আর কয়েকটা lesson-ই বাকি — আজ এগিয়ে যাও" }
+  },
+  "weak-topic": {
+    A: { bn: "🧠 দুর্বল topic", body: "কয়েকটা topic-এ বারবার ভুল হচ্ছে — আজ ওগুলো ধরে ফেলো" },
+    B: { bn: "🧠 একটু নজর দরকার", body: "যে topic-এ ভুল বেশি, সেটাই সবচেয়ে বেশি নম্বর ফেরায়" },
+    C: { bn: "🧠 লক্ষ্য ঠিক করি", body: "আজ শুধু দুর্বল topic-গুলোর practice করি" }
+  },
+  "achievement": {
+    A: { bn: "🏆 সাফল্য", body: "নতুন milestone unlock হয়েছে — দুর্দান্ত!" },
+    B: { bn: "🏆 milestone unlocked", body: "তোমার পরিশ্রম রঙিন হয়ে উঠল — এভাবেই চালিয়ে যাও" },
+    C: { bn: "🏆 অভিনন্দন", body: "আরেকটা ধাপ পেরিয়ে গেলে — পরেরটাও তোমার হাতের মুঠোয়" }
+  },
+  "certificate": {
+    A: { bn: "🎓 Certificate unlocked", body: "তোমার certificate তৈরি — এখনই দেখে নাও" },
+    B: { bn: "🎓 অভিনন্দন!", body: "course সম্পূর্ণ — certificate তোমার profile-এ যুক্ত হয়েছে" },
+    C: { bn: "🎓 তুমি পারেছ", body: "পুরো course শেষ — certificate নিতে প্রস্তুত" }
+  },
+  "challenge": {
+    A: { bn: "🚀 চ্যালেঞ্জ", body: "আজকের চ্যালেঞ্জ তোমার জন্য তৈরি — নিতে রাজি?" },
+    B: { bn: "🚀 নতুন চ্যালেঞ্জ", body: "নিজেকে পরখ করার সময় — আজকের চ্যালেঞ্জ নাও" },
+    C: { bn: "🚀 একটু কঠিন কিছু?", body: "আজকের চ্যালেঞ্জে নিজের সেরাটা দেখাও" }
+  }
+});
+function localParts(nowMs, tzOffsetMin = DEFAULT_TZ_OFFSET_MIN) {
+  const offset = Number.isFinite(Number(tzOffsetMin)) ? Number(tzOffsetMin) : DEFAULT_TZ_OFFSET_MIN;
+  const d = new Date(Number(nowMs) + offset * MIN_MS);
+  return {
+    date: d.toISOString().slice(0, 10),
+    hour: d.getUTCHours(),
+    minute: d.getUTCMinutes(),
+    weekday: d.getUTCDay(),
+    offsetMin: offset
+  };
+}
+var toMinutes2 = (hhmm) => {
+  const m = String(hhmm || "").match(/^(\d{2}):(\d{2})$/);
+  return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+};
+function inQuietHours2(hour, minute, prefs = {}) {
+  if (!Number(prefs.quiet_hours_enabled)) return false;
+  const start = toMinutes2(prefs.quiet_start);
+  const end = toMinutes2(prefs.quiet_end);
+  if (start == null || end == null || start === end) return false;
+  const nowM = hour * 60 + minute;
+  return start < end ? nowM >= start && nowM < end : nowM >= start || nowM < end;
+}
+function inSendWindow2(hour, prefs = {}) {
+  const after = Number.isFinite(Number(prefs.send_after_hour)) ? Number(prefs.send_after_hour) : DEFAULTS4.send_after_hour;
+  const before = Number.isFinite(Number(prefs.send_before_hour)) ? Number(prefs.send_before_hour) : DEFAULTS4.send_before_hour;
+  return hour >= after && hour < before;
+}
+var dayDiff2 = (a, b) => Math.round((Date.parse(a + "T00:00:00Z") - Date.parse(b + "T00:00:00Z")) / DAY_MS2);
+var asInt3 = (v, fallback = 0) => Number.isFinite(Number(v)) ? Number(v) : fallback;
+var rate = (part, whole) => whole > 0 ? part / whole : 0;
+function computeSignals(state = {}, nowMs = Date.now(), tzOffsetMin = DEFAULT_TZ_OFFSET_MIN) {
+  const { date: today } = localParts(nowMs, tzOffsetMin);
+  const stats = (Array.isArray(state.dailyStats) ? state.dailyStats : []).map((s) => ({ day: String(s?.day || ""), questions: asInt3(s?.questions), correct: asInt3(s?.correct), lessons: asInt3(s?.lessons) })).filter((s) => s.day);
+  const byDay = new Map(stats.map((s) => [s.day, s]));
+  const questionsToday = asInt3(byDay.get(today)?.questions);
+  const lessonsToday = asInt3(byDay.get(today)?.lessons);
+  const dayAt = (offset) => new Date(Date.parse(today + "T00:00:00Z") - offset * DAY_MS2).toISOString().slice(0, 10);
+  const active = (d) => asInt3(byDay.get(d)?.questions) > 0 || asInt3(byDay.get(d)?.lessons) > 0;
+  let streak = 0;
+  let cursor = active(today) ? 0 : 1;
+  if (active(dayAt(cursor))) while (active(dayAt(cursor))) {
+    streak += 1;
+    cursor += 1;
+  }
+  const lastActiveDay = [...byDay.keys()].filter(active).sort().pop() || "";
+  const lastActiveAt = asInt3(state.activityAt) || (lastActiveDay ? Date.parse(lastActiveDay + "T12:00:00Z") : 0);
+  const daysSinceActive = lastActiveDay ? Math.max(0, dayDiff2(today, lastActiveDay)) : null;
+  const window7 = stats.filter((s) => {
+    const d = dayDiff2(today, s.day);
+    return d >= 0 && d < 7;
+  });
+  const questions7 = window7.reduce((n, s) => n + s.questions, 0);
+  const correct7 = window7.reduce((n, s) => n + s.correct, 0);
+  const activeDays7 = window7.filter((s) => s.questions > 0 || s.lessons > 0).length;
+  const exams = (Array.isArray(state.examScores) ? state.examScores : []).map((e) => ({ id: String(e?.id || ""), score: asInt3(e?.score, NaN), at: asInt3(e?.at) })).filter((e) => Number.isFinite(e.score));
+  const recentExam = exams.slice().sort((a, b) => b.at - a.at)[0] || null;
+  const mistakes = state.mistakes || {};
+  const pending = asInt3(mistakes.pending);
+  const mastered = asInt3(mistakes.mastered);
+  const topics = (Array.isArray(mistakes.topics) ? mistakes.topics : []).map((t) => ({ topic: String(t?.topic || ""), misses: asInt3(t?.misses) })).filter((t) => t.topic && t.misses > 0).sort((a, b) => b.misses - a.misses);
+  const courses = (Array.isArray(state.courses) ? state.courses : []).map((c) => {
+    const total = asInt3(c?.lessonsTotal);
+    const done = Math.min(asInt3(c?.lessonsDone), total || asInt3(c?.lessonsDone));
+    return { id: String(c?.id || ""), lessonsTotal: total, lessonsDone: done, percent: total > 0 ? Math.round(done / total * 100) : 0 };
+  }).filter((c) => c.id && c.lessonsTotal > 0);
+  const history = (Array.isArray(state.history) ? state.history : []).map((h) => ({
+    key: String(h?.key || ""),
+    kind: String(h?.kind || ""),
+    sentAt: asInt3(h?.sentAt),
+    openedAt: asInt3(h?.openedAt),
+    clickedAt: asInt3(h?.clickedAt)
+  })).filter((h) => h.sentAt);
+  const recentNotifs = history.filter((h) => nowMs - h.sentAt <= DEFAULTS4.fatigue_window_days * DAY_MS2);
+  const openedNotifs = recentNotifs.filter((h) => h.openedAt).length;
+  const clickedNotifs = recentNotifs.filter((h) => h.clickedAt).length;
+  const accuracy = questions7 > 0 ? Math.round(rate(correct7, questions7) * 100) : null;
+  const engagementLevel = activeDays7 >= 5 ? "high" : activeDays7 >= 2 ? "medium" : "low";
+  const retentionStatus = daysSinceActive == null ? "new" : daysSinceActive <= 1 ? "active" : daysSinceActive < DEFAULTS4.inactive_days ? "cooling" : "inactive";
+  return {
+    today,
+    tzOffsetMin,
+    lastActiveAt,
+    lastActiveDay,
+    daysSinceActive,
+    recentSessions: activeDays7,
+    lessonActivity: lessonsToday,
+    lessons7: window7.reduce((n, s) => n + s.lessons, 0),
+    quizActivity: exams.length,
+    practiceActivity: questions7,
+    questionsToday,
+    completionRate: courses.length ? Math.round(courses.reduce((n, c) => n + c.percent, 0) / courses.length) : 0,
+    accuracy,
+    engagementLevel,
+    retentionStatus,
+    notificationEngagement: {
+      sent: recentNotifs.length,
+      opened: openedNotifs,
+      clicked: clickedNotifs,
+      openRate: Math.round(rate(openedNotifs, recentNotifs.length) * 100),
+      clickRate: Math.round(rate(clickedNotifs, recentNotifs.length) * 100)
+    },
+    streak,
+    streakRisk: streak >= 2 && questionsToday === 0 && lessonsToday === 0,
+    pending,
+    mastered,
+    repeatedMistakes: topics.reduce((n, t) => n + t.misses, 0),
+    weakTopics: topics,
+    courses,
+    recentExam,
+    milestoneNear: nextMilestoneGap(courses)
+  };
+}
+function nextMilestoneGap(courses) {
+  let best = null;
+  for (const c of courses) {
+    for (const mark of [25, 50, 75, 100]) {
+      if (c.percent >= mark) continue;
+      const lessonsAway = Math.max(1, Math.ceil((mark - c.percent) / 100 * c.lessonsTotal));
+      if (!best || lessonsAway < best.lessonsAway) best = { courseId: c.id, mark, lessonsAway, percent: c.percent };
+      break;
+    }
+  }
+  return best;
+}
+function classifySegment(signals = {}) {
+  const reasons = [];
+  const s = signals;
+  if (s.daysSinceActive == null) {
+    reasons.push("no-activity-yet");
+    return { segment: "new", reasons };
+  }
+  if (s.retentionStatus === "inactive") {
+    reasons.push(`inactive-${s.daysSinceActive}d`);
+    return { segment: "dormant", reasons };
+  }
+  if (s.streakRisk && s.streak >= 2) {
+    reasons.push(`streak-${s.streak}-at-risk`);
+    return { segment: "streak-risk", reasons };
+  }
+  if (s.weakTopics?.length && s.accuracy != null && s.accuracy < DEFAULTS4.weak_accuracy && s.practiceActivity >= DEFAULTS4.weak_min_attempts) {
+    reasons.push(`accuracy-${s.accuracy}%`);
+    return { segment: "struggling", reasons };
+  }
+  if (s.milestoneNear && s.milestoneNear.lessonsAway <= DEFAULTS4.milestone_gap) {
+    reasons.push(`milestone-${s.milestoneNear.mark}-in-${s.milestoneNear.lessonsAway}`);
+    return { segment: "milestone-near", reasons };
+  }
+  if (s.retentionStatus === "cooling") {
+    reasons.push(`cooling-${s.daysSinceActive}d`);
+    return { segment: "cooling", reasons };
+  }
+  if (s.engagementLevel === "high") {
+    reasons.push(`active-${s.recentSessions}/7`);
+    return { segment: "engaged", reasons };
+  }
+  reasons.push(`active-${s.recentSessions}/7`);
+  return { segment: "active", reasons };
+}
+function buildCandidates(signals = {}, ctx = {}) {
+  const s = signals;
+  const out = [];
+  const today = s.today;
+  const hour = asInt3(ctx.hour, 0);
+  if (s.streakRisk && s.streak >= 2 && hour >= DEFAULTS4.streak_risk_hour) {
+    out.push({ kind: "streak-risk", key: `streak-risk:${today}:${s.streak}`, value: s.streak, link: "dashboard", reason: `streak ${s.streak}, nothing today` });
+  }
+  if (s.daysSinceActive != null && s.daysSinceActive >= DEFAULTS4.inactive_days) {
+    out.push({ kind: "comeback", key: `comeback:${today}`, value: s.daysSinceActive, link: "dashboard", reason: `${s.daysSinceActive} days idle` });
+  }
+  if (s.pending >= DEFAULTS4.min_pending) {
+    out.push({ kind: "pending-learning", key: `pending:${today}:${Math.floor(s.pending / 5) * 5}`, value: s.pending, link: "smart-revision", reason: `${s.pending} pending` });
+  }
+  if (s.weakTopics?.length && s.accuracy != null && s.accuracy < DEFAULTS4.weak_accuracy && s.practiceActivity >= DEFAULTS4.weak_min_attempts) {
+    const top = s.weakTopics[0];
+    out.push({ kind: "weak-topic", key: `weak:${top.topic}:${today}`, value: top.misses, link: "smart-revision", reason: `${top.topic} ×${top.misses}, accuracy ${s.accuracy}%` });
+  }
+  for (const c of s.courses || []) {
+    for (const mark of [25, 50, 75, 100]) {
+      if (c.percent >= mark) continue;
+      const lessonsAway = Math.max(1, Math.ceil((mark - c.percent) / 100 * c.lessonsTotal));
+      if (lessonsAway <= DEFAULTS4.milestone_gap) {
+        out.push({ kind: "progress", key: `progress:${c.id}:${mark}`, value: mark, link: "dashboard", reason: `${c.id} ${c.percent}% → ${mark}% in ${lessonsAway}` });
+      }
+      break;
+    }
+    if (c.percent >= 100) {
+      out.push({ kind: "certificate", key: `certificate:${c.id}`, value: c.id, link: "dashboard", reason: `${c.id} complete` });
+    }
+  }
+  for (const c of s.courses || []) {
+    for (const mark of [50, 100]) {
+      if (c.percent >= mark) {
+        out.push({ kind: "achievement", key: `achievement:${c.id}:${mark}`, value: mark, link: "dashboard", reason: `${c.id} hit ${mark}%` });
+      }
+    }
+  }
+  if (s.engagementLevel === "high" && s.streak >= 3 && !s.weakTopics?.length) {
+    out.push({ kind: "challenge", key: `challenge:${today}`, value: s.streak, link: "dashboard", reason: `engaged, streak ${s.streak}` });
+  }
+  return out;
+}
+function rankCandidates(candidates = []) {
+  const order = new Map(KIND_ORDER.map((k, i) => [k, i]));
+  return candidates.slice().sort((a, b) => {
+    const pa = KIND_META[a.kind]?.priority ?? 0;
+    const pb = KIND_META[b.kind]?.priority ?? 0;
+    if (pb !== pa) return pb - pa;
+    const va = asInt3(a.value), vb = asInt3(b.value);
+    if (typeof a.value === "number" && typeof b.value === "number" && vb !== va) return vb - va;
+    return (order.get(a.kind) ?? 99) - (order.get(b.kind) ?? 99);
+  });
+}
+function detectFatigue(history = [], nowMs = Date.now(), opts = {}) {
+  const windowDays = asInt3(opts.windowDays, DEFAULTS4.fatigue_window_days);
+  const minSent = asInt3(opts.minSent, DEFAULTS4.fatigue_min_sent);
+  const threshold = Number.isFinite(Number(opts.openRate)) ? Number(opts.openRate) : DEFAULTS4.fatigue_open_rate;
+  const recent = (Array.isArray(history) ? history : []).map((h) => ({ sentAt: asInt3(h?.sentAt), openedAt: asInt3(h?.openedAt), clickedAt: asInt3(h?.clickedAt) })).filter((h) => h.sentAt && nowMs - h.sentAt <= windowDays * DAY_MS2);
+  const sent = recent.length;
+  const opened = recent.filter((h) => h.openedAt).length;
+  const clicked = recent.filter((h) => h.clickedAt).length;
+  const openRate = rate(opened, sent);
+  const clickRate = rate(clicked, sent);
+  const fatigued = sent >= minSent && openRate < threshold;
+  return {
+    sent,
+    opened,
+    clicked,
+    openRate: Math.round(openRate * 1e3) / 1e3,
+    clickRate: Math.round(clickRate * 1e3) / 1e3,
+    fatigued,
+    level: fatigued ? "high" : sent >= minSent && openRate < threshold * 2 ? "watch" : "normal"
+  };
+}
+function effectiveCap(prefs = {}, fatigue = {}) {
+  const base = asInt3(prefs.max_per_day, DEFAULTS4.max_per_day);
+  if (!fatigue?.fatigued) return base;
+  return Math.max(0, base - 1 + asInt3(prefs.fatigue_max_extra_cap, DEFAULTS4.fatigue_max_extra_cap));
+}
+function checkFrequency({ prefs = {}, fatigue = {}, sendsToday = 0, categorySends = 0, lastSentAt = 0, nowMs = Date.now(), isCelebration = false }) {
+  const cap = effectiveCap(prefs, fatigue);
+  const cooldownMs = asInt3(prefs.cooldown_hours, DEFAULTS4.cooldown_hours) * 3600 * 1e3;
+  if (fatigue?.fatigued && !isCelebration) return { allowed: false, stage: "fatigue", reason: "fatigued" };
+  if (sendsToday >= cap) {
+    if (isCelebration && fatigue?.fatigued) return { allowed: true, stage: "fatigue", reason: "celebration-exempt" };
+    return { allowed: false, stage: "daily-limit", reason: `cap ${cap}` };
+  }
+  const categoryCap = asInt3(prefs.max_per_category_per_day, DEFAULTS4.max_per_category_per_day);
+  if (categorySends >= categoryCap) return { allowed: false, stage: "category-limit", reason: `category cap ${categoryCap}` };
+  if (lastSentAt && nowMs - lastSentAt < cooldownMs) return { allowed: false, stage: "cooldown", reason: `cooldown ${asInt3(prefs.cooldown_hours, DEFAULTS4.cooldown_hours)}h` };
+  return { allowed: true, stage: "ok", reason: "within-limits", cap };
+}
+function dayPart(hour) {
+  if (hour < 6) return "night";
+  if (hour < 12) return "morning";
+  if (hour < 17) return "afternoon";
+  if (hour < 22) return "evening";
+  return "night";
+}
+var DAY_PART_WEIGHT = Object.freeze({ night: 4, morning: 1, afternoon: 2, evening: 3 });
+function preferredHour(history = [], opts = {}) {
+  const min = asInt3(opts.min, 3);
+  const hours = (Array.isArray(history) ? history : []).map((h) => asInt3(h?.hour, NaN)).filter((h) => Number.isFinite(h));
+  if (hours.length < min) return null;
+  const folded = hours.map((h) => h < 6 ? h + 24 : h);
+  const mean = folded.reduce((a, b) => a + b, 0) / folded.length;
+  return Math.floor(Math.min(23, Math.max(6, mean % 24)));
+}
+function bestSendWindow(signals = {}, prefs = {}) {
+  const learned = preferredHour(signals.history || [], { min: 3 });
+  if (learned != null) return { hour: learned, source: "learned" };
+  const after = asInt3(prefs.send_after_hour, DEFAULTS4.send_after_hour);
+  const before = asInt3(prefs.send_before_hour, DEFAULTS4.send_before_hour);
+  const mid = Math.round((after + before) / 2);
+  return { hour: mid, source: "baseline" };
+}
+function hashToInt(str2) {
+  let h = 2166136261;
+  const s = String(str2);
+  for (let i = 0; i < s.length; i += 1) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  return h >>> 0;
+}
+function assignVariant(userId, kind, variants = AB_VARIANTS) {
+  const list = Array.isArray(variants) && variants.length ? variants : AB_VARIANTS;
+  return list[hashToInt(`${userId}|${kind}`) % list.length];
+}
+function buildMessage2(kind, params = {}, lang = "bn", variant = "A") {
+  const meta = KIND_META[kind];
+  if (!meta) return null;
+  const set = AB_COPY[kind];
+  const copy2 = set?.[variant] || set?.A;
+  if (!copy2) return null;
+  const value = params.value;
+  const body = typeof copy2.body === "function" ? copy2.body(value) : copy2.body;
+  const title = typeof copy2.bn === "function" ? copy2.bn(value) : copy2.bn;
+  return { title, body, kind, category: meta.category, variant, link: params.link || "dashboard" };
+}
+var LEARNING_KINDS = Object.freeze(["lesson_start", "lesson_complete", "quiz_complete", "question_attempt", "course_complete"]);
+function attributeConversion(send = {}, learningEvents = [], windowMs = 6 * 3600 * 1e3) {
+  const sentAt = asInt3(send.sentAt);
+  if (!sentAt) return { converted: false, kind: null, lagMs: null };
+  const floor = Math.max(sentAt, asInt3(send.openedAt) || 0, asInt3(send.clickedAt) || 0);
+  const candidates = (Array.isArray(learningEvents) ? learningEvents : []).map((e) => ({ kind: String(e?.kind || e?.name || ""), at: asInt3(e?.at) })).filter((e) => LEARNING_KINDS.includes(e.kind) && e.at >= floor && e.at - sentAt <= windowMs).sort((a, b) => a.at - b.at);
+  if (!candidates.length) return { converted: false, kind: null, lagMs: null };
+  return { converted: true, kind: candidates[0].kind, lagMs: candidates[0].at - sentAt };
+}
+var pct2 = (part, whole) => whole > 0 ? Math.round(part / whole * 1e3) / 10 : 0;
+function computePerformance(rows = []) {
+  const byKind = {};
+  const byVariant = {};
+  const byHour = {};
+  let sent = 0, opened = 0, clicked = 0, converted = 0, failed = 0;
+  for (const r of rows) {
+    const kind = String(r?.kind || "unknown");
+    const variant = String(r?.variant || "A");
+    const hour = Number.isFinite(Number(r?.hour)) ? Number(r.hour) : null;
+    const ok = r?.status !== "failed";
+    if (ok) sent += 1;
+    else failed += 1;
+    if (r?.openedAt) opened += 1;
+    if (r?.clickedAt) clicked += 1;
+    if (r?.learningAt) converted += 1;
+    for (const [bucket, key] of [[byKind, kind], [byVariant, variant], [byHour, hour == null ? "unknown" : String(hour)]]) {
+      if (key == null) continue;
+      const b = bucket[key] || (bucket[key] = { sent: 0, opened: 0, clicked: 0, converted: 0, failed: 0 });
+      if (ok) b.sent += 1;
+      else b.failed += 1;
+      if (r?.openedAt) b.opened += 1;
+      if (r?.clickedAt) b.clicked += 1;
+      if (r?.learningAt) b.converted += 1;
+    }
+  }
+  for (const bucket of [byKind, byVariant, byHour]) {
+    for (const b of Object.values(bucket)) {
+      b.openRate = pct2(b.opened, b.sent);
+      b.clickRate = pct2(b.clicked, b.sent);
+      b.conversion = pct2(b.converted, b.sent);
+    }
+  }
+  const hours = Object.entries(byHour).filter(([h]) => h !== "unknown").map(([h, b]) => ({ hour: Number(h), ...b })).filter((b) => b.sent >= 3).sort((a, b) => b.conversion - a.conversion || b.openRate - a.openRate);
+  const bestHour = hours.length ? hours[0].hour : null;
+  return {
+    totals: { sent, opened, clicked, converted, failed, openRate: pct2(opened, sent), clickRate: pct2(clicked, sent), conversion: pct2(converted, sent) },
+    byKind,
+    byVariant,
+    byHour,
+    bestHour
+  };
+}
+function computeFeedback(rows = [], opts = {}) {
+  const perf = computePerformance(rows);
+  const minSample = asInt3(opts.minSample, 20);
+  const variants = Object.entries(perf.byVariant).filter(([, b]) => b.sent >= minSample);
+  let winner = null;
+  if (variants.length >= 2) {
+    const ranked = variants.sort((a, b) => b[1].conversion - a[1].conversion || b[1].openRate - a[1].openRate);
+    const [topKey, top] = ranked[0];
+    const [secondKey, second] = ranked[1];
+    if (top.conversion > second.conversion || top.openRate > second.openRate) winner = { variant: topKey, beat: secondKey, conversion: top.conversion, openRate: top.openRate };
+  }
+  return { ...perf, winner, ready: perf.totals.sent >= minSample };
+}
+function decide({ signals = {}, prefs = {}, fatigue = {}, ctx = {}, deps = {} } = {}) {
+  const trace = [];
+  const nowMs = asInt3(deps.nowMs, Date.now());
+  const tzOffsetMin = asInt3(prefs.tz_offset_min, DEFAULT_TZ_OFFSET_MIN);
+  const { hour, minute } = localParts(nowMs, tzOffsetMin);
+  const p = { ...DEFAULTS4, ...prefs };
+  const skip = (stage, reason2) => {
+    trace.push({ stage, ok: false, reason: reason2 });
+    return { decision: "skip", stage, reason: reason2, trace, candidate: null, variant: null, message: null };
+  };
+  if (!deps.hasDevices) return skip("eligible", "no-devices");
+  trace.push({ stage: "eligible", ok: true });
+  if (!Number(p.push_enabled)) return skip("enabled", "push-off");
+  if (!Number(p.personalized_enabled)) return skip("enabled", "personalized-off");
+  trace.push({ stage: "enabled", ok: true });
+  if (inQuietHours2(hour, minute, p)) return skip("quiet-hours", `${p.quiet_start}-${p.quiet_end}`);
+  if (!inSendWindow2(hour, p)) return skip("send-window", `outside ${p.send_after_hour}-${p.send_before_hour}`);
+  trace.push({ stage: "quiet-hours", ok: true, hour });
+  const built = buildCandidates(signals, { hour });
+  const ranked = rankCandidates(built).filter((c) => Number((p.categories || {})[KIND_META[c.kind]?.category] ?? 1));
+  if (!ranked.length) return skip("relevant", "no-candidate");
+  trace.push({ stage: "relevant", ok: true, candidates: ranked.map((c) => c.kind) });
+  const seenKeys = new Set(deps.seenKeys instanceof Set ? deps.seenKeys : []);
+  let firstBlock = null;
+  for (const candidate of ranked) {
+    if (seenKeys.has(candidate.key)) {
+      trace.push({ stage: "duplicate", ok: false, kind: candidate.kind, reason: candidate.key });
+      firstBlock = firstBlock || { stage: "duplicate", reason: candidate.key };
+      continue;
+    }
+    const isCelebration = Boolean(KIND_META[candidate.kind]?.celebration);
+    const freq = checkFrequency({
+      prefs: p,
+      fatigue,
+      sendsToday: asInt3(deps.sendsToday),
+      categorySends: asInt3((deps.categorySends || {})[KIND_META[candidate.kind]?.category], 0),
+      lastSentAt: asInt3(deps.lastSentAt),
+      nowMs,
+      isCelebration
+    });
+    if (!freq.allowed) {
+      trace.push({ stage: freq.stage, ok: false, kind: candidate.kind, reason: freq.reason });
+      firstBlock = firstBlock || { stage: freq.stage, reason: freq.reason };
+      continue;
+    }
+    const variant = deps.forceVariant || assignVariant(deps.userId || "anon", candidate.kind);
+    const built2 = buildMessage2(candidate.kind, { value: candidate.value, link: candidate.link }, deps.lang || "bn", variant);
+    if (!built2) {
+      trace.push({ stage: "message", ok: false, kind: candidate.kind, reason: "no-copy" });
+      firstBlock = firstBlock || { stage: "message", reason: "no-copy" };
+      continue;
+    }
+    const message = { ...built2, key: candidate.key };
+    trace.push({ stage: "priority", ok: true, kind: candidate.kind, priority: KIND_META[candidate.kind]?.priority });
+    trace.push({ stage: "frequency", ok: true, reason: freq.reason, cap: freq.cap });
+    return { decision: "send", stage: "send", reason: candidate.reason, trace, candidate, variant, message, window: bestSendWindow(signals, p) };
+  }
+  const blocked = firstBlock || { stage: "all-suppressed", reason: "every-candidate-blocked" };
+  trace.push({ stage: "all-suppressed", ok: false, reason: blocked.reason });
+  return { decision: "skip", stage: blocked.stage, reason: blocked.reason, trace, candidate: null, variant: null, message: null };
+}
+var IntelligenceStore = class {
+  #d1;
+  #ready;
+  constructor(d1) {
+    this.#d1 = d1 || null;
+  }
+  available() {
+    return Boolean(this.#d1);
+  }
+  async init() {
+    if (!this.#d1) return;
+    if (!this.#ready) {
+      this.#ready = (async () => {
+        await this.#d1.batch([
+          this.#d1.prepare(`CREATE TABLE IF NOT EXISTS notification_intel_state (
+            user_id TEXT PRIMARY KEY,
+            tz_offset_min INTEGER NOT NULL DEFAULT 360,
+            prefs_json TEXT NOT NULL,
+            updated_at INTEGER NOT NULL
+          )`),
+          this.#d1.prepare(`CREATE TABLE IF NOT EXISTS notification_outcomes (
+            user_id TEXT NOT NULL,
+            notification_key TEXT NOT NULL,
+            kind TEXT NOT NULL,
+            category TEXT NOT NULL,
+            variant TEXT NOT NULL,
+            day_key TEXT NOT NULL,
+            sent_at INTEGER NOT NULL,
+            opened_at INTEGER,
+            clicked_at INTEGER,
+            learning_at INTEGER,
+            learning_kind TEXT,
+            status TEXT NOT NULL,
+            PRIMARY KEY (user_id, notification_key)
+          )`),
+          this.#d1.prepare("CREATE INDEX IF NOT EXISTS idx_no_user_sent ON notification_outcomes(user_id, sent_at DESC)"),
+          this.#d1.prepare("CREATE INDEX IF NOT EXISTS idx_no_kind ON notification_outcomes(kind, sent_at DESC)"),
+          this.#d1.prepare(`CREATE TABLE IF NOT EXISTS notification_fatigue (
+            user_id TEXT PRIMARY KEY,
+            sent INTEGER NOT NULL,
+            opened INTEGER NOT NULL,
+            clicked INTEGER NOT NULL,
+            open_rate REAL NOT NULL,
+            level TEXT NOT NULL,
+            computed_at INTEGER NOT NULL
+          )`)
+        ]);
+      })().catch((err) => {
+        this.#ready = null;
+        throw err;
+      });
+    }
+    await this.#ready;
+  }
+  async audience() {
+    await this.init();
+    const rows = await this.#d1.prepare("SELECT DISTINCT user_id FROM fcm_devices WHERE is_active=1").all();
+    return (rows?.results || []).map((r) => String(r.user_id));
+  }
+  async getState(userId) {
+    await this.init();
+    const row = await this.#d1.prepare("SELECT * FROM notification_intel_state WHERE user_id=?").bind(userId).first();
+    if (!row) return { tz_offset_min: DEFAULT_TZ_OFFSET_MIN, prefs: { ...DEFAULT_PREFS2 }, stored: false };
+    let prefs = {};
+    try {
+      prefs = JSON.parse(String(row.prefs_json));
+    } catch {
+      prefs = {};
+    }
+    return {
+      tz_offset_min: asInt3(row.tz_offset_min, DEFAULT_TZ_OFFSET_MIN),
+      prefs: { ...DEFAULT_PREFS2, ...prefs, categories: { ...DEFAULT_PREFS2.categories, ...prefs.categories || {} } },
+      stored: true
+    };
+  }
+  async saveState(userId, { tzOffsetMin, prefs }, now) {
+    await this.init();
+    const current = await this.getState(userId);
+    const merged = {
+      ...current.prefs,
+      ...prefs || {},
+      categories: { ...current.prefs.categories, ...(prefs || {}).categories || {} }
+    };
+    const tz = Number.isFinite(Number(tzOffsetMin)) ? Math.max(-720, Math.min(840, Math.round(Number(tzOffsetMin)))) : current.tz_offset_min;
+    await this.#d1.prepare(
+      `INSERT INTO notification_intel_state(user_id, tz_offset_min, prefs_json, updated_at) VALUES (?,?,?,?)
+       ON CONFLICT(user_id) DO UPDATE SET tz_offset_min=excluded.tz_offset_min, prefs_json=excluded.prefs_json, updated_at=excluded.updated_at`
+    ).bind(userId, tz, JSON.stringify(merged), now).run();
+    return { tz_offset_min: tz, prefs: merged };
+  }
+  /* The daily cap is shared with the Phase G engine through notification_sends,
+   * so turning this engine on cannot double a student's daily allowance. */
+  async sendsToday(userId, dayKey3) {
+    await this.init();
+    const row = await this.#d1.prepare("SELECT COUNT(*) AS n FROM notification_sends WHERE user_id=? AND day_key=?").bind(userId, dayKey3).first();
+    return asInt3(row?.n, 0);
+  }
+  async categorySendsToday(userId, dayKey3, category) {
+    await this.init();
+    const row = await this.#d1.prepare(
+      `SELECT COUNT(*) AS n FROM notification_outcomes
+       WHERE user_id=? AND day_key=? AND category=? AND status<>'failed'`
+    ).bind(userId, dayKey3, category).first();
+    return asInt3(row?.n, 0);
+  }
+  async lastSentAt(userId) {
+    await this.init();
+    const row = await this.#d1.prepare("SELECT MAX(sent_at) AS t FROM notification_outcomes WHERE user_id=?").bind(userId).first();
+    return asInt3(row?.t, 0);
+  }
+  async seenKeys(userId) {
+    await this.init();
+    const rows = await this.#d1.prepare("SELECT notification_key FROM notification_outcomes WHERE user_id=?").bind(userId).all();
+    return new Set((rows?.results || []).map((r) => String(r.notification_key)));
+  }
+  async history(userId, limit = 200) {
+    await this.init();
+    const rows = await this.#d1.prepare(
+      "SELECT notification_key, kind, sent_at, opened_at, clicked_at FROM notification_outcomes WHERE user_id=? ORDER BY sent_at DESC LIMIT ?"
+    ).bind(userId, limit).all();
+    return (rows?.results || []).map((r) => ({
+      key: String(r.notification_key),
+      kind: String(r.kind),
+      sentAt: asInt3(r.sent_at),
+      openedAt: asInt3(r.opened_at),
+      clickedAt: asInt3(r.clicked_at)
+    }));
+  }
+  /* Claim the day slot in the shared table AND write the outcome row. The claim
+   * happens before the send so a crash cannot double-deliver. */
+  async claimSend({ userId, key, kind, category, variant, dayKey: dayKey3, at }) {
+    await this.init();
+    const claimed = await this.#d1.prepare(
+      `INSERT INTO notification_sends(user_id, kind, day_key, sent_at) VALUES (?,?,?,?)
+       ON CONFLICT(user_id, kind, day_key) DO NOTHING`
+    ).bind(userId, `intel:${kind}`, dayKey3, at).run();
+    if (!(asInt3(claimed?.meta?.changes, 0) > 0)) return false;
+    await this.#d1.prepare(
+      `INSERT INTO notification_outcomes(user_id, notification_key, kind, category, variant, day_key, sent_at, status)
+       VALUES (?,?,?,?,?,?,?,?)
+       ON CONFLICT(user_id, notification_key) DO NOTHING`
+    ).bind(userId, key, kind, category, variant, dayKey3, at, "sent").run();
+    return true;
+  }
+  async markOutcome({ userId, key, field, at }) {
+    await this.init();
+    if (!["opened_at", "clicked_at"].includes(field)) return false;
+    const res = await this.#d1.prepare(
+      `UPDATE notification_outcomes SET ${field}=COALESCE(${field}, ?) WHERE user_id=? AND notification_key=?`
+    ).bind(at, userId, key).run();
+    return asInt3(res?.meta?.changes, 0) > 0;
+  }
+  async markLearning({ userId, key, kind, at }) {
+    await this.init();
+    const res = await this.#d1.prepare(
+      `UPDATE notification_outcomes SET learning_at=COALESCE(learning_at, ?), learning_kind=COALESCE(learning_kind, ?)
+       WHERE user_id=? AND notification_key=?`
+    ).bind(at, kind, userId, key).run();
+    return asInt3(res?.meta?.changes, 0) > 0;
+  }
+  /* The most recent sends still inside the attribution window — what a learning
+   * event can be credited to. */
+  async convertibleSends(userId, sinceMs) {
+    await this.init();
+    const rows = await this.#d1.prepare(
+      `SELECT notification_key, kind, sent_at, opened_at, clicked_at FROM notification_outcomes
+       WHERE user_id=? AND sent_at>=? AND learning_at IS NULL ORDER BY sent_at DESC LIMIT 10`
+    ).bind(userId, sinceMs).all();
+    return (rows?.results || []).map((r) => ({
+      key: String(r.notification_key),
+      kind: String(r.kind),
+      sentAt: asInt3(r.sent_at),
+      openedAt: asInt3(r.opened_at),
+      clickedAt: asInt3(r.clicked_at)
+    }));
+  }
+  async saveFatigue(userId, fatigue, now) {
+    await this.init();
+    await this.#d1.prepare(
+      `INSERT INTO notification_fatigue(user_id, sent, opened, clicked, open_rate, level, computed_at) VALUES (?,?,?,?,?,?,?)
+       ON CONFLICT(user_id) DO UPDATE SET sent=excluded.sent, opened=excluded.opened, clicked=excluded.clicked,
+         open_rate=excluded.open_rate, level=excluded.level, computed_at=excluded.computed_at`
+    ).bind(userId, fatigue.sent, fatigue.opened, fatigue.clicked, fatigue.openRate, fatigue.level, now).run();
+  }
+  async fatigue(userId) {
+    await this.init();
+    const row = await this.#d1.prepare("SELECT * FROM notification_fatigue WHERE user_id=?").bind(userId).first();
+    if (!row) return { sent: 0, opened: 0, clicked: 0, openRate: 0, clickRate: 0, fatigued: false, level: "normal" };
+    return {
+      sent: asInt3(row.sent),
+      opened: asInt3(row.opened),
+      clicked: asInt3(row.clicked),
+      openRate: Number(row.open_rate) || 0,
+      clickRate: 0,
+      fatigued: String(row.level) === "high",
+      level: String(row.level)
+    };
+  }
+  async rowsForPerformance(limit = 2e3) {
+    await this.init();
+    const rows = await this.#d1.prepare(
+      `SELECT kind, category, variant, status, sent_at, opened_at, clicked_at, learning_at, learning_kind
+       FROM notification_outcomes ORDER BY sent_at DESC LIMIT ?`
+    ).bind(limit).all();
+    return (rows?.results || []).map((r) => ({
+      kind: String(r.kind),
+      category: String(r.category),
+      variant: String(r.variant),
+      status: String(r.status),
+      sentAt: asInt3(r.sent_at),
+      openedAt: asInt3(r.opened_at),
+      clickedAt: asInt3(r.clicked_at),
+      learningAt: asInt3(r.learning_at),
+      learningKind: r.learning_kind ? String(r.learning_kind) : null,
+      hour: localParts(asInt3(r.sent_at)).hour
+    }));
+  }
+  /* ── behaviour reads (Phase 1–2 tables, read-only) ───────────────────────
+   * These are the rows the signals are computed from. They are plain reads of
+   * tables other features already own — this engine never writes them. */
+  async dailyStats(userId, limitDays = 60) {
+    await this.init();
+    const rows = await this.#d1.prepare(
+      `SELECT day, payload_json FROM user_daily_stats
+       WHERE user_id=? AND deleted_at IS NULL ORDER BY day DESC LIMIT ?`
+    ).bind(userId, limitDays).all();
+    return (rows?.results || []).map((r) => {
+      let doc = null;
+      try {
+        doc = JSON.parse(String(r.payload_json));
+      } catch {
+        doc = null;
+      }
+      return {
+        day: String(r.day),
+        questions: asInt3(doc?.questions),
+        correct: asInt3(doc?.correct),
+        lessons: asInt3(doc?.lessons)
+      };
+    });
+  }
+  async examScores(userId, limit = 20) {
+    await this.init();
+    const rows = await this.#d1.prepare(
+      `SELECT id, payload_json, updated_at FROM user_exam_results
+       WHERE user_id=? AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT ?`
+    ).bind(userId, limit).all();
+    return (rows?.results || []).map((r) => {
+      let doc = null;
+      try {
+        doc = JSON.parse(String(r.payload_json));
+      } catch {
+        doc = null;
+      }
+      return { id: String(r.id), score: asInt3(doc?.score ?? doc?.percentage, NaN), at: asInt3(r.updated_at) };
+    }).filter((e) => Number.isFinite(e.score));
+  }
+  /* Pending revisions plus the topics those misses cluster in — the two numbers
+   * weak-topic intelligence needs. */
+  async mistakeState(userId) {
+    await this.init();
+    const rows = await this.#d1.prepare(
+      `SELECT topic_id, COUNT(*) AS misses FROM user_mistakes
+       WHERE user_id=? AND deleted_at IS NULL AND COALESCE(mastered,0)=0
+         AND (revision_status IS NULL OR revision_status<>'mastered')
+       GROUP BY topic_id ORDER BY misses DESC LIMIT 10`
+    ).bind(userId).all();
+    const topics = (rows?.results || []).map((r) => ({ topic: String(r.topic_id || "general"), misses: asInt3(r.misses) }));
+    const pending = topics.reduce((n, t) => n + t.misses, 0);
+    const masteredRow = await this.#d1.prepare(
+      `SELECT COUNT(*) AS n FROM user_mistakes
+       WHERE user_id=? AND deleted_at IS NULL AND (COALESCE(mastered,0)=1 OR revision_status='mastered')`
+    ).bind(userId).first();
+    return { pending, mastered: asInt3(masteredRow?.n), topics };
+  }
+  async lastActiveAt(userId) {
+    await this.init();
+    const row = await this.#d1.prepare(
+      "SELECT MAX(updated_at) AS t FROM user_activity WHERE user_id=? AND deleted_at IS NULL"
+    ).bind(userId).first();
+    return asInt3(row?.t, 0);
+  }
+  /* Course progress lives in the student's own settings blob (the client writes
+   * it there). Missing or malformed means "no course data" — never a guess. */
+  async courseProgress(userId) {
+    await this.init();
+    const row = await this.#d1.prepare(
+      `SELECT payload_json FROM user_settings WHERE user_id=? AND id='settings' AND deleted_at IS NULL`
+    ).bind(userId).first();
+    if (!row?.payload_json) return [];
+    let doc = null;
+    try {
+      doc = JSON.parse(String(row.payload_json));
+    } catch {
+      return [];
+    }
+    const raw = doc?.courses || doc?.courseProgress || [];
+    if (!Array.isArray(raw)) return [];
+    return raw.map((c) => ({
+      id: String(c?.id || c?.courseId || ""),
+      lessonsTotal: asInt3(c?.lessonsTotal ?? c?.total),
+      lessonsDone: asInt3(c?.lessonsDone ?? c?.done)
+    })).filter((c) => c.id && c.lessonsTotal > 0);
+  }
+};
+async function sendIntelligence(env, userId, message, store) {
+  const fcm = store || new FcmStore(env?.PROFILE_DB);
+  const targets = await fcm.activeTokens(userId);
+  if (!targets.length) return { ok: false, reason: "no-devices", sent: 0 };
+  const out = await fcmSendToTokens(env, targets, {
+    title: message.title,
+    body: message.body,
+    /* `key` is what the client echoes back so an open, a click and a later
+     * learning action can all be attributed to this exact send. Without it the
+     * conversion measurement has nothing to join on. */
+    data: { link: message.link, src: "fcm-intel", kind: message.kind, variant: message.variant, key: message.key || "" }
+  });
+  if (out.badIds?.length) await fcm.markInactive(out.badIds, Date.now());
+  return { ok: out.sent > 0, sent: out.sent, failed: out.failed };
+}
+async function runScheduledIntelligenceNotifications(env, deps = {}) {
+  const now = deps.now ? Number(deps.now()) : Date.now();
+  const store = deps.store || new IntelligenceStore(env?.PROFILE_DB);
+  if (!store.available()) return { processed: 0, sent: 0, skipped: 0, reason: "storage-unavailable" };
+  if (!env?.__skipFcmCheck && deps.requireFcm !== false && !fcmConfigured(env)) {
+    return { processed: 0, sent: 0, skipped: 0, reason: "fcm-not-configured" };
+  }
+  const users = await store.audience();
+  const send = deps.send || ((userId, message) => sendIntelligence(env, userId, message, new FcmStore(env?.PROFILE_DB)));
+  const signalsFor = deps.signalsFor || null;
+  let sent = 0;
+  let skipped = 0;
+  const results = [];
+  for (const userId of users) {
+    try {
+      const state = await store.getState(userId);
+      const { date } = localParts(now, state.tz_offset_min);
+      const signals = signalsFor ? await signalsFor(userId, date) : await defaultSignals(store, userId, date, now, state.tz_offset_min);
+      const fatigue = await store.fatigue(userId);
+      const outcome = decide({
+        signals,
+        prefs: { ...state.prefs, tz_offset_min: state.tz_offset_min },
+        fatigue,
+        ctx: { hour: localParts(now, state.tz_offset_min).hour },
+        deps: {
+          nowMs: now,
+          userId,
+          hasDevices: true,
+          sendsToday: await store.sendsToday(userId, date),
+          categorySends: {},
+          lastSentAt: await store.lastSentAt(userId),
+          seenKeys: await store.seenKeys(userId),
+          lang: state.prefs.lang || "bn"
+        }
+      });
+      if (outcome.decision !== "send") {
+        skipped += 1;
+        results.push({ userId, decision: "skip", stage: outcome.stage });
+        continue;
+      }
+      const category = KIND_META[outcome.candidate.kind]?.category || "learning";
+      const claimed = await store.claimSend({
+        userId,
+        key: outcome.candidate.key,
+        kind: outcome.candidate.kind,
+        category,
+        variant: outcome.variant,
+        dayKey: date,
+        at: now
+      });
+      if (!claimed) {
+        skipped += 1;
+        results.push({ userId, decision: "skip", stage: "duplicate-claim" });
+        continue;
+      }
+      const delivered = await send(userId, outcome.message);
+      if (delivered?.ok) sent += 1;
+      results.push({ userId, decision: "send", kind: outcome.candidate.kind, variant: outcome.variant, ok: Boolean(delivered?.ok) });
+    } catch (err) {
+      results.push({ userId, decision: "error", error: String(err?.message || err).slice(0, 120) });
+    }
+  }
+  return { processed: users.length, sent, skipped, results };
+}
+async function defaultSignals(store, userId, dayKey3, nowMs, tzOffsetMin) {
+  const [dailyStats, examScores, mistakes, courses, history, activityAt] = await Promise.all([
+    store.dailyStats(userId),
+    store.examScores(userId),
+    store.mistakeState(userId),
+    store.courseProgress(userId),
+    store.history(userId),
+    store.lastActiveAt(userId)
+  ]);
+  return computeSignals({
+    dailyStats,
+    examScores,
+    mistakes,
+    courses,
+    activityAt,
+    history: history.map((h) => ({ ...h, hour: localParts(h.sentAt, tzOffsetMin).hour }))
+  }, nowMs, tzOffsetMin);
+}
+var jsonResponse4 = (request, obj, status = 200) => new Response(JSON.stringify(obj), {
+  status,
+  headers: {
+    "Content-Type": "application/json; charset=utf-8",
+    "Access-Control-Allow-Origin": request.headers.get("Origin") || "*",
+    "Access-Control-Allow-Credentials": "true",
+    "Cache-Control": "no-store"
+  }
+});
+var ADMIN_PREFIX = "/api/notifications/intel/";
+var OWNED_PATHS = /* @__PURE__ */ new Set(["/api/notifications/intel-pref", "/api/notifications/outcome"]);
+async function handleIntelligenceRequest(request, env, deps = {}) {
+  const url = new URL(request.url);
+  const path = url.pathname;
+  const nowMs = () => typeof deps?.now === "function" ? Number(deps.now()) : Date.now();
+  if (!OWNED_PATHS.has(path) && !path.startsWith(ADMIN_PREFIX)) return null;
+  if (request.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: {
+      "Access-Control-Allow-Origin": request.headers.get("Origin") || "*",
+      "Access-Control-Allow-Credentials": "true",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization",
+      "Access-Control-Max-Age": "86400"
+    } });
+  }
+  if (path === "/api/notifications/intel-pref") {
+    const store2 = new IntelligenceStore(env?.PROFILE_DB);
+    if (!store2.available()) return jsonResponse4(request, { error: "storage-unavailable" }, 503);
+    const session = await (deps.sessionUser || sessionUser)(env, request);
+    if (!session) return jsonResponse4(request, { error: "auth-required" }, 401);
+    const userId = String(session.user.id);
+    if (request.method === "GET") {
+      const state = await store2.getState(userId);
+      return jsonResponse4(request, { ok: true, tz_offset_min: state.tz_offset_min, prefs: state.prefs });
+    }
+    if (request.method === "POST") {
+      const body = await parseBody(request);
+      if (!body) return jsonResponse4(request, { error: "invalid-body" }, 400);
+      const patch = {};
+      if (typeof body.tz_offset_min !== "undefined") patch.tz_offset_min = body.tz_offset_min;
+      for (const key of ["push_enabled", "personalized_enabled", "quiet_hours_enabled", "quiet_start", "quiet_end", "lang"]) {
+        if (typeof body[key] !== "undefined") patch[key] = body[key];
+      }
+      if (body.categories && typeof body.categories === "object") patch.categories = body.categories;
+      const saved = await store2.saveState(userId, { tzOffsetMin: patch.tz_offset_min, prefs: patch }, nowMs());
+      return jsonResponse4(request, { ok: true, tz_offset_min: saved.tz_offset_min, prefs: saved.prefs });
+    }
+    return jsonResponse4(request, { error: "method-not-allowed" }, 405);
+  }
+  if (path === "/api/notifications/outcome" && request.method === "POST") {
+    const store2 = new IntelligenceStore(env?.PROFILE_DB);
+    if (!store2.available()) return jsonResponse4(request, { error: "storage-unavailable" }, 503);
+    const session = await (deps.sessionUser || sessionUser)(env, request);
+    if (!session) return jsonResponse4(request, { error: "auth-required" }, 401);
+    const userId = String(session.user.id);
+    const body = await parseBody(request);
+    if (!body) return jsonResponse4(request, { error: "invalid-body" }, 400);
+    const action = String(body.action || "");
+    const at = nowMs();
+    if (action === "learning") {
+      const kind = String(body.kind || "");
+      if (!LEARNING_KINDS.includes(kind)) return jsonResponse4(request, { error: "invalid-kind" }, 400);
+      const sends = await store2.convertibleSends(userId, at - 6 * 3600 * 1e3);
+      const learningEvents = [{ kind, at }];
+      for (const send of sends) {
+        const credit = attributeConversion(send, learningEvents);
+        if (credit.converted) {
+          await store2.markLearning({ userId, key: send.key, kind: credit.kind, at });
+          return jsonResponse4(request, { ok: true, credited: send.key, lagMs: credit.lagMs });
+        }
+      }
+      return jsonResponse4(request, { ok: true, credited: null });
+    }
+    const key = String(body.notification_key || body.key || "");
+    if (!key) return jsonResponse4(request, { error: "missing-key" }, 400);
+    const field = action === "opened" ? "opened_at" : action === "clicked" ? "clicked_at" : "";
+    if (!field) return jsonResponse4(request, { error: "invalid-action" }, 400);
+    const changed = await store2.markOutcome({ userId, key, field, at });
+    return jsonResponse4(request, { ok: true, key, recorded: changed });
+  }
+  if (!path.startsWith(ADMIN_PREFIX)) return null;
+  const token = String(request.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "").trim();
+  if (!env.ADMIN_TOKEN || token !== env.ADMIN_TOKEN) return jsonResponse4(request, { error: "forbidden" }, 403);
+  const store = new IntelligenceStore(env?.PROFILE_DB);
+  if (!store.available()) return jsonResponse4(request, { error: "storage-unavailable" }, 503);
+  if (path === `${ADMIN_PREFIX}preview` && request.method === "GET") {
+    const userId = String(url.searchParams.get("user") || "").trim();
+    if (!userId) return jsonResponse4(request, { error: "missing-user" }, 400);
+    const now = nowMs();
+    const state = await store.getState(userId);
+    const { date, hour } = localParts(now, state.tz_offset_min);
+    const signals = deps.signalsFor ? await deps.signalsFor(userId, date) : await defaultSignals(store, userId, date, now, state.tz_offset_min);
+    const fatigue = await store.fatigue(userId);
+    const decision = decide({
+      signals,
+      prefs: { ...state.prefs, tz_offset_min: state.tz_offset_min },
+      fatigue,
+      ctx: { hour },
+      deps: {
+        nowMs: now,
+        userId,
+        hasDevices: true,
+        sendsToday: await store.sendsToday(userId, date),
+        categorySends: {},
+        lastSentAt: await store.lastSentAt(userId),
+        seenKeys: await store.seenKeys(userId)
+      }
+    });
+    return jsonResponse4(request, {
+      ok: true,
+      user: userId,
+      local: { date, hour, tz_offset_min: state.tz_offset_min },
+      segment: classifySegment(signals),
+      signals,
+      fatigue,
+      decision
+    });
+  }
+  if (path === `${ADMIN_PREFIX}preview-all` && request.method === "GET") {
+    const now = nowMs();
+    const users = await store.audience();
+    const plan = [];
+    for (const userId of users) {
+      const state = await store.getState(userId);
+      const { date, hour } = localParts(now, state.tz_offset_min);
+      const signals = deps.signalsFor ? await deps.signalsFor(userId, date) : await defaultSignals(store, userId, date, now, state.tz_offset_min);
+      const decision = decide({
+        signals,
+        prefs: { ...state.prefs, tz_offset_min: state.tz_offset_min },
+        fatigue: await store.fatigue(userId),
+        ctx: { hour },
+        deps: {
+          nowMs: now,
+          userId,
+          hasDevices: true,
+          sendsToday: await store.sendsToday(userId, date),
+          categorySends: {},
+          lastSentAt: await store.lastSentAt(userId),
+          seenKeys: await store.seenKeys(userId)
+        }
+      });
+      plan.push({ user: userId, segment: classifySegment(signals).segment, decision: decision.decision, stage: decision.stage, kind: decision.candidate?.kind || null });
+    }
+    return jsonResponse4(request, { ok: true, audience: users.length, plan });
+  }
+  if (path === `${ADMIN_PREFIX}run` && request.method === "POST") {
+    const result = await runScheduledIntelligenceNotifications(env, { store, now: nowMs, signalsFor: deps.signalsFor });
+    return jsonResponse4(request, { ok: true, ...result });
+  }
+  if (path === `${ADMIN_PREFIX}performance` && request.method === "GET") {
+    const rows = await store.rowsForPerformance();
+    return jsonResponse4(request, { ok: true, ...computeFeedback(rows), rows: rows.length });
+  }
+  if (path === `${ADMIN_PREFIX}fatigue` && request.method === "GET") {
+    const userId = String(url.searchParams.get("user") || "").trim();
+    if (!userId) return jsonResponse4(request, { error: "missing-user" }, 400);
+    const history = await store.history(userId);
+    return jsonResponse4(request, { ok: true, user: userId, fatigue: detectFatigue(history, nowMs()) });
+  }
+  return jsonResponse4(request, { error: "not-found" }, 404);
+}
+var __intelligenceTest = Object.freeze({
+  KIND_META,
+  KIND_ORDER,
+  DEFAULTS: DEFAULTS4,
+  DEFAULT_PREFS: DEFAULT_PREFS2,
+  PREF_CATEGORIES,
+  AB_VARIANTS,
+  AB_COPY,
+  localParts,
+  inQuietHours: inQuietHours2,
+  inSendWindow: inSendWindow2,
+  dayDiff: dayDiff2,
+  computeSignals,
+  classifySegment,
+  buildCandidates,
+  rankCandidates,
+  detectFatigue,
+  effectiveCap,
+  checkFrequency,
+  dayPart,
+  DAY_PART_WEIGHT,
+  preferredHour,
+  bestSendWindow,
+  hashToInt,
+  assignVariant,
+  buildMessage: buildMessage2,
+  attributeConversion,
+  LEARNING_KINDS,
+  computePerformance,
+  computeFeedback,
+  decide,
+  IntelligenceStore,
+  sendIntelligence,
+  runScheduledIntelligenceNotifications,
+  handleIntelligenceRequest
+});
+
+// event-notifications.mjs
+var DAY_MS3 = 24 * 3600 * 1e3;
 var EVENT_KINDS = Object.freeze([
   "streak-milestone",
   "personal-best",
@@ -11870,7 +12988,7 @@ var EVENT_KINDS = Object.freeze([
 ]);
 var STREAK_MILESTONES = Object.freeze([3, 7, 14, 30, 50, 100, 365]);
 var MASTERY_MILESTONES = Object.freeze([25, 50, 100, 250, 500]);
-var DEFAULTS4 = Object.freeze({
+var DEFAULTS5 = Object.freeze({
   max_per_day: 3,
   seen_exam_cap: 20,
   send_after_hour: 8,
@@ -11954,7 +13072,7 @@ function detectEvents(prev, curr, nowMs = Date.now()) {
     baseline: false
   };
 }
-function trimSnapshot(snapshot, cap = DEFAULTS4.seen_exam_cap) {
+function trimSnapshot(snapshot, cap = DEFAULTS5.seen_exam_cap) {
   const s = { ...emptySnapshot(), ...snapshot || {} };
   const exams = examIds(s.exams);
   return { ...s, exams: exams.slice(Math.max(0, exams.length - cap)) };
@@ -12034,12 +13152,12 @@ var EventStore = class {
   async prefs(userId) {
     await this.init();
     const row = await this.#d1.prepare("SELECT * FROM notification_settings WHERE user_id=?").bind(userId).first();
-    if (!row) return { ...DEFAULTS4, event_enabled: 1 };
+    if (!row) return { ...DEFAULTS5, event_enabled: 1 };
     return {
       event_enabled: Number(row.event_enabled ?? 1),
       quiet_hours_enabled: Number(row.quiet_hours_enabled ?? 1),
-      quiet_start: String(row.quiet_start || DEFAULTS4.quiet_start),
-      quiet_end: String(row.quiet_end || DEFAULTS4.quiet_end)
+      quiet_start: String(row.quiet_start || DEFAULTS5.quiet_start),
+      quiet_end: String(row.quiet_end || DEFAULTS5.quiet_end)
     };
   }
   /* The student's real progress, straight from the Phase B–F tables. */
@@ -12059,7 +13177,7 @@ var EventStore = class {
       return { day: String(r.day), questions: Number(doc?.questions || 0) };
     }).filter((s) => s.questions > 0);
     const activeDays = new Set(stats.map((s) => s.day));
-    const dayAt = (offset) => new Date(Date.parse(today + "T00:00:00Z") - offset * DAY_MS2).toISOString().slice(0, 10);
+    const dayAt = (offset) => new Date(Date.parse(today + "T00:00:00Z") - offset * DAY_MS3).toISOString().slice(0, 10);
     let streak = 0;
     let cursor = activeDays.has(today) ? 0 : 1;
     if (activeDays.has(dayAt(cursor))) {
@@ -12096,7 +13214,7 @@ var EventStore = class {
       mastered: Number(masteredRow?.n || 0),
       pending: Number(pendingRow?.n || 0),
       bestScore: examRows.length ? Math.max(...examRows.map((e) => e.score)) : null,
-      exams: examRows.slice(0, DEFAULTS4.seen_exam_cap).map((e) => ({ id: e.id, score: Math.round(e.score) }))
+      exams: examRows.slice(0, DEFAULTS5.seen_exam_cap).map((e) => ({ id: e.id, score: Math.round(e.score) }))
     };
   }
 };
@@ -12144,7 +13262,7 @@ async function runScheduledEventNotifications(env, deps = {}) {
         await store.putSnapshot(userId, curr, now);
         continue;
       }
-      let budget = Math.max(0, Number(deps.maxPerDay ?? DEFAULTS4.max_per_day) - await store.sentToday(userId, dayStart));
+      let budget = Math.max(0, Number(deps.maxPerDay ?? DEFAULTS5.max_per_day) - await store.sentToday(userId, dayStart));
       const rank2 = { "streak-milestone": 0, "personal-best": 1, "mastery-milestone": 2, "backlog-cleared": 3, "exam-completed": 4 };
       events.sort((a, b) => (rank2[a.kind] ?? 9) - (rank2[b.kind] ?? 9));
       for (const event of events) {
@@ -12152,7 +13270,7 @@ async function runScheduledEventNotifications(env, deps = {}) {
         const message = buildEventMessage(event);
         if (!message) continue;
         if (inQuietHours(hour, minute, prefs)) break;
-        if (!inSendWindow(hour, { ...prefs, ...DEFAULTS4 })) break;
+        if (!inSendWindow(hour, { ...prefs, ...DEFAULTS5 })) break;
         const claimed = await store.claimEvent(userId, event.key, event.kind, now);
         if (!claimed) continue;
         const outcome = await send(userId, message);
@@ -12177,10 +13295,10 @@ var __eventTest = Object.freeze({
 });
 
 // digest-notifications.mjs
-var DAY_MS3 = 24 * 3600 * 1e3;
+var DAY_MS4 = 24 * 3600 * 1e3;
 var DHAKA_OFFSET_MS2 = 6 * 3600 * 1e3;
 var DIGEST_KINDS = Object.freeze(["monthly", "weekly", "daily"]);
-var DEFAULTS5 = Object.freeze({
+var DEFAULTS6 = Object.freeze({
   daily_after_hour: 20,
   weekly_after_hour: 8,
   monthly_after_hour: 8,
@@ -12193,7 +13311,7 @@ var DEFAULTS5 = Object.freeze({
 });
 var pad2 = (n) => String(n).padStart(2, "0");
 var utcDay = (ms) => new Date(ms).toISOString().slice(0, 10);
-var shiftDays = (dateStr, days) => utcDay(Date.parse(dateStr + "T00:00:00Z") + days * DAY_MS3);
+var shiftDays = (dateStr, days) => utcDay(Date.parse(dateStr + "T00:00:00Z") + days * DAY_MS4);
 function isoWeek(dateStr) {
   const d = /* @__PURE__ */ new Date(dateStr + "T00:00:00Z");
   const day = (d.getUTCDay() + 6) % 7;
@@ -12202,7 +13320,7 @@ function isoWeek(dateStr) {
   const jan4 = new Date(Date.UTC(isoYear, 0, 4));
   const jan4Day = (jan4.getUTCDay() + 6) % 7;
   const week1Monday = Date.UTC(isoYear, 0, 4 - jan4Day);
-  const week = Math.round((d.getTime() - week1Monday) / (7 * DAY_MS3)) + 1;
+  const week = Math.round((d.getTime() - week1Monday) / (7 * DAY_MS4)) + 1;
   return { isoYear, week };
 }
 function dhakaCalendar(nowMs) {
@@ -12218,18 +13336,18 @@ function dhakaCalendar(nowMs) {
     dayOfMonth: d.getUTCDate(),
     monthKey: date.slice(0, 7),
     weekKey: `${isoYear}-W${pad2(week)}`,
-    prevMonthKey: new Date(Date.parse(date.slice(0, 8) + "01T00:00:00Z") - DAY_MS3).toISOString().slice(0, 7)
+    prevMonthKey: new Date(Date.parse(date.slice(0, 8) + "01T00:00:00Z") - DAY_MS4).toISOString().slice(0, 7)
   };
 }
 function dueDigests(cal, prefs = {}) {
   const out = [];
-  if (cal.dayOfMonth === 1 && cal.hour >= Number(prefs.monthly_after_hour ?? DEFAULTS5.monthly_after_hour)) {
+  if (cal.dayOfMonth === 1 && cal.hour >= Number(prefs.monthly_after_hour ?? DEFAULTS6.monthly_after_hour)) {
     out.push({ kind: "monthly", periodKey: cal.prevMonthKey });
   }
-  if (cal.weekday === 6 && cal.hour >= Number(prefs.weekly_after_hour ?? DEFAULTS5.weekly_after_hour)) {
+  if (cal.weekday === 6 && cal.hour >= Number(prefs.weekly_after_hour ?? DEFAULTS6.weekly_after_hour)) {
     out.push({ kind: "weekly", periodKey: cal.weekKey });
   }
-  if (cal.hour >= Number(prefs.daily_after_hour ?? DEFAULTS5.daily_after_hour)) {
+  if (cal.hour >= Number(prefs.daily_after_hour ?? DEFAULTS6.daily_after_hour)) {
     out.push({ kind: "daily", periodKey: cal.date });
   }
   return out;
@@ -12336,14 +13454,14 @@ var DigestStore = class {
   async prefs(userId) {
     await this.init();
     const row = await this.#d1.prepare("SELECT * FROM notification_settings WHERE user_id=?").bind(userId).first();
-    if (!row) return { ...DEFAULTS5, digest_enabled: 1 };
+    if (!row) return { ...DEFAULTS6, digest_enabled: 1 };
     return {
       /* Reuses the Phase G daily switch as the master opt-out: a student who
        * turned nudges off does not want recaps either. */
       digest_enabled: Number(row.personalized_enabled ?? 1),
       quiet_hours_enabled: Number(row.quiet_hours_enabled ?? 1),
-      quiet_start: String(row.quiet_start || DEFAULTS5.quiet_start),
-      quiet_end: String(row.quiet_end || DEFAULTS5.quiet_end)
+      quiet_start: String(row.quiet_start || DEFAULTS6.quiet_start),
+      quiet_end: String(row.quiet_end || DEFAULTS6.quiet_end)
     };
   }
   /* Daily totals for one student inside [from, to], deleted rows excluded. */
@@ -12399,7 +13517,7 @@ async function runScheduledDigests(env, deps = {}) {
   const send = deps.send || ((userId, message) => defaultSend2(env, userId, message));
   const cal = dhakaCalendar(now);
   const dayStart = Date.parse(cal.date + "T00:00:00Z") - DHAKA_OFFSET_MS2;
-  const maxPerDay = Number(deps.maxPerDay ?? DEFAULTS5.max_per_day);
+  const maxPerDay = Number(deps.maxPerDay ?? DEFAULTS6.max_per_day);
   const users = await store.audience();
   let sent = 0;
   let skipped = 0;
@@ -12414,7 +13532,7 @@ async function runScheduledDigests(env, deps = {}) {
       let timedPrefs = prefs;
       try {
         const events = await store.openHours(userId);
-        const best = bestSendHour(events, { default_hour: Number(prefs.daily_after_hour ?? DEFAULTS5.daily_after_hour) });
+        const best = bestSendHour(events, { default_hour: Number(prefs.daily_after_hour ?? DEFAULTS6.daily_after_hour) });
         if (best.confident) timedPrefs = { ...prefs, daily_after_hour: best.hour };
       } catch (_) {
       }
@@ -12422,7 +13540,7 @@ async function runScheduledDigests(env, deps = {}) {
         skipped += 1;
         continue;
       }
-      if (!inSendWindow(cal.hour, { ...DEFAULTS5, ...timedPrefs })) {
+      if (!inSendWindow(cal.hour, { ...DEFAULTS6, ...timedPrefs })) {
         skipped += 1;
         continue;
       }
@@ -12635,7 +13753,7 @@ var bumpUsage = async (env, delta) => {
   } catch {
   }
 };
-var jsonResponse4 = (request, obj, status = 200) => new Response(JSON.stringify(obj), {
+var jsonResponse5 = (request, obj, status = 200) => new Response(JSON.stringify(obj), {
   status,
   headers: {
     "Content-Type": "application/json; charset=utf-8",
@@ -12672,7 +13790,7 @@ async function handleFilesStorageRequest(request, env) {
   const available = Boolean(bucket && typeof bucket.put === "function");
   if (request.method === "GET" && path === "/api/files/usage") {
     const usage = await bucketUsage(env);
-    return jsonResponse4(request, {
+    return jsonResponse5(request, {
       ok: true,
       usedBytes: usage.bytes,
       exact: usage.exact,
@@ -12682,15 +13800,15 @@ async function handleFilesStorageRequest(request, env) {
   }
   if (request.method === "GET") {
     const key = path.slice("/api/files/".length);
-    if (!KEY_RE.test(key)) return jsonResponse4(request, { error: "not-found" }, 404);
-    if (!available) return jsonResponse4(request, { error: "storage-unavailable" }, 503);
+    if (!KEY_RE.test(key)) return jsonResponse5(request, { error: "not-found" }, 404);
+    if (!available) return jsonResponse5(request, { error: "storage-unavailable" }, 503);
     let obj;
     try {
       obj = await bucket.get(key);
     } catch {
       obj = null;
     }
-    if (!obj) return jsonResponse4(request, { error: "not-found" }, 404);
+    if (!obj) return jsonResponse5(request, { error: "not-found" }, 404);
     const ext = key.split(".").pop().toLowerCase();
     const type = UPLOAD_TYPES[ext] || "application/octet-stream";
     return new Response(obj.body, {
@@ -12704,35 +13822,35 @@ async function handleFilesStorageRequest(request, env) {
     });
   }
   const session = await sessionUser3(env, request);
-  if (!session) return jsonResponse4(request, { error: "auth-required" }, 401);
+  if (!session) return jsonResponse5(request, { error: "auth-required" }, 401);
   const userId = String(session.user.id);
-  if (request.method !== "POST") return jsonResponse4(request, { error: "method-not-allowed" }, 405);
+  if (request.method !== "POST") return jsonResponse5(request, { error: "method-not-allowed" }, 405);
   if (path === "/api/files/upload") {
-    if (!available) return jsonResponse4(request, { error: "storage-unavailable" }, 503);
+    if (!available) return jsonResponse5(request, { error: "storage-unavailable" }, 503);
     if (!await kvRateAllow2(env, `upload:${userId}`, MAX_UPLOADS_PER_HOUR, 3600)) {
-      return jsonResponse4(request, { error: "rate-limited" }, 429);
+      return jsonResponse5(request, { error: "rate-limited" }, 429);
     }
     const declared = Number(request.headers.get("Content-Length") || 0);
     if (!declared || declared > MAX_UPLOAD_BYTES) {
-      return jsonResponse4(request, { error: "too-large" }, 413);
+      return jsonResponse5(request, { error: "too-large" }, 413);
     }
     const ext = String(request.headers.get("X-File-Ext") || "").toLowerCase().replace(/[^a-z0-9]/g, "");
     const contentType = UPLOAD_TYPES[ext];
-    if (!contentType) return jsonResponse4(request, { error: "invalid-type" }, 400);
+    if (!contentType) return jsonResponse5(request, { error: "invalid-type" }, 400);
     const folder = String(request.headers.get("X-File-Folder") || "").toLowerCase();
-    if (!FOLDER_RE.test(folder)) return jsonResponse4(request, { error: "invalid-folder" }, 400);
+    if (!FOLDER_RE.test(folder)) return jsonResponse5(request, { error: "invalid-folder" }, 400);
     let bytes;
     try {
       bytes = new Uint8Array(await request.arrayBuffer());
     } catch {
-      return jsonResponse4(request, { error: "read-failed" }, 400);
+      return jsonResponse5(request, { error: "read-failed" }, 400);
     }
     if (!bytes.length || bytes.length > MAX_UPLOAD_BYTES) {
-      return jsonResponse4(request, { error: "too-large" }, 413);
+      return jsonResponse5(request, { error: "too-large" }, 413);
     }
     const usage = await bucketUsage(env);
     if (usage.bytes + bytes.length > BUCKET_HARD_LIMIT_BYTES) {
-      return jsonResponse4(request, { error: "bucket-limit", limitBytes: BUCKET_HARD_LIMIT_BYTES, usedBytes: usage.bytes }, 507);
+      return jsonResponse5(request, { error: "bucket-limit", limitBytes: BUCKET_HARD_LIMIT_BYTES, usedBytes: usage.bytes }, 507);
     }
     const day = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
     const key = `${folder}/${userId}/${day}/${randKey2(12)}.${ext}`;
@@ -12740,33 +13858,33 @@ async function handleFilesStorageRequest(request, env) {
       await bucket.put(key, bytes, { httpMetadata: { contentType } });
       await bumpUsage(env, bytes.length);
     } catch {
-      return jsonResponse4(request, { error: "storage-error" }, 503);
+      return jsonResponse5(request, { error: "storage-error" }, 503);
     }
     const fileUrl = `/api/files/${key}`;
-    return jsonResponse4(request, { ok: true, url: fileUrl, publicUrl: `${publicUrl(request)}${fileUrl}`, key }, 201);
+    return jsonResponse5(request, { ok: true, url: fileUrl, publicUrl: `${publicUrl(request)}${fileUrl}`, key }, 201);
   }
   if (path === "/api/files/delete") {
-    if (!available) return jsonResponse4(request, { error: "storage-unavailable" }, 503);
+    if (!available) return jsonResponse5(request, { error: "storage-unavailable" }, 503);
     let body = {};
     try {
       body = await request.json();
     } catch {
       body = null;
     }
-    if (!body || typeof body !== "object") return jsonResponse4(request, { error: "invalid-json" }, 400);
+    if (!body || typeof body !== "object") return jsonResponse5(request, { error: "invalid-json" }, 400);
     const key = String(body.key || "");
-    if (!KEY_RE.test(key)) return jsonResponse4(request, { error: "invalid-key" }, 400);
-    if (key.split("/")[1] !== userId) return jsonResponse4(request, { error: "forbidden" }, 403);
+    if (!KEY_RE.test(key)) return jsonResponse5(request, { error: "invalid-key" }, 400);
+    if (key.split("/")[1] !== userId) return jsonResponse5(request, { error: "forbidden" }, 403);
     try {
       const existing = await bucket.get(key);
       await bucket.delete(key);
       if (existing) await bumpUsage(env, -existing.size);
     } catch {
-      return jsonResponse4(request, { error: "storage-error" }, 503);
+      return jsonResponse5(request, { error: "storage-error" }, 503);
     }
-    return jsonResponse4(request, { ok: true, key });
+    return jsonResponse5(request, { ok: true, key });
   }
-  return jsonResponse4(request, { error: "not-found" }, 404);
+  return jsonResponse5(request, { error: "not-found" }, 404);
 }
 var __filesStorageTest = Object.freeze({
   BUCKET_HARD_LIMIT_BYTES,
@@ -13105,8 +14223,8 @@ function summarizeIdentityHealth(result) {
 }
 
 // auth-native/storage/sqlite-auth-repository.mjs
-var DAY_MS4 = 24 * 60 * 60 * 1e3;
-var EVENT_RETENTION_MS = 90 * DAY_MS4;
+var DAY_MS5 = 24 * 60 * 60 * 1e3;
+var EVENT_RETENTION_MS = 90 * DAY_MS5;
 function joinedYearOf(ts) {
   const t = Number(ts);
   if (!Number.isFinite(t) || t <= 0) return null;
@@ -14755,13 +15873,13 @@ var SqliteAuthRepository = class _SqliteAuthRepository {
   async cleanup(now) {
     return this.#transaction(() => {
       this.sql.exec("UPDATE auth_account_verification_tickets SET state='expired',refresh_cipher='' WHERE state='active' AND expires_at<=?", now);
-      this.sql.exec("DELETE FROM auth_account_verification_tickets WHERE expires_at<?", now - DAY_MS4);
+      this.sql.exec("DELETE FROM auth_account_verification_tickets WHERE expires_at<?", now - DAY_MS5);
       this.sql.exec("DELETE FROM auth_passkey_challenges WHERE expires_at<=?", now);
       this.sql.exec("DELETE FROM auth_passkey_tickets WHERE expires_at<=?", now);
       this.sql.exec("DELETE FROM auth_passkey_credentials WHERE status='revoked' AND revoked_at<?", now - EVENT_RETENTION_MS);
       this.sql.exec("DELETE FROM auth_rate_limits WHERE expires_at<=?", now);
-      this.sql.exec("DELETE FROM auth_trusted_devices WHERE expires_at<?", now - DAY_MS4);
-      this.sql.exec("DELETE FROM auth_security_challenges WHERE expires_at<?", now - DAY_MS4);
+      this.sql.exec("DELETE FROM auth_trusted_devices WHERE expires_at<?", now - DAY_MS5);
+      this.sql.exec("DELETE FROM auth_security_challenges WHERE expires_at<?", now - DAY_MS5);
       this.sql.exec("DELETE FROM auth_sessions WHERE expires_at<=? OR revoked_at IS NOT NULL", now);
       this.sql.exec("DELETE FROM auth_security_events WHERE occurred_at<?", now - EVENT_RETENTION_MS);
       this.sql.exec("INSERT INTO auth_meta(key,value) VALUES('last_cleanup',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", String(now));
@@ -16778,8 +17896,8 @@ async function dispatchSecurityNotifications({
 }
 
 // auth-native/verification/sqlite-verification-repository.mjs
-var DAY_MS5 = 864e5;
-var EVENT_RETENTION_MS2 = 90 * DAY_MS5;
+var DAY_MS6 = 864e5;
+var EVENT_RETENTION_MS2 = 90 * DAY_MS6;
 var safeReason = (value) => String(value || "UNKNOWN").toUpperCase().replace(/[^A-Z0-9_-]/g, "_").slice(0, 64) || "UNKNOWN";
 var SqliteVerificationRepository = class {
   constructor(storage) {
@@ -17434,8 +18552,8 @@ var SqliteVerificationRepository = class {
     });
   }
   async dailyQuotaSnapshot({ providerId, dailyQuota, now }) {
-    const dayStart = Math.floor(now / DAY_MS5) * DAY_MS5;
-    const resetAt = dayStart + DAY_MS5;
+    const dayStart = Math.floor(now / DAY_MS6) * DAY_MS6;
+    const resetAt = dayStart + DAY_MS6;
     const row = this.#one(
       "SELECT used FROM auth_verification_daily_quota WHERE provider_id=? AND day_start=?",
       providerId,
@@ -17446,8 +18564,8 @@ var SqliteVerificationRepository = class {
   }
   async reserveDailyQuota({ providerId, dailyQuota, now }) {
     return this.#transaction(() => {
-      const dayStart = Math.floor(now / DAY_MS5) * DAY_MS5;
-      const resetAt = dayStart + DAY_MS5;
+      const dayStart = Math.floor(now / DAY_MS6) * DAY_MS6;
+      const resetAt = dayStart + DAY_MS6;
       this.sql.exec(
         `INSERT INTO auth_verification_daily_quota(provider_id,day_start,used,quota_limit,reset_at,updated_at)
          VALUES(?,?,0,?,?,?) ON CONFLICT(provider_id,day_start)
@@ -18568,6 +19686,8 @@ var gk_agent_worker_default = {
     if (authResponse) return authResponse;
     const emailResponse = await handleInternalEmailRequest(request, env, ctx);
     if (emailResponse) return emailResponse;
+    const intelResponse = await handleIntelligenceRequest(request, env, ctx);
+    if (intelResponse) return intelResponse;
     const fcmResponse = await handleFcmNotificationRequest(request, env, ctx);
     if (fcmResponse) return fcmResponse;
     const adminPasskeyResponse = await handleAdminPasskeyRequest(request, env);
@@ -18648,6 +19768,10 @@ var gk_agent_worker_default = {
     }
     try {
       await runScheduledPersonalizedNotifications(env);
+    } catch (_) {
+    }
+    try {
+      await runScheduledIntelligenceNotifications(env);
     } catch (_) {
     }
     try {

@@ -134,9 +134,13 @@ test('hub v119: bell badge includes global unread; click logging on boot', () =>
 test('service worker: notificationclick stores {id: gid, link} for the app', () => {
   /* A service worker has no localStorage; the click is written to Cache
    * Storage, and the write rides inside event.waitUntil so it survives the
-   * worker being terminated after the event. */
+   * worker being terminated after the event.
+   * Phase 3 added a second branch: an intelligence push carries `key` rather
+   * than `gid`, and that key is what the outcome route attributes a click to. */
   assert.match(SW_MSG, /caches\.open\('ah-fcm-click'\)\.then\(\(c\) => c\.put\(/);
-  assert.match(SW_MSG, /new Response\(JSON\.stringify\(\{ id: String\(nd\.gid\), link: route, at: Date\.now\(\) \}\)\)/);
+  assert.match(SW_MSG, /\{ id: String\(nd\.gid\), link: route, at: Date\.now\(\) \}/, 'global push keeps the gid record');
+  assert.match(SW_MSG, /\{ intelKey: String\(nd\.key\), link: route, at: Date\.now\(\) \}/, 'intel push records the engine key');
+  assert.match(SW_MSG, /const clickRecord = nd\.gid/, 'the two branches are chosen by which field the push carries');
   assert.ok(!/self\.localStorage/.test(SW_MSG), 'a service worker must not touch localStorage');
   assert.match(SW_MSG, /event\.notification\.close\(\);/, 'closes the notification (unchanged behavior)');
 });
@@ -183,9 +187,9 @@ test('index.html: command-center script tag + route dispatch (hidden route, not 
 
 test('pin consistency: index.html script pins match sw.js cache entries + digests', () => {
   const pins = {
-    'notification-fcm.js': 'fcm-p1-v14',
+    'notification-fcm.js': 'fcm-p3-v15',
     'notification-inbox.js': 'notif-inbox-v6',
-    'notification-hub.js': 'notify-v121',
+    'notification-hub.js': 'notify-p3-v122',
     'notification-center-route.js': 'ns-cc-route-v1'
   };
   for (const [file, pin] of Object.entries(pins)) {
@@ -201,9 +205,9 @@ test('pin consistency: index.html script pins match sw.js cache entries + digest
     assert.match(SW, new RegExp(`"./${file}\\?v=${pin}": "[0-9a-f]{64}"`), `digest for ${file}`);
   }
   /* shell canary bumped together in both files */
-  assert.match(INDEX, /v288-learning-insights-20260925/g);
-  assert.match(SW, /const BUILD_ID = 'v288-learning-insights-20260925';/);
-  assert.ok((INDEX.match(/v288-learning-insights-20260925/g) || []).length >= 3, 'canary pinned in index.html (register + SW check)');
+  assert.match(INDEX, /v289-notification-intelligence-20260925/g);
+  assert.match(SW, /const BUILD_ID = 'v289-notification-intelligence-20260925';/);
+  assert.ok((INDEX.match(/v289-notification-intelligence-20260925/g) || []).length >= 3, 'canary pinned in index.html (register + SW check)');
 });
 
 test('sw-manifest digest of the command-center route shim is correct', () => {

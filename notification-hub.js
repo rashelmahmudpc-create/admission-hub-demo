@@ -618,7 +618,7 @@
     const prefs = await getPrefs();
     const soon = Object.entries(CAT_SOON).filter(([, v]) => v).map(([k]) => CAT_LABEL[k]).join(' · ');
     const perm = typeof Notification !== 'undefined' ? Notification.permission : 'unsupported';
-    const fcmRow = '<div id="ahFcmRow" style="padding:10px 0;border-bottom:1px solid var(--line);font-size:12px;color:var(--sub)">FCM Push — checking…</div><div id="ahPersonalRow"></div>';
+    const fcmRow = '<div id="ahFcmRow" style="padding:10px 0;border-bottom:1px solid var(--line);font-size:12px;color:var(--sub)">FCM Push — checking…</div><div id="ahPersonalRow"></div><div id="ahIntelRow"></div>';
     const pushRow = !pushReady() ? '<div style="padding:9px 0;border-bottom:1px solid var(--line);font-size:12px;color:var(--sub)">এই device-এ web push নেই — Telegram-এ notification যাবে</div>'
       : perm === 'granted' ? `<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)"><span style="flex:1;font-size:13px">iPhone push</span><span class="chip active" style="pointer-events:none">চালু</span></div>`
       : perm === 'denied' ? '<div style="padding:9px 0;border-bottom:1px solid var(--line);font-size:12px;color:var(--red)">Push অনুমতি ব্লকড — iOS Settings → Safari/Home-অ্যাপ → Notifications থেকে চালু করো</div>'
@@ -646,6 +646,10 @@
         const el = document.getElementById('ahPersonalRow');
         if (el) el.outerHTML = html;
       }).catch(() => {});
+      window.AhFcm?.intelRow?.().then(html => {
+        const el = document.getElementById('ahIntelRow');
+        if (el && html) el.outerHTML = html;
+      }).catch(() => {});
     } catch (_) {}
   };
   const toggleMaster = async () => { const prefs = await getPrefs(); prefs.master = !prefs.master; await savePrefs(prefs); openSettings(); toastShort(prefs.master ? 'Notification চালু' : 'Notification বন্ধ'); };
@@ -665,9 +669,20 @@
   const boot = () => {
     /* Phase 2: a background notification click stores {id, link} in Cache
      * Storage (set by firebase-messaging-sw.js — a service worker has no
-     * localStorage). Log the click once, then clear it. */
+     * localStorage). Log the click once, then clear it.
+     * Phase 3: an intelligence push stores {intelKey} instead — that is the
+     * engine's candidate key, and it goes to the outcome route. */
     const logClick = click => {
-      if (!click || !click.id) return;
+      if (!click) return;
+      if (click.intelKey) {
+        fetch('/api/notifications/outcome', {
+          method: 'POST', credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'clicked', notification_key: String(click.intelKey) })
+        }).catch(() => {});
+        return;
+      }
+      if (!click.id) return;
       fetch('/api/notifications/click', {
         method: 'POST', credentials: 'include',
         headers: { 'Content-Type': 'application/json' },

@@ -14,7 +14,7 @@
     "test:session": "node --test --test-concurrency=1 session-recovery-api.test.mjs session-recovery-chaos.test.mjs",
     "test:phase2": "npm run test:auth && npm run test:email",
     "test:production-auth": "npm run test:auth && npm run test:email && npm run test:native-auth && npm run test:fcm && npm run test:ui-guards",
-    "test:fcm": "node --test --test-concurrency=1 fcm-notification.test.mjs fcm-global.test.mjs fcm-global-contract.test.mjs notification-command-center-backend.test.mjs notif-sheet.test.mjs notification-admin-keyboard.test.mjs notification-command-center-layout.test.mjs event-notifications.test.mjs digest-notifications.test.mjs analytics-notifications.test.mjs send-planner.test.mjs admin-passkey.test.mjs",
+    "test:fcm": "node --test --test-concurrency=1 fcm-notification.test.mjs fcm-global.test.mjs fcm-global-contract.test.mjs notification-sw-routing.test.mjs notification-command-center-backend.test.mjs notif-sheet.test.mjs notification-admin-keyboard.test.mjs notification-command-center-layout.test.mjs event-notifications.test.mjs digest-notifications.test.mjs analytics-notifications.test.mjs notification-intelligence.test.mjs send-planner.test.mjs admin-passkey.test.mjs",
     "test:userdata": "node --test userdata-api.test.mjs",
     "test:student-data": "node --test --test-concurrency=1 userdata-api.test.mjs student-data-sync.test.mjs student-data-sync-chaos.test.mjs personalized-notification.test.mjs && npm run test:legacy-adoption",
     "test:sync": "node --test --test-concurrency=1 userdata-api.test.mjs student-data-sync.test.mjs student-data-sync-chaos.test.mjs",

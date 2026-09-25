@@ -986,3 +986,49 @@ and (later) in an admin surface.
   `pages build and deployment`, but neither publishes to Cloudflare. Run
   `Deploy Pages UI + Worker (manual)` with `confirmation=DEPLOY`; the API
   dispatch needs the `inputs` field or it returns 422.
+
+## Phase 3 — notification intelligence (v289)
+
+- **The handler order is load-bearing.** `handleFcmNotificationRequest` answers
+  `404` for any `/api/notifications/*` path it does not recognise, so
+  `handleIntelligenceRequest` must be registered *before* it or `/intel/*`,
+  `/intel-pref` and `/outcome` are swallowed. Add any future
+  `/api/notifications/*` handler with the same care.
+- **Never answer OPTIONS before claiming the path.** A handler that runs ahead of
+  the other `/api/*` handlers and returns `204` for every preflight will answer
+  CORS for the entire app. `handleIntelligenceRequest` checks its own paths
+  (`OWNED_PATHS` + `ADMIN_PREFIX`) *first* and returns `null` otherwise.
+- **The daily cap is shared with Phase G.** Both engines claim the same
+  `notification_sends(user_id, kind, day_key)` row, so enabling the intelligence
+  layer cannot double a student's daily allowance. `kind` is namespaced
+  (`intel:<kind>`) so the two engines do not collide on the same row.
+- **A blocked candidate must not stop the list.** The pipeline walks the ranked
+  candidates and takes the first that clears duplicate/frequency/cooldown, so a
+  capped *learning* nudge still lets a *streak* nudge through. When everything is
+  blocked, the reported `stage` is the first block hit, not a generic
+  `all-suppressed`.
+- **A/B variants must be deterministic and copy-only.** `assignVariant` hashes
+  `userId|kind`, so a cron tick cannot reshuffle an experiment mid-flight; and
+  variants never change eligibility, only the message text.
+- **Conversion credit refuses pre-tap learning.** `attributeConversion` floors the
+  window at the open/click time, because a lesson started *before* the tap cannot
+  have been caused by it. Only `LEARNING_KINDS` count.
+- **Timezone is per student and clamped.** The client reports its real UTC offset
+  (`AhFcm.syncTimezone`, once per session); the server clamps to −720…+840 minutes
+  and defaults to Dhaka. Quiet hours and the send window follow that offset, not
+  the server clock.
+- **Fatigue silences nudges, never good news.** `celebration: true` kinds still
+  reach a fatigued student; the daily cap drops for the rest.
+- **Behaviour reads are read-only.** The engine reads `user_daily_stats`,
+  `user_exam_results`, `user_mistakes`, `user_activity`, `user_settings` and never
+  writes them — the signals layer owns no other feature's data.
+- **Watch for tests that pass vacuously.** The Phase G "running twice in one day"
+  test used a *fresh* store on the second run, so the run stopped at
+  `fcm-not-configured` before reaching the duplicate guard. Duplicate/daily-cap
+  tests must reuse one store across both runs, or they prove nothing.
+- **`firebase-messaging-sw.js` click records now have two branches.** A global
+  push carries `gid`, an intelligence push carries `key`; the SW stores whichever
+  it sees and the page routes each to its own endpoint.
+- **`scripts/cache-bump.mjs` also bumps `sw.js`'s `BUILD_ID`.** If you add a file
+  that carries the `v###-…` build string, add it to the script's target list.
+>>>>>>> a149edb (feat(notifications): Phase 3 notification & engagement intelligence)

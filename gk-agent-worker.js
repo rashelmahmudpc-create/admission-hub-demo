@@ -5,6 +5,7 @@ import { createNativeAuthHandler } from './auth-native/worker/public-auth-handle
 import { handleFcmNotificationRequest, runScheduledGlobalNotifications } from './fcm-notification.mjs';
 import { handleAdminPasskeyRequest } from './admin-passkey.mjs';
 import { handlePersonalizedNotificationRequest, runScheduledPersonalizedNotifications } from './personalized-notification.mjs';
+import { handleIntelligenceRequest, runScheduledIntelligenceNotifications } from './notification-intelligence.mjs';
 import { runScheduledEventNotifications } from './event-notifications.mjs';
 import { runScheduledDigests } from './digest-notifications.mjs';
 import { handleUserDataRequest } from './userdata-api.mjs';
@@ -442,6 +443,11 @@ export default {
     const emailResponse = await handleInternalEmailRequest(request, env, ctx);
     if (emailResponse) return emailResponse;
     // Phase 1 — FCM notification foundation (owns /api/notifications/* + /internal/notifications/health).
+    /* Phase 3 — notification intelligence. Registered BEFORE the FCM handler
+     * because that one answers 404 for any /api/notifications/* path it does not
+     * recognise, which would swallow /intel/* and /intel-pref and /outcome. */
+    const intelResponse = await handleIntelligenceRequest(request, env, ctx);
+    if (intelResponse) return intelResponse;
     const fcmResponse = await handleFcmNotificationRequest(request, env, ctx);
     if (fcmResponse) return fcmResponse;
     // Admin passkey login (owns /api/admin/webauthn/*).
@@ -533,6 +539,10 @@ export default {
     /* Phase G — one personalized nudge per student per day (restraint built in:
      * daily cap, quiet hours, duplicate guard). Runs after the global send. */
     try { await runScheduledPersonalizedNotifications(env); } catch (_) {}
+    /* Phase 3 — the intelligence layer. Runs after Phase G and shares its daily
+     * allowance, so a student still gets at most one nudge a day; this one adds
+     * timezone awareness, the priority ranking, fatigue and the A/B variant. */
+    try { await runScheduledIntelligenceNotifications(env); } catch (_) {}
     /* Phase 4 — event notifications (streak/best/mastery/exam achievements) and
      * the daily/weekly/monthly digests. Both are dedup-guarded, so a repeated
      * cron tick is harmless. */

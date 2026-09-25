@@ -160,6 +160,9 @@
           const body = n.body || '';
           try { window.toast?.(`${title} — ${body}`.slice(0, 240)); } catch (_) {}
           try { window.AhFcmInbox?.onForeground?.(d); } catch (_) {}
+          /* A foreground push is shown as a toast, so it was seen — credit the
+           * open here. Background pushes are credited from the SW click record. */
+          if (d.key) reportOutcome('opened', { notification_key: String(d.key) }).catch(() => {});
         });
       } catch (_) { onMessageAttached = false; }
     }
@@ -419,6 +422,86 @@
     }
   };
 
+  /* ── Phase 3 — notification intelligence bridge ────────────────────────────
+   * Three jobs, all small:
+   *   1. tell the server this device's real UTC offset, so quiet hours and the
+   *      send window follow the student rather than the server's clock;
+   *   2. expose the per-category switches the intelligence engine reads;
+   *   3. echo open/click/learning outcomes back, so the engine can measure
+   *      whether a notification actually caused learning. */
+
+  const tzOffsetMin = () => {
+    try { return -new Date().getTimezoneOffset(); } catch (_) { return 360; }
+  };
+
+  /* Sync the offset once per session, and again if the student crosses a zone
+   * (the value is compared before sending, so a normal session writes nothing). */
+  const syncTimezone = async () => {
+    try {
+      const mine = tzOffsetMin();
+      if (Number(stateGet().tzSent) === mine) return { ok: true, skipped: true };
+      const res = await boundedFetch('/intel-pref', { method: 'POST', body: JSON.stringify({ tz_offset_min: mine }) });
+      if (res.ok) stateSet({ tzSent: mine });
+      return res;
+    } catch (_) { return { ok: false }; }
+  };
+
+  const CAT_LABELS = {
+    learning: { bn: 'পড়া ও রিভিশন', en: 'Learning & revision' },
+    streak: { bn: 'স্ট্রিক', en: 'Streak' },
+    achievement: { bn: 'অর্জন', en: 'Achievements' },
+    challenge: { bn: 'চ্যালেঞ্জ', en: 'Challenges' }
+  };
+
+  const intelRow = async () => {
+    const L = (() => { try { return window.AhI18n ? window.AhI18n.get() : 'bn'; } catch (_) { return 'bn'; } })();
+    const st = (bn, en) => (L === 'en' ? en : bn);
+    let prefs = null;
+    try {
+      const res = await boundedFetch('/intel-pref');
+      if (res.ok && res.data?.prefs) prefs = res.data.prefs;
+    } catch (_) { /* leave default */ }
+    if (!prefs) return '';
+    const cats = prefs.categories || {};
+    const rows = Object.keys(CAT_LABELS).map(key => {
+      const on = Number(cats[key]) === 1;
+      return `<label style="display:flex;align-items:center;gap:9px;padding:7px 0;font-size:12.5px;cursor:pointer">
+        <input type="checkbox" ${on ? 'checked' : ''} onchange="AhFcm.toggleCategory('${key}', this.checked)" style="width:16px;height:16px;accent-color:var(--emerald,#0f6b4f)">
+        <span>${st(CAT_LABELS[key].bn, CAT_LABELS[key].en)}</span>
+      </label>`;
+    }).join('');
+    return `<div style="margin:10px 0;padding:13px 14px;border:1.5px solid var(--line);border-radius:14px">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="color:var(--emerald,#0f6b4f)">${iconSvg('dot',15)}</span>
+        <b style="flex:1;font-size:13.5px">${st('কোন ধরনের নোটিফিকেশন চাও', 'Which notifications you want')}</b>
+      </div>
+      <p style="margin:7px 0 4px;font-size:12px;color:var(--sub,#6b7a72);line-height:1.6">${st('বন্ধ করা ধরন কখনোই পাঠানো হবে না — প্রতিদিন সর্বোচ্চ একটি স্মার্ট রিমাইন্ডার।', 'A type you switch off is never sent — at most one smart reminder a day.')}</p>
+      ${rows}
+    </div>`;
+  };
+
+  const toggleCategory = async (key, on) => {
+    const L = (() => { try { return window.AhI18n ? window.AhI18n.get() : 'bn'; } catch (_) { return 'bn'; } })();
+    try {
+      const res = await boundedFetch('/intel-pref', { method: 'POST', body: JSON.stringify({ categories: { [key]: on ? 1 : 0 } }) });
+      if (!res.ok) throw new Error('save failed');
+      window.toast?.(on
+        ? (L === 'en' ? 'Category on' : 'চালু হলো')
+        : (L === 'en' ? 'Category off' : 'বন্ধ হলো'));
+    } catch (_) {
+      window.toast?.(L === 'en' ? 'Could not save' : 'সেভ করা গেল না');
+    }
+  };
+
+  /* Report that the student acted on a notification. `key` is the value the
+   * engine put on the push; `learning` credits a real study action. Fire and
+   * forget — a failed report must never interrupt the student. */
+  const reportOutcome = async (action, payload = {}) => {
+    try {
+      return await boundedFetch('/outcome', { method: 'POST', body: JSON.stringify({ action, ...payload }) });
+    } catch (_) { return { ok: false }; }
+  };
+
   /* Dev test center (§18) — hidden route #notif-dev. Admin Bearer token is
    * entered per call and never stored. */
   const devPanel = () => {
@@ -478,6 +561,20 @@
     // Hidden dev route.
     const checkDev = () => { if (location.hash === '#notif-dev') devPanel(); };
     document.addEventListener?.('hashchange', checkDev);
+    // Phase 3: the server needs this device's real timezone, and needs it once.
+    // Sent on the idle path so it never competes with app boot.
+    const syncTz = () => { if (document.visibilityState === 'visible') syncTimezone().catch(() => {}); };
+    if ('requestIdleCallback' in window) requestIdleCallback(syncTz, { timeout: 20000 });
+    else setTimeout(syncTz, 6000);
+    /* Phase 3: a real study action after a notification is the conversion we
+     * measure. The analytics bus already emits these; we forward only the
+     * action name, and the server decides which send to credit. */
+    document.addEventListener?.('admission:activity', event => {
+      const type = String(event?.detail?.type || '');
+      const map = { LESSON_START: 'lesson_start', LESSON_COMPLETE: 'lesson_complete', QUIZ_COMPLETE: 'quiz_complete', QUESTION_ATTEMPT: 'question_attempt', COURSE_COMPLETE: 'course_complete' };
+      const kind = map[type];
+      if (kind) reportOutcome('learning', { kind }).catch(() => {});
+    });
     // Background token refresh for registered users — after the app has
     // settled, never on the critical boot path.
     const later = () => {
@@ -487,7 +584,7 @@
     if ('requestIdleCallback' in window) requestIdleCallback(later, { timeout: 20000 });
     else setTimeout(later, 6000);
     document.addEventListener?.('visibilitychange', () => {
-      if (document.visibilityState === 'visible') refreshIfEnabled().catch(() => {});
+      if (document.visibilityState === 'visible') { refreshIfEnabled().catch(() => {}); syncTimezone().catch(() => {}); }
     });
   };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
@@ -510,6 +607,7 @@
   window.AhFcm = {
     status, enable, disable, refresh: refreshIfEnabled,
     settingsRow, personalRow, togglePersonal, devPanel, getToken: currentToken,
+    intelRow, toggleCategory, syncTimezone, reportOutcome, tzOffsetMin,
     _state: stateGet, _config: getConfig, lastErr, selfTest
   };
 })();

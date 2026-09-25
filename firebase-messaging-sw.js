@@ -50,15 +50,21 @@ self.addEventListener('notificationclick', (event) => {
   const route = String(nd.link || hashRoute(nd.url) || 'dashboard').replace(/^#?\/?/, '');
   /* Phase 2: global notifications carry `gid` — store the click for the app
    * (which logs it to /api/notifications/click on next boot/route).
-   * Service workers have no localStorage, so this uses Cache Storage, which the
-   * page reads with the same key. The write is inside event.waitUntil so the
-   * entry survives the worker being terminated once this event completes. */
+   * Phase 3: intelligence notifications carry `key` (the engine's candidate
+   * key) — store that too so /api/notifications/outcome can attribute the click
+   * to the exact send. Service workers have no localStorage, so this uses Cache
+   * Storage, which the page reads with the same key. The write is inside
+   * event.waitUntil so the entry survives the worker being terminated once this
+   * event completes. */
   const url = String(nd.src || '').startsWith('fcm') ? `./#${route}` : (nd.url || './');
+  const clickRecord = nd.gid
+    ? { id: String(nd.gid), link: route, at: Date.now() }
+    : (nd.key ? { intelKey: String(nd.key), link: route, at: Date.now() } : null);
   event.waitUntil(Promise.all([
-    nd.gid
+    clickRecord
       ? caches.open('ah-fcm-click').then((c) => c.put(
           new Request('/__ahFcmClick'),
-          new Response(JSON.stringify({ id: String(nd.gid), link: route, at: Date.now() }))
+          new Response(JSON.stringify(clickRecord))
         )).catch(() => {})
       : Promise.resolve(),
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {

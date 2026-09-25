@@ -270,14 +270,20 @@ test('g: running twice in one day delivers nothing the second time', async () =>
   const first = await run(seed());
   assert.equal(first.delivered.length, 1);
 
-  /* A fresh store over the SAME send log: the duplicate guard must hold. */
+  /* The SAME store across both runs. A fresh store would make this pass for the
+   * wrong reason: with no send log the run stops at 'fcm-not-configured' before
+   * it ever reaches the duplicate guard, so the assertion proves nothing. */
   const { store } = storeFor(seed());
   const delivered = [];
-  const result = await runScheduledPersonalizedNotifications({}, {
-    store, now: () => NOW,
+  const call = () => runScheduledPersonalizedNotifications({}, {
+    store, now: () => NOW, requireFcm: false,
     send: async (u, m) => { delivered.push(m); return { ok: true, sent: 1 }; }
   });
-  assert.equal(result.sent, 0, 'the same day is not nudged twice');
+  const one = await call();
+  assert.equal(one.sent, 1, 'the first run delivers');
+  const two = await call();
+  assert.equal(two.sent, 0, 'the same day is not nudged twice');
+  assert.equal(delivered.length, 1);
 });
 
 test('g: a student who opted out is skipped without a send', async () => {
