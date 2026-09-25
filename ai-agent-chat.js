@@ -1413,23 +1413,26 @@
       <div class="ai-try">${esc(T.tryAsking)}</div>
       <div class="ai-chips">${T.chips.map((c) => `<button class="ai-chip" data-q="${esc(c[2])}"><span class="ic">${c[0]}</span><b>${esc(c[1])}</b><span>${esc(c[0] + ' ' + (c[1]))}</span></button>`).join('')}</div>`;
   }
-  /* ── M9 action confirmation card ──
-     The interface never executes a write on its own. It proposes one to the
-     Worker, renders the server-built summary, and waits for the student to tap
-     "yes"; only then does it confirm with the single-use token. */
+  /* ── M9 write actions ──
+     Every write still goes to the Worker as a proposal first — the interface
+     never writes by itself. A low-risk, reversible preference then confirms
+     itself, so a student who says "উত্তর ছোট করে দাও" simply gets the change
+     instead of a tap. The card and its yes/no buttons stay wired for actions
+     that must be approved by hand. */
   const ACT_ACTIONS = { 'prefs.write': { bn: 'তোমার AI পছন্দ সেভ করা', en: 'Save your AI preferences' } };
+  const AUTO_CONFIRM_ACTIONS = new Set(['prefs.write']);
   function actLabel(action) {
     const k = ACT_ACTIONS[action];
     return k ? (lang === 'en' ? k.en : k.bn) : String(action || '');
   }
   function actionCardHtml(m, idx) {
+    const head = `<div class="ai-msg ai"><div class="ai-msg-head"><span class="mini"></span>${esc(T.title)}</div><div class="ai-act">
+      <div class="ai-act-h">⚙️ ${esc(T.actTitle)} · ${esc(actLabel(m.actAction))}</div>`;
+    const sum = m.actSummary ? `<div class="ai-act-sum">${esc(m.actSummary)}</div>` : '';
     if (m.actDone) {
-      return `<div class="ai-msg ai"><div class="ai-msg-head"><span class="mini"></span>${esc(T.title)}</div><div class="ai-act"><div class="ai-act-done ${m.actDone === 'cancelled' || m.actDone === 'error' ? 'bad' : ''}">${esc(m.actDoneText || T.actApplied)}</div></div></div>`;
+      return `${head}${sum}<div class="ai-act-done ${m.actDone === 'cancelled' || m.actDone === 'error' ? 'bad' : ''}">${esc(m.actDoneText || T.actApplied)}</div></div></div>`;
     }
-    return `<div class="ai-msg ai"><div class="ai-msg-head"><span class="mini"></span>${esc(T.title)}</div><div class="ai-act">
-      <div class="ai-act-h">⚙️ ${esc(T.actTitle)} · ${esc(actLabel(m.actAction))}</div>
-      <div class="ai-act-q">${esc(m.actWhy || T.actConfirmQ)}</div>
-      ${m.actSummary ? `<div class="ai-act-sum">${esc(m.actSummary)}</div>` : ''}
+    return `${head}<div class="ai-act-q">${esc(m.actWhy || T.actConfirmQ)}</div>${sum}
       <div class="ai-act-btns"><button class="ai-act-yes" onclick="window.__AiActDecide(${idx},1)">✔ ${esc(T.actYes)}</button><button class="ai-act-no" onclick="window.__AiActDecide(${idx},0)">✖ ${esc(T.actNo)}</button></div>
       <div class="ai-act-note">🔒 ${esc(T.actOnly)}</div></div></div>`;
   }
@@ -1447,6 +1450,20 @@
       .then((r) => r.json().catch(() => null).then((j) => ({ status: r.status, body: j })))
       .catch(() => ({ status: 0, body: null }));
   }
+  /* Confirm a pending proposal and collapse it to a terminal state. Returns the
+     toast to show, if any. Shared by the tap handler and the auto-confirm path. */
+  async function resolveProposal(m) {
+    const res = await postAction('/api/ai/actions/confirm', { token: m.actId });
+    if (res.status === 200 && res.body && res.body.ok) {
+      m.actDone = 'applied'; m.actDoneText = T.actApplied;
+      return '';
+    }
+    if (res.status === 0) return T.actOffline;
+    const reason = res.body && (res.body.reason || res.body.error);
+    m.actDone = 'error';
+    m.actDoneText = reason === 'expired' ? T.actExpired : T.actFail;
+    return '';
+  }
   async function decideAction(idx, yes) {
     const m = msgs[idx];
     if (!m || !m.pending || m.actBusy) return;
@@ -1456,17 +1473,10 @@
       m.pending = false; m.actDone = 'cancelled'; m.actDoneText = T.actCancelled;
       m.actBusy = false; save(); renderMsgs(); return;
     }
-    const res = await postAction('/api/ai/actions/confirm', { token: m.actId });
-    if (res.status === 200 && res.body && res.body.ok) {
-      m.pending = false; m.actDone = 'applied'; m.actDoneText = T.actApplied;
-    } else if (res.status === 0) {
-      m.actBusy = false; save(); renderMsgs(); toast(T.actOffline); return;
-    } else {
-      const reason = res.body && (res.body.reason || res.body.error);
-      m.pending = false; m.actDone = 'error';
-      m.actDoneText = reason === 'expired' ? T.actExpired : T.actFail;
-    }
-    m.actBusy = false; save(); renderMsgs();
+    const warn = await resolveProposal(m);
+    m.actBusy = false;
+    if (warn) { save(); renderMsgs(); toast(warn); return; }
+    m.pending = false; save(); renderMsgs();
   }
   window.__AiActDecide = decideAction;
   /* Detect an explicit personalization request in the student's own words and map
@@ -1490,8 +1500,22 @@
     const res = await postAction('/api/ai/actions/propose', { action: intent.action, args: intent.args });
     if (res.status === 200 && res.body && res.body.ok && res.body.proposal) {
       const p = res.body.proposal;
-      msgs.push({ role: 'ai', text: '', ts: Date.now(), pending: true, actId: p.id, actAction: p.action, actSummary: p.summary || '', actExpiresAt: p.expiresAt || (Date.now() + 300000) });
-      save(); renderMsgs();
+      const m = { role: 'ai', text: '', ts: Date.now(), pending: true, actId: p.id, actAction: p.action, actSummary: p.summary || '', actExpiresAt: p.expiresAt || (Date.now() + 300000) };
+      if (AUTO_CONFIRM_ACTIONS.has(p.action)) {
+        /* Confirm before the first paint, so the card only ever shows the outcome. */
+        const warn = await resolveProposal(m);
+        if (warn) {
+          /* The confirm never reached the Worker, so the token is still good:
+             leave the card tappable rather than showing a dead or false result. */
+          m.pending = true; m.actBusy = false;
+          msgs.push(m); save(); renderMsgs(); toast(warn);
+          return true;
+        }
+        m.pending = false;
+        msgs.push(m); save(); renderMsgs();
+        return true;
+      }
+      msgs.push(m); save(); renderMsgs();
       return true;
     }
     if (res.status === 401) { toast(T.needLogin, true); return true; }
@@ -1499,7 +1523,7 @@
     return false;
   }
   function msgHtml(m, idx) {
-    if (m.pending) return actionCardHtml(m, idx);
+    if (m.actId) return actionCardHtml(m, idx);
     if (m.role === 'user') {
       const ub = m.text.length > 460 ? `<details class="ai-u-fold"><summary>${esc(m.text.slice(0, 150))}… <em>${esc(T.seeMore)}</em></summary><div>${esc(m.text)}</div></details>` : esc(m.text);
       return `<div class="ai-msg user"><div><div class="bubble">${ub}${m.image ? `<img class="thumb" src="${m.image}" alt="">` : ''}</div><div class="meta">${esc(fmtTime(m.ts))} <span class="ai-tick">✓✓</span></div></div></div>`;

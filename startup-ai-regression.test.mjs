@@ -51,7 +51,7 @@ test('১১. protection snapshot runs as idle post-boot work',
 /* PWA lifecycle */
 test('১২. build/cache/static-Welcome and main-app AI versions are synchronized',
 
-  SW.includes("const BUILD_ID = 'v283-single-email-button-20260921'") && H.includes("const expectedSwVersion = 'v283-single-email-button-20260921'") && H.includes('sw.js?v=v283-single-email-button-20260921') && H.includes('account-access.js?v=20260921-single-email-button-fallback') && SW.includes('account-access.js?v=20260921-single-email-button-fallback') && H.includes('ai-agent-chat.js?v=agent-f1-ui-chatv19-actions') && SW.includes('ai-agent-chat.js?v=agent-f1-ui-chatv19-actions'));
+  SW.includes("const BUILD_ID = 'v283-single-email-button-20260921'") && H.includes("const expectedSwVersion = 'v283-single-email-button-20260921'") && H.includes('sw.js?v=v283-single-email-button-20260921') && H.includes('account-access.js?v=20260921-single-email-button-fallback') && SW.includes('account-access.js?v=20260921-single-email-button-fallback') && H.includes('ai-agent-chat.js?v=agent-f1-ui-chatv20-autoprefs') && SW.includes('ai-agent-chat.js?v=agent-f1-ui-chatv20-autoprefs'));
 test('১৩. service-worker activation never navigates or reloads open clients',
   !SW.includes('c.navigate(c.url)') && !SW.includes("self.clients.matchAll({ type: 'window', includeUncontrolled: true });\n      for"));
 test('১৪. installed PWA document is bounded network-first with fast offline fallback',
@@ -59,7 +59,11 @@ test('১৪. installed PWA document is bounded network-first with fast offline 
   SW.includes('const DOCUMENT_NETWORK_TIMEOUT_MS = 2500') &&
   SW.includes("fetch(request, { cache: 'no-store', signal: controller.signal })") &&
   SW.includes('return offlineFallback(request);'));
-test('১৫. precache stays lean because code-native entry pages add no raster assets', shellAssets > 0 && shellAssets <= 21 && !appShellBlock.includes('result-analysis-500.js') && !appShellBlock.includes("  '',"));
+test('১৫. precache stays lean because code-native entry pages add no raster assets',
+  /* Bound tracks the hand-curated APP_SHELL list (22 entries after the
+     notification command center and student-data sync landed). The point of the
+     ceiling is to catch an accidental bulk import, not to pin an exact size. */
+  shellAssets > 0 && shellAssets <= 22 && !appShellBlock.includes('result-analysis-500.js') && !appShellBlock.includes("  '',"));
 test('১৬. PWA updates are in-place; active worker is never unregistered first', !H.includes('registration.unregister()'));
 
 /* AI composer and response */
