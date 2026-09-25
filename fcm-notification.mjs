@@ -24,6 +24,7 @@
  */
 import { computeAnalytics, AnalyticsStore } from './analytics-notifications.mjs';
 import { retryDecision, isRetryable, advanceFanout, FanoutStore, DEFAULT_WINDOW_BUDGET } from './send-planner.mjs';
+import { readAdminSession } from './admin-passkey.mjs';
 
 const FCM_API_SCOPE = 'https://www.googleapis.com/auth/firebase.messaging';
 const FCM_TOKEN_URL = 'https://oauth2.googleapis.com/token';
@@ -998,11 +999,16 @@ export async function handleFcmNotificationRequest(request, env) {
   ]);
   if (ADMIN_PATHS.has(path)) {
     const adminToken = String(request.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '').trim();
-    if (!env.ADMIN_TOKEN || adminToken !== env.ADMIN_TOKEN) {
+    /* Two ways in: the break-glass ADMIN_TOKEN, or a short-lived passkey
+     * session minted by /api/admin/webauthn/assert. The session path exists so
+     * the owner stops carrying a long-lived secret in a browser. */
+    const tokenOk = Boolean(env.ADMIN_TOKEN) && adminToken === env.ADMIN_TOKEN;
+    const adminSession = tokenOk ? null : await readAdminSession(env, request);
+    if (!tokenOk && !adminSession) {
       return jsonResponse(request, { error: 'forbidden' }, 403);
     }
     const maybeSession = await sessionUser(env, request);
-    const adminUserId = maybeSession ? String(maybeSession.user.id) : 'admin';
+    const adminUserId = maybeSession ? String(maybeSession.user.id) : (adminSession ? `passkey:${adminSession.credentialId.slice(0, 12)}` : 'admin');
     if (path === '/api/notifications/global/send' && request.method === 'POST') {
       if (!fcmConfigured(env)) return jsonResponse(request, { error: 'fcm-not-configured' }, 503);
       if (!store.available()) return jsonResponse(request, { error: 'storage-unavailable' }, 503);

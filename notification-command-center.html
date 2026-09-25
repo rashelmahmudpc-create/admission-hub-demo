@@ -1611,6 +1611,13 @@ const T = {
   auth_success:{bn:"যাচাই সম্পন্ন",en:"Verified"},
   auth_note:{bn:"টোকেন সেশন-মাত্র; প্রবেশের আগে লাইভ সার্ভিসে যাচাই করা হয়।",en:"Session-only token, verified against the live service before entry."},
   auth_demo:{bn:"ডেমো টোকেন ব্যবহার করুন",en:"Use demo token"},
+  auth_passkey:{bn:"Passkey দিয়ে ঢুকুন",en:"Sign in with passkey"},
+  auth_passkey_wait:{bn:"Passkey যাচাই হচ্ছে…",en:"Verifying passkey…"},
+  auth_passkey_fail:{bn:"Passkey মেলেনি",en:"Passkey did not match"},
+  auth_passkey_none:{bn:"এই ডিভাইসে কোনো Passkey নেই",en:"No passkey enrolled yet"},
+  auth_passkey_add:{bn:"এই ডিভাইসে Passkey যোগ করুন",en:"Add a passkey to this device"},
+  auth_passkey_added:{bn:"Passkey যোগ হয়েছে",en:"Passkey added"},
+  auth_passkey_ready:{bn:"Passkey চালু আছে",en:"Passkey is enabled"},
   audit_title:{bn:"অডিট লগ",en:"Audit log"},
   act_created:{bn:"তৈরি করেছে",en:"created"},
   act_edited:{bn:"সম্পাদনা করেছে",en:"edited"},
@@ -3810,6 +3817,7 @@ function moreMenuHTML(){
           ['light','dark','pink','green'].map(th=>'<button class="ns-seg-btn" aria-pressed="'+(state.theme===th)+'" data-action="set-theme" data-value="'+th+'">'+esc(t('theme_'+th))+'</button>').join('')+
         '</div></div>'+
       '<label class="ns-switch"><input type="checkbox" data-action="toggle-offline" '+(state.offline?'checked':'')+'><span class="ns-switch-track"></span><span>'+esc(t('offline_title'))+'</span></label>'+
+      '<button class="ns-btn ns-btn-ghost ns-btn-block" data-action="auth-passkey-add">'+ic('shield',16)+esc(t('auth_passkey_add'))+'</button>'+
       '<button class="ns-btn ns-btn-ghost ns-btn-block" data-action="signout">'+ic('lock',16)+esc(t('sys_signout'))+'</button>'+
     '</div>'+
   '</div>';
@@ -3922,7 +3930,7 @@ function viewHTMLFor(tab){
 function render(){
   const root=document.getElementById('nsRoot');
   if(!root) return;
-  if(!state.authenticated){ root.innerHTML=authGateHTML(); refreshTexts(); return; }
+  if(!state.authenticated){ root.innerHTML=authGateHTML(); refreshTexts(); refreshPasskeyButton(); return; }
   if(!root.querySelector('.ns-app')){
     root.innerHTML=shellHTML();
   }
@@ -4097,6 +4105,7 @@ function authGateHTML(){
         '<div id="nsAuthMsg" class="ns-field-help" aria-live="polite"></div>'+
       '</div>'+
       '<button class="ns-btn ns-btn-primary ns-btn-block" data-action="auth-verify" id="nsAuthBtn">'+ic('shield',17)+esc(t('auth_verify'))+'</button>'+
+      '<button class="ns-btn ns-btn-block" style="margin-top:8px" data-action="auth-passkey" id="nsPasskeyBtn" hidden>'+ic('lock',17)+esc(t('auth_passkey'))+'</button>'+
       '<button class="ns-btn ns-btn-quiet ns-btn-block" style="margin-top:8px" data-action="auth-demo">'+esc(t('auth_demo'))+'</button>'+
       '<div class="ns-gate-foot">'+ic('info',14)+'<span id="nsAuthHint">'+esc(t('auth_note'))+'</span></div>'+
     '</div>'+
@@ -4135,6 +4144,115 @@ function verifyToken(){
     render();
     toast(t('auth_success'),'ok',t('appSub'));
   });
+}
+
+/* ============================================================
+   PASSKEY LOGIN — enroll once, then enter with the device's own key.
+   The token path above stays as the break-glass fallback.
+   ============================================================ */
+function b64uToBytes(v){
+  const s=String(v||'').replace(/-/g,'+').replace(/_/g,'/');
+  const pad=s+'='.repeat((4-s.length%4)%4);
+  const bin=atob(pad);
+  const out=new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) out[i]=bin.charCodeAt(i);
+  return out;
+}
+function bytesToB64u(buf){
+  const bytes=new Uint8Array(buf);
+  let s='';
+  for(let i=0;i<bytes.length;i++) s+=String.fromCharCode(bytes[i]);
+  return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+}
+function passkeySupported(){
+  return Boolean(window.PublicKeyCredential&&navigator.credentials&&navigator.credentials.get&&navigator.credentials.create);
+}
+function publicKeyOptions(options,forCreate){
+  const pk={challenge:b64uToBytes(options.challenge),rpId:options.rpId,timeout:options.timeout,userVerification:options.userVerification};
+  if(forCreate){
+    pk.pubKeyCredParams=(options.pubKeyCredParams||[]).map(p=>({type:p.type,alg:p.alg}));
+    if(options.user) pk.user={id:b64uToBytes(options.user.id),name:options.user.name,displayName:options.user.displayName};
+    if(options.authenticatorSelection) pk.authenticatorSelection=options.authenticatorSelection;
+    pk.attestation=options.attestation||'none';
+    pk.excludeCredentials=(options.excludeCredentials||[]).map(c=>({type:c.type,id:b64uToBytes(c.id)}));
+  }else{
+    pk.allowCredentials=(options.allowCredentials||[]).map(c=>({type:c.type,id:b64uToBytes(c.id),transports:c.transports||[]}));
+  }
+  return pk;
+}
+function credentialToJson(cred){
+  const r=cred.response;
+  const base={id:cred.id,rawId:bytesToB64u(cred.rawId),type:cred.type};
+  if(r.attestationObject) return Object.assign(base,{clientDataJSON:bytesToB64u(r.clientDataJSON),attestationObject:bytesToB64u(r.attestationObject),transports:(r.getTransports&&r.getTransports())||[]});
+  return Object.assign(base,{clientDataJSON:bytesToB64u(r.clientDataJSON),authenticatorData:bytesToB64u(r.authenticatorData),signature:bytesToB64u(r.signature),userHandle:r.userHandle?bytesToB64u(r.userHandle):undefined});
+}
+function gateMsg(text,bad){
+  const msg=document.getElementById('nsAuthMsg');
+  if(!msg) return;
+  msg.textContent=text||'';
+  msg.style.color=bad?'var(--danger)':'';
+}
+/* Show the passkey button only when the worker reports one is enrolled. */
+function refreshPasskeyButton(){
+  const btn=document.getElementById('nsPasskeyBtn');
+  if(!btn) return;
+  if(!passkeySupported()){ btn.hidden=true; return; }
+  NS.api.get('/api/admin/webauthn/status').then(function(out){
+    if(!document.getElementById('nsPasskeyBtn')) return;
+    btn.hidden=!(out.ok&&out.data&&out.data.enrolled);
+  }).catch(function(){ btn.hidden=true; });
+}
+function signInWithPasskey(){
+  const btn=document.getElementById('nsPasskeyBtn');
+  if(!btn||!passkeySupported()) return;
+  btn.disabled=true; btn.innerHTML=ic('spinner',17)+esc(t('auth_passkey_wait'));
+  NS.api.post('/api/admin/webauthn/challenge',{purpose:'assert'}).then(function(begin){
+    if(!begin.ok||!begin.data||!begin.data.options){
+      btn.disabled=false; btn.innerHTML=ic('lock',17)+esc(t('auth_passkey'));
+      gateMsg(begin.status===404?t('auth_passkey_none'):t('auth_passkey_fail')+' ('+begin.status+')',true);
+      return null;
+    }
+    return navigator.credentials.get({publicKey:publicKeyOptions(begin.data.options,false)}).then(function(cred){
+      return NS.api.post('/api/admin/webauthn/assert',{challengeId:begin.data.challengeId,response:credentialToJson(cred)});
+    });
+  }).then(function(out){
+    if(!out) return;
+    if(!out.ok||!out.data||!out.data.session){
+      btn.disabled=false; btn.innerHTML=ic('lock',17)+esc(t('auth_passkey'));
+      gateMsg(t('auth_passkey_fail')+' ('+out.status+')',true);
+      return;
+    }
+    NS.api.setSession(out.data.session);
+    return NS.api.get('/api/notifications/history').then(function(hist){
+      state.authenticated=true;
+      if(hist.ok) NS.hydrate(hist.data);
+      render();
+      toast(t('auth_success'),'ok',t('appSub'));
+    });
+  }).catch(function(){
+    btn.disabled=false; btn.innerHTML=ic('lock',17)+esc(t('auth_passkey'));
+    gateMsg(t('auth_passkey_fail'),true);
+  });
+}
+/* Enrollment needs the admin token: it is a privileged change to the account. */
+function addPasskeyToDevice(){
+  if(!passkeySupported()) return;
+  const label=(window.prompt(t('auth_passkey_add'))||'').trim();
+  if(label===null) return;
+  NS.api.post('/api/admin/webauthn/challenge',{purpose:'register'}).then(function(begin){
+    if(!begin.ok||!begin.data||!begin.data.options) return gateMsg(t('auth_passkey_fail')+' ('+begin.status+')',true);
+    return navigator.credentials.create({publicKey:publicKeyOptions(begin.data.options,true)}).then(function(cred){
+      return NS.api.post('/api/admin/webauthn/register',{challengeId:begin.data.challengeId,response:credentialToJson(cred),label:label||'Admin device'});
+    });
+  }).then(function(out){
+    if(!out) return;
+    if(out.ok&&out.data&&out.data.registered){ toast(t('auth_passkey_added'),'ok',t('auth_passkey_ready')); refreshPasskeyButton(); }
+    else gateMsg(t('auth_passkey_fail')+' ('+(out.status||0)+')',true);
+  }).catch(function(){ gateMsg(t('auth_passkey_fail'),true); });
+}
+function signOutEverywhere(){
+  NS.api.clearToken();
+  NS.api.clearSession();
 }
 
 /* ============================================================
@@ -4569,8 +4687,10 @@ document.addEventListener('click',function(ev){
     case 'overlay-close': stop(); doOverlayClose(); break;
     case 'set-theme': stop(); applyTheme(el.dataset.value); if(overlayState.open){ closeOverlay(); afterOverlayClose(); } toast(t('theme_switch')+': '+t('theme_'+el.dataset.value),''); break;
     case 'set-lang': stop(); applyLang(el.dataset.value); if(overlayState.open){ closeOverlay(); afterOverlayClose(); } break;
-    case 'signout': stop(); state.authenticated=false; state.compose=blankDraft(); render(); toast(t('sys_signout_desc'),'ok',t('sys_signout_ok')); break;
+    case 'signout': stop(); signOutEverywhere(); state.authenticated=false; state.compose=blankDraft(); render(); toast(t('sys_signout_desc'),'ok',t('sys_signout_ok')); break;
     case 'auth-verify': stop(); verifyToken(); break;
+    case 'auth-passkey': stop(); signInWithPasskey(); break;
+    case 'auth-passkey-add': stop(); addPasskeyToDevice(); break;
     case 'auth-demo': stop();
       { const inp=document.getElementById('nsToken'); if(inp){ inp.value='demo-admin-token'; } verifyToken(); }
       break;
@@ -5175,7 +5295,12 @@ function initOffline(){
    The admin token is held in sessionStorage for this browser session only.
    ============================================================ */
 const API_TOKEN_KEY='ahAdminTok';
+const API_SESSION_KEY='ahAdminSess';
 function apiToken(){ try{ return sessionStorage.getItem(API_TOKEN_KEY)||''; }catch(_){ return ''; } }
+function apiSession(){ try{ return sessionStorage.getItem(API_SESSION_KEY)||''; }catch(_){ return ''; } }
+/* Passkey sessions live in sessionStorage too: they are short-lived (30 min) and
+ * scoped to this tab, which is the whole point — nothing long-lived to steal. */
+function setApiSession(v){ try{ v?sessionStorage.setItem(API_SESSION_KEY,v):sessionStorage.removeItem(API_SESSION_KEY); }catch(_){} }
 const API_BASE=(function(){
   try{
     // When this page is embedded in an iframe inside the app, the parent origin
@@ -5191,7 +5316,7 @@ function apiFetch(path,init){
   const timer=setTimeout(function(){controller.abort();},15000);
   const opts=Object.assign({credentials:'include',signal:controller.signal},init||{});
   opts.headers=Object.assign({'Content-Type':'application/json',
-    'Authorization':'Bearer '+apiToken()},(init&&init.headers)||{});
+    'Authorization':'Bearer '+apiToken()},apiSession()?{'X-Admin-Session':apiSession()}:{},(init&&init.headers)||{});
   return fetch(API_BASE+path,opts).then(function(res){
     return res.json().catch(function(){return {};}).then(function(data){
       return {ok:res.ok,status:res.status,data:data};
@@ -5202,8 +5327,11 @@ function apiFetch(path,init){
 function apiApi(){
   return {
     token:apiToken,
+    session:apiSession,
     setToken:function(v){ try{ v?sessionStorage.setItem(API_TOKEN_KEY,v):sessionStorage.removeItem(API_TOKEN_KEY); }catch(_){} },
+    setSession:setApiSession,
     clearToken:function(){ try{ sessionStorage.removeItem(API_TOKEN_KEY); }catch(_){} },
+    clearSession:function(){ setApiSession(''); },
     get:function(path){ return apiFetch(path,{method:'GET'}); },
     post:function(path,body){ return apiFetch(path,{method:'POST',body:JSON.stringify(body||{})}); }
   };
@@ -5212,10 +5340,12 @@ function apiApi(){
 /* Bootstrap: if a token is already present (same session), verify it silently and
    load live data without showing the gate again. */
 function bootstrapAuth(){
-  if(!apiToken()) return;
+  /* A passkey session is already an authenticated admin grant; verify it the
+   * same way the token is verified, so a reload does not bounce to the gate. */
+  if(!apiToken()&&!apiSession()) return;
   NS.api.get('/api/notifications/history').then(function(out){
     if(out.ok){ state.authenticated=true; NS.hydrate(out.data); render(); }
-    else NS.api.clearToken();
+    else { NS.api.clearToken(); NS.api.clearSession(); }
   });
 }
 
