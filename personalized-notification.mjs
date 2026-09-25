@@ -337,9 +337,12 @@ const jsonResponse = (request, obj, status = 200) => new Response(JSON.stringify
 
 /* Owns /api/notifications/personal-pref (student, session-authenticated) and
  * /api/notifications/personal/* (admin: preview and manual run). */
-export async function handlePersonalizedNotificationRequest(request, env) {
+export async function handlePersonalizedNotificationRequest(request, env, deps = {}) {
   const url = new URL(request.url);
   const path = url.pathname;
+  /* The clock is injectable so a preview test never depends on wall-clock hour;
+   * the worker passes its ExecutionContext here, which has no `now`. */
+  const nowMs = () => (typeof deps?.now === 'function' ? Number(deps.now()) : Date.now());
 
   /* ── student's own daily-reminder switch ─────────────────────────────────── */
   if (path === '/api/notifications/personal-pref') {
@@ -379,7 +382,7 @@ export async function handlePersonalizedNotificationRequest(request, env) {
 
   const store = new PersonalizedStore(env?.PROFILE_DB);
   if (!store.available()) return jsonResponse(request, { error: 'storage-unavailable' }, 503);
-  const { date, hour, minute } = dhakaParts(Date.now());
+  const { date, hour, minute } = dhakaParts(nowMs());
 
   /* Dry run for one student: shows the decision inputs and message, sends nothing. */
   if (path === `${PREFIX}preview` && request.method === 'GET') {
@@ -388,7 +391,7 @@ export async function handlePersonalizedNotificationRequest(request, env) {
     const prefs = await store.prefs(userId);
     const state = await store.learningState(userId, date);
     const nudged = await store.nudgedToday(userId, date);
-    const now = Date.now();
+    const now = nowMs();
     return jsonResponse(request, {
       ok: true,
       user: userId,
@@ -403,7 +406,7 @@ export async function handlePersonalizedNotificationRequest(request, env) {
 
   /* Roster view: who would get what right now. Sends nothing. */
   if (path === `${PREFIX}preview-all` && request.method === 'GET') {
-    const now = Date.now();
+    const now = nowMs();
     const users = await store.audience();
     const out = [];
     for (const userId of users) {

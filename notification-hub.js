@@ -663,21 +663,30 @@
 
   // ── boot: dashboard hydration + periodic engine ─────────────────────────────
   const boot = () => {
-    /* Phase 2: a background notification click stores {id, link} here (set by
-     * firebase-messaging-sw.js). Log the click once, then clear it. */
+    /* Phase 2: a background notification click stores {id, link} in Cache
+     * Storage (set by firebase-messaging-sw.js — a service worker has no
+     * localStorage). Log the click once, then clear it. */
+    const logClick = click => {
+      if (!click || !click.id) return;
+      fetch('/api/notifications/click', {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: String(click.id) })
+      }).catch(() => {});
+    };
+    const ahFcmClickKey = new Request('/__ahFcmClick');
+    try {
+      caches.open('ah-fcm-click').then(c => c.match(ahFcmClickKey)).then(res => {
+        if (!res) return;
+        return res.json().then(click => {
+          logClick(click);
+          return caches.open('ah-fcm-click').then(c => c.delete(ahFcmClickKey));
+        });
+      }).catch(() => {});
+    } catch (_) {}
     try {
       const raw = localStorage.getItem('ahFcmClick');
-      if (raw) {
-        localStorage.removeItem('ahFcmClick');
-        const click = JSON.parse(raw);
-        if (click && click.id) {
-          fetch('/api/notifications/click', {
-            method: 'POST', credentials: 'include',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id: String(click.id) })
-          }).catch(() => {});
-        }
-      }
+      if (raw) { localStorage.removeItem('ahFcmClick'); logClick(JSON.parse(raw)); }
     } catch (_) {}
     const lazy = fn => () => { if (!window.__ahNotifyNoAuto) fn(); };
     setTimeout(lazy(() => { evaluate(); syncState(); maybeResubscribe(); }), 8000);

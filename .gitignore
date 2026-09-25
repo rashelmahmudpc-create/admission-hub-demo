@@ -4,3 +4,6 @@ node_modules/
 
 # deploy build artifact (local only)
 dist/
+
+# agent scratch space
+.agent_tmp/

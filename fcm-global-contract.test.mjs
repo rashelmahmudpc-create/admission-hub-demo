@@ -125,14 +125,19 @@ test('inbox v6: merges the global feed, dedupes by id, taps log read + deep link
 test('hub v119: bell badge includes global unread; click logging on boot', () => {
   assert.match(HUB, /const globalUnreadCount = async/);
   assert.match(HUB, /const unread = \(await unreadCount\(\)\) \+ \(await globalUnreadCount\(\)\);/, 'badge = local + global unread');
-  assert.match(HUB, /localStorage\.getItem\('ahFcmClick'\)/, 'boot reads the stored click');
+  assert.match(HUB, /caches\.open\('ah-fcm-click'\)/, 'boot reads the stored click from Cache Storage');
   assert.match(HUB, /'\/api\/notifications\/click'/, 'boot logs the click to the API');
-  assert.match(HUB, /localStorage\.removeItem\('ahFcmClick'\)/, 'click logged once');
+  assert.match(HUB, /c\.delete\(ahFcmClickKey\)/, 'click logged once');
   assert.match(HUB, /globalUnreadCount, bellTap/, 'exported');
 });
 
 test('service worker: notificationclick stores {id: gid, link} for the app', () => {
-  assert.match(SW_MSG, /if \(nd\.gid\) self\.localStorage\.setItem\('ahFcmClick', JSON\.stringify\(\{ id: String\(nd\.gid\), link: route, at: Date\.now\(\) \}\)\);/);
+  /* A service worker has no localStorage; the click is written to Cache
+   * Storage, and the write rides inside event.waitUntil so it survives the
+   * worker being terminated after the event. */
+  assert.match(SW_MSG, /caches\.open\('ah-fcm-click'\)\.then\(\(c\) => c\.put\(/);
+  assert.match(SW_MSG, /new Response\(JSON\.stringify\(\{ id: String\(nd\.gid\), link: route, at: Date\.now\(\) \}\)\)/);
+  assert.ok(!/self\.localStorage/.test(SW_MSG), 'a service worker must not touch localStorage');
   assert.match(SW_MSG, /event\.notification\.close\(\);/, 'closes the notification (unchanged behavior)');
 });
 

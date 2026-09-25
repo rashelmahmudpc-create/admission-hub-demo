@@ -322,7 +322,9 @@ test('g: no active device means no work at all', async () => {
 
 const call = (path, env, method = 'GET', token = 'admin-secret-token') => {
   const req = new Request(`https://x.test${path}`, { method, headers: token ? { Authorization: `Bearer ${token}` } : {} });
-  return T.handlePersonalizedNotificationRequest(req, env);
+  /* Pin the route's clock to NOW (inside the 08:00–22:00 Dhaka send window) so
+   * preview assertions do not depend on the hour the suite happens to run. */
+  return T.handlePersonalizedNotificationRequest(req, env, { now: () => NOW });
 };
 
 test('g: personal routes are admin-only', async () => {

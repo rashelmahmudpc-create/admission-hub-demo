@@ -32,13 +32,21 @@ self.addEventListener('notificationclick', (event) => {
   const nd = event.notification.data || {};
   const route = String(nd.link || 'dashboard').replace(/^#?\/?/, '');
   /* Phase 2: global notifications carry `gid` — store the click for the app
-   * (which logs it to /api/notifications/click on next boot/route). */
-  try {
-    if (nd.gid) self.localStorage.setItem('ahFcmClick', JSON.stringify({ id: String(nd.gid), link: route, at: Date.now() }));
-  } catch (_) {}
+   * (which logs it to /api/notifications/click on next boot/route).
+   * Service workers have no localStorage, so this uses Cache Storage, which the
+   * page reads with the same key. The write is inside event.waitUntil so the
+   * entry survives the worker being terminated once this event completes. */
   const url = String(nd.src || '').startsWith('fcm') ? `./#${route}` : (nd.url || './');
-  event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
-    for (const client of list) { if ('focus' in client) { try { client.navigate(url); } catch (_) {} return client.focus(); } }
-    return self.clients.openWindow(url);
-  }));
+  event.waitUntil(Promise.all([
+    nd.gid
+      ? caches.open('ah-fcm-click').then((c) => c.put(
+          new Request('/__ahFcmClick'),
+          new Response(JSON.stringify({ id: String(nd.gid), link: route, at: Date.now() }))
+        )).catch(() => {})
+      : Promise.resolve(),
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+      for (const client of list) { if ('focus' in client) { try { client.navigate(url); } catch (_) {} return client.focus(); } }
+      return self.clients.openWindow(url);
+    })
+  ]));
 });
