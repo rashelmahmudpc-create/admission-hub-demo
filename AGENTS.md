@@ -801,10 +801,14 @@ other module loads the Firebase SDK or calls `logEvent`. Full reference:
   `admission:route-rendered`; session/user context rides
   `admissionhub:authchange`; learning completions ride `admission:activity`
   (`TEST_COMPLETED`, `REVISION_COMPLETED`).
-- **Dormant by default.** `FIREBASE_MEASUREMENT_ID` is not set, so
-  `/api/notifications/config` returns no `measurementId` and the service stays in
-  console mode — nothing is sent anywhere. Add the Worker var to switch GA4 on
-  with no code change (see `docs/ANALYTICS-FOUNDATION.md` §11).
+- **Live, via a code default.** `fcm-notification.mjs` ships
+  `DEFAULT_MEASUREMENT_ID = 'G-06DEZGLFJE'` (the `admission-hub-web` stream), so
+  `/api/notifications/config` returns a `measurementId` and GA4 transmits. The
+  planned `FIREBASE_MEASUREMENT_ID` binding is **not** used: the Worker sits on
+  the Workers Free 64-variable ceiling, and a 65th is rejected on deploy
+  (`code: 10055`). Bind `FIREBASE_MEASUREMENT_ID` as a dashboard secret only
+  after freeing a slot — an env value overrides the default. A measurement ID is
+  public, so the default leaks nothing.
 - **SDK.** `sdk/firebase-analytics-compat.js` is self-hosted (download from
   gstatic 10.12.2), matching the messaging SDK pattern; gstatic is the fallback.
 - **Bump discipline.** `analytics-service.js` is in `APP_SHELL`, so after editing
