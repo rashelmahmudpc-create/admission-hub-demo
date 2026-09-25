@@ -325,6 +325,16 @@ accepts `{ counts }`, so a Data API response can be fed straight in.
   MCQ attempt (verdict + real think-time), the privacy of that attempt, the
   no-double-count on re-answer, and the `quiz_complete` on the result screen.
 - Full suite: `npm run test:native-auth` → **535/535 + 49/49 + 12/12**.
+- **Live end-to-end (production, `admissionhub.pages.dev`, v288).** A headless
+  Chromium run drove the real signed-in course path — scroll to intersect each
+  lesson, tap every "পড়া শেষ", then answer all 60 MCQs. The on-device ledger
+  recorded the whole funnel:
+  `course_view 3, course_start 1, lesson_view 8, lesson_start 8,
+  lesson_complete 8, course_complete 1, quiz_start 1, question_attempt 60,
+  quiz_complete 1` (95 rows), and `learningInsights()` reported
+  `quality.ok = true` with no missing, incomplete, or duplicate events. This is
+  the M3 confirmation: the course MCQ engine emits per-question attempts and a
+  quiz completion on the live site, not just under jsdom.
 - Shell build `v288-learning-insights-20260925`; `analytics-service.js` query
   `analytics-p2-v2-insights`; `source-course-tool.js` query
   `v26-course-mcq-analytics`. `scripts/cache-bump.mjs` now also bumps
