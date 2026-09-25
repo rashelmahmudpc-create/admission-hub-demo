@@ -677,13 +677,19 @@ do the KV writes; the engine only decides whether they may happen.
   before reading a body or touching KV.
 - `agentStatus` advertises `actions: { version: 'act-v1', enabled, confirmTtlMs,
   declared }` — shape only, never a capability.
-- **The confirmation UI is the chat's "yes/no" card.** An explicit
-  personalization request in the student's own words (`actParseIntent`) is sent to
-  `/api/ai/actions/propose`; the reply becomes a pending card that shows the
-  *server-built* `summary` and two choices. Nothing is written until the student
-  taps "yes", which confirms with the single-use token; "no" resolves locally and
-  calls nothing. `offerAction()` falls back to a normal answer when the layer is
-  off or the action is denied, so the chat still works without writes. A proposal
-  older than its TTL is retired locally rather than round-tripped. The UI never
-  touches `aiprefs:` itself — the Worker is the only writer.
+- **Low-risk preferences confirm themselves; the card is for everything else.**
+  An explicit personalization request in the student's own words (`actParseIntent`)
+  is sent to `/api/ai/actions/propose`; the reply becomes a card. `prefs.write` is
+  listed in `AUTO_CONFIRM_ACTIONS`, so it is confirmed in the same pass and the
+  card only ever paints the terminal outcome — saying "উত্তর ছোট করে দাও" simply
+  applies the change, with no tap. Every other action (anything not on that
+  one-entry allowlist) renders the *server-built* `summary` with yes/no buttons
+  and waits: nothing is written until the student taps "yes", which confirms with
+  the single-use token; "no" resolves locally and calls nothing. If an
+  auto-confirm never reaches the Worker the card stays pending and tappable and
+  warns offline — never a false success. `offerAction()` falls back to a normal
+  answer when the layer is off or the action is denied, so the chat still works
+  without writes. A proposal older than its TTL is retired locally rather than
+  round-tripped. The UI never touches `aiprefs:` itself — the Worker is the only
+  writer, and the propose/confirm handshake is unchanged.
 
