@@ -1472,6 +1472,8 @@ const T = {
   c_title:{bn:"ক্যাম্পেইন",en:"Campaigns"},
   c_sub:{bn:"একাধিক বার্তার সিকোয়েন্স, টাইমলাইন সহ",en:"Multi-message sequences with a timeline"},
   c_new:{bn:"নতুন ক্যাম্পেইন",en:"New campaign"},
+  preview_badge:{bn:"প্রিভিউ",en:"Preview"},
+  c_preview_note:{bn:"এটি শুধু একটি প্রিভিউ — এর পেছনে এখনো কোনো ব্যাকএন্ড নেই। ক্যাম্পেইন তৈরি বা অ্যাক্টিভেট করলে তা কেবল এই ব্রাউজারে থাকে এবং রিফ্রেশ করলে মুছে যায়। কোনো সত্যিকারের বার্তা পাঠানো হয় না।",en:"This is a preview only — there is no backend yet. Creating or activating a campaign stays in this browser only and is lost on refresh. No real messages are sent."},
   c_timeline:{bn:"টাইমলাইন",en:"Timeline"},
   c_messages:{bn:"বার্তা",en:"Messages"},
   c_day:{bn:"দিন",en:"Day"},
@@ -1577,6 +1579,7 @@ const T = {
   au_title:{en:"Automations",bn:"অটোমেশন"},
   au_sub:{bn:"ট্রিগার → শর্ত → অ্যাকশন",en:"Trigger → condition → action"},
   au_new:{bn:"নতুন অটোমেশন",en:"New automation"},
+  au_preview_note:{bn:"এটি শুধু একটি প্রিভিউ — এর পেছনে এখনো কোনো ব্যাকএন্ড নেই। অটোমেশন তৈরি বা চালু করলে তা কেবল এই ব্রাউজারে থাকে এবং রিফ্রেশ করলে মুছে যায়। কোনো সত্যিকারের অটোমেশন চলে না।",en:"This is a preview only — there is no backend yet. Creating or enabling an automation stays in this browser only and is lost on refresh. No real automation runs."},
   au_trigger:{bn:"ট্রিগার",en:"Trigger"},
   au_condition:{bn:"শর্ত",en:"Condition"},
   au_action:{bn:"অ্যাকশন",en:"Action"},
@@ -3184,6 +3187,8 @@ function campaignsViewHTML(){
   return '<div class="ns-page-head"><div><h1>'+esc(t('c_title'))+'</h1><p>'+esc(t('c_sub'))+'</p></div>'+
     '<div class="ns-page-head-actions">'+
     '<button class="ns-btn ns-btn-primary ns-btn-sm" data-action="new-campaign">'+ic('plus',16)+esc(t('c_new'))+'</button></div></div>'+
+  
+  '<div class="ns-note ns-note-info" style="margin-bottom:14px">'+ic('info',16)+'<span>'+esc(t('c_preview_note'))+'</span></div>'+
   '<div class="ns-camp-grid">'+
     '<div class="ns-stack">'+
       (state.campaigns.length?groups.map(g=>{
@@ -3474,6 +3479,8 @@ function automationsViewHTML(){
   return '<div class="ns-page-head"><div><h1>'+esc(t('au_title'))+'</h1><p>'+esc(t('au_sub'))+'</p></div>'+
     '<div class="ns-page-head-actions">'+
     '<button class="ns-btn ns-btn-primary ns-btn-sm" data-action="new-automation">'+ic('plus',16)+esc(t('au_new'))+'</button></div></div>'+
+  '<div class="ns-note ns-note-info" style="margin-bottom:14px">'+ic('info',16)+'<span>'+esc(t('au_preview_note'))+'</span></div>'+
+  '<div class="ns-stack">'+
   '<div class="ns-stack">'+
     (state.automations.length?state.automations.map(au=>{
       const st=au.status;
