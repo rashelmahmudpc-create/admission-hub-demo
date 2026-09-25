@@ -968,3 +968,21 @@ and (later) in an admin surface.
   lesson section to zero height and starves the lesson `IntersectionObserver`.
   A headless check of `lesson_view`/`lesson_start` must remove that class and
   un-hide `#app` first; otherwise it reports a false "missing events" failure.
+- **A background push reaches the SW wrapped in `data.FCM_MSG`.** When a payload
+  carries a `notification` block (every sender here sets one), the Firebase SDK
+  shows the notification itself and sets `notification.data = { FCM_MSG: <payload> }`
+  — see `t.data={[ut]:e}` with `ut="FCM_MSG"` in `sdk/firebase-messaging-compat.js`.
+  Our `link`/`gid`/`src` therefore live at `data.FCM_MSG.data.*`, not at the top
+  level. Reading them directly made every tap fall through to `./` and silently
+  dropped global click logging. Unwrap first, then keep the flat shape as a
+  fallback. `sw.js` is the exception: it builds its own flat `data` before
+  `showNotification`, so it needs no unwrap.
+- **Substring assertions cannot test a service worker branch.** The SW contract
+  test only grepped the source for expected strings, so a wrong condition passed
+  for months. Run the handler instead: `notification-sw-routing.test.mjs` executes
+  the real `notificationclick` in a `vm` sandbox and asserts the URL opened.
+- **The Pages UI deploys only from the manual workflow.** Pushing to `main` runs
+  the bundle *guard* (`cf-pages.yml`, build-only) and GitHub's own
+  `pages build and deployment`, but neither publishes to Cloudflare. Run
+  `Deploy Pages UI + Worker (manual)` with `confirmation=DEPLOY`; the API
+  dispatch needs the `inputs` field or it returns 422.
