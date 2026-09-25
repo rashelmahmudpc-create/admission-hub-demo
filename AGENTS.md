@@ -889,6 +889,14 @@ Milestones M2 and M3 ship in this build (`docs/PHASE-02-LEARNING-ANALYTICS.md`
   ("পড়া শেষ ✓"). `source-course-tool.js` mirrors that UI (observer for
   `lesson_view`/`lesson_start`, delegated click for `lesson_complete`) — never
   re-implement completion.
+- **Never gate a tall element on an intersection ratio.** A lesson section is
+  taller than the phone viewport (measured 3270px vs ~844px), so
+  `threshold: 0.25` is unreachable and the event never fires — while
+  `lesson_complete` still works, so the gap is invisible in tests. Keep
+  `threshold: 0`. jsdom has no `IntersectionObserver`, so the suite silently
+  takes the no-observer fallback; stub it when a test must cover the real path
+  (see `m2-7`/`m2-8`). Verify behavioural claims like this against the live site
+  in a headless browser, not only against the suite.
 - **Filter scripts by type before `new Function()`.** Course HTML also carries a
   `<script type="application/ld+json">` SEO block. Concatenating it into the
   executable bundle throws `SyntaxError: Unexpected token ':'` and **no course

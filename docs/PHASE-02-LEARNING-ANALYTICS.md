@@ -155,6 +155,16 @@ completion. It mirrors the source's own UI:
   `LESSON_VIEW` + `LESSON_START` once per lesson, the first time it is scrolled
   into view. No observer (old browser / test DOM) falls back to counting all
   lessons as viewed.
+  - **Threshold must stay 0.** A lesson section is routinely taller than the
+    phone viewport — sandhi lesson 1 measured **3270px** against an ~844px
+    viewport — so `threshold: 0.25` with a `-40%` bottom margin could never be
+    satisfied. `intersectionRatio` stayed `0` and `lesson_view`/`lesson_start`
+    fired for **nobody** on a real device, while `lesson_complete` still worked.
+    The config is now `threshold: 0` with `-25%`; `markViewed` de-dupes, so the
+    looser trigger cannot double-count. Found by driving the live site in a
+    headless browser, not by the suite: jsdom has no `IntersectionObserver`, so
+    every test was silently taking the no-observer fallback. `m2-7`/`m2-8` now
+    stub the observer to pin the threshold and the emitted signals.
 - A delegated `click` listener on the host reads `button.done-btn[data-lesson]`
   after the source's own handler toggles `.on`, and fires `LESSON_COMPLETE`
   with `lesson_number`, `completion_percent: 100` and a `duration` (seconds since
@@ -196,12 +206,13 @@ the first lesson of a course. The key now joins **every required parameter**
 - `analytics-service.test.mjs` **32/32** (was 27): a28–a32 cover per-lesson
   dedupe, `course_complete`, repeatable `question_attempt` with timing, and the
   missing-required-param rejection.
-- `source-course-lessons.test.mjs` **6/6**: boots the real tool against the real
-  sandhi HTML in jsdom, asserts the lesson selectors line up, and drives the
-  actual "পড়া শেষ" buttons to completion.
-- Full suite: `npm run test:native-auth` → **535/535 + 32/32 + 6/6**. Shell build
-  bumped to `v286-lesson-quiz-analytics-20260925`; `source-course-tool.js` cache
-  query bumped to `v24-lesson-analytics`.
+- `source-course-lessons.test.mjs` **8/8**: boots the real tool against the real
+  sandhi HTML in jsdom, asserts the lesson selectors line up, drives the actual
+  "পড়া শেষ" buttons to completion, and stubs `IntersectionObserver` to pin the
+  threshold-0 config and the `lesson_view`/`lesson_start` signals.
+- Full suite: `npm run test:native-auth` → **535/535 + 32/32 + 8/8**. Shell build
+  bumped to `v287-lesson-observer-threshold-20260925`; `source-course-tool.js`
+  cache query bumped to `v25-lesson-observer`.
 
 ---
 
