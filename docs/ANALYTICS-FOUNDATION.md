@@ -135,21 +135,23 @@ id, e.g. `v284-analytics-foundation-20260924`), plus `environment`. Bump
 `EVENT_VERSION` when the dictionary changes shape in a way old dashboards would
 misread.
 
-## 11. Switching GA4 on (owner step, once)
+## 11. Switching GA4 on (already done, in code)
 
-The service is finished and inert-safe. To make data actually flow into GA4:
+The measurement ID for the `admission-hub-web` stream is `G-06DEZGLFJE`, read
+from the project's own web-app config. It ships as `DEFAULT_MEASUREMENT_ID` in
+`fcm-notification.mjs`.
 
-1. Firebase Console → project `admission-hub-fcm` → **Project settings** →
-   **Integrations / Analytics** → enable Google Analytics if not already on, or
-   create a **Web** stream and copy its **Measurement ID** (`G-XXXXXXXXXX`).
-2. Add the Worker variable `FIREBASE_MEASUREMENT_ID` = that ID (Cloudflare
-   dashboard → Workers → Settings → Variables, or `wrangler.toml` `[vars]`).
-3. Redeploy. `/api/notifications/config` will begin returning `measurementId`,
-   and GA4 transmission turns on by itself — no code change.
+The original plan was a `FIREBASE_MEASUREMENT_ID` Worker variable. That is not
+used, because this Worker already sits on the Workers Free **64-variable
+ceiling** (verified live: 15 plain-text + 49 secrets = 64), and a 65th binding
+is rejected on deploy with `code: 10055`. A GA4 measurement ID is public by
+design — every browser receives it — so a code default leaks nothing. If the
+stream ever changes, bind `FIREBASE_MEASUREMENT_ID` as a dashboard secret *after*
+freeing a slot; an env value always wins over the default.
 
-Until step 2, the app runs in console mode and **nothing is sent anywhere**.
-This is deliberate: it is better to collect nothing than to build a property on
-the wrong stream.
+To confirm it is live: `GET /api/notifications/config` returns
+`webConfig.measurementId`. Once present, the client transmits by itself — no
+Pages redeploy is needed, since the config is fetched at runtime.
 
 ## 12. Tests
 
