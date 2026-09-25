@@ -11764,9 +11764,10 @@ var jsonResponse3 = (request, obj, status = 200) => new Response(JSON.stringify(
     "Cache-Control": "no-store"
   }
 });
-async function handlePersonalizedNotificationRequest(request, env) {
+async function handlePersonalizedNotificationRequest(request, env, deps = {}) {
   const url = new URL(request.url);
   const path = url.pathname;
+  const nowMs = () => typeof deps?.now === "function" ? Number(deps.now()) : Date.now();
   if (path === "/api/notifications/personal-pref") {
     if (request.method === "OPTIONS") return new Response(null, { status: 204 });
     const store2 = new PersonalizedStore(env?.PROFILE_DB);
@@ -11799,14 +11800,14 @@ async function handlePersonalizedNotificationRequest(request, env) {
   if (!env.ADMIN_TOKEN || token !== env.ADMIN_TOKEN) return jsonResponse3(request, { error: "forbidden" }, 403);
   const store = new PersonalizedStore(env?.PROFILE_DB);
   if (!store.available()) return jsonResponse3(request, { error: "storage-unavailable" }, 503);
-  const { date, hour, minute } = dhakaParts(Date.now());
+  const { date, hour, minute } = dhakaParts(nowMs());
   if (path === `${PREFIX}preview` && request.method === "GET") {
     const userId = String(url.searchParams.get("user") || "").trim();
     if (!userId) return jsonResponse3(request, { error: "missing-user" }, 400);
     const prefs = await store.prefs(userId);
     const state = await store.learningState(userId, date);
     const nudged = await store.nudgedToday(userId, date);
-    const now = Date.now();
+    const now = nowMs();
     return jsonResponse3(request, {
       ok: true,
       user: userId,
@@ -11819,7 +11820,7 @@ async function handlePersonalizedNotificationRequest(request, env) {
     });
   }
   if (path === `${PREFIX}preview-all` && request.method === "GET") {
-    const now = Date.now();
+    const now = nowMs();
     const users = await store.audience();
     const out = [];
     for (const userId of users) {
