@@ -5093,7 +5093,7 @@ async function parseAuthenticatorData(bytes, { rpId, registration, cryptoImpl })
 function derIntegerTo32(bytes) {
   let value = bytes;
   while (value.length > 32 && value[0] === 0) value = value.slice(1);
-  if (!value.length || value.length > 32 || value[0] & 128) fail4();
+  if (!value.length || value.length > 32) fail4();
   const output = new Uint8Array(32);
   output.set(value, 32 - value.length);
   return output;
@@ -9561,6 +9561,8 @@ var __plannerTest = Object.freeze({
 
 // admin-passkey.mjs
 var PASSKEY_RP_ID2 = "admissionhub.pages.dev";
+var PASSKEY_RP_NAME = "AdmissionHub Admin";
+var PASSKEY_USER_ID = "admissionhub-admin";
 var PASSKEY_ORIGINS = Object.freeze([
   "https://admissionhub.pages.dev",
   "https://admission-gk.admissionhub.workers.dev"
@@ -9698,6 +9700,7 @@ async function handleRegister(request, env) {
   }
   const record = {
     credentialId: verified.credentialId,
+    userHandle: bytesToBase64Url3(encoder5.encode(PASSKEY_USER_ID)),
     publicKeyJwk: verified.publicKeyJwk,
     counter: verified.counter,
     backupEligible: verified.backupEligible,
@@ -9760,20 +9763,21 @@ async function handleAdminPasskeyRequest(request, env) {
       createdAt: Date.now()
     });
     const credentials2 = await listCredentials(env);
+    const rp = { id: PASSKEY_RP_ID2, name: PASSKEY_RP_NAME };
     return json4({
       challengeId,
       options: {
         challenge,
-        rpId: PASSKEY_RP_ID2,
         timeout: 12e4,
         userVerification: "required",
         ...purpose === "register" ? {
-          user: { id: bytesToBase64Url3(encoder5.encode("admissionhub-admin")), name: "admin@admissionhub", displayName: "AdmissionHub Admin" },
+          rp,
+          user: { id: bytesToBase64Url3(encoder5.encode(PASSKEY_USER_ID)), name: "admin@admissionhub", displayName: "AdmissionHub Admin" },
           pubKeyCredParams: [{ type: "public-key", alg: -7 }, { type: "public-key", alg: -257 }],
           authenticatorSelection: { residentKey: "preferred", userVerification: "required" },
           attestation: "none",
           excludeCredentials: credentials2.map((c) => ({ type: "public-key", id: c.credentialId }))
-        } : { allowCredentials: credentials2.map((c) => ({ type: "public-key", id: c.credentialId, transports: c.transports || [] })) }
+        } : { rpId: PASSKEY_RP_ID2, allowCredentials: credentials2.map((c) => ({ type: "public-key", id: c.credentialId, transports: c.transports || [] })) }
       }
     });
   }
