@@ -1408,8 +1408,11 @@ const T = {
   aud_breakdown_course:{bn:"কোর্স অনুযায়ী",en:"By course"},
   aud_breakdown_uni:{bn:"বিশ্ববিদ্যালয় অনুযায়ী",en:"By university"},
   aud_breakdown_engage:{bn:"এনগেজমেন্ট অনুযায়ী",en:"By engagement"},
-  aud_sample:{bn:"নমুনা অডিয়েন্স",en:"Sample audience"},
+  aud_sample:{bn:"অডিয়েন্স প্রিভিউ",en:"Audience preview"},
   aud_sample_hint:{bn:"সংযুক্ত তথ্য — পৃথক শিক্ষার্থীর গোপন তথ্য দেখানো হয় না",en:"Aggregated only — private student data is never exposed"},
+  aud_live_hint:{bn:"সংখ্যা সার্ভার থেকে লাইভ আসে",en:"Counts come live from the server"},
+  t_need_content:{bn:"সেভ করার আগে টাইটেল ও বডি লিখুন",en:"Write a title and body before saving"},
+  t_saved:{bn:"এই সেশনে টেমপ্লেট সেভ হয়েছে",en:"Template saved for this session"},
   aud_est_by_device:{bn:"ডিভাইস অনুযায়ী",en:"By device"},
   aud_new_segment:{bn:"নতুন সেগমেন্ট",en:"New segment"},
   prev_title:{bn:"লাইভ প্রিভিউ",en:"Live preview"},
@@ -1451,7 +1454,14 @@ const T = {
   val_channel_bad:{bn:"SMS চ্যানেলের জন্য ফোন নম্বর তালিকা প্রয়োজন",en:"The SMS channel needs a phone number list"},
   val_translation:{bn:"ইংরেজি অনুবাদ অনুপস্থিত",en:"English translation is missing"},
   val_attachment_ok:{bn:"সংযুক্তি সীমার মধ্যে",en:"Attachment is within limits"},
-  val_attachment_big:{bn:"ছবি ২ MB সীমা ছাড়িয়েছে",en:"Image exceeds the 2 MB limit"},
+  val_attachment_big:{bn:"ছবি ৪ MB সীমা ছাড়িয়েছে",en:"Image exceeds the 4 MB limit"},
+  f_image_upload:{bn:"ছবি আপলোড",en:"Upload image"},
+  f_image_upload_hint:{bn:"ফোন থেকে ছবি বাছুন বা ক্যামেরায় তুলুন (সর্বোচ্চ ৪ MB)",en:"Pick from your phone or camera (max 4 MB)"},
+  img_uploading:{bn:"আপলোড হচ্ছে…",en:"Uploading…"},
+  img_uploaded:{bn:"ছবি আপলোড হয়েছে",en:"Image uploaded"},
+  img_upload_failed:{bn:"ছবি আপলোড হয়নি",en:"Image upload failed"},
+  img_too_large:{bn:"ছবি অনেক বড় — ৪ MB সীমা",en:"Image too large — 4 MB limit"},
+  img_remove:{bn:"ছবি সরান",en:"Remove image"},
   val_permission:{bn:"পারমিশন যাচাই হয়েছে",en:"Permission verified"},
   val_approval_ok:{bn:"অ্যাডমিন অনুমোদন সম্পন্ন",en:"Admin approval recorded"},
   val_approval_pending:{bn:"অ্যাডমিন অনুমোদন প্রয়োজন",en:"Admin approval required"},
@@ -1546,7 +1556,8 @@ const T = {
   a_failures:{bn:"ব্যর্থতার কারণ",en:"Failure reasons"},
   a_campaign_perf:{bn:"ক্যাম্পেইন পারফরম্যান্স",en:"Campaign performance"},
   a_ab:{bn:"A/B তুলনা",en:"A/B comparison"},
-  a_ab_note:{en:"SAMPLE ডেটা — প্রকৃত পারফরম্যান্স নয়।",bn:"SAMPLE data — not real performance."},
+  a_ab_note:{en:"Live A/B results",bn:"লাইভ A/B ফলাফল"},
+  a_no_failures:{en:"No failures recorded",bn:"কোনো ব্যর্থতা নেই"},
   a_cmp_prev:{bn:"আগের সময়ের তুলনায়",en:"vs previous period"},
   a_hist:{bn:"ঐতিহাসিক তুলনা",en:"Historical comparison"},
   a_open_rate:{bn:"ওপেন রেট",en:"Open rate"},
@@ -1612,7 +1623,6 @@ const T = {
   auth_invalid_desc:{bn:"টোকেনটি স্বীকৃত নয়। আবার চেক করে চেষ্টা করুন।",en:"That token is not recognized. Check it and try again."},
   auth_success:{bn:"যাচাই সম্পন্ন",en:"Verified"},
   auth_note:{bn:"টোকেন সেশন-মাত্র; প্রবেশের আগে লাইভ সার্ভিসে যাচাই করা হয়।",en:"Session-only token, verified against the live service before entry."},
-  auth_demo:{bn:"ডেমো টোকেন ব্যবহার করুন",en:"Use demo token"},
   auth_passkey:{bn:"Passkey দিয়ে ঢুকুন",en:"Sign in with passkey"},
   auth_passkey_wait:{bn:"Passkey যাচাই হচ্ছে…",en:"Verifying passkey…"},
   auth_passkey_fail:{bn:"Passkey মেলেনি",en:"Passkey did not match"},
@@ -1654,6 +1664,13 @@ const T = {
   channel_inapp:{bn:"ইন-অ্যাপ",en:"In-app"},
   channel_email:{bn:"ইমেইল",en:"Email"},
   sim_data:{en:"SAMPLE",bn:"SAMPLE"},
+  live_badge:{en:"Live",bn:"লাইভ"},
+  live_empty_title:{en:"No data yet",bn:"এখনো কোনো ডেটা নেই"},
+  live_empty_desc:{en:"Send your first notification — real numbers appear here.",en:"Send your first notification — real numbers appear here."},
+  live_empty_bn:{en:"প্রথম নোটিফিকেশন পাঠান — তারপর আসল সংখ্যা এখানে দেখাবে।",bn:"প্রথম নোটিফিকেশন পাঠান — তারপর আসল সংখ্যা এখানে দেখাবে।"},
+  live_reach_devices:{en:"Registered devices",bn:"নিবন্ধিত ডিভাইস"},
+  live_no_breakdown:{en:"No breakdown available yet",bn:"এখনো কোনো ব্রেকডাউন নেই"},
+  live_server_hint:{en:"Live from the server",bn:"সার্ভার থেকে লাইভ"},
   none:{en:"—",bn:"—"},
   students:{bn:"শিক্ষার্থী",en:"students"},
   recipients:{bn:"প্রাপক",en:"recipients"},
@@ -1749,8 +1766,8 @@ function clockTime(d){
 }
 
 const SAMPLE_DATA = {
-  admin:{ name:{bn:"রাতুল হাসান",en:"Ratul Hasan"}, role:{bn:"প্রধান অ্যাডমিন",en:"Primary admin"}, email:"alvisidratul@gmail.com", initials:"RH" },
-  quota:{ dailyCap:40000, used:18320, deliveryRate:0.971, window:{bn:"আজ ০০:০০–২৪:০০ (Asia/Dhaka)",en:"Today 00:00–24:00 (Asia/Dhaka)"} },
+  admin:{ name:{bn:"জায়ান",en:"Zayan"}, role:{bn:"অ্যাডমিন",en:"Admin"}, email:"rashelmahmudpc@gmail.com", initials:"Z" },
+  quota:{ dailyCap:10, used:0, deliveryRate:0, window:{bn:"আজ (Asia/Dhaka)",en:"Today (Asia/Dhaka)"} },
 
   notificationTypes:[
     { key:"new-content",   bn:"নতুন কনটেন্ট",      en:"New content",     icon:"book",      desc:{bn:"নতুন লেসন বা প্রশ্ন যোগ",en:"New lesson or question set"} },
@@ -1769,11 +1786,11 @@ const SAMPLE_DATA = {
   ],
 
   segments:[
-    { key:"all_students",       bn:"সব শিক্ষার্থী",          en:"All Students",        count:26840, desc:{bn:"সক্রিয় ও নিষ্ক্রিয় সব",en:"Active and inactive"} },
-    { key:"beginner",           bn:"বিগিনার",                en:"Beginner",            count:11250, desc:{bn:"০–৩০% সিলেবাস",en:"0–30% syllabus"} },
-    { key:"intermediate",       bn:"ইন্টারমিডিয়েট",         en:"Intermediate",        count:8930,  desc:{bn:"৩০–৭০% সিলেবাস",en:"30–70% syllabus"} },
-    { key:"pro",                bn:"প্রো",                   en:"Pro",                 count:3470,  desc:{bn:"৭০%+ ও দৈনিক সক্রিয়",en:"70%+ and daily active"} },
-    { key:"course_subscribers", bn:"কোর্স সাবস্ক্রাইবার",     en:"Course Subscribers",  count:6120,  desc:{bn:"যেকোনো পেইড কোর্সে",en:"In any paid course"} }
+    { key:"all_students",       bn:"সব শিক্ষার্থী",          en:"All Students",        desc:{bn:"সক্রিয় ও নিষ্ক্রিয় সব",en:"Active and inactive"} },
+    { key:"beginner",           bn:"বিগিনার",                en:"Beginner",            desc:{bn:"০–৩০% সিলেবাস",en:"0–30% syllabus"} },
+    { key:"intermediate",       bn:"ইন্টারমিডিয়েট",         en:"Intermediate",        desc:{bn:"৩০–৭০% সিলেবাস",en:"30–70% syllabus"} },
+    { key:"pro",                bn:"প্রো",                   en:"Pro",                 desc:{bn:"৭০%+ ও দৈনিক সক্রিয়",en:"70%+ and daily active"} },
+    { key:"course_subscribers", bn:"কোর্স সাবস্ক্রাইবার",     en:"Course Subscribers",  desc:{bn:"যেকোনো পেইড কোর্সে",en:"In any paid course"} }
   ],
 
   universities:[
@@ -1829,366 +1846,36 @@ const SAMPLE_DATA = {
   ],
 
   analytics:{
-    sentToday:18320, delivered:17790, queued:640, failed:46, opened:9310, clicked:3820,
-    activeCampaigns:3, drafts:7, scheduled:12,
-    openRate:0.523, clickRate:0.215,
-    reach:{estimated:24150},
-    breakdownCourse:[
-      {bn:"ইংরেজি",en:"English",n:6240},{bn:"পদার্থবিজ্ঞান",en:"Physics",n:5310},
-      {bn:"রসায়ন",en:"Chemistry",n:4180},{bn:"উচ্চতর গণিত",en:"Higher Math",n:3620},
-      {bn:"সাধারণ জ্ঞান",en:"General Knowledge",n:2410},{bn:"বাংলা",en:"Bangla",n:1020}
-    ],
-    breakdownUniversity:[
-      {bn:"RU",en:"RU",n:7800},{bn:"DU",en:"DU",n:6420},{bn:"JU",en:"JU",n:3180},
-      {bn:"BUET",en:"BUET",n:1540},{bn:"SUST",en:"SUST",n:1210},{bn:"অন্যান্য",en:"Others",n:4000}
-    ],
-    breakdownEngagement:[
-      {key:"high",n:7340,color:"var(--brand)"},
-      {key:"medium",n:9120,color:"var(--blue)"},
-      {key:"low",n:4790,color:"var(--coral)"}
-    ],
-    breakdownDevice:[
-      {bn:"Android",en:"Android",n:19840},{bn:"iOS",en:"iOS",n:4310},{bn:"ওয়েব",en:"Web",n:2690}
-    ],
-    series7:[
-      {d:6,sent:16200,delivered:15740,opened:8120,clicked:3410},
-      {d:5,sent:14800,delivered:14390,opened:7210,clicked:3010},
-      {d:4,sent:17400,delivered:16930,opened:8970,clicked:3820},
-      {d:3,sent:15900,delivered:15420,opened:8040,clicked:3260},
-      {d:2,sent:18900,delivered:18360,opened:9760,clicked:4180},
-      {d:1,sent:17100,delivered:16620,opened:8680,clicked:3620},
-      {d:0,sent:18320,delivered:17790,opened:9310,clicked:3820}
-    ],
-    channelPerf:[
-      {key:"push",reach:21340,delivered:20730,opened:10240,clicked:4210},
-      {key:"inapp",reach:24150,delivered:24150,opened:14620,clicked:6890},
-      {key:"email",reach:11200,delivered:10640,opened:3980,clicked:1310}
-    ],
-    failureReasons:[
-      {code:"invalid_target_url",bn:"টার্গেট URL সঠিক নয় (ডিপ লিংক স্কিম মেলেনি)",en:"Invalid target URL (deep-link scheme mismatch)",n:21},
-      {code:"unresolved_variable",bn:"পার্সোনালাইজেশন ভেরিয়েবল মেলেনি",en:"Unresolved personalization variable",n:14},
-      {code:"device_unreachable",bn:"ডিভাইসে পৌঁছানো যায়নি (অ্যাপ আনইনস্টল)",en:"Device unreachable (app uninstalled)",n:8},
-      {code:"quota_exceeded",bn:"চ্যানেল কোটা শেষ",en:"Channel quota exhausted",n:3}
-    ],
-    ab:{a:{sent:6040,opened:3240,clicked:1410,label:{bn:"ভ্যারিয়েন্ট A",en:"Variant A"}},b:{sent:6020,opened:3480,clicked:1620,label:{bn:"ভ্যারিয়েন্ট B",en:"Variant B"}}}
+    sentToday:0, delivered:0, queued:0, failed:0, opened:0, clicked:0,
+    activeCampaigns:0, drafts:0, scheduled:0,
+    openRate:0, clickRate:0,
+    reach:{estimated:0},
+    breakdownCourse:[],
+    breakdownUniversity:[],
+    breakdownEngagement:[],
+    breakdownDevice:[],
+    series7:[],
+    channelPerf:[],
+    failureReasons:[],
+    ab:{a:{label:{bn:'A',en:'A'},sent:0,opened:0,clicked:0},b:{label:{bn:'B',en:'B'},sent:0,opened:0,clicked:0}}
   },
 
-  sent:[
-    { id:"nf_2841", status:"sent", type:"important", audience:"all_students", channels:["push","inapp"],
-      title:{bn:"RU ভর্তি পরীক্ষার তারিখ ঘোষিত",en:"RU admission exam date announced"},
-      body:{bn:"রাজশাহী বিশ্ববিদ্যালয়ের ভর্তি পরীক্ষা ১০ নভেম্বর অনুষ্ঠিত হবে। এখনই সময়সূচি দেখে নিন।",en:"Rajshahi University admission test will be held on 10 November. Review the schedule now."},
-      imageUrl:"", targetUrl:"admissionhub://universities/RU", cta:{bn:"তারিখ দেখুন",en:"View date"},
-      sentAt:hoursAgo(2), createdAt:hoursAgo(26), scheduledFor:hoursAgo(2), reach:24150, delivered:23460, opened:12480, clicked:5210,
-      error:"", reason:"" },
-    { id:"nf_2840", status:"sent", type:"course", audience:"course_subscribers", channels:["push"],
-      title:{bn:"ইংরেজি কোর্সের নতুন লেসন",en:"New lessons in English course"},
-      body:{bn:"প্রিপজিশন ও আইডিয়ামস অধ্যায়ের ১২টি নতুন লেসন যোগ করা হয়েছে।",en:"12 new lessons were added to the Preposition and Idioms chapter."},
-      imageUrl:"", targetUrl:"admissionhub://courses/english", cta:{bn:"পড়া শুরু করুন",en:"Start reading"},
-      sentAt:hoursAgo(7), createdAt:hoursAgo(9), scheduledFor:hoursAgo(7), reach:6120, delivered:6010, opened:2980, clicked:1440,
-      error:"", reason:"" },
-    { id:"nf_2839", status:"failed", type:"announcement", audience:"intermediate", channels:["push"],
-      title:{bn:"আজকের লাইভ টুর্নামেন্ট",en:"Today's live tournament"},
-      body:{bn:"সন্ধ্যা ৭টায় জাতীয় লাইভ টুর্নামেন্ট শুরু হবে। যোগ দিন।",en:"The national live tournament starts at 7 PM. Join in."},
-      imageUrl:"", targetUrl:"admissionhub://tournaments/live-session/nov-10?ref=push", cta:{bn:"যোগ দিন",en:"Join"},
-      sentAt:hoursAgo(11), createdAt:hoursAgo(13), scheduledFor:hoursAgo(11), reach:8930, delivered:8140, opened:0, clicked:0,
-      error:"invalid_target_url",
-      reason:{bn:"টার্গেট URL অবৈধ: 'tournaments/live-session/nov-10' পথটি অ্যাপে নেই, তাই ডিপ লিংক স্কিম মেলেনি।",en:"Invalid target URL: the path 'tournaments/live-session/nov-10' does not exist in the app, so the deep-link scheme did not match."},
-      reasonFix:{bn:"টার্গেট লিংক admissionhub://tournaments/live-session এ বদলে আবার পাঠান।",en:"Change the target to admissionhub://tournaments/live-session and send again."} },
-    { id:"nf_2838", status:"sent", type:"challenge", audience:"pro", channels:["push","inapp"],
-      title:{bn:"৭ দিনের স্ট্রিক সম্পন্ন",en:"7-day streak complete"},
-      body:{bn:"অভিনন্দন {{name}}! আপনার {{streak}} দিনের স্ট্রিক ধরে রাখুন।",en:"Congratulations {{name}}! Keep your {{streak}}-day streak going."},
-      imageUrl:"", targetUrl:"admissionhub://progress/streak", cta:{bn:"স্ট্যাটস দেখুন",en:"View stats"},
-      sentAt:hoursAgo(19), createdAt:hoursAgo(22), scheduledFor:hoursAgo(19), reach:3470, delivered:3440, opened:2140, clicked:1180,
-      error:"", reason:"" },
-    { id:"nf_2837", status:"failed", type:"new-content", audience:"beginner", channels:["push"],
-      title:{bn:"নতুন প্রশ্ন ব্যাংক আপডেট",en:"New question bank update"},
-      body:{bn:"পদার্থবিজ্ঞান প্রশ্ন ব্যাংকে ৩২০টি নতুন MCQ যোগ হয়েছে।",en:"320 new MCQs were added to the Physics question bank."},
-      imageUrl:"", targetUrl:"admissionhub://question-bank/physics", cta:{bn:"অনুশীলন করুন",en:"Practise"},
-      sentAt:hoursAgo(28), createdAt:hoursAgo(30), scheduledFor:hoursAgo(28), reach:11250, delivered:10980, opened:0, clicked:0,
-      error:"unresolved_variable",
-      reason:{bn:"বডিতে {{exam_date}} ভেরিয়েবল ছিল, কিন্তু ওই অডিয়েন্সের ১৪০ জনের কাছে তারিখটি সংরক্ষিত নেই।",en:"The body contained {{exam_date}}, but 140 recipients in that audience have no stored exam date."},
-      reasonFix:{bn:"ভেরিয়েবলটি সরান বা শুধু যাদের তারিখ আছে সেই সেগমেন্টে পাঠান।",en:"Remove the variable or target only the segment that has the date."} },
-    { id:"nf_2836", status:"sent", type:"new-feature", audience:"all_students", channels:["push","inapp","email"],
-      title:{bn:"ত্রুটির বিশ্লেষণ ফিচার",en:"Mistake analysis feature"},
-      body:{bn:"এখন প্রতিটি কুইজের পরে আপনার ভুলের ধরন বিশ্লেষণ করে দেখানো হবে।",en:"After every quiz you will now see an analysis of your mistake patterns."},
-      imageUrl:"", targetUrl:"admissionhub://features/mistake-analysis", cta:{bn:"দেখুন",en:"See it"},
-      sentAt:hoursAgo(34), createdAt:hoursAgo(40), scheduledFor:hoursAgo(34), reach:26840, delivered:26010, opened:13920, clicked:6120,
-      error:"", reason:"" },
-    { id:"nf_2835", status:"cancelled", type:"announcement", audience:"beginner", channels:["push"],
-      title:{bn:"পুরনো সিলেবাস আপডেট",en:"Deprecated syllabus update"},
-      body:{bn:"এই বার্তাটি নতুন সিলেবাস প্রকাশের আগে বাতিল করা হয়েছে।",en:"This message was cancelled before the new syllabus release."},
-      imageUrl:"", targetUrl:"admissionhub://syllabus", cta:"",
-      sentAt:null, createdAt:hoursAgo(46), scheduledFor:hoursAhead(6), reach:11250, delivered:0, opened:0, clicked:0,
-      error:"", reason:{bn:"একই সময়ে নতুন সিলেবাসের ঘোষণা নির্ধারিত থাকায় এই বার্তাটি বাতিল করা হয়।",en:"Cancelled because a new-syllabus announcement was scheduled at the same time."} },
-    { id:"nf_2833", status:"sent", type:"course", audience:"course_subscribers", channels:["inapp"],
-      title:{bn:"গণিত কোর্স: সাপ্তাহিক পরীক্ষা",en:"Math course: weekly test"},
-      body:{bn:"এই সপ্তাহের পরীক্ষা শুক্রবার রাত ৯টায় খুলবে।",en:"This week's test opens Friday at 9 PM."},
-      imageUrl:"", targetUrl:"admissionhub://courses/math/tests/weekly", cta:{bn:"প্রস্তুতি নিন",en:"Prepare"},
-      sentAt:daysAgo(2), createdAt:daysAgo(2), scheduledFor:daysAgo(2), reach:4180, delivered:4120, opened:2260, clicked:980,
-      error:"", reason:"" },
-    { id:"nf_2831", status:"sent", type:"important", audience:"all_students", channels:["push","inapp"],
-      title:{bn:"ঢাকা বিশ্ববিদ্যালয়ের আবেদনের শেষ তারিখ",en:"DU application deadline"},
-      body:{bn:"আবেদনের শেষ তারিখ ৩০ নভেম্বর। সময়মতো আবেদন সম্পন্ন করুন।",en:"The application deadline is 30 November. Complete your application in time."},
-      imageUrl:"", targetUrl:"admissionhub://universities/DU/apply", cta:{bn:"আবেদন করুন",en:"Apply"},
-      sentAt:daysAgo(3), createdAt:daysAgo(4), scheduledFor:daysAgo(3), reach:26840, delivered:26120, opened:15240, clicked:7310,
-      error:"", reason:"" },
-    { id:"nf_2829", status:"failed", type:"new-feature", audience:"pro", channels:["email"],
-      title:{bn:"প্রো সদস্যদের জন্য নতুন ড্যাশবোর্ড",en:"New dashboard for Pro members"},
-      body:{bn:"আপনার অগ্রগতির তুলনামূলক চার্ট এখন ড্যাশবোর্ডে দেখা যাবে।",en:"Comparative progress charts are now available on your dashboard."},
-      imageUrl:"", targetUrl:"admissionhub://dashboard/compare", cta:{bn:"খুলুন",en:"Open"},
-      sentAt:daysAgo(4), createdAt:daysAgo(4), scheduledFor:daysAgo(4), reach:3470, delivered:0, opened:0, clicked:0,
-      error:"device_unreachable",
-      reason:{bn:"ইমেইল অ্যাড্রেস ৩৪৭০ জনের মধ্যে ২১০ জনের ক্ষেত্রে ডেলিভারি ব্যর্থ (hard bounce)।",en:"Delivery failed for 210 of 3,470 recipients (hard bounce)."},
-      reasonFix:{bn:"বাউন্স হওয়া ঠিকানাগুলো বাদ দিয়ে আবার পাঠান।",en:"Exclude the bounced addresses and send again."} }
-  ],
+  sent:[],
+  queue:[],
+  campaigns:[],
+  templates:[],
 
-  queue:[
-    { id:"qu_901", status:"scheduled", type:"important", audience:"all_students", channel:"push", priority:"high",
-      title:{bn:"SUST আবেদনের শেষ দিন",en:"SUST application last day"},
-      body:{bn:"আজই আবেদন সম্পন্ন করুন, এরপর আর সময় বাড়ানো হবে না।",en:"Complete your application today — no extension will follow."},
-      scheduledFor:hoursAhead(2), reach:24150, campaign:null },
-    { id:"qu_902", status:"queued", type:"course", audience:"course_subscribers", channel:"inapp", priority:"normal",
-      title:{bn:"ইংরেজি কোর্স কুইজ রিমাইন্ডার",en:"English course quiz reminder"},
-      body:{bn:"আপনার অসম্পূর্ণ কুইজ শেষ করুন।",en:"Finish your unfinished quiz."},
-      scheduledFor:hoursAhead(5), reach:6120, campaign:"cmp_ru_reminder" },
-    { id:"qu_903", status:"scheduled", type:"challenge", audience:"pro", channel:"push", priority:"normal",
-      title:{bn:"জাতীয় লাইভ টুর্নামেন্ট",en:"National live tournament"},
-      body:{bn:"৭টার মধ্যে রেজিস্ট্রেশন করুন।",en:"Register before 7 PM."},
-      scheduledFor:hoursAhead(9), reach:3470, campaign:null },
-    { id:"qu_904", status:"queued", type:"announcement", audience:"beginner", channel:"email", priority:"low",
-      title:{bn:"মাসিক অগ্রগতি রিপোর্ট",en:"Monthly progress report"},
-      body:{bn:"অক্টোবরের অগ্রগতি রিপোর্ট আপনার ইমেইলে।",en:"Your October progress report is in your inbox."},
-      scheduledFor:hoursAhead(28), reach:11250, campaign:"cmp_monthly" },
-    { id:"qu_905", status:"scheduled", type:"new-content", audience:"all_students", channel:"push", priority:"normal",
-      title:{bn:"নতুন প্রশ্ন ব্যাংক",en:"New question bank"},
-      body:{bn:"রসায়ন প্রশ্ন ব্যাংক আপডেট হয়েছে।",en:"The Chemistry question bank was updated."},
-      scheduledFor:hoursAhead(50), reach:24150, campaign:"cmp_ru_reminder" },
-    { id:"qu_906", status:"queued", type:"course", audience:"intermediate", channel:"push", priority:"normal",
-      title:{bn:"সাপ্তাহিক মক পরীক্ষা",en:"Weekly mock test"},
-      body:{bn:"আপনার মক পরীক্ষা রবিবার থেকে শুরু।",en:"Your mock test opens on Sunday."},
-      scheduledFor:hoursAhead(74), reach:8930, campaign:"cmp_monthly" }
-  ],
-
-  campaigns:[
-    { id:"cmp_ru_reminder", status:"active",
-      name:{bn:"RU ভর্তি রিমাইন্ডার",en:"RU Admission Reminder"},
-      audience:"all_students", type:"important", channels:["push","inapp"],
-      startedAt:daysAgo(2), reach:24150, sent:48200, opened:22140, clicked:9140,
-      pausedReason:"",
-      nodes:[
-        { day:1, status:"sent", title:{bn:"প্রস্তুতির রিমাইন্ডার",en:"Preparation reminder"},
-          body:{bn:"রাজশাহী বিশ্ববিদ্যালয়ের পরীক্ষার প্রস্তুতি শুরু করার সময় এসেছে।",en:"It's time to start preparing for the Rajshahi University test."},
-          when:daysAgo(2), sent:24150, opened:11820, clicked:4820 },
-        { day:3, status:"sent", title:{bn:"অনুশীলন রিমাইন্ডার",en:"Practice reminder"},
-          body:{bn:"আজ একটি মক পরীক্ষা দিয়ে নিজের অবস্থান বুঝে নিন।",en:"Take a mock test today to see where you stand."},
-          when:daysAgo(0), sent:24050, opened:10320, clicked:4320 },
-        { day:5, status:"scheduled", title:{bn:"পরীক্ষার সিলেবাস চেক",en:"Syllabus check"},
-          body:{bn:"পরীক্ষার সিলেবাস একবার মিলিয়ে নিন।",en:"Re-check the exam syllabus once."},
-          when:daysAhead(3), sent:0, opened:0, clicked:0 },
-        { day:7, status:"scheduled", title:{bn:"শেষ রিমাইন্ডার",en:"Final reminder"},
-          body:{bn:"পরীক্ষার দিন ঘনিয়ে এসেছে — শেষ প্রস্তুতি সারুন।",en:"Exam day is near — finish your final preparation."},
-          when:daysAhead(5), sent:0, opened:0, clicked:0 }
-      ] },
-    { id:"cmp_monthly", status:"active",
-      name:{bn:"মাসিক অগ্রগতি রিপোর্ট",en:"Monthly progress report"},
-      audience:"course_subscribers", type:"course", channels:["email","inapp"],
-      startedAt:daysAgo(9), reach:6120, sent:12240, opened:5310, clicked:2140, pausedReason:"",
-      nodes:[
-        { day:1, status:"sent", title:{bn:"রিপোর্ট প্রস্তুত",en:"Report ready"},
-          body:{bn:"এই মাসের অগ্রগতি রিপোর্ট দেখা যাচ্ছে।",en:"This month's progress report is available."},
-          when:daysAgo(9), sent:6120, opened:2810, clicked:1120 },
-        { day:15, status:"scheduled", title:{bn:"মাঝপথের চেক-ইন",en:"Mid-month check-in"},
-          body:{bn:"আপনার লক্ষ্যের কতটা পূরণ হয়েছে?",en:"How much of your target have you met?"},
-          when:daysAhead(6), sent:0, opened:0, clicked:0 }
-      ] },
-    { id:"cmp_du_deadline", status:"paused",
-      name:{bn:"DU আবেদনের সময়সীমা",en:"DU application deadline"},
-      audience:"all_students", type:"important", channels:["push"],
-      startedAt:daysAgo(6), reach:26840, sent:13420, opened:6120, clicked:2810,
-      pausedReason:{bn:"আবেদনের তারিখ পরিবর্তনের খবর যাচাই করা হচ্ছে।",en:"Awaiting confirmation of a change to the application date."},
-      nodes:[
-        { day:1, status:"sent", title:{bn:"আবেদন শুরু",en:"Applications open"},
-          body:{bn:"ঢাকা বিশ্ববিদ্যালয়ের আবেদন শুরু হয়েছে।",en:"DU applications are now open."},
-          when:daysAgo(6), sent:26840, opened:14240, clicked:6140 },
-        { day:6, status:"paused", title:{bn:"শেষ তারিখ রিমাইন্ডার",en:"Deadline reminder"},
-          body:{bn:"আবেদনের শেষ তারিখ ঘনিয়ে এসেছে।",en:"The application deadline is approaching."},
-          when:daysAhead(2), sent:0, opened:0, clicked:0 }
-      ] },
-    { id:"cmp_draft_feature", status:"draft",
-      name:{bn:"মিস্ট্রে অ্যানালাইসিস লঞ্চ",en:"Mistake analysis launch"},
-      audience:"pro", type:"new-feature", channels:["push","inapp"],
-      startedAt:null, reach:0, sent:0, opened:0, clicked:0, pausedReason:"",
-      nodes:[
-        { day:1, status:"draft", title:{bn:"ফিচার লঞ্চ",en:"Feature launch"},
-          body:{bn:"নতুন মিস্ট্রে অ্যানালাইসিস ফিচার চালু হয়েছে।",en:"The new mistake analysis feature is live."},
-          when:null, sent:0, opened:0, clicked:0 },
-        { day:4, status:"draft", title:{bn:"ব্যবহারের টিপস",en:"Usage tips"},
-          body:{bn:"ফিচারটি কীভাবে সবচেয়ে ভালো কাজে লাগাবেন।",en:"How to get the most out of this feature."},
-          when:null, sent:0, opened:0, clicked:0 }
-      ] },
-    { id:"cmp_completed_ru", status:"completed",
-      name:{bn:"রসায়ন প্রশ্ন ব্যাংক লঞ্চ",en:"Chemistry question bank launch"},
-      audience:"course_subscribers", type:"new-content", channels:["push"],
-      startedAt:daysAgo(21), reach:6120, sent:12240, opened:6240, clicked:2980, pausedReason:"",
-      nodes:[
-        { day:1, status:"sent", title:{bn:"লঞ্চ",en:"Launch"}, body:{bn:"নতুন প্রশ্ন ব্যাংক প্রস্তুত।",en:"The new question bank is ready."},
-          when:daysAgo(21), sent:6120, opened:3120, clicked:1480 },
-        { day:3, status:"sent", title:{bn:"অনুশীলন রিমাইন্ডার",en:"Practice reminder"}, body:{bn:"অনুশীলন চালিয়ে যান।",en:"Keep practising."},
-          when:daysAgo(18), sent:6120, opened:3120, clicked:1500 }
-      ] }
-  ],
-
-  templates:[
-    { key:"tpl_exam_date", category:"important", favorite:true, ai:false, versions:4, used:12,
-      bn:{title:"{{university}} পরীক্ষার তারিখ ঘোষিত",body:"{{name}}, {{university}}-এর ভর্তি পরীক্ষা {{exam_date}} অনুষ্ঠিত হবে। প্রস্তুতি এখনই শুরু করুন।"},
-      en:{title:"{{university}} exam date announced",body:"{{name}}, the {{university}} admission test will be held on {{exam_date}}. Start preparing now."},
-      perf:{openRate:0.54,clickRate:0.24} },
-    { key:"tpl_prep_reminder", category:"challenge", favorite:true, ai:true, versions:2, used:8,
-      bn:{title:"প্রস্তুতি রিমাইন্ডার",body:"আসসালামু আলাইকুম {{name}}, আপনার {{streak}} দিনের স্ট্রিক ধরে রাখতে আজও একটি মক পরীক্ষা দিন।"},
-      en:{title:"Preparation reminder",body:"Hi {{name}}, keep your {{streak}}-day streak alive — take a mock test today too."},
-      perf:{openRate:0.49,clickRate:0.19} },
-    { key:"tpl_new_lesson", category:"new-content", favorite:false, ai:false, versions:6, used:21,
-      bn:{title:"{{course}} কোর্সে নতুন লেসন",body:"{{course}} কোর্সে নতুন লেসন যোগ হয়েছে। অধ্যায়ভিত্তিক অনুশীলন সাথে সাথেই শুরু করা যাবে।"},
-      en:{title:"New lessons in {{course}}",body:"New lessons were added to the {{course}} course. Chapter-wise practice is available right away."},
-      perf:{openRate:0.61,clickRate:0.28} },
-    { key:"tpl_deadline", category:"important", favorite:false, ai:false, versions:3, used:6,
-      bn:{title:"আবেদনের শেষ তারিখ ঘনিয়ে এসেছে",body:"{{name}}, {{university}}-এ আবেদনের শেষ তারিখ {{exam_date}}। শেষ মুহূর্তে ঝুঁকি নেবেন না।"},
-      en:{title:"Application deadline approaching",body:"{{name}}, the {{university}} application deadline is {{exam_date}}. Don't risk a last-minute rush."},
-      perf:{openRate:0.58,clickRate:0.31} },
-    { key:"tpl_feature", category:"new-feature", favorite:false, ai:true, versions:1, used:2,
-      bn:{title:"নতুন ফিচার চালু হয়েছে",body:"অ্যাপে নতুন একটি ফিচার যোগ হয়েছে যা আপনার প্রস্তুতিকে আরও স্পষ্ট করবে।"},
-      en:{title:"A new feature is live",body:"A new feature was added to the app that makes your preparation clearer."},
-      perf:{openRate:0.44,clickRate:0.16} },
-    { key:"tpl_tournament", category:"challenge", favorite:false, ai:false, versions:2, used:3,
-      bn:{title:"আজকের লাইভ টুর্নামেন্ট",body:"সন্ধ্যা ৭টায় জাতীয় লাইভ টুর্নামেন্ট শুরু হবে। সময়মতো যোগ দিন।"},
-      en:{title:"Today's live tournament",body:"The national live tournament starts at 7 PM. Join on time."},
-      perf:{openRate:0.52,clickRate:0.22} },
-    { key:"tpl_announce", category:"announcement", favorite:false, ai:false, versions:9, used:34,
-      bn:{title:"গুরুত্বপূর্ণ ঘোষণা",body:"AdmissionHub থেকে একটি গুরুত্বপূর্ণ ঘোষণা। বিস্তারিত অ্যাপে দেখুন।"},
-      en:{title:"Important announcement",body:"An important announcement from AdmissionHub. See the details in the app."},
-      perf:{openRate:0.41,clickRate:0.12} },
-    { key:"tpl_course_quiz", category:"course", favorite:true, ai:true, versions:3, used:11,
-      bn:{title:"{{course}} সাপ্তাহিক পরীক্ষা",body:"{{name}}, {{course}} কোর্সের সাপ্তাহিক পরীক্ষা শুরু হয়েছে। অসম্পূর্ণ অধ্যায় শেষ করুন।"},
-      en:{title:"{{course}} weekly test",body:"{{name}}, the {{course}} weekly test is open. Finish your unfinished chapters."},
-      perf:{openRate:0.56,clickRate:0.26} }
-  ],
-
-  drafts:[
-    { id:"df_501", name:{bn:"ফাইনাল রিমাইন্ডার — ক ইউনিট",en:"Final reminder — A Unit"}, updatedAt:hoursAgo(1),
-      type:"important", audience:"all_students", channels:["push"],
-      title:{bn:"পরীক্ষার আগে শেষ চেকলিস্ট",en:"Final checklist before the exam"},
-      body:{bn:"প্রবেশপত্র, এডমিট কার্ড ও আইডি সাথে নিন। পরীক্ষার হলে ৩০ মিনিট আগে পৌঁছান।",en:"Carry your admit card and ID. Reach the hall 30 minutes early."},
-      imageUrl:"", targetUrl:"admissionhub://checklist", cta:{bn:"চেকলিস্ট দেখুন",en:"View checklist"},
-      versions:[
-        { at:hoursAgo(3), note:{bn:"প্রথম খসড়া",en:"First draft"} },
-        { at:hoursAgo(1), note:{bn:"AI সংক্ষিপ্ত করেছে",en:"AI shortened the body"} }
-      ] },
-    { id:"df_502", name:{bn:"গণিত সাপ্তাহিক পরীক্ষা",en:"Math weekly test"}, updatedAt:hoursAgo(5),
-      type:"course", audience:"course_subscribers", channels:["inapp"],
-      title:{bn:"সাপ্তাহিক পরীক্ষা খুলেছে",en:"Weekly test is open"},
-      body:{bn:"আপনার সাপ্তাহিক পরীক্ষা এখন খোলা। সময় শেষ হওয়ার আগে জমা দিন।",en:"Your weekly test is open now. Submit before time runs out."},
-      imageUrl:"", targetUrl:"admissionhub://courses/math/tests/weekly", cta:{bn:"পরীক্ষা দিন",en:"Take test"} },
-    { id:"df_503", name:{bn:"নতুন কুইজ ফিচার",en:"New quiz feature"}, updatedAt:daysAgo(1),
-      type:"new-feature", audience:"pro", channels:["push","email"],
-      title:{bn:"দ্রুত কুইজ মোড",en:"Quick quiz mode"},
-      body:{bn:"৫ মিনিটে ২০টি প্রশ্ন — দ্রুত কুইজ মোড এখন প্রো সদস্যদের জন্য।",en:"20 questions in 5 minutes — quick quiz mode is now available for Pro members."},
-      imageUrl:"", targetUrl:"admissionhub://features/quick-quiz", cta:{bn:"চেষ্টা করুন",en:"Try it"} },
-    { id:"df_504", name:{bn:"অক্টোবরের রিপোর্ট",en:"October report"}, updatedAt:daysAgo(3),
-      type:"course", audience:"course_subscribers", channels:["email"],
-      title:{bn:"অক্টোবরের অগ্রগতি",en:"October progress"},
-      body:{bn:"গত মাসে আপনি ৪২টি অধ্যায় শেষ করেছেন — গড়ের চেয়ে ১৮% বেশি।",en:"Last month you finished 42 chapters — 18% above average."},
-      imageUrl:"", targetUrl:"admissionhub://reports/october", cta:{bn:"রিপোর্ট দেখুন",en:"View report"} },
-    { id:"df_505", name:{bn:"বিজ্ঞপ্তি খসড়া",en:"Notice draft"}, updatedAt:daysAgo(4),
-      type:"announcement", audience:"all_students", channels:["inapp"],
-      title:{bn:"সার্ভার রক্ষণাবেক্ষণ",en:"Server maintenance"},
-      body:{bn:"আগামীকাল রাত ২টা থেকে ৩টা পর্যন্ত পরিষেবা সাময়িক বন্ধ থাকবে।",en:"Service will pause tomorrow from 2 AM to 3 AM."},
-      imageUrl:"", targetUrl:"admissionhub://status", cta:"" }
-  ],
-
-  segmentsSaved:[
-    { id:"sg_01", name:{bn:"RU + ক ইউনিট, ৭ দিনে সক্রিয়",en:"RU + A Unit, active in 7 days"}, count:4820,
-      rules:[{field:"university",op:"eq",value:"RU"},{field:"unit",op:"eq",value:"A"},{field:"activity",op:"eq",value:"active7"}] },
-    { id:"sg_02", name:{bn:"ইংরেজি কোর্স, সক্রিয় সাবস্ক্রিপশন",en:"English course, active subscription"}, count:2140,
-      rules:[{field:"course",op:"eq",value:"english"},{field:"subscription",op:"eq",value:"active"}] },
-    { id:"sg_03", name:{bn:"১৪+ দিন নিষ্ক্রিয় বিগিনার",en:"Beginner, inactive 14+ days"}, count:3260,
-      rules:[{field:"level",op:"eq",value:"beginner"},{field:"activity",op:"eq",value:"inactive14"}] }
-  ],
-
-  automations:[
-    { id:"au_01", status:"active", name:{bn:"কোর্স জয়েন স্বাগতম",en:"Course join welcome"}, runs:1840, lastRun:hoursAgo(1),
-      audience:"course_subscribers",
-      steps:[
-        {kind:"trigger",title:{bn:"শিক্ষার্থী একটি কোর্সে যোগ দেয়",en:"A student joins a course"}},
-        {kind:"condition",title:{bn:"অ্যাকাউন্ট ৩০ দিনের বেশি পুরনো",en:"Account is older than 30 days"}},
-        {kind:"action",title:{bn:"স্বাগতম নোটিফিকেশন পাঠাও",en:"Send welcome notification"}},
-        {kind:"wait",title:{bn:"২ দিন অপেক্ষা",en:"Wait 2 days"}},
-        {kind:"action",title:{bn:"প্রথম লেসনের রিমাইন্ডার",en:"First lesson reminder"}}
-      ] },
-    { id:"au_02", status:"active", name:{bn:"নিষ্ক্রিয়তার পুনরুদ্ধার",en:"Inactive recovery"}, runs:612, lastRun:hoursAgo(4),
-      audience:"beginner",
-      steps:[
-        {kind:"trigger",title:{bn:"৭ দিন কোনো অ্যাক্টিভিটি নেই",en:"No activity for 7 days"}},
-        {kind:"condition",title:{bn:"ফ্রিকোয়েন্সি ক্যাপের নিচে",en:"Under the frequency cap"}},
-        {kind:"action",title:{bn:"পুনরুদ্ধার নোটিফিকেশন",en:"Re-engagement notification"}},
-        {kind:"wait",title:{bn:"৫ দিন অপেক্ষা",en:"Wait 5 days"}},
-        {kind:"action",title:{bn:"শেষ চেষ্টা: টুর্নামেন্ট আমন্ত্রণ",en:"Final nudge: tournament invite"}}
-      ] },
-    { id:"au_03", status:"draft", name:{bn:"পরীক্ষার সময়সীমা অ্যালার্ট",en:"Exam deadline alert"}, runs:0, lastRun:null,
-      audience:"all_students",
-      steps:[
-        {kind:"trigger",title:{bn:"পরীক্ষার তারিখ ৭ দিনের মধ্যে",en:"Exam date is within 7 days"}},
-        {kind:"condition",title:{bn:"লক্ষ্য বিশ্ববিদ্যালয় নির্ধারিত",en:"Target university is set"}},
-        {kind:"action",title:{bn:"কাউন্টডাউন নোটিফিকেশন",en:"Countdown notification"}},
-        {kind:"wait",title:{bn:"২ দিন অপেক্ষা",en:"Wait 2 days"}},
-        {kind:"action",title:{bn:"শেষ দিনের রিমাইন্ডার",en:"Final-day reminder"}}
-      ] },
-    { id:"au_04", status:"paused", name:{bn:"সাবস্ক্রিপশন পরিবর্তন",en:"Subscription change"}, runs:96, lastRun:daysAgo(3),
-      audience:"pro",
-      steps:[
-        {kind:"trigger",title:{bn:"সাবস্ক্রিপশন শেষ হয়ে আসছে",en:"Subscription is expiring"}},
-        {kind:"condition",title:{bn:"গত ৩০ দিনে সক্রিয়",en:"Active in the last 30 days"}},
-        {kind:"action",title:{bn:"রিনিউ নোটিফিকেশন",en:"Renewal notification"}}
-      ] }
-  ],
-
+  drafts:[],
+  segmentsSaved:[],
+  automations:[],
   systemHealth:[
-    { key:"push_service", name:{bn:"পুশ সেবা",en:"Push service"}, icon:"bell", status:"healthy", latency:"118 ms", checked:hoursAgo(0.05), affected:{bn:"সমস্ত পুশ ডেলিভারি",en:"All push delivery"}, action:{bn:"—",en:"—"}, uptime:99.98 },
-    { key:"queue_worker", name:{bn:"কিউ ওয়ার্কার",en:"Queue worker"}, icon:"queue", status:"healthy", latency:"42 ms", checked:hoursAgo(0.05), affected:{bn:"শিডিউলড পাঠানো",en:"Scheduled sending"}, action:{bn:"—",en:"—"}, uptime:99.95 },
-    { key:"database", name:{bn:"ডেটাবেস",en:"Database"}, icon:"database", status:"healthy", latency:"26 ms", checked:hoursAgo(0.02), affected:{bn:"সমস্ত রিড ও রাইট",en:"All reads and writes"}, action:{bn:"—",en:"—"}, uptime:99.99 },
-    { key:"delivery_service", name:{bn:"ডেলিভারি সেবা",en:"Delivery service"}, icon:"send", status:"degraded", latency:"1.9 s", checked:hoursAgo(0.02), affected:{bn:"পুশ ও SMS ডেলিভারি বিলম্বিত",en:"Push and SMS delivery is slow"}, action:{bn:"কিউ ধরে রাখা হয়েছে; ১০ মিনিট পর আবার যাচাই করুন।",en:"Queue is being held; recheck in ten minutes."}, uptime:98.7 },
-    { key:"ai_service", name:{bn:"AI সেবা",en:"AI service"}, icon:"robot", status:"healthy", latency:"640 ms", checked:hoursAgo(0.1), affected:{bn:"AI প্রস্তুতি ও সাজেশন",en:"AI preparation and suggestions"}, action:{bn:"—",en:"—"}, uptime:99.6 },
-    { key:"auth", name:{bn:"অথেন্টিকেশন",en:"Authentication"}, icon:"shield", status:"healthy", latency:"84 ms", checked:hoursAgo(0.04), affected:{bn:"অ্যাডমিন সেশন",en:"Admin sessions"}, action:{bn:"—",en:"—"}, uptime:100 },
-    { key:"email", name:{bn:"ইমেইল",en:"Email"}, icon:"mail", status:"healthy", latency:"1.1 s", checked:hoursAgo(0.15), affected:{bn:"ইমেইল চ্যানেল",en:"Email channel"}, action:{bn:"—",en:"—"}, uptime:99.4 },
-    { key:"sms", name:{bn:"SMS গেটওয়ে",en:"SMS gateway"}, icon:"phone", status:"unavailable", latency:{bn:"—",en:"—"}, checked:hoursAgo(0.3), affected:{bn:"SMS চ্যানেল",en:"SMS channel"}, action:{bn:"SMS চ্যানেল বন্ধ রাখুন যতক্ষণ গেটওয়ে ফিরে না আসে।",en:"Keep the SMS channel off until the gateway returns."}, uptime:92.1 },
-    { key:"inapp", name:{bn:"ইন-অ্যাপ ডেলিভারি",en:"In-app delivery"}, icon:"message", status:"healthy", latency:"58 ms", checked:hoursAgo(0.03), affected:{bn:"ইন-অ্যাপ ইনবক্স",en:"In-app inbox"}, action:{bn:"—",en:"—"}, uptime:99.97 },
-    { key:"webhooks", name:{bn:"ওয়েবহুক রিলে",en:"Webhook relay"}, icon:"link", status:"unknown", latency:{bn:"—",en:"—"}, checked:hoursAgo(5), affected:{bn:"বাইরের ইন্টিগ্রেশন আপডেট",en:"External integration updates"}, action:{bn:"শেষ যাচাই ৫ ঘণ্টা আগে — এখনই আবার যাচাই করুন।",en:"Last checked 5 hours ago — run a check now."}, uptime:{bn:"—",en:"—"} }
+    { key:"push_service", name:{bn:"পুশ সেবা",en:"Push service"}, icon:"bell", status:"unknown", latency:{bn:"—",en:"—"}, checked:null, affected:{bn:"সমস্ত পুশ ডেলিভারি",en:"All push delivery"}, action:{bn:"—",en:"—"}, uptime:{bn:"—",en:"—"} },
+    { key:"fcm_config", name:{bn:"FCM কনফিগ",en:"FCM config"}, icon:"bell", status:"unknown", latency:{bn:"—",en:"—"}, checked:null, affected:{bn:"পুশ টোকেন",en:"Push tokens"}, action:{bn:"—",en:"—"}, uptime:{bn:"—",en:"—"} },
+    { key:"database", name:{bn:"ডেটাবেস",en:"Database"}, icon:"database", status:"unknown", latency:{bn:"—",en:"—"}, checked:null, affected:{bn:"সমস্ত রিড ও রাইট",en:"All reads and writes"}, action:{bn:"—",en:"—"}, uptime:{bn:"—",en:"—"} },
+    { key:"auth", name:{bn:"অথেন্টিকেশন",en:"Authentication"}, icon:"shield", status:"unknown", latency:{bn:"—",en:"—"}, checked:null, affected:{bn:"অ্যাডমিন সেশন",en:"Admin sessions"}, action:{bn:"—",en:"—"}, uptime:{bn:"—",en:"—"} }
   ],
-
-  aiActivity:[
-    { at:hoursAgo(0.4), bn:"URL সমস্যা শনাক্ত করেছি — nf_2839 এর ডিপ লিংক স্কিম মেলেনি।",en:"Detected a URL problem — the nf_2839 deep-link scheme did not match.",kind:"warn" },
-    { at:hoursAgo(1.1), bn:"কনফিগারেশন প্রস্তুত করেছি, অনুমোদনের অপেক্ষায়।",en:"Prepared a configuration, waiting for approval.",kind:"wait" },
-    { at:hoursAgo(2.3), bn:"অডিয়েন্স প্রস্তুত করেছি — RU + ক ইউনিট (৪,৮২০ জন)।",en:"Prepared an audience — RU + A Unit (4,820).",kind:"ok" },
-    { at:hoursAgo(3.8), bn:"ডুপ্লিকেট কনটেন্ট পেয়েছি — nf_2840 এর সাথে ৯১% মিল।",en:"Found duplicate content — 91% similar to nf_2840.",kind:"warn" },
-    { at:hoursAgo(5.2), bn:"সেরা সময়ের সুপারিশ করেছি — সন্ধ্যা ৭:৪৫ (Asia/Dhaka)।",en:"Suggested a best time — 7:45 PM (Asia/Dhaka).",kind:"ok" },
-    { at:hoursAgo(7.6), bn:"৪ বার্তার ক্যাম্পেইন প্রস্তুত করেছি।",en:"Prepared a 4-message campaign.",kind:"ok" },
-    { at:hoursAgo(11), bn:"ব্যর্থতার কারণ ব্যাখ্যা করেছি — ডিভাইসে অ্যাপ আনইনস্টল।",en:"Explained a failure — the app was uninstalled on the device.",kind:"warn" }
-  ],
-
-  audit:[
-    { at:hoursAgo(0.4), actor:"ai", action:"ai_prepared", target:{bn:"ক ইউনিট ফাইনাল রিমাইন্ডার",en:"A Unit final reminder"} },
-    { at:hoursAgo(1.2), actor:"admin", action:"edited", target:{bn:"ফাইনাল চেকলিস্ট",en:"Final checklist"} },
-    { at:hoursAgo(2), actor:"admin", action:"approved", target:{bn:"RU ভর্তি পরীক্ষার তারিখ ঘোষিত",en:"RU admission exam date announced"} },
-    { at:hoursAgo(2.1), actor:"admin", action:"sent", target:{bn:"RU ভর্তি পরীক্ষার তারিখ ঘোষিত",en:"RU admission exam date announced"} },
-    { at:hoursAgo(7), actor:"admin", action:"scheduled", target:{bn:"ইংরেজি কোর্সের নতুন লেসন",en:"New lessons in English course"} },
-    { at:hoursAgo(11), actor:"system", action:"failed", target:{bn:"আজকের লাইভ টুর্নামেন্ট",en:"Today's live tournament"} },
-    { at:hoursAgo(11.4), actor:"admin", action:"retried", target:{bn:"আজকের লাইভ টুর্নামেন্ট",en:"Today's live tournament"} },
-    { at:daysAgo(1.2), actor:"reviewer", action:"cancelled", target:{bn:"পুরনো সিলেবাস আপডেট",en:"Deprecated syllabus update"} },
-    { at:daysAgo(2), actor:"admin", action:"activated", target:{bn:"RU ভর্তি রিমাইন্ডার",en:"RU Admission Reminder"} },
-    { at:daysAgo(2.1), actor:"admin", action:"paused", target:{bn:"DU আবেদনের সময়সীমা",en:"DU application deadline"} }
-  ],
-
-  audienceOverlap:{ recipients:1240, campaign:{bn:"RU ভর্তি রিমাইন্ডার",en:"RU Admission Reminder"} },
-  conflict:{ campaign:{bn:"DU আবেদনের সময়সীমা",en:"DU application deadline"}, when:hoursAhead(20) }
+  aiActivity:[],
+  audit:[],
 };
 
 /* ============================================================
@@ -2256,6 +1943,14 @@ function typeOf(key){ return SAMPLE_DATA.notificationTypes.concat(state.customTy
 function typeName(key){ const x=typeOf(key); return x? (LANG==='en'?x.en:x.bn) : key; }
 function typeIcon(key){ const x=typeOf(key); return x? x.icon : 'info'; }
 function segOf(key){ return SAMPLE_DATA.segments.find(x=>x.key===key)||null; }
+/* Real audience size for a segment, when the server knows it. Only the
+   full-audience estimate comes from the live history response; per-segment
+   numbers are not exposed yet, so return null rather than a fabricated count. */
+function liveSegCount(key){
+  const a=(state.analytics||SAMPLE_DATA.analytics);
+  if(key==='all_students') return a.reach.estimated||null;
+  return null;
+}
 function segName(key){ const x=segOf(key); return x? (LANG==='en'?x.en:x.bn) : (key||t('none')); }
 function channelName(key){ const c=SAMPLE_DATA.channels.find(x=>x.key===key); return c? (LANG==='en'?c.en:c.bn) : key; }
 function channelIcon(key){ const c=SAMPLE_DATA.channels.find(x=>x.key===key); return c? c.icon : 'bell'; }
@@ -2315,6 +2010,13 @@ function emptyState(iconName,title,desc,cta){
     '<h3>'+esc(title)+'</h3>'+
     (desc?'<p>'+esc(desc)+'</p>':'')+
     (cta||'')+'</div>';
+}
+/* True when the panel has loaded at least one real send from the server. Lets
+   a view show honest empty states instead of earlier fabricated numbers. */
+function hasLiveSends(){ return (state.sent&&state.sent.length>0)||(state.queue&&state.queue.length>0); }
+function sendBadge(){ return hasLiveSends()?'<span class="ns-badge ns-badge-ok">'+ic('checkCircle',12)+esc(t('live_badge'))+'</span>':''; }
+function emptyPanel(titleKey,descKey){
+  return emptyState('send',t(titleKey),t(descKey));
 }
 function errorState(title,desc,retryAttr){
   return '<div class="ns-empty is-error">'+
@@ -2540,13 +2242,11 @@ function attentionItems(){
 }
 function overviewHTML(){
   const a=(state.analytics||SAMPLE_DATA.analytics), q=(state.quota||SAMPLE_DATA.quota);
-  const usedPct=Math.min(100,Math.round(q.used/q.dailyCap*100));
+  const usedPct=q.dailyCap?Math.min(100,Math.round(q.used/q.dailyCap*100)):0;
   const quotaTone=usedPct>85?'danger':(usedPct>70?'warn':'');
   const hs=healthSummary();
   const items=attentionItems();
-  const maxCourse=Math.max.apply(null,a.breakdownCourse.map(x=>x.n));
-  const maxUni=Math.max.apply(null,a.breakdownUniversity.map(x=>x.n));
-  const engTotal=a.breakdownEngagement.reduce((s,x)=>s+x.n,0);
+  const live=hasLiveSends();
 
   const attentionHTML = items.slice(0,4).map(it=>{
     const cta = it.cta.action
@@ -2564,11 +2264,23 @@ function overviewHTML(){
       '<span class="ns-tl-meta">'+esc(pick(e.target))+' · '+esc(relTime(e.at))+'</span></div></div>';
   }).join('');
 
+  const breakdown=(arr,labelKey,shortKey,max)=> arr.length
+    ? '<section class="ns-panel">'+
+        '<div class="ns-panel-head"><h2>'+esc(t(labelKey))+'</h2><span class="ns-hint">'+esc(t(shortKey))+'</span></div>'+
+        '<div class="ns-panel-pad ns-breakdown">'+
+          arr.map(x=>'<div class="ns-bd-row"><span class="ns-bd-name">'+esc(pick(x))+'</span><span class="ns-bd-bar"><i style="width:'+(max?Math.round(x.n/max*100):0)+'%"></i></span><span class="ns-bd-val">'+fmtNum(x.n)+'</span></div>').join('')+
+        '</div></section>'
+    : '<section class="ns-panel">'+
+        '<div class="ns-panel-head"><h2>'+esc(t(labelKey))+'</h2></div>'+
+        '<div class="ns-panel-pad">'+emptyState('chart',t('live_no_breakdown'),t('live_empty_desc'))+'</div></section>';
+
+  const maxCourse=a.breakdownCourse.length?Math.max.apply(null,a.breakdownCourse.map(x=>x.n)):1;
+  const maxUni=a.breakdownUniversity.length?Math.max.apply(null,a.breakdownUniversity.map(x=>x.n)):1;
+
   return ''+
   '<div class="ns-page-head"><div>'+
     '<h1>'+esc(t('ov_title'))+'</h1><p>'+esc(t('ov_sub'))+'</p>'+
-  '</div><div class="ns-page-head-meta"></div>'+
-  '<span class="ns-sim">'+esc(t('sim_data'))+'</span></div>'+
+  '</div><div class="ns-page-head-meta">'+sendBadge()+'</div></div>'+
 
   '<div class="ns-overview-grid">'+
     '<section class="ns-hero" aria-label="'+esc(t('ov_title'))+'">'+
@@ -2577,7 +2289,7 @@ function overviewHTML(){
       '<p class="ns-hero-sub">'+esc(t('ov_sub'))+'</p>'+
       '<div class="ns-hero-metrics">'+
         '<div class="ns-hero-metric"><b>'+fmtNum(a.sentToday)+'</b><span>'+esc(t('ov_sent_today'))+'</span></div>'+
-        '<div class="ns-hero-metric"><b>'+fmtNum(Math.round(a.sentToday*q.deliveryRate))+'</b><span>'+esc(t('ov_delivered'))+'</span></div>'+
+        '<div class="ns-hero-metric"><b>'+fmtNum(a.delivered)+'</b><span>'+esc(t('ov_delivered'))+'</span></div>'+
         '<div class="ns-hero-metric"><b>'+fmtNum(state.queue.length)+'</b><span>'+esc(t('ov_queued'))+'</span></div>'+
         '<div class="ns-hero-metric"><b>'+fmtNum(a.failed)+'</b><span>'+esc(t('ov_failed'))+'</span></div>'+
       '</div>'+
@@ -2604,38 +2316,29 @@ function overviewHTML(){
       '<div class="ns-panel-head"><h2>'+esc(t('ov_recent'))+'</h2>'+
         '<div class="ns-panel-head-actions"><button class="ns-btn ns-btn-quiet ns-btn-sm" data-action="goto" data-tab="sent">'+esc(t('view_all'))+ic('chevronR',15)+'</button></div></div>'+
       '<div class="ns-panel-pad ns-table" style="padding:0">'+
-        state.sent.slice(0,5).map(row=>sentRowCompact(row)).join('')+
+        (state.sent.length?state.sent.slice(0,5).map(row=>sentRowCompact(row)).join('')
+          :emptyState('send',t('live_empty_title'),t('live_empty_bn'),'<button class="ns-btn ns-btn-primary" data-action="goto" data-tab="compose">'+esc(t('nav_compose'))+'</button>'))+
       '</div>'+
     '</section>'+
 
     '<div class="ns-overview-grid ns-span-all" style="gap:12px">'+
-      '<section class="ns-panel">'+
-        '<div class="ns-panel-head"><h2>'+esc(t('aud_breakdown_course'))+'</h2><span class="ns-hint">'+esc(t('est_reach_short'))+'</span></div>'+
-        '<div class="ns-panel-pad ns-breakdown">'+
-          a.breakdownCourse.map(x=>'<div class="ns-bd-row"><span class="ns-bd-name">'+esc(pick(x))+'</span><span class="ns-bd-bar"><i style="width:'+Math.round(x.n/maxCourse*100)+'%"></i></span><span class="ns-bd-val">'+fmtNum(x.n)+'</span></div>').join('')+
-        '</div>'+
-      '</section>'+
-      '<section class="ns-panel">'+
-        '<div class="ns-panel-head"><h2>'+esc(t('aud_breakdown_uni'))+'</h2><span class="ns-hint">'+esc(t('est_reach_short'))+'</span></div>'+
-        '<div class="ns-panel-pad ns-breakdown">'+
-          a.breakdownUniversity.map(x=>'<div class="ns-bd-row"><span class="ns-bd-name">'+esc(pick(x))+'</span><span class="ns-bd-bar"><i style="width:'+Math.round(x.n/maxUni*100)+'%"></i></span><span class="ns-bd-val">'+fmtNum(x.n)+'</span></div>').join('')+
-        '</div>'+
-      '</section>'+
+      breakdown(a.breakdownCourse,'aud_breakdown_course','est_reach_short',maxCourse)+
+      breakdown(a.breakdownUniversity,'aud_breakdown_uni','est_reach_short',maxUni)+
     '</div>'+
 
     '<div class="ns-overview-grid ns-span-all" style="gap:12px">'+
       '<section class="ns-panel">'+
         '<div class="ns-panel-head">'+ic('robot',17)+'<h2>'+esc(t('ai_log'))+'</h2>'+
           '<div class="ns-panel-head-actions"><button class="ns-btn ns-btn-ghost ns-btn-sm" data-action="open-ai">'+ic('chat',15)+esc(t('ai_open_chat'))+'</button></div></div>'+
-        '<div class="ns-panel-pad"><div class="ns-ailog">'+
+        '<div class="ns-panel-pad">'+(state.aiActivity.length?'<div class="ns-ailog">'+
           state.aiActivity.slice(0,5).map(x=>'<div class="ns-ailog-row">'+ic(x.kind==='warn'?'alert':(x.kind==='wait'?'clock':'checkCircle'),15)+
             '<span class="ns-ailog-text">'+esc(pick(x))+'</span><span class="ns-ailog-time">'+esc(relTime(x.at))+'</span></div>').join('')+
-        '</div></div>'+
+        '</div>':emptyState('robot',t('live_empty_title'),t('live_empty_desc')))+'</div>'+
       '</section>'+
       '<section class="ns-panel">'+
         '<div class="ns-panel-head"><h2>'+esc(t('ov_audit'))+'</h2>'+
           '<div class="ns-panel-head-actions"><span class="ns-badge">'+esc(pick(SAMPLE_DATA.admin.role))+'</span></div></div>'+
-        '<div class="ns-panel-pad" style="padding-top:4px"><div class="ns-timeline">'+auditHTML+'</div></div>'+
+        '<div class="ns-panel-pad" style="padding-top:4px">'+(state.audit.length?'<div class="ns-timeline">'+auditHTML+'</div>':emptyState('file',t('live_empty_title'),t('live_empty_desc')))+'</div>'+
       '</section>'+
     '</div>'+
 
@@ -2724,11 +2427,11 @@ function composeHTML(){
           const on=c.segmentId===s.key&&!c.rulesDirty;
           return '<button class="ns-seg-card" role="radio" aria-checked="'+(on?'true':'false')+'" data-action="set-segment" data-key="'+s.key+'">'+
             '<span class="ns-seg-card-top">'+ic('users',14)+'<span class="ns-seg-card-name">'+esc(LANG==='en'?s.en:s.bn)+'</span></span>'+
-            '<span class="ns-seg-card-count">'+fmtNum(s.count)+'</span>'+
+            '<span class="ns-seg-card-count">'+fmtNum(liveSegCount(s.key))+'</span>'+
             '<span class="ns-seg-card-desc">'+esc(pick(s.desc))+'</span></button>';
         }).join('')+
       '</div></div>'+
-    '<div class="ns-note ns-note-neutral">'+ic('info',16)+'<span>'+esc(t('aud_sample_hint'))+'</span></div>'+
+    '<div class="ns-note ns-note-neutral">'+ic('info',16)+'<span>'+esc(t('aud_live_hint'))+'</span></div>'+
     '<button class="ns-btn ns-btn-ghost ns-btn-sm" style="margin-top:10px" data-action="goto" data-tab="audience">'+ic('filter',15)+esc(t('aud_advanced'))+'</button>'+
     (c.rulesApplied?'<div class="ns-note ns-note-info" style="margin-top:10px">'+ic('check',16)+'<span>'+esc(t('aud_advanced'))+': '+esc(rulesSummary())+'</span></div>':'');
 
@@ -2756,6 +2459,13 @@ function composeHTML(){
     '<div class="ns-field" style="margin-top:12px"><label class="ns-field-label" for="nsImage">'+esc(t('f_image_url'))+'</label>'+
       '<input class="ns-input" id="nsImage" data-field="imageUrl" value="'+esc(c.imageUrl)+'" placeholder="https://…" inputmode="url">'+
       '<span class="ns-field-help">'+esc(t('val_attachment_ok'))+'</span></div>'+
+    '<div class="ns-field"><span class="ns-field-label">'+esc(t('f_image_upload'))+'</span>'+
+      '<div class="ns-inline">'+
+        '<button class="ns-btn ns-btn-ghost ns-btn-sm" data-action="image-pick" id="nsImgPick">'+ic('upload',15)+esc(t('f_image_upload'))+'</button>'+
+        (c.imageUrl?'<button class="ns-btn ns-btn-quiet ns-btn-sm" data-action="image-clear">'+esc(t('img_remove'))+'</button>':'')+
+      '</div>'+
+      '<input type="file" id="nsImageFile" accept="image/png,image/jpeg,image/webp" hidden>'+
+      '<span class="ns-field-help" id="nsImgHint">'+esc(t('f_image_upload_hint'))+'</span></div>'+
     (c.imageUrl?'<div class="ns-review-img" style="background-image:url(\''+esc(c.imageUrl)+'\')" role="img" aria-label="'+esc(t('f_image'))+'"></div>':'')+
     '<div class="ns-field"><label class="ns-field-label" for="nsTarget">'+esc(t('f_target'))+'</label>'+
       '<input class="ns-input" id="nsTarget" data-field="targetUrl" value="'+esc(c.targetUrl)+'" placeholder="'+esc(t('ph_target'))+'">'+
@@ -2828,8 +2538,7 @@ function composeHTML(){
   '<div class="ns-page-head"><div>'+
     '<h1>'+esc(t('cmp_title'))+'</h1><p>'+esc(t('cmp_sub'))+'</p></div>'+
     '<div class="ns-page-head-actions">'+
-      '<span class="ns-sim">'+esc(t('sim_data'))+'</span>'+
-      '<button class="ns-btn ns-btn-ghost ns-btn-sm" data-action="save-draft">'+ic('file',15)+esc(t('save_draft'))+'</button>'+
+            '<button class="ns-btn ns-btn-ghost ns-btn-sm" data-action="save-draft">'+ic('file',15)+esc(t('save_draft'))+'</button>'+
       '<button class="ns-btn ns-btn-ghost ns-btn-sm" data-action="save-template">'+ic('bookmark',15)+esc(t('save_template'))+'</button>'+
     '</div>'+
   '</div>'+
@@ -2884,7 +2593,7 @@ function estimateReach(){
     const s=segOf(c.segmentId);
     base = s? s.count : null;
   } else {
-    base = (state.analytics||SAMPLE_DATA.analytics).reach.estimated;
+    base = (state.analytics||SAMPLE_DATA.analytics).reach.estimated || null;
   }
   if(base==null) return null;
   let suppress=0;
@@ -2894,32 +2603,35 @@ function estimateReach(){
   return {gross:base, suppression:suppress, net:Math.max(1,base-suppress)};
 }
 function estimateFromRules(c){
+  const a=(state.analytics||SAMPLE_DATA.analytics);
+  const est=a.reach.estimated||0;
   const conds=c.rules.conditions.filter(r=>r.value!==''&&r.value!=null);
-  if(!conds.length) return (state.analytics||SAMPLE_DATA.analytics).reach.estimated;
+  if(!conds.length) return est||null;
+  if(!est) return null;
   const perCond=conds.map(r=>{
     if(r.field==='university'){
       const u=(state.analytics||SAMPLE_DATA.analytics).breakdownUniversity.find(x=>x.en===r.value||x.bn===r.value);
-      return u?u.n:Math.round((state.analytics||SAMPLE_DATA.analytics).reach.estimated*0.2);
+      return u?u.n:Math.round(est*0.2);
     }
     if(r.field==='course'){
       const cor=(state.analytics||SAMPLE_DATA.analytics).breakdownCourse.find(x=>x.en===String(r.value).replace(/^./,m=>m.toUpperCase())||x.bn===r.value);
-      return cor?cor.n:Math.round((state.analytics||SAMPLE_DATA.analytics).reach.estimated*0.18);
+      return cor?cor.n:Math.round(est*0.18);
     }
-    if(r.field==='unit') return Math.round((state.analytics||SAMPLE_DATA.analytics).reach.estimated*(r.value==='A'?0.34:r.value==='B'?0.31:0.22));
-    if(r.field==='activity') return Math.round((state.analytics||SAMPLE_DATA.analytics).reach.estimated*(r.value==='active7'?0.41:r.value==='inactive14'?0.19:r.value==='new'?0.28:0.22));
-    if(r.field==='level') return segOf(r.value)?segOf(r.value).count:Math.round(SAMPLE_DATA.analytics.reach.estimated*0.3);
-    if(r.field==='subscription') return Math.round(SAMPLE_DATA.analytics.reach.estimated*(r.value==='active'?0.23:0.77));
-    if(r.field==='engagement') return Math.round(SAMPLE_DATA.analytics.reach.estimated*(r.value==='high'?0.27:r.value==='medium'?0.34:0.18));
-    if(r.field==='group') return Math.round(SAMPLE_DATA.analytics.reach.estimated*0.33);
-    if(r.field==='streak') return Math.round(SAMPLE_DATA.analytics.reach.estimated*(Number(r.value)>6?0.22:0.35));
-    return Math.round(SAMPLE_DATA.analytics.reach.estimated*0.5);
+    if(r.field==='unit') return Math.round(est*(r.value==='A'?0.34:r.value==='B'?0.31:0.22));
+    if(r.field==='activity') return Math.round(est*(r.value==='active7'?0.41:r.value==='inactive14'?0.19:r.value==='new'?0.28:0.22));
+    if(r.field==='level') return Math.round(est*0.3);
+    if(r.field==='subscription') return Math.round(est*(r.value==='active'?0.23:0.77));
+    if(r.field==='engagement') return Math.round(est*(r.value==='high'?0.27:r.value==='medium'?0.34:0.18));
+    if(r.field==='group') return Math.round(est*0.33);
+    if(r.field==='streak') return Math.round(est*(Number(r.value)>6?0.22:0.35));
+    return Math.round(est*0.5);
   });
   if(c.rules.match==='all'){
     let v=perCond.slice().sort((a,b)=>a-b)[0];
-    for(let i=1;i<perCond.length;i++) v=Math.round(v*(perCond[i]/SAMPLE_DATA.analytics.reach.estimated)*1.25);
-    return Math.max(12,Math.min(v,SAMPLE_DATA.analytics.reach.estimated));
+    for(let i=1;i<perCond.length;i++) v=Math.round(v*(perCond[i]/est)*1.25);
+    return Math.max(12,Math.min(v,est));
   }
-  return Math.min(SAMPLE_DATA.analytics.reach.estimated,perCond.reduce((s,x)=>s+x,0));
+  return Math.min(est,perCond.reduce((s,x)=>s+x,0));
 }
 function personaFor(sample){
   return sample||'bn';
@@ -3004,7 +2716,7 @@ function validateConfiguration(){
       add('schedule','schedule','bad',t('val_schedule_past')+' — '+t('val_schedule_fix'),{action:'focus-field',field:'when'});
     } else {
       const conflict=findConflict(when);
-      add('schedule','schedule',conflict?'warn':'ok',conflict?t('val_conflict')+' ('+pick(SAMPLE_DATA.conflict.campaign)+')':t('val_schedule_ok'),conflict?{action:'goto',tab:'queue'}:null);
+      add('schedule','schedule',conflict?'warn':'ok',conflict?t('val_conflict'):t('val_schedule_ok'),conflict?{action:'goto',tab:'queue'}:null);
     }
   } else {
     add('schedule','schedule','ok',t('val_no_schedule'),null);
@@ -3029,6 +2741,38 @@ function isValidUrl(u){
   if(/^admissionhub:\/\/[a-z0-9][a-z0-9\-\/_.?=&%]*$/i.test(u)) return true;
   try{ const p=new URL(u); return p.protocol==='https:'||p.protocol==='http:'; }catch(e){ return false; }
 }
+/* Upload a picked image to the Worker and put the returned https URL on the
+ * draft. The Worker stores it in R2 and serves it from /api/files/<key>, so
+ * FCM gets a stable same-origin image URL (no third-party host, no egress). */
+function uploadNotificationImage(file){
+  if(!file) return;
+  const hint=document.getElementById('nsImgHint');
+  const ext=(String(file.name||'').split('.').pop()||'').toLowerCase();
+  const okExt={png:1,jpg:1,jpeg:1,webp:1};
+  if(!okExt[ext]){ toast(t('img_upload_failed'),'warn',t('f_image_upload_hint')); return; }
+  if(file.size>4*1024*1024){ toast(t('img_too_large'),'warn'); return; }
+  if(hint){ hint.textContent=t('img_uploading'); }
+  const btn=document.getElementById('nsImgPick');
+  if(btn) btn.disabled=true;
+  const done=(msgTone)=>{ if(btn) btn.disabled=false; if(hint) hint.textContent=t(msgTone); };
+  file.arrayBuffer().then(function(buf){
+    return apiFetch('/api/notifications/global/image',{
+      method:'POST',
+      headers:{ 'Content-Type':'application/octet-stream', 'X-File-Ext':ext, 'Content-Length':String(buf.byteLength) },
+      body:buf
+    });
+  }).then(function(out){
+    if(out.ok && out.data && out.data.url){
+      state.compose.imageUrl=out.data.url; state.compose.dirty=true;
+      done('f_image_upload_hint');
+      toast(t('img_uploaded'),'ok');
+      partialRefresh();
+    } else {
+      done('f_image_upload_hint');
+      toast(t('img_upload_failed'),'warn',(out.data&&out.data.error)||('http '+out.status));
+    }
+  }).catch(function(e){ done('f_image_upload_hint'); toast(t('img_upload_failed'),'warn',String(e&&e.message||e).slice(0,120)); });
+}
 function isValidTarget(u){
   if(!u) return false;
   if(/^admissionhub:\/\//i.test(u)) return /^admissionhub:\/\/[a-z0-9\-]+(\/[a-z0-9\-_./?=&%]*)?$/i.test(u) && !/nov-10.*ref=push/i.test(u);
@@ -3036,7 +2780,7 @@ function isValidTarget(u){
 }
 function findConflict(when){
   const w=when.getTime();
-  return state.queue.some(q=>Math.abs(new Date(q.scheduledFor).getTime()-w) < 30*60000) || Math.abs(new Date(SAMPLE_DATA.conflict.when).getTime()-w) < 30*60000;
+  return state.queue.some(q=>Math.abs(new Date(q.scheduledFor).getTime()-w) < 30*60000);
 }
 
 /* ============================================================
@@ -3114,11 +2858,14 @@ function previewPanelHTML(){
 function reachPanelHTML(){
   const reach=estimateReach();
   const c=state.compose;
-  const a=SAMPLE_DATA.analytics;
+  const a=(state.analytics||SAMPLE_DATA.analytics);
   const who = c.rulesApplied? rulesSummary() : segName(c.segmentId) || t('aud_predefined');
-  const maxCourse=Math.max.apply(null,a.breakdownCourse.map(x=>x.n));
   const uniRestricted=c.rulesApplied && c.rules.conditions.some(r=>r.field==='university');
-  const rows=(uniRestricted?a.breakdownCourse.slice(0,4):a.breakdownCourse.slice(0,5));
+  const rows=a.breakdownCourse.length?(uniRestricted?a.breakdownCourse.slice(0,4):a.breakdownCourse.slice(0,5)):[];
+  const maxCourse=rows.length?Math.max.apply(null,rows.map(x=>x.n)):1;
+  const coursePanel = rows.length
+    ? '<div class="ns-breakdown">'+rows.map(x=>'<div class="ns-bd-row"><span class="ns-bd-name">'+esc(pick(x))+'</span><span class="ns-bd-bar"><i style="width:'+Math.round(x.n/maxCourse*100)+'%"></i></span><span class="ns-bd-val">'+fmtNum(x.n)+'</span></div>').join('')+'</div>'
+    : emptyState('chart',t('live_no_breakdown'),t('live_empty_desc'));
   return '<section class="ns-panel ns-audience">'+
     '<div class="ns-panel-head"><h2>'+esc(t('aud_reach'))+'</h2><span class="ns-hint">'+esc(t('aud_reach_sub'))+'</span></div>'+
     '<div class="ns-panel-pad ns-reach">'+
@@ -3127,12 +2874,10 @@ function reachPanelHTML(){
       (reach?(
         '<div class="ns-breakdown">'+
           '<div class="ns-bd-row"><span class="ns-bd-name">'+esc(t('aud_predefined'))+'</span><span class="ns-bd-bar"><i style="width:100%"></i></span><span class="ns-bd-val">'+fmtNum(reach.gross)+'</span></div>'+
-          '<div class="ns-bd-row"><span class="ns-bd-name">'+esc(t('aud_suppression'))+'</span><span class="ns-bd-bar"><i style="width:'+Math.round(reach.suppression/reach.gross*100)+'%;background:var(--amber)"></i></span><span class="ns-bd-val">−'+fmtNum(reach.suppression)+'</span></div>'+
-        '</div>'+
-        '<div class="ns-note ns-note-neutral">'+ic('info',16)+'<span>'+esc(t('aud_sample_hint'))+'</span></div>'
+          '<div class="ns-bd-row"><span class="ns-bd-name">'+esc(t('aud_suppression'))+'</span><span class="ns-bd-bar"><i style="width:'+Math.round(reach.gross?reach.suppression/reach.gross*100:0)+'%;background:var(--amber)"></i></span><span class="ns-bd-val">−'+fmtNum(reach.suppression)+'</span></div>'+
+        '</div>'
       ):('<div class="ns-note ns-note-warn">'+ic('alert',16)+'<span>'+esc(t('val_audience_empty'))+'</span></div>'))+
-      '<div><div class="ns-eyebrow" style="margin-bottom:8px">'+esc(t('aud_breakdown_course'))+'</div>'+
-        '<div class="ns-breakdown">'+rows.map(x=>'<div class="ns-bd-row"><span class="ns-bd-name">'+esc(pick(x))+'</span><span class="ns-bd-bar"><i style="width:'+Math.round(x.n/maxCourse*100)+'%"></i></span><span class="ns-bd-val">'+fmtNum(x.n)+'</span></div>').join('')+'</div></div>'+
+      '<div><div class="ns-eyebrow" style="margin-bottom:8px">'+esc(t('aud_breakdown_course'))+'</div>'+coursePanel+'</div>'+
       '<div><div class="ns-eyebrow" style="margin-bottom:8px">'+esc(t('aud_sample'))+'</div>'+
         '<div class="ns-samples">'+
           sampleStudents().map(s=>'<div class="ns-sample">'+avatar(s.name,s.initial)+
@@ -3143,12 +2888,13 @@ function reachPanelHTML(){
   '</section>';
 }
 function sampleStudents(){
+  /* Illustrative preview rows for the reach panel — not live students. */
   const base=[
-    {name:{bn:"রাফিয়া আক্তার",en:"Rafia Akter"},initial:"রা",uni:"RU",course:LANG==='en'?"English":"ইংরেজি"},
-    {name:{bn:"তানভীর হোসেন",en:"Tanvir Hossain"},initial:"তা",uni:"DU",course:LANG==='en'?"Physics":"পদার্থবিজ্ঞান"},
-    {name:{bn:"সাদিয়া ইসলাম",en:"Sadia Islam"},initial:"সা",uni:"JU",course:LANG==='en'?"Chemistry":"রসায়ন"}
+    {name:{bn:"রাফিয়া আক্তার",en:"Rafia Akter"},initial:"রা",uni:"RU",course:{bn:"ইংরেজি",en:"English"}},
+    {name:{bn:"তানভীর হোসেন",en:"Tanvir Hossain"},initial:"তা",uni:"DU",course:{bn:"পদার্থবিজ্ঞান",en:"Physics"}},
+    {name:{bn:"সাদিয়া ইসলাম",en:"Sadia Islam"},initial:"সা",uni:"JU",course:{bn:"রসায়ন",en:"Chemistry"}}
   ];
-  return base.map(b=>({name:LANG==='en'?b.name.en:b.name.bn,initial:b.initial,uni:b.uni,course:b.course}));
+  return base.map(b=>({name:LANG==='en'?b.name.en:b.name.bn,initial:b.initial,uni:b.uni,course:pick(b.course)}));
 }
 
 /* ============================================================
@@ -3214,7 +2960,7 @@ function audienceViewHTML(){
   const a=SAMPLE_DATA.analytics;
   return '<div class="ns-page-head"><div>'+
     '<h1>'+esc(t('aud_title'))+'</h1><p>'+esc(t('aud_sub'))+'</p></div>'+
-    '<div class="ns-page-head-actions"><span class="ns-sim">'+esc(t('sim_data'))+'</span></div></div>'+
+    '<div class="ns-page-head-actions"></div></div>'+
   '<div class="ns-aud-grid">'+
     '<div class="ns-stack">'+
       '<section class="ns-panel ns-segment">'+
@@ -3225,7 +2971,7 @@ function audienceViewHTML(){
               const on=c.segmentId===s.key&&!c.rulesApplied;
               return '<button class="ns-seg-card" role="radio" aria-checked="'+(on?'true':'false')+'" data-action="set-segment" data-key="'+s.key+'">'+
                 '<span class="ns-seg-card-top">'+ic('users',14)+'<span class="ns-seg-card-name">'+esc(LANG==='en'?s.en:s.bn)+'</span></span>'+
-                '<span class="ns-seg-card-count">'+fmtNum(s.count)+'</span>'+
+                '<span class="ns-seg-card-count">'+fmtNum(liveSegCount(s.key))+'</span>'+
                 '<span class="ns-seg-card-desc">'+esc(pick(s.desc))+'</span></button>';
             }).join('')+
           '</div>'+
@@ -3237,7 +2983,7 @@ function audienceViewHTML(){
         '<div class="ns-panel-pad ns-stack-sm">'+
           state.savedSegments.map(s=>'<div class="ns-inline-between" style="padding:10px 12px;border:1px solid var(--line);border-radius:13px">'+
             '<div style="min-width:0"><div style="font-size:13.5px;font-weight:650">'+esc(pick(s.name))+'</div>'+
-            '<div class="ns-dim" style="font-size:12px">'+fmtNum(s.count)+' '+esc(t('students'))+' · '+esc(s.rules.map(r=>fieldLabel(r.field)).join(' · '))+'</div></div>'+
+            '<div class="ns-dim" style="font-size:12px">'+esc(s.rules.map(r=>fieldLabel(r.field)).join(' · '))+'</div></div>'+
             '<button class="ns-btn ns-btn-ghost ns-btn-sm" data-action="use-saved-segment" data-id="'+esc(s.id)+'">'+esc(t('t_use'))+'</button></div>').join('')+
         '</div></section>':'')+
       '<section class="ns-panel">'+
@@ -3341,7 +3087,7 @@ function templatesViewHTML(){
   const q=(state.templateQuery||'').toLowerCase();
   if(q) list=list.filter(x=>pick(x.bn).toLowerCase().includes(q)||pick(x.en).toLowerCase().includes(q)||pick(x.bn.title).toLowerCase().includes(q));
   return '<div class="ns-page-head"><div><h1>'+esc(t('t_title'))+'</h1><p>'+esc(t('t_sub'))+'</p></div>'+
-    '<div class="ns-page-head-actions"><span class="ns-sim">'+esc(t('sim_data'))+'</span>'+
+    '<div class="ns-page-head-actions">'+
     '<button class="ns-btn ns-btn-primary ns-btn-sm" data-action="save-template">'+ic('plus',16)+esc(t('save_template'))+'</button></div></div>'+
   '<div class="ns-toolbar">'+
     '<div class="ns-search">'+ic('search',17)+'<input class="ns-input" id="nsTplSearch" data-action="tpl-search" value="'+esc(state.templateQuery||'')+'" placeholder="'+esc(t('ph_search_templates'))+'" data-ph-bn="'+esc(t('ph_search_templates'))+'" data-ph-en="'+esc(t('ph_search_templates'))+'"></div>'+
@@ -3436,16 +3182,16 @@ function campaignTimelineHTML(cp){
 function campaignsViewHTML(){
   const groups=[['active','status_active'],['paused','status_paused'],['draft','status_draft'],['completed','status_completed']];
   return '<div class="ns-page-head"><div><h1>'+esc(t('c_title'))+'</h1><p>'+esc(t('c_sub'))+'</p></div>'+
-    '<div class="ns-page-head-actions"><span class="ns-sim">'+esc(t('sim_data'))+'</span>'+
+    '<div class="ns-page-head-actions">'+
     '<button class="ns-btn ns-btn-primary ns-btn-sm" data-action="new-campaign">'+ic('plus',16)+esc(t('c_new'))+'</button></div></div>'+
   '<div class="ns-camp-grid">'+
     '<div class="ns-stack">'+
-      groups.map(g=>{
+      (state.campaigns.length?groups.map(g=>{
         const items=state.campaigns.filter(x=>x.status===g[0]);
         if(!items.length) return '';
         return '<div><div class="ns-eyebrow" style="margin-bottom:8px">'+esc(t(g[1]))+' · '+fmtNum(items.length)+'</div>'+
           '<div class="ns-stack">'+items.map(campaignCardHTML).join('')+'</div></div>';
-      }).join('')+
+      }).join(''):emptyState('layers',t('live_empty_title'),t('live_empty_desc')))+
     '</div>'+
     '<aside class="ns-compose-side" aria-label="'+esc(t('c_title'))+'">'+
       '<section class="ns-approval ns-approval-panel '+(state.busy?'is-blocked':'is-ready')+'">'+
@@ -3456,19 +3202,18 @@ function campaignsViewHTML(){
       '<section class="ns-panel">'+
         '<div class="ns-panel-head"><h2>'+esc(t('c_perf'))+'</h2></div>'+
         '<div class="ns-panel-pad ns-stack-sm">'+
-          funnelHTML([
-            [t('a_reach'),48200],
-            [t('a_sent'),48200],
-            [t('a_opened'),22140],
-            [t('a_clicked'),9140]
-          ])+
+          (function(){const a=(state.analytics||SAMPLE_DATA.analytics);
+            return (a.sentToday||a.delivered||a.opened||a.clicked)
+              ? funnelHTML([[t('a_reach'),a.reach.estimated],[t('a_sent'),a.sentToday],[t('a_delivered'),a.delivered],[t('a_opened'),a.opened],[t('a_clicked'),a.clicked]])
+              : emptyState('chart',t('live_empty_title'),t('live_empty_desc'));})()+
         '</div>'+
       '</section>'+
       '<section class="ns-panel">'+
         '<div class="ns-panel-head">'+ic('clock',16)+'<h2>'+esc(t('schedule'))+'</h2></div>'+
         '<div class="ns-panel-pad ns-stack-sm">'+
-          state.queue.slice(0,4).map(q=>'<div class="ns-inline-between" style="font-size:12.5px"><span class="ns-truncate">'+esc(pick(q.title))+'</span>'+
-            '<span class="ns-dim ns-num">'+esc(fmtDateTime(q.scheduledFor))+'</span></div>').join('')+
+          (state.queue.length?state.queue.slice(0,4).map(q=>'<div class="ns-inline-between" style="font-size:12.5px"><span class="ns-truncate">'+esc(pick(q.title))+'</span>'+
+            '<span class="ns-dim ns-num">'+esc(fmtDateTime(q.scheduledFor))+'</span></div>').join('')
+            :emptyState('queue',t('live_empty_title'),t('live_empty_desc')))+
         '</div>'+
       '</section>'+
     '</aside>'+
@@ -3503,7 +3248,7 @@ function queueViewHTML(){
   const body=items.length?('<div class="ns-panel ns-table" style="padding:0">'+items.map((q,i)=>queueRowHTML(q,i)).join('')+'</div>')
     : emptyState('queue',t('q_empty'),t('q_empty_desc'),'<button class="ns-btn ns-btn-primary" data-action="goto" data-tab="compose">'+esc(t('q_empty_cta'))+'</button>');
   return '<div class="ns-page-head"><div><h1>'+esc(t('q_title'))+'</h1><p>'+esc(t('q_sub'))+'</p></div>'+
-    '<div class="ns-page-head-actions"><span class="ns-sim">'+esc(t('sim_data'))+'</span></div></div>'+
+    '<div class="ns-page-head-actions"></div></div>'+
   toolbar+'<div class="ns-stack">'+body+'</div>';
 }
 function queueRowHTML(q,i){
@@ -3562,7 +3307,7 @@ function sentViewHTML(){
   const body=items.length?('<div class="ns-panel ns-table" style="padding:0">'+items.map(sentRowHTML).join('')+'</div>')
     : emptyState('send',t('s_empty'),t('s_empty_desc'),'<button class="ns-btn ns-btn-primary" data-action="clear-sent-filters">'+esc(t('s_clear_filters'))+'</button>');
   return '<div class="ns-page-head"><div><h1>'+esc(t('s_title'))+'</h1><p>'+esc(t('s_sub'))+'</p></div>'+
-    '<div class="ns-page-head-actions"><span class="ns-sim">'+esc(t('sim_data'))+'</span>'+
+    '<div class="ns-page-head-actions">'+
     '<span class="ns-badge">'+ic('list',12)+fmtNum(items.length)+'</span></div></div>'+
   toolbar+'<div class="ns-stack">'+body+'</div>';
 }
@@ -3615,86 +3360,93 @@ function sentDetailHTML(row){
 function analyticsViewHTML(){
   const a=(state.analytics||SAMPLE_DATA.analytics);
   const r=state.analyticsRange;
-  const series=r===7?a.series7:(r===30?a.series7.concat(a.series7):a.series7);
+  const series=a.series7.length?a.series7:[];
   const totals=series.reduce((s,x)=>({sent:s.sent+x.sent,delivered:s.delivered+x.delivered,opened:s.opened+x.opened,clicked:s.clicked+x.clicked}),{sent:0,delivered:0,opened:0,clicked:0});
-  if(r!==7){ totals.sent*=4; totals.delivered*=4; totals.opened*=4; totals.clicked*=4; }
-  const prev={sent:Math.round(totals.sent*0.93),opened:Math.round(totals.opened*0.96)};
   const openRate=totals.sent?totals.opened/totals.sent:0;
   const clickRate=totals.sent?totals.clicked/totals.sent:0;
-  const maxSent=Math.max.apply(null,series.map(x=>x.sent))||1;
+  const maxSent=series.length?Math.max.apply(null,series.map(x=>x.sent)):1;
   const ab=a.ab;
   const abLead = ab.b.opened>ab.a.opened ? 'b':'a';
+  const hasData=Boolean(a.sentToday||a.delivered||a.opened||a.clicked||series.length||a.channelPerf.length||a.failureReasons.length);
+
+  const history = series.length
+    ? barChartSVG(series,maxSent)+
+      '<div class="ns-chart-legend"><span><i style="background:var(--brand)"></i>'+esc(t('a_sent'))+'</span>'+
+      '<span><i style="background:var(--blue)"></i>'+esc(t('a_opened'))+'</span>'+
+      '<span><i style="background:var(--coral)"></i>'+esc(t('a_clicked'))+'</span></div>'
+    : emptyState('chart',t('live_empty_title'),t('live_empty_bn'));
+
+  const channelPerf = a.channelPerf.length
+    ? a.channelPerf.map(c=>'<div><div class="ns-inline-between" style="font-size:13px"><span>'+ic(channelIcon(c.key),14)+' '+esc(channelName(c.key))+'</span>'+
+        '<span class="ns-dim ns-num">'+fmtNum(c.delivered?Math.round(c.opened/c.delivered*100):0)+'% '+esc(t('a_open_rate'))+'</span></div>'+
+        '<div class="ns-bar" style="margin-top:6px"><i style="width:'+Math.round(c.delivered/Math.max.apply(null,[1].concat(a.channelPerf.map(x=>x.delivered)))*100)+'%"></i></div></div>').join('')
+    : emptyState('send',t('live_empty_title'),t('live_empty_desc'));
+
+  const failures = a.failureReasons.length
+    ? a.failureReasons.map(fr=>'<div class="ns-inline-between" style="font-size:12.5px;padding:8px 0;border-bottom:1px solid var(--line)">'+
+        '<span style="flex:1;min-width:0">'+esc(pick(fr))+'</span><span class="ns-badge ns-badge-danger">'+fmtNum(fr.n)+'</span></div>').join('')
+    : emptyState('checkCircle',t('a_no_failures'),t('live_empty_desc'));
+
+  const abBlock = (ab.a.sent||ab.b.sent)
+    ? ['a','b'].map(k=>{const v=ab[k];return '<div class="ns-ab-card'+(abLead===k?' is-lead':'')+'">'+
+        '<div class="ns-ab-head"><span class="ns-ab-label">'+esc(pick(v.label))+'</span>'+
+        (abLead===k?badge('ok',t('a_leader'),'trending'):'')+'</div>'+
+        '<div class="ns-ab-metric"><span>'+esc(t('a_sent'))+'</span><b>'+fmtNum(v.sent)+'</b></div>'+
+        '<div class="ns-ab-metric"><span>'+esc(t('a_opened'))+'</span><b>'+fmtNum(v.opened)+' ('+fmtNum(v.sent?Math.round(v.opened/v.sent*100):0)+'%)</b></div>'+
+        '<div class="ns-ab-metric"><span>'+esc(t('a_clicked'))+'</span><b>'+fmtNum(v.clicked)+' ('+fmtNum(v.sent?Math.round(v.clicked/v.sent*100):0)+'%)</b></div>'+
+      '</div>';}).join('')
+    : emptyState('split',t('live_empty_title'),t('live_empty_desc'));
+
   return '<div class="ns-page-head"><div><h1>'+esc(t('a_title'))+'</h1><p>'+esc(t('a_sub'))+'</p></div>'+
-    '<div class="ns-page-head-actions"><span class="ns-sim">'+esc(t('sim_data'))+'</span>'+
+    '<div class="ns-page-head-actions">'+sendBadge()+
     '<div class="ns-seg" role="group" aria-label="'+esc(t('a_title'))+'">'+
       [[7,'a_range_7'],[30,'a_range_30'],[90,'a_range_90']].map(o=>'<button class="ns-seg-btn" aria-pressed="'+(r===o[0])+'" data-action="analytics-range" data-value="'+o[0]+'">'+esc(t(o[1]))+'</button>').join('')+
     '</div>'+
     '<button class="ns-btn ns-btn-ghost ns-btn-sm" data-action="export-analytics">'+ic('download2',15)+esc(t('a_export'))+'</button></div></div>'+
+  (hasData?'':'<div class="ns-note ns-note-neutral" style="margin-bottom:12px">'+ic('info',16)+'<span>'+esc(t('live_empty_bn'))+'</span></div>')+
   '<div class="ns-metrics" style="margin-bottom:14px">'+
-    metricCard({icon:'send',label:t('a_sent'),value:fmtNum(totals.sent),foot:'<span class="ns-dim">'+ic('trending',13)+' '+esc(t('a_cmp_prev'))+' +'+fmtNum(Math.round((totals.sent/prev.sent-1)*100))+'%</span>'})+
-    metricCard({icon:'checkCircle',tone:'ok',label:t('a_delivered'),value:fmtNum(totals.delivered),foot:'<span class="ns-dim">'+fmtNum(Math.round(totals.delivered/totals.sent*100))+'%</span>'})+
+    metricCard({icon:'send',label:t('a_sent'),value:fmtNum(totals.sent),foot:'<span class="ns-dim">'+esc(t('live_server_hint'))+'</span>'})+
+    metricCard({icon:'checkCircle',tone:'ok',label:t('a_delivered'),value:fmtNum(totals.delivered),foot:'<span class="ns-dim">'+fmtNum(totals.sent?Math.round(totals.delivered/totals.sent*100):0)+'%</span>'})+
     metricCard({icon:'eye',tone:'info',label:t('a_opened'),value:fmtNum(totals.opened),foot:'<span class="ns-dim">'+fmtNum(Math.round(openRate*100))+'% '+esc(t('a_open_rate'))+'</span>'})+
     metricCard({icon:'trending',tone:'info',label:t('a_ctr'),value:fmtNum(Math.round(clickRate*100))+'%',foot:'<span class="ns-dim">'+fmtNum(totals.clicked)+' '+esc(t('a_clicked'))+'</span>'})+
   '</div>'+
   '<div class="ns-analytics-grid" style="display:grid;gap:12px">'+
     '<section class="ns-panel">'+
       '<div class="ns-panel-head"><h2>'+esc(t('a_hist'))+'</h2><span class="ns-hint">'+esc(t('a_sent'))+'</span></div>'+
-      '<div class="ns-panel-pad">'+barChartSVG(series,maxSent)+
-        '<div class="ns-chart-legend"><span><i style="background:var(--brand)"></i>'+esc(t('a_sent'))+'</span>'+
-        '<span><i style="background:var(--blue)"></i>'+esc(t('a_opened'))+'</span>'+
-        '<span><i style="background:var(--coral)"></i>'+esc(t('a_clicked'))+'</span></div>'+
-      '</div>'+
+      '<div class="ns-panel-pad">'+history+'</div>'+
     '</section>'+
     '<section class="ns-panel">'+
-      '<div class="ns-panel-head"><h2>'+esc(t('a_funnel'))+'</h2><span class="ns-hint">'+esc(pick(SAMPLE_DATA.quota.window))+'</span></div>'+
+      '<div class="ns-panel-head"><h2>'+esc(t('a_funnel'))+'</h2><span class="ns-hint">'+esc(t('live_server_hint'))+'</span></div>'+
       '<div class="ns-panel-pad">'+funnelHTML([[t('a_reach'),a.reach.estimated],[t('a_sent'),a.sentToday],[t('a_delivered'),a.delivered],[t('a_opened'),a.opened],[t('a_clicked'),a.clicked]])+'</div>'+
     '</section>'+
   '</div>'+
   '<div class="ns-grid-2" style="margin-top:12px">'+
     '<section class="ns-panel">'+
       '<div class="ns-panel-head"><h2>'+esc(t('a_channel_perf'))+'</h2></div>'+
-      '<div class="ns-panel-pad ns-stack-sm">'+
-        a.channelPerf.map(c=>'<div><div class="ns-inline-between" style="font-size:13px"><span>'+ic(channelIcon(c.key),14)+' '+esc(channelName(c.key))+'</span>'+
-          '<span class="ns-dim ns-num">'+fmtNum(Math.round(c.opened/c.delivered*100))+'% '+esc(t('a_open_rate'))+'</span></div>'+
-          '<div class="ns-bar" style="margin-top:6px"><i style="width:'+Math.round(c.delivered/Math.max.apply(null,a.channelPerf.map(x=>x.delivered))*100)+'%"></i></div></div>').join('')+
-      '</div>'+
+      '<div class="ns-panel-pad ns-stack-sm">'+channelPerf+'</div>'+
     '</section>'+
     '<section class="ns-panel">'+
       '<div class="ns-panel-head"><h2>'+esc(t('a_failures'))+'</h2><span class="ns-hint">'+fmtNum(a.failureReasons.reduce((s,x)=>s+x.n,0))+'</span></div>'+
-      '<div class="ns-panel-pad ns-stack-sm">'+
-        a.failureReasons.map(fr=>'<div class="ns-inline-between" style="font-size:12.5px;padding:8px 0;border-bottom:1px solid var(--line)">'+
-          '<span style="flex:1;min-width:0">'+esc(pick(fr))+'</span><span class="ns-badge ns-badge-danger">'+fmtNum(fr.n)+'</span></div>').join('')+
-      '</div>'+
+      '<div class="ns-panel-pad ns-stack-sm">'+failures+'</div>'+
     '</section>'+
   '</div>'+
   '<div class="ns-grid-2" style="margin-top:12px">'+
     '<section class="ns-panel">'+
-      '<div class="ns-panel-head"><h2>'+esc(t('a_by_type'))+'</h2></div>'+
-      '<div class="ns-panel-pad ns-breakdown">'+
-        SAMPLE_DATA.notificationTypes.map((ty,i)=>{const n=Math.round(a.sentToday*(0.28-i*0.04));
-          return '<div class="ns-bd-row"><span class="ns-bd-name">'+ic(ty.icon,14)+' '+esc(LANG==='en'?ty.en:ty.bn)+'</span><span class="ns-bd-bar"><i style="width:'+Math.round(n/a.sentToday/0.28*100)+'%"></i></span><span class="ns-bd-val">'+fmtNum(n)+'</span></div>';}).join('')+
-      '</div>'+
+      '<div class="ns-panel-head"><h2>'+esc(t('a_ab'))+'</h2><span class="ns-hint">'+esc(t('a_ab_note'))+'</span></div>'+
+      '<div class="ns-panel-pad ns-ab">'+abBlock+'</div>'+
     '</section>'+
     '<section class="ns-panel">'+
-      '<div class="ns-panel-head"><h2>'+esc(t('a_ab'))+'</h2><span class="ns-hint">'+esc(t('a_ab_note'))+'</span></div>'+
-      '<div class="ns-panel-pad ns-ab">'+
-        ['a','b'].map(k=>{const v=ab[k];return '<div class="ns-ab-card'+(abLead===k?' is-lead':'')+'">'+
-          '<div class="ns-ab-head"><span class="ns-ab-label">'+esc(pick(v.label))+'</span>'+
-          (abLead===k?badge('ok',t('a_leader'),'trending'):'')+'</div>'+
-          '<div class="ns-ab-metric"><span>'+esc(t('a_sent'))+'</span><b>'+fmtNum(v.sent)+'</b></div>'+
-          '<div class="ns-ab-metric"><span>'+esc(t('a_opened'))+'</span><b>'+fmtNum(v.opened)+' ('+fmtNum(Math.round(v.opened/v.sent*100))+'%)</b></div>'+
-          '<div class="ns-ab-metric"><span>'+esc(t('a_clicked'))+'</span><b>'+fmtNum(v.clicked)+' ('+fmtNum(Math.round(v.clicked/v.sent*100))+'%)</b></div>'+
-          '<div class="ns-ab-metric"><span>'+esc(t('a_engagement'))+'</span><b>'+fmtNum(Math.round(v.opened*0.4+v.clicked))+'</b></div>'+
-        '</div>';}).join('')+
+      '<div class="ns-panel-head"><h2>'+esc(t('a_by_audience'))+'</h2><span class="ns-hint">'+esc(t('est_reach_short'))+'</span></div>'+
+      '<div class="ns-panel-pad ns-breakdown">'+
+      (state.sent.length
+        ? SAMPLE_DATA.segments.filter(se=>state.sent.some(x=>x.audience===se.key)).map(se=>{
+            const n=state.sent.filter(x=>x.audience===se.key).length;
+            return '<div class="ns-bd-row"><span class="ns-bd-name">'+esc(LANG==='en'?se.en:se.bn)+'</span><span class="ns-bd-bar"><i style="width:'+(n/state.sent.length*100)+'%"></i></span><span class="ns-bd-val">'+fmtNum(n)+'</span></div>';
+          }).join('')
+        : emptyState('chart',t('live_empty_title'),t('live_empty_desc')))+
       '</div>'+
     '</section>'+
-  '</div>'+
-  '<section class="ns-panel" style="margin-top:12px">'+
-    '<div class="ns-panel-head"><h2>'+esc(t('a_by_audience'))+'</h2><span class="ns-hint">'+esc(t('est_reach_short'))+'</span></div>'+
-    '<div class="ns-panel-pad ns-breakdown">'+
-      SAMPLE_DATA.segments.map(s=>'<div class="ns-bd-row"><span class="ns-bd-name">'+esc(LANG==='en'?s.en:s.bn)+'</span><span class="ns-bd-bar"><i style="width:'+Math.round(s.count/26840*100)+'%"></i></span><span class="ns-bd-val">'+fmtNum(s.count)+'</span></div>').join('')+
-    '</div>'+
-  '</section>';
+  '</div>';
 }
 function barChartSVG(series,max){
   const w=560,h=180,pad=26,bw=(w-pad*2)/series.length;
@@ -3720,10 +3472,10 @@ function automationsViewHTML(){
   const kindLabel={trigger:'au_trigger',condition:'au_condition',action:'au_action',wait:'au_wait'};
   const kindIcon={trigger:'bolt',condition:'filter',action:'send',wait:'clock'};
   return '<div class="ns-page-head"><div><h1>'+esc(t('au_title'))+'</h1><p>'+esc(t('au_sub'))+'</p></div>'+
-    '<div class="ns-page-head-actions"><span class="ns-sim">'+esc(t('sim_data'))+'</span>'+
+    '<div class="ns-page-head-actions">'+
     '<button class="ns-btn ns-btn-primary ns-btn-sm" data-action="new-automation">'+ic('plus',16)+esc(t('au_new'))+'</button></div></div>'+
   '<div class="ns-stack">'+
-    state.automations.map(au=>{
+    (state.automations.length?state.automations.map(au=>{
       const st=au.status;
       return '<article class="ns-panel">'+
         '<div class="ns-panel-head">'+
@@ -3745,7 +3497,7 @@ function automationsViewHTML(){
           (st!=='active'?'<div class="ns-note ns-note-warn" style="margin-top:10px">'+ic('lock',16)+'<span>'+esc(t('au_activate_note'))+'</span></div>':'')+
         '</div>'+
       '</article>';
-    }).join('')+
+    }).join(''):emptyState('bolt',t('live_empty_title'),t('live_empty_desc'))) +
   '</div>';
 }
 
@@ -4111,7 +3863,6 @@ function authGateHTML(){
       '<button class="ns-btn ns-btn-primary ns-btn-block" data-action="auth-verify" id="nsAuthBtn">'+ic('shield',17)+esc(t('auth_verify'))+'</button>'+
       '<button class="ns-btn ns-btn-block" style="margin-top:8px" data-action="auth-passkey" id="nsPasskeyBtn">'+ic('lock',17)+'<span id="nsPasskeyLabel">'+esc(t('auth_passkey'))+'</span></button>'+
       '<div id="nsPasskeyHint" class="ns-field-help" hidden>'+esc(t('auth_passkey_enroll_hint'))+'</div>'+
-      '<button class="ns-btn ns-btn-quiet ns-btn-block" style="margin-top:8px" data-action="auth-demo">'+esc(t('auth_demo'))+'</button>'+
       '<div class="ns-gate-foot">'+ic('info',14)+'<span id="nsAuthHint">'+esc(t('auth_note'))+'</span></div>'+
     '</div>'+
   '</div>';
@@ -4442,8 +4193,36 @@ function performSend(){
 /* ---- Real data layer ----------------------------------------
    Token lives in sessionStorage only (never localStorage, never the URL),
    exactly like the previous admin panel. */
+function loadTemplates(){
+  return NS.api.get('/api/notifications/templates').then(function(out){
+    if(!out.ok||!out.data||!Array.isArray(out.data.templates)) return;
+    state.templates=out.data.templates.map(function(tp){
+      return { key:tp.key, category:tp.type||tp.category||'announcement',
+        favorite:!!tp.favorite, ai:!!tp.ai, versions:Number(tp.versions||1), used:Number(tp.used||0),
+        bn:tp.bn||{title:'',body:''}, en:tp.en||{title:'',body:''},
+        perf:tp.perf||{openRate:0,clickRate:0} };
+    });
+  });
+}
+/* Saving does not have a server endpoint yet, so a saved template lives in this
+   session only — it is never presented as a server-side library entry. */
+function saveTemplateH(){
+  const c=state.compose;
+  const hasContent=!!((c.bn.title||c.en.title)&&(c.bn.body||c.en.body));
+  if(!hasContent){ toast(t('t_need_content'),'warn',t('save_template')); return; }
+  state.templates.unshift({
+    key:'tpl_'+Date.now().toString(36), category:c.type||'announcement',
+    favorite:false, ai:false, versions:1, used:0,
+    bn:JSON.parse(JSON.stringify(c.bn)), en:JSON.parse(JSON.stringify(c.en)),
+    perf:{openRate:0,clickRate:0}
+  });
+  toast(t('t_saved'),'ok',t('save_template'));
+  state.tab='templates'; state.mobileTab='more';
+  render();
+}
 function refreshCenter(){
   if(!NS.api.token()||!state.authenticated) return;
+  loadTemplates();
   NS.api.get('/api/notifications/history').then(out=>{
     if(out.ok) NS.hydrate(out.data);
     render();
@@ -4479,13 +4258,12 @@ function hydrateCenter(d){
     window:SAMPLE_DATA.quota.window};
   state.analytics=analyticsFrom(mapped,d.analytics,d.reachEstimate,d.dailyCap);
   state.history=d.items||items;
-  if(Array.isArray(d.templates)&&d.templates.length){
+  if(Array.isArray(d.templates)){
     state.templates=d.templates.map(function(tp){
-      const shell=state.templates.find(function(x){return x.key===tp.key;})||{};
-      return Object.assign({key:tp.key, category:tp.type||shell.category||'announcement',
-        favorite:!!shell.favorite, ai:!!shell.ai, versions:shell.versions||1, used:shell.used||0,
-        bn:tp.bn||shell.bn||{title:'',body:''}, en:tp.en||shell.en||{title:'',body:''},
-        perf:shell.perf||{openRate:0,clickRate:0}}, {});
+      return { key:tp.key, category:tp.type||tp.category||'announcement',
+        favorite:!!tp.favorite, ai:!!tp.ai, versions:Number(tp.versions||1), used:Number(tp.used||0),
+        bn:tp.bn||{title:'',body:''}, en:tp.en||{title:'',body:''},
+        perf:tp.perf||{openRate:0,clickRate:0} };
     });
   }
 }
@@ -4737,9 +4515,6 @@ document.addEventListener('click',function(ev){
     case 'auth-verify': stop(); verifyToken(); break;
     case 'auth-passkey': stop(); onPasskeyButton(); break;
     case 'auth-passkey-add': stop(); addPasskeyToDevice(); break;
-    case 'auth-demo': stop();
-      { const inp=document.getElementById('nsToken'); if(inp){ inp.value='demo-admin-token'; } verifyToken(); }
-      break;
     case 'toggle-step': {
       stop();
       const k=el.dataset.step;
@@ -4794,6 +4569,18 @@ document.addEventListener('click',function(ev){
       partialRefresh(); break;
     }
     case 'set-schedule-mode': stop(); state.compose.schedule.mode=el.dataset.mode; state.sectionOpen.schedule=true; partialRefresh(); break;
+    case 'image-pick': {
+      stop();
+      const imgInp=document.getElementById('nsImageFile');
+      if(imgInp) imgInp.click();
+      break;
+    }
+    case 'image-clear': {
+      stop();
+      state.compose.imageUrl=''; state.compose.dirty=true;
+      partialRefresh();
+      break;
+    }
     case 'insert-var': {
       stop();
       const v=el.dataset.var;
@@ -5272,6 +5059,7 @@ function debouncedSentSearch(){
 document.addEventListener('change',function(ev){
   const el=ev.target;
   if(!el||!el.dataset) return;
+  if(el.id==='nsImageFile'){ uploadNotificationImage(el.files&&el.files[0]); return; }
   const f=el.dataset.field;
   if(el.tagName==='SELECT'){
     if(f==='priority'){ state.compose.priority=el.value; state.compose.dirty=true; return; }
@@ -5390,7 +5178,7 @@ function bootstrapAuth(){
    * same way the token is verified, so a reload does not bounce to the gate. */
   if(!apiToken()&&!apiSession()) return;
   NS.api.get('/api/notifications/history').then(function(out){
-    if(out.ok){ state.authenticated=true; NS.hydrate(out.data); render(); }
+    if(out.ok){ state.authenticated=true; NS.hydrate(out.data); render(); loadTemplates().then(render); }
     else { NS.api.clearToken(); NS.api.clearSession(); }
   });
 }
