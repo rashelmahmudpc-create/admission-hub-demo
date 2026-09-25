@@ -1616,8 +1616,10 @@ const T = {
   auth_passkey_fail:{bn:"Passkey মেলেনি",en:"Passkey did not match"},
   auth_passkey_none:{bn:"এই ডিভাইসে কোনো Passkey নেই",en:"No passkey enrolled yet"},
   auth_passkey_add:{bn:"এই ডিভাইসে Passkey যোগ করুন",en:"Add a passkey to this device"},
+  auth_passkey_setup:{bn:"প্রথমবার Passkey সেটআপ করুন",en:"Set up a passkey"},
   auth_passkey_added:{bn:"Passkey যোগ হয়েছে",en:"Passkey added"},
   auth_passkey_ready:{bn:"Passkey চালু আছে",en:"Passkey is enabled"},
+  auth_passkey_enroll_hint:{bn:"টোকেন দিয়ে ঢুকে একবার Passkey যোগ করুন — এরপর টোকেন ছাড়াই ঢুকতে পারবেন।",en:"Sign in with the token once, add a passkey, then you can enter without the token."},
   audit_title:{bn:"অডিট লগ",en:"Audit log"},
   act_created:{bn:"তৈরি করেছে",en:"created"},
   act_edited:{bn:"সম্পাদনা করেছে",en:"edited"},
@@ -4105,7 +4107,8 @@ function authGateHTML(){
         '<div id="nsAuthMsg" class="ns-field-help" aria-live="polite"></div>'+
       '</div>'+
       '<button class="ns-btn ns-btn-primary ns-btn-block" data-action="auth-verify" id="nsAuthBtn">'+ic('shield',17)+esc(t('auth_verify'))+'</button>'+
-      '<button class="ns-btn ns-btn-block" style="margin-top:8px" data-action="auth-passkey" id="nsPasskeyBtn" hidden>'+ic('lock',17)+esc(t('auth_passkey'))+'</button>'+
+      '<button class="ns-btn ns-btn-block" style="margin-top:8px" data-action="auth-passkey" id="nsPasskeyBtn">'+ic('lock',17)+'<span id="nsPasskeyLabel">'+esc(t('auth_passkey'))+'</span></button>'+
+      '<div id="nsPasskeyHint" class="ns-field-help" hidden>'+esc(t('auth_passkey_enroll_hint'))+'</div>'+
       '<button class="ns-btn ns-btn-quiet ns-btn-block" style="margin-top:8px" data-action="auth-demo">'+esc(t('auth_demo'))+'</button>'+
       '<div class="ns-gate-foot">'+ic('info',14)+'<span id="nsAuthHint">'+esc(t('auth_note'))+'</span></div>'+
     '</div>'+
@@ -4192,15 +4195,46 @@ function gateMsg(text,bad){
   msg.textContent=text||'';
   msg.style.color=bad?'var(--danger)':'';
 }
-/* Show the passkey button only when the worker reports one is enrolled. */
+/* The gate always shows a passkey button. Before any credential is enrolled it
+ * reads as "Set up a passkey" and asserts will return no-credential, so the
+ * enrollment instruction is shown too. Once a credential exists the label flips
+ * to "Sign in with passkey". */
+let passkeyEnrolled=false;
 function refreshPasskeyButton(){
   const btn=document.getElementById('nsPasskeyBtn');
+  const label=document.getElementById('nsPasskeyLabel');
+  const hint=document.getElementById('nsPasskeyHint');
   if(!btn) return;
-  if(!passkeySupported()){ btn.hidden=true; return; }
+  if(!passkeySupported()){ btn.hidden=true; if(hint) hint.hidden=true; return; }
   NS.api.get('/api/admin/webauthn/status').then(function(out){
     if(!document.getElementById('nsPasskeyBtn')) return;
-    btn.hidden=!(out.ok&&out.data&&out.data.enrolled);
-  }).catch(function(){ btn.hidden=true; });
+    const enrolled=Boolean(out.ok&&out.data&&out.data.enrolled);
+    passkeyEnrolled=enrolled;
+    if(label) label.textContent=t(enrolled?'auth_passkey':'auth_passkey_setup');
+    if(hint) hint.hidden=enrolled;
+  }).catch(function(){
+    passkeyEnrolled=false;
+    if(label) label.textContent=t('auth_passkey');
+    if(hint) hint.hidden=true;
+  });
+}
+/* One button, two jobs: before enrollment it enrolls using the token in the
+ * field, after enrollment it signs in with the device key. */
+function onPasskeyButton(){
+  if(passkeyEnrolled) return signInWithPasskey();
+  return enrollFirstPasskey();
+}
+/* First-run enrollment straight from the gate: the token field is the admin
+ * credential, so the owner does not have to enter the panel to add a passkey. */
+function enrollFirstPasskey(){
+  const token=(document.getElementById('nsToken')||{}).value||'';
+  if(token.trim().length<4){
+    gateMsg(t('auth_passkey_add')+' — '+t('auth_token'),true);
+    const inp=document.getElementById('nsToken'); if(inp) inp.focus();
+    return;
+  }
+  NS.api.setToken(token.trim());
+  addPasskeyToDevice();
 }
 function signInWithPasskey(){
   const btn=document.getElementById('nsPasskeyBtn');
@@ -4208,8 +4242,13 @@ function signInWithPasskey(){
   btn.disabled=true; btn.innerHTML=ic('spinner',17)+esc(t('auth_passkey_wait'));
   NS.api.post('/api/admin/webauthn/challenge',{purpose:'assert'}).then(function(begin){
     if(!begin.ok||!begin.data||!begin.data.options){
-      btn.disabled=false; btn.innerHTML=ic('lock',17)+esc(t('auth_passkey'));
+      btn.disabled=false; btn.innerHTML=ic('lock',17)+'<span id="nsPasskeyLabel">'+esc(t('auth_passkey_setup'))+'</span>';
+      /* 404 no-credential: nothing to assert yet. Point at the token path, which
+       * is the only way to enroll the first passkey. */
+      const hint=document.getElementById('nsPasskeyHint');
+      if(hint) hint.hidden=false;
       gateMsg(begin.status===404?t('auth_passkey_none'):t('auth_passkey_fail')+' ('+begin.status+')',true);
+      if(begin.status===404){ const inp=document.getElementById('nsToken'); if(inp) inp.focus(); }
       return null;
     }
     return navigator.credentials.get({publicKey:publicKeyOptions(begin.data.options,false)}).then(function(cred){
@@ -4218,7 +4257,7 @@ function signInWithPasskey(){
   }).then(function(out){
     if(!out) return;
     if(!out.ok||!out.data||!out.data.session){
-      btn.disabled=false; btn.innerHTML=ic('lock',17)+esc(t('auth_passkey'));
+      btn.disabled=false; btn.innerHTML=ic('lock',17)+'<span id="nsPasskeyLabel">'+esc(t('auth_passkey'))+'</span>';
       gateMsg(t('auth_passkey_fail')+' ('+out.status+')',true);
       return;
     }
@@ -4230,15 +4269,16 @@ function signInWithPasskey(){
       toast(t('auth_success'),'ok',t('appSub'));
     });
   }).catch(function(){
-    btn.disabled=false; btn.innerHTML=ic('lock',17)+esc(t('auth_passkey'));
+    btn.disabled=false; btn.innerHTML=ic('lock',17)+'<span id="nsPasskeyLabel">'+esc(t('auth_passkey'))+'</span>';
     gateMsg(t('auth_passkey_fail'),true);
   });
 }
 /* Enrollment needs the admin token: it is a privileged change to the account. */
 function addPasskeyToDevice(){
   if(!passkeySupported()) return;
-  const label=(window.prompt(t('auth_passkey_add'))||'').trim();
-  if(label===null) return;
+  const answer=window.prompt(t('auth_passkey_add'));
+  if(answer===null) return;
+  const label=answer.trim();
   NS.api.post('/api/admin/webauthn/challenge',{purpose:'register'}).then(function(begin){
     if(!begin.ok||!begin.data||!begin.data.options) return gateMsg(t('auth_passkey_fail')+' ('+begin.status+')',true);
     return navigator.credentials.create({publicKey:publicKeyOptions(begin.data.options,true)}).then(function(cred){
@@ -4689,7 +4729,7 @@ document.addEventListener('click',function(ev){
     case 'set-lang': stop(); applyLang(el.dataset.value); if(overlayState.open){ closeOverlay(); afterOverlayClose(); } break;
     case 'signout': stop(); signOutEverywhere(); state.authenticated=false; state.compose=blankDraft(); render(); toast(t('sys_signout_desc'),'ok',t('sys_signout_ok')); break;
     case 'auth-verify': stop(); verifyToken(); break;
-    case 'auth-passkey': stop(); signInWithPasskey(); break;
+    case 'auth-passkey': stop(); onPasskeyButton(); break;
     case 'auth-passkey-add': stop(); addPasskeyToDevice(); break;
     case 'auth-demo': stop();
       { const inp=document.getElementById('nsToken'); if(inp){ inp.value='demo-admin-token'; } verifyToken(); }
