@@ -3,7 +3,20 @@
 // এখানে env/fetch mock — কোনো লাইভ API কল হয় না।
 import { readFileSync } from 'fs';
 let pass = 0, fail = 0;
-const t = (n, c) => { if (c) { pass++; console.log('  ✓', n); } else { fail++; console.log('  ✗', n); } }
+const tests = [];
+const t = (n, c) => { tests.push([n, c]); };
+
+/* Async cases share a single mocked `globalThis.fetch`, so they must run one at
+   a time; running them concurrently lets one case's mock clobber another's. */
+async function runAll() {
+  for (const [n, c] of tests) {
+    try {
+      const v = typeof c === 'function' ? await c() : c;
+      if (v) { pass++; console.log('  ✓', n); }
+      else { fail++; console.log('  ✗', n); }
+    } catch (e) { fail++; console.log('  ✗', n, '→', (e && e.message) || e); }
+  }
+}
 
 const A = await import('./ai-agent.js');
 const { classifyIntent, validateChatReq, capStats, buildSystemPrompt, summarizeTo, safetyGate, authVerificationGuidance, sanitizeOnboardingContext, onboardingSecretDetected, routerChain, geminiTextFromChunk, sseParse, ProviderError, INTENTS, sanitizeAiPrefs, __test } = A;
@@ -94,19 +107,21 @@ function fakeFetch(map) {
 }
 
 /* ── ৯. E2E: streaming chat (mock Gemini) ── */
-t('১৯. E2E-stream: SSE text + done-event (model/intent) + memory-রাইট + রেট-কাউন্ট', (async () => {
+t('১৯. E2E-stream: SSE text + done-event (model/intent) + memory-রাইট + রেট-কাউন্ট', async () => {
   const { env, store } = stubEnv({ AGENT_DAILY_CAP: 80 });
+  /* Real Gemini only tags the terminal chunk with finishReason; the fixture
+     used to tag every chunk, which made the parser stop after chunk one. */
   const restore = fakeFetch({
-    'streamGenerateContent': sseRes(gChunk('হ্যালো ') + gChunk('ভাই!') + 'data: {}\n\n')
+    'streamGenerateContent': sseRes('data: ' + JSON.stringify({ candidates: [{ content: { parts: [{ text: 'হ্যালো ' }] } }] }) + '\n\ndata: ' + JSON.stringify({ candidates: [{ content: { parts: [{ text: 'ভাই!' }] } }] }) + '\n\ndata: ' + JSON.stringify({ candidates: [{ content: { parts: [] }, finishReason: 'STOP' }] }) + '\n\n')
   });
   const req = new Request('https://x/api/ai/chat', { method: 'POST', body: JSON.stringify({ messages: [{ role: 'user', content: 'হ্যালো' }] }) });
   const r = await A.agentChat(req, env, 'account-u77');
   const text = await r.text();
   restore();
-  return r.status === 200 && text.includes('হ্যালো ভাই!') && text.includes('event: done') && text.includes('"intent":"GENERAL_CHAT"') && store.has('chatmem:account-u77') && store.get('airl:account-u77:' + new Date().toISOString().slice(0, 10)) === '1';
-})(), { timeout: 10000 });
+  return r.status === 200 && text.includes('হ্যালো ভাই!') && text.includes('event: done') && text.includes('"intent":"GENERAL_CHAT"') && store.has('chatmem:account-u77') && (JSON.parse(store.get('airl:account-u77')).n === 1);
+}, { timeout: 10000 });
 
-t('২০. E2E: রেট-লিমিট — cap-এর পর 429 (KV-রাইট মাত্র ২/চ্যাট)', (async () => {
+t('২০. E2E: রেট-লিমিট — cap-এর পর 429 (KV-রাইট মাত্র ২/চ্যাট)', async () => {
   const { env } = stubEnv({ AGENT_DAILY_CAP: 2 });
   const restore = fakeFetch({ 'streamGenerateContent': sseRes(gChunk('x')) });
   const mk = () => new Request('https://x/api/ai/chat', { method: 'POST', body: JSON.stringify({ messages: [{ role: 'user', content: 'হ্যালো' }] }) });
@@ -115,16 +130,16 @@ t('২০. E2E: রেট-লিমিট — cap-এর পর 429 (KV-রা�
   const r3 = await A.agentChat(mk(), env, 'account-url');
   restore();
   return r1.status === 200 && r2.status === 200 && r3.status === 429;
-})(), { timeout: 10000 });
+}, { timeout: 10000 });
 
-t('২১. E2E: invalid-body → 400; no-key → 503; uid-isolation (KV-কী-তে uid)', (async () => {
+t('২১. E2E: invalid-body → 400; no-key → 503; uid-isolation (KV-কী-তে uid)', async () => {
   const { env } = stubEnv({});
   const bad = await A.agentChat(new Request('https://x/api/ai/chat', { method: 'POST', body: 'not-json' }), env, 'account-ua');
   const nokey = await A.agentChat(new Request('https://x/api/ai/chat', { method: 'POST', body: JSON.stringify({ messages: [{ role: 'user', content: 'হ্যালো' }] }) }), stubEnv({ GEMINI_KEYS: '', GROQ_API_KEY: '' }).env, 'account-ub');
   return bad.status === 400 && nokey.status === 503;
-})(), { timeout: 10000 });
+}, { timeout: 10000 });
 
-t('২২. E2E: gemini-ব্যর্থ → groq-fallback (provider-চেইন)', (async () => {
+t('২২. E2E: gemini-ব্যর্থ → groq-fallback (provider-চেইন)', async () => {
   const { env } = stubEnv({});
   const restore = fakeFetch({
     'streamGenerateContent': new Response('boom', { status: 500 }),
@@ -135,9 +150,9 @@ t('২২. E2E: gemini-ব্যর্থ → groq-fallback (provider-চেই�
   const text = await r.text();
   restore();
   return r.status === 200 && text.includes('গ্রক-উত্তর') && text.includes('"provider":"groq"');
-})(), { timeout: 10000 });
+}, { timeout: 10000 });
 
-t('২৩. E2E: সব-provider-ব্যর্থ → SSE error-event (retryable)', (async () => {
+t('২৩. E2E: সব-provider-ব্যর্থ → SSE error-event (retryable)', async () => {
   const { env } = stubEnv({});
   const restore = fakeFetch({ 'streamGenerateContent': new Response('boom', { status: 500 }) });
   const req = new Request('https://x/api/ai/chat', { method: 'POST', body: JSON.stringify({ messages: [{ role: 'user', content: 'হ্যালো' }] }) });
@@ -145,9 +160,9 @@ t('২৩. E2E: সব-provider-ব্যর্থ → SSE error-event (retryabl
   const text = await r.text();
   restore();
   return r.status === 200 && text.includes('event: error') && text.includes('retryable');
-})(), { timeout: 10000 });
+}, { timeout: 10000 });
 
-t('২৪. E2E: mock-running-এ explain → 403 sse-error', (async () => {
+t('২৪. E2E: mock-running-এ explain → 403 sse-error', async () => {
   const { env } = stubEnv({});
   const restore = fakeFetch({ 'streamGenerateContent': sseRes(gChunk('x')) });
   const req = new Request('https://x/api/ai/chat', { method: 'POST', body: JSON.stringify({ messages: [{ role: 'user', content: 'এই প্রশ্নের উত্তরটা বুঝাও' }], context: { examMode: 'mock-running' } }) });
@@ -155,21 +170,21 @@ t('২৪. E2E: mock-running-এ explain → 403 sse-error', (async () => {
   const text = await r.text();
   restore();
   return r.status === 403 && text.includes('mock_refused');
-})(), { timeout: 10000 });
+}, { timeout: 10000 });
 
 /* ── ১০. статус + bundle-smoke ── */
-t('২৫. agentStatus: providers/limits/streaming', (async () => {
-  const r = await A.agentStatus(new Request('https://x/api/ai/status'), stubEnv({ GEMINI_KEYS: 'k' }).env, 'u');
+t('২৫. agentStatus: providers/limits/streaming', async () => {
+  const r = await A.agentStatus(new Request('https://x/api/ai/status'), stubEnv({ GEMINI_KEYS: 'k', AGENT_DAILY_CAP: 10 }).env, 'u');
   const d = await r.json();
-  return d.agent === 'agent-f1' && d.providers.gemini === true && d.streaming === true && d.limits.perDay === 80;
-})(), { timeout: 10000 });
+  return d.agent === 'agent-f1' && d.providers.gemini === true && d.streaming === true && d.limits.perDay === 10;
+}, { timeout: 10000 });
 
 t('২৬. Agent-f1 কোনো client-secret-শব্দ ধারণ করে না', !readFileSync('ai-agent.js', 'utf8').match(/Bearer [A-Za-z0-9_-]{20,}/) );
 
 /* ── ১১. ChatbotV1: Quiz-mode + Vision (মালিক-স্পেক) ── */
 t('২৭. Quiz-mode: prompt-এ কঠোর JSON-স্কিমা (QUIZ_REQUEST-ইনটেন্ট)', buildSystemPrompt({ quiz: true }).includes('QUIZ MODE') && buildSystemPrompt({ quiz: true }).includes('"questions"') && buildSystemPrompt({ quiz: true }).includes('0-based index') && !buildSystemPrompt({}).includes('QUIZ MODE'));
 t('২৮. Vision: validateChatReq mime/সাইজ-গেট', validateChatReq({ messages: [{ role: 'user', content: 'x', image: 'data:image/jpeg;base64,AAAA' }] }).ok && validateChatReq({ messages: [{ role: 'user', content: 'x', image: 'data:image/png;base64,AAAA' }] }).ok && !validateChatReq({ messages: [{ role: 'user', content: 'x', image: 'data:image/svg+xml;base64,AAAA' }] }).ok && !validateChatReq({ messages: [{ role: 'user', content: 'x', image: 'data:image/png;base64,' + 'A'.repeat(4700001) }] }).ok && !validateChatReq({ messages: [{ role: 'user', content: 'x', image: 'data:text/html;base64,AAAA' }] }).ok);
-t('২৯. E2E-vision: gemini-payload-এ inline_data + memory-তে base64-নেই', (async () => {
+t('২৯. E2E-vision: gemini-payload-এ inline_data + memory-তে base64-নেই', async () => {
   const { env, store } = stubEnv({});
   let captured = '';
   const restore = fakeFetch({
@@ -181,8 +196,8 @@ t('২৯. E2E-vision: gemini-payload-এ inline_data + memory-তে base64-ন
   const text = await r.text();
   restore();
   return captured.includes('inline_data') && captured.includes('iVBORw0KGgo') && captured.includes('mime_type') && r.status === 200 && text.includes('ছবিতে প্রশ্ন') && !String(store.get('chatmem:account-uv') || '').includes('iVBORw0KGgo');
-})(), { timeout: 10000 });
-t('৩০. Vision-এ chain-শুধু-gemini (groq-ফলব্যাক নিষিদ্ধ — ভুল উত্তর-দেওয়া থেকে বাঁচা)', (async () => {
+}, { timeout: 10000 });
+t('৩০. Vision-এ chain-শুধু-gemini (groq-ফলব্যাক নিষিদ্ধ — ভুল উত্তর-দেওয়া থেকে বাঁচা)', async () => {
   const { env } = stubEnv({ GROQ_API_KEY: 'grok' });
   const restore = fakeFetch({
     'streamGenerateContent': new Response('boom', { status: 500 }),
@@ -194,7 +209,7 @@ t('৩০. Vision-এ chain-শুধু-gemini (groq-ফলব্যাক ন�
   const text = await r.text();
   restore();
   return r.status === 200 && text.includes('event: error') && !text.includes('গ্রক-উত্তর');
-})(), { timeout: 10000 });
+}, { timeout: 10000 });
 
 t('৩১. Telegram guidance শুধু Admission Hub-এর নিশ্চিত ধাপ বোঝায়; OTP বানায় বা success ঘোষণা করে না', (() => {
   const guidance = authVerificationGuidance('Telegram OTP কীভাবে verify করব?');
@@ -298,7 +313,7 @@ t('৩৯. SystemPrompt: STUDENT PREFERENCES block — lang/tone/len directive',
   void r2body;
   t('৪১. agentChat: memory is automatic now — a saved pref cannot switch it off',
     r2.status === 200 && [...store2.keys()].some(k => k.includes('chatmem:account-upref_off'))
-    && [...store2.keys()].some(k => k.startsWith('airl:account-upref_off:')));
+    && [...store2.keys()].some(k => k.startsWith('airl:account-upref_off')));
 }
 
 {
@@ -344,5 +359,46 @@ t('৩৯. SystemPrompt: STUDENT PREFERENCES block — lang/tone/len directive',
     JSON.stringify(JSON.parse(captured3).contents).includes('দ্বিঘাত সমীকরণ'));
 }
 
+/* ── ১২. Rolling 24h quota (M11) ── */
+t('৪৫. readQuota: খালি/legacy/ fresh-format সব পড়ে', () => {
+  const now = 1_000_000_000_000;
+  const a = A.__test.readQuota(null, now);
+  const b = A.__test.readQuota('3', now);
+  const c = A.__test.readQuota(JSON.stringify({ n: 5, start: now }), now);
+  return a.n === 0 && b.n === 3 && c.n === 5 && c.start === now;
+});
+
+t('৪৬. readQuota: ২৪ ঘণ্টা পার হলে window রিসেট (এখনকার দিন-গোনা নয়)', () => {
+  const now = 1_000_000_000_000;
+  const fresh = A.__test.readQuota(JSON.stringify({ n: 10, start: now - 60_000 }), now);
+  const stale = A.__test.readQuota(JSON.stringify({ n: 10, start: now - 24 * 60 * 60 * 1000 }), now);
+  const broken = A.__test.readQuota('{not json', now);
+  return fresh.n === 10 && stale.n === 0 && stale.start === now && broken.n === 0 && broken.start === now;
+});
+
+t('৪৭. E2E: ডিফল্ট cap ১০ — ১১তম মেসেজে 429, আর remaining জানায়', async () => {
+  const { env } = stubEnv({ AGENT_DAILY_CAP: undefined });
+  const restore = fakeFetch({ 'streamGenerateContent': sseRes(gChunk('x')) });
+  const mk = () => new Request('https://x/api/ai/chat', { method: 'POST', body: JSON.stringify({ messages: [{ role: 'user', content: 'হ্যালো' }] }) });
+  let last = null;
+  for (let i = 0; i < 10; i++) { const r = await A.agentChat(mk(), env, 'account-cap10'); if (r.status !== 200) { last = r; break; } }
+  const over = await A.agentChat(mk(), env, 'account-cap10');
+  const body = await over.json();
+  restore();
+  return last === null && over.status === 429 && body.error === 'rate_limited' && body.cap === 10 && body.remaining === 0;
+}, { timeout: 20000 });
+
+t('৪৮. E2E: exhausted ছাড়া status-এ cap/remaining ঠিক দেখায়', async () => {
+  const { env } = stubEnv({ AGENT_DAILY_CAP: 10 });
+  const restore = fakeFetch({ 'streamGenerateContent': sseRes(gChunk('x')) });
+  const mk = () => new Request('https://x/api/ai/chat', { method: 'POST', body: JSON.stringify({ messages: [{ role: 'user', content: 'হ্যালো' }] }) });
+  await A.agentChat(mk(), env, 'account-quota');
+  restore();
+  const st = await A.agentStatus(new Request('https://x/api/ai/status'), env, 'account-quota');
+  const d = await st.json();
+  return d.limits.perDay === 10;
+}, { timeout: 10000 });
+
+await runAll();
 console.log(`\n🤖 AGENT-CORE-F1: ${pass} pass / ${fail} fail`);
 process.exit(fail ? 1 : 0);

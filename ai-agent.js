@@ -558,6 +558,25 @@ export function routerChain(env, tier, badSet = new Set()) {
 
 /* ── helpers: KV (best-effort) -------------------------------------------- */
 const dayKey = () => new Date().toISOString().slice(0, 10);
+/* Rolling quota window: a student gets `cap` messages, then `cap` more 24h after
+   their first message of the window — not at UTC midnight (which lands mid-morning
+   in Dhaka and would hand out a second allowance early). */
+const RL_WINDOW_MS = 24 * 60 * 60 * 1000;
+export function readQuota(raw, now) {
+  let n = 0, start = now;
+  if (raw !== null && raw !== undefined && raw !== '') {
+    let parsed;
+    try { parsed = JSON.parse(raw); } catch (_) { parsed = raw; }
+    if (parsed && typeof parsed === 'object') {
+      n = Math.max(0, Number(parsed.n) || 0);
+      start = Number(parsed.start) || now;
+    } else {
+      n = Math.max(0, Number(parsed) || 0);
+    }
+  }
+  if (now - start >= RL_WINDOW_MS) { n = 0; start = now; }
+  return { n, start };
+}
 const getKv = async (kv, key) => { try { return await kv.get(key); } catch (_) { return null; } };
 const putKv = async (kv, key, val, ttl) => { try { await kv.put(key, val, ttl ? { expirationTtl: ttl } : undefined); } catch (_) {} };
 const badKeyName = (key, model) => 'aibad:' + String(key).slice(0, 12) + ':' + model + ':' + dayKey();
@@ -613,14 +632,15 @@ export async function agentChat(request, env, uid, opts = {}) {
     return guidanceResponse('নিরাপত্তার জন্য Password, verification code বা গোপন তথ্য Assistant নেয় না। এমন কিছু লিখে থাকলে সেটি বদলে শুধু সাধারণ প্রশ্ন করো।', stream);
   }
 
-  /* rate limit: প্রতি-user প্রতি-দিন cap (KV ১ রাইট/চ্যাট) */
-  const cap = Math.max(10, Math.min(500, Number((env && env.AGENT_DAILY_CAP) || 80)));
-  const rlKey = 'airl:' + sendCtx.uid + ':' + dayKey();
-  let n = 0;
-  try { n = Number((await getKv(env.PUB_KV, rlKey)) || 0); } catch (_) { n = 0; }
-  const quota = quotaState({ used: n, cap });
-  if (quota.exhausted) return jsonResp({ error: 'rate_limited', message: 'আজকের AI-চ্যাট সীমা শেষ — কাল আবার চেষ্টা করো।', cap, remaining: quota.remaining }, 429);
-  await putKv(env.PUB_KV, rlKey, String(n + 1), 172800);
+  /* rate limit: প্রতি-user rolling 24h window-এ cap (KV ১ রাইট/চ্যাট) */
+  const cap = Math.max(1, Math.min(500, Number((env && env.AGENT_DAILY_CAP) || 10)));
+  const rlKey = 'airl:' + sendCtx.uid;
+  const now = Date.now();
+  let quotaNow = { n: 0, start: now };
+  try { quotaNow = readQuota(await getKv(env.PUB_KV, rlKey), now); } catch (_) { quotaNow = { n: 0, start: now }; }
+  const quota = quotaState({ used: quotaNow.n, cap });
+  if (quota.exhausted) return jsonResp({ error: 'rate_limited', message: 'আজকের AI-চ্যাট সীমা শেষ — ২৪ ঘণ্টা পর আবার চেষ্টা করো।', cap, remaining: quota.remaining }, 429);
+  await putKv(env.PUB_KV, rlKey, JSON.stringify({ n: quotaNow.n + 1, start: quotaNow.start }), 172800);
 
   const verificationGuidance = authVerificationGuidance(v.messages[v.messages.length - 1].content);
   if (verificationGuidance) return guidanceResponse(verificationGuidance, stream);
@@ -895,7 +915,7 @@ export async function agentStatus(request, env, uid) {
     ok: true, agent: AGENT_VERSION, pv: SYSTEM_PROMPT_V,
     providers: { gemini: hasGemini, groq: hasGroq, cloudflare: hasCloudflare },
     models: { fast: GEMINI_MODELS.FAST, smart: GEMINI_MODELS.SMART },
-    limits: { perDay: Math.max(10, Math.min(500, Number(env.AGENT_DAILY_CAP || 80))) },
+    limits: { perDay: Math.max(1, Math.min(500, Number(env.AGENT_DAILY_CAP || 10))) },
     streaming: true,
     tools: { version: TOOL_REGISTRY_VERSION, declared: listTools() },
     memory: { version: MEMORY_VERSION, mode: 'auto', scope: 'account-only' },
@@ -936,5 +956,6 @@ export const __test = {
   describeActions, ACTION_VERSION,
   makeTrace, makeRequestId, callerRef, estimateTokens, quotaState, renderTrace,
   parseTraces, appendTrace, addUsage, emptyUsage, estimateCost, describeObservability,
-  validateObservability, OBSERVABILITY_VERSION, FALLBACK
+  validateObservability, OBSERVABILITY_VERSION, FALLBACK,
+  readQuota
 };
