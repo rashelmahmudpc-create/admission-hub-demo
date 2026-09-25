@@ -17,8 +17,8 @@ const UI_VERSION_FROM = '20260921-single-email-button-fallback';
 const UI_VERSION_TO = '20260921-single-email-button-fallback';
 const LANG_VERSION_FROM = 'lang-v5-single-email-button';
 const LANG_VERSION_TO = 'lang-v5-single-email-button';
-const SW_BUILD_FROM = 'v283-single-email-button-20260921';
-const SW_BUILD_TO = 'v284-analytics-foundation-20260924';
+const SW_BUILD_FROM = 'v284-analytics-foundation-20260924';
+const SW_BUILD_TO = 'v285-learning-instrumentation-20260925';
 
 const targets = [
   'index.html',

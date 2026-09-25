@@ -818,3 +818,26 @@ other module loads the Firebase SDK or calls `logEvent`. Full reference:
   always misses one.
 - Run `node analytics-service.test.mjs` after touching the service; it is part of
   `npm run test:native-auth`.
+
+## Phase 2 — Learning Instrumentation (M1)
+
+Phase 2 (`docs/PHASE-02-LEARNING-ANALYTICS.md`) turns the Phase 1 foundation into
+learning behaviour data. Its first milestone ships in this build.
+
+- **Emit on the bus, not in the service.** No module imports `AhAnalytics`.
+  Learning surfaces dispatch `admission:activity` with a semantic `type`;
+  `analytics-service.js` owns the `LEARNING_BUS_TYPES` mapping (e.g.
+  `LESSON_COMPLETE` → `lesson_complete`) and relies on `normalizeEvent`'s
+  camelCase → snake_case pass. Add the bus type there, not a new caller.
+- **Quiz completions are explicit.** `TEST_COMPLETED`/`REVISION_COMPLETED` map
+  to `quiz_complete` by hand, because `resultId`/`sessionId` must become
+  `quiz_id` — the generic path would emit `result_id` and drop a required param.
+- **Full quiz summary.** The exam engine now sends `questionCount`, `correct`,
+  `wrong`, `skipped`, `accuracy`, `duration`, `mode`, `testType` on
+  `TEST_COMPLETED`; the Phase 1 handler always read them, but nothing sent them.
+- **Live course surface is `source-course-tool.js`.** `interactive-course-tool.js`
+  is dead code — its `interactive-courses` route is in `index.html`'s
+  `removedRoute` list. Do not instrument it.
+- **Privacy unchanged.** No message text, no search query, only opaque ids; no
+  new event names, so `EVENT_VERSION` stays `ev1` and the Worker ceiling is
+  untouched.

@@ -224,6 +224,24 @@
   const MAX_PARAMS = 24;
 
   /* ── internal state ─────────────────────────────────────────────────────── */
+  /* The app dispatches semantic learning signals on the `admission:activity`
+   * bus (so emitters never import this service). Each bus type maps to a
+   * dictionary event; the emitter's camelCase fields are snake_cased by
+   * normalizeEvent, so {type:'LESSON_COMPLETE', courseId, lessonId} becomes
+   * lesson_complete{course_id, lesson_id}. */
+  const LEARNING_BUS_TYPES = {
+    COURSE_VIEW: 'course_view',
+    COURSE_START: 'course_start',
+    LESSON_VIEW: 'lesson_view',
+    LESSON_START: 'lesson_start',
+    LESSON_COMPLETE: 'lesson_complete',
+    QUIZ_START: 'quiz_start',
+    SEARCH: 'search',
+    NOTIFICATION_OPEN: 'notification_open',
+    NOTIFICATION_CLICK: 'notification_click',
+    AI_MESSAGE_SENT: 'ai_message_sent'
+  };
+
   let config = null;            // { measurementId, appVersion, environment, debug }
   let sdkPromise = null;
   let analyticsInstance = null;
@@ -631,25 +649,33 @@
         }
       });
 
-      /* Learning events already flow on this bus. */
+      /* Learning events already flow on this bus. The quiz-completion shapes are
+       * built explicitly because their bus field names differ from the
+       * dictionary's (`resultId`/`sessionId` → `quiz_id`); the rest are
+       * table-driven and rely on camelCase → snake_case normalisation. */
       window.addEventListener('admission:activity', (e) => {
         const d = (e && e.detail) || {};
-        if (d.type === 'TEST_COMPLETED') {
+        if (d.type === 'TEST_COMPLETED' || d.type === 'REVISION_COMPLETED') {
+          const isRevision = d.type === 'REVISION_COMPLETED';
+          const quizType = d.quizType || d.testType || (isRevision ? 'revision' : d.mode);
           trackLearning('quiz_complete', {
-            quiz_id: String(d.resultId || ''),
-            question_count: Number(d.questionCount) || undefined,
-            correct: Number(d.correct) || undefined,
-            wrong: Number(d.wrong) || undefined,
-            score: Number(d.score) || undefined,
-            accuracy: Number(d.accuracy) || undefined
+            quiz_id: String((isRevision ? d.sessionId : d.resultId) || ''),
+            quiz_type: quizType,
+            question_count: d.questionCount,
+            correct: d.correct,
+            wrong: d.wrong,
+            skipped: d.skipped,
+            accuracy: d.accuracy,
+            score: d.score,
+            duration: d.duration
           });
-        } else if (d.type === 'REVISION_COMPLETED') {
-          trackLearning('quiz_complete', {
-            quiz_id: String(d.sessionId || ''),
-            quiz_type: 'revision',
-            question_count: Number(d.questionCount) || undefined
-          });
+          return;
         }
+        const mapped = LEARNING_BUS_TYPES[d.type];
+        if (!mapped) return;
+        const slice = {};
+        for (const k of Object.keys(d)) if (k !== 'type') slice[k] = d[k];
+        trackLearning(mapped, slice);
       });
     } catch (_) { /* no DOM (node:test) — hooks are optional */ }
   }

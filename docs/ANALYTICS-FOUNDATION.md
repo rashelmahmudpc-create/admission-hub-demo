@@ -158,4 +158,8 @@ Pages redeploy is needed, since the config is fetched at runtime.
 `analytics-service.test.mjs` (part of `npm run test:native-auth`) pins the
 contract: dictionary coverage, rejection of unknown events/params, the privacy
 filter, value coercion, enum enforcement, dedupe, screen normalisation,
-never-throws under a bare environment, and identity minimisation.
+never-throws under a bare environment, identity minimisation, and (Phase 2 M1)
+the `admission:activity` bus → dictionary-event routing. 27 tests.
+
+Phase 2 — Learning & Student Behavior Analytics — continues on this foundation;
+see `docs/PHASE-02-LEARNING-ANALYTICS.md`.

@@ -14,7 +14,7 @@ const PAGES_GUARD = read('.github/workflows/cf-pages.yml');
 const RELEASE_WORKFLOW = read('.github/workflows/telegram-auth-canary-activate.yml');
 const UI_VERSION = '20260921-single-email-button-fallback';
 
-const SHELL_VERSION = 'v284-analytics-foundation-20260924';
+const SHELL_VERSION = 'v285-learning-instrumentation-20260925';
 
 const between = (source, start, end) => {
   const from = source.indexOf(start);

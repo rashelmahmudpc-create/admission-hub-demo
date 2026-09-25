@@ -31,7 +31,7 @@
   const courseDef = () => COURSE_DEFS[courseKey()] || COURSE_DEFS.sandhi;
   const storagePrefix = () => `admissionHubNativeCourseV1:${courseDef().id}`;
   const SOURCE_STYLE_ID = 'source-course-native-style';
-  const state = { payload: null, loading: null, loadingKey: null, routeMounted: false, mountedCourseKey: null, flash: null, previousTheme: null, previousBodyTheme: null, quizFilterTouched: false, sourceListeners: [] };
+  const state = { payload: null, loading: null, loadingKey: null, routeMounted: false, mountedCourseKey: null, flash: null, previousTheme: null, previousBodyTheme: null, quizFilterTouched: false, quizStarted: false, sourceListeners: [] };
   const scopedStorage = (prefix, base) => {
     const prefixed = key => `${prefix}${String(key)}`;
     const keys = () => { const out = []; for (let i = 0; i < base.length; i += 1) { const key = base.key(i); if (key && key.startsWith(prefix)) out.push(key.slice(prefix.length)); } return out; };
@@ -80,6 +80,9 @@
   let routeCleanupInstalled = false;
 
   const esc = value => String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+  /* Phase 2: learning signals ride the app-wide bus; the analytics service is
+   * the only consumer, so this module never imports it. */
+  const track = (type, detail) => { try { window.dispatchEvent(new CustomEvent('admission:activity', { detail: { type, ...(detail || {}) } })); } catch (_) {} };
   const coursePath = () => String(location.hash.replace(/^#\/?/, '').split('?')[0] || 'dashboard');
   const isCoursePath = path => path === 'source-courses' || path.startsWith('source-courses/');
   const installRouteCleanup = () => {
@@ -134,6 +137,7 @@
     state.mountedCourseKey = null;
     state.flash = null;
     state.quizFilterTouched = false;
+    state.quizStarted = false;
     delete window.__sourceCourseMCQ;
     if (window.__sourceCourseActiveKey === 'prottoy-master') delete window.G;
     delete window.__sourceCourseActiveKey;
@@ -291,6 +295,7 @@
   const renderNativeQuiz = () => {
     const qSection = document.getElementById('quiz');
     if (!qSection) return;
+    if (!state.flash && !state.quizStarted) { state.quizStarted = true; track('QUIZ_START', { quizId: courseDef().id + ':course', quizType: 'practice', questionCount: questions().length }); }
     const heading = qSection.querySelector('.sec-head')?.outerHTML || '';
     const current = state.flash ? flashCard() : nativeQuiz(questions());
     const legacyGuard = `<div class="source-course-native-legacy-quiz-guard" aria-hidden="true"><div id="qCard"><div id="qMeta"></div><div id="qText"></div><div id="qOpts"></div><div id="qExplain"></div><button id="qPrev"></button><button id="qNext"></button><button id="quizReset"></button><span id="scCorrect"></span><span id="scWrong"></span><span id="scLeft"></span><span id="pbarFill"></span><div id="qGrid"></div></div></div>`;
@@ -316,6 +321,9 @@
   const open = () => {
     const key = courseKey();
     if (state.routeMounted && state.mountedCourseKey === key && document.querySelector('.source-native-host')) return true;
+    /* Phase 2: opening a course is a view; entering its quiz set is a start. */
+    track('COURSE_VIEW', { courseId: courseDef().id, courseType: 'source' });
+    track('COURSE_START', { courseId: courseDef().id });
     shell('<div class="source-native-loading" style="min-height:100dvh;display:grid;place-items:center;padding:20px;text-align:center">Opening source course…</div>', { topbar: false, hideNav: true, title: '' });
     loadSource().then(payload => {
       if (courseKey() !== key || coursePath() !== `source-courses/${key}`) return;
@@ -375,6 +383,7 @@
 
   function renderResult() {
     const store = quizStore(); const qs = questions(); const answered = answerCount(store); const correct = correctCount(store); const wrong = qs.filter(q => store.answers[q.id] !== undefined && Number(store.answers[q.id]) !== q.answer).length; const skipped = qs.length - answered; const accuracy = answered ? Math.round(correct / answered * 100) : 0;
+    track('TEST_COMPLETED', { resultId: courseDef().id + ':course', questionCount: qs.length, correct, wrong, skipped, accuracy, quizType: 'practice', mode: 'flash' });
     const mountPoint = document.getElementById('nativeCourseQuizMount'); if (!mountPoint) return;
     mountPoint.innerHTML = `<section class="card"><div class="kicker">NATIVE QUESTION BANK RESULT</div><h3>${esc(courseDef().label)} MCQ Result</h3><div class="stats"><div class="stat"><div class="n">${accuracy}%</div><div class="l">Accuracy</div></div><div class="stat"><div class="n">${correct}</div><div class="l">Correct</div></div><div class="stat"><div class="n">${wrong}</div><div class="l">Wrong</div></div><div class="stat"><div class="n">${skipped}</div><div class="l">Skipped</div></div></div><div class="native-course-flash-actions"><button class="btn" type="button" onclick="SourceCourse.reset()">Retry MCQ</button><button class="btn secondary" type="button" onclick="document.getElementById('quiz')?.scrollIntoView({behavior:'smooth'})">Back to Quiz</button></div></section>`;
   }

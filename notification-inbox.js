@@ -127,6 +127,9 @@
       const icon = CAT_ICON[row.category] || '🔔';
       const unread = !row.readAt;
       const i = idx++;
+      /* Phase 2: a rendered row is a notification seen. notification_open is a
+       * once-only dictionary event, so the service dedupes repeat renders. */
+      try { window.dispatchEvent(new CustomEvent('admission:activity', { detail: { type: 'NOTIFICATION_OPEN', notificationId: row.id, notificationType: row.source === 'global' ? 'global' : 'local' } })); } catch (_) {}
       return `<button class="nif-item fade-in stagger-${Math.min(i + 1, 6)} ${unread ? 'nif-unread' : ''}"
         data-nif-id="${esc(row.id)}" data-nif-global="${row.source === 'global' ? '1' : '0'}" data-nif-link="${esc(row.targetUrl || '')}"
         onclick="window.__nifTap(this)" ${unread ? '' : 'aria-label="read"'}>
@@ -237,6 +240,9 @@
     const id = el.dataset.nifId;
     const isGlobal = el.dataset.nifGlobal === '1';
     const targetUrl = el.dataset.nifLink || '';
+    /* Phase 2: an opened notification is an engagement signal; the tap is the
+     * click, the list render is the open. Only the opaque id leaves. */
+    try { window.dispatchEvent(new CustomEvent('admission:activity', { detail: { type: 'NOTIFICATION_CLICK', notificationId: id, notificationType: isGlobal ? 'global' : 'local', linkRoute: targetUrl || undefined } })); } catch (_) {}
     (async () => {
       try {
         if (isGlobal) {

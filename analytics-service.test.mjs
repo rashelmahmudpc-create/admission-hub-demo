@@ -229,3 +229,82 @@ test('a20: the service never references a production-only global it cannot survi
   assert.doesNotThrow(() => bare.trackScreen('dashboard'));
   assert.doesNotThrow(() => bare.setUserContext({ id: 'x', firstName: 'y' }));
 });
+
+/* ── Phase 2 M1 — learning instrumentation bus routing ────────────────────── */
+
+async function busHarness() {
+  const listeners = {};
+  const fakeWindow = { addEventListener: (t, fn) => { (listeners[t] = listeners[t] || []).push(fn); }, matchMedia: () => ({ matches: false }) };
+  const fakeDoc = { addEventListener: (t, fn) => { (listeners[t] = listeners[t] || []).push(fn); } };
+  const svc = new Function('self', 'window', 'document', 'localStorage', 'navigator',
+    `${src}\nreturn self.AhAnalytics;`)({}, fakeWindow, fakeDoc, undefined, {});
+  svc.attach();
+  await svc.configure({ forceMode: 'debug' });
+  const seen = [];
+  const originalInfo = console.info;
+  console.info = (...args) => { if (args[0] === '[AhAnalytics]') seen.push({ name: args[1], params: args[2] }); };
+  const fire = (detail) => (listeners['admission:activity'] || []).forEach(fn => fn({ detail }));
+  return { svc, fire, seen, restore: () => { console.info = originalInfo; } };
+}
+
+test('a23: LESSON_COMPLETE on the bus becomes lesson_complete with snake_case params', async () => {
+  const h = await busHarness();
+  try {
+    h.fire({ type: 'LESSON_COMPLETE', courseId: 'sandhi-interactive-v1', lessonId: 'l3', lessonNumber: 3, completionPercent: 100 });
+    const evt = h.seen.find(x => x.name === 'lesson_complete');
+    assert.ok(evt, 'lesson_complete emitted');
+    assert.equal(evt.params.course_id, 'sandhi-interactive-v1');
+    assert.equal(evt.params.lesson_id, 'l3');
+    assert.equal(evt.params.lesson_number, 3);
+    assert.equal(evt.params.completion_percent, 100);
+  } finally { h.restore(); }
+});
+
+test('a24: QUIZ_START drops an out-of-enum quiz_type but keeps the event', async () => {
+  const h = await busHarness();
+  try {
+    h.fire({ type: 'QUIZ_START', quizId: 'q-1', quizType: 'bogus', questionCount: 10 });
+    const evt = h.seen.find(x => x.name === 'quiz_start');
+    assert.ok(evt, 'quiz_start emitted');
+    assert.equal(evt.params.quiz_id, 'q-1');
+    assert.equal(evt.params.quiz_type, undefined, 'enum violation dropped');
+    assert.equal(evt.params.question_count, 10);
+  } finally { h.restore(); }
+});
+
+test('a25: TEST_COMPLETED keeps its legacy quiz_id shape and carries score/accuracy', async () => {
+  const h = await busHarness();
+  try {
+    h.fire({ type: 'TEST_COMPLETED', resultId: 'res-9', score: 42, accuracy: 84, questionCount: 50, correct: 42, wrong: 5, skipped: 3, mode: 'mock' });
+    const evt = h.seen.find(x => x.name === 'quiz_complete');
+    assert.ok(evt, 'quiz_complete emitted');
+    assert.equal(evt.params.quiz_id, 'res-9', 'resultId maps to quiz_id, not result_id');
+    assert.equal(evt.params.score, 42);
+    assert.equal(evt.params.accuracy, 84);
+    assert.equal(evt.params.question_count, 50);
+    assert.equal(evt.params.quiz_type, 'mock');
+  } finally { h.restore(); }
+});
+
+test('a26: AI_MESSAGE_SENT never carries the message text or prompt', async () => {
+  const h = await busHarness();
+  try {
+    h.fire({ type: 'AI_MESSAGE_SENT', text: 'my secret question', message: 'hello', prompt: 'x', intent: 'math' });
+    const evt = h.seen.find(x => x.name === 'ai_message_sent');
+    assert.ok(evt, 'ai_message_sent emitted');
+    const serialized = JSON.stringify(evt.params);
+    assert.equal(serialized.includes('secret'), false, 'text is dropped');
+    assert.equal(serialized.includes('hello'), false, 'message is dropped');
+    assert.equal(serialized.includes('prompt'), false, 'prompt is dropped');
+  } finally { h.restore(); }
+});
+
+test('a27: an unknown bus type is ignored and never crashes the handler', async () => {
+  const h = await busHarness();
+  try {
+    const before = h.seen.length;
+    assert.doesNotThrow(() => h.fire({ type: 'DB_WRITE', store: 'questions' }));
+    assert.doesNotThrow(() => h.fire({ type: 'QUESTION_REVIEWED', questionId: 'q1', correct: true }));
+    assert.equal(h.seen.length, before, 'unknown types emit nothing');
+  } finally { h.restore(); }
+});

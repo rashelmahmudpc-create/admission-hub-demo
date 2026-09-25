@@ -1,6 +1,6 @@
 const CACHE_PREFIX = 'admission-hub-shell-';
 
-const BUILD_ID = 'v284-analytics-foundation-20260924';
+const BUILD_ID = 'v285-learning-instrumentation-20260925';
 const CACHE_NAME = `${CACHE_PREFIX}${BUILD_ID}`;
 const VERSION_HEADER = 'X-Admission-Hub-Build';
 const DOCUMENT_NETWORK_TIMEOUT_MS = 2500;
@@ -43,13 +43,13 @@ const APP_SHELL = [
 // A truncated/corrupt download is NEVER written to the shell cache.
 const ASSET_DIGESTS = {
 /* sw-manifest:start */
-  "./index.html": "9b442fb1f4766430c508d265c06be79ce247445ed5cae380bc2e5639b98477b9",
+  "./index.html": "6574e39378effa56493e06d9ed6ac549083f0be78d66d7af90f022b93a067852",
   "./manifest.json": "11a85ae594fc629b11605daeda3f9afe4ef95215a55a29f9cc423314bfb275a4",
   "./manifest.webmanifest": "5be476009a140eabd088bd972bd4d345b9c4f4a055cd6e4f08774b9cb4afaf52",
   "./dashboard-v2.css?v=dash2f13-theme": "4f4c9295b487b8186fd45c006a96a43bcaf896a1a5b871f506a05874a8e00c99",
   "./3d-loader.css?v=3d-v2": "43ca21b0a41be5d223c317fd63582f19ff6ffab5d010639ef26349464550da63",
   "./session-persist.js?v=session-v2": "99f3d1f49f6d5714fd25f1c12b2aa978ca97a009d6caba9a690a0442d082593c",
-  "./analytics-service.js?v=analytics-p1-v1": "3ee5f3b4750f380bd89de982ff7e5c40795f17e679f70a0bbb7e59487fa4725b",
+  "./analytics-service.js?v=analytics-p1-v1": "ddb96077a7ad0f55db6de7eb439a1699d224a1bc6747abfad5c80279dd16152a",
   "./account-access.css?v=20260921-single-email-button-fallback": "54d46ed598915409c72c5da480cde492f947928a21088d4ed7b2f9ad4d13682e",
   "./institutions-bd.js?v=bd-institutions-v2": "602c5549515e8207ad152b948ca9b8fe3ad0fbe429afb56380e4e21b662f779d",
   "./language-engine.js?v=lang-v5-single-email-button": "7e726c3cd194381201c7fdb2b1a49af78f4f48f38012e05ab68e13eee3ade3ad",
@@ -59,9 +59,9 @@ const ASSET_DIGESTS = {
   "./profile-ui.css?v=profile-v15-uni-tap": "6408a4b7ac8acf6845cd0148c58377a4953c8ff879d30b2c520eafae0314b98a",
   "./data-protection.js?v=dp-v3-fastboot": "359dc907ade4bcb3a6a722385969ebb6af47f7e436e6cdf2cce0dd6b7343723d",
   "./dashboard-v2.js?v=dash2f15-inbox": "bea4ccad52b85c482d3fef5a7f2b2eec54dcdb125597a22411c4839b81783a49",
-  "./ai-agent-chat.js?v=agent-f1-ui-chatv20-autoprefs": "2c23eff31af482db3ca00dd4003df631ec9d28eceb43994805224aa55518ff47",
+  "./ai-agent-chat.js?v=agent-f1-ui-chatv20-autoprefs": "57150dc5db7c4d5c8eb63a8a40f9cd2ed919d5137986fa056a85a9e581dbe162",
   "./notification-fcm.js?v=fcm-p1-v14": "4b8b34d09a87392de152408fc8d4ae998c9bc91b49f03f106b36df3f3063eb16",
-  "./notification-inbox.js?v=notif-inbox-v6": "dff5b28685fd28091f1e6a263bcb60ffc85863fce965074a19e759e6eec887d3",
+  "./notification-inbox.js?v=notif-inbox-v6": "fc0fbd3c0cca6eee28ddcc1e57c74263fd6603636436e6af2aa66f8863080fd5",
   "./notification-center-route.js?v=ns-cc-route-v1": "d616507f4550697a38c0d441070ff979d1be51b332c252d4a4251136018f0dd4",
   "./student-data-sync.js?v=student-sync-v1": "8a8b93fc710b39fa22b92dce6cf5036102cdd688a852a5bd448a3a9c9edcf2aa",
   "./icons/icon-192.png": "777ce5566fbeff0f2e384c787c8dde4f47d7c869e455c6e577a503decd4f1683",
