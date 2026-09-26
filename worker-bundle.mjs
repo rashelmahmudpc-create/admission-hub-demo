@@ -12371,6 +12371,63 @@ function computeFeedback(rows = [], opts = {}) {
   }
   return { ...perf, winner, ready: perf.totals.sent >= minSample };
 }
+function computeDecisionStats(decisions = [], outcomes = []) {
+  const rows = Array.isArray(decisions) ? decisions : [];
+  const out = Array.isArray(outcomes) ? outcomes : [];
+  let sent = 0, skipped = 0;
+  const byRule = {};
+  const bySkipStage = {};
+  const byReason = {};
+  for (const d of rows) {
+    const decision = String(d?.decision || "");
+    const rule = String(d?.rule || "unknown");
+    if (decision === "send") sent += 1;
+    else skipped += 1;
+    const r = byRule[rule] || (byRule[rule] = { sent: 0, skipped: 0 });
+    if (decision === "send") r.sent += 1;
+    else r.skipped += 1;
+    if (decision !== "send") {
+      const stage = String(d?.stage || "unknown");
+      bySkipStage[stage] = (bySkipStage[stage] || 0) + 1;
+      const reason2 = String(d?.reason || "unknown");
+      byReason[reason2] = (byReason[reason2] || 0) + 1;
+    }
+  }
+  const rank2 = (obj) => Object.entries(obj).map(([key, value]) => ({ key, count: value })).sort((a, b) => b.count - a.count || a.key.localeCompare(b.key));
+  let opened = 0, clicked = 0, delivered = 0;
+  const perfByRule = {};
+  for (const o of out) {
+    if (o?.status === "failed") continue;
+    const rule = String(o?.kind || "unknown");
+    const b = perfByRule[rule] || (perfByRule[rule] = { sent: 0, opened: 0, clicked: 0 });
+    b.sent += 1;
+    delivered += 1;
+    if (o?.openedAt) {
+      opened += 1;
+      b.opened += 1;
+    }
+    if (o?.clickedAt) {
+      clicked += 1;
+      b.clicked += 1;
+    }
+  }
+  const perfRanked = Object.entries(perfByRule).map(([kind, b]) => ({ kind, ...b, clickRate: pct2(b.clicked, b.sent), openRate: pct2(b.opened, b.sent) })).sort((a, b) => b.clickRate - a.clickRate || b.openRate - a.openRate || a.kind.localeCompare(b.kind));
+  return {
+    eligible: rows.length,
+    sent,
+    skipped,
+    /* CTR is over delivered sends, not decisions: a decision to send that FCM
+     * then rejected must not sit in the denominator. */
+    totals: { sent: delivered, opened, clicked, clickRate: pct2(clicked, delivered), openRate: pct2(opened, delivered) },
+    byRule,
+    bySkipStage,
+    topSkipStage: rank2(bySkipStage)[0] || null,
+    topReason: rank2(byReason)[0] || null,
+    topRule: rank2(Object.fromEntries(Object.entries(byRule).map(([k, v]) => [k, v.sent])))[0] || null,
+    bestPerforming: perfRanked[0] || null,
+    byRulePerformance: perfRanked
+  };
+}
 function decide({ signals = {}, prefs = {}, fatigue = {}, ctx = {}, deps = {} } = {}) {
   const trace = [];
   const nowMs = asInt3(deps.nowMs, Date.now());
@@ -12477,7 +12534,21 @@ var IntelligenceStore = class {
             open_rate REAL NOT NULL,
             level TEXT NOT NULL,
             computed_at INTEGER NOT NULL
-          )`)
+          )`),
+          this.#d1.prepare(`CREATE TABLE IF NOT EXISTS notification_decisions (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            rule TEXT NOT NULL,
+            kind TEXT,
+            score INTEGER NOT NULL,
+            decision TEXT NOT NULL,
+            stage TEXT,
+            reason TEXT,
+            day_key TEXT NOT NULL,
+            created_at INTEGER NOT NULL
+          )`),
+          this.#d1.prepare("CREATE INDEX IF NOT EXISTS idx_nd_day ON notification_decisions(day_key, decision)"),
+          this.#d1.prepare("CREATE INDEX IF NOT EXISTS idx_nd_user ON notification_decisions(user_id, created_at DESC)")
         ]);
       })().catch((err) => {
         this.#ready = null;
@@ -12575,6 +12646,68 @@ var IntelligenceStore = class {
        ON CONFLICT(user_id, notification_key) DO NOTHING`
     ).bind(userId, key, kind, category, variant, dayKey4, at, "sent").run();
     return true;
+  }
+  /* Section 17 — why did we send (or not send)? One row per evaluated student
+   * per run, keyed by user+day+rule so a cron tick that fires twice cannot grow
+   * the log without bound. `decision` is 'send' or 'skip'; `stage`/`reason` come
+   * from the pipeline trace so a skip is answerable after the fact. */
+  async logDecision({ userId, rule, kind, score, decision, stage, reason: reason2, dayKey: dayKey4, at }) {
+    await this.init();
+    const id = `${userId}|${dayKey4}|${rule}`;
+    await this.#d1.prepare(
+      `INSERT INTO notification_decisions(id, user_id, rule, kind, score, decision, stage, reason, day_key, created_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?)
+       ON CONFLICT(id) DO UPDATE SET
+         kind=excluded.kind, score=excluded.score, decision=excluded.decision,
+         stage=excluded.stage, reason=excluded.reason, created_at=excluded.created_at`
+    ).bind(
+      id,
+      userId,
+      String(rule),
+      kind ? String(kind) : null,
+      asInt3(score, 0),
+      String(decision),
+      stage ? String(stage) : null,
+      reason2 ? String(reason2) : null,
+      String(dayKey4),
+      at
+    ).run();
+  }
+  async decisionsForDay(dayKey4) {
+    await this.init();
+    const rows = await this.#d1.prepare(
+      `SELECT user_id, rule, kind, score, decision, stage, reason, day_key, created_at
+       FROM notification_decisions WHERE day_key=? ORDER BY created_at DESC`
+    ).bind(dayKey4).all();
+    return (rows?.results || []).map((r) => ({
+      userId: String(r.user_id),
+      rule: String(r.rule),
+      kind: r.kind ? String(r.kind) : null,
+      score: asInt3(r.score, 0),
+      decision: String(r.decision),
+      stage: r.stage ? String(r.stage) : null,
+      reason: r.reason ? String(r.reason) : null,
+      dayKey: String(r.day_key),
+      createdAt: asInt3(r.created_at, 0)
+    }));
+  }
+  /* One day's outcomes, for the admin dashboard's CTR. Failed sends are kept so
+   * the dashboard can exclude them from the denominator itself. */
+  async outcomesForDay(dayKey4) {
+    await this.init();
+    const rows = await this.#d1.prepare(
+      `SELECT kind, category, variant, sent_at, opened_at, clicked_at, status
+       FROM notification_outcomes WHERE day_key=? ORDER BY sent_at DESC`
+    ).bind(dayKey4).all();
+    return (rows?.results || []).map((r) => ({
+      kind: String(r.kind),
+      category: String(r.category),
+      variant: String(r.variant),
+      sentAt: asInt3(r.sent_at, 0),
+      openedAt: asInt3(r.opened_at, 0),
+      clickedAt: asInt3(r.clicked_at, 0),
+      status: String(r.status)
+    }));
   }
   async markOutcome({ userId, key, field, at }) {
     await this.init();
@@ -12790,6 +12923,20 @@ async function runScheduledIntelligenceNotifications(env, deps = {}) {
       if (outcome.decision !== "send") {
         skipped += 1;
         results.push({ userId, decision: "skip", stage: outcome.stage });
+        try {
+          await store.logDecision({
+            userId,
+            rule: "none",
+            kind: null,
+            score: 0,
+            decision: "skip",
+            stage: outcome.stage,
+            reason: outcome.reason,
+            dayKey: date,
+            at: now
+          });
+        } catch (_) {
+        }
         continue;
       }
       const category = KIND_META[outcome.candidate.kind]?.category || "learning";
@@ -12805,11 +12952,39 @@ async function runScheduledIntelligenceNotifications(env, deps = {}) {
       if (!claimed) {
         skipped += 1;
         results.push({ userId, decision: "skip", stage: "duplicate-claim" });
+        try {
+          await store.logDecision({
+            userId,
+            rule: outcome.candidate.kind,
+            kind: outcome.candidate.kind,
+            score: KIND_META[outcome.candidate.kind]?.priority || 0,
+            decision: "skip",
+            stage: "duplicate-claim",
+            reason: outcome.candidate.key,
+            dayKey: date,
+            at: now
+          });
+        } catch (_) {
+        }
         continue;
       }
       const delivered = await send(userId, outcome.message);
       if (delivered?.ok) sent += 1;
       results.push({ userId, decision: "send", kind: outcome.candidate.kind, variant: outcome.variant, ok: Boolean(delivered?.ok) });
+      try {
+        await store.logDecision({
+          userId,
+          rule: outcome.candidate.kind,
+          kind: outcome.candidate.kind,
+          score: KIND_META[outcome.candidate.kind]?.priority || 0,
+          decision: "send",
+          stage: "send",
+          reason: outcome.reason,
+          dayKey: date,
+          at: now
+        });
+      } catch (_) {
+      }
     } catch (err) {
       results.push({ userId, decision: "error", error: String(err?.message || err).slice(0, 120) });
     }
@@ -12993,6 +13168,13 @@ async function handleIntelligenceRequest(request, env, deps = {}) {
     const history = await store.history(userId);
     return jsonResponse4(request, { ok: true, user: userId, fatigue: detectFatigue(history, nowMs()) });
   }
+  if (path === `${ADMIN_PREFIX}dashboard` && request.method === "GET") {
+    const day = String(url.searchParams.get("day") || "").trim();
+    const targetDay = day || localParts(nowMs(), DEFAULT_TZ_OFFSET_MIN).date;
+    const decisions = await store.decisionsForDay(targetDay);
+    const outcomes = await store.outcomesForDay(targetDay);
+    return jsonResponse4(request, { ok: true, day: targetDay, ...computeDecisionStats(decisions, outcomes) });
+  }
   return jsonResponse4(request, { error: "not-found" }, 404);
 }
 var __intelligenceTest = Object.freeze({
@@ -13025,6 +13207,7 @@ var __intelligenceTest = Object.freeze({
   LEARNING_KINDS,
   computePerformance,
   computeFeedback,
+  computeDecisionStats,
   decide,
   IntelligenceStore,
   sendIntelligence,

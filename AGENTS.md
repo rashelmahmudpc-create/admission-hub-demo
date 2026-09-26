@@ -1301,3 +1301,21 @@ and the provider makes a model optional.
 A fake D1 that pattern-matches SQL proves the call shape but not the schema — the
 store suite runs the real statements for that reason, the same blind spot Phase 4
 closed with `analytics-engine-sqlite.test.mjs`.
+- **Two engines can share a day-cap without sharing a ledger — check both.** The
+  Phase G (`personalized-notification.mjs`) and Phase 3
+  (`notification-intelligence.mjs`) engines each claim their own key in
+  `notification_sends`, but `notification_sends`'s primary key is
+  `(user_id, kind, day_key)` and Phase 3 prefixes its kind with `intel:` while
+  Phase G does not. So both can send on the same student-day, and the shared
+  `sendsToday` count (Phase 3 reads the *same* table) is what actually enforces
+  the daily cap. Before adding a third engine, verify the cap by reading the
+  table, not by trusting the per-engine claim.
+- **A dashboard whose denominator is "decisions" lies.** `computeDecisionStats`
+  originally divided clicks by decisions-to-send; a send FCM then rejected still
+  sat in the denominator and dragged CTR down. CTR is over *delivered* outcomes
+  (`status<>'failed'`), and `eligible`/`sent`/`skipped` come from the decision
+  log. Keep the two populations separate.
+- **A pure stats function is testable without D1.** Section 20's dashboard is one
+  pure function (`computeDecisionStats`) over two plain arrays; the route only
+  fetches and forwards. That is why the new tests need no fake database for the
+  maths, and why the route test is the only one that touches D1.

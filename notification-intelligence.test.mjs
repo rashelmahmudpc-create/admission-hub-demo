@@ -17,7 +17,7 @@ import {
   computeSignals, classifySegment, buildCandidates, rankCandidates,
   detectFatigue, effectiveCap, checkFrequency, dayPart, preferredHour, bestSendWindow,
   hashToInt, assignVariant, buildMessage, attributeConversion,
-  computePerformance, computeFeedback, decide,
+  computePerformance, computeFeedback, computeDecisionStats, decide,
   IntelligenceStore, runScheduledIntelligenceNotifications, handleIntelligenceRequest,
   __intelligenceTest as T
 } from './notification-intelligence.mjs';
@@ -34,7 +34,8 @@ function makeFakeD1(seed = {}) {
     sends: seed.sends || [],          // notification_sends (shared with Phase G)
     state: seed.state || [],          // notification_intel_state
     outcomes: seed.outcomes || [],    // notification_outcomes
-    fatigue: seed.fatigue || []
+    fatigue: seed.fatigue || [],
+    decisions: seed.decisions || []   // notification_decisions
   };
   const db = {
     _s: s,
@@ -58,6 +59,13 @@ function makeFakeD1(seed = {}) {
             const [user_id, key, kind, category, variant, day_key, sent_at, status] = args;
             if (s.outcomes.some(o => o.user_id === user_id && o.notification_key === key)) return { meta: { changes: 0 } };
             s.outcomes.push({ user_id, notification_key: key, kind, category, variant, day_key, sent_at, status, opened_at: 0, clicked_at: 0, learning_at: 0, learning_kind: null });
+            return { meta: { changes: 1 } };
+          }
+          if (sql.includes('INSERT INTO notification_decisions')) {
+            const [id, user_id, rule, kind, score, decision, stage, reason, day_key, created_at] = args;
+            const row = s.decisions.find(r => r.id === id);
+            if (row) Object.assign(row, { kind, score, decision, stage, reason, created_at });
+            else s.decisions.push({ id, user_id, rule, kind, score, decision, stage, reason, day_key, created_at });
             return { meta: { changes: 1 } };
           }
           if (sql.includes('INSERT INTO notification_intel_state')) {
@@ -138,6 +146,12 @@ function makeFakeD1(seed = {}) {
             const [u, limit] = args;
             const rows = s.outcomes.filter(o => o.user_id === u).sort((a, b) => b.sent_at - a.sent_at).slice(0, limit);
             return { results: rows.map(r => ({ notification_key: r.notification_key, kind: r.kind, sent_at: r.sent_at, opened_at: r.opened_at, clicked_at: r.clicked_at })) };
+          }
+          if (sql.includes('FROM notification_decisions')) {
+            return { results: s.decisions.filter(r => r.day_key === args[0]) };
+          }
+          if (sql.includes('FROM notification_outcomes WHERE day_key=?')) {
+            return { results: s.outcomes.filter(o => o.day_key === args[0]) };
           }
           if (sql.includes('FROM notification_outcomes ORDER BY sent_at DESC')) {
             const limit = args[0];
@@ -843,3 +857,180 @@ test('p3-65: an absurd timezone offset is clamped, never trusted', async () => {
   const low = await store.saveState('u1', { tzOffsetMin: -99999, prefs: {} }, NOW);
   assert.equal(low.tz_offset_min, -720);
 });
+
+/* ── section 17: the decision log (why did we send / not send?) ───────────── */
+
+test('p3-66: a run records a decision row for every evaluated student', async () => {
+  const d1 = makeFakeD1(baseSeed({ devices: [{ user_id: 'u1', is_active: 1 }, { user_id: 'u2', is_active: 1 }] }));
+  const store = new IntelligenceStore(d1);
+  await runScheduledIntelligenceNotifications(
+    { PROFILE_DB: d1, __skipFcmCheck: true },
+    { store, now: () => NOW, signalsFor: async () => computeSignals({}, NOW), send: async () => ({ ok: true, sent: 1 }) }
+  );
+  assert.equal(d1._s.decisions.length, 2, 'one decision row per student, send or skip');
+  for (const row of d1._s.decisions) {
+    assert.ok(['send', 'skip'].includes(row.decision));
+    assert.equal(row.day_key, TODAY);
+    assert.ok(row.reason, 'every decision carries a reason');
+  }
+});
+
+test('p3-67: a sent decision records the rule and its priority as the score', async () => {
+  const d1 = makeFakeD1(baseSeed());
+  const store = new IntelligenceStore(d1);
+  const signals = computeSignals({ dailyStats: [{ day: '2026-09-23', questions: 20, correct: 18 }], mistakes: { pending: 20 } }, NOW);
+  await runScheduledIntelligenceNotifications(
+    { PROFILE_DB: d1, __skipFcmCheck: true },
+    { store, now: () => NOW, signalsFor: async () => signals, send: async () => ({ ok: true, sent: 1 }) }
+  );
+  const row = d1._s.decisions.find(r => r.decision === 'send');
+  assert.ok(row, 'the send was logged');
+  assert.equal(row.rule, 'pending-learning');
+  assert.equal(row.score, KIND_META['pending-learning'].priority);
+  assert.match(String(row.reason), /pending/);
+});
+
+test('p3-68: a skip is logged with its stage, so silence is explainable', async () => {
+  const d1 = makeFakeD1(baseSeed({ state: [{ user_id: 'u1', tz_offset_min: 360, prefs_json: JSON.stringify({ personalized_enabled: 0 }), updated_at: NOW }] }));
+  const store = new IntelligenceStore(d1);
+  await runScheduledIntelligenceNotifications(
+    { PROFILE_DB: d1, __skipFcmCheck: true },
+    { store, now: () => NOW, signalsFor: async () => computeSignals({ mistakes: { pending: 20 } }, NOW), send: async () => ({ ok: true, sent: 1 }) }
+  );
+  const row = d1._s.decisions.find(r => r.decision === 'skip');
+  assert.ok(row, 'the skip was logged');
+  assert.equal(row.stage, 'enabled');
+  assert.equal(row.reason, 'personalized-off');
+  assert.equal(row.rule, 'none');
+});
+
+test('p3-69: the same student-day-rule is logged once, not once per cron tick', async () => {
+  const d1 = makeFakeD1(baseSeed());
+  const store = new IntelligenceStore(d1);
+  const signals = computeSignals({ mistakes: { pending: 20 } }, NOW);
+  const run = () => runScheduledIntelligenceNotifications(
+    { PROFILE_DB: d1, __skipFcmCheck: true },
+    { store, now: () => NOW, signalsFor: async () => signals, send: async () => ({ ok: true, sent: 1 }) }
+  );
+  await run();
+  await run();
+  const keyed = d1._s.decisions.filter(r => r.rule === 'pending-learning');
+  assert.equal(keyed.length, 1, 'the upsert key collapses a repeated tick');
+});
+
+test('p3-70: the decision log never breaks a run when its write fails', async () => {
+  const d1 = makeFakeD1(baseSeed());
+  const store = new IntelligenceStore(d1);
+  store.logDecision = async () => { throw new Error('disk full'); };
+  const res = await runScheduledIntelligenceNotifications(
+    { PROFILE_DB: d1, __skipFcmCheck: true },
+    { store, now: () => NOW, signalsFor: async () => computeSignals({ mistakes: { pending: 20 } }, NOW), send: async () => ({ ok: true, sent: 1 }) }
+  );
+  assert.equal(res.sent, 1, 'the send still happened');
+});
+
+/* ── section 20: the admin dashboard (computeDecisionStats) ───────────────── */
+
+test('p3-71: the dashboard counts eligible, sent and skipped for the day', () => {
+  const decisions = [
+    { rule: 'streak-risk', decision: 'send', stage: 'send', reason: 'streak 6' },
+    { rule: 'none', decision: 'skip', stage: 'quiet-hours', reason: '23:00-07:00' },
+    { rule: 'none', decision: 'skip', stage: 'quiet-hours', reason: '23:00-07:00' },
+    { rule: 'none', decision: 'skip', stage: 'relevant', reason: 'no-candidate' }
+  ];
+  const stats = computeDecisionStats(decisions, []);
+  assert.equal(stats.eligible, 4);
+  assert.equal(stats.sent, 1);
+  assert.equal(stats.skipped, 3);
+  assert.equal(stats.topSkipStage.key, 'quiet-hours');
+  assert.equal(stats.topSkipStage.count, 2);
+});
+
+test('p3-72: the top rule is the rule we sent most, not the one we considered most', () => {
+  const decisions = [
+    { rule: 'streak-risk', decision: 'send', stage: 'send', reason: 'x' },
+    { rule: 'streak-risk', decision: 'send', stage: 'send', reason: 'x' },
+    { rule: 'none', decision: 'skip', stage: 'duplicate', reason: 'k' }
+  ];
+  const stats = computeDecisionStats(decisions, []);
+  assert.equal(stats.topRule.key, 'streak-risk');
+  assert.equal(stats.topRule.count, 2);
+});
+
+test('p3-73: CTR is clicks over sent, never over eligible', () => {
+  const decisions = Array.from({ length: 100 }, (_, i) => ({ rule: i < 10 ? 'progress' : 'none', decision: i < 10 ? 'send' : 'skip', stage: i < 10 ? 'send' : 'relevant', reason: 'r' }));
+  const outcomes = Array.from({ length: 10 }, (_, i) => ({ kind: 'progress', status: 'sent', openedAt: i < 4 ? NOW : 0, clickedAt: i < 2 ? NOW : 0 }));
+  const stats = computeDecisionStats(decisions, outcomes);
+  assert.equal(stats.totals.sent, 10);
+  assert.equal(stats.totals.clickRate, 20, '2 clicks of 10 sent = 20%, not 2% of 100 eligible');
+  assert.equal(stats.totals.openRate, 40);
+});
+
+test('p3-74: best-performing is the highest click rate, ties broken by open rate', () => {
+  const outcomes = [
+    { kind: 'achievement', status: 'sent', openedAt: NOW, clickedAt: NOW },
+    { kind: 'achievement', status: 'sent', openedAt: NOW, clickedAt: NOW },
+    { kind: 'weak-topic', status: 'sent', openedAt: NOW, clickedAt: 0 },
+    { kind: 'weak-topic', status: 'sent', openedAt: NOW, clickedAt: 0 },
+    { kind: 'weak-topic', status: 'sent', openedAt: NOW, clickedAt: 0 }
+  ];
+  const stats = computeDecisionStats([], outcomes);
+  assert.equal(stats.bestPerforming.kind, 'achievement');
+  assert.equal(stats.bestPerforming.clickRate, 100);
+  assert.equal(stats.byRulePerformance[1].kind, 'weak-topic');
+});
+
+test('p3-75: a failed send is excluded from the dashboard denominator', () => {
+  const outcomes = [
+    { kind: 'progress', status: 'sent', openedAt: NOW, clickedAt: NOW },
+    { kind: 'progress', status: 'failed', openedAt: 0, clickedAt: 0 }
+  ];
+  const stats = computeDecisionStats([], outcomes);
+  assert.equal(stats.totals.sent, 1);
+  assert.equal(stats.totals.clickRate, 100, 'the failed send does not drag CTR down');
+});
+
+test('p3-76: an empty day reports zeros, not NaN', () => {
+  const stats = computeDecisionStats([], []);
+  assert.equal(stats.eligible, 0);
+  assert.equal(stats.totals.clickRate, 0);
+  assert.equal(stats.bestPerforming, null);
+  assert.equal(stats.topReason, null);
+});
+
+test('p3-77: the dashboard route returns the day stats for an admin', async () => {
+  const env = {
+    PROFILE_DB: makeFakeD1(baseSeed({
+      decisions: [
+        { id: 'a', user_id: 'u1', rule: 'streak-risk', kind: 'streak-risk', score: 90, decision: 'send', stage: 'send', reason: 'streak 6', day_key: TODAY, created_at: NOW },
+        { id: 'b', user_id: 'u2', rule: 'none', kind: null, score: 0, decision: 'skip', stage: 'quiet-hours', reason: '23:00-07:00', day_key: TODAY, created_at: NOW }
+      ],
+      outcomes: [
+        { user_id: 'u1', notification_key: 'streak-risk:2026-09-24:6', kind: 'streak-risk', category: 'streak', variant: 'A', day_key: TODAY, sent_at: NOW, opened_at: NOW, clicked_at: NOW, learning_at: 0, status: 'sent' }
+      ]
+    })),
+    ADMIN_TOKEN: 'sekret'
+  };
+  const res = await handleIntelligenceRequest(
+    new Request(`https://x.test/api/notifications/intel/dashboard?day=${TODAY}`, { headers: { Authorization: 'Bearer sekret' } }),
+    env, { now: () => NOW }
+  );
+  const body = await res.json();
+  assert.equal(res.status, 200);
+  assert.equal(body.day, TODAY);
+  assert.equal(body.eligible, 2);
+  assert.equal(body.sent, 1);
+  assert.equal(body.skipped, 1);
+  assert.equal(body.bestPerforming.kind, 'streak-risk');
+  assert.equal(body.totals.clickRate, 100);
+});
+
+test('p3-78: the dashboard is admin-only', async () => {
+  const env = { PROFILE_DB: makeFakeD1(baseSeed()), ADMIN_TOKEN: 'sekret' };
+  const res = await handleIntelligenceRequest(
+    new Request(`https://x.test/api/notifications/intel/dashboard?day=${TODAY}`),
+    env, { now: () => NOW }
+  );
+  assert.equal(res.status, 403);
+});
+
