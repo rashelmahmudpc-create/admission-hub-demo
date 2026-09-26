@@ -51,7 +51,7 @@ test('১১. protection snapshot runs as idle post-boot work',
 /* PWA lifecycle */
 test('১২. build/cache/static-Welcome and main-app AI versions are synchronized',
 
-  SW.includes("const BUILD_ID = 'v289-notification-intelligence-20260925'") && H.includes("const expectedSwVersion = 'v289-notification-intelligence-20260925'") && H.includes('sw.js?v=v289-notification-intelligence-20260925') && H.includes('account-access.js?v=20260921-single-email-button-fallback') && SW.includes('account-access.js?v=20260921-single-email-button-fallback') && H.includes('ai-agent-chat.js?v=agent-f1-ui-chatv20-autoprefs') && SW.includes('ai-agent-chat.js?v=agent-f1-ui-chatv20-autoprefs'));
+  SW.includes("const BUILD_ID = 'v290-analytics-dashboard-20260925'") && H.includes("const expectedSwVersion = 'v290-analytics-dashboard-20260925'") && H.includes('sw.js?v=v290-analytics-dashboard-20260925') && H.includes('account-access.js?v=20260921-single-email-button-fallback') && SW.includes('account-access.js?v=20260921-single-email-button-fallback') && H.includes('ai-agent-chat.js?v=agent-f1-ui-chatv20-autoprefs') && SW.includes('ai-agent-chat.js?v=agent-f1-ui-chatv20-autoprefs'));
 test('১৩. service-worker activation never navigates or reloads open clients',
   !SW.includes('c.navigate(c.url)') && !SW.includes("self.clients.matchAll({ type: 'window', includeUncontrolled: true });\n      for"));
 test('১৪. installed PWA document is bounded network-first with fast offline fallback',
@@ -60,10 +60,10 @@ test('১৪. installed PWA document is bounded network-first with fast offline 
   SW.includes("fetch(request, { cache: 'no-store', signal: controller.signal })") &&
   SW.includes('return offlineFallback(request);'));
 test('১৫. precache stays lean because code-native entry pages add no raster assets',
-  /* Bound tracks the hand-curated APP_SHELL list (23 entries after the
-     analytics-service foundation landed). The point of the
+  /* Bound tracks the hand-curated APP_SHELL list (24 entries after the
+     analytics-dashboard card landed). The point of the
      ceiling is to catch an accidental bulk import, not to pin an exact size. */
-  shellAssets > 0 && shellAssets <= 23 && !appShellBlock.includes('result-analysis-500.js') && !appShellBlock.includes("  '',"));
+  shellAssets > 0 && shellAssets <= 24 && !appShellBlock.includes('result-analysis-500.js') && !appShellBlock.includes("  '',"));
 test('১৬. PWA updates are in-place; active worker is never unregistered first', !H.includes('registration.unregister()'));
 
 /* AI composer and response */

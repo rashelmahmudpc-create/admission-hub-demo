@@ -6032,11 +6032,11 @@ var CloudflareNativeAuthEngine = class {
   // High-dynamic blueprint §01/§04/§05/§13/§14 — deterministic rule table.
   // No AI, no behavioral inference; only real account/profile state.
   profileContext({ profile = null, completion = 0, lastLoginAt = null, now = Date.now() }) {
-    const DAY_MS7 = 864e5;
+    const DAY_MS8 = 864e5;
     const createdAt = profile?.createdAt ? Number(profile.createdAt) : null;
     const hasTarget = Array.isArray(profile?.targets) && profile.targets.length > 0 && Boolean(profile.targets[0]?.name);
-    const ageDays = createdAt ? (now - createdAt) / DAY_MS7 : Number.POSITIVE_INFINITY;
-    const gapDays = lastLoginAt ? (now - Number(lastLoginAt)) / DAY_MS7 : Number.POSITIVE_INFINITY;
+    const ageDays = createdAt ? (now - createdAt) / DAY_MS8 : Number.POSITIVE_INFINITY;
+    const gapDays = lastLoginAt ? (now - Number(lastLoginAt)) / DAY_MS8 : Number.POSITIVE_INFINITY;
     let context = "DEFAULT";
     let greeting = "আগে থেকেই চলো";
     if (!profile || Number(completion) < 60) {
@@ -11700,19 +11700,19 @@ var PersonalizedStore = class {
       lastActiveAt: Number(activity?.t || 0)
     };
   }
-  async nudgedToday(userId, dayKey3) {
+  async nudgedToday(userId, dayKey4) {
     await this.init();
     const row = await this.#d1.prepare(
       "SELECT COUNT(*) AS n FROM notification_sends WHERE user_id=? AND day_key=?"
-    ).bind(userId, dayKey3).first();
+    ).bind(userId, dayKey4).first();
     return Number(row?.n || 0);
   }
-  async recordSend(userId, kind, dayKey3, at) {
+  async recordSend(userId, kind, dayKey4, at) {
     await this.init();
     const res = await this.#d1.prepare(
       `INSERT INTO notification_sends(user_id, kind, day_key, sent_at) VALUES (?,?,?,?)
        ON CONFLICT(user_id, kind, day_key) DO NOTHING`
-    ).bind(userId, kind, dayKey3, at).run();
+    ).bind(userId, kind, dayKey4, at).run();
     return Number(res?.meta?.changes || 0) > 0;
   }
 };
@@ -12482,17 +12482,17 @@ var IntelligenceStore = class {
   }
   /* The daily cap is shared with the Phase G engine through notification_sends,
    * so turning this engine on cannot double a student's daily allowance. */
-  async sendsToday(userId, dayKey3) {
+  async sendsToday(userId, dayKey4) {
     await this.init();
-    const row = await this.#d1.prepare("SELECT COUNT(*) AS n FROM notification_sends WHERE user_id=? AND day_key=?").bind(userId, dayKey3).first();
+    const row = await this.#d1.prepare("SELECT COUNT(*) AS n FROM notification_sends WHERE user_id=? AND day_key=?").bind(userId, dayKey4).first();
     return asInt3(row?.n, 0);
   }
-  async categorySendsToday(userId, dayKey3, category) {
+  async categorySendsToday(userId, dayKey4, category) {
     await this.init();
     const row = await this.#d1.prepare(
       `SELECT COUNT(*) AS n FROM notification_outcomes
        WHERE user_id=? AND day_key=? AND category=? AND status<>'failed'`
-    ).bind(userId, dayKey3, category).first();
+    ).bind(userId, dayKey4, category).first();
     return asInt3(row?.n, 0);
   }
   async lastSentAt(userId) {
@@ -12520,18 +12520,18 @@ var IntelligenceStore = class {
   }
   /* Claim the day slot in the shared table AND write the outcome row. The claim
    * happens before the send so a crash cannot double-deliver. */
-  async claimSend({ userId, key, kind, category, variant, dayKey: dayKey3, at }) {
+  async claimSend({ userId, key, kind, category, variant, dayKey: dayKey4, at }) {
     await this.init();
     const claimed = await this.#d1.prepare(
       `INSERT INTO notification_sends(user_id, kind, day_key, sent_at) VALUES (?,?,?,?)
        ON CONFLICT(user_id, kind, day_key) DO NOTHING`
-    ).bind(userId, `intel:${kind}`, dayKey3, at).run();
+    ).bind(userId, `intel:${kind}`, dayKey4, at).run();
     if (!(asInt3(claimed?.meta?.changes, 0) > 0)) return false;
     await this.#d1.prepare(
       `INSERT INTO notification_outcomes(user_id, notification_key, kind, category, variant, day_key, sent_at, status)
        VALUES (?,?,?,?,?,?,?,?)
        ON CONFLICT(user_id, notification_key) DO NOTHING`
-    ).bind(userId, key, kind, category, variant, dayKey3, at, "sent").run();
+    ).bind(userId, key, kind, category, variant, dayKey4, at, "sent").run();
     return true;
   }
   async markOutcome({ userId, key, field, at }) {
@@ -12774,7 +12774,7 @@ async function runScheduledIntelligenceNotifications(env, deps = {}) {
   }
   return { processed: users.length, sent, skipped, results };
 }
-async function defaultSignals(store, userId, dayKey3, nowMs, tzOffsetMin) {
+async function defaultSignals(store, userId, dayKey4, nowMs, tzOffsetMin) {
   const [dailyStats, examScores, mistakes, courses, history, activityAt] = await Promise.all([
     store.dailyStats(userId),
     store.examScores(userId),
@@ -13592,6 +13592,1555 @@ var __digestTest = Object.freeze({
   MSG: MSG3
 });
 
+// analytics-engine.mjs
+var DAY_MS5 = 864e5;
+var asInt4 = (v, fallback = 0) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.trunc(n) : fallback;
+};
+var asNum = (v, fallback = 0) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : fallback;
+};
+var pct3 = (part, whole, dp = 1) => whole > 0 ? Number((part / whole * 100).toFixed(dp)) : 0;
+var ratio2 = (part, whole, dp = 4) => whole > 0 ? Number((part / whole).toFixed(dp)) : 0;
+var round = (n, dp = 2) => Number.isFinite(Number(n)) ? Number(Number(n).toFixed(dp)) : 0;
+var sum = (rows, pick) => rows.reduce((n, r) => n + asNum(pick(r)), 0);
+var parseDay = (day) => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(day || ""));
+  return m ? Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : NaN;
+};
+var formatDay = (ms) => new Date(ms).toISOString().slice(0, 10);
+function dayKey3(ts, tzOffsetMin = DEFAULT_TZ_OFFSET_MIN) {
+  const tz = Number.isFinite(Number(tzOffsetMin)) ? Number(tzOffsetMin) : DEFAULT_TZ_OFFSET_MIN;
+  return formatDay(asInt4(ts, Date.now()) + tz * 6e4);
+}
+function shiftDay(day, delta) {
+  const base = parseDay(day);
+  if (!Number.isFinite(base)) return "";
+  return formatDay(base + asInt4(delta) * DAY_MS5);
+}
+function daysBetween(from, to) {
+  const a = parseDay(from);
+  const b = parseDay(to);
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return 0;
+  return Math.round((b - a) / DAY_MS5);
+}
+function dayRange(endDay, count) {
+  const end = parseDay(endDay);
+  if (!Number.isFinite(end) || count <= 0) return [];
+  const out = [];
+  for (let i = count - 1; i >= 0; i -= 1) out.push(formatDay(end - i * DAY_MS5));
+  return out;
+}
+function computeStreak(days = []) {
+  const clean = [...new Set(days.filter(Boolean))].sort();
+  if (!clean.length) return 0;
+  let best = 1;
+  let run = 1;
+  for (let i = 1; i < clean.length; i += 1) {
+    run = daysBetween(clean[i - 1], clean[i]) === 1 ? run + 1 : 1;
+    if (run > best) best = run;
+  }
+  return best;
+}
+function liveStreak(days = [], today = dayKey3(Date.now())) {
+  const set = new Set(days.filter(Boolean));
+  if (!set.size) return 0;
+  let cursor = set.has(today) ? today : shiftDay(today, -1);
+  if (!set.has(cursor)) return 0;
+  let run = 0;
+  while (set.has(cursor)) {
+    run += 1;
+    cursor = shiftDay(cursor, -1);
+  }
+  return run;
+}
+function normalizeLearning(input = {}) {
+  const dailyStats = (Array.isArray(input.dailyStats) ? input.dailyStats : []).map((r) => ({
+    day: String(r.day || r.date || "").slice(0, 10),
+    questions: asInt4(r.questions),
+    correct: asInt4(r.correct),
+    wrong: asInt4(r.wrong),
+    lessons: asInt4(r.lessons),
+    timeMs: asInt4(r.timeMs ?? r.time),
+    exams: asInt4(r.exams)
+  })).filter((r) => /^\d{4}-\d{2}-\d{2}$/.test(r.day));
+  const exams = (Array.isArray(input.examResults) ? input.examResults : []).map((r) => ({
+    id: String(r.id || ""),
+    score: asNum(r.score ?? r.percentage, NaN),
+    at: asInt4(r.at ?? r.updated_at ?? r.completedAt)
+  })).filter((r) => r.id);
+  const mistakes = (Array.isArray(input.mistakes) ? input.mistakes : []).map((r) => ({ topic: String(r.topic || r.topicId || "general"), misses: asInt4(r.misses) }));
+  const courses = (Array.isArray(input.courses) ? input.courses : []).map((c) => ({
+    id: String(c.id || ""),
+    lessonsTotal: asInt4(c.lessonsTotal),
+    lessonsDone: asInt4(c.lessonsDone)
+  })).filter((c) => c.id && c.lessonsTotal > 0);
+  return { dailyStats, exams, mistakes, courses };
+}
+function computeLearningMetrics(input = {}, options = {}) {
+  const { dailyStats, exams, mistakes, courses } = normalizeLearning(input);
+  const today = options.today || dayKey3(options.nowMs ?? Date.now(), options.tzOffsetMin);
+  const activeDays = [...new Set(dailyStats.filter((d) => d.questions > 0 || d.correct > 0 || d.wrong > 0 || d.lessons > 0 || d.timeMs > 0 || d.exams > 0).map((d) => d.day))].sort();
+  const questions = sum(dailyStats, (d) => d.questions);
+  const correct = sum(dailyStats, (d) => d.correct);
+  const wrong = sum(dailyStats, (d) => d.wrong);
+  const answered = correct + wrong;
+  const accuracy = answered > 0 ? pct3(correct, answered, 1) : exams.length ? round(sum(exams, (e) => e.score) / exams.length, 1) : 0;
+  const lessonsCompleted = sum(dailyStats, (d) => d.lessons);
+  const learningTimeMs = sum(dailyStats, (d) => d.timeMs);
+  const coursesStarted = courses.filter((c) => c.lessonsDone > 0).length;
+  const coursesCompleted = courses.filter((c) => c.lessonsDone >= c.lessonsTotal).length;
+  const lessonsTotal = sum(courses, (c) => c.lessonsTotal);
+  const lessonsDone = sum(courses, (c) => c.lessonsDone);
+  const byDay = new Map(dailyStats.map((d) => [d.day, d]));
+  const series = dayRange(today, options.seriesDays ?? 14).map((day) => {
+    const d = byDay.get(day);
+    return {
+      day,
+      questions: d?.questions ?? 0,
+      correct: d?.correct ?? 0,
+      lessons: d?.lessons ?? 0,
+      timeMs: d?.timeMs ?? 0,
+      active: activeDays.includes(day)
+    };
+  });
+  const hadGap = (() => {
+    for (let i = 1; i < activeDays.length; i += 1) {
+      if (daysBetween(activeDays[i - 1], activeDays[i]) >= 4) return true;
+    }
+    return false;
+  })();
+  return {
+    learningTimeMs,
+    learningMinutes: Math.round(learningTimeMs / 6e4),
+    lessonsCompleted,
+    quizActivity: exams.length,
+    practiceActivity: questions,
+    questionsCorrect: correct,
+    questionsWrong: wrong,
+    accuracy,
+    streak: liveStreak(activeDays, today),
+    longestStreak: computeStreak(activeDays),
+    activeDays: activeDays.length,
+    hadGap,
+    lastActiveDay: activeDays[activeDays.length - 1] || null,
+    daysSinceActive: activeDays.length ? Math.max(0, daysBetween(activeDays[activeDays.length - 1], today)) : null,
+    courseProgress: {
+      courses: courses.length,
+      started: coursesStarted,
+      completed: coursesCompleted,
+      lessonsTotal,
+      lessonsDone,
+      percent: pct3(lessonsDone, lessonsTotal, 1)
+    },
+    mistakes: {
+      pending: sum(mistakes, (m) => m.misses),
+      topics: mistakes.slice(0, 5)
+    },
+    series
+  };
+}
+function compareValue(current, previous) {
+  const cur = asNum(current);
+  const prev = asNum(previous);
+  const delta = round(cur - prev, 2);
+  const percent = prev > 0 ? round((cur - prev) / prev * 100, 1) : cur > 0 ? 100 : 0;
+  return {
+    current: cur,
+    previous: prev,
+    delta,
+    percent,
+    direction: delta > 0 ? "up" : delta < 0 ? "down" : "flat"
+  };
+}
+function splitPeriods(series = [], days = 7) {
+  const rows = Array.isArray(series) ? series : [];
+  const current = rows.slice(-days);
+  const previous = rows.slice(-days * 2, -days);
+  return { current, previous };
+}
+function comparePeriods(series = [], days = 7) {
+  const { current, previous } = splitPeriods(series, days);
+  const active = (rows) => rows.filter((r) => r.active).length;
+  const pick = {
+    practiceActivity: (rows) => sum(rows, (r) => r.questions),
+    lessonsCompleted: (rows) => sum(rows, (r) => r.lessons),
+    learningTimeMs: (rows) => sum(rows, (r) => r.timeMs),
+    activeDays: active,
+    accuracy: (rows) => {
+      const c = sum(rows, (r) => r.correct);
+      const w = sum(rows, (r) => r.wrong);
+      return c + w > 0 ? pct3(c, c + w, 1) : 0;
+    }
+  };
+  const out = {};
+  for (const [key, fn] of Object.entries(pick)) out[key] = compareValue(fn(current), fn(previous));
+  return { days, current, previous, metrics: out };
+}
+function linearTrend(values = [], options = {}) {
+  const points = (Array.isArray(values) ? values : []).map((v) => asNum(v));
+  const window = Math.max(3, asInt4(options.window, 7));
+  const slice = points.slice(-window);
+  if (slice.length < 3) return { slope: 0, direction: "flat", strength: 0, mean: 0 };
+  const n = slice.length;
+  const meanX = (n - 1) / 2;
+  const meanY = sum(slice, (v) => v) / n;
+  let num2 = 0;
+  let den = 0;
+  for (let i = 0; i < n; i += 1) {
+    num2 += (i - meanX) * (slice[i] - meanY);
+    den += (i - meanX) ** 2;
+  }
+  const slope = den > 0 ? num2 / den : 0;
+  const strength = meanY > 0 ? clamp01(Math.abs(slope) / meanY) : 0;
+  const direction = strength < (options.minStrength ?? 0.05) ? "flat" : slope > 0 ? "up" : "down";
+  return { slope: round(slope, 3), direction, strength: round(strength, 3), mean: round(meanY, 2) };
+}
+var clamp01 = (n) => Math.min(1, Math.max(0, n));
+function detectTrends(series = [], options = {}) {
+  const rows = Array.isArray(series) ? series : [];
+  const window = asInt4(options.window, 7);
+  return {
+    practiceActivity: linearTrend(rows.map((r) => r.questions), { window }),
+    lessonsCompleted: linearTrend(rows.map((r) => r.lessons), { window }),
+    learningTime: linearTrend(rows.map((r) => r.timeMs), { window }),
+    accuracy: linearTrend(rows.map((r) => {
+      const c = asNum(r.correct);
+      const w = asNum(r.wrong);
+      return c + w > 0 ? pct3(c, c + w, 1) : 0;
+    }), { window })
+  };
+}
+var SEGMENTS = Object.freeze(["new", "active", "highly_active", "returning", "at_risk", "inactive"]);
+function classifyBehaviourSegment(metrics = {}, options = {}) {
+  const today = options.today || dayKey3(options.nowMs ?? Date.now(), options.tzOffsetMin);
+  const since = metrics.daysSinceActive;
+  const activeDays = asInt4(metrics.activeDays);
+  const streak = asInt4(metrics.streak);
+  const windowDays = asInt4(options.windowDays, 14);
+  const trend = options.trend || null;
+  if (activeDays === 0) return { segment: since === null ? "new" : "inactive", reason: "no-activity" };
+  if (since !== null && since >= 14) return { segment: "inactive", reason: `inactive-${since}d` };
+  if (since !== null && since >= 4) return { segment: "at_risk", reason: `quiet-${since}d` };
+  if (options.returnedAfterGap ?? metrics.hadGap) return { segment: "returning", reason: "came-back" };
+  if (activeDays <= 2) return { segment: "new", reason: "just-started" };
+  if (activeDays >= Math.max(7, Math.ceil(windowDays * 0.6)) || streak >= 7) {
+    return { segment: "highly_active", reason: streak >= 7 ? `streak-${streak}` : `active-${activeDays}d` };
+  }
+  if (trend && trend.direction === "down" && trend.strength >= 0.15) return { segment: "at_risk", reason: "activity-falling" };
+  return { segment: "active", reason: `active-${activeDays}d` };
+}
+function classifyLearningStage(metrics = {}) {
+  const lessons = asInt4(metrics.lessonsCompleted);
+  const questions = asInt4(metrics.practiceActivity);
+  const completed = asInt4(metrics.courseProgress?.completed);
+  if (completed >= 3 || lessons >= 40 || questions >= 500) return { stage: "pro", lessons, questions };
+  if (lessons >= 10 || questions >= 100) return { stage: "intermediate", lessons, questions };
+  return { stage: "beginner", lessons, questions };
+}
+var FUNNEL_STEPS = Object.freeze([
+  { key: "course_view", event: "course_view" },
+  { key: "course_start", event: "course_start" },
+  { key: "lesson_start", event: "lesson_start" },
+  { key: "lesson_complete", event: "lesson_complete" },
+  { key: "quiz_start", event: "quiz_start" },
+  { key: "quiz_complete", event: "quiz_complete" }
+]);
+var DROPOFF_ALERT_RATE = 0.4;
+var DROPOFF_MIN_SAMPLE = 5;
+function countByEvent(events = []) {
+  const out = {};
+  for (const e of events) {
+    const name = String(e?.name || "");
+    if (name) out[name] = (out[name] || 0) + 1;
+  }
+  return out;
+}
+function buildFunnel(counts = {}) {
+  return FUNNEL_STEPS.map((step, index) => {
+    const count = asInt4(counts[step.event]);
+    const previous = index === 0 ? count : asInt4(counts[FUNNEL_STEPS[index - 1].event]);
+    return {
+      key: step.key,
+      event: step.event,
+      count,
+      reachRate: index === 0 ? 1 : ratio2(count, previous),
+      dropRate: index === 0 ? 0 : previous ? round((previous - count) / previous, 4) : 0
+    };
+  });
+}
+function detectFunnelDropOff(funnel = [], options = {}) {
+  const alertRate = options.alertRate ?? DROPOFF_ALERT_RATE;
+  const minSample = options.minSample ?? DROPOFF_MIN_SAMPLE;
+  const eligible = funnel.filter((s) => s.count >= minSample && s.dropRate >= alertRate);
+  const steepest = eligible.length ? eligible.reduce((worst, s) => s.dropRate > worst.dropRate ? s : worst, eligible[0]) : null;
+  return {
+    hasAlert: Boolean(steepest),
+    steepest: steepest ? steepest.key : null,
+    dropRate: steepest ? steepest.dropRate : 0,
+    threshold: alertRate,
+    minSample,
+    message: steepest ? dropOffMessage(steepest.key, steepest.dropRate) : ""
+  };
+}
+function dropOffMessage(key, rate2) {
+  const labels = {
+    course_start: "Course খোলার পর শুরু করেনি",
+    lesson_start: "Course শুরু করে পাঠ শুরু করেনি",
+    lesson_complete: "পাঠ শুরু করে শেষ করেনি",
+    quiz_start: "পাঠ শেষ করে কুইজ শুরু করেনি",
+    quiz_complete: "কুইজ শুরু করে শেষ করেনি"
+  };
+  return `${labels[key] || key} — ${Math.round(asNum(rate2) * 100)}% এখানেই থেমে গেছে।`;
+}
+function buildCourseAnalytics(rows = [], events = []) {
+  const byCourse = /* @__PURE__ */ new Map();
+  const ensure = (id) => {
+    if (!byCourse.has(id)) {
+      byCourse.set(id, {
+        courseId: id,
+        learners: 0,
+        activeLearners: 0,
+        started: 0,
+        completed: 0,
+        lessonsTotal: 0,
+        lessonsDone: 0,
+        views: 0,
+        starts: 0,
+        lessonStarts: 0,
+        lessonCompletes: 0,
+        quizzes: 0
+      });
+    }
+    return byCourse.get(id);
+  };
+  for (const row of rows) {
+    const id = String(row?.courseId || row?.id || "");
+    if (!id) continue;
+    const c = ensure(id);
+    c.learners += 1;
+    c.lessonsTotal += asInt4(row.lessonsTotal);
+    c.lessonsDone += asInt4(row.lessonsDone);
+    if (asInt4(row.lessonsDone) > 0) c.started += 1;
+    if (asInt4(row.lessonsTotal) > 0 && asInt4(row.lessonsDone) >= asInt4(row.lessonsTotal)) c.completed += 1;
+    if (asInt4(row.questions) > 0 || asInt4(row.lessonsDone) > 0) c.activeLearners += 1;
+  }
+  for (const e of events) {
+    const p = e?.params || {};
+    const id = String(p.course_id || p.courseId || "");
+    if (!id) continue;
+    const c = ensure(id);
+    if (e.name === "course_view") c.views += 1;
+    else if (e.name === "course_start") c.starts += 1;
+    else if (e.name === "lesson_start") c.lessonStarts += 1;
+    else if (e.name === "lesson_complete") c.lessonCompletes += 1;
+    else if (e.name === "quiz_complete" || e.name === "quiz_start") c.quizzes += 1;
+  }
+  return [...byCourse.values()].map((c) => ({
+    ...c,
+    progressPercent: pct3(c.lessonsDone, c.lessonsTotal, 1),
+    completionRate: pct3(c.completed, c.learners, 1),
+    startRate: pct3(c.started, c.learners, 1),
+    lessonCompletionRate: pct3(c.lessonCompletes, c.lessonStarts, 1)
+  })).sort((a, b) => b.learners - a.learners);
+}
+function buildLessonAnalytics(events = []) {
+  const byLesson = /* @__PURE__ */ new Map();
+  const ensure = (courseId, lessonId) => {
+    const key = `${courseId}::${lessonId}`;
+    if (!byLesson.has(key)) {
+      byLesson.set(key, {
+        courseId,
+        lessonId,
+        views: 0,
+        starts: 0,
+        completes: 0,
+        timeMs: 0,
+        timeSamples: 0,
+        retries: 0,
+        quizAttempts: 0,
+        quizCorrect: 0,
+        exits: 0
+      });
+    }
+    return byLesson.get(key);
+  };
+  const startedAt = /* @__PURE__ */ new Map();
+  for (const e of events) {
+    const p = e?.params || {};
+    const courseId = String(p.course_id || p.courseId || "");
+    const lessonId = String(p.lesson_id || p.lessonId || "");
+    if (!courseId || !lessonId) continue;
+    const l = ensure(courseId, lessonId);
+    const at = asInt4(e.at);
+    if (e.name === "lesson_view") l.views += 1;
+    else if (e.name === "lesson_start") {
+      l.starts += 1;
+      const seen = startedAt.get(`${courseId}::${lessonId}`);
+      if (seen) l.retries += 1;
+      startedAt.set(`${courseId}::${lessonId}`, at);
+    } else if (e.name === "lesson_complete") {
+      l.completes += 1;
+      const seen = startedAt.get(`${courseId}::${lessonId}`);
+      const dur = asInt4(p.duration);
+      if (dur > 0) {
+        l.timeMs += dur;
+        l.timeSamples += 1;
+      } else if (seen && at > seen) {
+        l.timeMs += at - seen;
+        l.timeSamples += 1;
+      }
+    } else if (e.name === "question_attempt") {
+      l.quizAttempts += 1;
+      if (p.correct === true || p.correct === "true" || asInt4(p.correct) === 1) l.quizCorrect += 1;
+    } else if (e.name === "quiz_complete") l.exits += 1;
+  }
+  return [...byLesson.values()].map((l) => ({
+    ...l,
+    viewRate: ratio2(l.views, Math.max(l.views, l.starts)),
+    startRate: ratio2(l.starts, l.views || l.starts),
+    completionRate: ratio2(l.completes, l.starts),
+    avgTimeMs: l.timeSamples ? Math.round(l.timeMs / l.timeSamples) : 0,
+    retryRate: ratio2(l.retries, l.starts),
+    quizAccuracy: pct3(l.quizCorrect, l.quizAttempts, 1)
+  })).sort((a, b) => a.completionRate - b.completionRate);
+}
+function buildQuizAnalytics(events = []) {
+  const byQuiz = /* @__PURE__ */ new Map();
+  const ensure = (id) => {
+    if (!byQuiz.has(id)) {
+      byQuiz.set(id, { quizId: id, attempts: 0, correct: 0, wrong: 0, skipped: 0, completed: 0, started: 0, timeMs: 0, timeSamples: 0, byTopic: /* @__PURE__ */ new Map() });
+    }
+    return byQuiz.get(id);
+  };
+  for (const e of events) {
+    const p = e?.params || {};
+    const id = String(p.quiz_id || p.quizId || p.course_id || p.courseId || "");
+    if (!id) continue;
+    const q = ensure(id);
+    if (e.name === "quiz_start") q.started += 1;
+    else if (e.name === "quiz_complete") q.completed += 1;
+    else if (e.name === "question_attempt") {
+      q.attempts += 1;
+      const isCorrect = p.correct === true || p.correct === "true" || asInt4(p.correct) === 1;
+      const isSkipped = p.skipped === true || p.skipped === "true";
+      if (isSkipped) q.skipped += 1;
+      else if (isCorrect) q.correct += 1;
+      else q.wrong += 1;
+      const dur = asInt4(p.duration);
+      if (dur > 0) {
+        q.timeMs += dur;
+        q.timeSamples += 1;
+      }
+      const topic = String(p.topic_id || p.topicId || "");
+      if (topic) {
+        const t = q.byTopic.get(topic) || { topic, attempts: 0, correct: 0 };
+        t.attempts += 1;
+        if (isCorrect) t.correct += 1;
+        q.byTopic.set(topic, t);
+      }
+    }
+  }
+  return [...byQuiz.values()].map((q) => ({
+    quizId: q.quizId,
+    attempts: q.attempts,
+    correct: q.correct,
+    wrong: q.wrong,
+    skipped: q.skipped,
+    completed: q.completed,
+    accuracy: pct3(q.correct, q.attempts, 1),
+    avgTimeMs: q.timeSamples ? Math.round(q.timeMs / q.timeSamples) : 0,
+    completionRate: ratio2(q.completed, q.started),
+    retryRate: ratio2(Math.max(0, q.attempts - 1), q.attempts),
+    hardestTopics: [...q.byTopic.values()].map((t) => ({ topic: t.topic, attempts: t.attempts, accuracy: pct3(t.correct, t.attempts, 1) })).filter((t) => t.attempts >= DROPOFF_MIN_SAMPLE).sort((a, b) => a.accuracy - b.accuracy).slice(0, 5)
+  })).sort((a, b) => a.accuracy - b.accuracy);
+}
+function computeEngagement(students = [], options = {}) {
+  const today = options.today || dayKey3(options.nowMs ?? Date.now(), options.tzOffsetMin);
+  const rows = (Array.isArray(students) ? students : []).filter((s) => s && s.userId);
+  const within = (days) => {
+    const cutoff = shiftDay(today, -(days - 1));
+    return rows.filter((s) => (s.activeDays || []).some((d) => d >= cutoff && d <= today));
+  };
+  const dau = within(1).length;
+  const wau = within(7).length;
+  const mau = within(30).length;
+  const sessionRows = rows.flatMap((s) => s.sessions || []);
+  const totalMs = sum(sessionRows, (r) => r.timeMs);
+  const sessionCount = sessionRows.length;
+  const returning = rows.filter((s) => (s.activeDays || []).length > 1).length;
+  return {
+    dau,
+    wau,
+    mau,
+    dauWauRatio: ratio2(dau, wau),
+    wauMauRatio: ratio2(wau, mau),
+    stickiness: pct3(dau, mau, 1),
+    sessions: sessionCount,
+    avgSessionMs: sessionCount ? Math.round(totalMs / sessionCount) : 0,
+    activeStudents: mau,
+    totalStudents: rows.length,
+    returningUsers: returning,
+    newUsers: rows.length - returning,
+    returningRate: pct3(returning, rows.length, 1),
+    learningActiveStudents: rows.filter((s) => asInt4(s.learningActions) > 0).length
+  };
+}
+var RETENTION_WINDOWS = Object.freeze([1, 7, 14, 30]);
+function computeRetention(students = [], options = {}) {
+  const today = options.today || dayKey3(options.nowMs ?? Date.now(), options.tzOffsetMin);
+  const rows = (Array.isArray(students) ? students : []).filter((s) => s && s.userId && (s.activeDays || []).length);
+  const cohorts = /* @__PURE__ */ new Map();
+  const buckets = new Map(RETENTION_WINDOWS.map((w) => [w, { window: w, cohortSize: 0, retained: 0, matureCohortSize: 0, rate: 0 }]));
+  for (const s of rows) {
+    const days = [...new Set(s.activeDays.filter(Boolean))].sort();
+    if (!days.length) continue;
+    const first = days[0];
+    const age = daysBetween(first, today);
+    if (!cohorts.has(first)) cohorts.set(first, { cohort: first, size: 0, retained: {}, matureSize: {} });
+    const cohort = cohorts.get(first);
+    cohort.size += 1;
+    for (const w of RETENTION_WINDOWS) {
+      const bucket = buckets.get(w);
+      const mature = age >= w;
+      if (mature) {
+        bucket.matureCohortSize += 1;
+        cohort.matureSize[w] = (cohort.matureSize[w] || 0) + 1;
+      }
+      const target = shiftDay(first, w);
+      const cameBack = days.some((d) => d >= target);
+      if (cameBack && mature) {
+        bucket.retained += 1;
+        cohort.retained[w] = (cohort.retained[w] || 0) + 1;
+      }
+    }
+  }
+  const windows = [...buckets.values()].map((b) => ({ ...b, rate: pct3(b.retained, b.matureCohortSize, 1) })).sort((a, b) => a.window - b.window);
+  return {
+    windows,
+    byWindow: Object.fromEntries(windows.map((w) => [`d${w.window}`, w.rate])),
+    cohortSize: rows.length,
+    cohortCount: cohorts.size,
+    cohorts: [...cohorts.values()].map((c) => ({
+      cohort: c.cohort,
+      size: c.size,
+      d1: pct3(c.retained[1] || 0, c.matureSize[1] || 0, 1),
+      d7: pct3(c.retained[7] || 0, c.matureSize[7] || 0, 1),
+      d14: pct3(c.retained[14] || 0, c.matureSize[14] || 0, 1),
+      d30: pct3(c.retained[30] || 0, c.matureSize[30] || 0, 1)
+    })).sort((a, b) => a.cohort < b.cohort ? 1 : -1).slice(0, 12)
+  };
+}
+function computeNotificationAnalytics(outcomes = [], options = {}) {
+  const rows = (Array.isArray(outcomes) ? outcomes : []).filter((o) => o && o.notification_key);
+  const bucket = (list) => {
+    const sent = list.length;
+    const opened = list.filter((o) => asInt4(o.opened_at) > 0).length;
+    const clicked = list.filter((o) => asInt4(o.clicked_at) > 0).length;
+    const learning = list.filter((o) => asInt4(o.learning_at) > 0 && LEARNING_KINDS.includes(String(o.learning_kind || ""))).length;
+    return {
+      sent,
+      opened,
+      clicked,
+      learning,
+      openRate: pct3(opened, sent, 1),
+      clickRate: pct3(clicked, sent, 1),
+      learningConversion: pct3(learning, sent, 1),
+      /* Of the students who engaged, how many actually studied — separates a
+       * good subject line from a good nudge. */
+      clickToLearning: pct3(learning, clicked, 1),
+      openToLearning: pct3(learning, opened, 1)
+    };
+  };
+  const overall = bucket(rows);
+  const group = (keyOf) => {
+    const map = /* @__PURE__ */ new Map();
+    for (const o of rows) {
+      const key = String(keyOf(o) || "unknown");
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(o);
+    }
+    return [...map.entries()].map(([key, list]) => ({ key, ...bucket(list) })).sort((a, b) => b.sent - a.sent);
+  };
+  const categories = group((o) => o.category);
+  const kinds = group((o) => o.kind);
+  const variants = group((o) => o.variant);
+  const campaigns = group((o) => o.campaign || o.day_key);
+  const best = (list) => list.length ? list.reduce((w, x) => x.learningConversion > w.learningConversion ? x : w, list[0]) : null;
+  const worst = (list) => list.length ? list.reduce((w, x) => x.learningConversion < w.learningConversion ? x : w, list[0]) : null;
+  return {
+    overall,
+    categories,
+    kinds,
+    variants,
+    campaigns,
+    bestCategory: best(categories),
+    bestKind: best(kinds),
+    bestVariant: best(variants),
+    worstCategory: categories.length > 1 ? worst(categories) : null,
+    /* Which part of the local day the student actually acted on. */
+    byHour: (() => {
+      const map = /* @__PURE__ */ new Map();
+      for (const o of rows) {
+        const at = asInt4(o.learning_at) || asInt4(o.clicked_at);
+        if (!at) continue;
+        const hour = new Date(at).getUTCHours();
+        map.set(hour, (map.get(hour) || 0) + 1);
+      }
+      return [...map.entries()].map(([hour, n]) => ({ hour, actions: n })).sort((a, b) => b.actions - a.actions);
+    })()
+  };
+}
+function computeCampaignAnalytics(globals = [], readCounts = {}) {
+  return (Array.isArray(globals) ? globals : []).map((g) => {
+    const id = String(g.id || "");
+    const delivered = asInt4(g.delivered);
+    const readers = asInt4(readCounts?.[id]);
+    const status = String(g.status || "");
+    return {
+      campaignId: id,
+      type: String(g.type || ""),
+      audience: String(g.audience || "all_students"),
+      topic: String(g.topic || ""),
+      status,
+      sentAt: asInt4(g.sent_at),
+      scheduledAt: asInt4(g.scheduled_at),
+      delivered,
+      opened: readers,
+      failed: status === "failed",
+      openRate: pct3(readers, delivered, 1),
+      /* A campaign is only judged once it has actually gone out. */
+      isLive: status === "sent" && delivered > 0
+    };
+  }).sort((a, b) => b.sentAt - a.sentAt);
+}
+function rankCampaigns(campaigns = [], minDelivered = DROPOFF_MIN_SAMPLE) {
+  const live = campaigns.filter((c) => c.isLive && c.delivered >= minDelivered);
+  const ranked = [...live].sort((a, b) => b.openRate - a.openRate);
+  return { ranked, best: ranked[0] || null, worst: ranked.length > 1 ? ranked[ranked.length - 1] : null };
+}
+var MILESTONES = Object.freeze([10, 25, 50, 75, 90, 100]);
+function computeMilestones(metrics = {}, options = {}) {
+  const progress = metrics.courseProgress || {};
+  const percent = asNum(progress.percent);
+  const lessonsDone = asInt4(progress.lessonsDone);
+  const lessonsTotal = asInt4(progress.lessonsTotal);
+  const questions = asInt4(metrics.practiceActivity);
+  const streak = asInt4(metrics.streak);
+  const out = [];
+  const nextPercent = MILESTONES.find((m) => m > percent);
+  if (nextPercent !== void 0) {
+    const lessonsNeeded = lessonsTotal > 0 ? Math.max(1, Math.ceil(nextPercent / 100 * lessonsTotal) - lessonsDone) : null;
+    out.push({
+      kind: "course_progress",
+      target: nextPercent,
+      current: round(percent, 1),
+      remaining: round(nextPercent - percent, 1),
+      lessonsNeeded,
+      message: lessonsNeeded ? `আর ${lessonsNeeded}টি পাঠ শেষ করলেই ${nextPercent}% milestone।` : `আর ${round(nextPercent - percent, 1)}% এগোলেই ${nextPercent}% milestone।`
+    });
+  }
+  for (const target of [7, 14, 30, 50, 100]) {
+    if (streak < target) {
+      out.push({
+        kind: "streak",
+        target,
+        current: streak,
+        remaining: target - streak,
+        message: `আর ${target - streak} দিন চালিয়ে গেলে ${target} দিনের streak।`
+      });
+      break;
+    }
+  }
+  for (const target of [100, 250, 500, 1e3]) {
+    if (questions < target) {
+      out.push({
+        kind: "practice",
+        target,
+        current: questions,
+        remaining: target - questions,
+        message: `আর ${target - questions}টি প্রশ্ন অভ্যাস করলেই ${target}টি সম্পূর্ণ।`
+      });
+      break;
+    }
+  }
+  return { milestones: out, next: out[0] || null, percent: round(percent, 1) };
+}
+var INSIGHT_KINDS = Object.freeze(["positive", "attention", "neutral"]);
+var insight = (kind, id, text, data = {}) => ({ kind, id, text, ...data });
+function buildStudentInsights(metrics = {}, context = {}) {
+  const out = [];
+  const trend = context.trend || null;
+  const comparison = context.comparison || null;
+  const accuracy = asNum(metrics.accuracy);
+  const practice = asInt4(metrics.practiceActivity);
+  const lessons = asInt4(metrics.lessonsCompleted);
+  const streak = asInt4(metrics.streak);
+  if (comparison?.metrics?.practiceActivity) {
+    const c = comparison.metrics.practiceActivity;
+    if (c.direction === "up" && c.previous > 0) {
+      out.push(insight(
+        "positive",
+        "practice-up",
+        `📈 এই সপ্তাহে তোমার অভ্যাস গত সপ্তাহের চেয়ে ${c.percent}% বেড়েছে।`,
+        { change: c.percent }
+      ));
+    }
+  }
+  if (comparison?.metrics?.lessonsCompleted) {
+    const c = comparison.metrics.lessonsCompleted;
+    if (c.direction === "up" && c.previous > 0) {
+      out.push(insight(
+        "positive",
+        "lessons-up",
+        `📚 গত সপ্তাহের তুলনায় ${c.delta}টি বেশি পাঠ শেষ করেছ।`,
+        { change: c.delta }
+      ));
+    }
+  }
+  if (streak >= 3) {
+    out.push(insight(
+      "positive",
+      "streak",
+      `🔥 টানা ${streak} দিন পড়ছ — এই ছন্দটা ধরে রাখো।`,
+      { streak }
+    ));
+  }
+  if (practice >= 20 && accuracy >= 80) {
+    out.push(insight(
+      "positive",
+      "accuracy",
+      `🎯 তোমার নির্ভুলতা ${accuracy}% — বেশ ভালো। এখন একটু কঠিন প্রশ্নে যাওয়ার সময়।`,
+      { accuracy }
+    ));
+  }
+  const courses = Array.isArray(context.courses) ? context.courses : [];
+  if (courses.length) {
+    const top = [...courses].sort((a, b) => pct3(b.lessonsDone, b.lessonsTotal, 1) - pct3(a.lessonsDone, a.lessonsTotal, 1))[0];
+    const percent = pct3(top.lessonsDone, top.lessonsTotal, 1);
+    if (percent > 0) {
+      out.push(insight(
+        "neutral",
+        "course-focus",
+        `🎯 তোমার সবচেয়ে বেশি progress হয়েছে ${top.id}-এ (${percent}%)।`,
+        { courseId: top.id, percent }
+      ));
+    }
+  }
+  if (trend?.practiceActivity?.direction === "down" && trend.practiceActivity.strength >= 0.15) {
+    out.push(insight(
+      "attention",
+      "practice-down",
+      `📉 অভ্যাস কমে আসছে — আজ অল্প করে হলেও কিছু প্রশ্ন solve করো।`,
+      { strength: trend.practiceActivity.strength }
+    ));
+  }
+  if (practice > 0 && accuracy > 0 && accuracy < 50) {
+    out.push(insight(
+      "attention",
+      "accuracy-low",
+      `⚠️ নির্ভুলতা ${accuracy}% — ভুলগুলো একবার revise করলে দ্রুত বাড়বে।`,
+      { accuracy }
+    ));
+  }
+  const pending = asInt4(metrics.mistakes?.pending);
+  if (pending >= 5) {
+    out.push(insight(
+      "attention",
+      "mistakes-pending",
+      `📝 ${pending}টি ভুল এখনো revise করা হয়নি।`,
+      { pending }
+    ));
+  }
+  if (metrics.daysSinceActive !== null && metrics.daysSinceActive >= 4) {
+    out.push(insight(
+      "attention",
+      "inactive",
+      `⏰ ${metrics.daysSinceActive} দিন ধরে পড়া হয়নি — আজ ছোট করে শুরু করো।`,
+      { days: metrics.daysSinceActive }
+    ));
+  }
+  if (lessons > 0 && practice === 0) {
+    out.push(insight(
+      "attention",
+      "no-practice",
+      `📖 পাঠ শেষ করেছ কিন্তু এখনো প্রশ্ন solve করনি — অভ্যাস ছাড়া মনে থাকবে না।`,
+      {}
+    ));
+  }
+  return out;
+}
+function buildAdminInsights(input = {}) {
+  const out = [];
+  const courses = Array.isArray(input.courses) ? input.courses : [];
+  const lessons = Array.isArray(input.lessons) ? input.lessons : [];
+  const quizzes = Array.isArray(input.quizzes) ? input.quizzes : [];
+  const engagement = input.engagement || {};
+  const retention = input.retention || {};
+  const notifications = input.notifications || {};
+  const campaigns = input.campaigns || {};
+  const funnel = input.funnel || [];
+  if (courses.length) {
+    const most = [...courses].sort((a, b) => b.learners - a.learners)[0];
+    if (most?.learners > 0) {
+      out.push(insight(
+        "neutral",
+        "most-engaged-course",
+        `Most engaged course: ${most.courseId} (${most.learners} জন learner)।`,
+        { courseId: most.courseId, learners: most.learners }
+      ));
+    }
+    const weakest = [...courses].filter((c) => c.learners >= DROPOFF_MIN_SAMPLE).sort((a, b) => a.lessonCompletionRate - b.lessonCompletionRate)[0];
+    if (weakest) {
+      out.push(insight(
+        "attention",
+        "weakest-course",
+        `⚠️ ${weakest.courseId}-এ lesson completion সবচেয়ে কম (${pct3(weakest.lessonCompletionRate * 100, 100, 1)}%)।`,
+        { courseId: weakest.courseId }
+      ));
+    }
+  }
+  const worstLesson = lessons.filter((l) => l.starts >= DROPOFF_MIN_SAMPLE).sort((a, b) => a.completionRate - b.completionRate)[0];
+  if (worstLesson && worstLesson.completionRate < 1 - DROPOFF_ALERT_RATE) {
+    const others = lessons.filter((l) => l.starts >= DROPOFF_MIN_SAMPLE && l !== worstLesson);
+    const avg = others.length ? sum(others, (l) => l.completionRate) / others.length : null;
+    out.push(insight(
+      "attention",
+      "lesson-dropoff",
+      `⚠️ Lesson ${worstLesson.lessonId}-এর completion rate অন্যান্য lesson-এর তুলনায় উল্লেখযোগ্যভাবে কম (${pct3(worstLesson.completionRate * 100, 100, 1)}%${avg !== null ? `, গড় ${pct3(avg * 100, 100, 1)}%` : ""})।`,
+      { courseId: worstLesson.courseId, lessonId: worstLesson.lessonId, completionRate: worstLesson.completionRate }
+    ));
+  }
+  const hardest = quizzes.filter((q) => q.attempts >= DROPOFF_MIN_SAMPLE).sort((a, b) => a.accuracy - b.accuracy)[0];
+  if (hardest) {
+    out.push(insight(
+      "attention",
+      "hardest-quiz",
+      `📝 ${hardest.quizId}-এ accuracy সবচেয়ে কম (${hardest.accuracy}%, ${hardest.attempts} attempts)।`,
+      { quizId: hardest.quizId, accuracy: hardest.accuracy }
+    ));
+  }
+  if (funnel.length) {
+    const drop = detectFunnelDropOff(funnel);
+    if (drop.hasAlert) {
+      out.push(insight("attention", "funnel-drop", `🚨 ${drop.message}`, { step: drop.steepest, dropRate: drop.dropRate }));
+    }
+  }
+  if (notifications.bestCategory?.sent >= DROPOFF_MIN_SAMPLE) {
+    const b = notifications.bestCategory;
+    out.push(insight(
+      "neutral",
+      "best-notification-category",
+      `🔔 Best notification category: ${b.key} (learning conversion ${b.learningConversion}%)।`,
+      { category: b.key }
+    ));
+  }
+  if (notifications.overall?.sent >= 20 && notifications.overall.learningConversion < 5) {
+    out.push(insight(
+      "attention",
+      "notification-conversion-low",
+      `⚠️ Notification → learning conversion মাত্র ${notifications.overall.learningConversion}% — পাঠানো কমিয়ে relevance বাড়ানো দরকার।`,
+      { conversion: notifications.overall.learningConversion }
+    ));
+  }
+  if (campaigns.best) {
+    out.push(insight(
+      "neutral",
+      "best-campaign",
+      `📣 সবচেয়ে ভালো campaign: ${campaigns.best.campaignId} (open ${campaigns.best.openRate}%)।`,
+      { campaignId: campaigns.best.campaignId }
+    ));
+  }
+  if (retention.byWindow && asNum(retention.cohortSize) >= DROPOFF_MIN_SAMPLE) {
+    const d7 = asNum(retention.byWindow.d7);
+    const d1 = asNum(retention.byWindow.d1);
+    if (d1 > 0 && d7 < d1 * 0.5) {
+      out.push(insight(
+        "attention",
+        "retention-gap",
+        `⚠️ D1 ${d1}% থেকে D7-এ নেমে এসেছে ${d7}% — প্রথম সপ্তাহেই অনেকেই হারিয়ে যাচ্ছে।`,
+        { d1, d7 }
+      ));
+    } else if (d1 > 0) {
+      out.push(insight(
+        "positive",
+        "retention-ok",
+        `✅ D1 retention ${d1}%।`,
+        { d1 }
+      ));
+    }
+  }
+  if (engagement.totalStudents >= DROPOFF_MIN_SAMPLE) {
+    out.push(insight(
+      "neutral",
+      "stickiness",
+      `👥 Stickiness (DAU/MAU) ${engagement.stickiness}% — ${engagement.dau} active আজ, ${engagement.mau} এই মাসে।`,
+      { stickiness: engagement.stickiness }
+    ));
+  }
+  return out;
+}
+function summarizeTrends(trends = {}) {
+  const up = [];
+  const down = [];
+  const labels = {
+    practiceActivity: "practice activity",
+    lessonsCompleted: "lesson completion",
+    learningTime: "learning time",
+    accuracy: "quiz accuracy"
+  };
+  for (const [key, t] of Object.entries(trends || {})) {
+    const label = labels[key] || key;
+    if (t?.direction === "up") up.push(label);
+    else if (t?.direction === "down") down.push(label);
+  }
+  if (!up.length && !down.length) return { text: "এই সময়ে বড় কোনো পরিবর্তন নেই — ধারা স্থির।", up, down };
+  const parts = [];
+  if (up.length) parts.push(`${up.join(", ")} বাড়ছে`);
+  if (down.length) parts.push(`${down.join(", ")} কমছে`);
+  return { text: `${parts.join(", কিন্তু ")}।`, up, down };
+}
+var MAX_EVENT_ROWS = 5e3;
+function isMissingSchemaError(err) {
+  const message = String(err?.message || err?.cause?.message || err || "");
+  return /no such table/i.test(message);
+}
+var AnalyticsStore2 = class {
+  #d1;
+  #ready;
+  constructor(d1) {
+    this.#d1 = d1 || null;
+  }
+  available() {
+    return Boolean(this.#d1);
+  }
+  /* A read that touches a table another module owns must not fail just because
+   * that module has not created its schema yet — a fresh database, or a first
+   * request that lands on analytics before the feature it reads. "No such
+   * table" means "no data yet", which every metric here already renders as
+   * zero; it does not mean the request is broken. Real SQL errors still throw,
+   * so a wrong column or a bad query is never silently swallowed. */
+  async #readAll(query) {
+    try {
+      const rows = await query.all();
+      return rows?.results || [];
+    } catch (err) {
+      if (isMissingSchemaError(err)) return [];
+      throw err;
+    }
+  }
+  async #readFirst(query) {
+    try {
+      return await query.first();
+    } catch (err) {
+      if (isMissingSchemaError(err)) return null;
+      throw err;
+    }
+  }
+  async init() {
+    if (!this.#d1) return;
+    if (!this.#ready) this.#ready = this.#createSchema().catch((err) => {
+      this.#ready = null;
+      throw err;
+    });
+    await this.#ready;
+  }
+  async #createSchema() {
+    const ddl = [
+      `CREATE TABLE IF NOT EXISTS analytics_events (
+        user_id TEXT NOT NULL,
+        id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        params_json TEXT,
+        at INTEGER NOT NULL,
+        day_key TEXT,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (user_id, id))`,
+      "CREATE INDEX IF NOT EXISTS idx_ae_user_at ON analytics_events(user_id, at)",
+      "CREATE INDEX IF NOT EXISTS idx_ae_name_at ON analytics_events(name, at)",
+      "CREATE INDEX IF NOT EXISTS idx_ae_user_day ON analytics_events(user_id, day_key)"
+    ];
+    for (const stmt of ddl) await this.#d1.prepare(stmt).run();
+  }
+  /* Ingest a batch of already-filtered learning events. Idempotent on
+   * (user_id, id): a client retry or a replayed flush cannot double-count, which
+   * is the whole reason the client is allowed to be at-least-once. */
+  async ingestEvents(userId, events, now) {
+    await this.init();
+    const rows = (Array.isArray(events) ? events : []).slice(0, 200);
+    let stored = 0;
+    for (const e of rows) {
+      const id = String(e?.id || "").slice(0, 120);
+      const name = String(e?.name || "").slice(0, 60);
+      if (!id || !name) continue;
+      const at = asInt4(e.at, now);
+      const params = e.params && typeof e.params === "object" ? e.params : {};
+      const res = await this.#d1.prepare(
+        `INSERT INTO analytics_events(user_id, id, name, params_json, at, day_key, created_at)
+         VALUES (?,?,?,?,?,?,?) ON CONFLICT(user_id, id) DO NOTHING`
+      ).bind(userId, id, name, JSON.stringify(params).slice(0, 4e3), at, dayKey3(at), now).run();
+      if (asInt4(res?.meta?.changes, 0) > 0) stored += 1;
+    }
+    return { received: rows.length, stored };
+  }
+  #events(rows) {
+    return (rows?.results || []).map((r) => {
+      let params = {};
+      try {
+        params = JSON.parse(String(r.params_json || "{}")) || {};
+      } catch {
+        params = {};
+      }
+      return { id: String(r.id), name: String(r.name), params, at: asInt4(r.at) };
+    });
+  }
+  /* Platform-wide events inside a window. This is the admin read; it is never
+   * reachable without the admin token. */
+  async eventsSince(sinceMs, limit = MAX_EVENT_ROWS) {
+    await this.init();
+    const rows = await this.#d1.prepare(
+      "SELECT id, name, params_json, at FROM analytics_events WHERE at>=? ORDER BY at ASC LIMIT ?"
+    ).bind(sinceMs, limit).all();
+    return this.#events(rows);
+  }
+  async userEvents(userId, sinceMs, limit = MAX_EVENT_ROWS) {
+    await this.init();
+    const rows = await this.#d1.prepare(
+      "SELECT id, name, params_json, at FROM analytics_events WHERE user_id=? AND at>=? ORDER BY at ASC LIMIT ?"
+    ).bind(userId, sinceMs, limit).all();
+    return this.#events(rows);
+  }
+  /* Every student's learning picture, one row per student, for the platform
+   * metrics. `activeDays` is a comma-joined day list — D1 has no array type and
+   * the only consumer is the segmentation/engagement code above. */
+  async studentSnapshots(sinceMs) {
+    await this.init();
+    const query = this.#d1.prepare(
+      `SELECT s.user_id AS user_id,
+              GROUP_CONCAT(DISTINCT s.day) AS days,
+              SUM(COALESCE(json_extract(s.payload_json,'$.questions'),0)) AS questions,
+              SUM(COALESCE(json_extract(s.payload_json,'$.lessons'),0)) AS lessons,
+              SUM(COALESCE(json_extract(s.payload_json,'$.timeMs'),0)) AS time_ms
+       FROM user_daily_stats s
+       WHERE s.deleted_at IS NULL AND s.day>=?
+       GROUP BY s.user_id`
+    ).bind(dayKey3(sinceMs));
+    const rows = await this.#readAll(query);
+    return rows.map((r) => ({
+      userId: String(r.user_id),
+      activeDays: String(r.days || "").split(",").filter(Boolean).sort(),
+      questions: asInt4(r.questions),
+      lessons: asInt4(r.lessons),
+      timeMs: asInt4(r.time_ms),
+      learningActions: asInt4(r.questions) + asInt4(r.lessons)
+    }));
+  }
+  /* Per-student daily series for one student — the student dashboard's read. */
+  async dailyStats(userId, limitDays = 60) {
+    await this.init();
+    const query = this.#d1.prepare(
+      "SELECT day, payload_json FROM user_daily_stats WHERE user_id=? AND deleted_at IS NULL ORDER BY day DESC LIMIT ?"
+    ).bind(userId, limitDays);
+    const rows = await this.#readAll(query);
+    return rows.map((r) => {
+      let doc = {};
+      try {
+        doc = JSON.parse(String(r.payload_json)) || {};
+      } catch {
+        doc = {};
+      }
+      return {
+        day: String(r.day),
+        questions: asInt4(doc.questions),
+        correct: asInt4(doc.correct),
+        wrong: asInt4(doc.wrong),
+        lessons: asInt4(doc.lessons),
+        timeMs: asInt4(doc.timeMs ?? doc.time),
+        exams: asInt4(doc.exams)
+      };
+    });
+  }
+  async examResults(userId, limit = 50) {
+    await this.init();
+    const query = this.#d1.prepare(
+      "SELECT id, payload_json, updated_at FROM user_exam_results WHERE user_id=? AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT ?"
+    ).bind(userId, limit);
+    const rows = await this.#readAll(query);
+    return rows.map((r) => {
+      let doc = {};
+      try {
+        doc = JSON.parse(String(r.payload_json)) || {};
+      } catch {
+        doc = {};
+      }
+      return { id: String(r.id), score: asNum(doc.score ?? doc.percentage, NaN), at: asInt4(r.updated_at) };
+    }).filter((e) => Number.isFinite(e.score));
+  }
+  async mistakes(userId) {
+    await this.init();
+    const query = this.#d1.prepare(
+      `SELECT COALESCE(topic_id,'general') AS topic, COUNT(*) AS misses FROM user_mistakes
+       WHERE user_id=? AND deleted_at IS NULL AND COALESCE(mastered,0)=0
+         AND (revision_status IS NULL OR revision_status<>'mastered')
+       GROUP BY topic ORDER BY misses DESC LIMIT 10`
+    ).bind(userId);
+    const rows = await this.#readAll(query);
+    return rows.map((r) => ({ topic: String(r.topic), misses: asInt4(r.misses) }));
+  }
+  /* Course progress lives in the student's own settings blob (same read Phase 3
+   * uses). A malformed or absent blob means "no course data" — never a guess. */
+  async courses(userId) {
+    await this.init();
+    const query = this.#d1.prepare(
+      "SELECT payload_json FROM user_settings WHERE user_id=? AND id='settings' AND deleted_at IS NULL"
+    ).bind(userId);
+    const row = await this.#readFirst(query);
+    if (!row?.payload_json) return [];
+    let doc = {};
+    try {
+      doc = JSON.parse(String(row.payload_json)) || {};
+    } catch {
+      return [];
+    }
+    const raw = doc.courses || doc.courseProgress || [];
+    if (!Array.isArray(raw)) return [];
+    return raw.map((c) => ({
+      id: String(c?.id || c?.courseId || ""),
+      lessonsTotal: asInt4(c?.lessonsTotal ?? c?.total),
+      lessonsDone: asInt4(c?.lessonsDone ?? c?.done)
+    })).filter((c) => c.id && c.lessonsTotal > 0);
+  }
+  /* The student's course blob as an analytics row, so the admin course rollup
+   * and the student view use the same shape. */
+  async courseRows(sinceMs) {
+    await this.init();
+    const query = this.#d1.prepare(
+      "SELECT user_id, payload_json, updated_at FROM user_settings WHERE id='settings' AND deleted_at IS NULL AND updated_at>=?"
+    ).bind(sinceMs);
+    const rows = await this.#readAll(query);
+    const out = [];
+    for (const r of rows) {
+      let doc = {};
+      try {
+        doc = JSON.parse(String(r.payload_json)) || {};
+      } catch {
+        continue;
+      }
+      const raw = Array.isArray(doc.courses || doc.courseProgress) ? doc.courses || doc.courseProgress : [];
+      for (const c of raw) {
+        const id = String(c?.id || c?.courseId || "");
+        const lessonsTotal = asInt4(c?.lessonsTotal ?? c?.total);
+        if (!id || lessonsTotal <= 0) continue;
+        out.push({ userId: String(r.user_id), courseId: id, lessonsTotal, lessonsDone: asInt4(c?.lessonsDone ?? c?.done) });
+      }
+    }
+    return out;
+  }
+  async notificationOutcomes(sinceMs) {
+    await this.init();
+    const query = this.#d1.prepare(
+      `SELECT notification_key, kind, category, variant, day_key, sent_at, opened_at, clicked_at, learning_at, learning_kind
+       FROM notification_outcomes WHERE sent_at>=? ORDER BY sent_at DESC LIMIT 5000`
+    ).bind(sinceMs);
+    const rows = await this.#readAll(query);
+    return rows.map((r) => ({
+      notification_key: String(r.notification_key),
+      kind: String(r.kind || ""),
+      category: String(r.category || ""),
+      variant: String(r.variant || ""),
+      day_key: String(r.day_key || ""),
+      sent_at: asInt4(r.sent_at),
+      opened_at: asInt4(r.opened_at),
+      clicked_at: asInt4(r.clicked_at),
+      learning_at: asInt4(r.learning_at),
+      learning_kind: String(r.learning_kind || "")
+    }));
+  }
+  async userOutcomes(userId, sinceMs) {
+    await this.init();
+    const query = this.#d1.prepare(
+      `SELECT notification_key, kind, category, variant, day_key, sent_at, opened_at, clicked_at, learning_at, learning_kind
+       FROM notification_outcomes WHERE user_id=? AND sent_at>=? ORDER BY sent_at DESC LIMIT 500`
+    ).bind(userId, sinceMs);
+    const rows = await this.#readAll(query);
+    return rows.map((r) => ({
+      notification_key: String(r.notification_key),
+      kind: String(r.kind || ""),
+      category: String(r.category || ""),
+      variant: String(r.variant || ""),
+      day_key: String(r.day_key || ""),
+      sent_at: asInt4(r.sent_at),
+      opened_at: asInt4(r.opened_at),
+      clicked_at: asInt4(r.clicked_at),
+      learning_at: asInt4(r.learning_at),
+      learning_kind: String(r.learning_kind || "")
+    }));
+  }
+  async globalNotifications(sinceMs) {
+    await this.init();
+    const query = this.#d1.prepare(
+      `SELECT id, type, audience, topic, status, sent_at, scheduled_at, COALESCE(delivered,0) AS delivered
+       FROM global_notifications WHERE COALESCE(sent_at, scheduled_at, 0)>=? ORDER BY COALESCE(sent_at, scheduled_at, 0) DESC LIMIT 500`
+    ).bind(sinceMs);
+    const rows = await this.#readAll(query);
+    return rows.map((r) => ({
+      id: String(r.id),
+      type: String(r.type || ""),
+      audience: String(r.audience || ""),
+      topic: String(r.topic || ""),
+      status: String(r.status || ""),
+      sent_at: asInt4(r.sent_at),
+      scheduled_at: asInt4(r.scheduled_at),
+      delivered: asInt4(r.delivered)
+    }));
+  }
+  async readCounts() {
+    await this.init();
+    const query = this.#d1.prepare(
+      "SELECT notification_id, COUNT(*) AS n FROM notification_reads GROUP BY notification_id"
+    );
+    const rows = await this.#readAll(query);
+    const out = {};
+    for (const r of rows) out[String(r.notification_id)] = asInt4(r.n);
+    return out;
+  }
+  /* How many students have a device registered — the honest denominator for a
+   * "reached" percentage. */
+  async deviceCount() {
+    await this.init();
+    const row = await this.#readFirst(this.#d1.prepare("SELECT COUNT(DISTINCT user_id) AS n FROM fcm_devices"));
+    return asInt4(row?.n);
+  }
+  /* Segments for the Phase 3 engine and for the admin filter list. Computed here
+   * once so the notification engine and the dashboard cannot disagree about who
+   * is "at risk". */
+  async segments(options = {}) {
+    const since = options.sinceMs ?? Date.now() - 60 * DAY_MS5;
+    const students = await this.studentSnapshots(since);
+    return students.map((s) => {
+      const metrics = computeLearningMetrics({
+        dailyStats: (s.activeDays || []).map((day) => ({ day, questions: 0, lessons: 0 })),
+        courses: []
+      }, { today: options.today || dayKey3(Date.now(), options.tzOffsetMin) });
+      const today = options.today || dayKey3(Date.now(), options.tzOffsetMin);
+      const last = s.activeDays[s.activeDays.length - 1] || null;
+      const enriched = {
+        ...metrics,
+        activeDays: s.activeDays.length,
+        practiceActivity: s.questions,
+        lessonsCompleted: s.lessons,
+        lastActiveDay: last,
+        daysSinceActive: last ? Math.max(0, daysBetween(last, today)) : null
+      };
+      return {
+        userId: s.userId,
+        ...classifyBehaviourSegment(enriched, { today }),
+        stage: classifyLearningStage(enriched).stage
+      };
+    });
+  }
+};
+var ANALYTICS_PREFIX = "/api/analytics/";
+var jsonResponse5 = (request, obj, status = 200) => new Response(JSON.stringify(obj), {
+  status,
+  headers: {
+    "Content-Type": "application/json; charset=utf-8",
+    "Cache-Control": "no-store",
+    ...request?.headers?.get("Origin") ? { "Access-Control-Allow-Origin": request.headers.get("Origin"), "Access-Control-Allow-Credentials": "true" } : {}
+  }
+});
+var readBody2 = async (request) => {
+  try {
+    return await request.json();
+  } catch {
+    return null;
+  }
+};
+function parseFilters(url, now = Date.now()) {
+  const days = Math.min(365, Math.max(1, asInt4(url.searchParams.get("days"), 30)));
+  const from = asInt4(url.searchParams.get("from"), 0);
+  const to = asInt4(url.searchParams.get("to"), 0);
+  const sinceMs = from > 0 ? from : now - days * DAY_MS5;
+  const untilMs = to > 0 ? to : now;
+  const pick = (key) => {
+    const v = String(url.searchParams.get(key) || "").trim().slice(0, 80);
+    return v || "";
+  };
+  return {
+    days,
+    sinceMs,
+    untilMs,
+    course: pick("course"),
+    lesson: pick("lesson"),
+    category: pick("category"),
+    segment: pick("segment"),
+    notificationType: pick("type"),
+    platform: pick("platform"),
+    tzOffsetMin: asInt4(url.searchParams.get("tz"), DEFAULT_TZ_OFFSET_MIN)
+  };
+}
+var inWindow = (at, f) => asInt4(at) >= f.sinceMs && asInt4(at) <= f.untilMs;
+function applyFilters({ events = [], courses = [], lessons = [], quizzes = [], campaigns = [], outcomes = [], segments = [] }, f) {
+  let ev = events.filter((e) => inWindow(e.at, f));
+  let co = courses;
+  let le = lessons;
+  let qu = quizzes;
+  let ca = campaigns.filter((c) => inWindow(c.sentAt || c.scheduledAt, f));
+  let ou = outcomes.filter((o) => inWindow(o.sent_at, f));
+  let sg = segments;
+  if (f.course) {
+    ev = ev.filter((e) => String(e.params?.course_id || e.params?.courseId || "") === f.course);
+    co = co.filter((c) => c.courseId === f.course);
+    le = le.filter((l) => l.courseId === f.course);
+    qu = qu.filter((q) => String(q.quizId) === f.course);
+  }
+  if (f.lesson) {
+    ev = ev.filter((e) => String(e.params?.lesson_id || e.params?.lessonId || "") === f.lesson);
+    le = le.filter((l) => l.lessonId === f.lesson);
+  }
+  if (f.category) ou = ou.filter((o) => o.category === f.category);
+  if (f.notificationType) {
+    ou = ou.filter((o) => o.kind === f.notificationType);
+    ca = ca.filter((c) => c.type === f.notificationType);
+  }
+  if (f.segment) sg = sg.filter((s) => s.segment === f.segment);
+  if (f.platform) ca = ca.filter((c) => String(c.topic || "").includes(f.platform));
+  return { events: ev, courses: co, lessons: le, quizzes: qu, campaigns: ca, outcomes: ou, segments: sg };
+}
+async function buildStudentDashboard(store, userId, options = {}) {
+  const f = options.filters || { sinceMs: Date.now() - 30 * DAY_MS5, untilMs: Date.now(), tzOffsetMin: DEFAULT_TZ_OFFSET_MIN };
+  const today = options.today || dayKey3(Date.now(), f.tzOffsetMin);
+  const [dailyStats, examResults, mistakes, courses, events, outcomes] = await Promise.all([
+    store.dailyStats(userId, options.limitDays ?? 90),
+    store.examResults(userId, 50),
+    store.mistakes(userId),
+    store.courses(userId),
+    store.userEvents(userId, f.sinceMs),
+    store.userOutcomes(userId, f.sinceMs)
+  ]);
+  const metrics = computeLearningMetrics({ dailyStats, examResults, mistakes, courses }, { today, seriesDays: options.seriesDays ?? 14 });
+  const comparison = comparePeriods(metrics.series, 7);
+  const trends = detectTrends(metrics.series, { window: 7 });
+  const segment = classifyBehaviourSegment(metrics, { today, trend: trends.practiceActivity });
+  const stage = classifyLearningStage(metrics);
+  const milestones = computeMilestones(metrics);
+  const insights = buildStudentInsights(metrics, { trend: trends, comparison, courses });
+  const trendSummary = summarizeTrends(trends);
+  const funnel = buildFunnel(countByEvent(events));
+  const notifications = computeNotificationAnalytics(outcomes);
+  return {
+    scope: "student",
+    userId,
+    generatedAt: Date.now(),
+    today,
+    metrics,
+    comparison,
+    trends,
+    trendSummary,
+    segment,
+    stage,
+    milestones,
+    insights,
+    funnel,
+    dropOff: detectFunnelDropOff(funnel),
+    notifications,
+    recentActivity: events.slice(-20).reverse().map((e) => ({ name: e.name, at: e.at, params: e.params }))
+  };
+}
+async function buildAdminDashboard(store, filters, options = {}) {
+  const [events, courseRows, outcomes, globals, readCounts, students, deviceCount] = await Promise.all([
+    store.eventsSince(filters.sinceMs),
+    store.courseRows(filters.sinceMs),
+    store.notificationOutcomes(filters.sinceMs),
+    store.globalNotifications(filters.sinceMs),
+    store.readCounts(),
+    store.studentSnapshots(filters.sinceMs),
+    store.deviceCount()
+  ]);
+  const courses = buildCourseAnalytics(courseRows, events);
+  const lessons = buildLessonAnalytics(events);
+  const quizzes = buildQuizAnalytics(events);
+  const campaigns = computeCampaignAnalytics(globals, readCounts);
+  const segments = students.map((s) => {
+    const last = s.activeDays[s.activeDays.length - 1] || null;
+    let hadGap = false;
+    for (let i = 1; i < s.activeDays.length; i += 1) {
+      if (daysBetween(s.activeDays[i - 1], s.activeDays[i]) >= 4) {
+        hadGap = true;
+        break;
+      }
+    }
+    const enriched = {
+      activeDays: s.activeDays.length,
+      practiceActivity: s.questions,
+      lessonsCompleted: s.lessons,
+      courseProgress: {},
+      hadGap,
+      daysSinceActive: last ? Math.max(0, daysBetween(last, filters.today || dayKey3(Date.now(), filters.tzOffsetMin))) : null
+    };
+    return { userId: s.userId, ...classifyBehaviourSegment(enriched, { today: filters.today }), stage: classifyLearningStage(enriched).stage };
+  });
+  const filtered = applyFilters({ events, courses, lessons, quizzes, campaigns, outcomes, segments }, filters);
+  const engagement = computeEngagement(
+    students.map((s) => ({ userId: s.userId, activeDays: s.activeDays, learningActions: s.learningActions, sessions: s.activeDays.map((d) => ({ timeMs: 0 })) })),
+    { today: filters.today, tzOffsetMin: filters.tzOffsetMin }
+  );
+  const retention = computeRetention(students, { today: filters.today, tzOffsetMin: filters.tzOffsetMin });
+  const notifications = computeNotificationAnalytics(filtered.outcomes);
+  const ranked = rankCampaigns(filtered.campaigns);
+  const funnel = buildFunnel(countByEvent(filtered.events));
+  const dropOff = detectFunnelDropOff(funnel);
+  const trends = detectTrends(
+    dayRange(filters.today || dayKey3(Date.now(), filters.tzOffsetMin), 14).map((day) => {
+      const rows = filtered.events.filter((e) => dayKey3(e.at, filters.tzOffsetMin) === day);
+      return {
+        day,
+        questions: rows.filter((e) => e.name === "question_attempt").length,
+        lessons: rows.filter((e) => e.name === "lesson_complete").length,
+        correct: rows.filter((e) => e.name === "question_attempt" && (e.params?.correct === true || e.params?.correct === "true")).length,
+        wrong: rows.filter((e) => e.name === "question_attempt" && !(e.params?.correct === true || e.params?.correct === "true")).length,
+        timeMs: 0
+      };
+    }),
+    { window: 7 }
+  );
+  const segmentCounts = {};
+  for (const s of filtered.segments) segmentCounts[s.segment] = (segmentCounts[s.segment] || 0) + 1;
+  const stageCounts = {};
+  for (const s of filtered.segments) stageCounts[s.stage] = (stageCounts[s.stage] || 0) + 1;
+  const insights = buildAdminInsights({
+    courses: filtered.courses,
+    lessons: filtered.lessons,
+    quizzes: filtered.quizzes,
+    engagement,
+    retention,
+    notifications,
+    campaigns: ranked,
+    funnel
+  });
+  return {
+    scope: "admin",
+    generatedAt: Date.now(),
+    filters,
+    totals: {
+      students: students.length,
+      devices: deviceCount,
+      events: filtered.events.length,
+      courses: filtered.courses.length,
+      lessons: filtered.lessons.length,
+      quizzes: filtered.quizzes.length
+    },
+    engagement,
+    retention,
+    funnel,
+    dropOff,
+    trends,
+    trendSummary: summarizeTrends(trends),
+    courses: filtered.courses,
+    lessons: filtered.lessons,
+    quizzes: filtered.quizzes,
+    notifications,
+    campaigns: ranked,
+    segments: { counts: segmentCounts, stages: stageCounts, total: filtered.segments.length },
+    insights,
+    /* The AI-ready layer: the structured signals Phase 5 will consume, already
+     * computed and already interpreted. */
+    signals: {
+      funnel,
+      dropOff,
+      trends,
+      trendSummary: summarizeTrends(trends),
+      insights,
+      segments: segmentCounts,
+      notificationConversion: notifications.overall.learningConversion
+    }
+  };
+}
+async function handleAnalyticsRequest(request, env, ctx, deps = {}) {
+  const url = new URL(request.url);
+  const path = url.pathname;
+  if (!path.startsWith(ANALYTICS_PREFIX) && path !== "/api/analytics") return null;
+  if (request.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: {
+      "Access-Control-Allow-Origin": request.headers.get("Origin") || "*",
+      "Access-Control-Allow-Credentials": "true",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization",
+      "Access-Control-Max-Age": "86400"
+    } });
+  }
+  const store = deps.store || new AnalyticsStore2(env?.PROFILE_DB);
+  if (!store.available()) return jsonResponse5(request, { error: "storage-unavailable" }, 503);
+  const resolveSession = deps.sessionUser || sessionUser;
+  const filters = parseFilters(url);
+  const adminToken = String(request.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "").trim();
+  const isAdmin = Boolean(env?.ADMIN_TOKEN) && adminToken === env.ADMIN_TOKEN;
+  if (path === `${ANALYTICS_PREFIX}events` && request.method === "POST") {
+    const session = await resolveSession(env, request);
+    if (!session?.user?.id) return jsonResponse5(request, { error: "auth-required" }, 401);
+    const body = await readBody2(request);
+    const events = Array.isArray(body?.events) ? body.events : [];
+    const result = await store.ingestEvents(String(session.user.id), events, Date.now());
+    return jsonResponse5(request, { ok: true, ...result });
+  }
+  if (path === `${ANALYTICS_PREFIX}me` && request.method === "GET") {
+    const session = await resolveSession(env, request);
+    if (!session?.user?.id) return jsonResponse5(request, { error: "auth-required" }, 401);
+    const payload = await buildStudentDashboard(store, String(session.user.id), { filters });
+    return jsonResponse5(request, payload);
+  }
+  if (!isAdmin) return jsonResponse5(request, { error: "forbidden" }, 403);
+  const dashboard = await buildAdminDashboard(store, filters);
+  if (path === `${ANALYTICS_PREFIX}overview` && request.method === "GET") {
+    return jsonResponse5(request, {
+      scope: "admin",
+      generatedAt: dashboard.generatedAt,
+      filters: dashboard.filters,
+      totals: dashboard.totals,
+      engagement: dashboard.engagement,
+      retention: dashboard.retention,
+      insights: dashboard.insights,
+      trendSummary: dashboard.trendSummary,
+      trends: dashboard.trends,
+      segments: dashboard.segments
+    });
+  }
+  const views = {
+    courses: () => dashboard.courses,
+    lessons: () => dashboard.lessons,
+    quizzes: () => dashboard.quizzes,
+    engagement: () => ({ engagement: dashboard.engagement, retention: dashboard.retention }),
+    retention: () => dashboard.retention,
+    notifications: () => dashboard.notifications,
+    campaigns: () => dashboard.campaigns,
+    segments: () => dashboard.segments,
+    funnel: () => ({ funnel: dashboard.funnel, dropOff: dashboard.dropOff }),
+    insights: () => dashboard.insights,
+    trends: () => ({ trends: dashboard.trends, summary: dashboard.trendSummary }),
+    signals: () => dashboard.signals
+  };
+  const view = path.slice(ANALYTICS_PREFIX.length).replace(/\/$/, "");
+  if (views[view] && request.method === "GET") {
+    return jsonResponse5(request, { scope: "admin", filters: dashboard.filters, [view]: views[view]() });
+  }
+  if (view === "export" && request.method === "GET") {
+    return jsonResponse5(request, {
+      scope: "admin",
+      exportedAt: Date.now(),
+      filters: dashboard.filters,
+      courses: dashboard.courses,
+      lessons: dashboard.lessons,
+      quizzes: dashboard.quizzes,
+      campaigns: dashboard.campaigns,
+      segments: dashboard.segments,
+      signals: dashboard.signals
+    });
+  }
+  return jsonResponse5(request, { error: "not-found" }, 404);
+}
+
 // files-storage.mjs
 var AUTHORITY_NAME4 = "admission-hub-global-auth-v1";
 var SESSION_COOKIE3 = "__Host-ah_session";
@@ -13766,7 +15315,7 @@ var bumpUsage = async (env, delta) => {
   } catch {
   }
 };
-var jsonResponse5 = (request, obj, status = 200) => new Response(JSON.stringify(obj), {
+var jsonResponse6 = (request, obj, status = 200) => new Response(JSON.stringify(obj), {
   status,
   headers: {
     "Content-Type": "application/json; charset=utf-8",
@@ -13803,7 +15352,7 @@ async function handleFilesStorageRequest(request, env) {
   const available = Boolean(bucket && typeof bucket.put === "function");
   if (request.method === "GET" && path === "/api/files/usage") {
     const usage = await bucketUsage(env);
-    return jsonResponse5(request, {
+    return jsonResponse6(request, {
       ok: true,
       usedBytes: usage.bytes,
       exact: usage.exact,
@@ -13813,15 +15362,15 @@ async function handleFilesStorageRequest(request, env) {
   }
   if (request.method === "GET") {
     const key = path.slice("/api/files/".length);
-    if (!KEY_RE.test(key)) return jsonResponse5(request, { error: "not-found" }, 404);
-    if (!available) return jsonResponse5(request, { error: "storage-unavailable" }, 503);
+    if (!KEY_RE.test(key)) return jsonResponse6(request, { error: "not-found" }, 404);
+    if (!available) return jsonResponse6(request, { error: "storage-unavailable" }, 503);
     let obj;
     try {
       obj = await bucket.get(key);
     } catch {
       obj = null;
     }
-    if (!obj) return jsonResponse5(request, { error: "not-found" }, 404);
+    if (!obj) return jsonResponse6(request, { error: "not-found" }, 404);
     const ext = key.split(".").pop().toLowerCase();
     const type = UPLOAD_TYPES[ext] || "application/octet-stream";
     return new Response(obj.body, {
@@ -13835,35 +15384,35 @@ async function handleFilesStorageRequest(request, env) {
     });
   }
   const session = await sessionUser3(env, request);
-  if (!session) return jsonResponse5(request, { error: "auth-required" }, 401);
+  if (!session) return jsonResponse6(request, { error: "auth-required" }, 401);
   const userId = String(session.user.id);
-  if (request.method !== "POST") return jsonResponse5(request, { error: "method-not-allowed" }, 405);
+  if (request.method !== "POST") return jsonResponse6(request, { error: "method-not-allowed" }, 405);
   if (path === "/api/files/upload") {
-    if (!available) return jsonResponse5(request, { error: "storage-unavailable" }, 503);
+    if (!available) return jsonResponse6(request, { error: "storage-unavailable" }, 503);
     if (!await kvRateAllow2(env, `upload:${userId}`, MAX_UPLOADS_PER_HOUR, 3600)) {
-      return jsonResponse5(request, { error: "rate-limited" }, 429);
+      return jsonResponse6(request, { error: "rate-limited" }, 429);
     }
     const declared = Number(request.headers.get("Content-Length") || 0);
     if (!declared || declared > MAX_UPLOAD_BYTES) {
-      return jsonResponse5(request, { error: "too-large" }, 413);
+      return jsonResponse6(request, { error: "too-large" }, 413);
     }
     const ext = String(request.headers.get("X-File-Ext") || "").toLowerCase().replace(/[^a-z0-9]/g, "");
     const contentType = UPLOAD_TYPES[ext];
-    if (!contentType) return jsonResponse5(request, { error: "invalid-type" }, 400);
+    if (!contentType) return jsonResponse6(request, { error: "invalid-type" }, 400);
     const folder = String(request.headers.get("X-File-Folder") || "").toLowerCase();
-    if (!FOLDER_RE.test(folder)) return jsonResponse5(request, { error: "invalid-folder" }, 400);
+    if (!FOLDER_RE.test(folder)) return jsonResponse6(request, { error: "invalid-folder" }, 400);
     let bytes;
     try {
       bytes = new Uint8Array(await request.arrayBuffer());
     } catch {
-      return jsonResponse5(request, { error: "read-failed" }, 400);
+      return jsonResponse6(request, { error: "read-failed" }, 400);
     }
     if (!bytes.length || bytes.length > MAX_UPLOAD_BYTES) {
-      return jsonResponse5(request, { error: "too-large" }, 413);
+      return jsonResponse6(request, { error: "too-large" }, 413);
     }
     const usage = await bucketUsage(env);
     if (usage.bytes + bytes.length > BUCKET_HARD_LIMIT_BYTES) {
-      return jsonResponse5(request, { error: "bucket-limit", limitBytes: BUCKET_HARD_LIMIT_BYTES, usedBytes: usage.bytes }, 507);
+      return jsonResponse6(request, { error: "bucket-limit", limitBytes: BUCKET_HARD_LIMIT_BYTES, usedBytes: usage.bytes }, 507);
     }
     const day = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
     const key = `${folder}/${userId}/${day}/${randKey2(12)}.${ext}`;
@@ -13871,33 +15420,33 @@ async function handleFilesStorageRequest(request, env) {
       await bucket.put(key, bytes, { httpMetadata: { contentType } });
       await bumpUsage(env, bytes.length);
     } catch {
-      return jsonResponse5(request, { error: "storage-error" }, 503);
+      return jsonResponse6(request, { error: "storage-error" }, 503);
     }
     const fileUrl = `/api/files/${key}`;
-    return jsonResponse5(request, { ok: true, url: fileUrl, publicUrl: `${publicUrl(request)}${fileUrl}`, key }, 201);
+    return jsonResponse6(request, { ok: true, url: fileUrl, publicUrl: `${publicUrl(request)}${fileUrl}`, key }, 201);
   }
   if (path === "/api/files/delete") {
-    if (!available) return jsonResponse5(request, { error: "storage-unavailable" }, 503);
+    if (!available) return jsonResponse6(request, { error: "storage-unavailable" }, 503);
     let body = {};
     try {
       body = await request.json();
     } catch {
       body = null;
     }
-    if (!body || typeof body !== "object") return jsonResponse5(request, { error: "invalid-json" }, 400);
+    if (!body || typeof body !== "object") return jsonResponse6(request, { error: "invalid-json" }, 400);
     const key = String(body.key || "");
-    if (!KEY_RE.test(key)) return jsonResponse5(request, { error: "invalid-key" }, 400);
-    if (key.split("/")[1] !== userId) return jsonResponse5(request, { error: "forbidden" }, 403);
+    if (!KEY_RE.test(key)) return jsonResponse6(request, { error: "invalid-key" }, 400);
+    if (key.split("/")[1] !== userId) return jsonResponse6(request, { error: "forbidden" }, 403);
     try {
       const existing = await bucket.get(key);
       await bucket.delete(key);
       if (existing) await bumpUsage(env, -existing.size);
     } catch {
-      return jsonResponse5(request, { error: "storage-error" }, 503);
+      return jsonResponse6(request, { error: "storage-error" }, 503);
     }
-    return jsonResponse5(request, { ok: true, key });
+    return jsonResponse6(request, { ok: true, key });
   }
-  return jsonResponse5(request, { error: "not-found" }, 404);
+  return jsonResponse6(request, { error: "not-found" }, 404);
 }
 var __filesStorageTest = Object.freeze({
   BUCKET_HARD_LIMIT_BYTES,
@@ -14236,8 +15785,8 @@ function summarizeIdentityHealth(result) {
 }
 
 // auth-native/storage/sqlite-auth-repository.mjs
-var DAY_MS5 = 24 * 60 * 60 * 1e3;
-var EVENT_RETENTION_MS = 90 * DAY_MS5;
+var DAY_MS6 = 24 * 60 * 60 * 1e3;
+var EVENT_RETENTION_MS = 90 * DAY_MS6;
 function joinedYearOf(ts) {
   const t = Number(ts);
   if (!Number.isFinite(t) || t <= 0) return null;
@@ -15886,13 +17435,13 @@ var SqliteAuthRepository = class _SqliteAuthRepository {
   async cleanup(now) {
     return this.#transaction(() => {
       this.sql.exec("UPDATE auth_account_verification_tickets SET state='expired',refresh_cipher='' WHERE state='active' AND expires_at<=?", now);
-      this.sql.exec("DELETE FROM auth_account_verification_tickets WHERE expires_at<?", now - DAY_MS5);
+      this.sql.exec("DELETE FROM auth_account_verification_tickets WHERE expires_at<?", now - DAY_MS6);
       this.sql.exec("DELETE FROM auth_passkey_challenges WHERE expires_at<=?", now);
       this.sql.exec("DELETE FROM auth_passkey_tickets WHERE expires_at<=?", now);
       this.sql.exec("DELETE FROM auth_passkey_credentials WHERE status='revoked' AND revoked_at<?", now - EVENT_RETENTION_MS);
       this.sql.exec("DELETE FROM auth_rate_limits WHERE expires_at<=?", now);
-      this.sql.exec("DELETE FROM auth_trusted_devices WHERE expires_at<?", now - DAY_MS5);
-      this.sql.exec("DELETE FROM auth_security_challenges WHERE expires_at<?", now - DAY_MS5);
+      this.sql.exec("DELETE FROM auth_trusted_devices WHERE expires_at<?", now - DAY_MS6);
+      this.sql.exec("DELETE FROM auth_security_challenges WHERE expires_at<?", now - DAY_MS6);
       this.sql.exec("DELETE FROM auth_sessions WHERE expires_at<=? OR revoked_at IS NOT NULL", now);
       this.sql.exec("DELETE FROM auth_security_events WHERE occurred_at<?", now - EVENT_RETENTION_MS);
       this.sql.exec("INSERT INTO auth_meta(key,value) VALUES('last_cleanup',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", String(now));
@@ -15942,7 +17491,7 @@ var safeInteraction = (value) => {
     return null;
   }
 };
-var ratio2 = (quota) => {
+var ratio3 = (quota) => {
   const limit = Number(quota?.limit || 0);
   const remaining = Number(quota?.remaining || 0);
   return limit > 0 ? Math.max(0, Math.min(1, remaining / limit)) : 0;
@@ -16126,7 +17675,7 @@ var VerificationOrchestrator = class {
           this.repository.providerSnapshot({ providerId: entry.id, now })
         ]);
         if (availability?.available !== true || state.circuit === "open" || Number(remoteQuota?.remaining || 0) <= 0 || localQuota.remaining <= 0) return null;
-        const lowestRatio = Math.min(ratio2(remoteQuota), ratio2(localQuota));
+        const lowestRatio = Math.min(ratio3(remoteQuota), ratio3(localQuota));
         const lowPenalty = lowestRatio <= this.config.policy.lowQuotaRatio ? 1e4 : (1 - lowestRatio) * 100;
         const failureTotal = Number(state.successCount || 0) + Number(state.failureCount || 0);
         const failurePenalty = failureTotal ? Number(state.failureCount || 0) / failureTotal * 500 : 0;
@@ -16562,7 +18111,7 @@ var VerificationOrchestrator = class {
             limit: Math.max(0, Number(remoteQuota?.limit || 0)),
             resetAt: Math.max(0, Number(remoteQuota?.resetAt || 0))
           },
-          low: ratio2(quota) <= this.config.policy.lowQuotaRatio
+          low: ratio3(quota) <= this.config.policy.lowQuotaRatio
         }),
         health: Object.freeze({
           circuit: state.circuit || "closed",
@@ -16603,7 +18152,7 @@ var VerificationOrchestrator = class {
     return this.repository.nextExpiry(Number(this.now()));
   }
 };
-var __verificationOrchestratorTest = Object.freeze({ PURPOSES, SEND_LIMITS, providerFailure, ratio: ratio2 });
+var __verificationOrchestratorTest = Object.freeze({ PURPOSES, SEND_LIMITS, providerFailure, ratio: ratio3 });
 
 // auth-native/verification/providers.mjs
 var safeInteger = (value, min = 0, max = Number.MAX_SAFE_INTEGER) => {
@@ -17909,8 +19458,8 @@ async function dispatchSecurityNotifications({
 }
 
 // auth-native/verification/sqlite-verification-repository.mjs
-var DAY_MS6 = 864e5;
-var EVENT_RETENTION_MS2 = 90 * DAY_MS6;
+var DAY_MS7 = 864e5;
+var EVENT_RETENTION_MS2 = 90 * DAY_MS7;
 var safeReason = (value) => String(value || "UNKNOWN").toUpperCase().replace(/[^A-Z0-9_-]/g, "_").slice(0, 64) || "UNKNOWN";
 var SqliteVerificationRepository = class {
   constructor(storage) {
@@ -18565,8 +20114,8 @@ var SqliteVerificationRepository = class {
     });
   }
   async dailyQuotaSnapshot({ providerId, dailyQuota, now }) {
-    const dayStart = Math.floor(now / DAY_MS6) * DAY_MS6;
-    const resetAt = dayStart + DAY_MS6;
+    const dayStart = Math.floor(now / DAY_MS7) * DAY_MS7;
+    const resetAt = dayStart + DAY_MS7;
     const row = this.#one(
       "SELECT used FROM auth_verification_daily_quota WHERE provider_id=? AND day_start=?",
       providerId,
@@ -18577,8 +20126,8 @@ var SqliteVerificationRepository = class {
   }
   async reserveDailyQuota({ providerId, dailyQuota, now }) {
     return this.#transaction(() => {
-      const dayStart = Math.floor(now / DAY_MS6) * DAY_MS6;
-      const resetAt = dayStart + DAY_MS6;
+      const dayStart = Math.floor(now / DAY_MS7) * DAY_MS7;
+      const resetAt = dayStart + DAY_MS7;
       this.sql.exec(
         `INSERT INTO auth_verification_daily_quota(provider_id,day_start,used,quota_limit,reset_at,updated_at)
          VALUES(?,?,0,?,?,?) ON CONFLICT(provider_id,day_start)
@@ -19709,6 +21258,8 @@ var gk_agent_worker_default = {
     if (personalResponse) return personalResponse;
     const userDataResponse = await handleUserDataRequest(request, env, ctx);
     if (userDataResponse) return userDataResponse;
+    const analyticsResponse = await handleAnalyticsRequest(request, env, ctx);
+    if (analyticsResponse) return analyticsResponse;
     const filesResponse = await handleFilesStorageRequest(request, env, ctx);
     if (filesResponse) return filesResponse;
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors(request) });

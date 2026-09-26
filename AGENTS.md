@@ -1067,3 +1067,72 @@ and (later) in an admin surface.
   deliberately installs no dependencies (it only rsyncs and greps), so any test
   importing `jsdom` must run in a job that installs. `shell-guard.yml` does
   `npm ci` first; the eight jsdom-dependent shell guards fail without it.
+
+## Phase 4 — analytics dashboard & smart insights (v290)
+
+`docs/PHASE-04-ANALYTICS-DASHBOARD.md`. One server-side engine, one set of metric
+math, two surfaces.
+
+- **`analytics-engine.mjs` is the only place metrics are computed.** The student
+  card and the admin view both call it through `/api/analytics/*`. Do not add a
+  metric to the browser; `analytics-service.js#buildLearningInsights` is the
+  Phase 1 browser funnel and is deliberately NOT imported into the worker.
+- **`AnalyticsStore` reads Phase 1–3 tables read-only**: `user_daily_stats`,
+  `user_exam_results`, `user_mistakes`, `user_settings` (course progress),
+  `analytics_events`, `notification_outcomes`, `global_notifications`,
+  `notification_reads`, `fcm_devices`. It writes exactly one table,
+  `analytics_events`, and only via `ingestEvents`.
+- **A read of another module's table must survive that table not existing yet.**
+  The engine creates only `analytics_events`; the other eight belong to Phase 1–3
+  and may not have been created on a fresh database, or on a first request that
+  reaches `/api/analytics/*` before those features have run. Every such read goes
+  through `#readAll` / `#readFirst`, which treat "no such table" as "no data" and
+  let the metric render as zero. `isMissingSchemaError` matches only
+  `no such table`; a missing *column* is schema drift — the table exists but not
+  in the shape this engine was written for — and still throws, as does any other
+  fault. Do not call `#d1.prepare(...).all()`
+  directly for a table this module does not own. The engine tests' fake D1 returns
+  `[]` for any unknown query, which is why 92 passing unit tests missed a 500 that
+  real SQLite produced; `analytics-engine-sqlite.test.mjs` and
+  `analytics-routes-worker.test.mjs` exist to keep that blind spot closed.
+- **Ingest is idempotent on `(user_id, id)`.** The client row id is a content
+  hash, so an offline flush retried after a crash sends the same id and stores
+  nothing new. Keep `ON CONFLICT` here — without it every retry inflates counts.
+- **Course progress is localStorage-only in the client, but the server reads
+  `user_settings`.** Lesson/quiz-level analytics therefore come from
+  `analytics_events`, not from the daily counters (which carry no lesson id).
+- **Drop-off thresholds are shared with Phase 2**: `DROPOFF_MIN_SAMPLE = 5`,
+  `DROPOFF_ALERT_RATE = 0.4`. If you change one, change both or the two surfaces
+  will disagree about the same funnel.
+- **Retention excludes immature cohorts.** A student who joined yesterday is not
+  in the D30 denominator. A test pins this — without it every new cohort reads as
+  a total loss.
+- **`returning` is derived from day history, not a caller hint.** If you gate it
+  behind an option, the admin segmentation (no hint) can never emit it, and the
+  segment filter silently matches nobody. A test asserts every advertised segment
+  is reachable.
+- **Admin access is `Authorization: Bearer $ADMIN_TOKEN`, and an unset token
+  means closed.** Never treat a missing `ADMIN_TOKEN` as "no auth required".
+- **Admin payloads are aggregate only.** No per-student row, no user id. Pinned by
+  a test that serializes the payload and asserts a seeded id is absent.
+- **`analytics-dashboard.js` loads as UMD on `self`** (like `analytics-service.js`)
+  and is tested through `new Function('self', ...)` against a fake root — the
+  tested build is the shipped build. It reads globals through a `win` alias, not
+  through the UMD `root`, because the factory does not close over `root`.
+- **Bengali rendering.** Numbers go through `Intl.NumberFormat('bn-BD')` (so
+  `82.5` renders as `৮২.৫`); labels are Bengali. Escaping is mandatory — insight
+  text can carry course/lesson ids.
+- **Route order matters.** `handleAnalyticsRequest` is registered in
+  `gk-agent-worker.js` after `handleUserDataRequest` (it reads the tables that
+  handler owns) and before the `/api/*` pubHandler catch-all (which would
+  otherwise answer `/api/analytics/*` as an unknown public route). Moving it
+  below the catch-all makes every analytics route a 404; `analytics-routes-worker.test.mjs`
+  calls the worker's real `fetch` and pins the order, against both the source
+  and the built bundle.
+- **Tests:** `npm run test:analytics` (120). Added to `test:production-auth`.
+  The engine tests use a pattern-matched fake D1 and need no network;
+  `analytics-engine-sqlite.test.mjs` runs the real DDL through `better-sqlite3`
+  and `analytics-routes-worker.test.mjs` goes through the worker's `fetch`.
+- **`scripts/cache-bump.mjs` targets `analytics-dashboard.js`** via the `v=`
+  query in `index.html` and `sw.js`'s `APP_SHELL`; the build string lives in
+  `sw.js` only.

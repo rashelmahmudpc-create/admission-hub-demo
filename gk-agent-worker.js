@@ -9,6 +9,8 @@ import { handleIntelligenceRequest, runScheduledIntelligenceNotifications } from
 import { runScheduledEventNotifications } from './event-notifications.mjs';
 import { runScheduledDigests } from './digest-notifications.mjs';
 import { handleUserDataRequest } from './userdata-api.mjs';
+/* Phase 4 — unified analytics & smart insights (owns /api/analytics/*). */
+import { handleAnalyticsRequest } from './analytics-engine.mjs';
 import { handleFilesStorageRequest } from './files-storage.mjs';
 export { EmailGatewayCoordinator } from './email-gateway/worker/email-coordinator.mjs';
 export { AdmissionAuthAuthority } from './auth-native/worker/auth-authority-do.mjs';
@@ -459,6 +461,11 @@ export default {
     // Student data sync (server-backed student learning data) — owns /api/userdata/*.
     const userDataResponse = await handleUserDataRequest(request, env, ctx);
     if (userDataResponse) return userDataResponse;
+    /* Phase 4 — analytics. Registered after userdata (it reads those tables) and
+     * before the /api/* pubHandler catch-all, which would otherwise treat
+     * /api/analytics/* as an unknown public route. */
+    const analyticsResponse = await handleAnalyticsRequest(request, env, ctx);
+    if (analyticsResponse) return analyticsResponse;
     // R2 file storage (owner-approved 2026-09-18) — owns /api/files/*.
     // Must run before the /api/* pubHandler catch-all.
     const filesResponse = await handleFilesStorageRequest(request, env, ctx);

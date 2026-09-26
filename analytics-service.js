@@ -28,7 +28,7 @@
   'use strict';
 
   const EVENT_VERSION = 'ev2';
-  const APP_VERSION_FALLBACK = 'v289-notification-intelligence-20260925';
+  const APP_VERSION_FALLBACK = 'v290-analytics-dashboard-20260925';
   const SDK_BASE = 'https://www.gstatic.com/firebasejs/10.12.2';
   const SDK_LOCAL = './sdk';
   const QUEUE_KEY = 'ahAnalyticsQueueV1';
