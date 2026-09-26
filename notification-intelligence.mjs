@@ -632,6 +632,70 @@ export function computeFeedback(rows = [], opts = {}) {
   return { ...perf, winner, ready: perf.totals.sent >= minSample };
 }
 
+/* Section 20 — the admin control tower, in one pure function over the decision
+ * log. It answers the four questions an operator actually asks: how many were
+ * eligible, how many we chose to send, why we skipped the rest, and which kind
+ * performs. CTR is clicks/sent, not clicks/eligible, so it cannot be inflated by
+ * a large eligible population that was never sent to. */
+export function computeDecisionStats(decisions = [], outcomes = []) {
+  const rows = Array.isArray(decisions) ? decisions : [];
+  const out = Array.isArray(outcomes) ? outcomes : [];
+
+  let sent = 0, skipped = 0;
+  const byRule = {};
+  const bySkipStage = {};
+  const byReason = {};
+
+  for (const d of rows) {
+    const decision = String(d?.decision || '');
+    const rule = String(d?.rule || 'unknown');
+    if (decision === 'send') sent += 1; else skipped += 1;
+    const r = byRule[rule] || (byRule[rule] = { sent: 0, skipped: 0 });
+    if (decision === 'send') r.sent += 1; else r.skipped += 1;
+    if (decision !== 'send') {
+      const stage = String(d?.stage || 'unknown');
+      bySkipStage[stage] = (bySkipStage[stage] || 0) + 1;
+      const reason = String(d?.reason || 'unknown');
+      byReason[reason] = (byReason[reason] || 0) + 1;
+    }
+  }
+
+  const rank = obj => Object.entries(obj)
+    .map(([key, value]) => ({ key, count: value }))
+    .sort((a, b) => (b.count - a.count) || a.key.localeCompare(b.key));
+
+  let opened = 0, clicked = 0, delivered = 0;
+  const perfByRule = {};
+  for (const o of out) {
+    if (o?.status === 'failed') continue;
+    const rule = String(o?.kind || 'unknown');
+    const b = perfByRule[rule] || (perfByRule[rule] = { sent: 0, opened: 0, clicked: 0 });
+    b.sent += 1;
+    delivered += 1;
+    if (o?.openedAt) { opened += 1; b.opened += 1; }
+    if (o?.clickedAt) { clicked += 1; b.clicked += 1; }
+  }
+  const perfRanked = Object.entries(perfByRule)
+    .map(([kind, b]) => ({ kind, ...b, clickRate: pct(b.clicked, b.sent), openRate: pct(b.opened, b.sent) }))
+    .sort((a, b) => (b.clickRate - a.clickRate) || (b.openRate - a.openRate) || a.kind.localeCompare(b.kind));
+
+  return {
+    eligible: rows.length,
+    sent,
+    skipped,
+    /* CTR is over delivered sends, not decisions: a decision to send that FCM
+     * then rejected must not sit in the denominator. */
+    totals: { sent: delivered, opened, clicked, clickRate: pct(clicked, delivered), openRate: pct(opened, delivered) },
+    byRule,
+    bySkipStage,
+    topSkipStage: rank(bySkipStage)[0] || null,
+    topReason: rank(byReason)[0] || null,
+    topRule: rank(Object.fromEntries(Object.entries(byRule).map(([k, v]) => [k, v.sent])))[0] || null,
+    bestPerforming: perfRanked[0] || null,
+    byRulePerformance: perfRanked
+  };
+}
+
 /* ── the pipeline (pure) ─────────────────────────────────────────────────── */
 
 /* Sections 1, 2, 5, 6, 17 and 18 in one ordered pass. Each stage appends a trace
@@ -767,7 +831,21 @@ export class IntelligenceStore {
             open_rate REAL NOT NULL,
             level TEXT NOT NULL,
             computed_at INTEGER NOT NULL
-          )`)
+          )`),
+          this.#d1.prepare(`CREATE TABLE IF NOT EXISTS notification_decisions (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            rule TEXT NOT NULL,
+            kind TEXT,
+            score INTEGER NOT NULL,
+            decision TEXT NOT NULL,
+            stage TEXT,
+            reason TEXT,
+            day_key TEXT NOT NULL,
+            created_at INTEGER NOT NULL
+          )`),
+          this.#d1.prepare('CREATE INDEX IF NOT EXISTS idx_nd_day ON notification_decisions(day_key, decision)'),
+          this.#d1.prepare('CREATE INDEX IF NOT EXISTS idx_nd_user ON notification_decisions(user_id, created_at DESC)')
         ]);
       })().catch(err => { this.#ready = null; throw err; });
     }
@@ -864,6 +942,52 @@ export class IntelligenceStore {
        ON CONFLICT(user_id, notification_key) DO NOTHING`
     ).bind(userId, key, kind, category, variant, dayKey, at, 'sent').run();
     return true;
+  }
+
+  /* Section 17 — why did we send (or not send)? One row per evaluated student
+   * per run, keyed by user+day+rule so a cron tick that fires twice cannot grow
+   * the log without bound. `decision` is 'send' or 'skip'; `stage`/`reason` come
+   * from the pipeline trace so a skip is answerable after the fact. */
+  async logDecision({ userId, rule, kind, score, decision, stage, reason, dayKey, at }) {
+    await this.init();
+    const id = `${userId}|${dayKey}|${rule}`;
+    await this.#d1.prepare(
+      `INSERT INTO notification_decisions(id, user_id, rule, kind, score, decision, stage, reason, day_key, created_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?)
+       ON CONFLICT(id) DO UPDATE SET
+         kind=excluded.kind, score=excluded.score, decision=excluded.decision,
+         stage=excluded.stage, reason=excluded.reason, created_at=excluded.created_at`
+    ).bind(id, userId, String(rule), kind ? String(kind) : null, asInt(score, 0), String(decision),
+      stage ? String(stage) : null, reason ? String(reason) : null, String(dayKey), at).run();
+  }
+
+  async decisionsForDay(dayKey) {
+    await this.init();
+    const rows = await this.#d1.prepare(
+      `SELECT user_id, rule, kind, score, decision, stage, reason, day_key, created_at
+       FROM notification_decisions WHERE day_key=? ORDER BY created_at DESC`
+    ).bind(dayKey).all();
+    return (rows?.results || []).map(r => ({
+      userId: String(r.user_id), rule: String(r.rule), kind: r.kind ? String(r.kind) : null,
+      score: asInt(r.score, 0), decision: String(r.decision),
+      stage: r.stage ? String(r.stage) : null, reason: r.reason ? String(r.reason) : null,
+      dayKey: String(r.day_key), createdAt: asInt(r.created_at, 0)
+    }));
+  }
+
+  /* One day's outcomes, for the admin dashboard's CTR. Failed sends are kept so
+   * the dashboard can exclude them from the denominator itself. */
+  async outcomesForDay(dayKey) {
+    await this.init();
+    const rows = await this.#d1.prepare(
+      `SELECT kind, category, variant, sent_at, opened_at, clicked_at, status
+       FROM notification_outcomes WHERE day_key=? ORDER BY sent_at DESC`
+    ).bind(dayKey).all();
+    return (rows?.results || []).map(r => ({
+      kind: String(r.kind), category: String(r.category), variant: String(r.variant),
+      sentAt: asInt(r.sent_at, 0), openedAt: asInt(r.opened_at, 0),
+      clickedAt: asInt(r.clicked_at, 0), status: String(r.status)
+    }));
   }
 
   async markOutcome({ userId, key, field, at }) {
@@ -1079,18 +1203,46 @@ export async function runScheduledIntelligenceNotifications(env, deps = {}) {
         }
       });
 
-      if (outcome.decision !== 'send') { skipped += 1; results.push({ userId, decision: 'skip', stage: outcome.stage }); continue; }
+      if (outcome.decision !== 'send') {
+        skipped += 1;
+        results.push({ userId, decision: 'skip', stage: outcome.stage });
+        try {
+          await store.logDecision({
+            userId, rule: 'none', kind: null, score: 0, decision: 'skip',
+            stage: outcome.stage, reason: outcome.reason, dayKey: date, at: now
+          });
+        } catch (_) { /* the log must never break a run */ }
+        continue;
+      }
 
       const category = KIND_META[outcome.candidate.kind]?.category || 'learning';
       const claimed = await store.claimSend({
         userId, key: outcome.candidate.key, kind: outcome.candidate.kind,
         category, variant: outcome.variant, dayKey: date, at: now
       });
-      if (!claimed) { skipped += 1; results.push({ userId, decision: 'skip', stage: 'duplicate-claim' }); continue; }
+      if (!claimed) {
+        skipped += 1;
+        results.push({ userId, decision: 'skip', stage: 'duplicate-claim' });
+        try {
+          await store.logDecision({
+            userId, rule: outcome.candidate.kind, kind: outcome.candidate.kind,
+            score: KIND_META[outcome.candidate.kind]?.priority || 0, decision: 'skip',
+            stage: 'duplicate-claim', reason: outcome.candidate.key, dayKey: date, at: now
+          });
+        } catch (_) { /* the log must never break a run */ }
+        continue;
+      }
 
       const delivered = await send(userId, outcome.message);
       if (delivered?.ok) sent += 1;
       results.push({ userId, decision: 'send', kind: outcome.candidate.kind, variant: outcome.variant, ok: Boolean(delivered?.ok) });
+      try {
+        await store.logDecision({
+          userId, rule: outcome.candidate.kind, kind: outcome.candidate.kind,
+          score: KIND_META[outcome.candidate.kind]?.priority || 0, decision: 'send',
+          stage: 'send', reason: outcome.reason, dayKey: date, at: now
+        });
+      } catch (_) { /* the log must never break a run */ }
     } catch (err) {
       /* One bad account must not stop the run. */
       results.push({ userId, decision: 'error', error: String(err?.message || err).slice(0, 120) });
@@ -1299,6 +1451,16 @@ export async function handleIntelligenceRequest(request, env, deps = {}) {
     return jsonResponse(request, { ok: true, user: userId, fatigue: detectFatigue(history, nowMs()) });
   }
 
+  /* Section 20 — the admin control tower. Eligible / sent / skipped for a day,
+   * the top reason we held back, the top rule we sent, and per-kind CTR. */
+  if (path === `${ADMIN_PREFIX}dashboard` && request.method === 'GET') {
+    const day = String(url.searchParams.get('day') || '').trim();
+    const targetDay = day || localParts(nowMs(), DEFAULT_TZ_OFFSET_MIN).date;
+    const decisions = await store.decisionsForDay(targetDay);
+    const outcomes = await store.outcomesForDay(targetDay);
+    return jsonResponse(request, { ok: true, day: targetDay, ...computeDecisionStats(decisions, outcomes) });
+  }
+
   return jsonResponse(request, { error: 'not-found' }, 404);
 }
 
@@ -1308,6 +1470,6 @@ export const __intelligenceTest = Object.freeze({
   computeSignals, classifySegment, buildCandidates, rankCandidates,
   detectFatigue, effectiveCap, checkFrequency, dayPart, DAY_PART_WEIGHT, preferredHour, bestSendWindow,
   hashToInt, assignVariant, buildMessage, attributeConversion, LEARNING_KINDS,
-  computePerformance, computeFeedback, decide,
+  computePerformance, computeFeedback, computeDecisionStats, decide,
   IntelligenceStore, sendIntelligence, runScheduledIntelligenceNotifications, handleIntelligenceRequest
 });
