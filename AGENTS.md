@@ -1031,6 +1031,18 @@ and (later) in an admin surface.
   `Deploy Pages UI + Worker (manual)` with `confirmation=DEPLOY`; the API
   dispatch needs the `inputs` field or it returns 422.
 
+**2026-09-26 — Phase 3 sections 17+20 (decision log + dashboard) shipped via
+`deploy-pages-worker.yml`**, run
+[`36262155410`](https://github.com/rashelmahmudpc-create/admission-hub-demo/actions/runs/36262155410)
+on `8bf1078` (squash of #39), both jobs green. Live checks that came back clean:
+
+- `admissionhub.pages.dev/sw.js` → `BUILD_ID = 'v290-analytics-dashboard-20260925'`,
+  identical to the committed `sw.js`.
+- `GET /api/notifications/intel/dashboard` → **403** without a token, matching
+  `intel/performance`, `intel/fatigue` and `intel/preview`. A 404 would have meant
+  the route was not registered; the shared admin gate is the discriminator.
+- `GET /api/notifications/config` → 200, `GET /api/notifications/self-test` → 401.
+
 ## Phase 3 — notification intelligence (v289)
 
 - **The handler order is load-bearing.** `handleFcmNotificationRequest` answers
