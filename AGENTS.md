@@ -1185,8 +1185,29 @@ math, two surfaces.
 
 The loop is Analytics → Understand → Predict → Decide → Act → Measure → Learn →
 Optimize. Phase 5 adds the understand/predict/decide half on top of Phase 4's
-measure half. It is **built, wired and fully tested in-repo (180 Phase 5 tests);
-it is NOT yet deployed** — the production-deploy gate still stands.
+measure half. It is **built, wired and fully tested in-repo (180 Phase 5 tests)**
+and **the worker half is DEPLOYED and live-verified (2026-09-24)**; there is no
+Phase 5 browser surface yet, so nothing in the Pages shell changed.
+
+**2026-09-24 — Phase 5 worker shipped via `deploy-pages-worker.yml`**, run
+`36261614918` on `233044c`, both jobs green. Live checks that came back clean:
+
+- **`POST /api/analytics/ai/feedback` → 401 `auth-required`.** This is the one
+  probe that proves Phase 5 is live: before the deploy every `/api/analytics/ai/*`
+  request answered 403 from Phase 4's admin gate (which owns the shared
+  `/api/analytics/*` prefix). Phase 5's own student gate answering 401 is the
+  discriminator.
+- `GET /api/analytics/ai/{health,me,chat}` → 403 `forbidden` without an admin
+  token, `OPTIONS /api/analytics/ai/health` → 204. A *bogus* bearer token is also
+  a clean 403, not a crash.
+- **Phase 4 is unchanged**: `POST /api/analytics/events` → 401 `auth-required`,
+  `GET /api/analytics/student` → 403 `forbidden` — byte-for-byte the same answers
+  Phase 4 was verified with, so the new handler did not shadow the old one.
+- `admissionhub.pages.dev/sw.js` still `v290-analytics-dashboard-20260925`.
+
+An admin-token curl of `ai/health` and `ai/chat` is still outstanding — the token
+is not available in this environment, and both are covered by
+`ai-analytics-routes-worker.test.mjs` against the real handler.
 
 Six modules, one direction of dependency: intelligence is pure, policy is pure,
 the store is the only writer, the copilot composes the two, routes expose them,
