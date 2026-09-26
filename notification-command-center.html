@@ -1770,7 +1770,7 @@ function clockTime(d){
 
 const SAMPLE_DATA = {
   admin:{ name:{bn:"জায়ান",en:"Zayan"}, role:{bn:"অ্যাডমিন",en:"Admin"}, email:"rashelmahmudpc@gmail.com", initials:"Z" },
-  quota:{ dailyCap:10, used:0, deliveryRate:0, window:{bn:"আজ (Asia/Dhaka)",en:"Today (Asia/Dhaka)"} },
+  quota:{ dailyCap:10, used:0, deliveryRate:0, window:{bn:"আজ (UTC)",en:"Today (UTC)"} },
 
   notificationTypes:[
     { key:"new-content",   bn:"নতুন কনটেন্ট",      en:"New content",     icon:"book",      desc:{bn:"নতুন লেসন বা প্রশ্ন যোগ",en:"New lesson or question set"} },
@@ -4238,7 +4238,14 @@ function refreshCenter(){
 function hydrateCenter(d){
   if(!d||typeof d!=='object') return;
   const items=Array.isArray(d.items)?d.items:[];
+  /* Per-item effectiveness (opened/clicked/ctr) is computed server-side by
+   * computeAnalytics and is NOT on the raw history row. Index it by id so the
+   * expanded detail shows real numbers instead of zeros. */
+  const metricsById={};
+  const perItem=d.analytics&&Array.isArray(d.analytics.items)?d.analytics.items:[];
+  perItem.forEach(function(m){ if(m&&m.id) metricsById[String(m.id)]=m; });
   const mapped=items.map(function(r){
+    const m=metricsById[String(r.id)]||{};
     const conv={ id:r.id, status:r.status, type:r.type, audience:r.audience,
       title:{bn:r.title,en:r.title}, body:{bn:r.body||'',en:r.body||''},
       channels:['push','inapp'], imageUrl:r.imageUrl||'', targetUrl:r.targetUrl||'',
@@ -4247,7 +4254,7 @@ function hydrateCenter(d){
       createdAt:r.createdAt?new Date(r.createdAt):null,
       scheduledFor:r.scheduledAt?new Date(r.scheduledAt):null,
       reach:Number(r.reachEstimate||0), delivered:Number(r.delivered||0),
-      opened:Number(r.opened||0), clicked:Number(r.clicks||0),
+      opened:Number(m.opened||r.opened||0), clicked:Number(r.clicks||m.clicked||0),
       error:r.error||'', reason:'' };
     return conv;
   });
@@ -4260,7 +4267,13 @@ function hydrateCenter(d){
   });
   state.lastSyncAt=new Date();
   state.quota={dailyCap:Number(d.dailyCap||SAMPLE_DATA.quota.dailyCap),
-    used:state.sent.length,
+    /* Prefer the limiter's own counter. Only fall back to a client-side count of
+     * today's sent rows when the server did not report one (older response or no
+     * KV binding), so the number is never silently the whole history length. */
+    used:(d.dailyUsed==null?state.sent.filter(function(r){
+      const ts=r.sentAt||r.createdAt;
+      return ts && new Date(ts).toISOString().slice(0,10)===new Date().toISOString().slice(0,10);
+    }).length:Number(d.dailyUsed)),
     deliveryRate:(function(s){ const dv=s.reduce(function(a,r){return a+(Number(r.delivered)||0);},0); const rq=s.reduce(function(a,r){return a+(Number(r.reach)||0);},0); return rq?dv/rq:0; })(state.sent),
     window:SAMPLE_DATA.quota.window};
   state.analytics=analyticsFrom(mapped,d.analytics,d.reachEstimate,d.dailyCap);

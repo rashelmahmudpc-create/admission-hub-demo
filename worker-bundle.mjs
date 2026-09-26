@@ -10111,7 +10111,7 @@ var FcmStore = class {
   async recentGlobals(limit = 50) {
     await this.#ensureTables();
     const res = await this.#d1.prepare(
-      `SELECT id, type, title, body, audience, topic, status, scheduled_at, sent_at, reach_estimate, delivered, clicks, error, created_at
+      `SELECT id, type, title, body, image_url, target_url, audience, topic, status, scheduled_at, sent_at, reach_estimate, delivered, clicks, error, created_at
        FROM global_notifications ORDER BY created_at DESC, id DESC LIMIT ?`
     ).bind(limit).all();
     return (res?.results || []).map((row) => ({
@@ -10119,6 +10119,8 @@ var FcmStore = class {
       type: row.type,
       title: row.title,
       body: row.body,
+      imageUrl: row.image_url || "",
+      targetUrl: row.target_url || "",
       audience: row.audience,
       topic: row.topic,
       status: row.status,
@@ -10222,6 +10224,15 @@ async function kvRateAllow(env, key, limit, ttlSeconds) {
     return true;
   } catch {
     return true;
+  }
+}
+async function kvRatePeek(env, key) {
+  const kv2 = env?.GK_KV;
+  if (!kv2 || typeof kv2.get !== "function") return null;
+  try {
+    return Number(await kv2.get(`fcm:${key}`) || 0);
+  } catch {
+    return null;
   }
 }
 var fcmTokenCache = { token: "", exp: 0 };
@@ -10647,9 +10658,7 @@ async function runScheduledGlobalNotifications(env) {
   }
   return { processed };
 }
-var dhakaDayKey = () => {
-  return (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
-};
+var utcDayKey = () => (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
 async function handleFcmNotificationRequest(request, env) {
   const url = new URL(request.url);
   const path = url.pathname;
@@ -10716,7 +10725,7 @@ async function handleFcmNotificationRequest(request, env) {
       const dedup = (await sha256Hex3(`${type}|${title}|${text}|now`)).slice(0, 40);
       const dup = await store.duplicateRecent(dedup, Date.now() - 10 * 864e5);
       if (dup) return jsonResponse(request, { error: "duplicate", existingId: dup }, 409);
-      if (!await kvRateAllow(env, `global:day:${dhakaDayKey()}`, GLOBAL_DAILY_CAP, 86400)) {
+      if (!await kvRateAllow(env, `global:day:${utcDayKey()}`, GLOBAL_DAILY_CAP, 86400)) {
         return jsonResponse(request, { error: "rate-limited" }, 429);
       }
       const id = `gn-${Math.random().toString(36).slice(2, 8)}${Math.random().toString(36).slice(2, 8)}`;
@@ -10817,7 +10826,11 @@ async function handleFcmNotificationRequest(request, env) {
         items,
         analytics,
         reachEstimate: await store.activeDeviceCount(),
-        dailyCap: GLOBAL_DAILY_CAP
+        dailyCap: GLOBAL_DAILY_CAP,
+        /* Real sends counted against today's cap, straight from the limiter's own
+         * counter. The panel used to show the total history length here, so a
+         * busy month read as "50 / 10" and looked permanently over quota. */
+        dailyUsed: await kvRatePeek(env, `global:day:${utcDayKey()}`)
       });
     }
     if (path === "/api/notifications/analytics" && request.method === "GET") {
