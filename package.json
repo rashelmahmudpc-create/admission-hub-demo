@@ -13,13 +13,14 @@
     "test:identity": "node --test --test-concurrency=1 identity-lifecycle.test.mjs account-state-runtime.test.mjs account-state-api.test.mjs",
     "test:session": "node --test --test-concurrency=1 session-recovery-api.test.mjs session-recovery-chaos.test.mjs",
     "test:phase2": "npm run test:auth && npm run test:email",
-    "test:production-auth": "npm run test:auth && npm run test:email && npm run test:native-auth && npm run test:fcm && npm run test:ui-guards",
+    "test:production-auth": "npm run test:auth && npm run test:email && npm run test:native-auth && npm run test:fcm && npm run test:ui-guards && npm run test:shell-guards",
     "test:fcm": "node --test --test-concurrency=1 fcm-notification.test.mjs fcm-global.test.mjs fcm-global-contract.test.mjs notification-sw-routing.test.mjs notification-command-center-backend.test.mjs notification-panel-history-seam.test.mjs notif-sheet.test.mjs notification-admin-keyboard.test.mjs notification-command-center-layout.test.mjs event-notifications.test.mjs digest-notifications.test.mjs analytics-notifications.test.mjs notification-intelligence.test.mjs send-planner.test.mjs admin-passkey.test.mjs",
     "test:userdata": "node --test userdata-api.test.mjs",
     "test:student-data": "node --test --test-concurrency=1 userdata-api.test.mjs student-data-sync.test.mjs student-data-sync-chaos.test.mjs personalized-notification.test.mjs && npm run test:legacy-adoption",
     "test:sync": "node --test --test-concurrency=1 userdata-api.test.mjs student-data-sync.test.mjs student-data-sync-chaos.test.mjs",
     "test:personalized": "node --test --test-concurrency=1 personalized-notification.test.mjs",
     "test:ui-guards": "node --test --test-concurrency=1 dead-handler-guard.test.mjs",
+    "test:shell-guards": "node --test --test-concurrency=1 honesty-guard.test.mjs i18n-guard.test.mjs intro.test.mjs crash-pill.test.mjs idb-hardening.test.mjs startup-ai-regression.test.mjs academic-catalog.test.mjs files-storage.test.mjs phase23-core.test.mjs profile-crop-flow.test.mjs profile-sheets.test.mjs profile-v2-core.test.mjs p08-exam-ac3.test.mjs p08-state-preserve.test.mjs p10-mistakes.test.mjs p11-dashboard-v2.test.mjs p13-dashboard-cache-guard.test.mjs p16-dashboard-single.test.mjs p18-legacy-dashboard-kill.test.mjs p20-voice-sameorigin.test.mjs p21-ai-agent-ui.test.mjs",
     "test:legacy-adoption": "node --test --test-concurrency=1 legacy-adoption.test.mjs legacy-adoption.integration.test.mjs legacy-adoption.e2e.test.mjs"
   },
   "dependencies": {

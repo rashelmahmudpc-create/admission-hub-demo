@@ -1053,3 +1053,17 @@ and (later) in an admin surface.
 - **Check `test:fcm` membership when adding a notification test.** A test file
   that is never listed in the script never runs in CI.
   `notification-sw-routing.test.mjs` sat unwired until this change.
+- **An unwired test file is a test that never runs.** The same sweep that caught
+  `notification-sw-routing.test.mjs` found 21 more: the dashboard, profile and
+  app-shell guards (`p11-dashboard-v2`, `p16-dashboard-single`,
+  `p13-dashboard-cache-guard`, `p18-legacy-dashboard-kill`, `profile-v2-core`,
+  `honesty-guard`, `i18n-guard`, `idb-hardening`, …) existed and passed locally
+  but were listed in no script, so no workflow ever executed them. They are now
+  `npm run test:shell-guards`, wired into `test:production-auth` and run by
+  `.github/workflows/shell-guard.yml`. Adding a `.test.mjs` is only half the job
+  — put it in a script *and* make sure some workflow runs that script. Audit with
+  `for f in *.test.mjs; do grep -q "$f" package.json || echo "UNWIRED: $f"; done`.
+- **A guard that needs `npm ci` cannot live in the bundle guard.** `cf-pages.yml`
+  deliberately installs no dependencies (it only rsyncs and greps), so any test
+  importing `jsdom` must run in a job that installs. `shell-guard.yml` does
+  `npm ci` first; the eight jsdom-dependent shell guards fail without it.
