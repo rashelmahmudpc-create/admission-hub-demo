@@ -382,6 +382,26 @@ really live (`curl -s https://admissionhub.pages.dev/notification-admin.js?v=adm
 | Worker `admission-gk` | `1caafb52-bcea-4077-8212-72650ae516ef` | FCM Phases 4-5 + `R2_ACCOUNT_ID` secret set |
 | Pages `admissionhub` | main (v8 assets) | admin keyboard fix + cache bump |
 
+**2026-09-26 — Phase 4 (v290) shipped via `deploy-pages-worker.yml`**, run
+[`36256391282`](https://github.com/rashelmahmudpc-create/admission-hub-demo/actions/runs/36256391282)
+on `51a6af7`, both jobs green. Live checks that came back clean:
+
+- `admissionhub.pages.dev/sw.js` → `BUILD_ID = 'v290-analytics-dashboard-20260925'`
+- `index.html` carries `<script defer src="./analytics-dashboard.js?v=analytics-p4-v1">`
+- `analytics-dashboard.js` and `analytics-engine.mjs` are byte-identical to the
+  committed sources (sha256 match), and the deployed script passes `node --check`
+- worker routes answer with the access-control the tests pin: `POST /api/analytics/events`
+  → 401 `auth-required`, `GET /api/analytics/student` → 403 `forbidden`,
+  `OPTIONS /api/analytics/*` → 204 with the CORS headers the page needs
+- a bogus `/api/analytics/nope` also returns 403, not 404, because the admin gate
+  sits at `analytics-engine.mjs:1717` *before* route dispatch — that is by design,
+  so a 403 there is not evidence the route is missing
+- Bengali numerals render live on the dashboard (০ / ১০০ MCQ, ৯১ Days Left, ০%)
+
+The student card mounts after `#ahNotifCard` and only renders once `GET
+/api/analytics/me` succeeds, so guest mode shows no analytics card — expected,
+not a failure. Verify a signed-in session to see it.
+
 Set `R2_ACCOUNT_ID` on the worker (`wrangler secret put`) or the R2 usage
 probe reports "unknown" (fail-soft; uploads still work).
 
