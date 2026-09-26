@@ -404,6 +404,20 @@ environments (`github-pages`, `email-gateway-production`) have zero Actions
 secrets, so `verify-firebase-config.mjs` aborts with `code=API_KEY_MISSING`. Do
 not rely on those workflows until the owner configures secrets.
 
+**2026-09-24: the injected deploy credentials are dead; a valid PAT has to come
+from the owner.** All seven `ADMISSIONHUB_GITHUB_KEY*` PATs (`ghp_`, correct
+shape) and `github_api` return `401 Bad credentials` from `GET /user`; `Clodflare_api`
+and `ADMISSIONHUB_CLOUDFLARE_API` (`cfat_`) return `1000 Invalid API Token` from
+`/user/tokens/verify`; the R2-style access/secret pair is not a token either. The
+repo itself is fine (`GET /repos/rashelmahmudpc-create/admission-hub-demo` → 200),
+so this is credential loss, not a rename or a lost-access 404, and retrying does
+not refresh them. A PAT the owner pastes into the session works: push with
+`https://x-access-token:<pat>@github.com/rashelmahmudpc-create/admission-hub-demo.git`.
+The Cloudflare side stays blocked until the owner supplies a token with
+`Pages:Edit` + `Workers Scripts:Edit`, so a session can commit and push but not
+deploy. Confirm the token identity with `GET /user` before blaming the push
+format — an invalid token and a lost-access 404 are different problems.
+
 ## Notification delivery invariants (owner bug reports 2026-09-24)
 
 Three production bugs were root-caused from live D1 data and fixed. Keep these
