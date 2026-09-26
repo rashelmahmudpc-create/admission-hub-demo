@@ -1180,3 +1180,103 @@ math, two surfaces.
 - **`scripts/cache-bump.mjs` targets `analytics-dashboard.js`** via the `v=`
   query in `index.html` and `sw.js`'s `APP_SHELL`; the build string lives in
   `sw.js` only.
+
+## Phase 5 — AI analytics & self-optimizing intelligence (`ai-p5-v1`)
+
+The loop is Analytics → Understand → Predict → Decide → Act → Measure → Learn →
+Optimize. Phase 5 adds the understand/predict/decide half on top of Phase 4's
+measure half. It is **built, wired and fully tested in-repo (180 Phase 5 tests);
+it is NOT yet deployed** — the production-deploy gate still stands.
+
+Six modules, one direction of dependency: intelligence is pure, policy is pure,
+the store is the only writer, the copilot composes the two, routes expose them,
+and the provider makes a model optional.
+
+- **`ai-analytics-intelligence.mjs`** (`AI_INTELLIGENCE_VERSION='ai-p5-v1'`) —
+  pure functions: `buildStudentProfile` (ten dimensions), `predictBehaviour`,
+  `predictRisk` (eight kinds), `rankNextBestActions` (seven kinds),
+  `predictBestTime`, `detectAnomalies`, `forecastTrend`, `buildContentIntelligence`,
+  `buildCourseIntelligence`, `evaluateAiPerformance`, `buildAdminAiSignals`.
+  No I/O, no clock, no randomness.
+- **`ai-analytics-policy.mjs`** (`AI_POLICY_VERSION='ai-p5-policy-v1'`) —
+  prohibitions, the human-approval gate, the copy sanitiser, grounding, capability
+  checks and rate limits. Also pure.
+- **`ai-analytics-store.mjs`** — the only Phase 5 writer. Owns four tables
+  (`ai_cache`, `ai_decisions`, `ai_approvals`, `ai_experiments`) and reads one
+  Phase 4 column (`analytics_events.at`) read-only.
+- **`ai-analytics-copilot.mjs`** — intent → query → grounded answer, plus the
+  notification writer and experiment optimiser. Never imports a provider.
+- **`ai-analytics-routes.mjs`** — `/api/analytics/ai/*`.
+- **`ai-analytics-provider.mjs`** (`AI_PROVIDER_VERSION='ai-p5-provider-v1'`) —
+  the optional Gemini one-shot bridge. **No key is a supported state**: every
+  surface has a deterministic answer and uses it.
+
+### Rules that must not be relaxed
+
+- **Confidence is a function of sample size, never of how interesting a result
+  looks.** `confidenceFromSample(samples, target)` is the only source. A signal
+  below its target is `band: 'insufficient'` — never silently `'low'`, because
+  "low risk" and "we cannot tell" are different claims and a UI that conflates
+  them lies to a student.
+- **Every dimension carries `value` + `band` + `confidence`.** `preferredTime`
+  was the one exception and it broke the uniform-shape test; keep the shape.
+- **A decline is a step change, not only a slope.** `declineScore` blends the
+  slope with a recent-vs-prior period comparison. A student who halved their
+  practice at day 20 shows *no* slope across a 14-day window — slope alone missed
+  it and scored a real decline at 0.11. Do not revert to slope-only.
+- **A no-data student gets `actions: []` and `reason: 'insufficient-data'`.**
+  Below `CONFIDENCE_TARGETS.risk` active days there is no behaviour to reason
+  from, so the engine returns nothing rather than dressing "less than a target"
+  up as a recommendation. A brand-new student's first step belongs to onboarding.
+- **Bengali patterns carry no `\b`.** JavaScript word boundaries are defined on
+  `[A-Za-z0-9_]`, so a `\b` before Bengali script never matches and the rule
+  would silently never fire. Every Bengali safety pattern is boundary-free;
+  every English one keeps its boundaries.
+- **A digit run is a figure only when it stands alone** — `(?<![\w-])\d+(?![\w])`.
+  Without the lookarounds, `l3` and `day-7` read as claims and every honest
+  answer is rejected. Negative values are deliberately not extracted; no metric
+  here is negative and `day-7` is far more common than a real minus sign.
+- **The window length is context, not a measurement.** `groundAnswer` takes
+  `options.allow` for exactly this; without it every answer that names its own
+  period ("the last 30 days") fails grounding.
+- **`sanitiseGeneratedCopy` infers the language from the payload shape.** A
+  default of `'bn'` reads an `{ en: ... }` payload as empty and rejects every
+  English notification.
+- **Unsafe copy is dropped, never laundered.** "act now" and "consider starting"
+  promise different things; the model does not get to pick which one a student
+  reads. A rejection falls back to the Phase 3 catalogue copy.
+- **Two stores, deliberately.** `AiAnalyticsStore` (Phase 5 tables) and Phase 4's
+  `AnalyticsStore` (dashboard reads) are separate. The AI layer reasons over
+  Phase 4 and must never write to its learning tables. Passing one where the
+  other is expected throws `store.eventsSince is not a function` — that is the
+  bug this split fixes.
+- **The AI handler is registered before the Phase 4 handler** in
+  `gk-agent-worker.js`. Phase 4 owns `/api/analytics/*`, so if Phase 5 came
+  second every `/api/analytics/ai/*` request would be answered by Phase 4's admin
+  gate — a 403 that looks like a permissions problem. `p5w-৮` pins the order in
+  the source.
+- **Feedback on a decision that is not the student's is a 403 with the same body
+  as a decision that does not exist.** Distinguishing them turns the endpoint into
+  an oracle for which ids are real. And an unsupported `actionTaken` is a 400,
+  not a silent downgrade to `ignored` — a typo must not corrupt the performance
+  figures.
+- **No price is ever invented.** Usage is a labelled token *estimate*; `costUsd`
+  stays `null` unless the observability layer has a real rate.
+- **The notification writer only ever sees whitelisted facts.** Identifiers,
+  tokens and internal flags are dropped before the prompt is built.
+
+### Tests
+
+`npm run test:ai-analytics` (180), also in `test:production-auth`:
+
+| File | Count | What only it can catch |
+|---|---|---|
+| `ai-analytics-intelligence.test.mjs` | 46 | the metric math and the confidence/risk rules |
+| `ai-analytics-policy.test.mjs` | 57 | safety, grounding, copilot, writer — offline via an injected generator |
+| `ai-analytics-store.test.mjs` | 25 | the real DDL through `better-sqlite3` |
+| `ai-analytics-provider.test.mjs` | 15 | the no-key and provider-fault paths |
+| `ai-analytics-routes-worker.test.mjs` | 37 | the worker's real `fetch`, route order, access gates, student path with an injected session |
+
+A fake D1 that pattern-matches SQL proves the call shape but not the schema — the
+store suite runs the real statements for that reason, the same blind spot Phase 4
+closed with `analytics-engine-sqlite.test.mjs`.

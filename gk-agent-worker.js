@@ -11,6 +11,10 @@ import { runScheduledDigests } from './digest-notifications.mjs';
 import { handleUserDataRequest } from './userdata-api.mjs';
 /* Phase 4 — unified analytics & smart insights (owns /api/analytics/*). */
 import { handleAnalyticsRequest } from './analytics-engine.mjs';
+/* Phase 5 — AI analytics intelligence (owns /api/analytics/ai/*; registered
+ * before the Phase 4 handler, which claims the wider prefix). */
+import { handleAiAnalyticsRequest } from './ai-analytics-routes.mjs';
+import { aiGenerate } from './ai-analytics-provider.mjs';
 import { handleFilesStorageRequest } from './files-storage.mjs';
 export { EmailGatewayCoordinator } from './email-gateway/worker/email-coordinator.mjs';
 export { AdmissionAuthAuthority } from './auth-native/worker/auth-authority-do.mjs';
@@ -461,6 +465,18 @@ export default {
     // Student data sync (server-backed student learning data) — owns /api/userdata/*.
     const userDataResponse = await handleUserDataRequest(request, env, ctx);
     if (userDataResponse) return userDataResponse;
+    /* Phase 5 — AI analytics intelligence. Registered *before* the Phase 4
+     * analytics handler, which claims every /api/analytics/* path and would
+     * otherwise answer /api/analytics/ai/* with its own admin gate (a 403 that
+     * reads like a permissions fault instead of a missing route). Both handlers
+     * live under the same prefix; order is the only thing that separates them. */
+    const aiAnalyticsResponse = await handleAiAnalyticsRequest(request, env, ctx, {
+      /* The one place a model is reachable from the analytics surface. Injecting
+       * it keeps the copilot testable without a network call, and means the AI
+       * layer is inert if no provider key is configured. */
+      generate: aiGenerate(env)
+    });
+    if (aiAnalyticsResponse) return aiAnalyticsResponse;
     /* Phase 4 — analytics. Registered after userdata (it reads those tables) and
      * before the /api/* pubHandler catch-all, which would otherwise treat
      * /api/analytics/* as an unknown public route. */
