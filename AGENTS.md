@@ -386,11 +386,11 @@ Set `R2_ACCOUNT_ID` on the worker (`wrangler secret put`) or the R2 usage
 probe reports "unknown" (fail-soft; uploads still work).
 
 
-The working credential pair (verified 2026-09-24) is the injected secret
-`ADMISSIONHUB_CLOUDFLARE_API` as the token and `ADMISSIONHUB_CLODFLARE_ACCOUNT_ID`
-(note the spelling) as the account id — pass them as `CLOUDFLARE_API_TOKEN` /
-`CLOUDFLARE_ACCOUNT_ID` to wrangler. The env-api pair is **not** a Cloudflare
-token/account; use the Cloudflare pair above.
+The injected pair `ADMISSIONHUB_CLOUDFLARE_API` / `ADMISSIONHUB_CLODFLARE_ACCOUNT_ID`
+(note the spelling) worked on 2026-09-24 but is **dead as of 2026-09-26** —
+`/user/tokens/verify` returns `1000 Invalid API Token`, and a local `wrangler
+deploy` fails with `Authentication error [code: 10000]`. Use
+`deploy-pages-worker.yml` instead (it has its own working secrets).
 
 The Pages project `admissionhub` is not Git-connected (`source: null`), so a
 push to `main` does not rebuild it — every client release is a manual
@@ -399,10 +399,20 @@ image): copy the tracked tree minus `.git`, `node_modules`, `dist`, `docs`,
 `AGENT_RESUME`, `ai-proxy`, `auth*`, `email-gateway`, `uploads`, `.github`,
 `*worker*.js`, `wrangler.toml`, `package*.json`, `*.test.mjs`, `*.md`.
 
-The `workflow_dispatch` deploy pipelines currently cannot run: the repo and both
-environments (`github-pages`, `email-gateway-production`) have zero Actions
-secrets, so `verify-firebase-config.mjs` aborts with `code=API_KEY_MISSING`. Do
-not rely on those workflows until the owner configures secrets.
+The `native-auth-activate.yml` / `email-gateway-deploy.yml` pipelines cannot run:
+`verify-firebase-config.mjs` aborts with `code=API_KEY_MISSING`. That is NOT true
+of every workflow — see below.
+
+**`deploy-pages-worker.yml` DOES have working Cloudflare secrets** (corrected
+2026-09-26). 27 runs, 24 green, latest at 2026-09-26T06:43Z on `51f0589`, and the
+live site matches that commit exactly (`sw.js` → `v289-notification-intelligence-20260925`).
+So the repo already holds `CLOUDFLARE_API_TOKEN` (Pages:Edit + Workers Scripts:Edit)
+and `CLOUDFLARE_ACCOUNT_ID`. Do **not** trust the old "zero Actions secrets" line,
+and do not reach for a local `wrangler` token before checking this workflow —
+the owner's GitHub side is the working deploy path. Note it is
+`workflow_dispatch`-only with `confirmation: DEPLOY`, so a push does not deploy;
+it has to be started from the Actions UI or the API. The Pages project is not
+Git-connected (`source: null`), so pushing `main` rebuilds nothing.
 
 **2026-09-24: the injected deploy credentials are dead; a valid PAT has to come
 from the owner.** All seven `ADMISSIONHUB_GITHUB_KEY*` PATs (`ghp_`, correct
