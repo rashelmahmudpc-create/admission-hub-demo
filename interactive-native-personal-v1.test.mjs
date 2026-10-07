@@ -9,7 +9,7 @@ const HTML = read('index.html');
 const SW = read('sw.js');
 const RELEASE = read('.github/workflows/telegram-auth-canary-activate.yml');
 const BUNDLE_GUARD = read('.github/workflows/cf-pages.yml');
-const UI_VERSION = '20260921-single-email-button-fallback';
+const UI_VERSION = '20261007-friendly-skin-v1';
 
 const SHELL_VERSION = 'v290-analytics-dashboard-20260925';
 
