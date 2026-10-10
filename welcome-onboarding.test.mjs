@@ -9,11 +9,19 @@ test('native welcome has six slides and no design-tool or React runtime',()=>{
  assert.ok(html.includes('Get Started'));
  assert.ok(!/\{\{|<x-dc|<sc-for|<script|react\.js/i.test(html));
 });
-test('welcome retains original auth controls and does not call auth APIs',()=>{
+test('welcome keeps Get Started as the only entry and drops the old auth links',()=>{
  const js=read('welcome-onboarding.js');
- for(const role of ['welcome-signup','welcome-login','welcome-language','welcome-google-button','continue-guest'])assert.ok(js.includes(role));
+ assert.ok(js.includes('welcome-signup'));
+ assert.ok(js.includes('welcome-language'));
  assert.ok(js.includes('placeholder.replaceWith(signup)'));
- assert.ok(js.includes('link.replaceWith(login)'));
+ // Owner (2026-10-10): the "Already have an account? Log In" line and the
+ // "More options" disclosure (Google + guest) are gone — only Get Started.
+ assert.ok(!js.includes('welcome-login'));
+ assert.ok(!js.includes('welcome-google-button'));
+ assert.ok(!js.includes('continue-guest'));
+ assert.ok(!js.includes('ahw-more'));
+ assert.ok(!js.includes('link.replaceWith'));
+ assert.ok(js.includes('closest(\'[data-w-style="w73"]\')'));
  assert.ok(!/\/api\/|localStorage|sessionStorage|cloneNode|method:\s*['"]POST/.test(js));
 });
 test('empty data seed stays empty and only loads the scoped UI',()=>{

@@ -235,6 +235,9 @@ body.ah-account-page-active>.ah-account-launcher{display:none!important}
   background:transparent;
 }
 .ah-account-page[data-current-view="welcome"] .ah-account-close{display:none!important}
+/* The owner wants the welcome to be the whole screen — the old account head
+   (brand bar + close button) must not sit above it as a boxed header. */
+.ah-account-page[data-current-view="welcome"] .ah-account-head{display:none!important}
 .ah-welcome-view{
   position:relative;
   isolation:isolate;
