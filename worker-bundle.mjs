@@ -2345,8 +2345,9 @@ var publishGlobal = async (env, full) => {
   } catch (_) {
   }
   const doc = { v: (Number(previousMeta.v) || 0) + 1, at: Date.now(), sig, subjects, topics, questions, vocabulary, vocabularyMaster, exams };
+  const cap = Number(env.PUB_CONTENT_MAX_BYTES) > 0 ? Number(env.PUB_CONTENT_MAX_BYTES) : 24 * 1024 * 1024;
   let raw = JSON.stringify(doc);
-  if (raw.length > 24 * 1024 * 1024) {
+  if (raw.length > cap) {
     doc.vocabularyMaster = (doc.vocabularyMaster || []).map((row) => {
       const clean = { ...row };
       delete clean.imageDataUrl;
@@ -2355,7 +2356,15 @@ var publishGlobal = async (env, full) => {
     });
     raw = JSON.stringify(doc);
   }
-  await env.PUB_KV.put("pubContent", raw.slice(0, 24 * 1024 * 1024));
+  if (raw.length > cap) return { error: "too-large" };
+  let roundTrip;
+  try {
+    roundTrip = JSON.parse(raw);
+  } catch (_) {
+    return { error: "integrity" };
+  }
+  if (fingerprintGlobal(roundTrip) !== sig) return { error: "integrity" };
+  await env.PUB_KV.put("pubContent", raw);
   const meta = { v: doc.v, at: doc.at, sig: doc.sig, counts: countsOf(doc) };
   await env.PUB_KV.put("pubContentMeta", JSON.stringify(meta));
   return { published: true, v: doc.v, counts: meta.counts };
@@ -2412,7 +2421,10 @@ var admin = async (request, env, path) => {
     }
     if (full && Array.isArray(full.questions) && full.questions.some((row) => row && row.id)) {
       const result = await publishGlobal(env, full);
-      return result.error === "empty" ? json({ error: "প্রশ্ন খালি" }, 400) : json(result);
+      if (result.error === "empty") return json({ error: "প্রশ্ন খালি" }, 400);
+      if (result.error === "too-large") return json({ error: "কনটেন্ট আকারসীমার বেশি — কমানো ছবি বাদ দিয়ে আবার চেষ্টা করো", code: "too-large" }, 413);
+      if (result.error === "integrity") return json({ error: "কনটেন্ট যাচাইয়ে ব্যর্থ — আগের সংস্করণই থাকল", code: "integrity" }, 409);
+      return json(result);
     }
     return json({ error: "প্রশ্ন খালি" }, 400);
   }

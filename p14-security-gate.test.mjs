@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import publicWorker, { verifyIntegrity } from './public-worker.js';
+import publicWorker, { verifyIntegrity, publishGlobal } from './public-worker.js';
 import { validateChatReq } from './ai-agent.js';
 import {
   checkAbuse, peekAbuse, isGuarded, windowKey, networkHash, RATE_DEFAULTS
@@ -124,6 +124,37 @@ test('input validation: malformed and hostile payloads are rejected, never coerc
   const ok = validateChatReq({ messages: [{ role: 'user', content: 'বাংলা ব্যাকরণ বুঝাও' }] });
   assert.equal(ok.ok, true);
   assert.equal(ok.messages.length, 1);
+});
+
+test('content integrity: publish refuses an oversized blob before it can poison KV', async () => {
+  const makeKv = () => {
+    const map = new Map();
+    return { map, async get(k){ return map.has(k) ? map.get(k) : null; }, async put(k,v){ map.set(k, String(v)); } };
+  };
+  const good = { subjects: [{ id: 's1' }], topics: [], questions: [{ id: 'q1', question: 'ক অ আ' }], vocabulary: [], vocabularyMaster: [] };
+
+  // A valid publish writes a parseable blob whose stored sig is verifiable.
+  const kvA = makeKv();
+  const res = await publishGlobal({ PUB_KV: kvA }, good);
+  assert.equal(res.published, true);
+  assert.equal(verifyIntegrity(JSON.parse(kvA.map.get('pubContent'))).ok, true);
+
+  // Over the byte cap (even after image stripping) the publish is refused, and
+  // no unparseable/truncated blob is written — the old slice() bug.
+  const kvB = makeKv();
+  const heavy = { ...good, vocabularyMaster: Array.from({ length: 40 }, (_, i) => ({ id: 'v' + i, word: 'w'.repeat(200) })) };
+  const badRes = await publishGlobal({ PUB_KV: kvB, PUB_CONTENT_MAX_BYTES: '600' }, heavy);
+  assert.equal(badRes.error, 'too-large');
+  assert.equal(kvB.map.has('pubContent'), false);
+});
+
+test('PUB_KV holds no per-user records — accounts live in D1, scoped by user_id', async () => {
+  // The public KV namespace stores only shared content, content meta and the
+  // identity-free abuse/audit namespaces; a student's rows are never a KV blob.
+  const kv = new MemoryKV();
+  await publishGlobal({ PUB_KV: kv }, { subjects: [{ id: 's1' }], questions: [{ id: 'q1', question: 'x' }] });
+  const accountLike = [...kv.data.keys()].filter(k => /usr|account|user|profile|vault/i.test(k));
+  assert.deepEqual(accountLike, []);
 });
 
 test('the abuse ceiling is applied before identity, and a guest leaves no identity trace', async () => {
