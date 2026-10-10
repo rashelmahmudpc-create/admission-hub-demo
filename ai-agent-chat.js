@@ -183,11 +183,6 @@
     .ai-hero-orb .p1{top:6px;right:14px}.ai-hero-orb .p2{bottom:10px;left:8px;animation-delay:1.2s}.ai-hero-orb .p3{top:38%;right:-2px;width:5px;height:5px;animation-delay:2.1s}
     @keyframes aiSpark{50%{opacity:.25;transform:scale(.6) translateY(-4px)}}
     .ai-notice{display:flex;align-items:flex-start;gap:9px;background:var(--ai-card,#fff);border:1px solid var(--ai-line,rgba(15,107,79,.12));border-radius:var(--r-m);padding:11px 12px;margin:12px 0 4px;font-size:12px;line-height:1.6;color:var(--ai-sub,#5F7A72);animation:aiIn .4s ease both}
-    .ai-reco{display:flex;align-items:flex-start;gap:10px;background:linear-gradient(135deg,rgba(46,230,168,.14),rgba(15,107,79,.07));border:1px solid rgba(15,107,79,.18);border-radius:var(--r-m);padding:12px 13px;margin:12px 0 4px;animation:aiIn .4s ease both}
-    .ai-reco .ic{font-size:18px;line-height:1.3;flex:0 0 auto}
-    .ai-reco b{display:block;font-size:13px;font-weight:800;color:var(--ai-ink,#16302A);margin-bottom:2px}
-    .ai-reco p{margin:0;font-size:13px;line-height:1.6;color:var(--ai-sub,#3D6459);font-weight:600}
-    .ai-agent-root[data-theme=dark] .ai-reco{border-color:rgba(46,230,168,.28)}
     .ai-notice b{color:var(--ai-ink,#16302A)}
     .ai-notice .x{margin-left:auto;border:0;background:none;color:var(--ai-sub,#8AA39A);font-size:16px;cursor:pointer;line-height:1;padding:2px}
     .ai-try{display:flex;align-items:center;gap:8px;margin:14px 2px 9px;font-size:14px;font-weight:800}
@@ -1470,20 +1465,9 @@
 
   /* ── messages render ── */
   function body() { return document.getElementById('aiAgentBody'); }
-  /* P06: the revision line, shown as a card on the welcome screen. Empty when
-     the student has no measured weak topic, so a new student sees no fake advice. */
-  function weakTopicLine() {
-    try {
-      const lp = learningProfile();
-      if (!lp.weakTopics.length) return '';
-      return lp.weakTopics.slice(0, 3).map((t) => `${t.name} (${t.accuracy}%)`).join(', ');
-    } catch (_) { return ''; }
-  }
   function emptyState() {
-    const reco = weakTopicLine();
     return `<div class="ai-hero"><div class="ai-hero-txt"><b>✦ ${esc(T.heroTitle)}</b><p>${esc(T.heroBody)}</p><button class="ai-hero-cta" id="aiHeroCta">${esc(T.heroCta)} →</button></div>
       <div class="ai-hero-orb" aria-hidden="true"><i class="ring"></i><i class="ring2"></i><i class="p1"></i><i class="p2"></i><i class="p3"></i><span class="big"></span></div></div>
-      ${reco ? `<div class="ai-reco" id="aiReco"><span class="ic">🎯</span><div><b>${esc(lang === 'en' ? 'Revise first' : 'আগে রিভিশন দাও')}</b><p>${esc(reco)}</p></div></div>` : ''}
       ${scopedRead(NOTICE_KEY) ? '' : `<div class="ai-notice" id="aiNotice">🛡 <div><b>AI responses</b> can occasionally contain mistakes. Verify important admission information from official sources.</div><button class="x" id="aiNoticeX" aria-label="Dismiss">×</button></div>`}
       <div class="ai-try">${esc(T.tryAsking)}</div>
       <div class="ai-chips">${T.chips.map((c) => `<button class="ai-chip" data-q="${esc(c[2])}"><span class="ic">${c[0]}</span><b>${esc(c[1])}</b><span>${esc(c[0] + ' ' + (c[1]))}</span></button>`).join('')}</div>`;

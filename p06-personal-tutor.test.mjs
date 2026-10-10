@@ -152,12 +152,9 @@ test('the prompt contains exactly one STUDY RECOMMENDATION block even with all f
   assert.match(p, /55%[^0-9]{0,12}70%/);
 });
 
-/* ── ১বি. The welcome-screen revision card ── */
-test('the welcome screen renders a revision card only when a weak topic exists', () => {
+/* ── ১বি. The welcome screen stays card-free (owner call 2026-10-10) ── */
+test('the welcome screen carries no revision card — the tutor speaks only in chat', () => {
   const client = readFileSync(new URL('./ai-agent-chat.js', import.meta.url), 'utf8');
-  assert.match(client, /function weakTopicLine\(\)/);
-  assert.match(client, /class="ai-reco"/);
-  assert.match(client, /\.ai-reco\{/, 'the card must be styled');
-  // Guarded by the empty-reco check, so a new student never sees fake advice.
-  assert.match(client, /\$\{reco \? `.*ai-reco/s);
+  assert.doesNotMatch(client, /ai-reco/, 'the revision card was removed by owner request');
+  assert.doesNotMatch(client, /function weakTopicLine/);
 });
