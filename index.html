@@ -5243,7 +5243,7 @@ window.__admissionBootPromise.catch(error => console.error('[Admission Hub] boot
       const expectedSwVersion = 'v301-p16-a11y-20261010';
       // register() on the same scope performs an in-place update. Never unregister
       // the active iOS worker first: that discards the instant offline shell.
-      const registration=await navigator.serviceWorker.register('./sw.js?v=v301-p16-a11y-20261010',{scope:'./',updateViaCache:'none'});
+      const registration=await navigator.serviceWorker.register('./sw.js?v=v302-p16-a11y-20261010b',{scope:'./',updateViaCache:'none'});
       await registration.update().catch(()=>{});
       // Purge every old app-shell cache (any build id ≠ current). This guarantees
       // stale pre-retirement application shells can never be served from cache again.
