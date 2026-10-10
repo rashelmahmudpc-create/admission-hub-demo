@@ -80,9 +80,9 @@
 **আছে:** Cloudflare এজ · KV-ক্যাশ · question-bank-performance.js · sw-ক্যাশ-শেল · offline-performance-QA-নোট।
 **বাকি:** ① ডেটাবেস+ইনডেক্স (পাবলিক D1) ② পেজিনেশন/লেজি-লোডিং ③ ভার্চুয়ালাইজড-লিস্ট ④ CDN-অ্যাসেট ⑤ API-কম্প্রেশন/বান্ডল-বিভাজন ⑥ লোড-টেস্ট (মিলিয়ন-প্রশ্ন/ইউজার-সিম)।
 
-## 🔐 P14 — Security & Privacy — 🟢 ~৮৫%
-**আছে:** B-GUESTISO **Resolved** (ভুয়া-গেস্ট-কী) · token-সেশন + সেশন-লিস্ট · admin-পাশে অডিট/লকআউট/রেট-লিমিট (AC-1) · secret-ম্যানেজমেন্ট (সব env-সিক্রেট, ফ্রন্টএন্ড-লিক নয় — verified) · delete-এন্ডপয়েন্ট · **public-API অ্যাবিউজ-গার্ড লাইভ** (প্রতি-নেটওয়ার্ক ১২০/মিনিট → 429; `p14-abuse-guard.mjs`, বাস্তবে যাচাই: ১২০→200, ১০→429) · **কনটেন্ট-ইন্টিগ্রিটি যাচাই** (`/api/admin/verify`) · **A↛B আইসোলেশন + input-validation গেট** (`test:p14`, ১৩/১৩ পাস — P20-র বাধ্যতামূলক গেট)।
-**বাকি:** ① KV→DB প্রতি-ইউজার RLS (D1; userdata-api-তে আগে থেকেই user_id-স্কোপড, KV-blob পাথ বাকি) ② admin-publish লেখার সময় ইন্টারনেট-ইন্টিগ্রিটি-প্রি-চেক (এখন যাচাই আলাদা রুটে)।
+## 🔐 P14 — Security & Privacy — ✅ ~১০০%
+**আছে:** B-GUESTISO **Resolved** (ভুয়া-গেস্ট-কী) · token-সেশন + সেশন-লিস্ট · admin-পাশে অডিট/লকআউট/রেট-লিমিট (AC-1) · secret-ম্যানেজমেন্ট (সব env-সিক্রেট, ফ্রন্টএন্ড-লিক নয় — verified) · delete-এন্ডপয়েন্ট · **public-API অ্যাবিউজ-গার্ড লাইভ** (প্রতি-নেটওয়ার্ক ১২০/মিনিট → 429; বাস্তবে যাচাই) · **কনটেন্ট-ইন্টিগ্রিটি: publish-সময়ে প্রি-চেক** (ওভারসাইজ হলে লেখা হয় না — পুরনো slice() বাগ বন্ধ) + `GET /api/admin/verify` (409 on drift) · **A↛B আইসোলেশন + input-validation + D1 per-user স্কোপ গেট** (`npm run test:p14`, ৪৪/৪৪ পাস — P20-র বাধ্যতামূলক গেট) · per-user ডেটা KV-তে নেই, D1-এ user_id-স্কোপড (টেস্টে প্রমাণিত)।
+**বাকি:** কোনো কোর কাজ নেই। P20-র আগে গেট: শুধু আপনার নিজে ব্যবহার → "✅ APPROVED FOR PUBLIC LAUNCH"।
 
 ## 🌐 P15 — PWA + Offline-First — 🟡 ~৬০%
 **আছে:** manifest.webmanifest (standalone+icons) · sw.js v179-aiengine (ক্যাশ-ভার্সনিং, build-header, update-check) · session-persist · অফলাইন-perf-QA।
