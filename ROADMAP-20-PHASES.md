@@ -68,9 +68,9 @@
 **আছে:** mistakes-bank · smart-revision · mistake-notebook/note-icon · mistake-analysis।
 **নতুন (সম্পূর্ণ ইঞ্জিন):** `mistake-engine.js` (pure UMD) — ① অটো-ক্যাটেগরি: careless/conceptual/memory/confusion/time/repeated (দ্রুত+easy ⇒ অসতর্ক, দীর্ঘসময় ⇒ সময়, factual ⇒ মুখস্থ, মিল-মিল অপশন ⇒ বিভ্রান্তি, ২+বার ভুল ⇒ repeated) · ② একক priority-স্তর Critical→High→Medium→Mastered · ③ repeated-ফ্ল্যাগ · ④ Mastered-রূপান্তর (টানা ২টি সঠিক রিভিশনে; নতুন ভুলে আবার pending)। তিন consumer-এ wired: mistakes-bank (tier+বারবার চিপ), mistake-analysis (mistakeCategory), smart-revision (tier label)। টেস্ট: `p10-mistake-engine.test.mjs` ১৬/১৬ + p10-mistakes ২৮/২৮।
 
-## 🧠 P11 — Adaptive Learning Engine — 🔴 ~১০%
-**আছে:** শুধু blueprint (INTERACTIVE_QUIZ_MODE_BLUEPRINT.md, SUPER_UPGRADE_BLUEPRINT.md) + result-analysis-ইঙ্গিত।
-**বাকি:** **সব** — পারফরম্যান্স-মডেল, ডিফিকাল্টি-অ্যাডজাস্টমেন্ট, per-student practice-pattern, strategy-ভিন্নতা (speed-vs-accuracy)।
+## 🧠 P11 — Adaptive Learning Engine — ✅ **সম্পন্ন (২০২৬-১০-১০, sw v299)**
+**আছে:** P08-এর ExamSelect ভিত্তি।
+**নতুন (সম্পূর্ণ ইঞ্জিন):** `adaptive-engine.js` (pure UMD) — ① performance-মডেল: per-topic ability (কঠিন প্রশ্ন বেশি দামি, confidence সহ) ② difficulty-অ্যাডজাস্ট: ability-ব্যান্ড অনুযায়ী easy/medium/hard মিশ্রণ (কম ডেটায় 'mixed', জোর করে নয়) ③ practice-pattern-মেমরি (পরীক্ষা/সক্রিয় দিন/পছন্দের কঠিনতা) ④ strategy-প্রোফাইল: fast-accurate / fast-wrong / slow-right / balanced। `adaptive-insights-panel.js` — Progress পেজে "🧠 আমার সামর্থ্য" প্যানেল + এক-ট্যাপ adaptive অনুশীলন। ExamSelect-এ `selectAdaptiveFor` যোগ, adaptive মোড এখন শিক্ষার্থীর নিজের ব্যান ব্যবহার করে। টেস্ট: `p11-adaptive-engine.test.mjs` ১৪/১৪।
 
 ## 📚 P12 — Smart Vocabulary — 🟢 ~৭৫%
 **আছে:** vocabulary-master (CSS/JS) · Smart Memorizing (New→Learning→Review→**Mastered** spaced-status) · ElevenLabs-অডিও+উচ্চারণ · match-tool · dictionary-parser/ফাইনাল-ফিক্স · বড়-সেট-পারফরম্যান্স।

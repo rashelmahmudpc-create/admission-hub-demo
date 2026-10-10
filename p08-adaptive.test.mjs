@@ -90,7 +90,8 @@ test('p08-ad8: the exam setup offers an Adaptive question order', () => {
 });
 
 test('p08-ad9: selectQuestionsByMode has an adaptive branch', () => {
-  assert.match(html, /mode==='adaptive'\)\{ candidates=selectAdaptive\(candidates,count\); \}/);
+  // P11 made the branch band-aware; it still falls back to the fixed mix.
+  assert.match(html, /mode==='adaptive'\)\{ const band=adaptiveBand\(\); candidates=band&&band!=='mixed'\?selectAdaptiveFor\(candidates,count,band\):selectAdaptive\(candidates,count\); \}/);
 });
 
 test('p08-ad10: "Confirm before submit" off skips the confirm modal', () => {

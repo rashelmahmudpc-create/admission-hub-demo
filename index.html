@@ -3329,6 +3329,19 @@ const ExamSelect=(function(){
     while(sum>count){ const m=parts.filter(x=>x.n>0).sort((a,b)=>b.n-a.n)[0]; if(!m) break; m.n--; sum--; }
     return Object.fromEntries(parts.map(x=>[x.d,x.n]));
   }
+  /* Difficulty mix for a test of `count` questions, from the target weights.
+     Rounding drift is absorbed so the parts always add up to the count. */
+  function mixForBand(count, band){
+    count=Math.max(0,Math.floor(count)||0);
+    let weights=TARGET;
+    const eng=typeof self!=='undefined'?self.AhAdaptiveEngine:undefined;
+    if(eng&&typeof eng.targetMix==='function') weights=eng.targetMix(band);
+    const parts=DIFFS.map(d=>({d,n:Math.round(count*(weights[d]||0))}));
+    let sum=parts.reduce((a,x)=>a+x.n,0);
+    while(sum<count){ parts[1].n++; sum++; }
+    while(sum>count){ const m=parts.filter(x=>x.n>0).sort((a,b)=>b.n-a.n)[0]; if(!m) break; m.n--; sum--; }
+    return Object.fromEntries(parts.map(x=>[x.d,x.n]));
+  }
   /* Pick `count` questions matching the target difficulty mix, then warm up. */
   function selectAdaptive(pool,count){
     const list=Array.isArray(pool)?pool:[];
@@ -3336,6 +3349,19 @@ const ExamSelect=(function(){
     for(const q of list) buckets[difficultyOf(q)].push(q);
     const want=Math.min(count,list.length);
     const mix=mixFor(want);
+    const chosen=[];
+    for(const d of DIFFS){ for(let i=0;i<mix[d]&&buckets[d].length;i++) chosen.push(buckets[d].shift()); }
+    for(const d of DIFFS){ while(chosen.length<want&&buckets[d].length) chosen.push(buckets[d].shift()); }
+    return adaptive(chosen).slice(0,want);
+  }
+  /* P11 — the same selection, but the difficulty mix follows the student's own
+     measured band (from the Adaptive Engine) instead of the fixed target. */
+  function selectAdaptiveFor(pool,count,band){
+    const list=Array.isArray(pool)?pool:[];
+    const buckets={easy:[],medium:[],hard:[]};
+    for(const q of list) buckets[difficultyOf(q)].push(q);
+    const want=Math.min(count,list.length);
+    const mix=mixForBand(want,band);
     const chosen=[];
     for(const d of DIFFS){ for(let i=0;i<mix[d]&&buckets[d].length;i++) chosen.push(buckets[d].shift()); }
     for(const d of DIFFS){ while(chosen.length<want&&buckets[d].length) chosen.push(buckets[d].shift()); }
@@ -3351,11 +3377,31 @@ const ExamSelect=(function(){
     if(sel.length!==3) p.push('selectAdaptive lost questions');
     return p;
   }
-  return {DIFFS,TARGET,difficultyOf,expectedTime,filterByDifficulty,adaptive,mixFor,selectAdaptive,validate};
+  return {DIFFS,TARGET,difficultyOf,expectedTime,filterByDifficulty,adaptive,mixFor,mixForBand,selectAdaptive,selectAdaptiveFor,validate};
 })();
 function examSelectValidate(){ return ExamSelect.validate(); }
 function adaptiveOrder(pool){ return ExamSelect.adaptive(pool); }
 function selectAdaptive(pool,count){ return ExamSelect.selectAdaptive(pool,count); }
+function selectAdaptiveForBand(pool,count,band){ return ExamSelect.selectAdaptiveFor(pool,count,band); }
+/* P11 — start an adaptive practice paper sized to the student's own band. */
+function startAdaptivePractice(){
+  const band=adaptiveBand();
+  try{ ExamSetup=freshSetup(); }catch(_){ return; }
+  ExamSetup.mode='practice';
+  ExamSetup.selectionMode='adaptive';
+  ExamSetup.totalCount=Math.min(20,Math.max(5,(CACHE.settings&&CACHE.settings.examDefaults&&CACHE.settings.examDefaults.count)||20));
+  ExamSetup.band=band;
+  if(typeof window.closeAdaptivePanel==='function') window.closeAdaptivePanel();
+  navigate('exam/setup');
+}
+/* P11 — read the student's measured difficulty band from the Adaptive Engine.
+   Falls back to the fixed mix when the engine or history is unavailable. */
+function adaptiveBand(){
+  try{ const eng=window.AhAdaptiveEngine; if(!eng||typeof eng.analyze!=='function') return 'mixed';
+    const m=eng.analyze({results:(CACHE.examResults||[]),questions:CACHE.questions||[]});
+    return (m&&m.recommendedDifficulty)||'mixed';
+  }catch(_){ return 'mixed'; }
+}
 function filterByDifficulty(pool,difficulty){ return ExamSelect.filterByDifficulty(pool,difficulty); }
 /* P08-EXAMSELECT:end */
 function selectQuestionsByMode(pool,mode,count){
@@ -3372,7 +3418,7 @@ function selectQuestionsByMode(pool,mode,count){
     const groups=[candidates.filter(q=>attempts(q)===0),candidates.filter(q=>wrong(q)>0),candidates.filter(q=>q.bookmarked===true),shuffleArr(candidates)];
     const seen=new Set(); candidates=[]; let round=0; while(candidates.length<pool.length && round<pool.length*2){const g=groups[round%groups.length]; const q=g[Math.floor(round/groups.length)]; if(q&&!seen.has(q.id)){seen.add(q.id); candidates.push(q);} round++;}
   }
-  else if(mode==='adaptive'){ candidates=selectAdaptive(candidates,count); }
+  else if(mode==='adaptive'){ const band=adaptiveBand(); candidates=band&&band!=='mixed'?selectAdaptiveFor(candidates,count,band):selectAdaptive(candidates,count); }
   else candidates=shuffleArr(candidates);
   return candidates.slice(0,count);
 }
@@ -5179,16 +5225,16 @@ window.__admissionBootPromise.catch(error => console.error('[Admission Hub] boot
     // The updated worker takes control now; the current document remains usable and the next launch uses the new shell.
     try{
 
-      const expectedSwVersion = 'v298-p10-mistake-20261010';
+      const expectedSwVersion = 'v299-p11-adaptive-20261010';
       // register() on the same scope performs an in-place update. Never unregister
       // the active iOS worker first: that discards the instant offline shell.
-      const registration=await navigator.serviceWorker.register('./sw.js?v=v298-p10-mistake-20261010',{scope:'./',updateViaCache:'none'});
+      const registration=await navigator.serviceWorker.register('./sw.js?v=v299-p11-adaptive-20261010',{scope:'./',updateViaCache:'none'});
       await registration.update().catch(()=>{});
       // Purge every old app-shell cache (any build id ≠ current). This guarantees
       // stale pre-retirement application shells can never be served from cache again.
       try {
 
-        const cur = 'admission-hub-shell-v298-p10-mistake-20261010';
+        const cur = 'admission-hub-shell-v299-p11-adaptive-20261010';
         const names = await caches.keys();
         for (const name of names) {
           if (name.startsWith('admission-hub-shell-') && name !== cur) await caches.delete(name).catch(()=>{});
@@ -5419,6 +5465,8 @@ setTimeout(() => { if (location.hash.replace(/^#/, '').split('?')[0] === 'dictio
 
 <script defer src="admission-hub-feature-suite.js?v=clear-topic-questions-v13"></script>
 <script defer src="./mistake-engine.js?v=p10-v1"></script>
+<script defer src="./adaptive-engine.js?v=p11-v1"></script>
+<script defer src="./adaptive-insights-panel.js?v=p11-v1"></script>
 <script defer src="mistake-analysis.js?v=p10-v2"></script>
 <script defer src="question-bank-performance.js?v=11-aiex"></script>
 <script defer src="hierarchy-and-exam-fix.js?v=19-clear-topic-questions"></script>
