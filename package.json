@@ -26,6 +26,7 @@
     "test:legacy-adoption": "node --test --test-concurrency=1 legacy-adoption.test.mjs legacy-adoption.integration.test.mjs legacy-adoption.e2e.test.mjs",
     "test:ai-analytics": "node --test --test-concurrency=1 ai-analytics-intelligence.test.mjs ai-analytics-policy.test.mjs ai-analytics-store.test.mjs ai-analytics-provider.test.mjs ai-analytics-routes-worker.test.mjs",
     "test:p13": "node --test --test-concurrency=1 p13-performance-core.test.mjs p13-performance-wiring.test.mjs p13-completion.test.mjs p13-d1-backfill.test.mjs",
+    "test:p15": "node --test --test-concurrency=1 p15-pwa-offline.test.mjs",
     "test:load": "node p13-load-runner.mjs"
   },
   "dependencies": {
