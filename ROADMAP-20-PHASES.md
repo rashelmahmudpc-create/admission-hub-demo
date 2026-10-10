@@ -85,7 +85,7 @@
 **বাকি:** কোনো কোর কাজ নেই। P20-র আগে গেট: শুধু আপনার নিজে ব্যবহার → "✅ APPROVED FOR PUBLIC LAUNCH"।
 
 ## 🌐 P15 — PWA + Offline-First — 🟢 ~৮৫%
-**আছে:** manifest.webmanifest (standalone+icons) · sw.js v299 (ক্যাশ-ভার্সনিং, build-header, শেল SHA-256 ডাইজেস্ট — নষ্ট ডাউনলোড কখনো ক্যাশ হয় না) · session-persist (visible-এ update-check) · student-data-sync (IndexedDB + রিট্রাই-কিউ, online-এ ফ্লাশ) · **ইনস্টল-গাইড পপ-আপ লাইভ** — আন্তরিক বার্তা ("পড়ার সঙ্গী, সবসময় সাথে"), প্ল্যাটফর্ম-অনুযায়ী ধাপ (Android/iPhone/Desktop), installed হলে নীরব, ১৪ দিনে একবার · **`npm run test:p15` গেট (১১/১১)** — manifest + BUILD_ID-সিঙ্ক + শেল-ডাইজেস্ট + পপ-আপ-আচরণ।
+**আছে:** manifest.webmanifest (standalone+icons) · sw.js v299 (ক্যাশ-ভার্সনিং, build-header, শেল SHA-256 ডাইজেস্ট — নষ্ট ডাউনলোড কখনো ক্যাশ হয় না) · session-persist (visible-এ update-check) · student-data-sync (IndexedDB + রিট্রাই-কিউ, online-এ ফ্লাশ) · **ইনস্টল-গাইড পপ-আপ লাইভ (মালিকের লেখা বার্তা)** — "পড়াশোনা থাকুক হাতের কাছেই", **অ্যানিমেটেড ডেমো** (Share/⋮-এ ট্যাপ → মেনু → হোম-স্ক্রিন আইকন), প্ল্যাটফর্ম-অনুযায়ী ধাপ, installed হলে নীরব, ১৪ দিনে একবার · **`npm run test:p15` গেট (১২/১২)**।
 **বাকি:** ① অফলাইন-প্র্যাকটিস/পরীক্ষা-র স্পষ্ট ফ্লো-গ্যারান্টি ② Background Sync API রেজিস্ট্রেশন ③ offline-ডেটা-বাউন্ডারি-ডক।
 
 ## 🎨 P16 — UX/Accessibility/Device — 🟡 ~৫০%
