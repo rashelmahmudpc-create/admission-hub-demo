@@ -35,3 +35,10 @@ test('frontend workflow has no Worker deployment',()=>{
  assert.ok(workflow.includes('pages deploy dist --project-name admissionhub --branch main'));
  assert.ok(!/command:\s*deploy --config|build:worker|wrangler\.toml\s*$/.test(workflow));
 });
+test('a successful mount reveals the welcome (regression: it stayed visibility:hidden, blank page)',()=>{
+ const js=read('welcome-onboarding.js');
+ // The scaffold is hidden while the template loads; every success path must
+ // clear that inline style, or the whole welcome stays invisible.
+ assert.ok(js.includes("view.style.visibility='hidden'"));
+ assert.ok(js.includes("view.replaceChildren(board);view.style.visibility='';"));
+});
