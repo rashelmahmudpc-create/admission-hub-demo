@@ -188,6 +188,15 @@ export function capStats(stats) {
   if (weak) s.weakTopics = weak;
   const subs = rows(stats.subjects, 6);
   if (subs) s.subjects = subs;
+  /* This week vs last week — bounded to the same shapes as the lifetime stats. */
+  const period = (input) => {
+    if (!input || typeof input !== 'object') return null;
+    return { exams: num(input.exams, 0, 1000), accuracy: num(input.accuracy, 0, 100) };
+  };
+  const weekly = period(stats.weekly);
+  if (weekly) s.weekly = weekly;
+  const prevWeekly = period(stats.prevWeekly);
+  if (prevWeekly) s.prevWeekly = prevWeekly;
   return Object.keys(s).length ? s : null;
 }
 
@@ -324,8 +333,9 @@ export function buildSystemPrompt(opts = {}) {
    gives its normal answer instead of inventing a plan. */
 export function buildStudyRecommendation(stats, opts = {}) {
   const s = capStats(stats);
-  if (!s || !Array.isArray(s.weakTopics) || !s.weakTopics.length) return null;
   const en = opts.langStyle === 'en';
+  const improvement = buildImprovementLine(s, { langStyle: opts.langStyle });
+  if (!s || !Array.isArray(s.weakTopics) || !s.weakTopics.length) return improvement || null;
   const list = s.weakTopics.slice(0, 3).map(t => `${t.name} (${t.accuracy}%)`).join(', ');
   const lead = en
     ? `Your revision priority right now: ${list}.`
@@ -333,7 +343,37 @@ export function buildStudyRecommendation(stats, opts = {}) {
   const tip = en
     ? 'Practise these with a few MCQs daily, then re-test after a day to confirm the gap is closing.'
     : 'প্রতিদিন অল্প কিছু MCQ দিয়ে এগুলোর অনুশীলন করো, এক দিন পর আবার পরীক্ষা দিয়ে দেখো দুর্বলতা কমছে কি না।';
-  return `${lead} ${tip}`;
+  return [improvement, `${lead} ${tip}`].filter(Boolean).join(' ');
+}
+
+/* ── P06: improvement line (this week vs last week) ────────────────────────
+   A single honest sentence about direction of travel, or null when there is not
+   enough recent activity to say anything. Deterministic and pure. */
+export function buildImprovementLine(stats, opts = {}) {
+  const s = capStats(stats);
+  if (!s || !s.weekly || !s.weekly.exams) return null;
+  const en = opts.langStyle === 'en';
+  const cur = s.weekly;
+  const prev = s.prevWeekly;
+  if (!prev || !prev.exams) {
+    return en
+      ? `This week: ${cur.exams} exam(s) at ${cur.accuracy}% accuracy.`
+      : `এই সপ্তাহে: ${cur.exams}টি পরীক্ষা, একুরেসি ${cur.accuracy}%।`;
+  }
+  const delta = cur.accuracy - prev.accuracy;
+  if (delta >= 3) {
+    return en
+      ? `You improved this week: ${prev.accuracy}% → ${cur.accuracy}% (up ${delta} points). Nice work — keep going.`
+      : `এই সপ্তাহে উন্নতি হয়েছে: গত সপ্তাহে ${prev.accuracy}% → এখন ${cur.accuracy}% (${delta} পয়েন্ট বেশি)। ভালো করছো, চালিয়ে যাও।`;
+  }
+  if (delta <= -3) {
+    return en
+      ? `Your accuracy dipped this week: ${prev.accuracy}% → ${cur.accuracy}% (down ${Math.abs(delta)} points). Slow down and revise the basics before the next test.`
+      : `এই সপ্তাহে একুরেসি একটু কমেছে: গত সপ্তাহে ${prev.accuracy}% → এখন ${cur.accuracy}% (${Math.abs(delta)} পয়েন্ট কম)। পরের পরীক্ষার আগে বেসিকটা আরেকবার দেখে নাও।`;
+  }
+  return en
+    ? `Steady this week: ${prev.accuracy}% → ${cur.accuracy}% accuracy. Push a little harder to move it up.`
+    : `এই সপ্তাহে প্রায় একই রকম: গত সপ্তাহে ${prev.accuracy}% → এখন ${cur.accuracy}%। একটু বেশি চেষ্টা করলে বাড়বে।`;
 }
 
 /* ── Conversation Memory: summarize (short/session 2-layer) -------------- */
@@ -1049,7 +1089,7 @@ function sseError(msg, status) {
 }
 
 export const __test = {
-  classifyIntent, validateChatReq, capStats, buildSystemPrompt, summarizeTo, buildStudyRecommendation,
+  classifyIntent, validateChatReq, capStats, buildSystemPrompt, summarizeTo, buildStudyRecommendation, buildImprovementLine,
   safetyGate, authVerificationGuidance, routerChain, geminiTextFromChunk, sseParse, ProviderError,
   adapterFor, providerChain, PROVIDER_ADAPTERS, GEMINI_ADAPTER, GROQ_ADAPTER, CLOUDFLARE_ADAPTER,
   INTENTS, TIER, GEMINI_MODELS, AGENT_VERSION, SYSTEM_PROMPT_V,

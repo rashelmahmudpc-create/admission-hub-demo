@@ -183,6 +183,11 @@
     .ai-hero-orb .p1{top:6px;right:14px}.ai-hero-orb .p2{bottom:10px;left:8px;animation-delay:1.2s}.ai-hero-orb .p3{top:38%;right:-2px;width:5px;height:5px;animation-delay:2.1s}
     @keyframes aiSpark{50%{opacity:.25;transform:scale(.6) translateY(-4px)}}
     .ai-notice{display:flex;align-items:flex-start;gap:9px;background:var(--ai-card,#fff);border:1px solid var(--ai-line,rgba(15,107,79,.12));border-radius:var(--r-m);padding:11px 12px;margin:12px 0 4px;font-size:12px;line-height:1.6;color:var(--ai-sub,#5F7A72);animation:aiIn .4s ease both}
+    .ai-reco{display:flex;align-items:flex-start;gap:10px;background:linear-gradient(135deg,rgba(46,230,168,.14),rgba(15,107,79,.07));border:1px solid rgba(15,107,79,.18);border-radius:var(--r-m);padding:12px 13px;margin:12px 0 4px;animation:aiIn .4s ease both}
+    .ai-reco .ic{font-size:18px;line-height:1.3;flex:0 0 auto}
+    .ai-reco b{display:block;font-size:13px;font-weight:800;color:var(--ai-ink,#16302A);margin-bottom:2px}
+    .ai-reco p{margin:0;font-size:13px;line-height:1.6;color:var(--ai-sub,#3D6459);font-weight:600}
+    .ai-agent-root[data-theme=dark] .ai-reco{border-color:rgba(46,230,168,.28)}
     .ai-notice b{color:var(--ai-ink,#16302A)}
     .ai-notice .x{margin-left:auto;border:0;background:none;color:var(--ai-sub,#8AA39A);font-size:16px;cursor:pointer;line-height:1;padding:2px}
     .ai-try{display:flex;align-items:center;gap:8px;margin:14px 2px 9px;font-size:14px;font-weight:800}
@@ -809,17 +814,46 @@
       return { weakTopics, subjects: subjectRows };
     } catch (_) { return { weakTopics: [], subjects: [] }; }
   };
+  /* This week vs last week, so the tutor can speak to real improvement (or a
+     slide) instead of a lifetime average that never moves. Same academic-only
+     fields; the server re-sanitizes. */
+  const P06_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+  const windowStats = (from, to) => {
+    let exams = 0, correct = 0, wrong = 0;
+    for (const r of CACHE.examResults) {
+      const ts = Number((r && (r.completedAt || r.date)) || 0);
+      if (!ts || ts < from || (to != null && ts >= to)) continue;
+      exams++;
+      for (const q of (Array.isArray(r && r.snapshot) ? r.snapshot : [])) {
+        if (q && q.status === 'correct') correct++; else if (q && q.status === 'wrong') wrong++;
+      }
+    }
+    return { exams, accuracy: correct + wrong > 0 ? Math.round((correct / (correct + wrong)) * 100) : 0 };
+  };
+  const weekDelta = () => {
+    try {
+      if (typeof CACHE === 'undefined' || !Array.isArray(CACHE.examResults)) return null;
+      const now = Date.now();
+      const cur = windowStats(now - P06_WEEK_MS, null);
+      const prev = windowStats(now - 2 * P06_WEEK_MS, now - P06_WEEK_MS);
+      if (!cur.exams && !prev.exams) return null;
+      return { weekly: cur, prevWeekly: prev };
+    } catch (_) { return null; }
+  };
   const localStats = () => {
     try {
       if (typeof computeLifetimeStats !== 'function') return null;
       const s = computeLifetimeStats();
       const lp = learningProfile();
-      return {
+      const out = {
         exams: Number(s.exams || 0), questions: Number(s.totalQuestions || s.attempted || 0),
         accuracy: Number(s.accuracy || 0), streak: typeof computeStreak === 'function' ? Number(computeStreak() || 0) : 0,
         mistakes: typeof CACHE !== 'undefined' && Array.isArray(CACHE.mistakes) ? CACHE.mistakes.length : Number(s.wrong || 0),
         weakTopics: lp.weakTopics, subjects: lp.subjects
       };
+      const wd = weekDelta();
+      if (wd) { out.weekly = wd.weekly; out.prevWeekly = wd.prevWeekly; }
+      return out;
     } catch (_) { return null; }
   };
   const save = () => { if (!accountScope) return; try { sessions[cur].msgs = msgs.slice(-MAX_MSGS); sessions[cur].ts = Date.now(); scopedWrite(STORE, JSON.stringify({ v: 2, list: sessions, cur: cur })); } catch (_) {} };
@@ -1436,9 +1470,20 @@
 
   /* ── messages render ── */
   function body() { return document.getElementById('aiAgentBody'); }
+  /* P06: the revision line, shown as a card on the welcome screen. Empty when
+     the student has no measured weak topic, so a new student sees no fake advice. */
+  function weakTopicLine() {
+    try {
+      const lp = learningProfile();
+      if (!lp.weakTopics.length) return '';
+      return lp.weakTopics.slice(0, 3).map((t) => `${t.name} (${t.accuracy}%)`).join(', ');
+    } catch (_) { return ''; }
+  }
   function emptyState() {
+    const reco = weakTopicLine();
     return `<div class="ai-hero"><div class="ai-hero-txt"><b>✦ ${esc(T.heroTitle)}</b><p>${esc(T.heroBody)}</p><button class="ai-hero-cta" id="aiHeroCta">${esc(T.heroCta)} →</button></div>
       <div class="ai-hero-orb" aria-hidden="true"><i class="ring"></i><i class="ring2"></i><i class="p1"></i><i class="p2"></i><i class="p3"></i><span class="big"></span></div></div>
+      ${reco ? `<div class="ai-reco" id="aiReco"><span class="ic">🎯</span><div><b>${esc(lang === 'en' ? 'Revise first' : 'আগে রিভিশন দাও')}</b><p>${esc(reco)}</p></div></div>` : ''}
       ${scopedRead(NOTICE_KEY) ? '' : `<div class="ai-notice" id="aiNotice">🛡 <div><b>AI responses</b> can occasionally contain mistakes. Verify important admission information from official sources.</div><button class="x" id="aiNoticeX" aria-label="Dismiss">×</button></div>`}
       <div class="ai-try">${esc(T.tryAsking)}</div>
       <div class="ai-chips">${T.chips.map((c) => `<button class="ai-chip" data-q="${esc(c[2])}"><span class="ic">${c[0]}</span><b>${esc(c[1])}</b><span>${esc(c[0] + ' ' + (c[1]))}</span></button>`).join('')}</div>`;

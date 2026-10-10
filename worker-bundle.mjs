@@ -95,6 +95,10 @@ function renderContext(bundle) {
     if (Array.isArray(s.weakTopics) && s.weakTopics.length) {
       lines.push(`- weak topics: ${pill(s.weakTopics)}`);
     }
+    if (s.weekly && s.weekly.exams) {
+      const delta = s.prevWeekly && s.prevWeekly.exams ? `, prev ${s.prevWeekly.accuracy}%` : "";
+      lines.push(`- this week: ${s.weekly.exams} exams, ${s.weekly.accuracy}% accuracy${delta}`);
+    }
   }
   if (scopeAtLeast(scope.profile, SCOPE.MINIMAL) && data.profile) {
     const p = data.profile;
@@ -1124,6 +1128,14 @@ function capStats(stats) {
   if (weak) s.weakTopics = weak;
   const subs = rows(stats.subjects, 6);
   if (subs) s.subjects = subs;
+  const period = (input) => {
+    if (!input || typeof input !== "object") return null;
+    return { exams: num2(input.exams, 0, 1e3), accuracy: num2(input.accuracy, 0, 100) };
+  };
+  const weekly = period(stats.weekly);
+  if (weekly) s.weekly = weekly;
+  const prevWeekly = period(stats.prevWeekly);
+  if (prevWeekly) s.prevWeekly = prevWeekly;
   return Object.keys(s).length ? s : null;
 }
 var AI_PREFS_DEFAULT = Object.freeze({ langStyle: "bn", tone: "friendly", responseLen: "balanced" });
@@ -1241,12 +1253,31 @@ STUDY RECOMMENDATION (শিক্ষার্থী কী পড়বে জ�
 }
 function buildStudyRecommendation(stats, opts = {}) {
   const s = capStats(stats);
-  if (!s || !Array.isArray(s.weakTopics) || !s.weakTopics.length) return null;
   const en = opts.langStyle === "en";
+  const improvement = buildImprovementLine(s, { langStyle: opts.langStyle });
+  if (!s || !Array.isArray(s.weakTopics) || !s.weakTopics.length) return improvement || null;
   const list = s.weakTopics.slice(0, 3).map((t) => `${t.name} (${t.accuracy}%)`).join(", ");
   const lead = en ? `Your revision priority right now: ${list}.` : `এখন রিভিশনে সবচেয়ে জরুরি: ${list}।`;
   const tip = en ? "Practise these with a few MCQs daily, then re-test after a day to confirm the gap is closing." : "প্রতিদিন অল্প কিছু MCQ দিয়ে এগুলোর অনুশীলন করো, এক দিন পর আবার পরীক্ষা দিয়ে দেখো দুর্বলতা কমছে কি না।";
-  return `${lead} ${tip}`;
+  return [improvement, `${lead} ${tip}`].filter(Boolean).join(" ");
+}
+function buildImprovementLine(stats, opts = {}) {
+  const s = capStats(stats);
+  if (!s || !s.weekly || !s.weekly.exams) return null;
+  const en = opts.langStyle === "en";
+  const cur = s.weekly;
+  const prev = s.prevWeekly;
+  if (!prev || !prev.exams) {
+    return en ? `This week: ${cur.exams} exam(s) at ${cur.accuracy}% accuracy.` : `এই সপ্তাহে: ${cur.exams}টি পরীক্ষা, একুরেসি ${cur.accuracy}%।`;
+  }
+  const delta = cur.accuracy - prev.accuracy;
+  if (delta >= 3) {
+    return en ? `You improved this week: ${prev.accuracy}% → ${cur.accuracy}% (up ${delta} points). Nice work — keep going.` : `এই সপ্তাহে উন্নতি হয়েছে: গত সপ্তাহে ${prev.accuracy}% → এখন ${cur.accuracy}% (${delta} পয়েন্ট বেশি)। ভালো করছো, চালিয়ে যাও।`;
+  }
+  if (delta <= -3) {
+    return en ? `Your accuracy dipped this week: ${prev.accuracy}% → ${cur.accuracy}% (down ${Math.abs(delta)} points). Slow down and revise the basics before the next test.` : `এই সপ্তাহে একুরেসি একটু কমেছে: গত সপ্তাহে ${prev.accuracy}% → এখন ${cur.accuracy}% (${Math.abs(delta)} পয়েন্ট কম)। পরের পরীক্ষার আগে বেসিকটা আরেকবার দেখে নাও।`;
+  }
+  return en ? `Steady this week: ${prev.accuracy}% → ${cur.accuracy}% accuracy. Push a little harder to move it up.` : `এই সপ্তাহে প্রায় একই রকম: গত সপ্তাহে ${prev.accuracy}% → এখন ${cur.accuracy}%। একটু বেশি চেষ্টা করলে বাড়বে।`;
 }
 function summarizeTo(messages, maxTurns = 6, maxChars = 900) {
   const msgs = Array.isArray(messages) ? messages.slice(0, -maxTurns) : [];

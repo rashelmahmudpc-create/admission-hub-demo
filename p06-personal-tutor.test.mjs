@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { capStats, buildSystemPrompt, buildStudyRecommendation } from './ai-agent.js';
+import { capStats, buildSystemPrompt, buildStudyRecommendation, buildImprovementLine } from './ai-agent.js';
 import { renderContext, buildContext } from './context-engine.js';
 import { makeMemory, upsertMemory, parseMemory, renderMemory, KIND, SOURCE, MEMORY_VERSION } from './memory-engine.js';
 
@@ -113,4 +113,51 @@ test('a rejection of the client-side weak-topic computation would break this con
 test('agentChat persists the discussed topic for the next session', () => {
   assert.match(SRC, /key: 'last-topic'/);
   assert.match(SRC, /memKey/, 'the memory key must be computed once');
+});
+
+/* ── ২বি. Improvement line (this week vs last week) ── */
+test('capStats bounds the weekly periods and drops a malformed one', () => {
+  const s = capStats({ weekly: { exams: 4, accuracy: 88 }, prevWeekly: { exams: 2, accuracy: 61 } });
+  assert.deepEqual(s.weekly, { exams: 4, accuracy: 88 });
+  assert.deepEqual(s.prevWeekly, { exams: 2, accuracy: 61 });
+  assert.equal((capStats({ exams: 1, weekly: 'nope' }) || {}).weekly, undefined);
+});
+
+test('buildImprovementLine reports a rise, a dip and a flat week from real figures', () => {
+  const up = buildImprovementLine({ weekly: { exams: 3, accuracy: 74 }, prevWeekly: { exams: 3, accuracy: 60 } });
+  assert.match(up, /উন্নতি/); assert.match(up, /60%[^0-9]{0,12}74%/);
+  const down = buildImprovementLine({ weekly: { exams: 3, accuracy: 52 }, prevWeekly: { exams: 3, accuracy: 68 } });
+  assert.match(down, /কমেছে/); assert.match(down, /68%[^0-9]{0,12}52%/);
+  const flat = buildImprovementLine({ weekly: { exams: 3, accuracy: 65 }, prevWeekly: { exams: 3, accuracy: 66 } });
+  assert.match(flat, /প্রায় একই/);
+});
+
+test('buildImprovementLine is silent without a measured week, and has no prev-week fallback noise', () => {
+  assert.equal(buildImprovementLine({ exams: 9, accuracy: 80 }), null);
+  assert.equal(buildImprovementLine(null), null);
+  const firstWeek = buildImprovementLine({ weekly: { exams: 2, accuracy: 70 } });
+  assert.match(firstWeek, /এই সপ্তাহে/);
+  assert.doesNotMatch(firstWeek, /গত সপ্তাহে/);
+});
+
+test('buildStudyRecommendation merges the improvement line with the revision priority', () => {
+  const rec = buildStudyRecommendation({ weekly: { exams: 3, accuracy: 74 }, prevWeekly: { exams: 3, accuracy: 60 }, weakTopics: [{ name: 'রসায়ন', attempts: 6, accuracy: 40 }] });
+  assert.match(rec, /উন্নতি/);
+  assert.match(rec, /রসায়ন \(40%\)/);
+});
+
+test('the prompt contains exactly one STUDY RECOMMENDATION block even with all fields', () => {
+  const p = buildSystemPrompt({ stats: { accuracy: 66, weakTopics: [{ name: 'ইংরেজি', attempts: 4, accuracy: 50 }], weekly: { exams: 2, accuracy: 70 }, prevWeekly: { exams: 2, accuracy: 55 } } });
+  assert.equal((p.match(/STUDY RECOMMENDATION/g) || []).length, 1);
+  assert.match(p, /55%[^0-9]{0,12}70%/);
+});
+
+/* ── ১বি. The welcome-screen revision card ── */
+test('the welcome screen renders a revision card only when a weak topic exists', () => {
+  const client = readFileSync(new URL('./ai-agent-chat.js', import.meta.url), 'utf8');
+  assert.match(client, /function weakTopicLine\(\)/);
+  assert.match(client, /class="ai-reco"/);
+  assert.match(client, /\.ai-reco\{/, 'the card must be styled');
+  // Guarded by the empty-reco check, so a new student never sees fake advice.
+  assert.match(client, /\$\{reco \? `.*ai-reco/s);
 });

@@ -139,6 +139,10 @@ export function renderContext(bundle) {
     if (Array.isArray(s.weakTopics) && s.weakTopics.length) {
       lines.push(`- weak topics: ${pill(s.weakTopics)}`);
     }
+    if (s.weekly && s.weekly.exams) {
+      const delta = s.prevWeekly && s.prevWeekly.exams ? `, prev ${s.prevWeekly.accuracy}%` : '';
+      lines.push(`- this week: ${s.weekly.exams} exams, ${s.weekly.accuracy}% accuracy${delta}`);
+    }
   }
   if (scopeAtLeast(scope.profile, SCOPE.MINIMAL) && data.profile) {
     const p = data.profile;
