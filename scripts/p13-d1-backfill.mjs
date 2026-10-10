@@ -66,6 +66,9 @@ export function buildSql(doc, { now = Date.now(), batch = BATCH, all = false } =
      serve a table whose sig does not match the live meta, so a stale D1 copy can
      never shadow newer KV content. */
   out.push(`INSERT INTO content_meta (k, v) VALUES ('sig', ${sqlStr(doc && doc.sig || '')}) ON CONFLICT(k) DO UPDATE SET v=excluded.v;`);
+  /* The read-path switch. Stored in the database rather than a Worker variable
+     so it does not count against the Free-plan 64-variable cap. */
+  out.push(`INSERT INTO content_meta (k, v) VALUES ('mode', 'd1') ON CONFLICT(k) DO UPDATE SET v=excluded.v;`);
   // With --all, mirror the small lists too, so the document can be assembled
   // from D1 alone instead of reading the large KV blob.
   if (all) {

@@ -114,17 +114,22 @@ function createD1Reader(db) {
       const res = await (bind2.length ? stmt.bind(...bind2) : stmt).all();
       return (res && res.results ? res.results : []).map(normalizeRow).filter(Boolean);
     },
-    /* Signature of the content version these rows were built from. The read
-       path compares it to the live meta and refuses a stale table. */
-    async sig() {
+    /* Read a small keyed value from content_meta (e.g. the content sig, or the
+       'mode' toggle). Null-safe. */
+    async meta(key) {
       if (!available) return null;
       try {
-        const stmt = db.prepare("SELECT v FROM content_meta WHERE k = ?").bind("sig");
+        const stmt = db.prepare("SELECT v FROM content_meta WHERE k = ?").bind(String(key));
         const res = await stmt.first();
         return res ? String(res.v) : null;
       } catch (_) {
         return null;
       }
+    },
+    /* Signature of the content version these rows were built from. The read
+       path compares it to the live meta and refuses a stale table. */
+    async sig() {
+      return this.meta("sig");
     },
     /* Assemble the same document shape the KV blob holds, entirely from D1:
        questions plus the mirrored small lists. Returns null when the tables
@@ -2355,15 +2360,17 @@ var public_worker_default = {
         return json({ v: doc.v || 0, at: doc.at || 0, sig: doc.sig || "", counts: countsOf(doc) });
       }
       if (path === "/api/content" && request.method === "GET") {
-        if (env.PUB_D1_CONTENT === "enabled" && env.PROFILE_DB) {
+        if (env.PROFILE_DB) {
           try {
-            const rawMeta = await env.PUB_KV.get("pubContentMeta");
-            const meta = rawMeta ? JSON.parse(rawMeta) : null;
             const { createD1Reader: createD1Reader2 } = await Promise.resolve().then(() => (init_p13_d1_read(), p13_d1_read_exports));
             const reader = createD1Reader2(env.PROFILE_DB);
-            if (meta && meta.sig && await reader.sig() === String(meta.sig)) {
-              const document = await reader.document();
-              if (document) return json({ v: meta.v || 0, at: meta.at || 0, sig: meta.sig, ...document, source: "d1" });
+            if (await reader.meta("mode") === "d1") {
+              const rawMeta = await env.PUB_KV.get("pubContentMeta");
+              const meta = rawMeta ? JSON.parse(rawMeta) : null;
+              if (meta && meta.sig && await reader.sig() === String(meta.sig)) {
+                const document = await reader.document();
+                if (document) return json({ v: meta.v || 0, at: meta.at || 0, sig: meta.sig, ...document, source: "d1" });
+              }
             }
           } catch (_) {
           }

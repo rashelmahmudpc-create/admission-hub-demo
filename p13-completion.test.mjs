@@ -123,6 +123,13 @@ test('p13d-15: document() returns null when there is nothing to serve', async ()
   assert.equal(await D1.createD1Reader(broken).document(), null);
 });
 
+test('p13d-16: meta() reads a keyed flag and sig() is meta("sig")', async () => {
+  const db = { prepare: (sql) => ({ bind: (k) => ({ first: async () => ({ v: k === 'mode' ? 'd1' : '9:9:9' }) }) }) };
+  const reader = D1.createD1Reader(db);
+  assert.equal(await reader.meta('mode'), 'd1');
+  assert.equal(await reader.sig(), '9:9:9');
+});
+
 test('p13d-13: a bound reader normalizes rows and counts', async () => {
   const seen = [];
   const db = { prepare(sql) { seen.push(sql); return { bind(...args) { this._a = args; return this; }, async all() { return { results: [{ id: 'q1', sort_key: 'k1', topic_id: 't', subject_id: 's', difficulty: 1, updated_at: 1, payload: '{"text":"x"}' }] }; }, async first() { return { n: 7 }; } }; } };
@@ -215,7 +222,7 @@ test('p13w-07: the runtime exposes a real windowed VirtualList, not a stub', () 
 
 test('p13w-08: the D1 content path is flag-and-sig gated and falls back to KV', () => {
   const p = readFileSync(new URL('./public-worker.js', import.meta.url), 'utf8');
-  assert.match(p, /env\.PUB_D1_CONTENT === 'enabled'/, 'D1 path must be opt-in, never the default');
+  assert.match(p, /\(await reader\.meta\('mode'\)\) === 'd1'/, 'the D1 path must be an explicit opt-in flag row');
   assert.match(p, /await reader\.sig\(\)\) === String\(meta\.sig\)/, 'D1 must be served only when its sig matches the live meta');
   assert.match(p, /await import\('\.\/p13-d1-read\.mjs'\)/, 'dynamic import keeps D1 code out of the main bundle');
   assert.match(p, /fall through to KV/, 'a D1 miss must fall back to the live KV content');
@@ -223,8 +230,8 @@ test('p13w-08: the D1 content path is flag-and-sig gated and falls back to KV', 
   assert.match(p, /\{ v: meta\.v \|\| 0, at: meta\.at \|\| 0, sig: meta\.sig, \.\.\.document, source: 'd1' \}/, 'the D1 reply must carry v/sig and the document shape');
   // The gate must sit before the KV read *within the same route*, so default
   // behaviour is unchanged.
-  const gate = p.indexOf('PUB_D1_CONTENT');
-  assert.ok(gate > -1 && p.indexOf("env.PUB_KV.get('pubContent')", gate) > gate, 'KV read must remain the fallback after the gate');
+  const route = p.indexOf("path === '/api/content' && request.method === 'GET'");
+  assert.ok(p.indexOf("meta('mode')", route) < p.indexOf("env.PUB_KV.get('pubContent')", route), 'KV read must remain the fallback after the gate');
 });
 
 /* ---------------------------- compression ---------------------------- */

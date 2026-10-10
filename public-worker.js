@@ -207,20 +207,23 @@ export default {
         return json({ v: doc.v || 0, at: doc.at || 0, sig: doc.sig || '', counts: countsOf(doc) });
       }
       if (path === '/api/content' && request.method === 'GET') {
-        /* P13 — optional D1 fast path. Off unless explicitly enabled AND the D1
-           copy is provably in sync with the live meta (sig match). The whole
-           document (questions + small lists) is assembled from D1, so the large
-           KV blob is not read at all. Any mismatch or error falls through to KV
-           untouched. */
-        if (env.PUB_D1_CONTENT === 'enabled' && env.PROFILE_DB) {
+        /* P13 — optional D1 fast path. Enabled by a flag row in content_meta
+           (set by the p13-d1-backfill workflow), not by a Worker variable, so
+           the Free-plan 64-variable cap is not touched. The D1 copy is served
+           only when its stored sig matches /api/content/meta's live sig; the
+           whole document is assembled from D1. Any mismatch or error falls back
+           to the KV blob untouched. */
+        if (env.PROFILE_DB) {
           try {
-            const rawMeta = await env.PUB_KV.get('pubContentMeta');
-            const meta = rawMeta ? JSON.parse(rawMeta) : null;
             const { createD1Reader } = await import('./p13-d1-read.mjs');
             const reader = createD1Reader(env.PROFILE_DB);
-            if (meta && meta.sig && (await reader.sig()) === String(meta.sig)) {
-              const document = await reader.document();
-              if (document) return json({ v: meta.v || 0, at: meta.at || 0, sig: meta.sig, ...document, source: 'd1' });
+            if ((await reader.meta('mode')) === 'd1') {
+              const rawMeta = await env.PUB_KV.get('pubContentMeta');
+              const meta = rawMeta ? JSON.parse(rawMeta) : null;
+              if (meta && meta.sig && (await reader.sig()) === String(meta.sig)) {
+                const document = await reader.document();
+                if (document) return json({ v: meta.v || 0, at: meta.at || 0, sig: meta.sig, ...document, source: 'd1' });
+              }
             }
           } catch (_) { /* fall through to KV */ }
         }

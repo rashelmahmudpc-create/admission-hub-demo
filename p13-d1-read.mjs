@@ -133,15 +133,20 @@ export function createD1Reader(db) {
         const res = await (bind.length ? stmt.bind(...bind) : stmt).all();
         return (res && res.results ? res.results : []).map(normalizeRow).filter(Boolean);
       },
-      /* Signature of the content version these rows were built from. The read
-         path compares it to the live meta and refuses a stale table. */
-      async sig() {
+      /* Read a small keyed value from content_meta (e.g. the content sig, or the
+         'mode' toggle). Null-safe. */
+      async meta(key) {
         if (!available) return null;
         try {
-          const stmt = db.prepare('SELECT v FROM content_meta WHERE k = ?').bind('sig');
+          const stmt = db.prepare('SELECT v FROM content_meta WHERE k = ?').bind(String(key));
           const res = await stmt.first();
           return res ? String(res.v) : null;
         } catch (_) { return null; }
+      },
+      /* Signature of the content version these rows were built from. The read
+         path compares it to the live meta and refuses a stale table. */
+      async sig() {
+        return this.meta('sig');
       },
       /* Assemble the same document shape the KV blob holds, entirely from D1:
          questions plus the mirrored small lists. Returns null when the tables

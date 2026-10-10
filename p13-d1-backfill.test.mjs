@@ -76,6 +76,7 @@ test('p13b-08: the backfill workflow is manual, confirmed, and additive-only', (
 test('p13b-09: the SQL records the content sig the read path verifies', () => {
   const sql = buildSql({ ...DOC, sig: '1:2:3' }, { now: 1 });
   assert.match(sql, /INSERT INTO content_meta \(k, v\) VALUES \('sig', '1:2:3'\)/, 'sig must be stored');
+  assert.match(sql, /VALUES \('mode', 'd1'\)/, 'the read-path switch is stored in D1, not a Worker var');
 });
 
 test('p13b-10: --all mirrors the small lists so the doc can be assembled from D1', () => {
