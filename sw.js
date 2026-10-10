@@ -1,6 +1,6 @@
 const CACHE_PREFIX = 'admission-hub-shell-';
 
-const BUILD_ID = 'v297-p09-analytics-20261010';
+const BUILD_ID = 'v298-p10-mistake-20261010';
 const CACHE_NAME = `${CACHE_PREFIX}${BUILD_ID}`;
 const VERSION_HEADER = 'X-Admission-Hub-Build';
 const DOCUMENT_NETWORK_TIMEOUT_MS = 2500;
@@ -39,6 +39,7 @@ const APP_SHELL = [
   './analytics-dashboard.js?v=analytics-p4-v1',
   './analytics-insight-engine.js?v=p09-v1',
   './analytics-insights-panel.js?v=p09-v1',
+  './mistake-engine.js?v=p10-v1',
   './student-data-sync.js?v=student-sync-v1',
   './icons/icon-192.png',
   './icons/icon-512.png'
@@ -48,13 +49,13 @@ const APP_SHELL = [
 // A truncated/corrupt download is NEVER written to the shell cache.
 const ASSET_DIGESTS = {
 /* sw-manifest:start */
-  "./index.html": "bfcc8a0cd4be1f4da538ffcb77ed1600caabf717519b0bb980c752dfe9c484ae",
+  "./index.html": "ce7ce8131a674d26d15c299e9864940bf49c4105c84bfdbf687ce70628bc9bc0",
   "./manifest.json": "11a85ae594fc629b11605daeda3f9afe4ef95215a55a29f9cc423314bfb275a4",
   "./manifest.webmanifest": "5be476009a140eabd088bd972bd4d345b9c4f4a055cd6e4f08774b9cb4afaf52",
   "./dashboard-v2.css?v=dash2f13-theme": "4541bc1e65fd158c593443562975400d128b8f1d3b636595df3c235b99e8cced",
   "./3d-loader.css?v=3d-v2": "43ca21b0a41be5d223c317fd63582f19ff6ffab5d010639ef26349464550da63",
   "./session-persist.js?v=session-v2": "99f3d1f49f6d5714fd25f1c12b2aa978ca97a009d6caba9a690a0442d082593c",
-  "./analytics-service.js?v=analytics-p2-v2-insights": "6bf99cbb2a92628bc1b28b41898479aa4c5246c6911409bef43a36a8c56a2157",
+  "./analytics-service.js?v=analytics-p2-v2-insights": "a8e49e5083a7934e6375b816861b42eb9526e6fc572afc7f0245d9ffd5651d21",
   "./account-access.css?v=20260921-single-email-button-fallback": "54d46ed598915409c72c5da480cde492f947928a21088d4ed7b2f9ad4d13682e",
   "./institutions-bd.js?v=bd-institutions-v2": "602c5549515e8207ad152b948ca9b8fe3ad0fbe429afb56380e4e21b662f779d",
   "./language-engine.js?v=lang-v5-single-email-button": "7e726c3cd194381201c7fdb2b1a49af78f4f48f38012e05ab68e13eee3ade3ad",
@@ -73,6 +74,7 @@ const ASSET_DIGESTS = {
   "./analytics-dashboard.js?v=analytics-p4-v1": "ee2d5fcf1b3850ed5c1b83de136085be340ab8c31805e26bd3db15d7a8e41f8b",
   "./analytics-insight-engine.js?v=p09-v1": "8f001e9e9535fa636ebe2822cb2d2d5d16297f6baa36451e5882ba5281ec7ee1",
   "./analytics-insights-panel.js?v=p09-v1": "f39d9c7b9fade9361b662af8b58b7f6d37025cdb859e4370ce455b7a5053f546",
+  "./mistake-engine.js?v=p10-v1": "4266b9acb49107d4bf48cd88c0d82492d2324f351ca4b4235b6b156706b44f50",
   "./student-data-sync.js?v=student-sync-v1": "8a8b93fc710b39fa22b92dce6cf5036102cdd688a852a5bd448a3a9c9edcf2aa",
   "./icons/icon-192.png": "777ce5566fbeff0f2e384c787c8dde4f47d7c869e455c6e577a503decd4f1683",
   "./icons/icon-512.png": "86459109582f82b1d891a3e5a82723fefd21a3c65e9d0d22ab4dae33bb540520",

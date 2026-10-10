@@ -5179,16 +5179,16 @@ window.__admissionBootPromise.catch(error => console.error('[Admission Hub] boot
     // The updated worker takes control now; the current document remains usable and the next launch uses the new shell.
     try{
 
-      const expectedSwVersion = 'v297-p09-analytics-20261010';
+      const expectedSwVersion = 'v298-p10-mistake-20261010';
       // register() on the same scope performs an in-place update. Never unregister
       // the active iOS worker first: that discards the instant offline shell.
-      const registration=await navigator.serviceWorker.register('./sw.js?v=v297-p09-analytics-20261010',{scope:'./',updateViaCache:'none'});
+      const registration=await navigator.serviceWorker.register('./sw.js?v=v298-p10-mistake-20261010',{scope:'./',updateViaCache:'none'});
       await registration.update().catch(()=>{});
       // Purge every old app-shell cache (any build id ≠ current). This guarantees
       // stale pre-retirement application shells can never be served from cache again.
       try {
 
-        const cur = 'admission-hub-shell-v297-p09-analytics-20261010';
+        const cur = 'admission-hub-shell-v298-p10-mistake-20261010';
         const names = await caches.keys();
         for (const name of names) {
           if (name.startsWith('admission-hub-shell-') && name !== cur) await caches.delete(name).catch(()=>{});
@@ -5418,7 +5418,8 @@ setTimeout(() => { if (location.hash.replace(/^#/, '').split('?')[0] === 'dictio
 </script>
 
 <script defer src="admission-hub-feature-suite.js?v=clear-topic-questions-v13"></script>
-<script defer src="mistake-analysis.js?v=gemini-v4-0816"></script>
+<script defer src="./mistake-engine.js?v=p10-v1"></script>
+<script defer src="mistake-analysis.js?v=p10-v2"></script>
 <script defer src="question-bank-performance.js?v=11-aiex"></script>
 <script defer src="hierarchy-and-exam-fix.js?v=19-clear-topic-questions"></script>
 
@@ -5635,8 +5636,8 @@ setTimeout(() => { if (location.hash.replace(/^#/, '').split('?')[0] === 'dictio
 <script defer src="./settings-command-cleanup.js?v=settings-command-cleanup-v2"></script>
 <script defer src="./navigation-tools-pronunciation.js?v=navigation-tools-pronunciation-v5-home-escape"></script>
 <script defer src="./progress-tool.js?v=progress-v7-p09-insights"></script>
-<script defer src="./mistakes-bank-tool.js?v=mistakes-bank-v1"></script>
-<script defer src="./smart-revision-tool.js?v=smart-revision-v2-safe-session"></script>
+<script defer src="./mistakes-bank-tool.js?v=mistakes-bank-v2-p10"></script>
+<script defer src="./smart-revision-tool.js?v=smart-revision-v3-p10"></script>
 <script defer src="./source-course-tool.js?v=bangla-only-courses-v26-course-mcq-analytics"></script>
 <script defer src="./android-runtime-fix.js?v=and-scroll-v1"></script>
 <script>window.AH_CLOUD_ROLE='public';</script>

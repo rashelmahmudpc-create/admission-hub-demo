@@ -88,6 +88,23 @@
     return names.length ? names.join(' — ') : 'General';
   }
 
+  /* P10: use the pure mistake engine when present; degrade to an empty label
+     rather than throwing if it has not loaded. */
+  function engineCategory(snapshot, difficulty){
+    try{
+      var E = window.AhMistakeEngine; if(!E || !E.categorize) return '';
+      var m = (window.CACHE && CACHE.mistakes || []).find(function(x){ return String(x.questionId) === String(snapshot.questionId); });
+      var r = E.categorize({ snapshot: snapshot, record: m, difficulty: difficulty });
+      return r ? r.category : '';
+    }catch(_){ return ''; }
+  }
+  function engineTier(snapshot){
+    try{
+      var E = window.AhMistakeEngine; if(!E || !E.priorityTier) return '';
+      var m = (window.CACHE && CACHE.mistakes || []).find(function(x){ return String(x.questionId) === String(snapshot.questionId); });
+      return E.priorityTier(m || { wrongCount: 1 });
+    }catch(_){ return ''; }
+  }
   function buildAnalysisCardFromSnapshot(snapshot, result){
     if(!snapshot || snapshot.status !== 'wrong') return null;
     const options = (snapshot.options || []).map(function(opt, i){
@@ -117,6 +134,8 @@
       relatedPracticeQuestions: [],
       difficulty: difficultyOf(snapshot.questionId),
       examImportance: importanceOf(snapshot.topicId),
+      mistakeCategory: engineCategory(snapshot, difficultyOf(snapshot.questionId)),
+      priorityTier: engineTier(snapshot),
       createdAt: now,
       updatedAt: now,
       tags: [topic].filter(Boolean),

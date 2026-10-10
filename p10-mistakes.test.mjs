@@ -40,7 +40,7 @@ t('flash/result-পথ → enrichMistakeRecord (revisionStatus+mastered-অক�
 t('Settings: Delete Mistakes (dbClear)', H.includes("dbClear('mistakes')") && H.includes('Delete Mistakes'));
 
 /* ৫ — Smart Mistake Book (mistake-analysis.js) লোডেড + API */
-t('mistake-analysis.js deferred in production HTML (optional, outside lean shell)', H.includes('<script defer src="mistake-analysis.js?v=gemini-v4-0816"></script>') && !SW.includes("'./mistake-analysis.js?v=gemini-v4-0816'"));
+t('mistake-analysis.js deferred in production HTML (optional, outside lean shell)', H.includes('<script defer src="mistake-analysis.js?v=p10-v2"></script>') && !SW.includes("'./mistake-analysis.js?v=p10-v2'"));
 t('MA publicApi এক্সপোজড (window.MA)', MA.includes('window.MA = publicApi') && MA.includes('publicApi'));
 t('ভুল-খাতা localStorage-key + toAgentPayload', MA.includes("'mistake-analysis-notebook-v1'") && MA.includes('toAgentPayload'));
 t('mistake-note-icon.js deferred in production HTML (optional, outside lean shell)', H.includes('mistake-note-icon.js?v=16-aiex') && !SW.includes("'./mistake-note-icon.js?v=16-aiex'"));
@@ -48,8 +48,8 @@ t('note-icon: openQuestionNoteEditor ইন্টিগ্রেশন', MN.incl
 
 /* ৬ — ভার্সন v194 */
 
-t('sw BUILD_ID current shell', SW.includes("const BUILD_ID = 'v297-p09-analytics-20261010'"));
-t('index sw-marker current shell', H.includes('sw.js?v=v297-p09-analytics-20261010'));
+t('sw BUILD_ID current shell', SW.includes("const BUILD_ID = 'v298-p10-mistake-20261010'"));
+t('index sw-marker current shell', H.includes('sw.js?v=v298-p10-mistake-20261010'));
 
 console.log(`\nP10-MISTAKES: ${pass} pass / ${fail} fail`);
 if (fail) process.exit(1);

@@ -64,9 +64,9 @@
 **আছে:** progress-tool · weekly-report · daily-streak · result-analysis-500 · mistake-analysis।
 **নতুন (সম্পূর্ণ ইঞ্জিন):** `analytics-insight-engine.js` (pure UMD) — exam-snapshot থেকে per-topic Strong/Weak/Improving/Declining/Needs-Revision ক্লাসিফিকেশন · difficulty-wise নির্ভুলতা · time-spent (মোট/গড়/per-difficulty) · wrong-pattern (একাধিকবার-ভুল) · improvement-rate (আগের বনাম পরের অর্ধেক) · বাংলায় insight-কার্ড। `analytics-insights-panel.js` — Progress পেজে "📊 বিশ্লেষণ ও পরামর্শ" বোতামে খোলে এমন read-only প্যানেল। ট্রেন্ড কেবল একাধিক পরীক্ষা-থাকলে দাবি করে। টেস্ট: `p09-analytics.test.mjs` ১৪/১৪।
 
-## 🎯 P10 — Smart Mistake & Revision — 🟡 ~৫০%
-**আছে:** mistakes-bank · smart-revision · mistake-notebook/note-icon · mistake-analysis (improving-ইঙ্গিত)।
-**বাকি:** ① অটো-ক্যাটেগরি (careless/conceptual/memory/confusion/time/repeated) ② revision-priority-স্তর (Critical→High→Medium→Mastered) ③ repeated-mistake-ফ্ল্যাগ ④ "Mastered"-রূপান্তর-লজিক।
+## 🎯 P10 — Smart Mistake & Revision — ✅ **সম্পন্ন (২০২৬-১০-১০, sw v298)**
+**আছে:** mistakes-bank · smart-revision · mistake-notebook/note-icon · mistake-analysis।
+**নতুন (সম্পূর্ণ ইঞ্জিন):** `mistake-engine.js` (pure UMD) — ① অটো-ক্যাটেগরি: careless/conceptual/memory/confusion/time/repeated (দ্রুত+easy ⇒ অসতর্ক, দীর্ঘসময় ⇒ সময়, factual ⇒ মুখস্থ, মিল-মিল অপশন ⇒ বিভ্রান্তি, ২+বার ভুল ⇒ repeated) · ② একক priority-স্তর Critical→High→Medium→Mastered · ③ repeated-ফ্ল্যাগ · ④ Mastered-রূপান্তর (টানা ২টি সঠিক রিভিশনে; নতুন ভুলে আবার pending)। তিন consumer-এ wired: mistakes-bank (tier+বারবার চিপ), mistake-analysis (mistakeCategory), smart-revision (tier label)। টেস্ট: `p10-mistake-engine.test.mjs` ১৬/১৬ + p10-mistakes ২৮/২৮।
 
 ## 🧠 P11 — Adaptive Learning Engine — 🔴 ~১০%
 **আছে:** শুধু blueprint (INTERACTIVE_QUIZ_MODE_BLUEPRINT.md, SUPER_UPGRADE_BLUEPRINT.md) + result-analysis-ইঙ্গিত।
