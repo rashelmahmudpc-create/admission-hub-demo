@@ -1,25 +1,39 @@
 /**
- * 🎙️ ADMISSION HUB — Secure ElevenLabs Voice Proxy (Cloudflare Worker)
- * v104 · generate-once → level-2 server cache → audio to browser
+ * 🎙️ ADMISSION HUB — Secure Voice Proxy (Cloudflare Worker)
+ * v105 · provider-aware: Cartesia (default) with an automatic ElevenLabs fallback
+ * generate-once → level-2 server cache → audio to browser
  *
  * ── Deploy (5 মিনিট) ─────────────────────────────────────────────
  * 1. Cloudflare Dashboard → Workers & Pages → Create Worker → নাম দাও (যেমন admission-voice) → Deploy
  * 2. Edit code → এই পুরো ফাইল পেস্ট → Deploy
  * 3. Worker → Settings → Variables & Secrets:
- *      • Add Secret:  ELEVENLABS_API_KEY = <তোমার ElevenLabs API key>
+ *      • Add Secret:  CARTESIA_API_KEY = <তোমার Cartesia API key>   (প্রধান)
+ *      • Add Secret:  ELEVENLABS_API_KEY = <তোমার ElevenLabs API key> (বিকল্প/fallback)
  *        (key শুধু এখানে থাকবে — অ্যাপ/frontend/localStorage/IndexedDB-তে কখনো নয়)
  * 4. (Optional, level-2 persistent cache) Storage & Databases → KV → Create namespace
  *      → Worker → Settings → Bindings → KV namespace: variable name  VOICE_KV
  * 5. অ্যাপে: Vocabulary → ⚙ Category settings → Vocabulary Voices →
  *      endpoint-এ এই worker-এর URL পেস্ট (যেমন https://admission-voice.<subdomain>.workers.dev)
  *
- * Security: এই worker ছাড়া কেউ ElevenLabs key দেখবে না। Origin allowlist +
+ * Provider: Cartesia ব্যবহার হয় যখন CARTESIA_API_KEY আছে (অথবা অনুরোধে provider=cartesia);
+ * না থাকলে স্বয়ংক্রিয়ভাবে ElevenLabs-এ ফিরে যায় — তাই audio কখনো ভাঙে না।
+ *
+ * Security: এই worker ছাড়া কেউ কোনো key দেখবে না। Origin allowlist +
  * app-header + per-IP rate limit — যেন অচেনা কেউ তোমার quota পোড়াতে না পারে।
  */
 
 const DEFAULT_VOICE_ID = 'EXAVITQu4vr4xnSDxMaL'; // Sarah — clear American, free-plan API-allowed
 const DEFAULT_MODEL_ID = 'eleven_flash_v2_5';    // low-latency + cost-efficient
 const DEFAULT_FORMAT = 'mp3_22050_32';           // ছোট ফাইল — দ্রুত লোড
+
+/* Cartesia (Sonic). Chosen as the default provider: Bengali on every tier,
+   ~4x the audio per dollar at the entry plan, and quality on par with ElevenLabs. */
+const CARTESIA_URL = 'https://api.cartesia.ai/tts/bytes';
+const CARTESIA_VERSION = '2026-08-14';           // current required API version
+const CARTESIA_MODEL = 'sonic-3.6';
+const CARTESIA_VOICE_ID = '47c38ca4-5f35-497b-b1a3-415245fb35e1'; // Daniel — clear American male
+const CARTESIA_VOICE_ID_BN = 'db6b0ed5-d5d3-463d-ae85-518a07d3c2b4'; // Skylar — primary multilingual fallback
+const CARTESIA_FORMAT = { container: 'mp3', sample_rate: 44100, bit_rate: 128000 };
 
 const RATE_LIMIT = 60;        // requests / minute / IP
 const RATE_WINDOW_MS = 60000;
@@ -69,6 +83,70 @@ const rateLimited = request => {
 
 const clean = (value, re) => (typeof value === 'string' && re.test(value) ? value : null);
 
+/* Is the text Bengali (so Cartesia should use a bn-capable voice/language)? */
+const isBengali = text => /[\u0980-\u09FF]/.test(String(text || ''));
+
+/* Cartesia → MP3 bytes. Throws on any non-OK response so the caller can fall back. */
+async function cartesiaAudio(env, word, voiceId) {
+  const bn = isBengali(word);
+  const voice = voiceId || (bn ? CARTESIA_VOICE_ID_BN : CARTESIA_VOICE_ID);
+  const resp = await fetch(CARTESIA_URL, {
+    method: 'POST',
+    headers: {
+      'Cartesia-Version': CARTESIA_VERSION,
+      'Authorization': `Bearer ${env.CARTESIA_API_KEY}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      model_id: CARTESIA_MODEL,
+      transcript: word,
+      voice: { id: voice },
+      language: bn ? 'bn' : 'en',
+      output_format: CARTESIA_FORMAT
+    })
+  });
+  if (!resp.ok) {
+    let detail = '';
+    try { detail = String((await resp.json())?.message || '').slice(0, 160); } catch (_) { /* non-json */ }
+    const err = new Error(detail || `cartesia_error_${resp.status}`);
+    err.status = resp.status;
+    throw err;
+  }
+  const buffer = await resp.arrayBuffer();
+  if (!buffer.byteLength) throw new Error('empty_audio');
+  return buffer;
+}
+
+/* ElevenLabs → MP3 bytes (the fallback path, unchanged behaviour). */
+async function elevenAudio(env, word, voiceId, modelId, format) {
+  const resp = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=${format}`, {
+    method: 'POST',
+    headers: {
+      'xi-api-key': env.ELEVENLABS_API_KEY,
+      'Content-Type': 'application/json',
+      'Accept': 'audio/mpeg'
+    },
+    body: JSON.stringify({
+      text: word, // শুধু word — meaning/explanation কখনো audio-তে যায় না
+      model_id: modelId,
+      voice_settings: { stability: 0.5, similarity_boost: 0.75, style: 0, use_speaker_boost: true, speed: 1.0 }
+    })
+  });
+  if (!resp.ok) {
+    let msg = `elevenlabs_error_${resp.status}`;
+    try {
+      const detail = await resp.json();
+      if (detail?.detail?.message) msg = String(detail.detail.message).slice(0, 160);
+    } catch (_) { /* non-json error body */ }
+    const err = new Error(msg);
+    err.status = resp.status;
+    throw err;
+  }
+  const buffer = await resp.arrayBuffer();
+  if (!buffer.byteLength) throw new Error('empty_audio');
+  return buffer;
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -76,15 +154,22 @@ export default {
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: corsHeaders(request) });
 
     if (url.pathname === '/health') {
-      return json(request, { ok: true, configured: !!env.ELEVENLABS_API_KEY, kv: !!env.VOICE_KV });
+      return json(request, {
+        ok: true,
+        configured: !!(env.CARTESIA_API_KEY || env.ELEVENLABS_API_KEY),
+        cartesia: !!env.CARTESIA_API_KEY,
+        elevenlabs: !!env.ELEVENLABS_API_KEY,
+        provider: env.CARTESIA_API_KEY ? 'cartesia' : (env.ELEVENLABS_API_KEY ? 'elevenlabs' : 'none'),
+        kv: !!env.VOICE_KV
+      });
     }
 
     if (request.method !== 'POST' || url.pathname !== '/api/voice') {
       return json(request, { error: 'not_found' }, 404);
     }
 
-    if (!env.ELEVENLABS_API_KEY) {
-      return json(request, { error: 'worker not configured — set ELEVENLABS_API_KEY secret' }, 503);
+    if (!env.CARTESIA_API_KEY && !env.ELEVENLABS_API_KEY) {
+      return json(request, { error: 'worker not configured — set CARTESIA_API_KEY secret' }, 503);
     }
     if (request.headers.get('X-AH-App') !== 'admission-hub') {
       return json(request, { error: 'forbidden' }, 403);
@@ -102,14 +187,19 @@ export default {
     }
 
     // Central config থেকে এলেও worker নিজের whitelist-বিহীন কিছু গ্রহণ করে না
-    const voiceId = clean(body.voiceId, /^[a-zA-Z0-9]{10,40}$/) || DEFAULT_VOICE_ID;
-    const modelId = clean(body.modelId, /^[a-z0-9_]{3,40}$/) || DEFAULT_MODEL_ID;
+    const voiceId = clean(body.voiceId, /^[a-zA-Z0-9-]{10,40}$/) || null;
+    const modelId = clean(body.modelId, /^[a-z0-9_.-]{3,40}$/) || null;
     const format = clean(body.output_format, /^mp3_[0-9_]+$/) || DEFAULT_FORMAT;
 
-    const norm = word.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-    const cacheKey = `v1:${voiceId}:${modelId}:${norm}`;
+    // Which provider? Cartesia when asked for and configured; else the default order.
+    const requested = clean(body.provider, /^[a-z]{3,12}$/) || null;
+    const useCartesia = !!env.CARTESIA_API_KEY && requested !== 'elevenlabs';
+    const provider = useCartesia ? 'cartesia' : 'elevenlabs';
 
-    // Level-2 cache: server-side — browser storage মুছে গেলেও ElevenLabs কল লাগবে না
+    const norm = word.toLowerCase().replace(/[^a-z0-9\u0980-\u09FF]+/gu, '-').replace(/^-+|-+$/g, '');
+    const cacheKey = `v2:${provider}:${voiceId || 'default'}:${modelId || 'default'}:${norm}`;
+
+    // Level-2 cache: server-side — browser storage মুছে গেলেও কোনো TTS কল লাগবে না
     if (env.VOICE_KV) {
       try {
         const hit = await env.VOICE_KV.get(cacheKey, { type: 'arrayBuffer' });
@@ -117,37 +207,31 @@ export default {
       } catch (_) { /* KV না পাওয়া গেলে সরাসরি generate */ }
     }
 
-    let resp;
+    const errors = [];
+    let buffer = null;
     try {
-      resp = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=${format}`, {
-        method: 'POST',
-        headers: {
-          'xi-api-key': env.ELEVENLABS_API_KEY,
-          'Content-Type': 'application/json',
-          'Accept': 'audio/mpeg'
-        },
-        body: JSON.stringify({
-          text: word, // শুধু word — meaning/explanation কখনো audio-তে যায় না
-          model_id: modelId,
-          voice_settings: { stability: 0.5, similarity_boost: 0.75, style: 0, use_speaker_boost: true, speed: 1.0 }
-        })
-      });
-    } catch (_) {
-      return json(request, { error: 'upstream_unreachable' }, 502);
+      if (useCartesia) {
+        try {
+          // Cartesia voice ids are UUIDs; a legacy ElevenLabs id must not leak in.
+          buffer = await cartesiaAudio(env, word, clean(voiceId, /^[0-9a-fA-F-]{36}$/));
+        } catch (err) {
+          errors.push(`cartesia: ${err.message}`);
+          // Fall back to ElevenLabs so a Cartesia outage never silences the app.
+          if (env.ELEVENLABS_API_KEY) {
+            buffer = await elevenAudio(env, word, clean(voiceId, /^[a-zA-Z0-9]{10,40}$/) || DEFAULT_VOICE_ID, modelId || DEFAULT_MODEL_ID, format);
+          } else {
+            throw err;
+          }
+        }
+      } else {
+        buffer = await elevenAudio(env, word, clean(voiceId, /^[a-zA-Z0-9]{10,40}$/) || DEFAULT_VOICE_ID, modelId || DEFAULT_MODEL_ID, format);
+      }
+    } catch (err) {
+      const status = err.status === 401 || err.status === 403 ? 503 : err.status === 429 ? 429 : 502;
+      return json(request, { error: err.message || 'upstream_error', provider, errors }, status);
     }
 
-    if (!resp.ok) {
-      let msg = `elevenlabs_error_${resp.status}`;
-      try {
-        const detail = await resp.json();
-        if (detail?.detail?.message) msg = String(detail.detail.message).slice(0, 160);
-      } catch (_) { /* non-json error body */ }
-      const status = resp.status === 401 || resp.status === 403 ? 503 : resp.status === 429 ? 429 : 502;
-      return json(request, { error: msg }, status);
-    }
-
-    const buffer = await resp.arrayBuffer();
-    if (!buffer.byteLength) return json(request, { error: 'empty_audio' }, 502);
+    if (!buffer || !buffer.byteLength) return json(request, { error: 'empty_audio', provider }, 502);
 
     if (env.VOICE_KV) {
       try { await env.VOICE_KV.put(cacheKey, buffer, { expirationTtl: 60 * 60 * 24 * 30 }); } catch (_) {}

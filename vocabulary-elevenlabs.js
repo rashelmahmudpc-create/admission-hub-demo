@@ -1,19 +1,21 @@
-/* v104 — ElevenLabs voice pipeline for Vocabulary.
+/* v107 — Voice pipeline for Vocabulary (provider = Cartesia, ElevenLabs fallback).
    Generate once → save permanently in IndexedDB (voiceCache blob) → instant offline playback.
    API key কখনো client-side থাকে না: অ্যাপ শুধু নিজের Cloudflare Worker proxy-তে কথা বলে।
-   Priority: custom uploaded voice → ElevenLabs (cache → generate) → Web Speech TTS fallback. */
+   Worker Main = Cartesia (CARTESIA_API_KEY); key না থাকলে বা Cartesia ব্যর্থ হলে
+   স্বয়ংক্রিয়ভাবে ElevenLabs-এ ফিরে যায় — তাই audio কখনো ভাঙে না।
+   Priority: custom uploaded voice → provider audio (cache → generate) → Web Speech TTS fallback. */
 (() => {
   'use strict';
 
   // ── Central configuration (এক জায়গা থেকেই সব পরিবর্তন) ──────────────────────
   const VOICE_CONFIG = Object.freeze({
-    provider: 'elevenlabs',
-    voiceId: 'EXAVITQu4vr4xnSDxMaL',       // Sarah — clear American, free-plan API-allowed
-    modelId: 'eleven_flash_v2_5',          // low-latency + cost-efficient
+    provider: 'cartesia',                  // worker default; ElevenLabs stays the automatic fallback
+    voiceId: '',                            // খালি = worker-এর Cartesia default (Daniel, en) / বাংলায় Skylar
+    modelId: '',                            // খালি = worker-এর sonic-3.6
     outputFormat: 'mp3_22050_32',
     lang: 'en-US',                          // accent/locale — এক জায়গা থেকে বদলাও
     voiceSettings: Object.freeze({ stability: 0.5, similarity_boost: 0.75, style: 0, use_speaker_boost: true, speed: 1.0 }),
-    settingsVersion: 2,                     // voice/model বদলালে এই সংখ্যা বাড়ালেই পুরনো cache conflict-মুক্ত
+    settingsVersion: 3,                     // voice/model বদলালে এই সংখ্যা বাড়ালেই পুরনো cache conflict-মুক্ত
     maxWordLength: 60,
     timeoutMs: 20000,
     errorCooldownMs: 60000                  // ব্যর্থ word-এ এই সময় পর্যন্ত আবার API চেষ্টা হয় না
@@ -102,6 +104,7 @@
         headers: { 'Content-Type': 'application/json', 'X-AH-App': 'admission-hub' },
         body: JSON.stringify({
           word: String(word).trim(),
+          provider: VOICE_CONFIG.provider,
           voiceId: VOICE_CONFIG.voiceId,
           modelId: VOICE_CONFIG.modelId,
           output_format: VOICE_CONFIG.outputFormat,
