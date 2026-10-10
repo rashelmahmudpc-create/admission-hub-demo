@@ -986,6 +986,7 @@ export class CloudflareNativeAuthEngine {
       present: true,
       mime: avatar.mime,
       bytes: Number(avatar.bytes),
+      updatedAt: Number(avatar.updatedAt || 0),
       data: this.#bufferToBase64(avatar.data)
     });
   }

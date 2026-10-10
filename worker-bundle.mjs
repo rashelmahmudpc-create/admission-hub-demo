@@ -6569,6 +6569,7 @@ var CloudflareNativeAuthEngine = class {
       present: true,
       mime: avatar.mime,
       bytes: Number(avatar.bytes),
+      updatedAt: Number(avatar.updatedAt || 0),
       data: this.#bufferToBase64(avatar.data)
     });
   }
@@ -9253,12 +9254,17 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         });
         if (!result?.present) return json3(request, 404, { ok: false, error: { code: "AVATAR_NOT_FOUND" } });
         const bytes = Uint8Array.from(atob(result.data), (char) => char.charCodeAt(0));
+        const etag = `"av-${result.updatedAt || result.bytes || 0}"`;
+        if (request.headers.get("If-None-Match") === etag) {
+          return new Response(null, { status: 304, headers: new Headers({ "ETag": etag, "Cache-Control": "private, max-age=300, must-revalidate", ...corsHeaders(request) }) });
+        }
         return new Response(bytes, {
           status: 200,
           headers: new Headers({
             "Content-Type": result.mime,
             "Content-Length": String(bytes.byteLength),
-            "Cache-Control": "private, max-age=3600, no-store=0",
+            "ETag": etag,
+            "Cache-Control": "private, max-age=300, must-revalidate",
             ...corsHeaders(request)
           })
         });

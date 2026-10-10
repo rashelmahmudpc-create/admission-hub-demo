@@ -1462,12 +1462,20 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         });
         if (!result?.present) return json(request, 404, { ok: false, error: { code: 'AVATAR_NOT_FOUND' } });
         const bytes = Uint8Array.from(atob(result.data), char => char.charCodeAt(0));
+        // Stable, version-scoped URL: let the browser cache and revalidate it.
+        // The old `no-store` (plus a `?ts=Date.now()` in the client) forced a
+        // full re-download on every render — the repeated loading the owner saw.
+        const etag = `"av-${result.updatedAt || result.bytes || 0}"`;
+        if (request.headers.get('If-None-Match') === etag) {
+          return new Response(null, { status: 304, headers: new Headers({ 'ETag': etag, 'Cache-Control': 'private, max-age=300, must-revalidate', ...corsHeaders(request) }) });
+        }
         return new Response(bytes, {
           status: 200,
           headers: new Headers({
             'Content-Type': result.mime,
             'Content-Length': String(bytes.byteLength),
-            'Cache-Control': 'private, max-age=3600, no-store=0',
+            'ETag': etag,
+            'Cache-Control': 'private, max-age=300, must-revalidate',
             ...corsHeaders(request)
           })
         });

@@ -173,8 +173,11 @@
 
     const avatarLetter = escv((C().user && C().user.name ? C().user.name : 'S').trim().slice(0, 1).toUpperCase());
     // Phase 7 — uploaded avatar (user data) replaces the letter once present.
-    const avatarInner = (typeof window.__ahHasAvatar === 'function' && window.__ahHasAvatar())
-      ? '<img class="dv2-avatar-img" src="/api/auth/v1/profile/avatar" alt="" onerror="this.remove()">' + avatarLetter
+    // Use the version-scoped URL so the browser serves the cached image instead
+    // of re-downloading on every dashboard render (the repeated loading).
+    const avatarSrc = typeof window.__ahAvatarUrl === 'function' ? window.__ahAvatarUrl() : null;
+    const avatarInner = avatarSrc
+      ? '<img class="dv2-avatar-img" src="' + escv(avatarSrc) + '" alt="" onerror="this.remove()">' + avatarLetter
       : avatarLetter;
     // Phase 7 hotfix — the dashboard avatar is the top entry point to the
     // Profile tab (same destination as the bottom-nav 👤). One identity surface.

@@ -235,10 +235,18 @@ test('dashboard avatar is the top entry point to the Profile tab', () => {
   assert.match(DASH_CSS, /\.dv2-avatar-tap\{cursor:pointer\}/);
 });
 
-test('dashboard header upgrades to the uploaded avatar', () => {
-  assert.match(DASH, /window\.__ahHasAvatar/);
+test('dashboard header upgrades to the uploaded avatar, cached by version', () => {
+  assert.match(DASH, /window\.__ahAvatarUrl/);
   assert.match(DASH, /dv2-avatar-img/);
+  assert.doesNotMatch(DASH, /src="\/api\/auth\/v1\/profile\/avatar"/, 'the dashboard must use the version-scoped URL, not a bare one');
   assert.match(DASH_CSS, /\.dv2-avatar-img\{position:absolute/);
+});
+
+test('avatar URL is version-scoped, never cache-busted per render', () => {
+  // The old `?ts=Date.now()` forced a re-download on every render; the fix keys
+  // the URL on avatar.updatedAt so the browser caches it.
+  assert.match(UI, /\$\{API\}\/profile\/avatar\?v=\$\{avatarVersion\(\)\}/);
+  assert.doesNotMatch(UI, /profile\/avatar\?ts=/);
 });
 
 test('profile css: bottom sheet, toast, skeleton, 320px-safe wrap', () => {

@@ -101,6 +101,9 @@
   // Dashboard upgrade hook: the dashboard header shows the uploaded avatar
   // once the profile has been loaded at least once in this session.
   window.__ahHasAvatar = () => state.data?.avatar?.present === true;
+  // Shared, version-scoped avatar URL so every surface (dashboard, header)
+  // reuses the same cached image instead of re-fetching it.
+  window.__ahAvatarUrl = () => (state.data?.avatar?.present ? `${API}/profile/avatar?v=${avatarVersion()}` : null);
 
   /* ---------------- API ---------------- */
 
@@ -232,7 +235,24 @@
     state.data = body;
     state.version = body?.profile?.version || null;
     profileCacheWrite(body);
+    prefetchAvatar();
     return body;
+  }
+
+  /* Warm the browser cache for the uploaded avatar once the version is known,
+     so the <img> paints from cache instead of fetching. Idempotent per version. */
+  let avatarPrefetched = '';
+  function prefetchAvatar() {
+    const a = state.data && state.data.avatar;
+    if (!a || !a.present) return;
+    const v = avatarVersion();
+    if (avatarPrefetched === v) return;
+    avatarPrefetched = v;
+    try {
+      const img = new Image();
+      img.decoding = 'async';
+      img.src = `${API}/profile/avatar?v=${v}`;
+    } catch (_) {}
   }
 
   async function patch(fields) {
@@ -335,11 +355,20 @@
       + `</svg>`;
   }
 
+  // A stable URL that changes only when the photo does (avatar.updatedAt), so
+  // the browser caches it instead of re-downloading on every render. The old
+  // `?ts=${Date.now()}` busted the cache on each paint — that was the repeated
+  // loading the owner saw.
+  function avatarVersion() {
+    const a = state.data && state.data.avatar;
+    return a && a.updatedAt ? String(a.updatedAt) : '1';
+  }
+
   function avatarMarkup() {
     const d = state.data || {};
     const name = d.profile?.fullName || '';
     if (d.avatar?.present) {
-      return `<img class="pp-avatar-img" src="${API}/profile/avatar?ts=${Date.now()}" alt="${esc(name)} এর ছবি">`;
+      return `<img class="pp-avatar-img" src="${API}/profile/avatar?v=${avatarVersion()}" alt="${esc(name)} এর ছবি" loading="eager" decoding="async">`;
     }
     return `<span class="pp-avatar-svg" data-avatar-contract="zero-raster-avatar-v1">${defaultAvatarSvg(name, d.publicId || 'ah', state.prefs.avatarStyle, state.prefs.avatarGender)}</span>`;
   }
@@ -350,7 +379,7 @@
     const d = state.data || {};
     const name = d.profile?.fullName || '';
     if (d.avatar?.present) {
-      return `<img src="${API}/profile/avatar?ts=${Date.now()}" alt="${esc(name)}" style="width:${size}px;height:${size}px;border-radius:50%;object-fit:cover;display:block">`;
+      return `<img src="${API}/profile/avatar?v=${avatarVersion()}" alt="${esc(name)}" style="width:${size}px;height:${size}px;border-radius:50%;object-fit:cover;display:block" decoding="async">`;
     }
     return `<span style="display:inline-block;width:${size}px;height:${size}px;line-height:0">${defaultAvatarSvg(name, d.publicId || 'ah', state.prefs.avatarStyle, state.prefs.avatarGender)}</span>`;
   }
