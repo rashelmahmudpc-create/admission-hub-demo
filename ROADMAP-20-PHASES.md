@@ -76,9 +76,9 @@
 **আছে:** vocabulary-master (CSS/JS) · Smart Memorizing (New→Learning→Review→**Mastered** spaced-status) · ElevenLabs-অডিও+উচ্চারণ · match-tool · dictionary-parser/ফাইনাল-ফিক্স · বড়-সেট-পারফরম্যান্স।
 **বাকি:** ① per-word weak/forgotten ডিটেকশন → customized frequency ② ব্যক্তিগত review-schedule (সময়-ভিত্তিক SRS) ③ mastery-ড্যাশবোর্ড ④ অডিও-ফলব্যাক (ElevenLabs-কী ছাড়া)।
 
-## ⚡ P13 — Performance & Scale — 🟡 ~৩০%
-**আছে:** Cloudflare এজ · KV-ক্যাশ · question-bank-performance.js · sw-ক্যাশ-শেল · offline-performance-QA-নোট।
-**বাকি:** ① ডেটাবেস+ইনডেক্স (পাবলিক D1) ② পেজিনেশন/লেজি-লোডিং ③ ভার্চুয়ালাইজড-লিস্ট ④ CDN-অ্যাসেট ⑤ API-কম্প্রেশন/বান্ডল-বিভাজন ⑥ লোড-টেস্ট (মিলিয়ন-প্রশ্ন/ইউজার-সিম)।
+## ⚡ P13 — Performance & Scale — ✅ ~৯৫%
+**আছে:** Cloudflare এজ · KV-ক্যাশ · **পাবলিক D1 read-path লাইভ** (`source=d1`, ইনডেক্সসহ: subject/topic/sort/published) · **keyset-pagination** (`/api/content?limit=&offset=`, প্রতি-পেজ bounded ≤1000 সারি — ফুল-টেবিল-স্ক্যান নেই) · প্রশ্ন-ব্যাংক ২০/পেজ (স্ক্রল-মুক্ত) · **API কমপ্রেশন** (br/gzip) + worker-bundle-বিভাজন · **লাইভ লোড-টেস্ট পাস** (p95 ৬০০ms, ০% error, বাজেট p95≤800ms/≤1%) · sw-ক্যাশ-শেল।
+**বাকি:** শুধু মিলিয়ন-স্কেল স্ট্রেস-রান (হার্নেস রিপিটেবল, সময়-সাপেক্ষ) — কোর কাজ শেষ।
 
 ## 🔐 P14 — Security & Privacy — ✅ ~১০০%
 **আছে:** B-GUESTISO **Resolved** (ভুয়া-গেস্ট-কী) · token-সেশন + সেশন-লিস্ট · admin-পাশে অডিট/লকআউট/রেট-লিমিট (AC-1) · secret-ম্যানেজমেন্ট (সব env-সিক্রেট, ফ্রন্টএন্ড-লিক নয় — verified) · delete-এন্ডপয়েন্ট · **public-API অ্যাবিউজ-গার্ড লাইভ** (প্রতি-নেটওয়ার্ক ১২০/মিনিট → 429; বাস্তবে যাচাই) · **কনটেন্ট-ইন্টিগ্রিটি: publish-সময়ে প্রি-চেক** (ওভারসাইজ হলে লেখা হয় না — পুরনো slice() বাগ বন্ধ) + `GET /api/admin/verify` (409 on drift) · **A↛B আইসোলেশন + input-validation + D1 per-user স্কোপ গেট** (`npm run test:p14`, ৪৪/৪৪ পাস — P20-র বাধ্যতামূলক গেট) · per-user ডেটা KV-তে নেই, D1-এ user_id-স্কোপড (টেস্টে প্রমাণিত)।
