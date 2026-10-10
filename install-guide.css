@@ -1,5 +1,5 @@
-/* Install Guide — warm, one-time pop-up. Uses the app's theme tokens so it
-   looks native in both light and dark mode. */
+/* Install Guide — warm, one-time pop-up with an animated "how to" demo.
+   Uses the app's theme tokens so it looks native in light and dark mode. */
 .ahig-backdrop{
   position:fixed; inset:0; z-index:9999;
   display:flex; align-items:flex-end; justify-content:center;
@@ -9,31 +9,73 @@
   animation:ahig-fade .22s ease both;
 }
 .ahig-card{
-  position:relative; width:100%; max-width:420px;
+  position:relative; width:100%; max-width:430px;
+  max-height:92vh; overflow-y:auto;
   background:var(--ah-surface,#fff); color:var(--ah-ink,#123d35);
   border:1px solid var(--ah-line,#c8e8dc); border-radius:22px;
-  padding:26px 22px 22px; text-align:center;
+  padding:24px 20px 20px; text-align:center;
   box-shadow:0 18px 60px rgba(9,60,45,.28);
   animation:ahig-rise .28s cubic-bezier(.2,.9,.3,1.1) both;
 }
-.ahig-badge{
-  width:60px; height:60px; margin:0 auto 12px; border-radius:20px;
-  display:grid; place-items:center; font-size:30px;
-  background:linear-gradient(145deg,var(--ah-mint,#0b9a70),var(--ah-brand-fill,#12a876));
-  box-shadow:0 8px 22px rgba(11,154,112,.34);
+.ahig-title{ margin:0 0 8px; font-size:1.16rem; line-height:1.4; color:var(--ah-ink,#123d35); }
+.ahig-lead{ margin:0 0 16px; font-size:.94rem; line-height:1.6; color:var(--ah-ink-mid,#284e43); }
+
+/* ── animated demo stage ─────────────────────────────────────────────── */
+.ahig-stage{
+  position:relative; height:150px; margin:0 0 16px; border-radius:16px;
+  background:linear-gradient(160deg,var(--ah-surface-alt,#f4fbf8),var(--ah-line,#c8e8dc));
+  border:1px solid var(--ah-line,#c8e8dc); overflow:hidden;
 }
-.ahig-title{ margin:0 0 8px; font-size:1.18rem; line-height:1.35; color:var(--ah-ink,#123d35); }
-.ahig-lead{ margin:0 0 16px; font-size:.95rem; line-height:1.6; color:var(--ah-ink-mid,#284e43); }
+.ahig-bar{
+  display:flex; align-items:center; gap:8px; height:38px; padding:0 12px;
+  background:var(--ah-surface,#fff); border-bottom:1px solid var(--ah-line,#c8e8dc);
+}
+.ahig-bar-title{ font-size:.72rem; color:var(--ah-ink-muted,#7b8f88); }
+.ahig-share,.ahig-dots{
+  margin-left:auto; width:26px; height:26px; border-radius:8px; display:grid; place-items:center;
+  font-size:.95rem; color:var(--ah-brand-fill,#12a876); background:var(--ah-surface-alt,#f4fbf8);
+}
+.ahig-menu{
+  position:absolute; top:44px; right:10px; width:64%; max-width:220px;
+  background:var(--ah-surface,#fff); border:1px solid var(--ah-line,#c8e8dc);
+  border-radius:12px; box-shadow:0 10px 26px rgba(9,60,45,.16);
+  text-align:left; overflow:hidden;
+  opacity:0; transform:translateY(-6px) scale(.97); transition:opacity .28s ease, transform .28s ease;
+}
+.ahig-menu.is-on,.ahig-menu.is-done{ opacity:1; transform:none; }
+.ahig-menu-row{ padding:9px 12px; font-size:.76rem; color:var(--ah-ink-mid,#284e43); border-bottom:1px solid var(--ah-line,#c8e8dc); }
+.ahig-menu-row:last-child{ border-bottom:none; }
+.ahig-menu-hit{ color:var(--ah-brand-fill,#12a876); font-weight:600; transition:background .25s ease, transform .25s ease; }
+.ahig-menu-hit.is-on{ background:var(--ah-surface-alt,#f4fbf8); transform:translateX(3px); }
+.ahig-menu-hit.is-on::after{ content:' 👆'; }
+.ahig-result{
+  position:absolute; left:50%; bottom:12px; transform:translate(-50%,24px) scale(.9);
+  display:flex; align-items:center; gap:8px; padding:8px 14px; border-radius:14px;
+  background:var(--ah-surface,#fff); border:1px solid var(--ah-brand-fill,#12a876);
+  box-shadow:0 8px 20px rgba(18,168,118,.25);
+  opacity:0; transition:opacity .3s ease, transform .35s cubic-bezier(.2,.9,.3,1.2);
+}
+.ahig-result.is-on,.ahig-result.is-done{ opacity:1; transform:translate(-50%,0) scale(1); }
+.ahig-appicon{ font-size:1.1rem; }
+.ahig-result-label{ font-size:.78rem; font-weight:600; color:var(--ah-ink,#123d35); }
+
+/* a soft tap ripple on the share/menu button */
+.ahig-share.is-on,.ahig-dots.is-on{ animation:ahig-tap .7s ease both; }
+@keyframes ahig-tap{ 0%{transform:scale(1)} 35%{transform:scale(.82); background:var(--ah-brand-fill,#12a876); color:#fff}
+  100%{transform:scale(1)} }
+
+.ahig-howtitle{ margin:0 0 8px; font-size:.86rem; font-weight:700; color:var(--ah-ink,#123d35); text-align:left; }
 .ahig-steps{
-  margin:0 0 20px; padding:14px 16px 14px 34px; text-align:left;
+  margin:0 0 14px; padding:12px 16px 12px 34px; text-align:left;
   background:var(--ah-surface-alt,#f4fbf8); border:1px solid var(--ah-line,#c8e8dc);
   border-radius:14px; font-size:.9rem; line-height:1.6; color:var(--ah-ink-mid,#284e43);
 }
 .ahig-steps li{ margin:6px 0; }
+.ahig-foot{ margin:0 0 16px; font-size:.84rem; line-height:1.55; color:var(--ah-ink-soft,#5d7a72); }
 .ahig-actions{ display:flex; flex-direction:column; gap:10px; }
 .ahig-primary,.ahig-secondary{
   font:inherit; font-weight:600; border-radius:14px; padding:13px 16px; cursor:pointer;
-  border:1px solid transparent; transition:transform .06s ease, filter .15s ease;
+  border:1px solid transparent; transition:transform .06s ease;
 }
 .ahig-primary{ background:var(--ah-brand-fill,#12a876); color:#fff; box-shadow:0 6px 16px rgba(18,168,118,.3); }
 .ahig-primary:active{ transform:scale(.98); }
@@ -52,4 +94,6 @@
 @media (min-width:520px){ .ahig-backdrop{ align-items:center; } }
 @media (prefers-reduced-motion:reduce){
   .ahig-backdrop,.ahig-card{ animation:none; }
+  .ahig-menu,.ahig-result,.ahig-menu-hit,.ahig-share,.ahig-dots{ transition:none; animation:none; }
+  .ahig-menu,.ahig-result{ opacity:1; transform:none; }
 }

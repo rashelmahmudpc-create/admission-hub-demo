@@ -1,13 +1,12 @@
 /*
  * Install Guide — Admission Hub
  *
- * A warm, one-time pop-up that gently invites a student to keep the app on
- * their phone ("আপনার পড়ার সঙ্গী, সবসময় সাথে"). It is platform-aware:
- *  · Android — offers the real install prompt when the browser provides one.
- *  · iPhone/iPad (iOS/iPadOS) — shows the Share → Add to Home Screen steps.
- *  · Desktop — points at the address-bar install icon.
- * It never nags: it shows once, remembers a dismissal for two weeks, and
- * stays silent when the app is already installed (standalone).
+ * A warm, one-time pop-up that shows a student how to keep the app on their
+ * phone. Beside the written steps it plays a small, looping animation of the
+ * actual gesture (Share button → Add to Home Screen → the new icon), so a
+ * student who has never done it can copy it by eye.
+ * It is platform-aware and never nags: it shows once, remembers a dismissal
+ * for two weeks, and stays silent when the app is already installed.
  */
 (() => {
   'use strict';
@@ -16,6 +15,7 @@
   const DAY = 24 * 60 * 60 * 1000;
   const SNOOZE_DAYS = 14;
   const AUTO_DELAY_MS = 7000;
+  const DEMO_STEP_MS = 2400;
 
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -62,17 +62,71 @@
     deferredPrompt = e;
   });
 
+  /* Written steps, worded for the device in hand. */
   const STEPS = {
-    android: 'Chrome-এ ডান-উপরের ⋮ মেনু চেপে “Install app” (বা “Add to Home screen”) চাপুন।',
-    ios: 'Safari-তে নিচের Share বাটন (চৌকো তীর) চেপে “Add to Home Screen” → “Add” চাপুন।',
-    desktop: 'ব্রাউজারের ঠিকানা-বারের ডানদিকের ছোট ইনস্টল-আইকনে চাপ দিন।'
+    ios: [
+      'Safari-এর নিচের Share বাটনে ট্যাপ করুন।',
+      '“Add to Home Screen” → “Add” চাপুন।'
+    ],
+    android: [
+      'ব্রাউজারের উপরে-ডানে ⋮ মেনুতে ট্যাপ করুন।',
+      '“Add to Home screen” → “Add” চাপুন।'
+    ],
+    desktop: [
+      'ঠিকানা-বারের ডানদিকের ইনস্টল-আইকনে ক্লিক করুন।',
+      '“Install” → “Install” চাপুন।'
+    ]
   };
+
+  /* The little motion demo: gesture → menu → result. */
+  function demoMarkup(p) {
+    if (p === 'ios') {
+      return `
+        <div class="ahig-stage" data-demo="ios" aria-hidden="true">
+          <div class="ahig-bar"><span class="ahig-bar-title">admissionhub.pages.dev</span>
+            <span class="ahig-share" data-anim="tap">↑</span>
+          </div>
+          <div class="ahig-menu" data-anim="menu">
+            <div class="ahig-menu-row">অনুলিপি করুন</div>
+            <div class="ahig-menu-row ahig-menu-hit" data-anim="hit">➕ Add to Home Screen</div>
+            <div class="ahig-menu-row">বুকমার্ক</div>
+          </div>
+          <div class="ahig-result" data-anim="land"><span class="ahig-appicon">🎓</span>
+            <span class="ahig-result-label">Admission Hub</span></div>
+        </div>`;
+    }
+    if (p === 'android') {
+      return `
+        <div class="ahig-stage" data-demo="android" aria-hidden="true">
+          <div class="ahig-bar"><span class="ahig-bar-title">admissionhub.pages.dev</span>
+            <span class="ahig-dots" data-anim="tap">⋮</span>
+          </div>
+          <div class="ahig-menu" data-anim="menu">
+            <div class="ahig-menu-row">Share</div>
+            <div class="ahig-menu-row ahig-menu-hit" data-anim="hit">Install app</div>
+            <div class="ahig-menu-row">Bookmark</div>
+          </div>
+          <div class="ahig-result" data-anim="land"><span class="ahig-appicon">🎓</span>
+            <span class="ahig-result-label">Admission Hub</span></div>
+        </div>`;
+    }
+    return `
+      <div class="ahig-stage" data-demo="desktop" aria-hidden="true">
+        <div class="ahig-bar"><span class="ahig-bar-title">admissionhub.pages.dev</span>
+          <span class="ahig-dots" data-anim="tap">⤓</span>
+        </div>
+        <div class="ahig-result" data-anim="land"><span class="ahig-appicon">🎓</span>
+          <span class="ahig-result-label">Admission Hub</span></div>
+      </div>`;
+  }
 
   let root = null;
   let shown = false;
+  let demoTimer = 0;
 
   function build() {
     const p = platform();
+    const steps = STEPS[p] || STEPS.desktop;
     const el = document.createElement('div');
     el.className = 'ahig-backdrop';
     el.setAttribute('role', 'dialog');
@@ -81,24 +135,49 @@
     el.innerHTML = `
       <div class="ahig-card" tabindex="-1">
         <button class="ahig-close" type="button" aria-label="বন্ধ করুন">✕</button>
-        <div class="ahig-badge" aria-hidden="true">📲</div>
-        <h2 class="ahig-title" id="ahig-title">আপনার পড়ার সঙ্গী, সবসময় সাথে</h2>
-        <p class="ahig-lead">Admission Hub ফোনে বসিয়ে নিন — এক ট্যাপেই খুলবে, আর নেট না থাকলেও পড়া যাবে।</p>
+        <h2 class="ahig-title" id="ahig-title">পড়াশোনা থাকুক হাতের কাছেই 📚</h2>
+        <p class="ahig-lead">Admission Hub হোম স্ক্রিনে যোগ করুন, যাতে এক ক্লিকে খুলতে পারেন এবং অফলাইনেও পড়তে পারেন।</p>
+        ${demoMarkup(p)}
+        <div class="ahig-howtitle">যেভাবে যোগ করবেন</div>
         <ol class="ahig-steps">
-          <li>${esc(STEPS[p])}</li>
-          <li>তারপর হোম-স্ক্রিনের আইকনে চাপ দিলেই সোজা অ্যাপের মতো খুলবে।</li>
+          ${steps.map(s => `<li>${esc(s)}</li>`).join('')}
         </ol>
+        <p class="ahig-foot">এরপর হোম স্ক্রিন থেকেই Admission Hub খুলতে পারবেন।</p>
         <div class="ahig-actions">
-          <button class="ahig-primary" type="button" data-action="install">${p === 'android' ? 'ফোনে বসিয়ে দিন' : 'বুঝেছি, ধন্যবাদ'}</button>
+          <button class="ahig-primary" type="button" data-action="install">${p === 'android' ? 'এখনই যোগ করুন' : 'বুঝেছি, ধন্যবাদ'}</button>
           <button class="ahig-secondary" type="button" data-action="later">পরে মনে করাব</button>
         </div>
       </div>`;
     return el;
   }
 
+  function stopDemo() { if (demoTimer) { clearInterval(demoTimer); demoTimer = 0; } }
+
+  function startDemo() {
+    if (!root) return;
+    const stage = root.querySelector('.ahig-stage');
+    if (!stage) return;
+    const seq = ['tap', 'menu', 'hit', 'land'];
+    let i = 0;
+    const total = seq.length * 2; // play the gesture twice, then rest on the result
+    const paint = () => {
+      const stepIndex = Math.min(i, seq.length - 1);
+      const active = i >= total ? 'land' : seq[stepIndex];
+      stage.querySelectorAll('[data-anim]').forEach(n => {
+        n.classList.toggle('is-on', n.getAttribute('data-anim') === active);
+        n.classList.toggle('is-done', seq.indexOf(n.getAttribute('data-anim')) < seq.indexOf(active));
+      });
+      i += 1;
+      if (i > total) { clearInterval(demoTimer); demoTimer = 0; }
+    };
+    paint();
+    demoTimer = setInterval(paint, DEMO_STEP_MS);
+  }
+
   function hide(why) {
     if (!root) return;
     snooze(why);
+    stopDemo();
     const node = root;
     root = null;
     node.classList.add('ahig-out');
@@ -113,6 +192,7 @@
     root = build();
     document.body.appendChild(root);
     requestAnimationFrame(() => root && root.querySelector('.ahig-card')?.focus());
+    startDemo();
 
     root.addEventListener('click', async (ev) => {
       const action = ev.target && ev.target.getAttribute && ev.target.getAttribute('data-action');
@@ -129,7 +209,6 @@
           } catch (_) { hide('dismiss'); }
           return;
         }
-        /* No native prompt (iOS/desktop): the steps above are the answer. */
         hide('acknowledged');
       }
     });
