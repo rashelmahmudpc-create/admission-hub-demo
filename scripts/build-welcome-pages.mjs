@@ -3,7 +3,7 @@ import {readFileSync,writeFileSync} from 'node:fs';
 import {join,resolve} from 'node:path';
 import {spawnSync} from 'node:child_process';
 const root=resolve(process.argv[2]||'dist');
-const version='welcome-native-20261010-v9';
+const version='welcome-native-20261010-v10';
 const indexPath=join(root,'index.html');
 let html=readFileSync(indexPath,'utf8');
 const matches=html.match(/app-seed\.js\?v=[^"']+/g)||[];

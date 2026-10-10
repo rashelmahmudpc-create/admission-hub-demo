@@ -3,3 +3,5 @@
 @media(max-height:900px){.ah-welcome-live [data-w-style="w15"]{margin-top:clamp(8px,2.2svh,26px)!important;font-size:clamp(26px,7.4vw,34px)!important;line-height:1.3!important}.ah-welcome-live [data-w-style="w16"]{margin-top:clamp(4px,1.1svh,10px)!important}.ah-welcome-live [data-w-style="w17"]{margin-top:clamp(8px,2.2svh,22px)!important}}
 
 .ah-welcome-live{padding:0!important}
+html:has(.ah-welcome-upgraded),body:has(.ah-welcome-upgraded),body:has(.ah-welcome-upgraded) #app{background:#f7f6fb!important}
+@media(max-height:680px){.ah-welcome-live [data-w-style="w15"]{font-size:clamp(23px,6.4vw,28px)!important;line-height:1.25!important;margin-top:6px!important}.ah-welcome-live [data-w-style="w16"]{font-size:14px!important;line-height:1.5!important}.ah-welcome-live [data-w-style="w17"]{margin-top:6px!important}.ah-welcome-live [data-w-style="w71"]{margin-top:8px!important}}

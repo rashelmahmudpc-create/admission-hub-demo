@@ -6,7 +6,7 @@ window.AH_SEED = { subjects: [], topics: [], questions: [], vocabulary: [], voca
 (() => {
   if (document.getElementById('ah-welcome-ui-style')) return;
   const base = new URL('.', document.currentScript.src);
-  const version = 'welcome-native-20261010-v9';
+  const version = 'welcome-native-20261010-v10';
   const style = document.createElement('link');
   style.id = 'ah-welcome-ui-style'; style.rel = 'stylesheet';
   style.href = new URL(`welcome-onboarding.css?v=${version}`, base);
