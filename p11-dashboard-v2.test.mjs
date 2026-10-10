@@ -8,9 +8,9 @@ const V2 = readFileSync('dashboard-v2.js', 'utf8');
 const CSS = readFileSync('dashboard-v2.css', 'utf8');
 
 /* ১ — ফাইল-লোড + ক্যাশ-কী */
-t('dashboard-v2.js defer-লোড (?v=dash2)', H.includes('<script defer src="./dashboard-v2.js?v=dash2f15-inbox"></script>'));
+t('dashboard-v2.js defer-লোড (?v=dash2)', H.includes('<script defer src="./dashboard-v2.js?v=dash2f16-avatar-cache"></script>'));
 t('dashboard-v2.css link (?v=dash2)', H.includes('<link rel="stylesheet" href="./dashboard-v2.css?v=dash2f13-theme">'));
-t('sw APP_SHELL-এ dashboard-v2 (js+css)', SW.includes("'./dashboard-v2.js?v=dash2f15-inbox'") && SW.includes("'./dashboard-v2.css?v=dash2f13-theme'"));
+t('sw APP_SHELL-এ dashboard-v2 (js+css)', SW.includes("'./dashboard-v2.js?v=dash2f16-avatar-cache'") && SW.includes("'./dashboard-v2.css?v=dash2f13-theme'"));
 
 t('sw BUILD_ID v299-p11-adaptive-20261010', SW.includes("const BUILD_ID = 'v299-p11-adaptive-20261010'"));
 t('index sw-marker v195', H.includes('sw.js?v=v299-p11-adaptive-20261010'));

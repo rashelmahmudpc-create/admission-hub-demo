@@ -56,7 +56,7 @@ t('৩০. ক্লায়েন্ট-কোডে SSE-পার্স (data
 /* ── ৬. ভার্সন-অখণ্ডতা v208 ── */
 
 t('৩১. sw BUILD_ID v208-aiagent (index-marker + expectedSwVersion)', SW.includes("const BUILD_ID = 'v299-p11-adaptive-20261010'") && H.includes('sw.js?v=v299-p11-adaptive-20261010') && H.includes("const expectedSwVersion = 'v299-p11-adaptive-20261010'"));
-t('৩২. sw APP_SHELL: anonymous AI chatv14 + dash2f10-main-ai', SW.includes('./ai-agent-chat.js?v=agent-f1-ui-p06chat') && SW.includes('./dashboard-v2.js?v=dash2f15-inbox') && H.includes('dashboard-v2.js?v=dash2f15-inbox'));
+t('৩২. sw APP_SHELL: anonymous AI chatv14 + dash2f10-main-ai', SW.includes('./ai-agent-chat.js?v=agent-f1-ui-p06chat') && SW.includes('./dashboard-v2.js?v=dash2f16-avatar-cache') && H.includes('dashboard-v2.js?v=dash2f16-avatar-cache'));
 
 
 /* ── ৭. মালিক-ফিডব্যাক v209 (chatv2): Enter-newline · sheet-nav-hide · premium-composer · typography ── */

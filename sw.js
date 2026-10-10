@@ -1,4 +1,7 @@
 const CACHE_PREFIX = 'admission-hub-shell-';
+// Version-keyed cache for the profile photo only. The shell cache must never
+// hold user data; this one holds exactly one image and is trimmed on write.
+const AVATAR_CACHE = 'admission-hub-avatar-v1';
 
 const BUILD_ID = 'v299-p11-adaptive-20261010';
 const CACHE_NAME = `${CACHE_PREFIX}${BUILD_ID}`;
@@ -26,10 +29,10 @@ const APP_SHELL = [
   './language-engine.js?v=lang-v5-single-email-button',
   './account-access.js?v=20260921-single-email-button-fallback',
   './academic-catalog.js?v=acad-cat-v2',
-  './profile-ui.js?v=profile-v17-uni-tap',
+  './profile-ui.js?v=profile-v18-avatar-cache',
   './profile-ui.css?v=profile-v15-uni-tap',
   './data-protection.js?v=dp-v3-fastboot',
-  './dashboard-v2.js?v=dash2f15-inbox',
+  './dashboard-v2.js?v=dash2f16-avatar-cache',
   './ai-agent-chat.js?v=agent-f1-ui-p06chat',
   './question-engine.js?v=qe1',
   './question-engine-panel.js?v=qe1',
@@ -53,7 +56,7 @@ const APP_SHELL = [
 // A truncated/corrupt download is NEVER written to the shell cache.
 const ASSET_DIGESTS = {
 /* sw-manifest:start */
-  "./index.html": "8dc95d272908a271ed43edcd505f3ba6d88e28bea43fb3fe0f57efe0f59b7f64",
+  "./index.html": "eb5fc4e09b574a2ca2129cc42aaf8cf66e6df8121613bcc61dd4c35bc7fb80da",
   "./manifest.json": "11a85ae594fc629b11605daeda3f9afe4ef95215a55a29f9cc423314bfb275a4",
   "./manifest.webmanifest": "5be476009a140eabd088bd972bd4d345b9c4f4a055cd6e4f08774b9cb4afaf52",
   "./dashboard-v2.css?v=dash2f13-theme": "4541bc1e65fd158c593443562975400d128b8f1d3b636595df3c235b99e8cced",
@@ -65,10 +68,10 @@ const ASSET_DIGESTS = {
   "./language-engine.js?v=lang-v5-single-email-button": "7e726c3cd194381201c7fdb2b1a49af78f4f48f38012e05ab68e13eee3ade3ad",
   "./account-access.js?v=20260921-single-email-button-fallback": "263f3c9d14e32358a1c7a052794096c092be39ab575b0c0b5b070c1bd3ae3497",
   "./academic-catalog.js?v=acad-cat-v2": "75e7b80663d41330658c948ad1d4829d49f5c9abed581350582cfeace06d5b32",
-  "./profile-ui.js?v=profile-v17-uni-tap": "aaa1bf37e54b4dd44bad0a9ea6c904645f0457cea98d10aaa02bf39664d6b1b8",
+  "./profile-ui.js?v=profile-v18-avatar-cache": "aaa1bf37e54b4dd44bad0a9ea6c904645f0457cea98d10aaa02bf39664d6b1b8",
   "./profile-ui.css?v=profile-v15-uni-tap": "6408a4b7ac8acf6845cd0148c58377a4953c8ff879d30b2c520eafae0314b98a",
   "./data-protection.js?v=dp-v3-fastboot": "359dc907ade4bcb3a6a722385969ebb6af47f7e436e6cdf2cce0dd6b7343723d",
-  "./dashboard-v2.js?v=dash2f15-inbox": "34d501b9af4a669f4a4e05f6fd38ce254ef1760e6d6f49b97f769eaeaeeff4dc",
+  "./dashboard-v2.js?v=dash2f16-avatar-cache": "34d501b9af4a669f4a4e05f6fd38ce254ef1760e6d6f49b97f769eaeaeeff4dc",
   "./ai-agent-chat.js?v=agent-f1-ui-p06chat": "6b9794a856ecfd8b7afee0551f2dfabafcb1575bd3991d5947c1f79fec05864a",
   "./question-engine.js?v=qe1": "db404fefd97bea27dad177748bafb0a9ba7d87bedca094e3da795c5b77946cd4",
   "./question-engine-panel.js?v=qe1": "33376e371654d575484194b5fcf8e486f4e3329c13e5330ff8619caab0399ec4",
@@ -190,6 +193,38 @@ self.addEventListener('fetch', event => {
 
   // Authentication responses are always live and are never written to the PWA cache.
   if (requestUrl.pathname.startsWith('/api/auth/')) {
+    // The profile photo is the one auth route that is cacheable: its URL carries
+    // a ?v=<avatar.updatedAt> version, so a cached copy stays correct until the
+    // photo is replaced. Caching it here is what stops the "বারবার লোডিং" — the
+    // blanket no-store below re-downloads the bytes on every render.
+    if (request.method === 'GET' && requestUrl.pathname === '/api/auth/v1/profile/avatar') {
+      event.respondWith((async () => {
+        const cache = await caches.open(AVATAR_CACHE);
+        // Cache-first: the ?v= version makes the URL immutable, so a hit is
+        // always the right bytes and costs no network at all.
+        const cached = await cache.match(request);
+        if (cached) return cached;
+        try {
+          const fresh = await fetch(request, { cache: 'no-store' });
+          if (fresh && fresh.ok) {
+            await cache.put(request, fresh.clone()).catch(() => {});
+            // Exactly one avatar version is kept; older ?v= entries are dropped.
+            for (const key of await cache.keys()) {
+              if (key.url !== request.url) await cache.delete(key).catch(() => {});
+            }
+          }
+          return fresh;
+        } catch (_) {
+          return new Response(JSON.stringify({
+            ok: false, error: { code: 'OFFLINE', message: 'অ্যাকাউন্ট সেবার জন্য ইন্টারনেট সংযোগ প্রয়োজন।' }
+          }), {
+            status: 503,
+            headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' }
+          });
+        }
+      })());
+      return;
+    }
     event.respondWith(fetch(request, { cache: 'no-store' }).catch(() => new Response(JSON.stringify({
       ok: false, error: { code: 'OFFLINE', message: 'অ্যাকাউন্ট সেবার জন্য ইন্টারনেট সংযোগ প্রয়োজন।' }
     }), {

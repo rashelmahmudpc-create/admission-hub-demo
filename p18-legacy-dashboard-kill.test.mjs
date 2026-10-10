@@ -30,7 +30,7 @@ test('production code contains no superseded command-center markers', (() => {
 
 test('HTML and service worker are no-cache controlled', HEADERS.includes('/sw.js') && HEADERS.includes('/index.html') && HEADERS.includes('Cache-Control: no-cache'));
 test('dashboard and app-shell build markers are current',
-  H.includes('dashboard-v2.js?v=dash2f15-inbox') && SW.includes('dashboard-v2.js?v=dash2f15-inbox') &&
+  H.includes('dashboard-v2.js?v=dash2f16-avatar-cache') && SW.includes('dashboard-v2.js?v=dash2f16-avatar-cache') &&
 
   SW.includes("const BUILD_ID = 'v299-p11-adaptive-20261010'") && H.includes('sw.js?v=v299-p11-adaptive-20261010'));
 

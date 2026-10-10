@@ -113,14 +113,14 @@ test('index.html: Profile tab (6th) wired into bottom nav + router', () => {
 test('index.html: profile assets linked with versions (v262)', () => {
   assert.match(HTML, /<link rel="stylesheet" href="\.\/profile-ui\.css\?v=profile-v15-uni-tap">/);
   assert.match(HTML, /<script defer src="\.\/academic-catalog\.js\?v=acad-cat-v2"><\/script>/);
-  assert.match(HTML, /<script defer src="\.\/profile-ui\.js\?v=profile-v17-uni-tap"><\/script>/);
+  assert.match(HTML, /<script defer src="\.\/profile-ui\.js\?v=profile-v18-avatar-cache"><\/script>/);
 });
 
 test('sw.js caches the profile assets (v262)', () => {
 
   assert.match(SW, /const BUILD_ID = 'v299-p11-adaptive-20261010';/);
   assert.match(SW, /'\.\/academic-catalog\.js\?v=acad-cat-v2',/);
-  assert.match(SW, /'\.\/profile-ui\.js\?v=profile-v17-uni-tap',/);
+  assert.match(SW, /'\.\/profile-ui\.js\?v=profile-v18-avatar-cache',/);
   assert.match(SW, /'\.\/profile-ui\.css\?v=profile-v15-uni-tap',/);
 });
 
@@ -247,6 +247,19 @@ test('avatar URL is version-scoped, never cache-busted per render', () => {
   // the URL on avatar.updatedAt so the browser caches it.
   assert.match(UI, /\$\{API\}\/profile\/avatar\?v=\$\{avatarVersion\(\)\}/);
   assert.doesNotMatch(UI, /profile\/avatar\?ts=/);
+});
+
+test('service worker caches the versioned avatar instead of forcing no-store', () => {
+  // The blanket `cache: 'no-store'` on /api/auth/ re-downloaded the photo on
+  // every render, which is the "বারবার লোডিং" the owner saw. The avatar has its
+  // own cache-first branch, keyed by the versioned URL.
+  assert.match(SW, /const AVATAR_CACHE = 'admission-hub-avatar-v1';/);
+  assert.match(SW, /requestUrl\.pathname === '\/api\/auth\/v1\/profile\/avatar'/);
+  assert.match(SW, /await caches\.open\(AVATAR_CACHE\)/);
+  // Cache-first: it must return the cached copy before touching the network.
+  const branch = SW.slice(SW.indexOf("=== '/api/auth/v1/profile/avatar'"));
+  const put = branch.indexOf('cache.put');
+  assert.ok(branch.indexOf('if (cached) return cached;') < put, 'cache hit must short-circuit the fetch');
 });
 
 test('profile css: bottom sheet, toast, skeleton, 320px-safe wrap', () => {
@@ -637,10 +650,10 @@ test('v263: truncated-script self-heal (owner bug: "SyntaxError: Unexpected EOF"
 test('v264: poisoned-cache fix — asset re-pin, no-store SW fetch, digest-verified precache', () => {
   // New cache keys for every shell asset (device HTTP/SW caches held a
   // truncated copy from the network-blip window — new URL = clean fetch).
-  assert.match(HTML, /profile-ui\.js\?v=profile-v17-uni-tap/);
+  assert.match(HTML, /profile-ui\.js\?v=profile-v18-avatar-cache/);
   assert.match(HTML, /profile-ui\.css\?v=profile-v15-uni-tap/);
   assert.match(HTML, /academic-catalog\.js\?v=acad-cat-v2/);
-  assert.match(HTML, /dashboard-v2\.js\?v=dash2f15-inbox/);
+  assert.match(HTML, /dashboard-v2\.js\?v=dash2f16-avatar-cache/);
   assert.match(HTML, /session-persist\.js\?v=session-v2/);
   // SW runtime asset fetches never consult the browser HTTP cache
   assert.match(SW, /fetch\(request, \{ cache: 'no-store', signal: controller\.signal \}\)/);
