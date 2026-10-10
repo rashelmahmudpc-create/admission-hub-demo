@@ -64,3 +64,10 @@ test('p15-05: the worker refuses a corrupt download and can be told to take over
   assert.match(sw, /SKIP_WAITING/, 'the update flow needs a skipWaiting escape hatch');
   assert.match(sw, /DOCUMENT_NETWORK_TIMEOUT_MS/, 'a stalled navigation must not hang offline');
 });
+
+test('p15-06: the install-guide pop-up ships and is precached', () => {
+  assert.ok(sw.includes('install-guide.js'), 'the install guide must be in the app shell');
+  assert.ok(sw.includes('install-guide.css'), 'the install guide styles must be in the app shell');
+  assert.match(indexHtml, /\.\/install-guide\.js/, 'index.html must load the install guide');
+  assert.match(indexHtml, /\.\/install-guide\.css/, 'index.html must link the install guide styles');
+});

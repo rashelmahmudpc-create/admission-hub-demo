@@ -48,6 +48,8 @@ const APP_SHELL = [
   './p13-performance-core.js?v=p13-core-v1',
   './p13-performance-runtime.js?v=p13-runtime-v1',
   './student-data-sync.js?v=student-sync-v1',
+  './install-guide.css?v=install-v1',
+  './install-guide.js?v=install-v1',
   './icons/icon-192.png',
   './icons/icon-512.png'
 ];
@@ -56,7 +58,7 @@ const APP_SHELL = [
 // A truncated/corrupt download is NEVER written to the shell cache.
 const ASSET_DIGESTS = {
 /* sw-manifest:start */
-  "./index.html": "eb5fc4e09b574a2ca2129cc42aaf8cf66e6df8121613bcc61dd4c35bc7fb80da",
+  "./index.html": "c7348f26cac69caaff75befa2a67b9208b29febc716de91bba8170a48888a3ad",
   "./manifest.json": "11a85ae594fc629b11605daeda3f9afe4ef95215a55a29f9cc423314bfb275a4",
   "./manifest.webmanifest": "5be476009a140eabd088bd972bd4d345b9c4f4a055cd6e4f08774b9cb4afaf52",
   "./dashboard-v2.css?v=dash2f13-theme": "4541bc1e65fd158c593443562975400d128b8f1d3b636595df3c235b99e8cced",
@@ -87,6 +89,8 @@ const ASSET_DIGESTS = {
   "./p13-performance-core.js?v=p13-core-v1": "a51cc8a619d04b2f7b2bed2d4752a2d4c1da652f9e2034faacd47addf8cdcdca",
   "./p13-performance-runtime.js?v=p13-runtime-v1": "60fb332e307a6606e3dec74100fbb2b4337d4497c6d0fe3ee2e40e0470c1391a",
   "./student-data-sync.js?v=student-sync-v1": "8a8b93fc710b39fa22b92dce6cf5036102cdd688a852a5bd448a3a9c9edcf2aa",
+  "./install-guide.css?v=install-v1": "781d09eb622c012f48e1c8abc6f0de3cd7f4be32bcd18ecd4bea8f16a63ef096",
+  "./install-guide.js?v=install-v1": "2e3840f0ebdd0697c04ce909afda32b2b106100199bc53d7799f9b667dc3e21e",
   "./icons/icon-192.png": "777ce5566fbeff0f2e384c787c8dde4f47d7c869e455c6e577a503decd4f1683",
   "./icons/icon-512.png": "86459109582f82b1d891a3e5a82723fefd21a3c65e9d0d22ab4dae33bb540520",
 /* sw-manifest:end */
