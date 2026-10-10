@@ -39,7 +39,7 @@ const mount=async()=>{
   swipe.tabIndex=0;swipe.setAttribute('role','region');swipe.setAttribute('aria-roledescription','carousel');swipe.setAttribute('aria-label','Admission Hub features');
   const hadFocus=view.contains(document.activeElement);
   view.className='ah-account-view ah-welcome-live';view.dataset.welcomeUpgrade=version;view.replaceChildren(board);view.style.visibility='';page.classList.add('ah-welcome-upgraded');
-  (function(){var c='#f7f6fb';var m=document.querySelector('meta[name="theme-color"]');if(!m){m=document.createElement('meta');m.name='theme-color';document.head.appendChild(m)}m.setAttribute('content',c);document.documentElement.style.backgroundColor=c;document.body&&(document.body.style.backgroundColor=c);})();
+  (function(){var c=(getComputedStyle(document.documentElement).getPropertyValue('--bg')||'').trim()||'#f7f6fb';var m=document.querySelector('meta[name="theme-color"]');if(!m){m=document.createElement('meta');m.name='theme-color';document.head.appendChild(m)}m.setAttribute('content',c);document.documentElement.style.backgroundColor=c;document.body&&(document.body.style.backgroundColor=c);})();
   let slide=0,timer=null,paused=matchMedia('(prefers-reduced-motion: reduce)').matches,hover=false,focused=false,start=null;
   const render=n=>{
    slide=(n+6)%6;const[accent,btn,ink,rgb]=themes[slide];
