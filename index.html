@@ -5082,16 +5082,16 @@ window.__admissionBootPromise.catch(error => console.error('[Admission Hub] boot
     // The updated worker takes control now; the current document remains usable and the next launch uses the new shell.
     try{
 
-      const expectedSwVersion = 'v294-p06-cardless-20261010';
+      const expectedSwVersion = 'v295-p07-question-engine-20261010';
       // register() on the same scope performs an in-place update. Never unregister
       // the active iOS worker first: that discards the instant offline shell.
-      const registration=await navigator.serviceWorker.register('./sw.js?v=v294-p06-cardless-20261010',{scope:'./',updateViaCache:'none'});
+      const registration=await navigator.serviceWorker.register('./sw.js?v=v295-p07-question-engine-20261010',{scope:'./',updateViaCache:'none'});
       await registration.update().catch(()=>{});
       // Purge every old app-shell cache (any build id ≠ current). This guarantees
       // stale pre-retirement application shells can never be served from cache again.
       try {
 
-        const cur = 'admission-hub-shell-v294-p06-cardless-20261010';
+        const cur = 'admission-hub-shell-v295-p07-question-engine-20261010';
         const names = await caches.keys();
         for (const name of names) {
           if (name.startsWith('admission-hub-shell-') && name !== cur) await caches.delete(name).catch(()=>{});
@@ -5229,6 +5229,8 @@ window.__admissionBootPromise.catch(error => console.error('[Admission Hub] boot
 <script defer src="./academic-catalog.js?v=acad-cat-v2"></script>
 <script defer src="./profile-ui.js?v=profile-v17-uni-tap"></script>
 <script defer src="./ai-agent-chat.js?v=agent-f1-ui-p06chat"></script>
+<script defer src="./question-engine.js?v=qe1"></script>
+<script defer src="./question-engine-panel.js?v=qe1"></script>
 <script defer src="qbank-redesign.js?v=practice15"></script>
 <script defer src="urgent-fix.js?v=practice14"></script>
 <script defer src="phase12-ui.js?v=nav-resume-router-v11-main-ai"></script>
@@ -5237,7 +5239,7 @@ window.__admissionBootPromise.catch(error => console.error('[Admission Hub] boot
 <script defer src="phase1-upgrade.js?v=4-nosplash"></script>
 <script defer src="study-tools-restore.js?v=3"></script>
 <script defer src="urgent-topic-fix.js?v=practice10"></script>
-<script defer src="phase2-dictionary-parser.js?v=5"></script>
+<script defer src="phase2-dictionary-parser.js?v=6"></script>
 <script defer src="phase3-question-bank-route.js?v=practice10"></script>
 <script defer src="routine90.js?v=design-mint-card-v2"></script>
 <script defer src="routine90-parser.js?v=1"></script>
@@ -5318,7 +5320,7 @@ setTimeout(() => { if (location.hash.replace(/^#/, '').split('?')[0] === 'dictio
 })();
 </script>
 
-<script defer src="admission-hub-feature-suite.js?v=clear-topic-questions-v12"></script>
+<script defer src="admission-hub-feature-suite.js?v=clear-topic-questions-v13"></script>
 <script defer src="mistake-analysis.js?v=gemini-v4-0816"></script>
 <script defer src="question-bank-performance.js?v=11-aiex"></script>
 <script defer src="hierarchy-and-exam-fix.js?v=19-clear-topic-questions"></script>

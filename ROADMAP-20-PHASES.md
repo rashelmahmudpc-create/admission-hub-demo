@@ -50,9 +50,10 @@
 **আছে:** AI-mentor (Gemini) · `result-ai-analysis` · `mistake-analysis` · Admihub AI-চ্যাট (ডেটা-মেমোরি: "এজেন্ট তোমার ব্যাংক থেকেই উত্তর") · weekly-report-tool।
 **বাকি:** ① সত্যিকারের পার্সোনালাইজেশন: ইউজারের accuracy/weak-topic/সময়-ডেটা AI-প্রম্পটে ইনজেকশন ② "তোমার এই topic-এ accuracy কম → এটা revise করো" ধরনের শিক্ষা-রেকমেন্ডেশন ③ টিউটর-কনভারসেশন-মেমোরি (prior sessions)।
 
-## 🧬 P07 — Intelligent Question Engine — 🔴 ~২৫%
+## 🧬 P07 — Intelligent Question Engine — ✅ **সম্পন্ন (২০২৬-১০-১০, sw v295)**
 **আছে:** per-question মেটাডেটা (subject/topic/sub-topic) · dictionary-parser-এ duplicate-protection · qbank-performance · phase3-intelligence · interactive-course।
-**বাকি (প্রায় সব):** ① Difficulty/type/concept/expected-time ট্যাগ ② AI-ভিত্তিক duplicate+similarity ডিটেকশন ③ difficulty-অনুমান ④ explanation-কোয়ালিটি-চেক ⑤ answer-consistency ভেরিফিকেশন ⑥ বিশ্লেষণ-প্যানেল (লাখ-প্রশ্ন-রেডি)।
+**নতুন (সম্পূর্ণ ইঞ্জিন):** `question-engine.js` — difficulty/type/concept/expected-time ট্যাগ · দৃঢ় similarity (word-Jaccard + char-Dice) · blocked duplicate-detection (লাখ-প্রশ্ন-রেডি) · explanation-কোয়ালিটি-চেক · answer-consistency ভেরিফিকেশন · single-pass `analyzeBank`। `question-engine-panel.js` — প্রশ্নভান্ডারের বিশ্লেষণ-প্যানেল (difficulty/type মিক্স, কোয়ালিটি-গ্যাপ, ডুপ্লিকেট-গ্রুপ) + এক-ট্যাপে ট্যাগ-রাইট-ব্যাক। টেস্ট: `question-engine.test.mjs` ২০/২০।
+**অবস্থা:** ছয়টিই সম্পন্ন। ভবিষ্যৎ-ঐচ্ছিক: ইম্পোর্টের সময়েই স্বয়ংক্রিয়ভাবে ট্যাগ বসানো (এখন প্যানেল থেকে এক-ট্যাপে হয়), এবং ব্যবহার-ডেটা বাড়লে difficulty-অনুমান আরও নিখুঁত হবে।
 
 ## 📝 P08 — World-Class Exam Engine — 🟡 ~৭০%
 **আছে:** Mock/Flash/Mistake টেস্ট · exam-dropdowns · session-persist (route+scroll, PWA-reopen) · nav-resume · mock-result-experience · result-analysis-500 · one-time-mock-seed/tool · টাইমার/নেগেটিভ-মার্ক/র্যান্ডমাইজেশন (আংশিক)।
