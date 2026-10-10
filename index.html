@@ -5082,16 +5082,16 @@ window.__admissionBootPromise.catch(error => console.error('[Admission Hub] boot
     // The updated worker takes control now; the current document remains usable and the next launch uses the new shell.
     try{
 
-      const expectedSwVersion = 'v290-analytics-dashboard-20260925';
+      const expectedSwVersion = 'v291-ai-duplicate-turn-20261010';
       // register() on the same scope performs an in-place update. Never unregister
       // the active iOS worker first: that discards the instant offline shell.
-      const registration=await navigator.serviceWorker.register('./sw.js?v=v290-analytics-dashboard-20260925',{scope:'./',updateViaCache:'none'});
+      const registration=await navigator.serviceWorker.register('./sw.js?v=v291-ai-duplicate-turn-20261010',{scope:'./',updateViaCache:'none'});
       await registration.update().catch(()=>{});
       // Purge every old app-shell cache (any build id ≠ current). This guarantees
       // stale pre-retirement application shells can never be served from cache again.
       try {
 
-        const cur = 'admission-hub-shell-v290-analytics-dashboard-20260925';
+        const cur = 'admission-hub-shell-v291-ai-duplicate-turn-20261010';
         const names = await caches.keys();
         for (const name of names) {
           if (name.startsWith('admission-hub-shell-') && name !== cur) await caches.delete(name).catch(()=>{});
@@ -5228,7 +5228,7 @@ window.__admissionBootPromise.catch(error => console.error('[Admission Hub] boot
 <script defer src="./dashboard-v2.js?v=dash2f15-inbox"></script>
 <script defer src="./academic-catalog.js?v=acad-cat-v2"></script>
 <script defer src="./profile-ui.js?v=profile-v17-uni-tap"></script>
-<script defer src="./ai-agent-chat.js?v=agent-f1-ui-chatv20-autoprefs"></script>
+<script defer src="./ai-agent-chat.js?v=agent-f1-ui-dupturnfix"></script>
 <script defer src="qbank-redesign.js?v=practice15"></script>
 <script defer src="urgent-fix.js?v=practice14"></script>
 <script defer src="phase12-ui.js?v=nav-resume-router-v11-main-ai"></script>

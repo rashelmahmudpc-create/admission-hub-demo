@@ -109,10 +109,10 @@ await test('content hydration is public and account-independent',
 
 await test('service-worker build and HTML registration are synchronized',
 
-  SW.includes("const BUILD_ID = 'v290-analytics-dashboard-20260925'") &&
-  H.includes("const expectedSwVersion = 'v290-analytics-dashboard-20260925'") &&
-  H.includes('sw.js?v=v290-analytics-dashboard-20260925') &&
-  H.includes('admission-hub-shell-v290-analytics-dashboard-20260925'));
+  SW.includes("const BUILD_ID = 'v291-ai-duplicate-turn-20261010'") &&
+  H.includes("const expectedSwVersion = 'v291-ai-duplicate-turn-20261010'") &&
+  H.includes('sw.js?v=v291-ai-duplicate-turn-20261010') &&
+  H.includes('admission-hub-shell-v291-ai-duplicate-turn-20261010'));
 await test('service-worker shell cannot cache retired assets', retiredMarkers.every(marker => !SW.includes(marker)));
 await test('premium account and institution assets use synchronized cache-busting versions',
   ['account-access.css?v=20260921-single-email-button-fallback', 'account-access.js?v=20260921-single-email-button-fallback', 'institutions-bd.js?v=bd-institutions-v2']
@@ -124,8 +124,8 @@ await test('premium Auth UI/server contract and curated-manual institution polic
   AUTH_HANDLER.includes("version: 'premium-onboarding-v1'") &&
   INSTITUTIONS.includes("coverage: 'curated-starter-index'") && INSTITUTIONS.includes("mode: 'manual'"));
 await test('main-app AI client is versioned in the public shell while prior shells are still purged',
-  SW.includes('ai-agent-chat.js?v=agent-f1-ui-chatv20-autoprefs') &&
-  H.includes('ai-agent-chat.js?v=agent-f1-ui-chatv20-autoprefs') &&
+  SW.includes('ai-agent-chat.js?v=agent-f1-ui-dupturnfix') &&
+  H.includes('ai-agent-chat.js?v=agent-f1-ui-dupturnfix') &&
   H.includes("name.startsWith('admission-hub-shell-')") && SW.includes('.filter(key => key !== CACHE_NAME)'));
 
 const forbiddenWorkerRoutes = retiredRoutes.filter(route => !route.startsWith('/api/admin/'));

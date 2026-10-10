@@ -1029,7 +1029,18 @@ function validateChatReq(body) {
     msgs.push({ role, content: content.trim(), image });
   }
   if (total > 2e4) return { ok: false, code: "context_too_long", message: "বার্তার মোট আকার খুব বড়।" };
-  return { ok: true, messages: msgs, fresh: body.fresh === true };
+  const merged = [];
+  for (const mm of msgs) {
+    const prev = merged[merged.length - 1];
+    if (prev && prev.role === "user" && mm.role === "user") {
+      prev.content = `${prev.content}
+${mm.content}`.slice(0, 4e3);
+      if (!prev.image && mm.image) prev.image = mm.image;
+    } else {
+      merged.push({ ...mm });
+    }
+  }
+  return { ok: true, messages: merged, fresh: body.fresh === true };
 }
 var ONBOARDING_ACTIONS = /* @__PURE__ */ new Set([
   "focus-name",

@@ -14,7 +14,7 @@ const PAGES_GUARD = read('.github/workflows/cf-pages.yml');
 const RELEASE_WORKFLOW = read('.github/workflows/telegram-auth-canary-activate.yml');
 const UI_VERSION = '20260921-single-email-button-fallback';
 
-const SHELL_VERSION = 'v290-analytics-dashboard-20260925';
+const SHELL_VERSION = 'v291-ai-duplicate-turn-20261010';
 
 const between = (source, start, end) => {
   const from = source.indexOf(start);
@@ -116,8 +116,8 @@ test('unsupported verification methods remain truthful and fail closed', () => {
 test('Signup Assistant is removed while the ordinary app AI remains available', () => {
   assert.doesNotMatch(JS, /ASSISTANT_ENABLED|data-role="guide|ah-guide|AI Assistant|context:\s*\{\s*onboarding/);
   assert.doesNotMatch(CSS, /\.ah-guide|\.ah-assistant-hint/);
-  assert.match(HTML, /ai-agent-chat\.js\?v=agent-f1-ui-chatv20-autoprefs/);
-  assert.match(SW, /ai-agent-chat\.js\?v=agent-f1-ui-chatv20-autoprefs/);
+  assert.match(HTML, /ai-agent-chat\.js\?v=agent-f1-ui-dupturnfix/);
+  assert.match(SW, /ai-agent-chat\.js\?v=agent-f1-ui-dupturnfix/);
   // bottom-nav AI tab সরানো হয়েছে — AI এখন dashboard-এর Command Center + সরাসরি /ai রুট।
   assert.doesNotMatch(HTML, /\{key:'ai'/);
   assert.doesNotMatch(HTML, /juju-floating\.js/);

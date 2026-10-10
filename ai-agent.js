@@ -90,7 +90,20 @@ export function validateChatReq(body) {
     msgs.push({ role, content: content.trim(), image });
   }
   if (total > 20000) return { ok: false, code: 'context_too_long', message: 'বার্তার মোট আকার খুব বড়।' };
-  return { ok: true, messages: msgs, fresh: body.fresh === true };
+  /* Collapse consecutive user turns. A model reads two identical consecutive
+     user messages as one combined input (৮ + ৮ → ৮৮); merging them means no
+     caller can ever duplicate a turn downstream. */
+  const merged = [];
+  for (const mm of msgs) {
+    const prev = merged[merged.length - 1];
+    if (prev && prev.role === 'user' && mm.role === 'user') {
+      prev.content = `${prev.content}\n${mm.content}`.slice(0, 4000);
+      if (!prev.image && mm.image) prev.image = mm.image;
+    } else {
+      merged.push({ ...mm });
+    }
+  }
+  return { ok: true, messages: merged, fresh: body.fresh === true };
 }
 
 const ONBOARDING_ACTIONS = new Set([

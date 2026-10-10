@@ -1721,7 +1721,13 @@
     return hist.slice(-MAX_HISTORY);
   }
   async function callStream(userText, image) {
-    const prior = history();
+    let prior = history();
+    /* send() pushes the current turn onto msgs before calling us, so history()
+       already contains it. Appending userText again sent the same user turn to
+       the model twice — it read "৮" + "৮" as the single input "৮৮". Drop the
+       trailing copy that send() just added, then append the turn once below. */
+    const last = prior[prior.length - 1];
+    if (last && last.role === 'user' && last.content === userText) prior = prior.slice(0, -1);
     const hist = prior.concat([{ role: 'user', content: userText, ...(image ? { image } : {}) }]);
     /* No prior turns means this is the opening message of a brand-new thread
        ("New Chat", or the first message after a reload with an empty session).
