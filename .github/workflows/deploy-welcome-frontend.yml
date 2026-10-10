@@ -1,0 +1,49 @@
+name: Deploy Welcome UI (frontend only)
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type DEPLOY_FRONTEND to publish Pages UI only; backend Worker is untouched
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: admission-hub-pages-deploy
+  cancel-in-progress: false
+jobs:
+  pages:
+    if: ${{ inputs.confirmation == 'DEPLOY_FRONTEND' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Validate isolated welcome UI
+        run: |
+          node --check welcome-onboarding.js
+          node --check app-seed.js
+          node --test welcome-onboarding.test.mjs
+          npm run check:sw-manifest
+      - name: Build sanitized frontend bundle
+        run: |
+          set -eu
+          rm -rf dist
+          mkdir -p dist
+          rsync -a --exclude='.git' --exclude='node_modules' --exclude='dist' --exclude='docs' --exclude='AGENT_RESUME' --exclude='ai-proxy' --exclude='auth' --exclude='auth-native' --exclude='email-gateway' --exclude='apps-script' --exclude='uploads' --exclude='.github' --exclude='gk-agent-worker.js' --exclude='public-worker.js' --exclude='ai-agent.js' --exclude='worker-bundle.mjs' --exclude='voice-worker.js' --exclude='notification-worker.js' --exclude='fcm-notification.mjs' --exclude='wrangler.toml' --exclude='package.json' --exclude='package-lock.json' --exclude='*.test.mjs' --exclude='*.md' ./ dist/
+          node scripts/build-welcome-pages.mjs dist
+          test -s dist/index.html
+          test -s dist/sw.js
+          test -s dist/welcome-onboarding.html
+      - name: Deploy Pages frontend only
+        uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: '4.35.0'
+          command: pages deploy dist --project-name admissionhub --branch main --commit-hash ${{ github.sha }}

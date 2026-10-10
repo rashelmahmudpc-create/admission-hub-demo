@@ -1,0 +1,22 @@
+/* Build-time frontend cache refresh. Never writes backend sources or deploys a Worker. */
+import {readFileSync,writeFileSync} from 'node:fs';
+import {join,resolve} from 'node:path';
+import {spawnSync} from 'node:child_process';
+const root=resolve(process.argv[2]||'dist');
+const version='welcome-native-20261010-v1';
+const indexPath=join(root,'index.html');
+let html=readFileSync(indexPath,'utf8');
+const matches=html.match(/app-seed\.js\?v=[^"']+/g)||[];
+if(matches.length!==1)throw Error('Expected exactly one existing app-seed loader');
+html=html.replace(matches[0],`app-seed.js?v=${version}`);
+writeFileSync(indexPath,html);
+const swPath=join(root,'sw.js');
+let sw=readFileSync(swPath,'utf8');
+const release=(process.env.GITHUB_SHA||'local-preview').slice(0,12);
+sw=sw.replace(/const BUILD_ID = '[^']*';/,`const BUILD_ID = 'welcome-${release}';`);
+const additions=['app-seed.js','welcome-onboarding.css','welcome-onboarding.js','welcome-onboarding.html'];
+sw=sw.replace('const APP_SHELL = [','const APP_SHELL = [\n'+additions.map(path=>`  './${path}?v=${version}',`).join('\n'));
+writeFileSync(swPath,sw);
+const result=spawnSync(process.execPath,[join(root,'scripts/sw-manifest.mjs')],{stdio:'inherit'});
+if(result.status!==0)process.exit(result.status||1);
+console.log('Welcome frontend build: versioned loader, isolated UI and offline cache updated.');
