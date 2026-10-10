@@ -1,0 +1,45 @@
+name: Voice — list Cartesia voices (manual)
+
+# Throwaway discovery job: prints the Cartesia voice catalogue so a male
+# Bengali-capable voice can be chosen. Deploy-only/discovery: touches no secret,
+# no worker, no code.
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type LIST to dump the Cartesia voice catalogue
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  list:
+    if: ${{ inputs.confirmation == 'LIST' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Dump Cartesia voices
+        env:
+          CARTESIA_API_KEY: ${{ secrets.CARTESIA_API_KEY }}
+        run: |
+          set -eu
+          curl -s --max-time 30 "https://api.cartesia.ai/voices?limit=100" \
+            -H "Cartesia-Version: 2026-08-14" \
+            -H "Authorization: Bearer $CARTESIA_API_KEY" \
+            -o /tmp/voices.json
+          echo "bytes: $(wc -c </tmp/voices.json)"
+          node -e '
+            const j = JSON.parse(require("fs").readFileSync("/tmp/voices.json","utf8"));
+            const arr = Array.isArray(j) ? j : (j.data || j.voices || []);
+            console.log("count:", arr.length);
+            const bn = arr.filter(v => /bn|bengali/i.test(String(v.language||v.primary_language||"")));
+            console.log("bn-tagged:", bn.length);
+            for (const v of bn) console.log("BN |", v.id, "|", v.name, "|", JSON.stringify(v.gender||""), "|", v.language||v.primary_language||"");
+            const male = arr.filter(v => /male|man|boy/i.test(String(v.gender||"")) );
+            console.log("male-tagged:", male.length);
+            for (const v of male.slice(0,40)) console.log("M |", v.id, "|", v.name, "|", JSON.stringify(v.gender||""), "|", v.language||v.primary_language||"");
+            console.log("--- first 12 sample ---");
+            for (const v of arr.slice(0,12)) console.log(v.id, "|", v.name, "|", JSON.stringify(Object.keys(v)));
+          '
