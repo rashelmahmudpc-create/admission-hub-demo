@@ -12,7 +12,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { SCHEMA } from '../p13-d1-read.mjs';
 
 const DIFFICULTY = { easy: 1, medium: 2, hard: 3, mixed: 0 };
-const BATCH = 200;
+const BATCH = 25;
 
 const sqlStr = v => (v === null || v === undefined) ? 'NULL' : `'${String(v).replace(/'/g, "''")}'`;
 const sqlInt = v => { const n = Number(v); return Number.isFinite(n) ? String(Math.trunc(n)) : '0'; };

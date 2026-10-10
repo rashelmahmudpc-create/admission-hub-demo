@@ -53,9 +53,9 @@ test('p13b-05: quotes are escaped so a name with an apostrophe cannot break the 
 
 test('p13b-06: rows are batched into multiple INSERT statements', () => {
   const many = { questions: Array.from({ length: 450 }, (_, i) => ({ id: 'q' + i, topicId: 't', subjectId: 's', difficulty: 'mixed' })) };
-  const sql = buildSql(many, { now: 1, batch: 200 });
+  const sql = buildSql(many, { now: 1, batch: 25 });
   const inserts = sql.match(/INSERT INTO questions/g) || [];
-  assert.equal(inserts.length, 3, '450 rows at batch 200 = 3 statements');
+  assert.equal(inserts.length, 18, '450 rows at batch 25 = 18 statements (small enough to avoid SQLITE_TOOBIG)');
 });
 
 test('p13b-07: rows without an id are skipped, and JSON content parses', () => {
