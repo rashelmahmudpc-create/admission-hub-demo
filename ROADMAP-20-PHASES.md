@@ -88,9 +88,9 @@
 **আছে:** manifest.webmanifest (standalone+icons) · sw.js v299 (ক্যাশ-ভার্সনিং, build-header, শেল SHA-256 ডাইজেস্ট — নষ্ট ডাউনলোড কখনো ক্যাশ হয় না) · session-persist (visible-এ update-check) · student-data-sync (IndexedDB + রিট্রাই-কিউ, online-এ ফ্লাশ) · **ইনস্টল-পপ-আপ লাইভ — এক-ট্যাপ** (Android: সোজা ব্রাউজারের ইনস্টল-প্রম্পট; iPhone: বাটনে চাপলে ধাপ+অ্যানিমেটেড ডেমো, আগে থেকে দেখায় না), installed হলে নীরব, ১৪ দিনে একবার · **`npm run test:p15` গেট (১২/১২)**।
 **বাকি:** ① অফলাইন-প্র্যাকটিস/পরীক্ষা-র স্পষ্ট ফ্লো-গ্যারান্টি ② Background Sync API রেজিস্ট্রেশন ③ offline-ডেটা-বাউন্ডারি-ডক।
 
-## 🎨 P16 — UX/Accessibility/Device — 🟡 ~৫০%
-**আছে:** mobile-ux-fix · onboarding · experience-studio (themes/animation/hooks) · 3d-loader · touch-অপটিমাইজেশন · ভাষা-কাস্টম।
-**বাকি:** ① aria/focus-কভারেজ (মাত্র ২২ aria-attribute) ② keyboard-nav ③ screen-reader-যাচাই ④ dynamic-text ⑤ desktop/tablet-রেসপন্সিভ-অডিট ⑥ gesture-পলিশ।
+## 🎨 P16 — UX/Accessibility/Device — 🟡 ~৬০%
+**আছে:** mobile-ux-fix · onboarding · experience-studio (themes/animation/hooks) · 3d-loader · touch-অপটিমাইজেশন · ভাষা-কাস্টম · **a11y-core লাইভ** — কীবোর্ড-স্কিপ-লিংক, অ্যাপ-জুড়ে দৃশ্যমান ফোকাস-রিং, polite live-region (স্ক্রিন-রিডার ঘোষণা), reduced-motion-সম্মান (`npm run test:p16`, ৫/৫)।
+**বাকি:** ① বাকি icon-only বাটনে aria-label ② keyboard-nav-এর সম্পূর্ণ পথ ③ screen-reader-যাচাই ④ desktop/tablet-রেসপন্সিভ-অডিট ⑤ gesture-পলিশ।
 
 ## 🤖 P17 — AI Automation & Agents — 🟡 ~৪০%
 **আছে:** GK-এজেন্ট (দৈনিক cron, ৩-key failover, TG-নোটিফ) · notification-worker · voice-worker · admin-এজেন্ট-সিস্টেম+grants (AC-5) · bug-agent।
@@ -100,8 +100,8 @@
 **বাকি: সব** — ইউনিভার্সিটি/ইউনিট/সাবজেক্ট/টপিক-ম্যাপ · প্রশ্ন-প্যাটার্ন-বিশ্লেষণ · priority/রিভিশন-প্ল্যান · weakness-report · data-driven গাইডেন্স (**নীতি-লক: কোনো rank-guarantee নয়** — blueprint-লেভেল থেকেই ঠিক)।
 
 ## 🌍 P19 — Production, SEO & Global Infrastructure — 🟡 ~৫০%
-**আছে:** live HTTPS (workers.dev) · title+description · CI-deploy (admin+public, GitHub Actions) · `/api/health` · আপডেট-লগ (sw-build-header) · PWA-মেটাডেটা।
-**বাকি:** ① **robots.txt + sitemap.xml (নেই — grep-প্রমাণ)** ② Open-Graph/সোশ্যাল-শেয়ার (`og:` কাউন্ট **0**) ③ কাস্টম-ডোমেইন — ✅ **ফ্রি-পথ সমাপ্ত**: https://admissionhub.pages.dev লাইভ (CF-Pages, ০-টাকা; docs/PHASE-19-DOMAIN.md) — নিজের-ডোমেইন ঐচ্ছিক-ভবিষ্যৎ (Freenom-মৃত) ④ সার্চ-ইনডেক্সিং-যাচাই ⑤ monitoring/error-tracking ⑥ backup/recovery ⑦ staging-env ⑧ Core-Web-Vitals-অডিট।
+**আছে:** live HTTPS (workers.dev) · title+description · CI-deploy (admin+public, GitHub Actions) · `/api/health` · আপডেট-লগ (sw-build-header) · PWA-মেটাডেটা · **robots.txt + sitemap.xml লাইভ** (যাচাই: ২০০, `Sitemap:`-উল্লেখসহ; আগের "নেই" টীকা ভুল ছিল) · **Open-Graph + Twitter কার্ড লাইভ** (og:*/twitter:* + og-image.png ২০০; আগের "০" টীকা ভুল ছিল) · **canonical লাইভ** · কাস্টম-ডোমেইন ✅ ফ্রি (https://admissionhub.pages.dev)।
+**বাকি:** ① সার্চ-ইনডেক্সিং-যাচাই (SE-এ সাবমিট) ② monitoring/error-tracking ③ backup/recovery ④ staging-env ⑤ Core-Web-Vitals-অডিট।
 
 ## 🚀 P20 — Final QA + World-Class Launch — 🔴 ০%
 **বাকি:** সম্পূর্ণ QA-ম্যাট্রিক্স (UI/workflow/exam/cloud/users/security/AI/performance/PWA/mobile/desktop) → আপনার নিজে ব্যবহার → **NO-লঞ্চ ছাড়া APPROVED**। শুধু আপনার "✅ APPROVED FOR PUBLIC LAUNCH"-এর পর।
