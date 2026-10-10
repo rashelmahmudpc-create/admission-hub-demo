@@ -1,0 +1,60 @@
+name: P13 D1 Backfill (manual)
+
+# Manual, additive migration for the P13 read path. It:
+#   1. pulls the LIVE /api/content document,
+#   2. generates idempotent SQL for the indexed `questions` table,
+#   3. applies it to the existing `admission-profile` D1 database,
+#   4. verifies the row count and writes a status file.
+# It never touches the KV content that is currently serving, so it is safe to
+# re-run. Turning the read path ON is a separate step (PUB_D1_CONTENT).
+#
+# Required repository secrets: CLOUDFLARE_API_TOKEN (D1:Edit),
+# CLOUDFLARE_ACCOUNT_ID.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type BACKFILL to load live content into the D1 questions table
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  backfill:
+    if: ${{ inputs.confirmation == 'BACKFILL' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Generate backfill SQL from the live content
+        run: |
+          set -eu
+          node scripts/p13-d1-backfill.mjs \
+            --url "https://admission-gk.admissionhub.workers.dev/api/content" \
+            --out backfill.sql
+          # Guard: never apply an empty file over a populated table.
+          test -s backfill.sql
+          grep -q "INSERT INTO questions" backfill.sql || { echo "no rows to insert"; exit 1; }
+      - name: Apply to D1
+        uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd # v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: '4.35.0'
+          command: d1 execute admission-profile --remote --file backfill.sql -y
+      - name: Verify the row count
+        uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd # v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: '4.35.0'
+          command: d1 execute admission-profile --remote --command "SELECT COUNT(*) AS rows FROM questions;"
