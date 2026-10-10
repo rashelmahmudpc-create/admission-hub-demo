@@ -42,6 +42,8 @@ const APP_SHELL = [
   './mistake-engine.js?v=p10-v1',
   './adaptive-engine.js?v=p11-v1',
   './adaptive-insights-panel.js?v=p11-v1',
+  './p13-performance-core.js?v=p13-core-v1',
+  './p13-performance-runtime.js?v=p13-runtime-v1',
   './student-data-sync.js?v=student-sync-v1',
   './icons/icon-192.png',
   './icons/icon-512.png'
@@ -51,7 +53,7 @@ const APP_SHELL = [
 // A truncated/corrupt download is NEVER written to the shell cache.
 const ASSET_DIGESTS = {
 /* sw-manifest:start */
-  "./index.html": "ca6fcf344527e5534816b98261a531428c9f3ce77586cc62675c5345b6fb0a24",
+  "./index.html": "8dc95d272908a271ed43edcd505f3ba6d88e28bea43fb3fe0f57efe0f59b7f64",
   "./manifest.json": "11a85ae594fc629b11605daeda3f9afe4ef95215a55a29f9cc423314bfb275a4",
   "./manifest.webmanifest": "5be476009a140eabd088bd972bd4d345b9c4f4a055cd6e4f08774b9cb4afaf52",
   "./dashboard-v2.css?v=dash2f13-theme": "4541bc1e65fd158c593443562975400d128b8f1d3b636595df3c235b99e8cced",
@@ -79,6 +81,8 @@ const ASSET_DIGESTS = {
   "./mistake-engine.js?v=p10-v1": "4266b9acb49107d4bf48cd88c0d82492d2324f351ca4b4235b6b156706b44f50",
   "./adaptive-engine.js?v=p11-v1": "4d684652043d4ab0fe38660546491a2c31f67264548cf4040be181aa39a63d45",
   "./adaptive-insights-panel.js?v=p11-v1": "bb3a42e5d386b2d3861ab088cf0a30354b981cb1b40c419603c0fbdf47fddb27",
+  "./p13-performance-core.js?v=p13-core-v1": "a51cc8a619d04b2f7b2bed2d4752a2d4c1da652f9e2034faacd47addf8cdcdca",
+  "./p13-performance-runtime.js?v=p13-runtime-v1": "60fb332e307a6606e3dec74100fbb2b4337d4497c6d0fe3ee2e40e0470c1391a",
   "./student-data-sync.js?v=student-sync-v1": "8a8b93fc710b39fa22b92dce6cf5036102cdd688a852a5bd448a3a9c9edcf2aa",
   "./icons/icon-192.png": "777ce5566fbeff0f2e384c787c8dde4f47d7c869e455c6e577a503decd4f1683",
   "./icons/icon-512.png": "86459109582f82b1d891a3e5a82723fefd21a3c65e9d0d22ab4dae33bb540520",
