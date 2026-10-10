@@ -64,6 +64,9 @@
 @keyframes ahig-tap{ 0%{transform:scale(1)} 35%{transform:scale(.82); background:var(--ah-brand-fill,#12a876); color:#fff}
   100%{transform:scale(1)} }
 
+.ahig-detail[hidden]{ display:none; }
+.ahig-detail{ animation:ahig-fade .25s ease both; }
+
 .ahig-howtitle{ margin:0 0 8px; font-size:.86rem; font-weight:700; color:var(--ah-ink,#123d35); text-align:left; }
 .ahig-steps{
   margin:0 0 14px; padding:12px 16px 12px 34px; text-align:left;

@@ -31,7 +31,7 @@ function boot({ ua = 'Mozilla/5.0 (Linux; Android 13)', standalone = false, stor
   return w;
 }
 
-t('ig-01: on Android it offers the real install action and Android steps', async () => {
+t('ig-01: Android shows ONE primary button that opens the native install prompt', async () => {
   const w = boot({ ua: 'Mozilla/5.0 (Linux; Android 13; Pixel 7)' });
   assert.equal(w.AhInstallGuide.platform(), 'android');
   const ok = await w.AhInstallGuide.show();
@@ -39,28 +39,29 @@ t('ig-01: on Android it offers the real install action and Android steps', async
   const card = w.document.querySelector('.ahig-card');
   assert.ok(card, 'the pop-up renders');
   assert.match(w.document.querySelector('.ahig-primary').textContent, /যোগ করুন/);
-  assert.match(w.document.querySelector('.ahig-steps').textContent, /মেনু/);
+  assert.equal(w.document.querySelector('.ahig-detail').hidden, true, 'steps are hidden until asked');
 });
 
-t('ig-02: on iPhone it shows the Share → Add to Home Screen steps', async () => {
+t('ig-02: iPhone leads with a button and keeps the steps tucked away', async () => {
   const w = boot({ ua: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)', touch: true });
   assert.equal(w.AhInstallGuide.platform(), 'ios');
   await w.AhInstallGuide.show();
-  const steps = w.document.querySelector('.ahig-steps').textContent;
-  assert.match(steps, /Add to Home Screen/);
-  assert.match(steps, /Share/);
+  assert.match(w.document.querySelector('.ahig-primary').textContent, /কীভাবে/);
+  assert.equal(w.document.querySelector('.ahig-detail').hidden, true);
 });
 
-t('ig-06: the animation demo shows the gesture and the result on the right platform', async () => {
+t('ig-06: tapping the button on iPhone reveals the steps and the animated demo', async () => {
   const w = boot({ ua: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)', touch: true });
   await w.AhInstallGuide.show();
-  const stage = w.document.querySelector('.ahig-stage');
-  assert.ok(stage, 'the demo stage renders');
+  w.document.querySelector('[data-action="install"]').click();
+  const detail = w.document.querySelector('.ahig-detail');
+  assert.equal(detail.hidden, false, 'the guide appears on demand');
+  const stage = detail.querySelector('.ahig-stage');
   assert.equal(stage.getAttribute('data-demo'), 'ios');
-  assert.ok(w.document.querySelector('[data-anim="tap"]'), 'there is a tap target');
-  assert.ok(w.document.querySelector('[data-anim="hit"]'), 'there is a highlighted menu row');
-  assert.ok(w.document.querySelector('[data-anim="land"]'), 'the resulting home-screen icon is shown');
-  assert.match(stage.textContent, /Add to Home Screen/);
+  assert.ok(detail.querySelector('[data-anim="tap"]'), 'there is a tap target');
+  assert.ok(detail.querySelector('[data-anim="hit"]'), 'there is a highlighted menu row');
+  assert.ok(detail.querySelector('[data-anim="land"]'), 'the resulting home-screen icon is shown');
+  assert.match(detail.textContent, /Add to Home Screen/);
 });
 
 t('ig-03: an installed app (standalone) is never interrupted', async () => {
@@ -88,7 +89,7 @@ t('ig-05: "পরে মনে করাব" snoozes, and the owner\'s copy is u
   await w.AhInstallGuide.show();
   const html = w.document.querySelector('.ahig-card').textContent;
   assert.match(html, /হাতের কাছেই/);
-  assert.match(html, /অফলাইনেও পড়তে/);
+  assert.match(html, /অফলাইনেও পড়া যাবে/);
   assert.doesNotMatch(html, /ইনস্টল করুন।/);
   w.document.querySelector('[data-action="later"]').click();
   assert.ok(JSON.parse(w.localStorage.getItem('ah-install-guide-v1')).dismissedAt > 0);
