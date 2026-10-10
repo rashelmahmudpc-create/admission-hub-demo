@@ -1,7 +1,7 @@
 /* Owner-supplied welcome design, native DOM. No API, authentication or account-state changes. */
 (() => {
 'use strict';
-const base=new URL('.',document.currentScript.src),version='welcome-native-20261010-v13';
+const base=new URL('.',document.currentScript.src),version='welcome-native-20261010-v14';
 const themes=[['#1d4ed8','#2563eb','#fff','37,99,235'],['#5b3df0','#6c4cf5','#fff','108,76,245'],['#078a68','#0a9a73','#fff','10,154,115'],['#d93f1c','#e8482a','#fff','232,72,42'],['#b8265a','#d6336c','#fff','214,51,108'],['#b45309','#ffb020','#2b1a00','255,176,32']];
 const english=[['All admission notices in one place','Never miss university, medical or GST admissions'],['Simple visual courses','Understand grammar with visuals and examples'],['Question bank and model tests','Sharpen your skills, one subject at a time'],['Learn from mistakes','See what went wrong and why the answer is correct'],['Track your progress','See clearly where you need to improve'],['AI help for any question','Ask when you get stuck and get a simple explanation']];
 let pending=false;
@@ -71,7 +71,7 @@ const mount=async()=>{
   document.addEventListener('visibilitychange',sync);
   const observer=new MutationObserver(sync);observer.observe(page,{attributes:true,attributeFilter:['hidden','data-current-view']});observer.observe(view,{attributes:true,attributeFilter:['hidden']});
   render(0);translate();sync();if(hadFocus)signup.focus({preventScroll:true});discover.disconnect();
- }catch(error){view.style.visibility='';console.warn('[welcome-ui] Original welcome retained:',error.message);}finally{pending=false;}
+ }catch(error){view.style.visibility='';view.classList.remove('ah-welcome-live');page.classList.remove('ah-welcome-upgraded');view.dataset.welcomeUpgrade='failed';console.warn('[welcome-ui] Original welcome controls restored:',error.message);}finally{pending=false;}
 };
 const discover=new MutationObserver(mount);discover.observe(document.documentElement,{childList:true,subtree:true});mount();window.addEventListener('pagehide',()=>discover.disconnect(),{once:true});
 })();
