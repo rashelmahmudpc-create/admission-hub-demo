@@ -1,0 +1,87 @@
+name: Voice Worker — deploy (manual)
+
+# Manual, deploy-only workflow for the admission-voice Worker (Cartesia + ElevenLabs
+# fallback). The Worker deploys outside the normal CI because it carries its own
+# KV binding and secrets; this workflow preserves the KV namespace and only
+# publishes the committed voice-worker.js source.
+#
+# Required repository secrets: CLOUDFLARE_API_TOKEN (Workers Scripts:Edit + KV:Read),
+# CLOUDFLARE_ACCOUNT_ID.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type DEPLOY to publish voice-worker.js to the admission-voice worker
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    if: ${{ inputs.confirmation == 'DEPLOY' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - name: Discover KV namespace and current secrets
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          INFLOWSKY_CLOUDFLARE_API_TOKEN: ${{ secrets.INFLOWSKY_CLOUDFLARE_API_TOKEN }}
+          INFLOWSKY_CLOUDFLARE_ACCOUNT_ID: ${{ secrets.INFLOWSKY_CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set +e
+          npm i -g wrangler@4.35.0 >/dev/null 2>&1
+          echo "::group::whoami"
+          wrangler whoami 2>&1 | sed -E 's/[0-9a-f]{32,}/<redacted>/g' || true
+          echo "::endgroup::"
+          echo "::group::kv namespace list"
+          wrangler kv namespace list 2>&1 || true
+          echo "::endgroup::"
+          echo "::group::admission-voice secrets (names only)"
+          wrangler secret list --name admission-voice 2>&1 || true
+          echo "::endgroup::"
+      - name: Deploy voice-worker.js with the preserved KV binding
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -eu
+          # Reuse the existing KV namespace so the level-2 audio cache survives.
+          KV_ID="$(wrangler kv namespace list 2>/dev/null | node -e '
+            let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{
+              try{const a=JSON.parse(s);const hit=a.find(n=>/voice/i.test(n.title||""))||a[0];
+                if(hit)process.stdout.write(hit.id);}catch(e){}
+            });')"
+          echo "KV namespace id found: ${KV_ID:+yes}"
+          {
+            echo 'name = "admission-voice"'
+            echo 'main = "voice-worker.js"'
+            echo 'compatibility_date = "2024-11-01"'
+            echo 'workers_dev = true'
+            if [ -n "$KV_ID" ]; then
+              echo '[[kv_namespaces]]'
+              echo 'binding = "VOICE_KV"'
+              echo "id = \"$KV_ID\""
+            fi
+          } > wrangler.voice.toml
+          wrangler deploy --config wrangler.voice.toml
+      - name: Verify the deployed worker
+        run: |
+          set -eu
+          sleep 5
+          for i in 1 2 3 4 5; do
+            body="$(curl -s --max-time 20 "https://admission-voice.admissionhub.workers.dev/health?cb=$RANDOM" || true)"
+            echo "health: $body"
+            echo "$body" | grep -q '"provider"' && break
+            sleep 6
+          done
+          echo "$body" | grep -q '"provider":"cartesia"' && echo "CARTESIA ACTIVE" || echo "CARTESIA NOT ACTIVE (check CARTESIA_API_KEY secret on the worker)"
+          code="$(curl -s --max-time 25 -o /tmp/v.mp3 -w '%{http_code}' -X POST "https://admission-voice.admissionhub.workers.dev/api/voice" -H 'Content-Type: application/json' -H 'X-AH-App: admission-hub' --data '{"word":"apple"}' || true)"
+          echo "voice POST: $code bytes=$(wc -c </tmp/v.mp3 2>/dev/null)"
