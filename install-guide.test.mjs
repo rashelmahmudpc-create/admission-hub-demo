@@ -84,6 +84,24 @@ t('ig-04: it shows once, then stays quiet for two weeks after a dismissal', asyn
   assert.equal(again, false, 'it does not nag within the snooze window');
 });
 
+t('ig-06: it never auto-opens over the welcome / account entry', async () => {
+  const w = boot();
+  // The entry screen is showing: the account page exists and is not hidden.
+  const page = w.document.createElement('div');
+  page.id = 'ah-account-page';
+  w.document.body.appendChild(page);
+  w.__ahigAutoDelay = 20;
+  w.document.dispatchEvent(new w.Event('DOMContentLoaded'));
+  await new Promise(r => setTimeout(r, 100));
+  assert.equal(w.document.querySelector('.ahig-card'), null, 'no modal over the entry screen');
+
+  // Once the student has entered (entry gone), the warm invitation may appear.
+  page.remove();
+  w.__ahigAutoDelay = 20;
+  await new Promise(r => setTimeout(r, 120));
+  assert.ok(w.document.querySelector('.ahig-card'), 'invitation returns after entry');
+});
+
 t('ig-05: "পরে মনে করাব" snoozes, and the owner\'s copy is used', async () => {
   const w = boot();
   await w.AhInstallGuide.show();

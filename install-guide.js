@@ -208,9 +208,28 @@
     return true;
   }
 
+  /* The welcome / account entry is on screen: a modal install pop-up here covers
+     the first thing a new student should see, so it reads as a blank screen.
+     Wait until the student has actually entered the app instead of nagging on
+     the front door. */
+  function entryShowing() {
+    try {
+      const page = document.getElementById('ah-account-page');
+      if (page && !page.hidden) return true;
+      if (document.querySelector('.ah-welcome-live')) return true;
+    } catch (_) {}
+    return false;
+  }
+  function autoDelay() {
+    const override = Number(window.__ahigAutoDelay);
+    return override > 0 ? override : AUTO_DELAY_MS;
+  }
   function maybeAutoShow() {
     if (isStandalone() || recentlyDismissed()) return;
-    setTimeout(() => { void show(); }, AUTO_DELAY_MS);
+    setTimeout(() => {
+      if (entryShowing()) { maybeAutoShow(); return; }
+      void show();
+    }, autoDelay());
   }
 
   if (document.readyState === 'loading') {
