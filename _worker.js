@@ -27,6 +27,10 @@ const isServerOnlyAsset = pathname => SERVER_ONLY_ASSETS.has(pathname) ||
    crawlers index unlimited duplicate pages. */
 const PUBLIC_ROUTES = new Set([
   '/', '/index.html',
+  /* The welcome UI fetches this template at runtime. Without the route the
+     fetch 404s and the app silently keeps the OLD welcome, so the new design
+     must stay reachable at both the clean and .html pathname. */
+  '/welcome-onboarding', '/welcome-onboarding.html',
   '/splash-preview', '/splash-preview.html',
   '/verification-control-center', '/verification-control-center.html',
   '/ai-performance-analysis-live', '/ai-performance-analysis-live.html',

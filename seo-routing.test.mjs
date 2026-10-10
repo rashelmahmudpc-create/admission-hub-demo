@@ -12,6 +12,7 @@ const REAL_FILES = new Map([
   ['/verification-control-center.html', 'text/html; charset=utf-8'],
   ['/ai-performance-analysis-live.html', 'text/html; charset=utf-8'],
   ['/notification-command-center.html', 'text/html; charset=utf-8'],
+  ['/welcome-onboarding.html', 'text/html; charset=utf-8'],
   ['/courses/prottoy/index.html', 'text/html; charset=utf-8'],
   ['/courses/prottoy-master/index.html', 'text/html; charset=utf-8'],
   ['/courses/sandhi/index.html', 'text/html; charset=utf-8'],
@@ -140,5 +141,15 @@ test('preview surfaces are reachable but marked noindex', async () => {
     '/verification-control-center.html', '/notification-command-center.html']) {
     const res = await get(path);
     assert.equal(res.status, 200, `${path} must stay reachable`);
+  }
+});
+
+test('the welcome UI template is reachable, not swallowed by the SPA 404 guard', async () => {
+  /* welcome-onboarding.js fetches this template at runtime; if it 404s the app
+     silently keeps the old welcome, so the route must never be retired. */
+  for (const path of ['/welcome-onboarding', '/welcome-onboarding.html']) {
+    const res = await get(path);
+    assert.equal(res.status, 200, `${path} must stay reachable`);
+    assert.match(res.headers.get('content-type'), /text\/html/, `${path} must be HTML`);
   }
 });
