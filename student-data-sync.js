@@ -107,7 +107,35 @@
       console.warn('[StudentSync] queue overflow — dropped oldest ops', dropped.length);
     }
     persistQueue();
+    requestBackgroundSync();
     scheduleFlush();
+  }
+
+  /* Ask the service worker to wake us when connectivity returns, even if this
+   * page has been closed. Best effort: Safari and some browsers do not support
+   * it, in which case the plain 'online' listener still flushes. */
+  function requestBackgroundSync() {
+    try {
+      if (typeof navigator === 'undefined' || !navigator.serviceWorker) return;
+      if (!('SyncManager' in global) && !('sync' in (navigator.serviceWorker || {}))) return;
+      navigator.serviceWorker.ready
+        .then(reg => { if (reg && reg.sync && typeof reg.sync.register === 'function') return reg.sync.register('ah-student-sync'); })
+        .catch(() => {});
+    } catch (_) { /* unsupported — the 'online' event is the fallback */ }
+  }
+
+  /* A live status stream for the honest offline indicator in the UI. */
+  function emitStatus() {
+    try {
+      global.dispatchEvent(new CustomEvent('admissionhub:sync-status', {
+        detail: {
+          online: state.online,
+          active: state.active,
+          pending: pendingCount(),
+          lastError: state.lastError
+        }
+      }));
+    } catch (_) {}
   }
 
   function scheduleFlush(delay) {
@@ -200,6 +228,7 @@
       log('push paused', String(err && err.message || err));
     } finally {
       state.flushing = false;
+      emitStatus();
       /* Converge any store where the server won the conflict. */
       if (reconcileStores.size) {
         void (async () => { for (const s of reconcileStores) await pullStore(s); })();
@@ -308,6 +337,7 @@
     state.scope = scope;
     state.cursors = meta.cursors || {};
     log('active for scope', scope);
+    emitStatus();
     void (async () => {
       await migrateLocal(scope);
       await pullAll();
@@ -323,10 +353,12 @@
      * signs back in; a different account must not inherit it. */
     queue = [];
     persistQueue();
+    emitStatus();
   }
 
   function setOnline(online) {
     state.online = !!online;
+    emitStatus();
     if (state.online && state.active) { void flush(); void pullAll(); }
   }
 
@@ -345,6 +377,14 @@
       if (d.store) enqueue(d.store, d.id, d.op === 'delete' ? 'delete' : 'put', d.doc, d.updated_at);
     });
     global.addEventListener('admissionhub:sync-now', () => scheduleFlush(0));
+    /* The service worker nudges us from its Background Sync wake-up. */
+    if (navigator.serviceWorker && typeof navigator.serviceWorker.addEventListener === 'function') {
+      navigator.serviceWorker.addEventListener('message', event => {
+        if (event && event.data && event.data.type === 'FLUSH_STUDENT_SYNC') {
+          if (state.active) { void flush(); void pullAll(); }
+        }
+      });
+    }
   }
 
   if (typeof navigator !== 'undefined' && navigator.onLine === false) state.online = false;

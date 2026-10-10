@@ -71,3 +71,39 @@ test('p15-06: the install-guide pop-up ships and is precached', () => {
   assert.match(indexHtml, /\.\/install-guide\.js/, 'index.html must load the install guide');
   assert.match(indexHtml, /\.\/install-guide\.css/, 'index.html must link the install guide styles');
 });
+
+test('p15-07: Background Sync is registered and the worker wakes closed clients', () => {
+  const sync = readFileSync(new URL('./student-data-sync.js', import.meta.url), 'utf8');
+  assert.match(sync, /reg\.sync\.register\('ah-student-sync'\)/, 'the engine must register the sync tag');
+  assert.match(sw, /addEventListener\('sync'/, 'the worker must handle the sync event');
+  assert.match(sw, /event\.tag !== 'ah-student-sync'/, 'it must filter to our tag');
+  assert.match(sw, /FLUSH_STUDENT_SYNC/, 'it must nudge clients to flush');
+  assert.match(sync, /FLUSH_STUDENT_SYNC/, 'the engine must react to the nudge');
+});
+
+test('p15-08: an offline write is queued, persisted and safe when offline', () => {
+  const sync = readFileSync(new URL('./student-data-sync.js', import.meta.url), 'utf8');
+  assert.match(sync, /persistQueue\(\)/, 'the queue must persist across reloads');
+  assert.match(sync, /if \(!state\.online\) return \{ skipped: true, offline: true \}/, 'pushes must pause offline');
+  assert.match(sync, /MAX_QUEUE/, 'there must be a bounded queue');
+  // Coalescing: a newer write for a record replaces the older one.
+  assert.match(sync, /queue\.splice\(i, 1\)/, 'writes must coalesce per record');
+});
+
+test('p15-09: the offline indicator is honest and shipped', () => {
+  const js = readFileSync(new URL('./offline-status.js', import.meta.url), 'utf8');
+  assert.match(js, /sync-status/, 'it must listen to the real sync status stream');
+  assert.match(js, /অফলাইন/, 'it must show an offline state');
+  assert.match(js, /সিংক হচ্ছে/, 'it must show a syncing state');
+  assert.ok(sw.includes('offline-status.js'), 'the indicator must be in the app shell');
+  assert.match(indexHtml, /\.\/offline-status\.js/, 'index.html must load the indicator');
+  // It must not claim success it cannot verify: no fabricated "saved" on error.
+  assert.ok(!/lastError[^\n]*সিংক হয়েছে/.test(js), 'an error must not read as success');
+});
+
+test('p15-10: the offline data boundary is documented', () => {
+  const doc = readFileSync(new URL('./docs/P15-OFFLINE-BOUNDARY.md', import.meta.url), 'utf8');
+  assert.match(doc, /Safari/i, 'the iOS limitation must be stated');
+  assert.match(doc, /Background Sync/i, 'background sync must be described');
+  assert.match(doc, /IndexedDB/i, 'the local store must be described');
+});

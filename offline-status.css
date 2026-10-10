@@ -1,0 +1,18 @@
+/* Offline status pill — a small, honest indicator of connection + pending sync. */
+.ah-offline-pill{
+  position:fixed; left:50%; bottom:calc(14px + env(safe-area-inset-bottom,0px));
+  transform:translateX(-50%) translateY(12px);
+  z-index:9000; opacity:0; pointer-events:none;
+  padding:7px 14px; border-radius:999px;
+  font:600 12.5px/1.3 system-ui,-apple-system,"Noto Sans Bengali",sans-serif;
+  background:#243b34; color:#eaf5f0;
+  box-shadow:0 8px 22px rgba(9,60,45,.26);
+  transition:opacity .18s ease, transform .18s ease;
+}
+.ah-offline-pill[data-mode="offline"]{ background:#8a4b12; color:#fff5e9; }
+.ah-offline-pill[data-mode="done"]{ background:var(--ah-brand-fill,#12a876); color:#fff; }
+.ah-offline-pill:not([hidden]){ opacity:1; transform:translateX(-50%) translateY(0); }
+.ah-offline-pill[hidden]{ display:none; }
+@media (prefers-reduced-motion:reduce){
+  .ah-offline-pill{ transition:none; }
+}

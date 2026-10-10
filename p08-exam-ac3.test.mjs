@@ -39,8 +39,8 @@ t('discardActiveExam: retry-টাইমার ক্লিয়ার', /async
 
 /* ৬ — ভার্সন-ট্র্যাকিং v189 */
 
-t('sw BUILD_ID current shell', SW.includes("const BUILD_ID = 'v299-p11-adaptive-20261010'"));
-t('index sw-marker current shell', H.includes('sw.js?v=v299-p11-adaptive-20261010'));
+t('sw BUILD_ID current shell', SW.includes("const BUILD_ID = 'v300-p15-offline-20261010'"));
+t('index sw-marker current shell', H.includes('sw.js?v=v300-p15-offline-20261010'));
 
 console.log(`\nP08-AC3: ${pass} pass / ${fail} fail`);
 if (fail) process.exit(1);

@@ -3,7 +3,7 @@ const CACHE_PREFIX = 'admission-hub-shell-';
 // hold user data; this one holds exactly one image and is trimmed on write.
 const AVATAR_CACHE = 'admission-hub-avatar-v1';
 
-const BUILD_ID = 'v299-p11-adaptive-20261010';
+const BUILD_ID = 'v300-p15-offline-20261010';
 const CACHE_NAME = `${CACHE_PREFIX}${BUILD_ID}`;
 const VERSION_HEADER = 'X-Admission-Hub-Build';
 const DOCUMENT_NETWORK_TIMEOUT_MS = 2500;
@@ -52,6 +52,8 @@ const APP_SHELL = [
   './install-guide.js?v=install-v3',
   './a11y-core.css?v=a11y-v1',
   './a11y-core.js?v=a11y-v1',
+  './offline-status.css?v=offline-v1',
+  './offline-status.js?v=offline-v1',
   './icons/icon-192.png',
   './icons/icon-512.png'
 ];
@@ -60,13 +62,13 @@ const APP_SHELL = [
 // A truncated/corrupt download is NEVER written to the shell cache.
 const ASSET_DIGESTS = {
 /* sw-manifest:start */
-  "./index.html": "caf0ca0cd1b81433bf7a27568a91c20948df2bf22b1b8873e45bf7d421109cf3",
+  "./index.html": "3bfd36c29ec137c96014c6383f1e987d0f7fec5cb1c2ccbd494d0cf071a711f9",
   "./manifest.json": "11a85ae594fc629b11605daeda3f9afe4ef95215a55a29f9cc423314bfb275a4",
   "./manifest.webmanifest": "5be476009a140eabd088bd972bd4d345b9c4f4a055cd6e4f08774b9cb4afaf52",
   "./dashboard-v2.css?v=dash2f13-theme": "4541bc1e65fd158c593443562975400d128b8f1d3b636595df3c235b99e8cced",
   "./3d-loader.css?v=3d-v2": "43ca21b0a41be5d223c317fd63582f19ff6ffab5d010639ef26349464550da63",
   "./session-persist.js?v=session-v2": "99f3d1f49f6d5714fd25f1c12b2aa978ca97a009d6caba9a690a0442d082593c",
-  "./analytics-service.js?v=analytics-p2-v2-insights": "001fddd097b68d4eb68683245853990ff9f4886c16fe8029a4d6a35a5b7b5b89",
+  "./analytics-service.js?v=analytics-p2-v2-insights": "37f238bf531b9ea5a21183799f8b3502d6c7d7e2b85e36bbcb7efdf1f51e6abe",
   "./account-access.css?v=20260921-single-email-button-fallback": "54d46ed598915409c72c5da480cde492f947928a21088d4ed7b2f9ad4d13682e",
   "./institutions-bd.js?v=bd-institutions-v2": "602c5549515e8207ad152b948ca9b8fe3ad0fbe429afb56380e4e21b662f779d",
   "./language-engine.js?v=lang-v5-single-email-button": "7e726c3cd194381201c7fdb2b1a49af78f4f48f38012e05ab68e13eee3ade3ad",
@@ -90,11 +92,13 @@ const ASSET_DIGESTS = {
   "./adaptive-insights-panel.js?v=p11-v1": "bb3a42e5d386b2d3861ab088cf0a30354b981cb1b40c419603c0fbdf47fddb27",
   "./p13-performance-core.js?v=p13-core-v1": "a51cc8a619d04b2f7b2bed2d4752a2d4c1da652f9e2034faacd47addf8cdcdca",
   "./p13-performance-runtime.js?v=p13-runtime-v1": "60fb332e307a6606e3dec74100fbb2b4337d4497c6d0fe3ee2e40e0470c1391a",
-  "./student-data-sync.js?v=student-sync-v1": "8a8b93fc710b39fa22b92dce6cf5036102cdd688a852a5bd448a3a9c9edcf2aa",
+  "./student-data-sync.js?v=student-sync-v1": "f81ed126b0c8104c29fc0838a8f373c6c444ac45f17c2050850805285ce479c1",
   "./install-guide.css?v=install-v3": "0eb58c7551f8d973390fb7b19fd98e4dd63ea2070f9f6cbe9429962098c3635c",
   "./install-guide.js?v=install-v3": "ddd70ab50423c1d075d436c8ec7c1af89bfeceb0e198915e9f5ebd82e2efdfa8",
   "./a11y-core.css?v=a11y-v1": "c3829667c87b46bbe7effd4ca4e9732f02b58ed849c4ac481f9be7ef02026aac",
   "./a11y-core.js?v=a11y-v1": "14e5c0cfeeb2480b57fc3064261984f39c248f4f548baffaeacbc87784a5b768",
+  "./offline-status.css?v=offline-v1": "4760d6b1570b482eff9c79d69f97156b288333271a53bfe1b9428c73e7389ea4",
+  "./offline-status.js?v=offline-v1": "6991cef73a9adf91fccdfa36c5a947dd3d8181eb393b4f744abc1d78a08b8493",
   "./icons/icon-192.png": "777ce5566fbeff0f2e384c787c8dde4f47d7c869e455c6e577a503decd4f1683",
   "./icons/icon-512.png": "86459109582f82b1d891a3e5a82723fefd21a3c65e9d0d22ab4dae33bb540520",
 /* sw-manifest:end */
@@ -180,6 +184,22 @@ self.addEventListener('message', event => {
   if (event.data && event.data.type === 'VERSION_CHECK') {
     event.ports?.[0]?.postMessage({type:'VERSION_CHECK_RESULT', buildId:BUILD_ID, cacheName:CACHE_NAME});
   }
+});
+
+// Background Sync (P15): when the OS regains connectivity it wakes the worker
+// even with no page open. We do not touch IndexedDB here — that would need a
+// second, duplicate sync engine in the worker. Instead we nudge every open
+// client to flush; the page owns the queue and the auth cookie. This is what
+// lets a student finish an exam offline, close the app, and still have the
+// result reach the account once the network returns.
+self.addEventListener('sync', event => {
+  if (event.tag !== 'ah-student-sync') return;
+  event.waitUntil((async () => {
+    try {
+      const open = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+      open.forEach(client => client.postMessage({ type: 'FLUSH_STUDENT_SYNC' }));
+    } catch (_) { /* best effort — the page also flushes on its own 'online' event */ }
+  })());
 });
 
 self.addEventListener('fetch', event => {

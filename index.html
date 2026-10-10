@@ -10,6 +10,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="alternate" type="application/manifest+json" href="manifest.webmanifest">
 <link rel="stylesheet" href="./a11y-core.css?v=a11y-v1">
+<link rel="stylesheet" href="./offline-status.css?v=offline-v1">
 <link rel="stylesheet" href="./install-guide.css?v=install-v3">
 <link rel="stylesheet" href="./3d-loader.css?v=3d-v2">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -5227,16 +5228,16 @@ window.__admissionBootPromise.catch(error => console.error('[Admission Hub] boot
     // The updated worker takes control now; the current document remains usable and the next launch uses the new shell.
     try{
 
-      const expectedSwVersion = 'v299-p11-adaptive-20261010';
+      const expectedSwVersion = 'v300-p15-offline-20261010';
       // register() on the same scope performs an in-place update. Never unregister
       // the active iOS worker first: that discards the instant offline shell.
-      const registration=await navigator.serviceWorker.register('./sw.js?v=v299-p11-adaptive-20261010',{scope:'./',updateViaCache:'none'});
+      const registration=await navigator.serviceWorker.register('./sw.js?v=v300-p15-offline-20261010',{scope:'./',updateViaCache:'none'});
       await registration.update().catch(()=>{});
       // Purge every old app-shell cache (any build id ≠ current). This guarantees
       // stale pre-retirement application shells can never be served from cache again.
       try {
 
-        const cur = 'admission-hub-shell-v299-p11-adaptive-20261010';
+        const cur = 'admission-hub-shell-v300-p15-offline-20261010';
         const names = await caches.keys();
         for (const name of names) {
           if (name.startsWith('admission-hub-shell-') && name !== cur) await caches.delete(name).catch(()=>{});
@@ -5700,6 +5701,7 @@ setTimeout(() => { if (location.hash.replace(/^#/, '').split('?')[0] === 'dictio
 <script defer src="./student-data-sync.js?v=student-sync-v1"></script>
 <script src="./app-seed.js?v=v189-empty" defer></script>
 <script src="./a11y-core.js?v=a11y-v1" defer></script>
+<script src="./offline-status.js?v=offline-v1" defer></script>
 <script src="./install-guide.js?v=install-v3" defer></script>
 <script>
 /* Seed + cloud hydrate: cloud-content-sync.js (batched IDB, Android-safe). */
