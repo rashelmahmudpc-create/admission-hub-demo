@@ -1,3 +1,149 @@
+var __defProp = Object.defineProperty;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __esm = (fn, res) => function __init() {
+  return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
+};
+var __export = (target, all) => {
+  for (var name in all)
+    __defProp(target, name, { get: all[name], enumerable: true });
+};
+
+// p13-d1-read.mjs
+var p13_d1_read_exports = {};
+__export(p13_d1_read_exports, {
+  DEFAULT_LIMIT: () => DEFAULT_LIMIT,
+  MAX_LIMIT: () => MAX_LIMIT,
+  SCHEMA: () => SCHEMA,
+  buildQuery: () => buildQuery,
+  createD1Reader: () => createD1Reader,
+  decodeCursor: () => decodeCursor,
+  encodeCursor: () => encodeCursor,
+  normalizeRow: () => normalizeRow,
+  toPage: () => toPage
+});
+function encodeCursor(row) {
+  if (!row) return null;
+  const raw = JSON.stringify({ s: String(row.sort_key), i: String(row.id) });
+  if (typeof btoa === "function") return btoa(raw);
+  return Buffer.from(raw, "utf8").toString("base64");
+}
+function decodeCursor(cursor) {
+  if (!cursor) return null;
+  try {
+    const raw = typeof atob === "function" ? atob(String(cursor)) : Buffer.from(String(cursor), "base64").toString("utf8");
+    const p = JSON.parse(raw);
+    if (!p || typeof p.s !== "string" || typeof p.i !== "string") return null;
+    return { sortKey: p.s, id: p.i };
+  } catch (_) {
+    return null;
+  }
+}
+function buildQuery(params = {}) {
+  const where = [];
+  const bind2 = [];
+  if (params.topicId) {
+    where.push("topic_id = ?");
+    bind2.push(String(params.topicId));
+  }
+  if (params.subjectId) {
+    where.push("subject_id = ?");
+    bind2.push(String(params.subjectId));
+  }
+  if (params.publishedOnly !== false) where.push("published = 1");
+  const after = decodeCursor(params.cursor);
+  if (after) {
+    where.push("(sort_key, id) > (?, ?)");
+    bind2.push(after.sortKey, after.id);
+  }
+  const limit = clamp(num2(params.limit, DEFAULT_LIMIT), 1, MAX_LIMIT);
+  const sql = "SELECT id, topic_id, subject_id, difficulty, sort_key, payload, updated_at FROM questions" + (where.length ? " WHERE " + where.join(" AND ") : "") + " ORDER BY sort_key ASC, id ASC LIMIT ?";
+  bind2.push(limit);
+  return { sql, bind: bind2, limit };
+}
+function normalizeRow(row) {
+  if (!row) return null;
+  let payload = {};
+  try {
+    payload = typeof row.payload === "string" ? JSON.parse(row.payload) : row.payload || {};
+  } catch (_) {
+  }
+  return {
+    id: String(row.id),
+    topicId: row.topic_id,
+    subjectId: row.subject_id,
+    difficulty: num2(row.difficulty, 1),
+    sortKey: String(row.sort_key),
+    updatedAt: num2(row.updated_at),
+    ...payload
+  };
+}
+function toPage(rows, limit) {
+  const list = (rows || []).map(normalizeRow).filter(Boolean);
+  const hasMore = list.length >= num2(limit, DEFAULT_LIMIT);
+  return { items: list, nextCursor: hasMore ? encodeCursor({ sort_key: list[list.length - 1].sortKey, id: list[list.length - 1].id }) : null, count: list.length };
+}
+function createD1Reader(db) {
+  const available = !!db && typeof db.prepare === "function";
+  return {
+    available,
+    async page(params = {}) {
+      if (!available) return null;
+      const q = buildQuery(params);
+      const stmt = db.prepare(q.sql);
+      const bound = q.bind.length ? stmt.bind(...q.bind) : stmt;
+      const res = await bound.all();
+      return toPage(res && res.results ? res.results : [], q.limit);
+    },
+    /* A cheap bounded probe used by health checks. */
+    async count(params = {}) {
+      if (!available) return null;
+      const where = [];
+      const bind2 = [];
+      if (params.topicId) {
+        where.push("topic_id = ?");
+        bind2.push(String(params.topicId));
+      }
+      if (params.subjectId) {
+        where.push("subject_id = ?");
+        bind2.push(String(params.subjectId));
+      }
+      if (params.publishedOnly !== false) where.push("published = 1");
+      const sql = "SELECT COUNT(*) AS n FROM questions" + (where.length ? " WHERE " + where.join(" AND ") : "");
+      const stmt = db.prepare(sql);
+      const res = await (bind2.length ? stmt.bind(...bind2) : stmt).first();
+      return res ? num2(res.n) : 0;
+    }
+  };
+}
+var SCHEMA, MAX_LIMIT, DEFAULT_LIMIT, clamp, num2;
+var init_p13_d1_read = __esm({
+  "p13-d1-read.mjs"() {
+    SCHEMA = `
+CREATE TABLE IF NOT EXISTS questions (
+  id          TEXT PRIMARY KEY,
+  topic_id    TEXT NOT NULL,
+  subject_id  TEXT NOT NULL,
+  difficulty  INTEGER NOT NULL DEFAULT 1,
+  published   INTEGER NOT NULL DEFAULT 1,
+  sort_key    TEXT NOT NULL,
+  payload     TEXT NOT NULL,
+  updated_at  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_q_topic   ON questions(topic_id, sort_key, id);
+CREATE INDEX IF NOT EXISTS idx_q_subject ON questions(subject_id, sort_key, id);
+CREATE INDEX IF NOT EXISTS idx_q_sort    ON questions(sort_key, id);
+CREATE INDEX IF NOT EXISTS idx_q_pub     ON questions(published, sort_key, id);
+`;
+    MAX_LIMIT = 100;
+    DEFAULT_LIMIT = 20;
+    clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+    num2 = (v, d = 0) => {
+      const n = Number(v);
+      return isFinite(n) ? n : d;
+    };
+  }
+});
+
 // context-engine.js
 var CONTEXT_VERSION = "ctx-v1";
 var CATEGORY = Object.freeze({
@@ -1097,17 +1243,17 @@ function sanitizeOnboardingContext(value) {
 }
 function capStats(stats) {
   if (!stats || typeof stats !== "object") return null;
-  const num2 = (v, min, max) => {
+  const num3 = (v, min, max) => {
     const n = Number(v);
     if (!isFinite(n) || n < 0) return 0;
     return Math.min(max, Math.round(n));
   };
   const s = {};
-  if (stats.exams != null) s.exams = num2(stats.exams, 0, 1e5);
-  if (stats.questions != null) s.questions = num2(stats.questions, 0, 1e6);
-  if (stats.accuracy != null) s.accuracy = num2(stats.accuracy, 0, 100);
-  if (stats.streak != null) s.streak = num2(stats.streak, 0, 3650);
-  if (stats.mistakes != null) s.mistakes = num2(stats.mistakes, 0, 1e5);
+  if (stats.exams != null) s.exams = num3(stats.exams, 0, 1e5);
+  if (stats.questions != null) s.questions = num3(stats.questions, 0, 1e6);
+  if (stats.accuracy != null) s.accuracy = num3(stats.accuracy, 0, 100);
+  if (stats.streak != null) s.streak = num3(stats.streak, 0, 3650);
+  if (stats.mistakes != null) s.mistakes = num3(stats.mistakes, 0, 1e5);
   const name = (v, max) => String(v == null ? "" : v).replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, max);
   const pii = (v) => /[\w.+-]+@[\w-]+\.[\w.]+|(?:\+?880|0)1[3-9]\d{8}|\b\d{10,}\b/.test(v);
   const rows = (input, limit) => {
@@ -1119,7 +1265,7 @@ function capStats(stats) {
       const n = name(row.name, 60);
       if (!n || seen.has(n) || pii(n)) continue;
       seen.add(n);
-      out.push({ name: n, attempts: num2(row.attempts, 0, 1e5), accuracy: num2(row.accuracy, 0, 100) });
+      out.push({ name: n, attempts: num3(row.attempts, 0, 1e5), accuracy: num3(row.accuracy, 0, 100) });
       if (out.length >= limit) break;
     }
     return out.length ? out : null;
@@ -1130,7 +1276,7 @@ function capStats(stats) {
   if (subs) s.subjects = subs;
   const period = (input) => {
     if (!input || typeof input !== "object") return null;
-    return { exams: num2(input.exams, 0, 1e3), accuracy: num2(input.accuracy, 0, 100) };
+    return { exams: num3(input.exams, 0, 1e3), accuracy: num3(input.accuracy, 0, 100) };
   };
   const weekly = period(stats.weekly);
   if (weekly) s.weekly = weekly;
@@ -2136,6 +2282,20 @@ var public_worker_default = {
         return json({ v: doc.v || 0, at: doc.at || 0, sig: doc.sig || "", counts: countsOf(doc) });
       }
       if (path === "/api/content" && request.method === "GET") {
+        if (env.PUB_D1_CONTENT === "enabled" && env.PROFILE_DB) {
+          try {
+            const { createD1Reader: createD1Reader2 } = await Promise.resolve().then(() => (init_p13_d1_read(), p13_d1_read_exports));
+            const reader = createD1Reader2(env.PROFILE_DB);
+            const page = await reader.page({
+              topicId: url.searchParams.get("topicId") || void 0,
+              subjectId: url.searchParams.get("subjectId") || void 0,
+              limit: url.searchParams.get("limit") || void 0,
+              cursor: url.searchParams.get("cursor") || void 0
+            });
+            if (page && page.count) return json({ v: 0, at: 0, source: "d1", ...page });
+          } catch (_) {
+          }
+        }
         const raw = await env.PUB_KV.get("pubContent");
         return json(paginateContent(raw ? JSON.parse(raw) : { v: 0, at: 0, questions: [], vocabulary: [], exams: [] }, url.searchParams.get("limit"), url.searchParams.get("offset")));
       }
@@ -9570,7 +9730,7 @@ var AnalyticsStore = class {
 var __analyticsTest = Object.freeze({ computeAnalytics, summarizeHistory, pct });
 
 // send-planner.mjs
-var clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
+var clamp2 = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
 var asInt2 = (v, fallback = 0) => {
   const n = Number(v);
   return Number.isFinite(n) ? Math.trunc(n) : fallback;
@@ -9581,7 +9741,7 @@ function planFanout(total, { budget = DEFAULT_WINDOW_BUDGET, cursor = 0 } = {}) 
   const size = Math.max(0, asInt2(total));
   const budgetRaw = asInt2(budget, DEFAULT_WINDOW_BUDGET);
   const limit = budgetRaw > 0 ? budgetRaw : DEFAULT_WINDOW_BUDGET;
-  const start = clamp(asInt2(cursor), 0, size);
+  const start = clamp2(asInt2(cursor), 0, size);
   const take = Math.min(limit, size - start);
   return {
     start,
@@ -9643,7 +9803,7 @@ function scoreHours(events = []) {
 }
 function bestSendHour(events = [], opts = {}) {
   const minSamples = Math.max(1, asInt2(opts.min_samples, TIMING_DEFAULTS.min_samples));
-  const defaultHour = clamp(asInt2(opts.default_hour, TIMING_DEFAULTS.default_hour), 0, 23);
+  const defaultHour = clamp2(asInt2(opts.default_hour, TIMING_DEFAULTS.default_hour), 0, 23);
   const usable = events.filter((e) => asInt2(e?.hour, -1) >= 0 && asInt2(e?.hour, -1) <= 23);
   if (usable.length < minSamples) {
     return { hour: defaultHour, score: TIMING_DEFAULTS.floor, confident: false, samples: usable.length };
@@ -14130,13 +14290,13 @@ function linearTrend(values = [], options = {}) {
   const n = slice.length;
   const meanX = (n - 1) / 2;
   const meanY = sum(slice, (v) => v) / n;
-  let num2 = 0;
+  let num3 = 0;
   let den = 0;
   for (let i = 0; i < n; i += 1) {
-    num2 += (i - meanX) * (slice[i] - meanY);
+    num3 += (i - meanX) * (slice[i] - meanY);
     den += (i - meanX) ** 2;
   }
-  const slope = den > 0 ? num2 / den : 0;
+  const slope = den > 0 ? num3 / den : 0;
   const strength = meanY > 0 ? clamp01(Math.abs(slope) / meanY) : 0;
   const direction = strength < (options.minStrength ?? 0.05) ? "flat" : slope > 0 ? "up" : "down";
   return { slope: round(slope, 3), direction, strength: round(strength, 3), mean: round(meanY, 2) };
@@ -18530,6 +18690,37 @@ var __filesStorageTest = Object.freeze({
   MAX_UPLOAD_BYTES,
   MAX_UPLOADS_PER_HOUR
 });
+
+// p13-api-compression.mjs
+var MIN_COMPRESS_BYTES = 1024;
+function shouldCompress({ acceptEncoding = "", method = "GET", length = 0, status = 200 } = {}) {
+  if (method === "HEAD" || status < 200 || status >= 300) return false;
+  if (!/\bbr\b|\bgzip\b/.test(String(acceptEncoding))) return false;
+  return Number(length) >= MIN_COMPRESS_BYTES;
+}
+function preferEncoding(acceptEncoding = "") {
+  if (/\bbr\b/.test(String(acceptEncoding))) return "br";
+  if (/\bgzip\b/.test(String(acceptEncoding))) return "gzip";
+  return null;
+}
+async function compressResponse(request, response3, threshold = MIN_COMPRESS_BYTES) {
+  try {
+    const acceptEncoding = request && request.headers ? request.headers.get("Accept-Encoding") || "" : "";
+    if (typeof CompressionStream !== "function") return response3;
+    const buf = await response3.clone().arrayBuffer();
+    if (!shouldCompress({ acceptEncoding, method: request.method, length: buf.byteLength, status: response3.status })) return response3;
+    const encoding = preferEncoding(acceptEncoding);
+    const stream = new Blob([buf]).stream().pipeThrough(new CompressionStream(encoding === "br" ? "deflate" : "gzip"));
+    const body = await new Response(stream).arrayBuffer();
+    const headers = new Headers(response3.headers);
+    headers.set("Content-Encoding", encoding === "br" ? "deflate" : "gzip");
+    headers.set("Vary", "Accept-Encoding");
+    headers.set("Content-Length", String(body.byteLength));
+    return new Response(body, { status: response3.status, statusText: response3.statusText, headers });
+  } catch (_) {
+    return response3;
+  }
+}
 
 // email-gateway/worker/email-coordinator.mjs
 var response = (body, status = 200) => new Response(JSON.stringify(body), {
@@ -24356,9 +24547,13 @@ var gk_agent_worker_default = {
           USE_CONTEXT_ENGINE: env.USE_CONTEXT_ENGINE,
           AGENT_DAILY_CAP: env.AGENT_DAILY_CAP,
           AGENT_PUBLIC_DAILY_CAP: env.AGENT_PUBLIC_DAILY_CAP,
-          AGENT_GEMINI_MODELS: env.AGENT_GEMINI_MODELS
+          AGENT_GEMINI_MODELS: env.AGENT_GEMINI_MODELS,
+          /* P13 — D1 read path (public question/content lists). Absent binding
+             leaves the KV path in place, so this is additive. */
+          PROFILE_DB: env.PROFILE_DB
         };
-        return public_worker_default.fetch(new Request(u2p.href, request), envPub, ctx);
+        const pubResponse = await public_worker_default.fetch(new Request(u2p.href, request), envPub, ctx);
+        return await compressResponse(request, pubResponse);
       }
     }
     if (url.pathname === "/health") {

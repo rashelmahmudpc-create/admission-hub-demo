@@ -87,3 +87,19 @@
   Cache-Control: no-store, max-age=0
   Referrer-Policy: no-referrer
 
+
+# P13 — fingerprinted static assets (a ?v= query) can never change under their
+# URL, so the browser keeps them for a year and never revalidates. The shell
+# (/sw.js, /index.html) stays no-store above; an asset without a version stamp
+# is left to the default, so a stale bundle still can never stick.
+/*.js?v=*
+  Cache-Control: public, max-age=31536000, immutable
+
+/*.css?v=*
+  Cache-Control: public, max-age=31536000, immutable
+
+/*.png?v=*
+  Cache-Control: public, max-age=31536000, immutable
+
+/*.woff2?v=*
+  Cache-Control: public, max-age=31536000, immutable

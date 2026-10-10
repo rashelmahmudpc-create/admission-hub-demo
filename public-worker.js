@@ -207,6 +207,22 @@ export default {
         return json({ v: doc.v || 0, at: doc.at || 0, sig: doc.sig || '', counts: countsOf(doc) });
       }
       if (path === '/api/content' && request.method === 'GET') {
+        /* P13 — optional D1 fast path. Off unless explicitly enabled AND the
+           table has been backfilled; gating on the flag (not just the binding)
+           means a bound-but-empty D1 can never blank out live content. */
+        if (env.PUB_D1_CONTENT === 'enabled' && env.PROFILE_DB) {
+          try {
+            const { createD1Reader } = await import('./p13-d1-read.mjs');
+            const reader = createD1Reader(env.PROFILE_DB);
+            const page = await reader.page({
+              topicId: url.searchParams.get('topicId') || undefined,
+              subjectId: url.searchParams.get('subjectId') || undefined,
+              limit: url.searchParams.get('limit') || undefined,
+              cursor: url.searchParams.get('cursor') || undefined,
+            });
+            if (page && page.count) return json({ v: 0, at: 0, source: 'd1', ...page });
+          } catch (_) { /* fall through to KV */ }
+        }
         const raw = await env.PUB_KV.get('pubContent');
         return json(paginateContent(raw ? JSON.parse(raw) : { v: 0, at: 0, questions: [], vocabulary: [], exams: [] }, url.searchParams.get('limit'), url.searchParams.get('offset')));
       }

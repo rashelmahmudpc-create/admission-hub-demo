@@ -16,6 +16,8 @@ import { handleAnalyticsRequest } from './analytics-engine.mjs';
 import { handleAiAnalyticsRequest } from './ai-analytics-routes.mjs';
 import { aiGenerate } from './ai-analytics-provider.mjs';
 import { handleFilesStorageRequest } from './files-storage.mjs';
+/* P13 — gzip/br for large JSON replies (read path scale). */
+import { compressResponse } from './p13-api-compression.mjs';
 export { EmailGatewayCoordinator } from './email-gateway/worker/email-coordinator.mjs';
 export { AdmissionAuthAuthority } from './auth-native/worker/auth-authority-do.mjs';
 
@@ -507,9 +509,13 @@ export default {
           USE_CONTEXT_ENGINE: env.USE_CONTEXT_ENGINE,
           AGENT_DAILY_CAP: env.AGENT_DAILY_CAP,
           AGENT_PUBLIC_DAILY_CAP: env.AGENT_PUBLIC_DAILY_CAP,
-          AGENT_GEMINI_MODELS: env.AGENT_GEMINI_MODELS
+          AGENT_GEMINI_MODELS: env.AGENT_GEMINI_MODELS,
+          /* P13 — D1 read path (public question/content lists). Absent binding
+             leaves the KV path in place, so this is additive. */
+          PROFILE_DB: env.PROFILE_DB
         };
-        return pubHandler.fetch(new Request(u2p.href, request), envPub, ctx);
+        const pubResponse = await pubHandler.fetch(new Request(u2p.href, request), envPub, ctx);
+        return await compressResponse(request, pubResponse);
       }
     }
 
