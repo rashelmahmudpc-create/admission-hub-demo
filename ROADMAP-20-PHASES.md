@@ -84,9 +84,9 @@
 **আছে:** B-GUESTISO **Resolved** (ভুয়া-গেস্ট-কী) · token-সেশন + সেশন-লিস্ট · admin-পাশে অডিট/লকআউট/রেট-লিমিট (AC-1) · secret-ম্যানেজমেন্ট (সব env-সিক্রেট, ফ্রন্টএন্ড-লিক নয় — verified) · delete-এন্ডপয়েন্ট · **public-API অ্যাবিউজ-গার্ড লাইভ** (প্রতি-নেটওয়ার্ক ১২০/মিনিট → 429; বাস্তবে যাচাই) · **কনটেন্ট-ইন্টিগ্রিটি: publish-সময়ে প্রি-চেক** (ওভারসাইজ হলে লেখা হয় না — পুরনো slice() বাগ বন্ধ) + `GET /api/admin/verify` (409 on drift) · **A↛B আইসোলেশন + input-validation + D1 per-user স্কোপ গেট** (`npm run test:p14`, ৪৪/৪৪ পাস — P20-র বাধ্যতামূলক গেট) · per-user ডেটা KV-তে নেই, D1-এ user_id-স্কোপড (টেস্টে প্রমাণিত)।
 **বাকি:** কোনো কোর কাজ নেই। P20-র আগে গেট: শুধু আপনার নিজে ব্যবহার → "✅ APPROVED FOR PUBLIC LAUNCH"।
 
-## 🌐 P15 — PWA + Offline-First — 🟢 ~৭৫%
-**আছে:** manifest.webmanifest (standalone+icons) · sw.js v299 (ক্যাশ-ভার্সনিং, build-header, শেল SHA-256 ডাইজেস্ট — নষ্ট ডাউনলোড কখনো ক্যাশ হয় না) · session-persist (visible-এ update-check) · student-data-sync (IndexedDB + রিট্রাই-কিউ, online-এ ফ্লাশ) · **নতুন `npm run test:p15` গেট (5/5)** — manifest + BUILD_ID-সিঙ্ক + শেল-ডাইজেস্ট যাচাই।
-**বাকি:** ① অফলাইন-প্র্যাকটিস/পরীক্ষা-র স্পষ্ট ফ্লো-গ্যারান্টি ② Background Sync API রেজিস্ট্রেশন (এখন only online-ইভেন্টে ফ্লাশ) ③ user-facing update-ব্যানার ④ অফলাইন-ডেটা-বাউন্ডারি-ডক।
+## 🌐 P15 — PWA + Offline-First — 🟢 ~৮৫%
+**আছে:** manifest.webmanifest (standalone+icons) · sw.js v299 (ক্যাশ-ভার্সনিং, build-header, শেল SHA-256 ডাইজেস্ট — নষ্ট ডাউনলোড কখনো ক্যাশ হয় না) · session-persist (visible-এ update-check) · student-data-sync (IndexedDB + রিট্রাই-কিউ, online-এ ফ্লাশ) · **ইনস্টল-গাইড পপ-আপ লাইভ** — আন্তরিক বার্তা ("পড়ার সঙ্গী, সবসময় সাথে"), প্ল্যাটফর্ম-অনুযায়ী ধাপ (Android/iPhone/Desktop), installed হলে নীরব, ১৪ দিনে একবার · **`npm run test:p15` গেট (১১/১১)** — manifest + BUILD_ID-সিঙ্ক + শেল-ডাইজেস্ট + পপ-আপ-আচরণ।
+**বাকি:** ① অফলাইন-প্র্যাকটিস/পরীক্ষা-র স্পষ্ট ফ্লো-গ্যারান্টি ② Background Sync API রেজিস্ট্রেশন ③ offline-ডেটা-বাউন্ডারি-ডক।
 
 ## 🎨 P16 — UX/Accessibility/Device — 🟡 ~৫০%
 **আছে:** mobile-ux-fix · onboarding · experience-studio (themes/animation/hooks) · 3d-loader · touch-অপটিমাইজেশন · ভাষা-কাস্টম।
