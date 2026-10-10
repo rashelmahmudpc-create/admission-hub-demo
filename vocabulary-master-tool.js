@@ -137,10 +137,20 @@
     };
   }
   let recordsLoaded = false;
+  async function seedCategoryA() {
+    const seed = window.AH_VOCAB_A_SEED;
+    if (!Array.isArray(seed) || !seed.length) return;
+    const present = new Set((state.records || []).filter(row => row.category === 'A').map(row => row.normalized));
+    const added = seed.map(normalizeRecord).filter(row => row.word && !present.has(row.normalized));
+    if (!added.length) return;
+    for (const row of added) await dbPut(STORE, row);
+    state.records = (state.records || []).concat(added).sort((a,b) => (Number(a.order) - Number(b.order)) || (Number(a.createdAt) - Number(b.createdAt)) || a.id.localeCompare(b.id));
+  }
   async function loadRecords(force = false) {
     if (recordsLoaded && !force) return state.records;
     const rows = typeof dbGetAll === 'function' ? await dbGetAll(STORE) : [];
     state.records = (rows || []).filter(row => row && row.tool === 'vocabulary-master').map(normalizeRecord).sort((a,b) => (Number(a.order) - Number(b.order)) || (Number(a.createdAt) - Number(b.createdAt)) || a.id.localeCompare(b.id));
+    await seedCategoryA(); /* category A starter cards — no-op once A has words */
     recordsLoaded = true;
     return state.records;
   }
