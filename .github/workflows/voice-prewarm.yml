@@ -41,15 +41,23 @@ jobs:
           console.log('words to warm:', words.length);
 
           let ok = 0, edge = 0, miss = 0, fail = 0;
+          const sleep = ms => new Promise(r => setTimeout(r, ms));
           for (const [i, word] of words.entries()) {
-            try {
-              const r = await fetch(VOICE, { method: 'POST', headers: H, body: JSON.stringify({ word }) });
-              const state = r.headers.get('x-voice-cache') || '';
-              if (!r.ok) { fail++; console.log('FAIL', word, r.status); continue; }
-              await r.arrayBuffer();
-              ok++;
-              if (state === 'hit' || state === 'edge') edge++; else miss++;
-            } catch (e) { fail++; console.log('ERR', word, String(e && e.message)); }
+            let done = false;
+            for (let attempt = 0; attempt < 4 && !done; attempt += 1) {
+              try {
+                const r = await fetch(VOICE, { method: 'POST', headers: H, body: JSON.stringify({ word }) });
+                if (r.status === 429) { await sleep((Number(r.headers.get('retry-after')) || 20) * 1000); continue; }
+                if (!r.ok) { fail++; console.log('FAIL', word, r.status); done = true; continue; }
+                const state = r.headers.get('x-voice-cache') || '';
+                await r.arrayBuffer();
+                ok++;
+                if (state === 'hit' || state === 'edge') edge++; else miss++;
+                done = true;
+              } catch (e) { fail++; console.log('ERR', word, String(e && e.message)); done = true; }
+            }
+            if (!done) { fail++; console.log('RATE-LIMITED', word); }
+            await sleep(1100); /* worker allows 60/min/IP; ~1.1s stays safely under it */
             if ((i + 1) % 20 === 0) console.log('progress', i + 1, '/', words.length);
           }
           console.log(`DONE ok=${ok} already_cached=${edge} newly_generated=${miss} failed=${fail}`);
