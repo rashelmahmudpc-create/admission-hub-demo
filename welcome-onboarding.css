@@ -4,4 +4,9 @@
 
 .ah-welcome-live{padding:0!important}
 html:has(.ah-welcome-upgraded),body:has(.ah-welcome-upgraded),body:has(.ah-welcome-upgraded) #app{background:#f7f6fb!important}
+/* Owner: the welcome must be locked — nothing may scroll or move, ever. Pin the
+   page and the account layer to the visible area and kill every scroll/gesture
+   path (browser chrome resize, overscroll bounce, pull-to-refresh). */
+html:has(.ah-welcome-upgraded),body:has(.ah-welcome-upgraded){position:fixed!important;inset:0!important;width:100%!important;height:100%!important;overflow:hidden!important;overscroll-behavior:none!important;touch-action:none}
+.ah-account-page:has(.ah-welcome-upgraded),.ah-account-page:has(.ah-welcome-upgraded) .ah-account-shell,.ah-account-page:has(.ah-welcome-upgraded) .ah-account-body{position:fixed!important;inset:0!important;width:100%!important;height:100%!important;min-height:0!important;margin:0!important;max-width:none!important;overflow:hidden!important;overscroll-behavior:none!important}
 @media(max-height:680px){.ah-welcome-live [data-w-style="w15"]{font-size:clamp(23px,6.4vw,28px)!important;line-height:1.25!important;margin-top:6px!important}.ah-welcome-live [data-w-style="w16"]{font-size:14px!important;line-height:1.5!important}.ah-welcome-live [data-w-style="w17"]{margin-top:6px!important}.ah-welcome-live [data-w-style="w71"]{margin-top:8px!important}}
