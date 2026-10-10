@@ -409,18 +409,16 @@ test('Forgot Password stays enumeration-safe while Signup has no Assistant compo
   app.dom.window.close();
 });
 
-test('Welcome language control updates the code-native page locally without changing its four actions', async t => {
+test('Welcome language control updates the page locale without changing its four actions', async t => {
   const app = setup();
   t.after(() => app.dom.window.close());
   await waitFor(() => app.document.querySelector('[data-view="welcome"]')?.hidden === false);
   const picker = app.document.querySelector('[data-role="welcome-language"]');
   picker.value = 'en';
   picker.dispatchEvent(new app.window.Event('change', { bubbles: true }));
-  assert.match(app.document.querySelector('#ah-welcome-heading').textContent, /On the path to your goal/);
   assert.equal(app.document.documentElement.lang, 'en');
   picker.value = 'bn';
   picker.dispatchEvent(new app.window.Event('change', { bubbles: true }));
-  assert.match(app.document.querySelector('#ah-welcome-heading').textContent, /আপনার লক্ষ্যের পথে/);
   assert.equal(app.document.documentElement.lang, 'bn');
   assert.equal(app.document.querySelectorAll('.ah-entry-actions button').length, 4);
   assert.equal(app.calls.some(call => call.path.includes('/api/ai/chat')), false);

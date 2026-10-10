@@ -1,7 +1,7 @@
 /* Owner-supplied welcome design, native DOM. No API, authentication or account-state changes. */
 (() => {
 'use strict';
-const base=new URL('.',document.currentScript.src),version='welcome-native-20261010-v4';
+const base=new URL('.',document.currentScript.src),version='welcome-native-20261010-v5';
 const themes=[['#1d4ed8','#2563eb','#fff','37,99,235'],['#5b3df0','#6c4cf5','#fff','108,76,245'],['#078a68','#0a9a73','#fff','10,154,115'],['#d93f1c','#e8482a','#fff','232,72,42'],['#b8265a','#d6336c','#fff','214,51,108'],['#b45309','#ffb020','#2b1a00','255,176,32']];
 const english=[['All admission notices in one place','Never miss university, medical or GST admissions'],['Simple visual courses','Understand grammar with visuals and examples'],['Question bank and model tests','Sharpen your skills, one subject at a time'],['Learn from mistakes','See what went wrong and why the answer is correct'],['Track your progress','See clearly where you need to improve'],['AI help for any question','Ask when you get stuck and get a simple explanation']];
 let pending=false;

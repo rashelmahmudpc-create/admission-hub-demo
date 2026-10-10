@@ -40,20 +40,22 @@ test('account access remains a real full-screen document, never popup or dialog 
   assert.match(CSS, /\.ah-account-page\[data-current-view="welcome"\] \.ah-account-shell\[data-current-view="welcome"\]\{[\s\S]{0,160}width:100%[\s\S]{0,100}max-width:none/);
 });
 
-test('Welcome is rebuilt as modular code-native UI with exactly four entry paths', () => {
+test('Welcome ships only the functional entry controls; the old design is gone', () => {
   assert.match(welcome, /data-page-contract="code-native-welcome-v1"/);
   assert.match(welcome, /data-media-contract="zero-raster-entry-v1"/);
-  assert.match(welcome, /data-native-welcome-visual="journey-console-v1"/);
-  assert.match(welcome, /class="ah-console-core"/);
-  assert.match(welcome, /class="ah-route-track"/);
-  assert.match(welcome, /class="ah-console-modules"/);
-  assert.match(welcome, /STUDY PATH/);
-  assert.match(welcome, /আপনার লক্ষ্যের পথে/);
+  // The owner's live design (welcome-onboarding.js) replaces this at runtime, so
+  // the server view keeps only the controls the account flow binds to.
+  assert.match(welcome, /data-native-welcome-mount="welcome-onboarding-v1"/);
+  assert.match(welcome, /data-role="welcome-language"/);
+  // The old decorative welcome is fully deleted from the server view.
+  for (const dead of ['journey-console', 'ah-console-', 'ah-welcome-stage', 'ah-welcome-benefits',
+    'ah-welcome-ai-helper', 'ah-welcome-landscape', 'ah-code-ambient', 'ah-brand-mark',
+    'STUDY PATH', 'আপনার লক্ষ্যের পথে']) {
+    assert.ok(!welcome.includes(dead), `old welcome part still present: ${dead}`);
+  }
   assert.doesNotMatch(welcome, /data-3d-student-stage|ah-3d-student|ah-3d-object|ah-3d-campus/);
   assert.doesNotMatch(CSS, /ah-3d-/);
-  assert.match(welcome, /data-ai-helper-contract="welcome-ai-v1"/);
-  assert.match(welcome, /data-role="welcome-language"/);
-  assert.equal((welcome.match(/<article>/g) || []).length, 7, 'three console modules plus four benefit modules');
+  // The four entry paths remain as functional hooks (Google/guest are wired, not shown).
   assert.deepEqual([...welcome.matchAll(/data-role="(welcome-signup|welcome-login|continue-guest|welcome-google-button)"/g)].map(match => match[1]).sort(), [
     'continue-guest', 'welcome-google-button', 'welcome-login', 'welcome-signup'
   ]);
