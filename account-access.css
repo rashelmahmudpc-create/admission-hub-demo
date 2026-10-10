@@ -222,11 +222,13 @@ body.ah-account-page-active>.ah-account-launcher{display:none!important}
 .ah-account-shell[data-visual-contract="code-native-page-system-v1"] .ah-account-input{font-size:16px}
 
 /* Welcome — modular journey console, rendered only from DOM/CSS/SVG code. */
+/* Owner: the welcome must be one flat colour edge to edge so the phone's
+   status-bar strip and the app's top padding never differ. The former mint/blue
+   radial glows + 160deg gradient made the top-left corner a different colour
+   from the bar above it. Must follow the active theme's --bg (which is also what
+   the theme-color meta is synced to) and win over the later [data-theme] rules. */
 .ah-account-page[data-current-view="welcome"]{
-  background:
-    radial-gradient(circle at 10% 8%,rgba(67,183,151,.13),transparent 28%),
-    radial-gradient(circle at 92% 28%,rgba(64,136,199,.09),transparent 25%),
-    linear-gradient(160deg,#f5fbf8 0%,#fff 48%,#f1f8f5 100%);
+  background:var(--bg,#f7f6fb)!important;
 }
 .ah-account-page[data-current-view="welcome"] .ah-account-shell[data-current-view="welcome"]{
   width:100%;
