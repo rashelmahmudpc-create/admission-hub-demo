@@ -257,6 +257,18 @@ button{font-family:inherit;}
 html,body,#app,.setup-scroll,#examScrollContainer{scrollbar-width:none;-ms-overflow-style:none;}
 html::-webkit-scrollbar,body::-webkit-scrollbar,#app::-webkit-scrollbar,.setup-scroll::-webkit-scrollbar,#examScrollContainer::-webkit-scrollbar{width:0;height:0;display:none;}
 #app{max-width:760px; margin:0 auto; min-height:100%; padding-bottom:calc(82px + var(--safe-b)); overflow-x:hidden;}
+/* P16: on a laptop/tablet the phone column would look like a sliver down the
+   middle of a wide screen. Widen it and calm the bottom bar into a centred
+   floating pill so the app reads as finished, not stretched. Phones are
+   untouched — this only ever applies at >=900px. */
+@media(min-width:900px){
+  body #app{max-width:1080px; padding-bottom:calc(96px + var(--safe-b));}
+  body #navRoot .bottomnav{left:50%!important;right:auto!important;width:auto!important;max-width:640px!important;
+    transform:translateX(-50%)!important;border-radius:18px!important;
+    bottom:calc(14px + var(--safe-b))!important;padding:6px 14px!important;height:auto!important;
+    box-shadow:0 14px 34px rgba(14,60,44,.16)!important;}
+  .modal{max-width:640px;}
+}
 #app.no-nav{padding-bottom:calc(24px + var(--safe-b));}
 /* Keep navigation outside the scrolling app content and locked to the viewport bottom. */
 #navRoot{position:fixed!important;left:0!important;right:0!important;top:auto!important;bottom:0!important;height:calc(74px + var(--safe-b))!important;max-height:none!important;z-index:1000!important;display:block!important;transform:none!important;pointer-events:none!important;}
@@ -1429,14 +1441,14 @@ function renderShell(innerHtml, opts){
 function topbarHtml(opts){
   return `<div class="topbar${opts.hideNav ? ' sai-chromeless' : ''}">
     ${opts.menu ? `<button class="sai-menuicon" onclick="${opts.menu}" aria-label="মেনু">☰</button>` : ''}
-    ${opts.back ? `<button class="backbtn" onclick="${opts.back}">${opts.iconBack||'←'}</button>` : ''}
+    ${opts.back ? `<button class="backbtn" aria-label="পিছনে যান" onclick="${opts.back}">${opts.iconBack||'←'}</button>` : ''}
     <h1>${opts.title||''}</h1>
     ${(opts.actions||[]).join('')}
   </div>`;
 }
 function bottomNavHtml(active){
   return `<div class="bottomnav">
-    ${NAV_TABS.map(t=>`<button class="navbtn ${active===t.key?'active':''}" onclick="window.AdmissionNavigation ? window.AdmissionNavigation.openTab('${t.key}') : navigate('${t.key}')">
+    ${NAV_TABS.map(t=>`<button class="navbtn ${active===t.key?'active':''}" aria-label="${t.label}" aria-current="${active===t.key?'page':'false'}" onclick="window.AdmissionNavigation ? window.AdmissionNavigation.openTab('${t.key}') : navigate('${t.key}')">
       <span class="ic">${t.icon}</span><span>${t.label}</span></button>`).join('')}
   </div>`;
 }
@@ -1660,7 +1672,7 @@ function renderDashboard(){
       <div class="card premium-card fade-in stagger-1">
         <div class="row between">
           <div style="font-weight: 700; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px;">Today's Target</div>
-          <button class="iconbtn" style="color:#fff; padding:0;" onclick="openTargetModal()">⚙️</button>
+          <button class="iconbtn" style="color:#fff; padding:0;" aria-label="আজকের টার্গেট" onclick="openTargetModal()">⚙️</button>
         </div>
         <div class="row between" style="margin-top: 12px; align-items: flex-end;">
           <div style="font-size: 28px; font-weight: 800;">${todayCount} <span style="font-size: 16px; font-weight: 400; opacity: 0.8;">/ ${target} Qs</span></div>
@@ -1976,7 +1988,7 @@ function toggleQuestionBookmark(id){
 function openQuestionPreview(id){
   const q=CACHE.questions.find(x=>x.id===id); if(!q) return;
   const st=explorerStats(q), answer=(q.options||[])[q.answer];
-  openModal(`<div class="row between"><h3 style="margin:0;">Question preview</h3><button class="iconbtn" onclick="closeModal()">×</button></div><div class="muted" style="margin:10px 0 4px;">${esc(subjectName(q.subjectId))} · ${esc(topicName(q.topicId))} · ${(q.difficulty||'medium')}</div><div style="font-weight:700;font-size:15px;line-height:1.45;">${esc(q.question)}</div><div style="margin-top:12px;">${(q.options||[]).map((o,i)=>`<div class="opt ${i===q.answer?'correct':''}"><span class="let">${String.fromCharCode(65+i)}</span><span>${esc(o)}</span></div>`).join('')}</div>${q.explanation?`<div class="card" style="background:var(--mint);margin:8px 0 0;padding:12px;"><b>Explanation</b><div class="muted" style="margin-top:4px;">${esc(q.explanation)}</div></div>`:''}<div class="muted" style="margin-top:10px;">${st.attempts||0} attempts · ${st.wrong||0} mistakes${answer?` · Correct answer: ${esc(answer)}`:''}</div><div class="row" style="margin-top:14px;"><button class="btn" style="flex:1" onclick="closeModal();startQuestionPractice('${q.id}')">Practice</button></div>`);
+  openModal(`<div class="row between"><h3 style="margin:0;">Question preview</h3><button class="iconbtn" aria-label="বন্ধ করুন" onclick="closeModal()">×</button></div><div class="muted" style="margin:10px 0 4px;">${esc(subjectName(q.subjectId))} · ${esc(topicName(q.topicId))} · ${(q.difficulty||'medium')}</div><div style="font-weight:700;font-size:15px;line-height:1.45;">${esc(q.question)}</div><div style="margin-top:12px;">${(q.options||[]).map((o,i)=>`<div class="opt ${i===q.answer?'correct':''}"><span class="let">${String.fromCharCode(65+i)}</span><span>${esc(o)}</span></div>`).join('')}</div>${q.explanation?`<div class="card" style="background:var(--mint);margin:8px 0 0;padding:12px;"><b>Explanation</b><div class="muted" style="margin-top:4px;">${esc(q.explanation)}</div></div>`:''}<div class="muted" style="margin-top:10px;">${st.attempts||0} attempts · ${st.wrong||0} mistakes${answer?` · Correct answer: ${esc(answer)}`:''}</div><div class="row" style="margin-top:14px;"><button class="btn" style="flex:1" onclick="closeModal();startQuestionPractice('${q.id}')">Practice</button></div>`);
 }
 function moveTopicOptions(subjectId,selectedTopicId){
   const options=window.topicPickerOptions?window.topicPickerOptions(subjectId):CACHE.topics.filter(t=>t.subjectId===subjectId).sort((a,b)=>a.order-b.order).map(t=>({...t,pickerName:t.name}));
@@ -2114,8 +2126,8 @@ function renderSubjectDetail(subId){
           <div class="muted">${topicQCount(t.id)} questions</div>
         </div>
         <div class="row" onclick="event.stopPropagation()">
-          <button class="iconbtn" onclick="openTopicForm('${subId}','${t.id}')">✏️</button>
-          <button class="iconbtn" onclick="deleteTopic('${t.id}')">🗑️</button>
+          <button class="iconbtn" aria-label="বিষয় সম্পাদনা" onclick="openTopicForm('${subId}','${t.id}')">✏️</button>
+          <button class="iconbtn" aria-label="বিষয় মুছুন" onclick="deleteTopic('${t.id}')">🗑️</button>
         </div>
       </div>
       <div class="row" style="margin-top:12px; gap:8px;">
@@ -3806,15 +3818,15 @@ function renderFlashRunning(){
       <header class="flash-header">
         <div class="row between">
           <div class="row">
-            <button class="backbtn" onclick="confirmSubmitExam()">←</button>
+            <button class="backbtn" aria-label="পরীক্ষা জমা দিন" onclick="confirmSubmitExam()">←</button>
             <div>
               <h1 class="flash-title">Flash Test</h1>
               <div class="flash-subtitle">⚡ Instant Feedback Mode</div><span class="live-score-chip" id="liveScoreChip" style="margin-top:5px;">${liveScoreChipHtml(e)}</span>
             </div>
           </div>
           <div class="row">
-            <button class="iconbtn">${e.bookmarks.has(q.id)?'★':'☆'}</button>
-            <button class="iconbtn">⋮</button>
+            <button class="iconbtn" aria-label="বুকমার্ক" aria-pressed="${e.bookmarks.has(q.id)}">${e.bookmarks.has(q.id)?'★':'☆'}</button>
+            <button class="iconbtn" aria-label="আরও অপশন">⋮</button>
           </div>
         </div>
       </header>
@@ -5228,16 +5240,16 @@ window.__admissionBootPromise.catch(error => console.error('[Admission Hub] boot
     // The updated worker takes control now; the current document remains usable and the next launch uses the new shell.
     try{
 
-      const expectedSwVersion = 'v300-p15-offline-20261010';
+      const expectedSwVersion = 'v301-p16-a11y-20261010';
       // register() on the same scope performs an in-place update. Never unregister
       // the active iOS worker first: that discards the instant offline shell.
-      const registration=await navigator.serviceWorker.register('./sw.js?v=v300-p15-offline-20261010',{scope:'./',updateViaCache:'none'});
+      const registration=await navigator.serviceWorker.register('./sw.js?v=v301-p16-a11y-20261010',{scope:'./',updateViaCache:'none'});
       await registration.update().catch(()=>{});
       // Purge every old app-shell cache (any build id ≠ current). This guarantees
       // stale pre-retirement application shells can never be served from cache again.
       try {
 
-        const cur = 'admission-hub-shell-v300-p15-offline-20261010';
+        const cur = 'admission-hub-shell-v301-p16-a11y-20261010';
         const names = await caches.keys();
         for (const name of names) {
           if (name.startsWith('admission-hub-shell-') && name !== cur) await caches.delete(name).catch(()=>{});

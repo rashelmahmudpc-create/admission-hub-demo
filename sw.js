@@ -3,7 +3,7 @@ const CACHE_PREFIX = 'admission-hub-shell-';
 // hold user data; this one holds exactly one image and is trimmed on write.
 const AVATAR_CACHE = 'admission-hub-avatar-v1';
 
-const BUILD_ID = 'v300-p15-offline-20261010';
+const BUILD_ID = 'v301-p16-a11y-20261010';
 const CACHE_NAME = `${CACHE_PREFIX}${BUILD_ID}`;
 const VERSION_HEADER = 'X-Admission-Hub-Build';
 const DOCUMENT_NETWORK_TIMEOUT_MS = 2500;
@@ -62,13 +62,13 @@ const APP_SHELL = [
 // A truncated/corrupt download is NEVER written to the shell cache.
 const ASSET_DIGESTS = {
 /* sw-manifest:start */
-  "./index.html": "3bfd36c29ec137c96014c6383f1e987d0f7fec5cb1c2ccbd494d0cf071a711f9",
+  "./index.html": "60ce44d9d90f86deed480de7a4e809fd6d7bb8481a4b465e724fcabc4da9c649",
   "./manifest.json": "11a85ae594fc629b11605daeda3f9afe4ef95215a55a29f9cc423314bfb275a4",
   "./manifest.webmanifest": "5be476009a140eabd088bd972bd4d345b9c4f4a055cd6e4f08774b9cb4afaf52",
   "./dashboard-v2.css?v=dash2f13-theme": "4541bc1e65fd158c593443562975400d128b8f1d3b636595df3c235b99e8cced",
   "./3d-loader.css?v=3d-v2": "43ca21b0a41be5d223c317fd63582f19ff6ffab5d010639ef26349464550da63",
   "./session-persist.js?v=session-v2": "99f3d1f49f6d5714fd25f1c12b2aa978ca97a009d6caba9a690a0442d082593c",
-  "./analytics-service.js?v=analytics-p2-v2-insights": "37f238bf531b9ea5a21183799f8b3502d6c7d7e2b85e36bbcb7efdf1f51e6abe",
+  "./analytics-service.js?v=analytics-p2-v2-insights": "fbc3b6b1dc0cef3e76215b0c9b95fa83e112c0b7dd70affd327b348d8ebabd3b",
   "./account-access.css?v=20260921-single-email-button-fallback": "54d46ed598915409c72c5da480cde492f947928a21088d4ed7b2f9ad4d13682e",
   "./institutions-bd.js?v=bd-institutions-v2": "602c5549515e8207ad152b948ca9b8fe3ad0fbe429afb56380e4e21b662f779d",
   "./language-engine.js?v=lang-v5-single-email-button": "7e726c3cd194381201c7fdb2b1a49af78f4f48f38012e05ab68e13eee3ade3ad",
@@ -96,7 +96,7 @@ const ASSET_DIGESTS = {
   "./install-guide.css?v=install-v3": "0eb58c7551f8d973390fb7b19fd98e4dd63ea2070f9f6cbe9429962098c3635c",
   "./install-guide.js?v=install-v3": "ddd70ab50423c1d075d436c8ec7c1af89bfeceb0e198915e9f5ebd82e2efdfa8",
   "./a11y-core.css?v=a11y-v1": "c3829667c87b46bbe7effd4ca4e9732f02b58ed849c4ac481f9be7ef02026aac",
-  "./a11y-core.js?v=a11y-v1": "14e5c0cfeeb2480b57fc3064261984f39c248f4f548baffaeacbc87784a5b768",
+  "./a11y-core.js?v=a11y-v1": "633500e94e202d7035bccb5868f64d273c67324f1962e4c8b2e2df741ca5c6c5",
   "./offline-status.css?v=offline-v1": "4760d6b1570b482eff9c79d69f97156b288333271a53bfe1b9428c73e7389ea4",
   "./offline-status.js?v=offline-v1": "6991cef73a9adf91fccdfa36c5a947dd3d8181eb393b4f744abc1d78a08b8493",
   "./icons/icon-192.png": "777ce5566fbeff0f2e384c787c8dde4f47d7c869e455c6e577a503decd4f1683",
