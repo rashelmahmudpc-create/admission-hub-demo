@@ -28,7 +28,7 @@
   'use strict';
 
   const EVENT_VERSION = 'ev2';
-  const APP_VERSION_FALLBACK = 'v296-p08-adaptive-20261010';
+  const APP_VERSION_FALLBACK = 'v297-p09-analytics-20261010';
   const SDK_BASE = 'https://www.gstatic.com/firebasejs/10.12.2';
   const SDK_LOCAL = './sdk';
   const QUEUE_KEY = 'ahAnalyticsQueueV1';

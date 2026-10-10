@@ -60,9 +60,9 @@
 **রিকভারি:** mid-exam বন্ধ/রিফ্রেশে question-state+টাইমার (startTime+endTime থেকে recompute) · auto-save (debounced IDB + sessionStorage backup) · auto-submit (endTime-এ scheduled) · নেট-ফেল ব্যাকঅফ-retry, আর অনলাইনে ফিরলেই pending submit সাথে সাথে যায়।
 **নতুন:** adaptive-testing foundation — `ExamSelect` (pure module): difficulty filter + easy→medium→hard warm-up order + target difficulty-mix; setup-এ Adaptive order-চিপ। এখন দৃশ্যমান সব সেটআপ-টগল (auto-save, confirm-before-submit, resume) সত্যিই কাজ করে। টেস্ট: `p08-adaptive.test.mjs` ১২/১২ + আগের p08-exam-ac3 (২৩) ও p08-state-preserve (২৪)।
 
-## 📊 P09 — Advanced Analytics — 🟡 ~৪৫%
+## 📊 P09 — Advanced Analytics — ✅ **সম্পন্ন (২০২৬-১০-১০, sw v297)**
 **আছে:** progress-tool · weekly-report · daily-streak · result-analysis-500 · mistake-analysis।
-**বাকি:** ① Strong/Weak/Improving/Declining/Needs-Revision ড্যাশবোর্ড ② difficulty-wise ও time-spent বিশ্লেষণ ③ wrong-pattern-রিপোর্ট ④ improvement-rate/লং-টার্ম ট্রেন্ড ⑤ জনসাধারণ-ভাষায় insight-কার্ড।
+**নতুন (সম্পূর্ণ ইঞ্জিন):** `analytics-insight-engine.js` (pure UMD) — exam-snapshot থেকে per-topic Strong/Weak/Improving/Declining/Needs-Revision ক্লাসিফিকেশন · difficulty-wise নির্ভুলতা · time-spent (মোট/গড়/per-difficulty) · wrong-pattern (একাধিকবার-ভুল) · improvement-rate (আগের বনাম পরের অর্ধেক) · বাংলায় insight-কার্ড। `analytics-insights-panel.js` — Progress পেজে "📊 বিশ্লেষণ ও পরামর্শ" বোতামে খোলে এমন read-only প্যানেল। ট্রেন্ড কেবল একাধিক পরীক্ষা-থাকলে দাবি করে। টেস্ট: `p09-analytics.test.mjs` ১৪/১৪।
 
 ## 🎯 P10 — Smart Mistake & Revision — 🟡 ~৫০%
 **আছে:** mistakes-bank · smart-revision · mistake-notebook/note-icon · mistake-analysis (improving-ইঙ্গিত)।
