@@ -50,6 +50,8 @@ const APP_SHELL = [
   './student-data-sync.js?v=student-sync-v1',
   './install-guide.css?v=install-v3',
   './install-guide.js?v=install-v3',
+  './a11y-core.css?v=a11y-v1',
+  './a11y-core.js?v=a11y-v1',
   './icons/icon-192.png',
   './icons/icon-512.png'
 ];
@@ -58,7 +60,7 @@ const APP_SHELL = [
 // A truncated/corrupt download is NEVER written to the shell cache.
 const ASSET_DIGESTS = {
 /* sw-manifest:start */
-  "./index.html": "1da3052c453472155be6d05ccd03b682b5ae9310d29c2563580d4daa18647f7c",
+  "./index.html": "caf0ca0cd1b81433bf7a27568a91c20948df2bf22b1b8873e45bf7d421109cf3",
   "./manifest.json": "11a85ae594fc629b11605daeda3f9afe4ef95215a55a29f9cc423314bfb275a4",
   "./manifest.webmanifest": "5be476009a140eabd088bd972bd4d345b9c4f4a055cd6e4f08774b9cb4afaf52",
   "./dashboard-v2.css?v=dash2f13-theme": "4541bc1e65fd158c593443562975400d128b8f1d3b636595df3c235b99e8cced",
@@ -91,6 +93,8 @@ const ASSET_DIGESTS = {
   "./student-data-sync.js?v=student-sync-v1": "8a8b93fc710b39fa22b92dce6cf5036102cdd688a852a5bd448a3a9c9edcf2aa",
   "./install-guide.css?v=install-v3": "0eb58c7551f8d973390fb7b19fd98e4dd63ea2070f9f6cbe9429962098c3635c",
   "./install-guide.js?v=install-v3": "ddd70ab50423c1d075d436c8ec7c1af89bfeceb0e198915e9f5ebd82e2efdfa8",
+  "./a11y-core.css?v=a11y-v1": "c3829667c87b46bbe7effd4ca4e9732f02b58ed849c4ac481f9be7ef02026aac",
+  "./a11y-core.js?v=a11y-v1": "14e5c0cfeeb2480b57fc3064261984f39c248f4f548baffaeacbc87784a5b768",
   "./icons/icon-192.png": "777ce5566fbeff0f2e384c787c8dde4f47d7c869e455c6e577a503decd4f1683",
   "./icons/icon-512.png": "86459109582f82b1d891a3e5a82723fefd21a3c65e9d0d22ab4dae33bb540520",
 /* sw-manifest:end */

@@ -1,0 +1,51 @@
+/* Accessibility core — skip link, visible keyboard focus, screen-reader text,
+   and a calmer motion mode. Uses the app's theme tokens where they exist. */
+:root{
+  --ah-focus:#12a876;
+  --ah-focus-ring:rgba(18,168,118,.45);
+}
+
+/* Screen-reader-only, but focusable (used by the skip link). */
+.ah-sr-only{
+  position:absolute!important; width:1px; height:1px; padding:0; margin:-1px;
+  overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0;
+}
+
+/* Skip link: hidden off-screen until a keyboard user focuses it. */
+.ah-skip-link{
+  position:fixed; top:8px; left:8px; z-index:10000;
+  transform:translateY(-160%);
+  padding:10px 16px; border-radius:12px;
+  background:var(--ah-brand-fill,#12a876); color:#fff;
+  font:600 14px/1.4 system-ui,-apple-system,"Noto Sans Bengali",sans-serif;
+  text-decoration:none; box-shadow:0 8px 24px rgba(9,60,45,.28);
+  transition:transform .15s ease;
+}
+.ah-skip-link:focus,
+.ah-skip-link:focus-visible{ transform:translateY(0); outline:3px solid #fff; outline-offset:2px; }
+
+/* A single, consistent visible focus ring for anything reachable by keyboard.
+   Never remove the outline elsewhere without replacing it with something. */
+:where(a,button,input,select,textarea,summary,[tabindex],[role="button"],[role="tab"],[role="option"]):focus-visible{
+  outline:3px solid var(--ah-focus);
+  outline-offset:2px;
+  border-radius:6px;
+}
+/* Underlying focused elements that already draw their own ring keep theirs. */
+:where(input,textarea,select):focus-visible{ outline-offset:1px; }
+
+/* The injected main-content target must not show a ring of its own. */
+#ah-main-content:focus{ outline:none; }
+
+/* The live region must never be seen. */
+#ah-live-status{ position:absolute!important; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); }
+
+/* Calmer motion for visitors who ask for it (set by a11y-core.js on <html>). */
+html.ah-reduce-motion *,
+html.ah-reduce-motion *::before,
+html.ah-reduce-motion *::after{
+  animation-duration:.001ms!important;
+  animation-iteration-count:1!important;
+  transition-duration:.001ms!important;
+  scroll-behavior:auto!important;
+}

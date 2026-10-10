@@ -60,11 +60,11 @@ test('১৪. installed PWA document is bounded network-first with fast offline 
   SW.includes("fetch(request, { cache: 'no-store', signal: controller.signal })") &&
   SW.includes('return offlineFallback(request);'));
 test('১৫. precache stays lean because code-native entry pages add no raster assets',
-  /* Bound tracks the hand-curated APP_SHELL list (33 entries after the P13
-     performance core + runtime landed on top of the P11 adaptive engine).
-     The point of the
+  /* Bound tracks the hand-curated APP_SHELL list (37 entries after the P16
+     accessibility core — skip link + focus ring + reduced motion — landed on
+     top of the P15 install guide). The point of the
      ceiling is to catch an accidental bulk import, not to pin an exact size. */
-  shellAssets > 0 && shellAssets <= 33 && !appShellBlock.includes('result-analysis-500.js') && !appShellBlock.includes("  '',"));
+  shellAssets > 0 && shellAssets <= 37 && !appShellBlock.includes('result-analysis-500.js') && !appShellBlock.includes("  '',"));
 test('১৬. PWA updates are in-place; active worker is never unregistered first', !H.includes('registration.unregister()'));
 
 /* AI composer and response */
