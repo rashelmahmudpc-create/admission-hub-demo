@@ -23,6 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22'
@@ -37,12 +38,24 @@ jobs:
           if (!res.ok) { console.error('content fetch failed', res.status); process.exit(1); }
           const doc = await res.json();
           const rows = [...(doc.vocabulary || []), ...(doc.vocabularyMaster || [])];
-          const words = [...new Set(rows.map(r => String(r.word || r.term || '').trim()).filter(w => w && w.length <= 60 && /^[\p{L}\p{M}][\p{L}\p{M}'’.\- ]*$/u.test(w)))];
-          console.log('words to warm:', words.length);
+          const words = new Set(rows.map(r => String(r.word || r.term || '').trim()).filter(w => w && w.length <= 60 && /^[\p{L}\p{M}][\p{L}\p{M}'’.\- ]*$/u.test(w)));
+          // Also warm the app's built-in starter cards and every synonym/antonym
+          // they show, so a student tapping one of those is never the first to pay.
+          try {
+            const src = await (await import('node:fs')).promises.readFile('./vocabulary-a-seed.js', 'utf8');
+            const re = /word:\s*'([^']+)'/g;
+            let m;
+            while ((m = re.exec(src))) {
+              const w = m[1].trim();
+              if (w && w.length <= 60 && /^[\p{L}\p{M}][\p{L}\p{M}'’.\- ]*$/u.test(w)) words.add(w);
+            }
+          } catch (_) { /* seed file optional */ }
+          const list = [...words];
+          console.log('words to warm:', list.length);
 
           let ok = 0, edge = 0, miss = 0, fail = 0;
           const sleep = ms => new Promise(r => setTimeout(r, ms));
-          for (const [i, word] of words.entries()) {
+          for (const [i, word] of list.entries()) {
             let done = false;
             for (let attempt = 0; attempt < 4 && !done; attempt += 1) {
               try {
@@ -58,7 +71,7 @@ jobs:
             }
             if (!done) { fail++; console.log('RATE-LIMITED', word); }
             await sleep(1100); /* worker allows 60/min/IP; ~1.1s stays safely under it */
-            if ((i + 1) % 20 === 0) console.log('progress', i + 1, '/', words.length);
+            if ((i + 1) % 20 === 0) console.log('progress', i + 1, '/', list.length);
           }
           console.log(`DONE ok=${ok} already_cached=${edge} newly_generated=${miss} failed=${fail}`);
           JS

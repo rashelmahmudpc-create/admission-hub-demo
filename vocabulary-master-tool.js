@@ -506,6 +506,22 @@
     const found = document.getElementById('vmCategoryFound');
     if (found) found.textContent = `${recordsFor(state.query, state.category).length.toLocaleString()} words found`;
   }
+  function prefetchCategoryVoices() {
+    const lib = window.VocabularyElevenLabs;
+    if (!lib || typeof lib.prefetchWords !== 'function') return;
+    const rows = recordsFor(state.query, state.category).slice(0, 24);
+    const words = [];
+    for (const record of rows) {
+      if (record.word) words.push(record.word);
+      relations(record, 'synonyms').forEach(item => words.push(item.word));
+      relations(record, 'antonyms').forEach(item => words.push(item.word));
+      relations(record, 'acronyms').forEach(item => words.push(item.word));
+    }
+    const unique = [...new Set(words.filter(Boolean))];
+    if (!unique.length) return;
+    // Delayed so it never competes with the first paint; best-effort and silent.
+    window.setTimeout(() => { try { lib.prefetchWords(unique, 24); } catch (_) {} }, 900);
+  }
   function renderCategory() {
     const all = recordsFor(state.query, state.category);
     const category = escape(state.category || 'ALL');
@@ -514,6 +530,7 @@
     renderShell(body, { title:`${state.category || 'Vocabulary'} Vocabulary`, back:`navigate('${route('bank')}')` });
     bindCategoryScrollTracking();
     restoreCategoryPosition();
+    prefetchCategoryVoices();
   }
   function renderWord(id) {
     const record = state.records.find(row => row.id === id);

@@ -41,3 +41,12 @@ test('vocab-a: the seed is loaded from index.html before the tool, and the tool 
   assert.match(TOOL, /window\.AH_VOCAB_A_SEED/);
   assert.match(TOOL, /await seedCategoryA\(\)/);
 });
+
+test('vocab-a: opening a category prefetches its words (and relations) into the voice cache', () => {
+  const VOICE = readFileSync(new URL('vocabulary-elevenlabs.js', root), 'utf8');
+  assert.match(VOICE, /const prefetchWords = async/);
+  assert.match(VOICE, /prefetchWords,\s/, 'prefetchWords must be exported on window.VocabularyElevenLabs');
+  assert.match(TOOL, /function prefetchCategoryVoices\(\)/);
+  assert.match(TOOL, /lib\.prefetchWords\(unique, 24\)/);
+  assert.match(TOOL, /prefetchCategoryVoices\(\);/, 'renderCategory must trigger the prefetch');
+});

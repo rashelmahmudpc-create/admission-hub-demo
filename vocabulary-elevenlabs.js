@@ -201,6 +201,40 @@
   };
 
   // ── Stats + cache management (vocabulary ডেটা কখনো ধরে না) ───────────────────
+  // ── Prefetch: warm the shared cache in the background ──────────────────────
+  // A category's words (and their synonyms/antonyms) are generated once, quietly,
+  // so a student's first tap plays from cache instead of waiting on the provider.
+  // Deduped against in-flight work and the local cache; capped concurrency.
+  const prefetchWords = async (words, limit = 12) => {
+    const list = [...new Set((Array.isArray(words) ? words : []).map(w => String(w || '').trim()).filter(Boolean))].slice(0, limit);
+    if (!list.length || !configured()) return 0;
+    const customLib = window.__vmVoiceLib;
+    let warmed = 0;
+    const run = async word => {
+      const key = cacheKey(word);
+      if (!key || pending.has(key)) return;
+      if (customLib && customLib[normalizeWord(word)]) return;
+      try { const row = await getRow(key); if (row && row.audioBlob) return; } catch (_) { /* fall through */ }
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+      const job = generateAudio(word);
+      pending.set(key, job);
+      apiCalls++;
+      try {
+        const blob = await job;
+        await putRow({
+          id: key, wordKey: normalizeWord(word), word: word.slice(0, VOICE_CONFIG.maxWordLength), type: 'vocabulary',
+          audioBlob: blob, voiceId: VOICE_CONFIG.voiceId, modelId: VOICE_CONFIG.modelId,
+          settingsVersion: VOICE_CONFIG.settingsVersion, lang: VOICE_CONFIG.lang,
+          createdAt: Date.now(), size: blob.size
+        });
+        warmed++;
+      } catch (_) { /* prefetch is best-effort, never surfaced */ }
+      finally { pending.delete(key); }
+    };
+    for (let i = 0; i < list.length; i += 3) await Promise.all(list.slice(i, i + 3).map(run));
+    return warmed;
+  };
+
   const stats = async () => {
     const rows = await allRows();
     return { count: rows.length, bytes: rows.reduce((sum, row) => sum + (Number(row.size) || (row.audioBlob && row.audioBlob.size) || 0), 0) };
@@ -272,7 +306,7 @@
   };
 
   window.VocabularyElevenLabs = {
-    speakWord, playUrl, stopAudio, cacheKey, normalizeWord,
+    speakWord, playUrl, stopAudio, cacheKey, normalizeWord, prefetchWords,
     stats, clearAll, clearCategory, categoryStatus,
     confirmClearAll, confirmClearCategory,
     settingsSection, hydrateSettingsSection, saveEndpoint,
