@@ -80,6 +80,50 @@ test('p13d-09: the reader is null-safe when D1 is not bound (KV fallback preserv
 });
 
 test('p13d-10: the reader runs the query through bind and returns a page', async () => {
+  let captured = null;
+  const db = { prepare(sql) { captured = sql; return { bind: (...a) => ({ all: async () => ({ results: [{ id: 'x', topic_id: 't', subject_id: 's', difficulty: 1, sort_key: 'k', payload: '{}', updated_at: 1 }] }) }), all: async () => ({ results: [] }) }; } };
+  const reader = D1.createD1Reader(db);
+  const page = await reader.page({ topicId: 't', limit: 5 });
+  assert.equal(page.count, 1);
+  assert.match(captured, /ORDER BY sort_key ASC, id ASC LIMIT \?/);
+});
+
+test('p13d-11: all() returns every row for a filter, ordered, with no LIMIT', async () => {
+  const seen = [];
+  const db = { prepare(sql) { seen.push(sql); return { bind: () => ({ all: async () => ({ results: [] }) }), all: async () => ({ results: [] }) }; } };
+  const reader = D1.createD1Reader(db);
+  await reader.all({ subjectId: 'sub-01' });
+  assert.match(seen[0], /ORDER BY sort_key ASC, id ASC$/);
+  assert.ok(!/LIMIT/.test(seen[0]), 'all() must not truncate');
+});
+
+test('p13d-12: sig() reads the stored content signature, and is null-safe', async () => {
+  const ok = { prepare: () => ({ bind: () => ({ first: async () => ({ v: '1:2:3' }) }) }) };
+  assert.equal(await D1.createD1Reader(ok).sig(), '1:2:3');
+  assert.equal(await D1.createD1Reader(null).sig(), null);
+  const broken = { prepare: () => ({ bind: () => ({ first: async () => { throw new Error('no table'); } }) }) };
+  assert.equal(await D1.createD1Reader(broken).sig(), null, 'a missing table must not throw');
+});
+
+test('p13d-14: document() assembles questions plus the mirrored lists from D1', async () => {
+  const db = { prepare(sql) {
+    if (/content_lists/.test(sql)) return { all: async () => ({ results: [{ kind: 'subjects', payload: '{"id":"sub-01"}' }, { kind: 'topics', payload: '{"id":"top-001"}' }] }) };
+    return { all: async () => ({ results: [{ id: 'q1', topic_id: 't', subject_id: 'sub-01', difficulty: 1, sort_key: 'k', payload: '{"text":"x"}', updated_at: 1 }] }) };
+  } };
+  const doc = await D1.createD1Reader(db).document();
+  assert.equal(doc.questions.length, 1);
+  assert.equal(doc.subjects[0].id, 'sub-01');
+  assert.equal(doc.topics[0].id, 'top-001');
+});
+
+test('p13d-15: document() returns null when there is nothing to serve', async () => {
+  const empty = { prepare: () => ({ all: async () => ({ results: [] }) }) };
+  assert.equal(await D1.createD1Reader(empty).document(), null, 'empty D1 must fall back to KV');
+  const broken = { prepare: () => { throw new Error('no table'); } };
+  assert.equal(await D1.createD1Reader(broken).document(), null);
+});
+
+test('p13d-13: a bound reader normalizes rows and counts', async () => {
   const seen = [];
   const db = { prepare(sql) { seen.push(sql); return { bind(...args) { this._a = args; return this; }, async all() { return { results: [{ id: 'q1', sort_key: 'k1', topic_id: 't', subject_id: 's', difficulty: 1, updated_at: 1, payload: '{"text":"x"}' }] }; }, async first() { return { n: 7 }; } }; } };
   const reader = D1.createD1Reader(db);
@@ -169,11 +213,14 @@ test('p13w-07: the runtime exposes a real windowed VirtualList, not a stub', () 
   assert.match(r, /Perf\.computeWindow/);
 });
 
-test('p13w-08: the D1 content path is flag-gated and falls back to KV', () => {
+test('p13w-08: the D1 content path is flag-and-sig gated and falls back to KV', () => {
   const p = readFileSync(new URL('./public-worker.js', import.meta.url), 'utf8');
   assert.match(p, /env\.PUB_D1_CONTENT === 'enabled'/, 'D1 path must be opt-in, never the default');
+  assert.match(p, /await reader\.sig\(\)\) === String\(meta\.sig\)/, 'D1 must be served only when its sig matches the live meta');
   assert.match(p, /await import\('\.\/p13-d1-read\.mjs'\)/, 'dynamic import keeps D1 code out of the main bundle');
   assert.match(p, /fall through to KV/, 'a D1 miss must fall back to the live KV content');
+  assert.match(p, /await reader\.document\(\)/, 'the whole document must be assembled from D1');
+  assert.match(p, /\{ v: meta\.v \|\| 0, at: meta\.at \|\| 0, sig: meta\.sig, \.\.\.document, source: 'd1' \}/, 'the D1 reply must carry v/sig and the document shape');
   // The gate must sit before the KV read *within the same route*, so default
   // behaviour is unchanged.
   const gate = p.indexOf('PUB_D1_CONTENT');

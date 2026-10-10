@@ -94,6 +94,63 @@ function createD1Reader(db) {
       const res = await bound.all();
       return toPage(res && res.results ? res.results : [], q.limit);
     },
+    /* Every row for a filter, ordered by the index. Used for the current
+       full-document pull; a paging client uses page() instead. */
+    async all(params = {}) {
+      if (!available) return null;
+      const where = [];
+      const bind2 = [];
+      if (params.topicId) {
+        where.push("topic_id = ?");
+        bind2.push(String(params.topicId));
+      }
+      if (params.subjectId) {
+        where.push("subject_id = ?");
+        bind2.push(String(params.subjectId));
+      }
+      if (params.publishedOnly !== false) where.push("published = 1");
+      const sql = "SELECT id, topic_id, subject_id, difficulty, sort_key, payload, updated_at FROM questions" + (where.length ? " WHERE " + where.join(" AND ") : "") + " ORDER BY sort_key ASC, id ASC";
+      const stmt = db.prepare(sql);
+      const res = await (bind2.length ? stmt.bind(...bind2) : stmt).all();
+      return (res && res.results ? res.results : []).map(normalizeRow).filter(Boolean);
+    },
+    /* Signature of the content version these rows were built from. The read
+       path compares it to the live meta and refuses a stale table. */
+    async sig() {
+      if (!available) return null;
+      try {
+        const stmt = db.prepare("SELECT v FROM content_meta WHERE k = ?").bind("sig");
+        const res = await stmt.first();
+        return res ? String(res.v) : null;
+      } catch (_) {
+        return null;
+      }
+    },
+    /* Assemble the same document shape the KV blob holds, entirely from D1:
+       questions plus the mirrored small lists. Returns null when the tables
+       are not there, so a caller can fall back to KV. */
+    async document() {
+      if (!available) return null;
+      try {
+        const qres = await db.prepare("SELECT id, topic_id, subject_id, difficulty, sort_key, payload, updated_at FROM questions WHERE published = 1 ORDER BY sort_key ASC, id ASC").all();
+        const questions = (qres && qres.results ? qres.results : []).map(normalizeRow).filter(Boolean);
+        if (!questions.length) return null;
+        const lres = await db.prepare("SELECT kind, payload FROM content_lists ORDER BY kind ASC, ord ASC").all();
+        const lists = {};
+        for (const r of lres && lres.results ? lres.results : []) {
+          let item = {};
+          try {
+            item = JSON.parse(r.payload);
+          } catch (_) {
+            continue;
+          }
+          (lists[r.kind] = lists[r.kind] || []).push(item);
+        }
+        return { questions, ...lists };
+      } catch (_) {
+        return null;
+      }
+    },
     /* A cheap bounded probe used by health checks. */
     async count(params = {}) {
       if (!available) return null;
@@ -133,6 +190,22 @@ CREATE INDEX IF NOT EXISTS idx_q_topic   ON questions(topic_id, sort_key, id);
 CREATE INDEX IF NOT EXISTS idx_q_subject ON questions(subject_id, sort_key, id);
 CREATE INDEX IF NOT EXISTS idx_q_sort    ON questions(sort_key, id);
 CREATE INDEX IF NOT EXISTS idx_q_pub     ON questions(published, sort_key, id);
+/* One row recording which content version the rows above were built from, so a
+   read path can prove the table is in sync before trusting it. */
+CREATE TABLE IF NOT EXISTS content_meta (
+  k TEXT PRIMARY KEY,
+  v TEXT NOT NULL
+);
+/* Small lists (subjects, topics, vocabulary, …) mirrored per kind, so the whole
+   document can be assembled from D1 without reading the large KV blob. */
+CREATE TABLE IF NOT EXISTS content_lists (
+  kind    TEXT NOT NULL,
+  id      TEXT NOT NULL,
+  ord     INTEGER NOT NULL DEFAULT 0,
+  payload TEXT NOT NULL,
+  PRIMARY KEY (kind, id)
+);
+CREATE INDEX IF NOT EXISTS idx_list_kind ON content_lists(kind, ord);
 `;
     MAX_LIMIT = 100;
     DEFAULT_LIMIT = 20;
@@ -2284,15 +2357,14 @@ var public_worker_default = {
       if (path === "/api/content" && request.method === "GET") {
         if (env.PUB_D1_CONTENT === "enabled" && env.PROFILE_DB) {
           try {
+            const rawMeta = await env.PUB_KV.get("pubContentMeta");
+            const meta = rawMeta ? JSON.parse(rawMeta) : null;
             const { createD1Reader: createD1Reader2 } = await Promise.resolve().then(() => (init_p13_d1_read(), p13_d1_read_exports));
             const reader = createD1Reader2(env.PROFILE_DB);
-            const page = await reader.page({
-              topicId: url.searchParams.get("topicId") || void 0,
-              subjectId: url.searchParams.get("subjectId") || void 0,
-              limit: url.searchParams.get("limit") || void 0,
-              cursor: url.searchParams.get("cursor") || void 0
-            });
-            if (page && page.count) return json({ v: 0, at: 0, source: "d1", ...page });
+            if (meta && meta.sig && await reader.sig() === String(meta.sig)) {
+              const document = await reader.document();
+              if (document) return json({ v: meta.v || 0, at: meta.at || 0, sig: meta.sig, ...document, source: "d1" });
+            }
           } catch (_) {
           }
         }

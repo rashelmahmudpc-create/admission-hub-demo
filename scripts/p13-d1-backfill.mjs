@@ -45,7 +45,7 @@ export function questionToRow(q, now = Date.now()) {
   };
 }
 
-export function buildSql(doc, { now = Date.now(), batch = BATCH } = {}) {
+export function buildSql(doc, { now = Date.now(), batch = BATCH, all = false } = {}) {
   const questions = Array.isArray(doc && doc.questions) ? doc.questions : [];
   const rows = questions.filter(q => q && q.id).map(q => questionToRow(q, now));
   const out = [];
@@ -61,6 +61,22 @@ export function buildSql(doc, { now = Date.now(), batch = BATCH } = {}) {
     out.push(chunk.map(r =>
       `  (${sqlStr(r.id)}, ${sqlStr(r.topic_id)}, ${sqlStr(r.subject_id)}, ${sqlInt(r.difficulty)}, 1, ${sqlStr(r.sort_key)}, ${sqlStr(r.payload)}, ${sqlInt(r.updated_at)})`
     ).join(',\n') + '\nON CONFLICT(id) DO UPDATE SET topic_id=excluded.topic_id, subject_id=excluded.subject_id, difficulty=excluded.difficulty, published=excluded.published, sort_key=excluded.sort_key, payload=excluded.payload, updated_at=excluded.updated_at;');
+  }
+  /* Record the content signature these rows came from. The read path refuses to
+     serve a table whose sig does not match the live meta, so a stale D1 copy can
+     never shadow newer KV content. */
+  out.push(`INSERT INTO content_meta (k, v) VALUES ('sig', ${sqlStr(doc && doc.sig || '')}) ON CONFLICT(k) DO UPDATE SET v=excluded.v;`);
+  // With --all, mirror the small lists too, so the document can be assembled
+  // from D1 alone instead of reading the large KV blob.
+  if (all) {
+    const KINDS = ['subjects', 'topics', 'vocabulary', 'vocabularyMaster', 'exams'];
+    out.push('DELETE FROM content_lists;');
+    for (const kind of KINDS) {
+      const list = Array.isArray(doc && doc[kind]) ? doc[kind].filter(x => x && x.id) : [];
+      if (!list.length) continue;
+      out.push(`INSERT INTO content_lists (kind, id, ord, payload) VALUES`);
+      out.push(list.map((x, i) => `  (${sqlStr(kind)}, ${sqlStr(x.id)}, ${sqlInt(i)}, ${sqlStr(JSON.stringify(x))})`).join(',\n') + '\nON CONFLICT(kind, id) DO UPDATE SET ord=excluded.ord, payload=excluded.payload;');
+    }
   }
   out.push(`SELECT COUNT(*) AS rows FROM questions;`);
   return out.join('\n') + '\n';
@@ -79,20 +95,35 @@ async function main() {
   const out = arg('out', 'backfill.sql');
   const file = arg('in', '');
   const url = arg('url', '');
+  let all = arg('all', '') === 'true' || process.argv.includes('--all');
   let text;
   if (file) text = readFileSync(file, 'utf8');
   else if (url) {
     const res = await fetch(url, { headers: { 'X-AH-App': 'admission-hub' } });
     if (!res.ok) throw new Error('fetch ' + url + ' -> HTTP ' + res.status);
     text = await res.text();
+    // The content document does not embed its signature; /api/content/meta does.
+    // The read path verifies this sig, so it must be captured here.
+    const metaUrl = url.replace(/\/content$/, '/content/meta');
+    if (metaUrl !== url) {
+      const mr = await fetch(metaUrl, { headers: { 'X-AH-App': 'admission-hub' } });
+      if (mr.ok) {
+        const meta = await mr.json();
+        const doc = JSON.parse(text);
+        doc.sig = meta && meta.sig || '';
+        text = JSON.stringify(doc);
+      }
+    }
+    all = all || arg('all', '') === 'true';
   } else {
-    console.error('usage: node scripts/p13-d1-backfill.mjs --in content.json | --url <endpoint> [--out backfill.sql]');
+    console.error('usage: node scripts/p13-d1-backfill.mjs --in content.json | --url <endpoint> [--sig S] [--all] [--out backfill.sql]');
     process.exit(2);
   }
-  const sql = buildFromContentJson(text, { now: Date.now() });
+  const doc = JSON.parse(text);
+  if (arg('sig', '')) doc.sig = arg('sig');
+  const sql = buildSql(doc, { now: Date.now(), all });
   writeFileSync(out, sql);
-  const rows = (JSON.parse(text).questions || []).length;
-  console.log(`p13-d1-backfill: ${rows} questions -> ${out} (${sql.length} bytes)`);
+  console.log(`p13-d1-backfill: ${(doc.questions || []).length} questions, sig="${doc.sig || ''}", all=${all} -> ${out} (${sql.length} bytes)`);
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

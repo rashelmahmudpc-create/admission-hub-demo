@@ -72,3 +72,19 @@ test('p13b-08: the backfill workflow is manual, confirmed, and additive-only', (
   assert.match(w, /test -s backfill.sql/, 'must refuse to run on an empty file');
   assert.ok(!/wrangler.*deploy/.test(w), 'backfill must not deploy code');
 });
+
+test('p13b-09: the SQL records the content sig the read path verifies', () => {
+  const sql = buildSql({ ...DOC, sig: '1:2:3' }, { now: 1 });
+  assert.match(sql, /INSERT INTO content_meta \(k, v\) VALUES \('sig', '1:2:3'\)/, 'sig must be stored');
+});
+
+test('p13b-10: --all mirrors the small lists so the doc can be assembled from D1', () => {
+  const doc = { ...DOC, subjects: [{ id: 'sub-01', name: 'GK' }], topics: [{ id: 'top-001', name: 'Politics' }] };
+  const sql = buildSql(doc, { now: 1, all: true });
+  assert.match(sql, /CREATE TABLE IF NOT EXISTS content_lists/);
+  assert.match(sql, /DELETE FROM content_lists;/);
+  assert.match(sql, /INSERT INTO content_lists \(kind, id, ord, payload\)/);
+  assert.match(sql, /'subjects', 'sub-01', 0/);
+  const plain = buildSql(doc, { now: 1 });
+  assert.ok(!/INSERT INTO content_lists/.test(plain), 'without --all the KV lists are left alone');
+});

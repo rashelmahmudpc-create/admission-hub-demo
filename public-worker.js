@@ -207,20 +207,21 @@ export default {
         return json({ v: doc.v || 0, at: doc.at || 0, sig: doc.sig || '', counts: countsOf(doc) });
       }
       if (path === '/api/content' && request.method === 'GET') {
-        /* P13 — optional D1 fast path. Off unless explicitly enabled AND the
-           table has been backfilled; gating on the flag (not just the binding)
-           means a bound-but-empty D1 can never blank out live content. */
+        /* P13 — optional D1 fast path. Off unless explicitly enabled AND the D1
+           copy is provably in sync with the live meta (sig match). The whole
+           document (questions + small lists) is assembled from D1, so the large
+           KV blob is not read at all. Any mismatch or error falls through to KV
+           untouched. */
         if (env.PUB_D1_CONTENT === 'enabled' && env.PROFILE_DB) {
           try {
+            const rawMeta = await env.PUB_KV.get('pubContentMeta');
+            const meta = rawMeta ? JSON.parse(rawMeta) : null;
             const { createD1Reader } = await import('./p13-d1-read.mjs');
             const reader = createD1Reader(env.PROFILE_DB);
-            const page = await reader.page({
-              topicId: url.searchParams.get('topicId') || undefined,
-              subjectId: url.searchParams.get('subjectId') || undefined,
-              limit: url.searchParams.get('limit') || undefined,
-              cursor: url.searchParams.get('cursor') || undefined,
-            });
-            if (page && page.count) return json({ v: 0, at: 0, source: 'd1', ...page });
+            if (meta && meta.sig && (await reader.sig()) === String(meta.sig)) {
+              const document = await reader.document();
+              if (document) return json({ v: meta.v || 0, at: meta.at || 0, sig: meta.sig, ...document, source: 'd1' });
+            }
           } catch (_) { /* fall through to KV */ }
         }
         const raw = await env.PUB_KV.get('pubContent');

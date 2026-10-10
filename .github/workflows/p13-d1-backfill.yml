@@ -40,6 +40,7 @@ jobs:
           set -eu
           node scripts/p13-d1-backfill.mjs \
             --url "https://admission-gk.admissionhub.workers.dev/api/content" \
+            --all \
             --out backfill.sql
           # Guard: never apply an empty file over a populated table.
           test -s backfill.sql

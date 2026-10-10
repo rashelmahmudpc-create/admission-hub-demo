@@ -25,6 +25,22 @@ CREATE INDEX IF NOT EXISTS idx_q_topic   ON questions(topic_id, sort_key, id);
 CREATE INDEX IF NOT EXISTS idx_q_subject ON questions(subject_id, sort_key, id);
 CREATE INDEX IF NOT EXISTS idx_q_sort    ON questions(sort_key, id);
 CREATE INDEX IF NOT EXISTS idx_q_pub     ON questions(published, sort_key, id);
+/* One row recording which content version the rows above were built from, so a
+   read path can prove the table is in sync before trusting it. */
+CREATE TABLE IF NOT EXISTS content_meta (
+  k TEXT PRIMARY KEY,
+  v TEXT NOT NULL
+);
+/* Small lists (subjects, topics, vocabulary, …) mirrored per kind, so the whole
+   document can be assembled from D1 without reading the large KV blob. */
+CREATE TABLE IF NOT EXISTS content_lists (
+  kind    TEXT NOT NULL,
+  id      TEXT NOT NULL,
+  ord     INTEGER NOT NULL DEFAULT 0,
+  payload TEXT NOT NULL,
+  PRIMARY KEY (kind, id)
+);
+CREATE INDEX IF NOT EXISTS idx_list_kind ON content_lists(kind, ord);
 `;
 
 export const MAX_LIMIT = 100;
@@ -101,6 +117,50 @@ export function createD1Reader(db) {
         const bound = q.bind.length ? stmt.bind(...q.bind) : stmt;
         const res = await bound.all();
         return toPage(res && res.results ? res.results : [], q.limit);
+      },
+      /* Every row for a filter, ordered by the index. Used for the current
+         full-document pull; a paging client uses page() instead. */
+      async all(params = {}) {
+        if (!available) return null;
+        const where = [];
+        const bind = [];
+        if (params.topicId) { where.push('topic_id = ?'); bind.push(String(params.topicId)); }
+        if (params.subjectId) { where.push('subject_id = ?'); bind.push(String(params.subjectId)); }
+        if (params.publishedOnly !== false) where.push('published = 1');
+        const sql = 'SELECT id, topic_id, subject_id, difficulty, sort_key, payload, updated_at FROM questions'
+          + (where.length ? ' WHERE ' + where.join(' AND ') : '') + ' ORDER BY sort_key ASC, id ASC';
+        const stmt = db.prepare(sql);
+        const res = await (bind.length ? stmt.bind(...bind) : stmt).all();
+        return (res && res.results ? res.results : []).map(normalizeRow).filter(Boolean);
+      },
+      /* Signature of the content version these rows were built from. The read
+         path compares it to the live meta and refuses a stale table. */
+      async sig() {
+        if (!available) return null;
+        try {
+          const stmt = db.prepare('SELECT v FROM content_meta WHERE k = ?').bind('sig');
+          const res = await stmt.first();
+          return res ? String(res.v) : null;
+        } catch (_) { return null; }
+      },
+      /* Assemble the same document shape the KV blob holds, entirely from D1:
+         questions plus the mirrored small lists. Returns null when the tables
+         are not there, so a caller can fall back to KV. */
+      async document() {
+        if (!available) return null;
+        try {
+          const qres = await db.prepare('SELECT id, topic_id, subject_id, difficulty, sort_key, payload, updated_at FROM questions WHERE published = 1 ORDER BY sort_key ASC, id ASC').all();
+          const questions = (qres && qres.results ? qres.results : []).map(normalizeRow).filter(Boolean);
+          if (!questions.length) return null;
+          const lres = await db.prepare('SELECT kind, payload FROM content_lists ORDER BY kind ASC, ord ASC').all();
+          const lists = {};
+          for (const r of (lres && lres.results ? lres.results : [])) {
+            let item = {};
+            try { item = JSON.parse(r.payload); } catch (_) { continue; }
+            (lists[r.kind] = lists[r.kind] || []).push(item);
+          }
+          return { questions, ...lists };
+        } catch (_) { return null; }
       },
       /* A cheap bounded probe used by health checks. */
       async count(params = {}) {
