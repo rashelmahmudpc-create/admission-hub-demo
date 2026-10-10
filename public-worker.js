@@ -6,6 +6,7 @@ import {
   authorizeAction, makeProposal, confirmProposal, proposalSummary,
   makeAuditRecord, parseAudit, appendAudit, STATUS, actionsEnabled
 } from './action-engine.js';
+import { checkAbuse, isGuarded } from './p14-abuse-guard.mjs';
 
 const JSONH = {
   'Content-Type': 'application/json',
@@ -154,6 +155,24 @@ export const publishGlobal = async (env, full) => {
   return { published: true, v: doc.v, counts: meta.counts };
 };
 
+/* P14 — content integrity. The published doc carries `sig`, a fingerprint of
+   the live shapes, and `counts`. This recomputes both from the stored doc and
+   reports any drift, so a publication that was silently mangled (or a tampered
+   KV value) is visible from an admin check instead of surfacing as a user bug. */
+export const verifyIntegrity = doc => {
+  const source = doc && typeof doc === 'object' ? doc : {};
+  const expected = fingerprintGlobal({
+    subjects: onlyRows(source.subjects), topics: onlyRows(source.topics),
+    questions: onlyRows(source.questions), vocabulary: onlyRows(source.vocabulary),
+    vocabularyMaster: onlyRows(source.vocabularyMaster)
+  });
+  const counts = countsOf(source);
+  const mismatches = [];
+  if (source.sig && source.sig !== expected) mismatches.push('sig');
+  if (source.counts && JSON.stringify(source.counts) !== JSON.stringify(counts)) mismatches.push('counts');
+  return { ok: mismatches.length === 0, v: source.v || 0, sig: source.sig || '', expectedSig: expected, counts, mismatches };
+};
+
 const readAudit = async (env, uid) => {
   try {
     const raw = await env.PUB_KV.get('actaudit:' + uid);
@@ -171,6 +190,12 @@ const admin = async (request, env, path) => {
   if (path === '/api/admin/content' && request.method === 'GET') {
     const raw = await env.PUB_KV.get('pubContent');
     return json(raw ? JSON.parse(raw) : { v: 0, questions: [], vocabulary: [], exams: [] });
+  }
+  if (path === '/api/admin/verify' && request.method === 'GET') {
+    const raw = await env.PUB_KV.get('pubContent');
+    const doc = raw ? JSON.parse(raw) : {};
+    const report = verifyIntegrity(doc);
+    return json(report, report.ok ? 200 : 409);
   }
   if (path === '/api/admin/publish' && request.method === 'POST') {
     const body = await request.json().catch(() => ({}));
@@ -198,6 +223,15 @@ export default {
     const url = new URL(request.url);
     const path = url.pathname;
     try {
+      /* P14 — public-API abuse ceiling. Counted per network, before any route
+         work, so a scripted flood of AI/write calls is stopped at the edge
+         rather than reaching the model or KV. Content GETs are excluded. */
+      if (isGuarded(request, path)) {
+        const guard = await checkAbuse(request, env, { salt: env.PUBLIC_RATE_SALT || '' });
+        if (!guard.allowed) {
+          return json({ error: 'rate_limited', message: 'একটু বেশি অনুরোধ এসেছে — কিছুক্ষণ পরে আবার চেষ্টা করো।', retryAfter: guard.retryAfter }, 429);
+        }
+      }
       if (path === '/api/health') return json({ ok: true, accountSystem: 'retired', legacyAccountSystem: 'retired', nativeAuth: 'cloudflare-native-v1', identity: 'firebase-account-or-ephemeral-guest', at: Date.now() });
       if (path === '/api/content/meta' && request.method === 'GET') {
         const raw = await env.PUB_KV.get('pubContentMeta');

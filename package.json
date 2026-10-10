@@ -17,6 +17,7 @@
     "test:fcm": "node --test --test-concurrency=1 fcm-notification.test.mjs fcm-global.test.mjs fcm-global-contract.test.mjs notification-sw-routing.test.mjs notification-command-center-backend.test.mjs notification-panel-history-seam.test.mjs notif-sheet.test.mjs notification-admin-keyboard.test.mjs notification-command-center-layout.test.mjs event-notifications.test.mjs digest-notifications.test.mjs analytics-notifications.test.mjs notification-intelligence.test.mjs send-planner.test.mjs admin-passkey.test.mjs",
     "test:analytics": "node --test --test-concurrency=1 analytics-engine.test.mjs analytics-dashboard.test.mjs analytics-engine-sqlite.test.mjs analytics-routes-worker.test.mjs",
     "test:userdata": "node --test userdata-api.test.mjs",
+    "test:p14": "node --test --test-concurrency=1 p14-security-gate.test.mjs account-data-isolation.test.mjs",
     "test:student-data": "node --test --test-concurrency=1 userdata-api.test.mjs student-data-sync.test.mjs student-data-sync-chaos.test.mjs personalized-notification.test.mjs && npm run test:legacy-adoption",
     "test:sync": "node --test --test-concurrency=1 userdata-api.test.mjs student-data-sync.test.mjs student-data-sync-chaos.test.mjs",
     "test:personalized": "node --test --test-concurrency=1 personalized-notification.test.mjs",

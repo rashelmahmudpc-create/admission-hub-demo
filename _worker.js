@@ -13,6 +13,7 @@ const RETIRED_ASSET_PREFIXES = ['/auth-art', '/auth-screens'];
 const SERVER_ONLY_ASSETS = new Set([
   '/gk-agent-worker.js', '/public-worker.js', '/ai-agent.js', '/worker-bundle.mjs',
   '/voice-worker.js', '/notification-worker.js', '/fcm-notification.mjs',
+  '/p14-abuse-guard.mjs', '/action-engine.js', '/userdata-api.mjs',
   '/wrangler.toml', '/package.json', '/package-lock.json'
 ]);
 const SERVER_ONLY_PREFIXES = ['/auth/', '/auth-native/', '/email-gateway/', '/apps-script/', '/docs/', '/AGENT_RESUME/', '/.github/'];

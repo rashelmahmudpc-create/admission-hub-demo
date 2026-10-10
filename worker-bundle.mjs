@@ -55,7 +55,7 @@ function buildQuery(params = {}) {
     where.push("(sort_key, id) > (?, ?)");
     bind2.push(after.sortKey, after.id);
   }
-  const limit = clamp(num2(params.limit, DEFAULT_LIMIT), 1, MAX_LIMIT);
+  const limit = clamp2(num2(params.limit, DEFAULT_LIMIT), 1, MAX_LIMIT);
   const sql = "SELECT id, topic_id, subject_id, difficulty, sort_key, payload, updated_at FROM questions" + (where.length ? " WHERE " + where.join(" AND ") : "") + " ORDER BY sort_key ASC, id ASC LIMIT ?";
   bind2.push(limit);
   return { sql, bind: bind2, limit };
@@ -177,7 +177,7 @@ function createD1Reader(db) {
     }
   };
 }
-var SCHEMA, MAX_LIMIT, DEFAULT_LIMIT, clamp, num2;
+var SCHEMA, MAX_LIMIT, DEFAULT_LIMIT, clamp2, num2;
 var init_p13_d1_read = __esm({
   "p13-d1-read.mjs"() {
     SCHEMA = `
@@ -214,7 +214,7 @@ CREATE INDEX IF NOT EXISTS idx_list_kind ON content_lists(kind, ord);
 `;
     MAX_LIMIT = 100;
     DEFAULT_LIMIT = 20;
-    clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+    clamp2 = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
     num2 = (v, d = 0) => {
       const n = Number(v);
       return isFinite(n) ? n : d;
@@ -2152,6 +2152,58 @@ data: ${JSON.stringify(msg)}
   }), { status, headers: { "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-cache", "Access-Control-Allow-Origin": "*" } });
 }
 
+// p14-abuse-guard.mjs
+var RATE_DEFAULTS = Object.freeze({ limit: 120, windowMs: 6e4 });
+var clamp = (value, lo, hi, fallback) => {
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.max(lo, Math.min(hi, n)) : fallback;
+};
+function clientNetwork(request) {
+  const header = request && request.headers;
+  const raw = header && (header.get("CF-Connecting-IP") || header.get("X-Forwarded-For"));
+  return String(raw || "unknown").split(",")[0].trim() || "unknown";
+}
+async function networkHash(request, salt = "") {
+  const bytes = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(`${clientNetwork(request)}|${salt}`)
+  );
+  return [...new Uint8Array(bytes)].map((b) => b.toString(16).padStart(2, "0")).join("").slice(0, 24);
+}
+function isGuarded(request, path) {
+  if (!path || path === "/api/health") return false;
+  if (path.startsWith("/api/admin/")) return false;
+  if (path.startsWith("/api/ai")) return true;
+  return request && request.method !== "GET" && request && request.method !== "HEAD";
+}
+function windowKey(hash, now, windowMs) {
+  return `rlpub:${hash}:${Math.floor(now / windowMs)}`;
+}
+async function checkAbuse(request, env, opts = {}) {
+  const limit = clamp(opts.limit ?? (env && env.PUBLIC_RATE_LIMIT), 1, 5e3, RATE_DEFAULTS.limit);
+  const windowMs = clamp(opts.windowMs ?? (env && env.PUBLIC_RATE_WINDOW_MS), 1e3, 36e5, RATE_DEFAULTS.windowMs);
+  const now = Number(opts.now) || Date.now();
+  const store = env && env.PUB_KV;
+  if (!store) return { allowed: true, limit, windowMs, remaining: limit };
+  const hash = await networkHash(request, opts.salt || "");
+  const key = windowKey(hash, now, windowMs);
+  let count = 0;
+  try {
+    count = Number(await store.get(key)) || 0;
+  } catch (_) {
+    return { allowed: true, limit, windowMs, remaining: limit };
+  }
+  if (count >= limit) {
+    const retryAfter = Math.max(1, Math.ceil((windowMs - now % windowMs) / 1e3));
+    return { allowed: false, limit, windowMs, remaining: 0, retryAfter };
+  }
+  try {
+    await store.put(key, String(count + 1), { expirationTtl: Math.ceil(windowMs / 1e3) + 2 });
+  } catch (_) {
+  }
+  return { allowed: true, limit, windowMs, remaining: limit - count - 1 };
+}
+
 // public-worker.js
 var JSONH = {
   "Content-Type": "application/json",
@@ -2245,9 +2297,9 @@ async function anonymousAiIdentity(request, env, countUsage = true) {
   const userAgent = String(request.headers.get("User-Agent") || "").slice(0, 180);
   const network = String(request.headers.get("CF-Connecting-IP") || request.headers.get("X-Forwarded-For") || "unknown").split(",")[0].trim();
   const deviceHash = await sha256(supplied || `${network}|${userAgent}`);
-  const networkHash = await sha256(network === "unknown" ? `${network}|${userAgent}` : network);
+  const networkHash2 = await sha256(network === "unknown" ? `${network}|${userAgent}` : network);
   if (countUsage && env.PUB_KV) {
-    const key = `aipub:${networkHash.slice(0, 24)}:${dayKey2()}`;
+    const key = `aipub:${networkHash2.slice(0, 24)}:${dayKey2()}`;
     let count = 0;
     try {
       count = Number(await env.PUB_KV.get(key) || 0);
@@ -2308,6 +2360,21 @@ var publishGlobal = async (env, full) => {
   await env.PUB_KV.put("pubContentMeta", JSON.stringify(meta));
   return { published: true, v: doc.v, counts: meta.counts };
 };
+var verifyIntegrity = (doc) => {
+  const source = doc && typeof doc === "object" ? doc : {};
+  const expected = fingerprintGlobal({
+    subjects: onlyRows(source.subjects),
+    topics: onlyRows(source.topics),
+    questions: onlyRows(source.questions),
+    vocabulary: onlyRows(source.vocabulary),
+    vocabularyMaster: onlyRows(source.vocabularyMaster)
+  });
+  const counts = countsOf(source);
+  const mismatches = [];
+  if (source.sig && source.sig !== expected) mismatches.push("sig");
+  if (source.counts && JSON.stringify(source.counts) !== JSON.stringify(counts)) mismatches.push("counts");
+  return { ok: mismatches.length === 0, v: source.v || 0, sig: source.sig || "", expectedSig: expected, counts, mismatches };
+};
 var readAudit = async (env, uid) => {
   try {
     const raw = await env.PUB_KV.get("actaudit:" + uid);
@@ -2325,6 +2392,12 @@ var admin = async (request, env, path) => {
   if (path === "/api/admin/content" && request.method === "GET") {
     const raw = await env.PUB_KV.get("pubContent");
     return json(raw ? JSON.parse(raw) : { v: 0, questions: [], vocabulary: [], exams: [] });
+  }
+  if (path === "/api/admin/verify" && request.method === "GET") {
+    const raw = await env.PUB_KV.get("pubContent");
+    const doc = raw ? JSON.parse(raw) : {};
+    const report = verifyIntegrity(doc);
+    return json(report, report.ok ? 200 : 409);
   }
   if (path === "/api/admin/publish" && request.method === "POST") {
     const body = await request.json().catch(() => ({}));
@@ -2351,6 +2424,12 @@ var public_worker_default = {
     const url = new URL(request.url);
     const path = url.pathname;
     try {
+      if (isGuarded(request, path)) {
+        const guard = await checkAbuse(request, env, { salt: env.PUBLIC_RATE_SALT || "" });
+        if (!guard.allowed) {
+          return json({ error: "rate_limited", message: "একটু বেশি অনুরোধ এসেছে — কিছুক্ষণ পরে আবার চেষ্টা করো।", retryAfter: guard.retryAfter }, 429);
+        }
+      }
       if (path === "/api/health") return json({ ok: true, accountSystem: "retired", legacyAccountSystem: "retired", nativeAuth: "cloudflare-native-v1", identity: "firebase-account-or-ephemeral-guest", at: Date.now() });
       if (path === "/api/content/meta" && request.method === "GET") {
         const raw = await env.PUB_KV.get("pubContentMeta");
@@ -9815,7 +9894,7 @@ var AnalyticsStore = class {
 var __analyticsTest = Object.freeze({ computeAnalytics, summarizeHistory, pct });
 
 // send-planner.mjs
-var clamp2 = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
+var clamp3 = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
 var asInt2 = (v, fallback = 0) => {
   const n = Number(v);
   return Number.isFinite(n) ? Math.trunc(n) : fallback;
@@ -9826,7 +9905,7 @@ function planFanout(total, { budget = DEFAULT_WINDOW_BUDGET, cursor = 0 } = {}) 
   const size = Math.max(0, asInt2(total));
   const budgetRaw = asInt2(budget, DEFAULT_WINDOW_BUDGET);
   const limit = budgetRaw > 0 ? budgetRaw : DEFAULT_WINDOW_BUDGET;
-  const start = clamp2(asInt2(cursor), 0, size);
+  const start = clamp3(asInt2(cursor), 0, size);
   const take = Math.min(limit, size - start);
   return {
     start,
@@ -9888,7 +9967,7 @@ function scoreHours(events = []) {
 }
 function bestSendHour(events = [], opts = {}) {
   const minSamples = Math.max(1, asInt2(opts.min_samples, TIMING_DEFAULTS.min_samples));
-  const defaultHour = clamp2(asInt2(opts.default_hour, TIMING_DEFAULTS.default_hour), 0, 23);
+  const defaultHour = clamp3(asInt2(opts.default_hour, TIMING_DEFAULTS.default_hour), 0, 23);
   const usable = events.filter((e) => asInt2(e?.hour, -1) >= 0 && asInt2(e?.hour, -1) <= 23);
   if (usable.length < minSamples) {
     return { hour: defaultHour, score: TIMING_DEFAULTS.floor, confident: false, samples: usable.length };
