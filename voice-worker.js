@@ -182,7 +182,10 @@ export default {
     try { body = await request.json(); } catch (_) { return json(request, { error: 'bad_json' }, 400); }
 
     const word = String(body?.word || '').trim();
-    if (!word || word.length > 60 || !/^[\p{L}][\p{L}'’.\- ]{0,59}$/u.test(word)) {
+    // \p{M} (combining marks) is required: Bengali vowel signs and conjuncts are
+    // marks, not letters, so a letter-only class rejected most Bengali words
+    // ("আসসালামু", "কেমন") while accepting bare ones like "বই".
+    if (!word || word.length > 60 || !/^[\p{L}][\p{L}\p{M}\u200c\u200d'’.\- ]{0,59}$/u.test(word)) {
       return json(request, { error: 'invalid_word' }, 400);
     }
 

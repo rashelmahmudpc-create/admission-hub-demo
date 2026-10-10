@@ -139,3 +139,23 @@ test('p22-10: a legacy ElevenLabs voice id never leaks into a Cartesia request',
   assert.notEqual(sent.voice.id, 'EXAVITQu4vr4xnSDxMaL', 'the ElevenLabs id must be ignored');
   assert.match(sent.voice.id, /^[0-9a-fA-F-]{36}$/, 'a Cartesia uuid default must be used instead');
 });
+
+test('p22-11: Bengali vowel signs and conjuncts pass the input sanitiser', async () => {
+  const worker = build();
+  const { env, calls, fetchMock } = mockEnv({ env: { CARTESIA_API_KEY: 'ck' } });
+  // "আসসালামু" (matra U+09C1), "কেমন" (matra U+09C7), "শ্রদ্ধা" (hasant+ra)
+  for (const bn of ['আসসালামু', 'কেমন', 'শ্রদ্ধা', 'বই পড়া']) {
+    const res = await run(worker, env, { word: bn }, fetchMock);
+    assert.equal(res.status, 200, `${bn} must be accepted, not invalid_word`);
+  }
+  assert.equal(JSON.parse(calls.at(-1).init.body).language, 'bn');
+});
+
+test('p22-12: non-letters and control input are still rejected', async () => {
+  const worker = build();
+  const { env, fetchMock } = mockEnv({ env: { CARTESIA_API_KEY: 'ck' } });
+  for (const bad of ['a}],"x":1', '123', '', 'x'.repeat(61), 'a\nb', 'a;b']) {
+    const res = await run(worker, env, { word: bad }, fetchMock);
+    assert.equal(res.status, 400, `${JSON.stringify(bad)} must stay invalid`);
+  }
+});
