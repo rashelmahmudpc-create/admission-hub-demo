@@ -59,7 +59,18 @@ test('p22-03: a Cartesia key makes Cartesia the default, with the required heade
   assert.equal(sent.language, 'en');
   assert.equal(sent.output_format.container, 'mp3');
   assert.ok(sent.voice.id, 'a voice id must be sent');
+  assert.deepEqual(sent.generation_config, { speed: 0.95 }, 'a calmer default speed is sent');
   assert.equal((await res.arrayBuffer()).byteLength, MP3.byteLength);
+});
+
+test('p22-04b: a client speed request is clamped and reaches Cartesia', async () => {
+  const worker = build();
+  const { env, calls, fetchMock } = mockEnv({ env: { CARTESIA_API_KEY: 'ck' } });
+  await run(worker, env, { word: 'apple', speed: 0.85 }, fetchMock);
+  assert.equal(JSON.parse(calls[0].init.body).generation_config.speed, 0.85);
+  const { env: e2, calls: c2, fetchMock: f2 } = mockEnv({ env: { CARTESIA_API_KEY: 'ck' } });
+  await run(worker, e2, { word: 'apple', speed: 9 }, f2);
+  assert.equal(JSON.parse(c2[0].init.body).generation_config.speed, 0.95, 'out-of-range speed falls back to the default');
 });
 
 test('p22-04: a Bengali word switches language and uses a different voice than English', async () => {
@@ -167,8 +178,8 @@ test('p22-13: a generated clip is stored in KV with no expiry (permanent)', asyn
   const { env, fetchMock } = mockEnv({ env: { CARTESIA_API_KEY: 'ck', VOICE_KV: kv } });
   const res = await run(worker, env, { word: 'apple' }, fetchMock);
   assert.equal(res.status, 200);
-  const stored = puts.find(p => p.k === 'v2:cartesia:default:default:apple');
-  assert.ok(stored, 'audio must be stored under the v2 cache key');
+  const stored = puts.find(p => p.k === 'v3:cartesia:47c38ca4-5f35-497b-b1a3-415245fb35e1:default:0.95:apple');
+  assert.ok(stored, 'audio must be stored under the v3 cache key (resolved voice + speed)');
   assert.equal(stored.opts, undefined, 'no expirationTtl => permanent (আজীবন)');
 });
 

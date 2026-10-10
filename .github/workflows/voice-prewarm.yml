@@ -1,0 +1,57 @@
+name: Voice — pre-warm all content words (manual)
+
+# Generates audio once for every word in the live content, so each word is already
+# in the worker's permanent KV + edge cache BEFORE a student taps it. Deploy-only:
+# touches no secret, no worker, no code — it just POSTs to the live voice worker.
+# Re-runnable: already-cached words return instantly, so a second run costs nothing.
+# No secrets are passed to the script; it only calls the public worker endpoints.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type PREWARM to generate and cache audio for every content word
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  prewarm:
+    if: ${{ inputs.confirmation == 'PREWARM' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - name: Pre-warm the voice cache
+        run: |
+          cat > prewarm.mjs <<'JS'
+          const VOICE = 'https://admission-voice.admissionhub.workers.dev/api/voice';
+          const CONTENT = 'https://admission-gk.admissionhub.workers.dev/api/content';
+          const H = { 'Content-Type': 'application/json', 'X-AH-App': 'admission-hub', 'User-Agent': 'admission-hub-prewarm/1.0' };
+
+          const res = await fetch(CONTENT, { headers: H });
+          if (!res.ok) { console.error('content fetch failed', res.status); process.exit(1); }
+          const doc = await res.json();
+          const rows = [...(doc.vocabulary || []), ...(doc.vocabularyMaster || [])];
+          const words = [...new Set(rows.map(r => String(r.word || r.term || '').trim()).filter(w => w && w.length <= 60 && /^[\p{L}\p{M}][\p{L}\p{M}'’.\- ]*$/u.test(w)))];
+          console.log('words to warm:', words.length);
+
+          let ok = 0, edge = 0, miss = 0, fail = 0;
+          for (const [i, word] of words.entries()) {
+            try {
+              const r = await fetch(VOICE, { method: 'POST', headers: H, body: JSON.stringify({ word }) });
+              const state = r.headers.get('x-voice-cache') || '';
+              if (!r.ok) { fail++; console.log('FAIL', word, r.status); continue; }
+              await r.arrayBuffer();
+              ok++;
+              if (state === 'hit' || state === 'edge') edge++; else miss++;
+            } catch (e) { fail++; console.log('ERR', word, String(e && e.message)); }
+            if ((i + 1) % 20 === 0) console.log('progress', i + 1, '/', words.length);
+          }
+          console.log(`DONE ok=${ok} already_cached=${edge} newly_generated=${miss} failed=${fail}`);
+          JS
+          node prewarm.mjs

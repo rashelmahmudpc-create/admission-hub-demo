@@ -34,6 +34,8 @@ const CARTESIA_MODEL = 'sonic-3.6';
 const CARTESIA_VOICE_ID = '47c38ca4-5f35-497b-b1a3-415245fb35e1'; // Daniel — clear American male
 const CARTESIA_VOICE_ID_BN = 'db6b0ed5-d5d3-463d-ae85-518a07d3c2b4'; // Skylar — primary multilingual fallback
 const CARTESIA_FORMAT = { container: 'mp3', sample_rate: 44100, bit_rate: 128000 };
+const CARTESIA_SPEED = 0.95;                     // slightly slower reads as calmer/clearer
+const cleanSpeed = value => { const n = Number(value); return Number.isFinite(n) && n >= 0.6 && n <= 1.5 ? Math.round(n * 100) / 100 : CARTESIA_SPEED; };
 
 const RATE_LIMIT = 60;        // requests / minute / IP
 const RATE_WINDOW_MS = 60000;
@@ -86,10 +88,15 @@ const clean = (value, re) => (typeof value === 'string' && re.test(value) ? valu
 /* Is the text Bengali (so Cartesia should use a bn-capable voice/language)? */
 const isBengali = text => /[\u0980-\u09FF]/.test(String(text || ''));
 
+/* The voice actually used for a phrase — needed so the cache key can include it. */
+function resolveVoice(word, voiceId) {
+  return voiceId || (isBengali(word) ? CARTESIA_VOICE_ID_BN : CARTESIA_VOICE_ID);
+}
+
 /* Cartesia → MP3 bytes. Throws on any non-OK response so the caller can fall back. */
-async function cartesiaAudio(env, word, voiceId) {
+async function cartesiaAudio(env, word, voiceId, speed) {
   const bn = isBengali(word);
-  const voice = voiceId || (bn ? CARTESIA_VOICE_ID_BN : CARTESIA_VOICE_ID);
+  const voice = resolveVoice(word, voiceId);
   const resp = await fetch(CARTESIA_URL, {
     method: 'POST',
     headers: {
@@ -102,6 +109,7 @@ async function cartesiaAudio(env, word, voiceId) {
       transcript: word,
       voice: { id: voice },
       language: bn ? 'bn' : 'en',
+      generation_config: { speed: cleanSpeed(speed) },
       output_format: CARTESIA_FORMAT
     })
   });
@@ -200,7 +208,11 @@ export default {
     const provider = useCartesia ? 'cartesia' : 'elevenlabs';
 
     const norm = word.toLowerCase().replace(/[^a-z0-9\u0980-\u09FF]+/gu, '-').replace(/^-+|-+$/g, '');
-    const cacheKey = `v2:${provider}:${voiceId || 'default'}:${modelId || 'default'}:${norm}`;
+    // The key uses the RESOLVED voice, so changing a default voice can never serve
+    // the old voice's cached audio. Speed is part of the key for the same reason.
+    const resolvedVoice = useCartesia ? resolveVoice(word, clean(voiceId, /^[0-9a-fA-F-]{36}$/)) : (clean(voiceId, /^[a-zA-Z0-9]{10,40}$/) || DEFAULT_VOICE_ID);
+    const speed = cleanSpeed(body.speed);
+    const cacheKey = `v3:${provider}:${resolvedVoice}:${modelId || 'default'}:${speed}:${norm}`;
 
     // Level-0 edge cache (Cache API): free, per-colo, does not expire like KV.
     // A repeat play from any student in the same region answers here, so the
@@ -254,7 +266,7 @@ export default {
       if (useCartesia) {
         try {
           // Cartesia voice ids are UUIDs; a legacy ElevenLabs id must not leak in.
-          buffer = await cartesiaAudio(env, word, clean(voiceId, /^[0-9a-fA-F-]{36}$/));
+          buffer = await cartesiaAudio(env, word, clean(voiceId, /^[0-9a-fA-F-]{36}$/), speed);
         } catch (err) {
           errors.push(`cartesia: ${err.message}`);
           // Fall back to ElevenLabs so a Cartesia outage never silences the app.

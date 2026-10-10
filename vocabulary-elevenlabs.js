@@ -1,4 +1,4 @@
-/* v108 — Voice pipeline for Vocabulary (provider = Cartesia, ElevenLabs fallback).
+/* v109 — Voice pipeline for Vocabulary (provider = Cartesia, ElevenLabs fallback).
    Generate once → save permanently in IndexedDB (voiceCache blob) → instant offline playback.
    API key কখনো client-side থাকে না: অ্যাপ শুধু নিজের Cloudflare Worker proxy-তে কথা বলে।
    Worker Main = Cartesia (CARTESIA_API_KEY); key না থাকলে বা Cartesia ব্যর্থ হলে
@@ -12,10 +12,11 @@
     provider: 'cartesia',                  // worker default; ElevenLabs stays the automatic fallback
     voiceId: '',                            // খালি = worker-এর Cartesia default (Daniel, en) / বাংলায় Skylar
     modelId: '',                            // খালি = worker-এর sonic-3.6
-    outputFormat: 'mp3_22050_32',
+    outputFormat: "mp3_22050_32",
     lang: 'en-US',                          // accent/locale — এক জায়গা থেকে বদলাও
     voiceSettings: Object.freeze({ stability: 0.5, similarity_boost: 0.75, style: 0, use_speaker_boost: true, speed: 1.0 }),
-    settingsVersion: 4,                     // voice/model বদলালে এই সংখ্যা বাড়ালেই পুরনো cache conflict-মুক্ত
+    speed: 0.95,                           // calmer/clearer reading
+    settingsVersion: 5,                     // voice/model বদলালে এই সংখ্যা বাড়ালেই পুরনো cache conflict-মুক্ত
     maxWordLength: 60,
     timeoutMs: 20000,
     errorCooldownMs: 60000                  // ব্যর্থ word-এ এই সময় পর্যন্ত আবার API চেষ্টা হয় না
@@ -111,7 +112,8 @@
           modelId: VOICE_CONFIG.modelId,
           output_format: VOICE_CONFIG.outputFormat,
           lang: VOICE_CONFIG.lang,
-          voice_settings: VOICE_CONFIG.voiceSettings
+          voice_settings: VOICE_CONFIG.voiceSettings,
+          speed: VOICE_CONFIG.speed
         }),
         signal: ctrl ? ctrl.signal : undefined
       });
