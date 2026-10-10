@@ -2,6 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
+import publicWorker from './public-worker.js';
 
 const d1src = readFileSync(new URL('./p13-d1-read.mjs', import.meta.url), 'utf8');
 const D1 = await import('./p13-d1-read.mjs');
@@ -261,3 +262,43 @@ test('p13c-03: compressResponse leaves a small reply untouched and never throws'
   assert.ok(out2.headers.get('Content-Encoding'));
 });
 
+
+
+/* ------------------- bounded D1 page (worker wiring) ------------------- */
+test('p13w-10: a paged /api/content read is bounded — never a full-table scan', async () => {
+  class KV {
+    constructor(m){ this.m = m; }
+    async get(k){ return this.m.has(k) ? this.m.get(k) : null; }
+    async put(k,v){ this.m.set(k,String(v)); }
+  }
+  const sig = '5:14:3000:81:0:0:143542';
+  const kv = new KV(new Map([
+    ['pubContentMeta', JSON.stringify({ v: 1, at: 0, sig, counts: { questions: 3000 } })],
+  ]));
+  // A D1 double that records every LIMIT it is asked for.
+  const limits = [];
+  const rows = Array.from({ length: 3000 }, (_, i) => ({
+    id: 'pq-' + String(i + 1).padStart(4, '0'), topic_id: 't', subject_id: 's',
+    difficulty: 1, sort_key: 'k' + i, payload: '{}', updated_at: 1,
+  }));
+  const db = {
+    prepare(sql) {
+      const run = (bind) => ({
+        all: async () => {
+          const m = /LIMIT \?/.test(sql) && bind.length;
+          if (m) { const lim = Number(bind[bind.length - 1]); limits.push(lim); return { results: rows.slice(0, lim) }; }
+          return { results: rows };
+        },
+        first: async () => (sql.includes('content_meta') ? { v: bind[0] === 'mode' ? 'd1' : sig } : null),
+      });
+      return { bind: (...b) => run(b), all: async () => ({ results: rows }), first: async () => null };
+    },
+  };
+  const req = new Request('https://worker/api/content?limit=50', { headers: { 'X-AH-App': 'admission-hub' } });
+  const res = await publicWorker.fetch(req, { PUB_KV: kv, PROFILE_DB: db });
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.equal(body.source, 'd1');
+  assert.equal(body.questions.length, 50);
+  assert.ok(limits.length && limits.every(l => l <= 1000), `every D1 page must be bounded, saw ${limits.join(',')}`);
+});

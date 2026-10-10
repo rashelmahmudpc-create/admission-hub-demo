@@ -271,6 +271,30 @@ export default {
               const rawMeta = await env.PUB_KV.get('pubContentMeta');
               const meta = rawMeta ? JSON.parse(rawMeta) : null;
               if (meta && meta.sig && (await reader.sig()) === String(meta.sig)) {
+                const limit = Number(url.searchParams.get('limit'));
+                if (Number.isFinite(limit) && limit > 0) {
+                  /* P13 — paged read. Pull one bounded page from D1 (keyset on
+                     the indexed key), never the whole table: a full scan of a
+                     large `questions` table is what blew the Worker CPU budget
+                     and returned `1102`. The small mirrored lists ride along. */
+                  const pageLimit = Math.min(500, limit);
+                  const offset = Math.max(0, Number(url.searchParams.get('offset')) || 0);
+                  // Never fetch an unbounded window: offset+limit is capped so a
+                  // crafted `offset` cannot force a full-table read again.
+                  const window = Math.min(pageLimit + offset, 1000);
+                  const paged = await reader.page({ limit: window });
+                  if (paged && paged.items) {
+                    const slice = offset < window ? paged.items.slice(offset, offset + pageLimit) : [];
+                    const lists = (await reader.lists()) || {};
+                    return json({
+                      v: meta.v || 0, at: meta.at || 0, sig: meta.sig,
+                      ...lists, questions: slice,
+                      total: meta.counts && meta.counts.questions,
+                      page: { limit: pageLimit, offset },
+                      source: 'd1'
+                    });
+                  }
+                }
                 const document = await reader.document();
                 if (document) return json({ v: meta.v || 0, at: meta.at || 0, sig: meta.sig, ...document, source: 'd1' });
               }

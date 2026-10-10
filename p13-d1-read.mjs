@@ -148,6 +148,22 @@ export function createD1Reader(db) {
       async sig() {
         return this.meta('sig');
       },
+      /* The mirrored small lists (subjects, topics, vocabulary, …) as one
+         object. These are tiny next to `questions`, so a paged read returns
+         them whole. Null-safe. */
+      async lists() {
+        if (!available) return null;
+        try {
+          const lres = await db.prepare('SELECT kind, payload FROM content_lists ORDER BY kind ASC, ord ASC').all();
+          const out = {};
+          for (const r of (lres && lres.results ? lres.results : [])) {
+            let item = {};
+            try { item = JSON.parse(r.payload); } catch (_) { continue; }
+            (out[r.kind] = out[r.kind] || []).push(item);
+          }
+          return out;
+        } catch (_) { return null; }
+      },
       /* Assemble the same document shape the KV blob holds, entirely from D1:
          questions plus the mirrored small lists. Returns null when the tables
          are not there, so a caller can fall back to KV. */
@@ -157,13 +173,7 @@ export function createD1Reader(db) {
           const qres = await db.prepare('SELECT id, topic_id, subject_id, difficulty, sort_key, payload, updated_at FROM questions WHERE published = 1 ORDER BY sort_key ASC, id ASC').all();
           const questions = (qres && qres.results ? qres.results : []).map(normalizeRow).filter(Boolean);
           if (!questions.length) return null;
-          const lres = await db.prepare('SELECT kind, payload FROM content_lists ORDER BY kind ASC, ord ASC').all();
-          const lists = {};
-          for (const r of (lres && lres.results ? lres.results : [])) {
-            let item = {};
-            try { item = JSON.parse(r.payload); } catch (_) { continue; }
-            (lists[r.kind] = lists[r.kind] || []).push(item);
-          }
+          const lists = (await this.lists()) || {};
           return { questions, ...lists };
         } catch (_) { return null; }
       },

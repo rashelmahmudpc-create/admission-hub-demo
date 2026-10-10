@@ -131,6 +131,28 @@ function createD1Reader(db) {
     async sig() {
       return this.meta("sig");
     },
+    /* The mirrored small lists (subjects, topics, vocabulary, …) as one
+       object. These are tiny next to `questions`, so a paged read returns
+       them whole. Null-safe. */
+    async lists() {
+      if (!available) return null;
+      try {
+        const lres = await db.prepare("SELECT kind, payload FROM content_lists ORDER BY kind ASC, ord ASC").all();
+        const out = {};
+        for (const r of lres && lres.results ? lres.results : []) {
+          let item = {};
+          try {
+            item = JSON.parse(r.payload);
+          } catch (_) {
+            continue;
+          }
+          (out[r.kind] = out[r.kind] || []).push(item);
+        }
+        return out;
+      } catch (_) {
+        return null;
+      }
+    },
     /* Assemble the same document shape the KV blob holds, entirely from D1:
        questions plus the mirrored small lists. Returns null when the tables
        are not there, so a caller can fall back to KV. */
@@ -140,17 +162,7 @@ function createD1Reader(db) {
         const qres = await db.prepare("SELECT id, topic_id, subject_id, difficulty, sort_key, payload, updated_at FROM questions WHERE published = 1 ORDER BY sort_key ASC, id ASC").all();
         const questions = (qres && qres.results ? qres.results : []).map(normalizeRow).filter(Boolean);
         if (!questions.length) return null;
-        const lres = await db.prepare("SELECT kind, payload FROM content_lists ORDER BY kind ASC, ord ASC").all();
-        const lists = {};
-        for (const r of lres && lres.results ? lres.results : []) {
-          let item = {};
-          try {
-            item = JSON.parse(r.payload);
-          } catch (_) {
-            continue;
-          }
-          (lists[r.kind] = lists[r.kind] || []).push(item);
-        }
+        const lists = await this.lists() || {};
         return { questions, ...lists };
       } catch (_) {
         return null;
@@ -2459,6 +2471,27 @@ var public_worker_default = {
               const rawMeta = await env.PUB_KV.get("pubContentMeta");
               const meta = rawMeta ? JSON.parse(rawMeta) : null;
               if (meta && meta.sig && await reader.sig() === String(meta.sig)) {
+                const limit = Number(url.searchParams.get("limit"));
+                if (Number.isFinite(limit) && limit > 0) {
+                  const pageLimit = Math.min(500, limit);
+                  const offset = Math.max(0, Number(url.searchParams.get("offset")) || 0);
+                  const window = Math.min(pageLimit + offset, 1e3);
+                  const paged = await reader.page({ limit: window });
+                  if (paged && paged.items) {
+                    const slice = offset < window ? paged.items.slice(offset, offset + pageLimit) : [];
+                    const lists = await reader.lists() || {};
+                    return json({
+                      v: meta.v || 0,
+                      at: meta.at || 0,
+                      sig: meta.sig,
+                      ...lists,
+                      questions: slice,
+                      total: meta.counts && meta.counts.questions,
+                      page: { limit: pageLimit, offset },
+                      source: "d1"
+                    });
+                  }
+                }
                 const document = await reader.document();
                 if (document) return json({ v: meta.v || 0, at: meta.at || 0, sig: meta.sig, ...document, source: "d1" });
               }
