@@ -10,11 +10,16 @@ html:has(.ah-welcome-upgraded),body:has(.ah-welcome-upgraded),body:has(.ah-welco
 html:has(.ah-welcome-upgraded),body:has(.ah-welcome-upgraded){position:fixed!important;inset:0!important;width:100%!important;height:100%!important;overflow:hidden!important;overscroll-behavior:none!important;touch-action:none}
 .ah-account-page:has(.ah-welcome-upgraded),.ah-account-page:has(.ah-welcome-upgraded) .ah-account-shell,.ah-account-page:has(.ah-welcome-upgraded) .ah-account-body{position:fixed!important;inset:0!important;width:100%!important;height:100%!important;min-height:0!important;margin:0!important;max-width:none!important;overflow:hidden!important;overscroll-behavior:none!important}
 /* The decorative colour glows tint the extreme top/bottom edge, so the device
-   status/nav bar (theme-colour #f7f6fb) no longer matched the app edge. Fade
-   the glows out over the safe-area band + a small margin, leaving the flat
-   base colour at the edges so app and device read as one surface. */
-.ahw-artboard > [data-w-style="w1"],.ahw-artboard > [data-w-style="w2"],.ahw-artboard > [data-w-style="w3"],.ahw-artboard > [data-w-style="w4"],.ahw-artboard > [data-w-style="w5"],.ahw-artboard > [data-w-style="w6"],.ahw-artboard > [data-w-style="w7"]{
-  -webkit-mask-image:linear-gradient(to bottom,transparent 0,#000 calc(32px + env(safe-area-inset-top)),#000 calc(100% - 32px - env(safe-area-inset-bottom)),transparent 100%);
-  mask-image:linear-gradient(to bottom,transparent 0,#000 calc(32px + env(safe-area-inset-top)),#000 calc(100% - 32px - env(safe-area-inset-bottom)),transparent 100%);
+   status/nav bar (theme-colour #f7f6fb) no longer matched the app edge. Put the
+   glows behind a soft base-coloured veil whose strength fades with distance
+   from the edge: at the safe-area band the surface is the flat base colour, so
+   app and device read as one. The veil sits above the glows but below content. */
+.ahw-artboard{isolation:isolate}
+.ahw-artboard > [data-w-style="w1"],.ahw-artboard > [data-w-style="w2"],.ahw-artboard > [data-w-style="w3"],.ahw-artboard > [data-w-style="w4"],.ahw-artboard > [data-w-style="w5"],.ahw-artboard > [data-w-style="w6"],.ahw-artboard > [data-w-style="w7"]{z-index:-1}
+.ahw-artboard::before,.ahw-artboard::after{
+  content:"";position:absolute;left:0;right:0;z-index:0;pointer-events:none;
+  height:calc(96px + env(safe-area-inset-top));
 }
+.ahw-artboard::before{top:0;background:linear-gradient(to bottom,#f7f6fb 0,calc(34px + env(safe-area-inset-top)),rgba(247,246,251,0))}
+.ahw-artboard::after{bottom:0;height:calc(90px + env(safe-area-inset-bottom));background:linear-gradient(to top,#f7f6fb 0,calc(32px + env(safe-area-inset-bottom)),rgba(247,246,251,0))}
 @media(max-height:680px){.ah-welcome-live [data-w-style="w15"]{font-size:clamp(23px,6.4vw,28px)!important;line-height:1.25!important;margin-top:6px!important}.ah-welcome-live [data-w-style="w16"]{font-size:14px!important;line-height:1.5!important}.ah-welcome-live [data-w-style="w17"]{margin-top:6px!important}.ah-welcome-live [data-w-style="w71"]{margin-top:8px!important}}
