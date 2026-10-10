@@ -40,9 +40,10 @@ test('p13b-04: the SQL creates the schema, clears, and inserts', () => {
   assert.match(sql, /CREATE TABLE IF NOT EXISTS questions/);
   assert.match(sql, /DELETE FROM questions;/);
   assert.match(sql, /INSERT INTO questions/);
+  assert.ok(!/BEGIN TRANSACTION|COMMIT/.test(sql), 'D1 rejects SQL transaction statements');
   assert.match(sql, /ON CONFLICT\(id\) DO UPDATE/, 're-running must be idempotent');
-  assert.match(sql, /BEGIN TRANSACTION;/);
-  assert.match(sql, /COMMIT;/);
+  
+  
 });
 
 test('p13b-05: quotes are escaped so a name with an apostrophe cannot break the SQL', () => {

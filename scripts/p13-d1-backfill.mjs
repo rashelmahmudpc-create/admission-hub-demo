@@ -51,7 +51,9 @@ export function buildSql(doc, { now = Date.now(), batch = BATCH } = {}) {
   const out = [];
   out.push('-- P13 D1 backfill — generated, idempotent.');
   out.push(SCHEMA.trim());
-  out.push('BEGIN TRANSACTION;');
+  // No explicit BEGIN/COMMIT: D1 runs on Durable Objects, which reject SQL
+  // transaction statements (wrangler: "use state.storage.transaction()").
+  // `d1 execute` applies the file atomically anyway.
   out.push('DELETE FROM questions;');
   for (let i = 0; i < rows.length; i += batch) {
     const chunk = rows.slice(i, i + batch);
@@ -60,7 +62,6 @@ export function buildSql(doc, { now = Date.now(), batch = BATCH } = {}) {
       `  (${sqlStr(r.id)}, ${sqlStr(r.topic_id)}, ${sqlStr(r.subject_id)}, ${sqlInt(r.difficulty)}, 1, ${sqlStr(r.sort_key)}, ${sqlStr(r.payload)}, ${sqlInt(r.updated_at)})`
     ).join(',\n') + '\nON CONFLICT(id) DO UPDATE SET topic_id=excluded.topic_id, subject_id=excluded.subject_id, difficulty=excluded.difficulty, published=excluded.published, sort_key=excluded.sort_key, payload=excluded.payload, updated_at=excluded.updated_at;');
   }
-  out.push('COMMIT;');
   out.push(`SELECT COUNT(*) AS rows FROM questions;`);
   return out.join('\n') + '\n';
 }
