@@ -62,7 +62,7 @@ const APP_SHELL = [
 // A truncated/corrupt download is NEVER written to the shell cache.
 const ASSET_DIGESTS = {
 /* sw-manifest:start */
-  "./index.html": "797b76d5c172c48b3c4246070d6ad64c1aa495b02e8ac221893f063c10a8ced0",
+  "./index.html": "e7a5363fcd63b42aba36763cf136323da8575b487ae81a246307153579ee44aa",
   "./manifest.json": "eb5b27604e5523007b76e0006bd6c69249b48d90cce53771a591311789cc100a",
   "./manifest.webmanifest": "ab6d32ccba7590f6c1ab8b579136d65ae20672cf8894f95348c61892c7e7be0d",
   "./dashboard-v2.css?v=dash2f13-theme": "4541bc1e65fd158c593443562975400d128b8f1d3b636595df3c235b99e8cced",
