@@ -9,4 +9,12 @@ html:has(.ah-welcome-upgraded),body:has(.ah-welcome-upgraded),body:has(.ah-welco
    path (browser chrome resize, overscroll bounce, pull-to-refresh). */
 html:has(.ah-welcome-upgraded),body:has(.ah-welcome-upgraded){position:fixed!important;inset:0!important;width:100%!important;height:100%!important;overflow:hidden!important;overscroll-behavior:none!important;touch-action:none}
 .ah-account-page:has(.ah-welcome-upgraded),.ah-account-page:has(.ah-welcome-upgraded) .ah-account-shell,.ah-account-page:has(.ah-welcome-upgraded) .ah-account-body{position:fixed!important;inset:0!important;width:100%!important;height:100%!important;min-height:0!important;margin:0!important;max-width:none!important;overflow:hidden!important;overscroll-behavior:none!important}
+/* The decorative colour glows tint the extreme top/bottom edge, so the device
+   status/nav bar (theme-colour #f7f6fb) no longer matched the app edge. Fade
+   the glows out over the safe-area band + a small margin, leaving the flat
+   base colour at the edges so app and device read as one surface. */
+.ahw-artboard > [data-w-style="w1"],.ahw-artboard > [data-w-style="w2"],.ahw-artboard > [data-w-style="w3"],.ahw-artboard > [data-w-style="w4"],.ahw-artboard > [data-w-style="w5"],.ahw-artboard > [data-w-style="w6"],.ahw-artboard > [data-w-style="w7"]{
+  -webkit-mask-image:linear-gradient(to bottom,transparent 0,#000 calc(32px + env(safe-area-inset-top)),#000 calc(100% - 32px - env(safe-area-inset-bottom)),transparent 100%);
+  mask-image:linear-gradient(to bottom,transparent 0,#000 calc(32px + env(safe-area-inset-top)),#000 calc(100% - 32px - env(safe-area-inset-bottom)),transparent 100%);
+}
 @media(max-height:680px){.ah-welcome-live [data-w-style="w15"]{font-size:clamp(23px,6.4vw,28px)!important;line-height:1.25!important;margin-top:6px!important}.ah-welcome-live [data-w-style="w16"]{font-size:14px!important;line-height:1.5!important}.ah-welcome-live [data-w-style="w17"]{margin-top:6px!important}.ah-welcome-live [data-w-style="w71"]{margin-top:8px!important}}

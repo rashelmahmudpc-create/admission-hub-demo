@@ -9,7 +9,7 @@ const HTML = read('index.html');
 const SW = read('sw.js');
 const RELEASE = read('.github/workflows/telegram-auth-canary-activate.yml');
 const BUNDLE_GUARD = read('.github/workflows/cf-pages.yml');
-const UI_VERSION = '20261010-static-welcome-lock';
+const UI_VERSION = '20261010-static-welcome-lock2';
 
 const SHELL_VERSION = 'v301-p16-a11y-20261010';
 
