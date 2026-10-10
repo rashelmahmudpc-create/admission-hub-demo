@@ -133,6 +133,12 @@ export function renderContext(bundle) {
     if (s.streak != null) bits.push(`streak=${s.streak}d`);
     if (s.mistakes != null) bits.push(`mistakes=${s.mistakes}`);
     if (bits.length) lines.push(`- performance: ${bits.join(' ')}`);
+    /* P06: weak topics as short pills so the model can prioritise revision.
+       Already sanitized by capStats; rendered plain so no prompt structure leaks. */
+    const pill = (list) => list.filter(Boolean).slice(0, 4).map(x => `${x.name} ${x.accuracy}%`).join(', ');
+    if (Array.isArray(s.weakTopics) && s.weakTopics.length) {
+      lines.push(`- weak topics: ${pill(s.weakTopics)}`);
+    }
   }
   if (scopeAtLeast(scope.profile, SCOPE.MINIMAL) && data.profile) {
     const p = data.profile;

@@ -17,8 +17,8 @@ const UI_VERSION_FROM = '20260921-single-email-button-fallback';
 const UI_VERSION_TO = '20260921-single-email-button-fallback';
 const LANG_VERSION_FROM = 'lang-v5-single-email-button';
 const LANG_VERSION_TO = 'lang-v5-single-email-button';
-const SW_BUILD_FROM = 'v290-analytics-dashboard-20260925';
-const SW_BUILD_TO = 'v291-ai-duplicate-turn-20261010';
+const SW_BUILD_FROM = 'v291-ai-duplicate-turn-20261010';
+const SW_BUILD_TO = 'v292-p06-personal-tutor-20261010';
 
 const targets = [
   'index.html',
@@ -55,7 +55,7 @@ const replacements = [
   [SW_BUILD_FROM, SW_BUILD_TO],
   // The AI chat script's own cache-busting query moves with the shell build, so
   // it is bumped in the same pass to keep index.html and sw.js in lockstep.
-  ['ai-agent-chat.js?v=agent-f1-ui-chatv20-autoprefs', 'ai-agent-chat.js?v=agent-f1-ui-dupturnfix']
+  ['ai-agent-chat.js?v=agent-f1-ui-dupturnfix', 'ai-agent-chat.js?v=agent-f1-ui-p06tutor']
 ];
 
 let changed = 0;

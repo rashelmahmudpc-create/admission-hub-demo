@@ -781,14 +781,44 @@
     }
     return guestMemo;
   };
+  /* Per-topic / per-subject accuracy from the student's own result snapshots.
+     Only academic names leave the device (topic and subject names); no identity
+     and no raw answers. Feeds the prompt's personal-learning profile so the
+     tutor can say "your accuracy here is low — revise this". */
+  const P06_TOPIC_MIN_ATTEMPTS = 3;
+  const P06_WEAK_ACC = 70;
+  const learningProfile = () => {
+    try {
+      if (typeof CACHE === 'undefined' || !Array.isArray(CACHE.examResults)) return { weakTopics: [], subjects: [] };
+      const nameOf = (fn, id) => { try { return typeof fn === 'function' ? String(fn(id) || '').trim() : ''; } catch (_) { return ''; } };
+      const topics = {}, subjects = {};
+      for (const r of CACHE.examResults) {
+        for (const q of (Array.isArray(r && r.snapshot) ? r.snapshot : [])) {
+          const st = q && q.status;
+          if (st !== 'correct' && st !== 'wrong') continue;
+          const tn = nameOf(typeof topicName === 'function' ? topicName : null, q.topicId);
+          if (tn && tn !== '—') { const t = topics[tn] || (topics[tn] = { attempts: 0, correct: 0 }); t.attempts++; if (st === 'correct') t.correct++; }
+          const sn = nameOf(typeof subjectName === 'function' ? subjectName : null, q.subjectId);
+          if (sn && sn !== '—') { const s = subjects[sn] || (subjects[sn] = { attempts: 0, correct: 0 }); s.attempts++; if (st === 'correct') s.correct++; }
+        }
+      }
+      const toRows = (map) => Object.entries(map).map(([name, v]) => ({ name, attempts: v.attempts, accuracy: v.attempts > 0 ? Math.round((v.correct / v.attempts) * 100) : 0 }));
+      const weakTopics = toRows(topics).filter((t) => t.attempts >= P06_TOPIC_MIN_ATTEMPTS && t.accuracy < P06_WEAK_ACC)
+        .sort((a, b) => a.accuracy - b.accuracy).slice(0, 4);
+      const subjectRows = toRows(subjects).sort((a, b) => b.attempts - a.attempts).slice(0, 6);
+      return { weakTopics, subjects: subjectRows };
+    } catch (_) { return { weakTopics: [], subjects: [] }; }
+  };
   const localStats = () => {
     try {
       if (typeof computeLifetimeStats !== 'function') return null;
       const s = computeLifetimeStats();
+      const lp = learningProfile();
       return {
         exams: Number(s.exams || 0), questions: Number(s.totalQuestions || s.attempted || 0),
         accuracy: Number(s.accuracy || 0), streak: typeof computeStreak === 'function' ? Number(computeStreak() || 0) : 0,
-        mistakes: typeof CACHE !== 'undefined' && Array.isArray(CACHE.mistakes) ? CACHE.mistakes.length : Number(s.wrong || 0)
+        mistakes: typeof CACHE !== 'undefined' && Array.isArray(CACHE.mistakes) ? CACHE.mistakes.length : Number(s.wrong || 0),
+        weakTopics: lp.weakTopics, subjects: lp.subjects
       };
     } catch (_) { return null; }
   };

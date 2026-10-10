@@ -91,6 +91,10 @@ function renderContext(bundle) {
     if (s.streak != null) bits.push(`streak=${s.streak}d`);
     if (s.mistakes != null) bits.push(`mistakes=${s.mistakes}`);
     if (bits.length) lines.push(`- performance: ${bits.join(" ")}`);
+    const pill = (list) => list.filter(Boolean).slice(0, 4).map((x) => `${x.name} ${x.accuracy}%`).join(", ");
+    if (Array.isArray(s.weakTopics) && s.weakTopics.length) {
+      lines.push(`- weak topics: ${pill(s.weakTopics)}`);
+    }
   }
   if (scopeAtLeast(scope.profile, SCOPE.MINIMAL) && data.profile) {
     const p = data.profile;
@@ -1100,6 +1104,26 @@ function capStats(stats) {
   if (stats.accuracy != null) s.accuracy = num2(stats.accuracy, 0, 100);
   if (stats.streak != null) s.streak = num2(stats.streak, 0, 3650);
   if (stats.mistakes != null) s.mistakes = num2(stats.mistakes, 0, 1e5);
+  const name = (v, max) => String(v == null ? "" : v).replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, max);
+  const pii = (v) => /[\w.+-]+@[\w-]+\.[\w.]+|(?:\+?880|0)1[3-9]\d{8}|\b\d{10,}\b/.test(v);
+  const rows = (input, limit) => {
+    if (!Array.isArray(input)) return null;
+    const seen = /* @__PURE__ */ new Set();
+    const out = [];
+    for (const row of input) {
+      if (!row || typeof row !== "object") continue;
+      const n = name(row.name, 60);
+      if (!n || seen.has(n) || pii(n)) continue;
+      seen.add(n);
+      out.push({ name: n, attempts: num2(row.attempts, 0, 1e5), accuracy: num2(row.accuracy, 0, 100) });
+      if (out.length >= limit) break;
+    }
+    return out.length ? out : null;
+  };
+  const weak = rows(stats.weakTopics, 4);
+  if (weak) s.weakTopics = weak;
+  const subs = rows(stats.subjects, 6);
+  if (subs) s.subjects = subs;
   return Object.keys(s).length ? s : null;
 }
 var AI_PREFS_DEFAULT = Object.freeze({ langStyle: "bn", tone: "friendly", responseLen: "balanced" });
@@ -1195,8 +1219,34 @@ STUDENT PREFERENCES (এই ব্যবহারকারীর নিজস্
     if (bits.length) p += `
 
 USER STATS (শুধু এই প্রদত্ত সংখ্যা ব্যবহার করো — এগুলোর বাইরে কোনো সংখ্যা বানাবে না): ${bits.join(" · ")}.`;
+    const fmtRows = (list) => list.filter(Boolean).map((x) => `${x.name} (${x.accuracy}%, ${x.attempts}টা)`);
+    if (Array.isArray(stats.weakTopics) && stats.weakTopics.length) {
+      p += `
+
+LEARNING PROFILE — দুর্বল টপিক (শিক্ষার্থীর নিজের ফলাফল থেকে): ${fmtRows(stats.weakTopics).join(" · ")}.
+- শিক্ষার্থী এসব টপিক নিয়ে জিজ্ঞেস করলে, বা সাধারণভাবে কী পড়বে জানতে চাইলে, এই দুর্বল টপিকগুলো অগ্রাধিকার দাও।
+- সংখ্যা কখনো বানাবে না; শুধু উপরের দেওয়া টপিক ও পার্সেন্ট ব্যবহার করো। শিক্ষার্থীকে বলো কেন দুর্বল এবং কীভাবে ঠিক করবে।`;
+    }
+    if (Array.isArray(stats.subjects) && stats.subjects.length) {
+      p += `
+
+SUBJECT ACCURACY (প্রদত্ত): ${fmtRows(stats.subjects).join(" · ")}.`;
+    }
+    const rec = buildStudyRecommendation(stats, { langStyle: prefs && prefs.langStyle });
+    if (rec) p += `
+
+STUDY RECOMMENDATION (শিক্ষার্থী কী পড়বে জানতে চাইলে এই লাইনটি স্বাভাবিকভাবে ব্যবহার করো): ${rec}`;
   }
   return p;
+}
+function buildStudyRecommendation(stats, opts = {}) {
+  const s = capStats(stats);
+  if (!s || !Array.isArray(s.weakTopics) || !s.weakTopics.length) return null;
+  const en = opts.langStyle === "en";
+  const list = s.weakTopics.slice(0, 3).map((t) => `${t.name} (${t.accuracy}%)`).join(", ");
+  const lead = en ? `Your revision priority right now: ${list}.` : `এখন রিভিশনে সবচেয়ে জরুরি: ${list}।`;
+  const tip = en ? "Practise these with a few MCQs daily, then re-test after a day to confirm the gap is closing." : "প্রতিদিন অল্প কিছু MCQ দিয়ে এগুলোর অনুশীলন করো, এক দিন পর আবার পরীক্ষা দিয়ে দেখো দুর্বলতা কমছে কি না।";
+  return `${lead} ${tip}`;
 }
 function summarizeTo(messages, maxTurns = 6, maxChars = 900) {
   const msgs = Array.isArray(messages) ? messages.slice(0, -maxTurns) : [];
@@ -1581,16 +1631,42 @@ async function agentChat(request, env, uid, opts = {}) {
   const ctxBundle = contextEngineEnabled(env) ? buildContext({ uid: sendCtx.uid, prefs: aiPrefs, stats, onboarding, profile: profileCtx, memoryOn }) : null;
   const ctxText = ctxBundle ? renderContext(ctxBundle) : "";
   let summaryText = memoryOn && !freshThread ? await getKv(env.PUB_KV, "chatmemsum:" + sendCtx.uid) : "";
+  const memKey = "mem:" + MEMORY_VERSION + ":" + sendCtx.uid;
   let memRecords = [];
   if (memoryOn) {
     try {
-      const rawLong = await getKv(env.PUB_KV, "mem:" + MEMORY_VERSION + ":" + sendCtx.uid);
+      const rawLong = await getKv(env.PUB_KV, memKey);
       memRecords = parseMemory(rawLong, sendCtx.uid);
     } catch (_) {
       memRecords = [];
     }
   }
-  const memoryText = memoryOn ? renderMemory(memRecords, MEMORY_VERSION) : "";
+  let tutorContext = [];
+  if (memoryOn) {
+    const lastUser = v.messages[v.messages.length - 1];
+    const priorTopic = memRecords.find((r) => r.kind === KIND.STUDIES && r.key === "last-topic");
+    const topic = String(lastUser.content || "").replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 80);
+    const isFresh = v.fresh === true;
+    if (topic && isPiiFree(topic) && !(isFresh && priorTopic)) {
+      try {
+        const record = makeMemory(
+          { kind: KIND.STUDIES, key: "last-topic", value: topic, source: SOURCE.USER_STATED, confidence: 0.9, reason: "সর্বশেষ আলোচনার বিষয়" },
+          sendCtx.uid
+        );
+        if (record) {
+          const rawLong = await getKv(env.PUB_KV, memKey);
+          const stored = parseMemory(rawLong, sendCtx.uid).filter((r) => !(r.kind === KIND.STUDIES && r.key === "last-topic"));
+          await putKv(env.PUB_KV, memKey, JSON.stringify(upsertMemory(stored, record, sendCtx.uid)));
+        }
+      } catch (_) {
+      }
+    }
+    if (priorTopic && !isFresh) {
+      tutorContext = [Object.freeze({ kind: KIND.STUDIES, key: "last-topic", value: priorTopic.value, source: SOURCE.USER_STATED, confidence: priorTopic.confidence, reason: priorTopic.reason, ts: priorTopic.ts, ownerUid: sendCtx.uid })];
+    }
+  }
+  const baseRecords = memRecords.filter((r) => !(r.kind === KIND.STUDIES && r.key === "last-topic"));
+  const memoryText = memoryOn ? renderMemory(baseRecords.concat(tutorContext), MEMORY_VERSION) : "";
   const sys = [systemPrompt, ctxText, memoryText, summaryText].filter(Boolean).join("\n\n");
   const hasImage = msgs.some((m) => m.image);
   const partsOf = (m) => {

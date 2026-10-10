@@ -11,7 +11,7 @@ const RELEASE = read('.github/workflows/telegram-auth-canary-activate.yml');
 const BUNDLE_GUARD = read('.github/workflows/cf-pages.yml');
 const UI_VERSION = '20260921-single-email-button-fallback';
 
-const SHELL_VERSION = 'v291-ai-duplicate-turn-20261010';
+const SHELL_VERSION = 'v292-p06-personal-tutor-20261010';
 
 const signupStart = JS.indexOf('<form class="ah-account-view ah-signup-view"');
 const signupEnd = JS.indexOf('<div class="ah-account-view ah-created-view"', signupStart);
@@ -108,6 +108,6 @@ test('code-native release markers and fail-closed publication checks are synchro
 test('Signup stays AI-free while the ordinary application AI remains shipped', () => {
   assert.doesNotMatch(JS, /\/api\/ai\/chat|data-role="guide|class="ah-guide/);
   assert.doesNotMatch(CSS, /\.ah-guide/);
-  assert.match(HTML, /<script defer src="\.\/ai-agent-chat\.js\?v=agent-f1-ui-dupturnfix"><\/script>/);
-  assert.match(SW, /\.\/ai-agent-chat\.js\?v=agent-f1-ui-dupturnfix/);
+  assert.match(HTML, /<script defer src="\.\/ai-agent-chat\.js\?v=agent-f1-ui-p06tutor"><\/script>/);
+  assert.match(SW, /\.\/ai-agent-chat\.js\?v=agent-f1-ui-p06tutor/);
 });

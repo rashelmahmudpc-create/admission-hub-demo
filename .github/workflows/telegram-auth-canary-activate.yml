@@ -152,9 +152,9 @@ jobs:
           public_ready=false
           for attempt in 1 2 3 4 5 6 7 8; do
 
-            fetch_public "$verify_dir/index.html" "https://admissionhub.pages.dev/?release=v291-ai-duplicate-turn-20261010"
+            fetch_public "$verify_dir/index.html" "https://admissionhub.pages.dev/?release=v292-p06-personal-tutor-20261010"
             if grep -Fq 'account-access.js?v=20260921-single-email-button-fallback' "$verify_dir/index.html" \
-              && grep -Fq 'ai-agent-chat.js?v=agent-f1-ui-dupturnfix' "$verify_dir/index.html"; then
+              && grep -Fq 'ai-agent-chat.js?v=agent-f1-ui-p06tutor' "$verify_dir/index.html"; then
               public_ready=true
               break
             fi
@@ -181,17 +181,17 @@ jobs:
           grep -Fq 'account-access.css?v=20260921-single-email-button-fallback' "$verify_dir/index.html"
           grep -Fq 'dashboard-v2.css?v=dash2f13-theme' "$verify_dir/index.html"
           grep -Fq 'dashboard-v2.js?v=dash2f15-inbox' "$verify_dir/index.html"
-          grep -Fq 'ai-agent-chat.js?v=agent-f1-ui-dupturnfix' "$verify_dir/index.html"
+          grep -Fq 'ai-agent-chat.js?v=agent-f1-ui-p06tutor' "$verify_dir/index.html"
           grep -Fq 'phase12-ui.js?v=nav-resume-router-v11-main-ai' "$verify_dir/index.html"
 
-          grep -Fq 'sw.js?v=v291-ai-duplicate-turn-20261010' "$verify_dir/index.html"
+          grep -Fq 'sw.js?v=v292-p06-personal-tutor-20261010' "$verify_dir/index.html"
           verify_retired_media_absent() {
             asset="$1"
             status=$(curl --silent --show-error --connect-timeout 10 --max-time 30 \
               -H 'Cache-Control: no-cache' --dump-header "$verify_dir/${asset}.headers" \
               --output "$verify_dir/${asset}.body" --write-out '%{http_code}' \
 
-              "https://admissionhub.pages.dev/${asset}?retired=v291-ai-duplicate-turn-20261010")
+              "https://admissionhub.pages.dev/${asset}?retired=v292-p06-personal-tutor-20261010")
             case "$status" in
               404|410) ;;
               200)
@@ -208,10 +208,10 @@ jobs:
           fetch_public "$verify_dir/account-access.js" 'https://admissionhub.pages.dev/account-access.js?v=20260921-single-email-button-fallback'
           fetch_public "$verify_dir/account-access.css" 'https://admissionhub.pages.dev/account-access.css?v=20260921-single-email-button-fallback'
           fetch_public "$verify_dir/dashboard-v2.js" 'https://admissionhub.pages.dev/dashboard-v2.js?v=dash2f15-inbox'
-          fetch_public "$verify_dir/ai-agent-chat.js" 'https://admissionhub.pages.dev/ai-agent-chat.js?v=agent-f1-ui-dupturnfix'
+          fetch_public "$verify_dir/ai-agent-chat.js" 'https://admissionhub.pages.dev/ai-agent-chat.js?v=agent-f1-ui-p06tutor'
           fetch_public "$verify_dir/phase12-ui.js" 'https://admissionhub.pages.dev/phase12-ui.js?v=nav-resume-router-v11-main-ai'
 
-          fetch_public "$verify_dir/sw.js" 'https://admissionhub.pages.dev/sw.js?v=v291-ai-duplicate-turn-20261010'
+          fetch_public "$verify_dir/sw.js" 'https://admissionhub.pages.dev/sw.js?v=v292-p06-personal-tutor-20261010'
 
           grep -Fq "'X-AH-Auth-UI': 'auth-premium-v6'" "$verify_dir/account-access.js"
           grep -Fq 'data-visual-contract="code-native-page-system-v1"' "$verify_dir/account-access.js"
@@ -275,10 +275,10 @@ jobs:
           grep -Fq '<span>AI</span>' "$verify_dir/dashboard-v2.js"
           grep -Fq 'window.renderAiAgentPage = render' "$verify_dir/ai-agent-chat.js"
 
-          grep -Fq "const BUILD_ID = 'v291-ai-duplicate-turn-20261010'" "$verify_dir/sw.js"
+          grep -Fq "const BUILD_ID = 'v292-p06-personal-tutor-20261010'" "$verify_dir/sw.js"
           ! grep -Fq 'onboarding-welcome-hero.webp' "$verify_dir/sw.js"
           ! grep -Fq 'onboarding-personal-hero.webp' "$verify_dir/sw.js"
-          grep -Fq './ai-agent-chat.js?v=agent-f1-ui-dupturnfix' "$verify_dir/sw.js"
+          grep -Fq './ai-agent-chat.js?v=agent-f1-ui-p06tutor' "$verify_dir/sw.js"
           rm -rf "$verify_dir"
           echo 'Zero-raster code-native Welcome and input-bound Personal preview, truthful Email/Telegram verification, ordinary Guest route, signup-only Assistant isolation, restored main-app AI, and cache-safe assets are READY; generic backup and pre-verification Passkey remain protected.'
 

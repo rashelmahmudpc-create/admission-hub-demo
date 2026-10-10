@@ -51,7 +51,7 @@ test('১১. protection snapshot runs as idle post-boot work',
 /* PWA lifecycle */
 test('১২. build/cache/static-Welcome and main-app AI versions are synchronized',
 
-  SW.includes("const BUILD_ID = 'v291-ai-duplicate-turn-20261010'") && H.includes("const expectedSwVersion = 'v291-ai-duplicate-turn-20261010'") && H.includes('sw.js?v=v291-ai-duplicate-turn-20261010') && H.includes('account-access.js?v=20260921-single-email-button-fallback') && SW.includes('account-access.js?v=20260921-single-email-button-fallback') && H.includes('ai-agent-chat.js?v=agent-f1-ui-dupturnfix') && SW.includes('ai-agent-chat.js?v=agent-f1-ui-dupturnfix'));
+  SW.includes("const BUILD_ID = 'v292-p06-personal-tutor-20261010'") && H.includes("const expectedSwVersion = 'v292-p06-personal-tutor-20261010'") && H.includes('sw.js?v=v292-p06-personal-tutor-20261010') && H.includes('account-access.js?v=20260921-single-email-button-fallback') && SW.includes('account-access.js?v=20260921-single-email-button-fallback') && H.includes('ai-agent-chat.js?v=agent-f1-ui-p06tutor') && SW.includes('ai-agent-chat.js?v=agent-f1-ui-p06tutor'));
 test('১৩. service-worker activation never navigates or reloads open clients',
   !SW.includes('c.navigate(c.url)') && !SW.includes("self.clients.matchAll({ type: 'window', includeUncontrolled: true });\n      for"));
 test('১৪. installed PWA document is bounded network-first with fast offline fallback',

@@ -18,7 +18,7 @@
 import { buildContext, renderContext, describeContext, CONTEXT_VERSION } from './context-engine.js';
 import { getPromptText, BASE_PROMPT_ID } from './prompt-registry.js';
 import { listTools, TOOL_REGISTRY_VERSION } from './tool-registry.js';
-import { extractMemoryCandidates, makeMemory, upsertMemory, parseMemory, renderMemory, resolveMemoryOwner, MEMORY_VERSION } from './memory-engine.js';
+import { extractMemoryCandidates, makeMemory, upsertMemory, parseMemory, renderMemory, resolveMemoryOwner, isPiiFree, KIND, SOURCE, MEMORY_VERSION } from './memory-engine.js';
 import { validateResponse, describeResponseValidation, RESPONSE_VALIDATION_VERSION } from './response-validator.js';
 import { describeActions, ACTION_VERSION } from './action-engine.js';
 import { makeTrace, makeRequestId, callerRef, quotaState, renderTrace, estimateTokens, FALLBACK, OBSERVABILITY_VERSION, describeObservability, parseTraces, appendTrace, addUsage, emptyUsage, estimateCost, validateObservability } from './observability.js';
@@ -164,6 +164,30 @@ export function capStats(stats) {
   if (stats.accuracy != null) s.accuracy = num(stats.accuracy, 0, 100);
   if (stats.streak != null) s.streak = num(stats.streak, 0, 3650);
   if (stats.mistakes != null) s.mistakes = num(stats.mistakes, 0, 100000);
+  /* P06 personal learning profile. Academic topic/subject NAMES only — the same
+     class of data the profile already carries, never identity. Each row is
+     trimmed, de-duplicated and range-checked so a malformed payload cannot
+     smuggle prompt structure or a fabricated figure past the model. */
+  const name = (v, max) => String(v == null ? '' : v).replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
+  const pii = (v) => /[\w.+-]+@[\w-]+\.[\w.]+|(?:\+?880|0)1[3-9]\d{8}|\b\d{10,}\b/.test(v);
+  const rows = (input, limit) => {
+    if (!Array.isArray(input)) return null;
+    const seen = new Set();
+    const out = [];
+    for (const row of input) {
+      if (!row || typeof row !== 'object') continue;
+      const n = name(row.name, 60);
+      if (!n || seen.has(n) || pii(n)) continue;
+      seen.add(n);
+      out.push({ name: n, attempts: num(row.attempts, 0, 100000), accuracy: num(row.accuracy, 0, 100) });
+      if (out.length >= limit) break;
+    }
+    return out.length ? out : null;
+  };
+  const weak = rows(stats.weakTopics, 4);
+  if (weak) s.weakTopics = weak;
+  const subs = rows(stats.subjects, 6);
+  if (subs) s.subjects = subs;
   return Object.keys(s).length ? s : null;
 }
 
@@ -272,8 +296,44 @@ export function buildSystemPrompt(opts = {}) {
     if (stats.streak != null) bits.push(`স্ট্রিক: ${stats.streak} দিন`);
     if (stats.mistakes != null) bits.push(`ভুল-তালিকা: ${stats.mistakes}টা`);
     if (bits.length) p += `\n\nUSER STATS (শুধু এই প্রদত্ত সংখ্যা ব্যবহার করো — এগুলোর বাইরে কোনো সংখ্যা বানাবে না): ${bits.join(' · ')}.`;
+    /* P06 learning profile: where the student is weak, so the tutor can guide
+       revision instead of giving a generic answer. Names/figures come straight
+       from the student's own results and are never invented. */
+    const fmtRows = (list) => list.filter(Boolean).map(x => `${x.name} (${x.accuracy}%, ${x.attempts}টা)`);
+    if (Array.isArray(stats.weakTopics) && stats.weakTopics.length) {
+      p += `\n\nLEARNING PROFILE — দুর্বল টপিক (শিক্ষার্থীর নিজের ফলাফল থেকে): ${fmtRows(stats.weakTopics).join(' · ')}.
+- শিক্ষার্থী এসব টপিক নিয়ে জিজ্ঞেস করলে, বা সাধারণভাবে কী পড়বে জানতে চাইলে, এই দুর্বল টপিকগুলো অগ্রাধিকার দাও।
+- সংখ্যা কখনো বানাবে না; শুধু উপরের দেওয়া টপিক ও পার্সেন্ট ব্যবহার করো। শিক্ষার্থীকে বলো কেন দুর্বল এবং কীভাবে ঠিক করবে।`;
+    }
+    if (Array.isArray(stats.subjects) && stats.subjects.length) {
+      p += `\n\nSUBJECT ACCURACY (প্রদত্ত): ${fmtRows(stats.subjects).join(' · ')}.`;
+    }
+    /* The ready-made revision line. Offered, not forced: the model weaves it in
+       when the student asks what to study or how to improve, and stays silent
+       about it otherwise. */
+    const rec = buildStudyRecommendation(stats, { langStyle: prefs && prefs.langStyle });
+    if (rec) p += `\n\nSTUDY RECOMMENDATION (শিক্ষার্থী কী পড়বে জানতে চাইলে এই লাইনটি স্বাভাবিকভাবে ব্যবহার করো): ${rec}`;
   }
   return p;
+}
+
+/* ── P06: study recommendation (deterministic, from the student's own data) ──
+   Turns the sanitized weak-topic rows into one actionable revision line. Pure
+   (no env, no model, no I/O) so it is unit-testable and reusable by the chat UI.
+   Returns null when the student has no measured weak topic yet — the tutor then
+   gives its normal answer instead of inventing a plan. */
+export function buildStudyRecommendation(stats, opts = {}) {
+  const s = capStats(stats);
+  if (!s || !Array.isArray(s.weakTopics) || !s.weakTopics.length) return null;
+  const en = opts.langStyle === 'en';
+  const list = s.weakTopics.slice(0, 3).map(t => `${t.name} (${t.accuracy}%)`).join(', ');
+  const lead = en
+    ? `Your revision priority right now: ${list}.`
+    : `এখন রিভিশনে সবচেয়ে জরুরি: ${list}।`;
+  const tip = en
+    ? 'Practise these with a few MCQs daily, then re-test after a day to confirm the gap is closing.'
+    : 'প্রতিদিন অল্প কিছু MCQ দিয়ে এগুলোর অনুশীলন করো, এক দিন পর আবার পরীক্ষা দিয়ে দেখো দুর্বলতা কমছে কি না।';
+  return `${lead} ${tip}`;
 }
 
 /* ── Conversation Memory: summarize (short/session 2-layer) -------------- */
@@ -722,14 +782,45 @@ export async function agentChat(request, env, uid, opts = {}) {
   /* M7 long-term memory: read the caller's own records, render only the newest,
      most confident few. Storage is bounded by the engine and the owner is the
      server-validated account uid — a record for anyone else is dropped on parse. */
+  const memKey = 'mem:' + MEMORY_VERSION + ':' + sendCtx.uid;
   let memRecords = [];
   if (memoryOn) {
     try {
-      const rawLong = await getKv(env.PUB_KV, 'mem:' + MEMORY_VERSION + ':' + sendCtx.uid);
+      const rawLong = await getKv(env.PUB_KV, memKey);
       memRecords = parseMemory(rawLong, sendCtx.uid);
     } catch (_) { memRecords = []; }
   }
-  const memoryText = memoryOn ? renderMemory(memRecords, MEMORY_VERSION) : '';
+  /* P06 conversation-memory: remember the topic just discussed so a later, new
+     session can continue it. Only the student's own question is stored (never a
+     model output), it is PII-checked, and it is reserved under keys the chat
+     extractor can never produce — so it never collides with a student-stated
+     memory. Joined to the render below for free: no extra read, no extra KV
+     write on the read path. Guests are refused earlier, so this is account-only. */
+  let tutorContext = [];
+  if (memoryOn) {
+    const lastUser = v.messages[v.messages.length - 1];
+    const priorTopic = memRecords.find(r => r.kind === KIND.STUDIES && r.key === 'last-topic');
+    const topic = String(lastUser.content || '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80);
+    const isFresh = v.fresh === true;
+    if (topic && isPiiFree(topic) && !(isFresh && priorTopic)) {
+      try {
+        const record = makeMemory(
+          { kind: KIND.STUDIES, key: 'last-topic', value: topic, source: SOURCE.USER_STATED, confidence: 0.9, reason: 'সর্বশেষ আলোচনার বিষয়' },
+          sendCtx.uid
+        );
+        if (record) {
+          const rawLong = await getKv(env.PUB_KV, memKey);
+          const stored = parseMemory(rawLong, sendCtx.uid).filter(r => !(r.kind === KIND.STUDIES && r.key === 'last-topic'));
+          await putKv(env.PUB_KV, memKey, JSON.stringify(upsertMemory(stored, record, sendCtx.uid)));
+        }
+      } catch (_) {}
+    }
+    if (priorTopic && !isFresh) {
+      tutorContext = [Object.freeze({ kind: KIND.STUDIES, key: 'last-topic', value: priorTopic.value, source: SOURCE.USER_STATED, confidence: priorTopic.confidence, reason: priorTopic.reason, ts: priorTopic.ts, ownerUid: sendCtx.uid })];
+    }
+  }
+  const baseRecords = memRecords.filter(r => !(r.kind === KIND.STUDIES && r.key === 'last-topic'));
+  const memoryText = memoryOn ? renderMemory(baseRecords.concat(tutorContext), MEMORY_VERSION) : '';
   const sys = [systemPrompt, ctxText, memoryText, summaryText].filter(Boolean).join('\n\n');
 
   const hasImage = msgs.some(m => m.image);
@@ -958,7 +1049,7 @@ function sseError(msg, status) {
 }
 
 export const __test = {
-  classifyIntent, validateChatReq, capStats, buildSystemPrompt, summarizeTo,
+  classifyIntent, validateChatReq, capStats, buildSystemPrompt, summarizeTo, buildStudyRecommendation,
   safetyGate, authVerificationGuidance, routerChain, geminiTextFromChunk, sseParse, ProviderError,
   adapterFor, providerChain, PROVIDER_ADAPTERS, GEMINI_ADAPTER, GROQ_ADAPTER, CLOUDFLARE_ADAPTER,
   INTENTS, TIER, GEMINI_MODELS, AGENT_VERSION, SYSTEM_PROMPT_V,
