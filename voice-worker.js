@@ -202,12 +202,50 @@ export default {
     const norm = word.toLowerCase().replace(/[^a-z0-9\u0980-\u09FF]+/gu, '-').replace(/^-+|-+$/g, '');
     const cacheKey = `v2:${provider}:${voiceId || 'default'}:${modelId || 'default'}:${norm}`;
 
+    // Level-0 edge cache (Cache API): free, per-colo, does not expire like KV.
+    // A repeat play from any student in the same region answers here, so the
+    // body never travels and no provider call happens.
+    let edgeCache = null;
+    let edgeUrl = null;
+    try { edgeCache = caches.default; edgeUrl = new URL(request.url); edgeUrl.searchParams.set('v', cacheKey); } catch (_) { edgeCache = null; }
+    if (edgeCache && edgeUrl) {
+      try {
+        const hit = await edgeCache.match(edgeUrl.toString());
+        if (hit) {
+          const buf = await hit.arrayBuffer();
+          if (buf.byteLength > 0) return audio(request, buf, 'edge');
+        }
+      } catch (_) { /* edge cache unavailable → continue */ }
+    }
+
     // Level-2 cache: server-side — browser storage মুছে গেলেও কোনো TTS কল লাগবে না
     if (env.VOICE_KV) {
       try {
         const hit = await env.VOICE_KV.get(cacheKey, { type: 'arrayBuffer' });
-        if (hit && hit.byteLength > 0) return audio(request, hit, 'hit');
+        if (hit && hit.byteLength > 0) {
+          if (edgeCache && edgeUrl) { try { await edgeCache.put(edgeUrl.toString(), audio(request, hit, 'miss')); } catch (_) {} }
+          return audio(request, hit, 'hit');
+        }
       } catch (_) { /* KV না পাওয়া গেলে সরাসরি generate */ }
+    }
+
+    // Single-flight lock: two students tapping the same new phrase at once would
+    // each pay for it. First writer wins; the second waits briefly, re-checks the
+    // cache and only generates if the winner did not store it (best-effort).
+    if (env.VOICE_KV) {
+      try {
+        const lockKey = `lock:${cacheKey}`;
+        if (await env.VOICE_KV.get(lockKey)) {
+          await new Promise(r => setTimeout(r, 1500));
+          const again = await env.VOICE_KV.get(cacheKey, { type: 'arrayBuffer' });
+          if (again && again.byteLength > 0) {
+            if (edgeCache && edgeUrl) { try { await edgeCache.put(edgeUrl.toString(), audio(request, again, 'miss')); } catch (_) {} }
+            return audio(request, again, 'hit');
+          }
+        } else {
+          await env.VOICE_KV.put(lockKey, '1', { expirationTtl: 30 });
+        }
+      } catch (_) { /* lock is best-effort; generate anyway rather than fail */ }
     }
 
     const errors = [];
@@ -236,8 +274,14 @@ export default {
 
     if (!buffer || !buffer.byteLength) return json(request, { error: 'empty_audio', provider }, 502);
 
+    if (edgeCache && edgeUrl) {
+      try { await edgeCache.put(edgeUrl.toString(), audio(request, buffer, 'miss')); } catch (_) {}
+    }
+
+    // Permanence: no expirationTtl, so a phrase is paid for once and stays for
+    // the life of the account — every later student is served from the cache.
     if (env.VOICE_KV) {
-      try { await env.VOICE_KV.put(cacheKey, buffer, { expirationTtl: 60 * 60 * 24 * 30 }); } catch (_) {}
+      try { await env.VOICE_KV.put(cacheKey, buffer); } catch (_) {}
     }
     return audio(request, buffer, 'miss');
   }

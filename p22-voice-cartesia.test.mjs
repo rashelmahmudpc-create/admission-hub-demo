@@ -159,3 +159,46 @@ test('p22-12: non-letters and control input are still rejected', async () => {
     assert.equal(res.status, 400, `${JSON.stringify(bad)} must stay invalid`);
   }
 });
+
+test('p22-13: a generated clip is stored in KV with no expiry (permanent)', async () => {
+  const worker = build();
+  const puts = [];
+  const kv = { get: async () => null, put: async (k, v, opts) => { puts.push({ k, opts }); } };
+  const { env, fetchMock } = mockEnv({ env: { CARTESIA_API_KEY: 'ck', VOICE_KV: kv } });
+  const res = await run(worker, env, { word: 'apple' }, fetchMock);
+  assert.equal(res.status, 200);
+  const stored = puts.find(p => p.k === 'v2:cartesia:default:default:apple');
+  assert.ok(stored, 'audio must be stored under the v2 cache key');
+  assert.equal(stored.opts, undefined, 'no expirationTtl => permanent (আজীবন)');
+});
+
+test('p22-14: the edge cache answers a repeat before any provider call', async () => {
+  const worker = build();
+  const store = new Map();
+  globalThis.caches = { default: {
+    match: async (u) => store.get(String(u)) || undefined,
+    put: async (u, resp) => { store.set(String(u), resp.clone()); }
+  } };
+  try {
+    const { env, calls, fetchMock } = mockEnv({ env: { CARTESIA_API_KEY: 'ck', VOICE_KV: { get: async () => null, put: async () => {} } } });
+    const first = await run(worker, env, { word: 'apple' }, fetchMock);
+    assert.equal(first.headers.get('X-Voice-Cache'), 'miss');
+    const second = await run(worker, env, { word: 'apple' }, fetchMock);
+    assert.equal(second.headers.get('X-Voice-Cache'), 'edge');
+    assert.equal(calls.length, 1, 'the edge hit must not reach Cartesia');
+  } finally { delete globalThis.caches; }
+});
+
+test('p22-15: a concurrent-second request waits for the lock holder and reuses its KV row', async () => {
+  const worker = build();
+  let stored = null;
+  const kv = {
+    get: async (k, o) => (k.startsWith('lock:') ? '1' : (o && o.type === 'arrayBuffer' ? stored : null)),
+    put: async (k, v) => { if (!k.startsWith('lock:')) stored = v; }
+  };
+  const { env, calls, fetchMock } = mockEnv({ env: { CARTESIA_API_KEY: 'ck', VOICE_KV: kv } });
+  stored = MP3; // pretend the lock holder finished and stored the clip
+  const res = await run(worker, env, { word: 'apple' }, fetchMock);
+  assert.equal(res.headers.get('X-Voice-Cache'), 'hit');
+  assert.equal(calls.length, 0, 'the waiter must not call the provider');
+});

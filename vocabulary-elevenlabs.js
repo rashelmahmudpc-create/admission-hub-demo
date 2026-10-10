@@ -1,4 +1,4 @@
-/* v107 — Voice pipeline for Vocabulary (provider = Cartesia, ElevenLabs fallback).
+/* v108 — Voice pipeline for Vocabulary (provider = Cartesia, ElevenLabs fallback).
    Generate once → save permanently in IndexedDB (voiceCache blob) → instant offline playback.
    API key কখনো client-side থাকে না: অ্যাপ শুধু নিজের Cloudflare Worker proxy-তে কথা বলে।
    Worker Main = Cartesia (CARTESIA_API_KEY); key না থাকলে বা Cartesia ব্যর্থ হলে
@@ -15,7 +15,7 @@
     outputFormat: 'mp3_22050_32',
     lang: 'en-US',                          // accent/locale — এক জায়গা থেকে বদলাও
     voiceSettings: Object.freeze({ stability: 0.5, similarity_boost: 0.75, style: 0, use_speaker_boost: true, speed: 1.0 }),
-    settingsVersion: 3,                     // voice/model বদলালে এই সংখ্যা বাড়ালেই পুরনো cache conflict-মুক্ত
+    settingsVersion: 4,                     // voice/model বদলালে এই সংখ্যা বাড়ালেই পুরনো cache conflict-মুক্ত
     maxWordLength: 60,
     timeoutMs: 20000,
     errorCooldownMs: 60000                  // ব্যর্থ word-এ এই সময় পর্যন্ত আবার API চেষ্টা হয় না
@@ -26,7 +26,9 @@
   const escape = value => String(value).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 
   // ── Deterministic cache identity: hash(word + voice + model + settings) ──────
-  const normalizeWord = word => String(word || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  // Must keep Bengali code points (\u0980-\u09FF): an ASCII-only class stripped a
+  // Bengali word to empty, which made the whole app skip the cache for Bengali.
+  const normalizeWord = word => String(word || '').trim().toLowerCase().replace(/[^a-z0-9\u0980-\u09FF]+/gu, '-').replace(/^-+|-+$/g, '');
   const fnv = text => { let h = 0x811c9dc5; for (let i = 0; i < text.length; i++) { h ^= text.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; } return ('0000000' + h.toString(16)).slice(-8); };
   const djb = text => { let h = 5381; for (let i = 0; i < text.length; i++) { h = (((h << 5) + h) + text.charCodeAt(i)) >>> 0; } return ('0000000' + h.toString(16)).slice(-8); };
   const configTag = () => [VOICE_CONFIG.voiceId, VOICE_CONFIG.modelId, VOICE_CONFIG.settingsVersion, VOICE_CONFIG.lang].join('|');
