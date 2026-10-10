@@ -1,6 +1,6 @@
 const CACHE_PREFIX = 'admission-hub-shell-';
 
-const BUILD_ID = 'v295-p07-question-engine-20261010';
+const BUILD_ID = 'v296-p08-adaptive-20261010';
 const CACHE_NAME = `${CACHE_PREFIX}${BUILD_ID}`;
 const VERSION_HEADER = 'X-Admission-Hub-Build';
 const DOCUMENT_NETWORK_TIMEOUT_MS = 2500;
@@ -46,13 +46,13 @@ const APP_SHELL = [
 // A truncated/corrupt download is NEVER written to the shell cache.
 const ASSET_DIGESTS = {
 /* sw-manifest:start */
-  "./index.html": "209f2de0bafe380445fdbfefdc4283f62aa5e9d91d8beac35303b1b8f7b0d152",
+  "./index.html": "46b134e2fdab804ae08d9131eb8a408716c38d38f7d3c2af52009ac9628b77a3",
   "./manifest.json": "11a85ae594fc629b11605daeda3f9afe4ef95215a55a29f9cc423314bfb275a4",
   "./manifest.webmanifest": "5be476009a140eabd088bd972bd4d345b9c4f4a055cd6e4f08774b9cb4afaf52",
   "./dashboard-v2.css?v=dash2f13-theme": "4541bc1e65fd158c593443562975400d128b8f1d3b636595df3c235b99e8cced",
   "./3d-loader.css?v=3d-v2": "43ca21b0a41be5d223c317fd63582f19ff6ffab5d010639ef26349464550da63",
   "./session-persist.js?v=session-v2": "99f3d1f49f6d5714fd25f1c12b2aa978ca97a009d6caba9a690a0442d082593c",
-  "./analytics-service.js?v=analytics-p2-v2-insights": "c381085d164bea496c29cc03b7d9f990a4cab88c4b56ca899a555e071aded821",
+  "./analytics-service.js?v=analytics-p2-v2-insights": "c5ca69a96743bcf1b56515fbbc6832b33c9a389869d19c140643126551c1b549",
   "./account-access.css?v=20260921-single-email-button-fallback": "54d46ed598915409c72c5da480cde492f947928a21088d4ed7b2f9ad4d13682e",
   "./institutions-bd.js?v=bd-institutions-v2": "602c5549515e8207ad152b948ca9b8fe3ad0fbe429afb56380e4e21b662f779d",
   "./language-engine.js?v=lang-v5-single-email-button": "7e726c3cd194381201c7fdb2b1a49af78f4f48f38012e05ab68e13eee3ade3ad",

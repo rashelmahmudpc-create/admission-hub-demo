@@ -55,9 +55,10 @@
 **নতুন (সম্পূর্ণ ইঞ্জিন):** `question-engine.js` — difficulty/type/concept/expected-time ট্যাগ · দৃঢ় similarity (word-Jaccard + char-Dice) · blocked duplicate-detection (লাখ-প্রশ্ন-রেডি) · explanation-কোয়ালিটি-চেক · answer-consistency ভেরিফিকেশন · single-pass `analyzeBank`। `question-engine-panel.js` — প্রশ্নভান্ডারের বিশ্লেষণ-প্যানেল (difficulty/type মিক্স, কোয়ালিটি-গ্যাপ, ডুপ্লিকেট-গ্রুপ) + এক-ট্যাপে ট্যাগ-রাইট-ব্যাক। টেস্ট: `question-engine.test.mjs` ২০/২০।
 **অবস্থা:** ছয়টিই সম্পন্ন। ভবিষ্যৎ-ঐচ্ছিক: ইম্পোর্টের সময়েই স্বয়ংক্রিয়ভাবে ট্যাগ বসানো (এখন প্যানেল থেকে এক-ট্যাপে হয়), এবং ব্যবহার-ডেটা বাড়লে difficulty-অনুমান আরও নিখুঁত হবে।
 
-## 📝 P08 — World-Class Exam Engine — 🟡 ~৭০%
-**আছে:** Mock/Flash/Mistake টেস্ট · exam-dropdowns · session-persist (route+scroll, PWA-reopen) · nav-resume · mock-result-experience · result-analysis-500 · one-time-mock-seed/tool · টাইমার/নেগেটিভ-মার্ক/র্যান্ডমাইজেশন (আংশিক)।
-**বাকি:** ① মাঝ-পরীক্ষায় অ্যাপ-বন্ধ/রিফ্রেশ → question-state+টাইমার রিকভারি (যাচাই+গ্যাপ-ক্লোজ) ② auto-save+auto-submit ③ network-failure রিকভারি ④ state-preservation-টেস্ট-স্যুট ⑤ adaptive-testing-ফাউন্ডেশন (মেটাডেটা-স্কিমা)।
+## 📝 P08 — World-Class Exam Engine — ✅ **সম্পন্ন (২০২৬-১০-১০, sw v296)**
+**আছে:** Mock/Flash/Mistake টেস্ট · exam-dropdowns · session-persist (route+scroll, PWA-reopen) · nav-resume · mock-result-experience · result-analysis-500 · one-time-mock-seed/tool · টাইমার/নেগেটিভ-মার্ক/র্যান্ডমাইজেশন।
+**রিকভারি:** mid-exam বন্ধ/রিফ্রেশে question-state+টাইমার (startTime+endTime থেকে recompute) · auto-save (debounced IDB + sessionStorage backup) · auto-submit (endTime-এ scheduled) · নেট-ফেল ব্যাকঅফ-retry, আর অনলাইনে ফিরলেই pending submit সাথে সাথে যায়।
+**নতুন:** adaptive-testing foundation — `ExamSelect` (pure module): difficulty filter + easy→medium→hard warm-up order + target difficulty-mix; setup-এ Adaptive order-চিপ। এখন দৃশ্যমান সব সেটআপ-টগল (auto-save, confirm-before-submit, resume) সত্যিই কাজ করে। টেস্ট: `p08-adaptive.test.mjs` ১২/১২ + আগের p08-exam-ac3 (২৩) ও p08-state-preserve (২৪)।
 
 ## 📊 P09 — Advanced Analytics — 🟡 ~৪৫%
 **আছে:** progress-tool · weekly-report · daily-streak · result-analysis-500 · mistake-analysis।

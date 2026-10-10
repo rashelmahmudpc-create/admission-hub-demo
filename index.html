@@ -3280,6 +3280,84 @@ function weakTopicIds(){
   CACHE.questions.forEach(q=>{const st=q.stats||{}; const attempts=st.attempts||0; if(!by[q.topicId]) by[q.topicId]={attempts:0,correct:0}; by[q.topicId].attempts+=attempts; by[q.topicId].correct+=st.correct||0;});
   return Object.entries(by).filter(([,v])=>v.attempts>0).sort((a,b)=>(a[1].correct/Math.max(1,a[1].attempts))-(b[1].correct/Math.max(1,b[1].attempts))).map(([id])=>id);
 }
+/* P08-EXAMSELECT:start */
+/* P08 — adaptive-testing foundation. A pure, dependency-free selector that reads
+   the difficulty/expected-time tags the Question Engine (P07) writes and can
+   filter or warm-up-order a paper by difficulty. Kept pure so it is testable
+   without a DOM, and defensive so an untagged bank still behaves. */
+const ExamSelect=(function(){
+  const DIFFS=['easy','medium','hard'];
+  const TARGET={easy:0.3,medium:0.5,hard:0.2};
+  const FALLBACK_TIME={easy:35,medium:55,hard:85};
+  function difficultyOf(q){
+    const d=String((q&&q.difficulty)||'').toLowerCase();
+    if(DIFFS.includes(d)) return d;
+    const eng=window.AhQuestionEngine;
+    if(eng&&typeof eng.difficultyOf==='function') return eng.difficultyOf(q);
+    return 'medium';
+  }
+  function expectedTime(q){
+    const t=Number(q&&q.expectedTime);
+    if(t>0) return t;
+    const eng=window.AhQuestionEngine;
+    if(eng&&typeof eng.expectedTime==='function') return eng.expectedTime(q);
+    return FALLBACK_TIME[difficultyOf(q)]||55;
+  }
+  function filterByDifficulty(pool,difficulty){
+    const list=Array.isArray(pool)?pool:[];
+    if(!difficulty||difficulty==='mixed'||difficulty==='all') return [...list];
+    return list.filter(q=>difficultyOf(q)===difficulty);
+  }
+  /* Interleave easy→medium→hard so a paper warms up, without dropping a question. */
+  function adaptive(pool){
+    const list=Array.isArray(pool)?pool:[];
+    const buckets={easy:[],medium:[],hard:[]};
+    for(const q of list) buckets[difficultyOf(q)].push(q);
+    const out=[];
+    while(out.length<list.length){
+      for(const d of DIFFS){ if(buckets[d].length) out.push(buckets[d].shift()); }
+    }
+    return out;
+  }
+  /* Difficulty mix for a test of `count` questions, from the target weights.
+     Rounding drift is absorbed so the parts always add up to the count. */
+  function mixFor(count){
+    count=Math.max(0,Math.floor(count)||0);
+    const parts=DIFFS.map(d=>({d,n:Math.round(count*TARGET[d])}));
+    let sum=parts.reduce((a,x)=>a+x.n,0);
+    while(sum<count){ parts[1].n++; sum++; }
+    while(sum>count){ const m=parts.filter(x=>x.n>0).sort((a,b)=>b.n-a.n)[0]; if(!m) break; m.n--; sum--; }
+    return Object.fromEntries(parts.map(x=>[x.d,x.n]));
+  }
+  /* Pick `count` questions matching the target difficulty mix, then warm up. */
+  function selectAdaptive(pool,count){
+    const list=Array.isArray(pool)?pool:[];
+    const buckets={easy:[],medium:[],hard:[]};
+    for(const q of list) buckets[difficultyOf(q)].push(q);
+    const want=Math.min(count,list.length);
+    const mix=mixFor(want);
+    const chosen=[];
+    for(const d of DIFFS){ for(let i=0;i<mix[d]&&buckets[d].length;i++) chosen.push(buckets[d].shift()); }
+    for(const d of DIFFS){ while(chosen.length<want&&buckets[d].length) chosen.push(buckets[d].shift()); }
+    return adaptive(chosen).slice(0,want);
+  }
+  function validate(){
+    const p=[];
+    if(!DIFFS.length) p.push('no difficulties');
+    const order=adaptive([{difficulty:'hard'},{difficulty:'medium'},{difficulty:'easy'}]).map(q=>q.difficulty);
+    if(order[0]!=='easy'||order[order.length-1]!=='hard') p.push('adaptive warm-up order wrong');
+    const mix=mixFor(10); if(mix.easy+mix.medium+mix.hard!==10) p.push('mix does not sum to count');
+    const sel=selectAdaptive([{id:1,difficulty:'easy'},{id:2,difficulty:'hard'},{id:3,difficulty:'medium'}],3);
+    if(sel.length!==3) p.push('selectAdaptive lost questions');
+    return p;
+  }
+  return {DIFFS,TARGET,difficultyOf,expectedTime,filterByDifficulty,adaptive,mixFor,selectAdaptive,validate};
+})();
+function examSelectValidate(){ return ExamSelect.validate(); }
+function adaptiveOrder(pool){ return ExamSelect.adaptive(pool); }
+function selectAdaptive(pool,count){ return ExamSelect.selectAdaptive(pool,count); }
+function filterByDifficulty(pool,difficulty){ return ExamSelect.filterByDifficulty(pool,difficulty); }
+/* P08-EXAMSELECT:end */
 function selectQuestionsByMode(pool,mode,count){
   const attempts=q=>(q.stats&&q.stats.attempts)||0;
   const wrong=q=>(q.stats&&q.stats.wrong)||0 || (CACHE.mistakes.find(m=>m.questionId===q.id)?.wrongCount||0);
@@ -3293,7 +3371,9 @@ function selectQuestionsByMode(pool,mode,count){
   else if(mode==='mixed'){
     const groups=[candidates.filter(q=>attempts(q)===0),candidates.filter(q=>wrong(q)>0),candidates.filter(q=>q.bookmarked===true),shuffleArr(candidates)];
     const seen=new Set(); candidates=[]; let round=0; while(candidates.length<pool.length && round<pool.length*2){const g=groups[round%groups.length]; const q=g[Math.floor(round/groups.length)]; if(q&&!seen.has(q.id)){seen.add(q.id); candidates.push(q);} round++;}
-  } else candidates=shuffleArr(candidates);
+  }
+  else if(mode==='adaptive'){ candidates=selectAdaptive(candidates,count); }
+  else candidates=shuffleArr(candidates);
   return candidates.slice(0,count);
 }
 function startExamFor(subjectIds, topicIds){
@@ -3339,6 +3419,11 @@ async function beginExam(){
     }
   }
   selected = selected.slice(0, Math.min(requestedCount, selected.length));
+  if(st.order==='adaptive' && typeof adaptiveOrder==='function'){ selected=adaptiveOrder(selected); }
+  if(['easy','medium','hard'].includes(st.difficulty) && typeof filterByDifficulty==='function'){
+    const only=filterByDifficulty(selected, st.difficulty);
+    if(only.length) selected=only;
+  }
 
   const questions = selected.map(q=>{
     let optOrder=[0,1,2,3];
@@ -3646,6 +3731,7 @@ function skipMock(){
 }
 function confirmSubmitExam(){
   const e=ActiveExam;
+  if(e && e.configuration && e.configuration.confirmSubmit===false){ submitExam(false); return; }
   const answered=Object.keys(e.selectedAnswers).length;
   const unanswered=e.questions.length-answered;
   const flagged=e.flags.size;
@@ -3809,6 +3895,15 @@ function renderFlashSummary(){
 /* ---- submit & scoring (shared) ---- */
 let submitRetryAttempt=0;
 let submitRetryHandle=null;
+window.addEventListener('online',()=>{
+  /* Network-failure recovery: when connectivity returns and a submit result is
+     still pending, stop waiting out the backoff and send it now. */
+  const e=ActiveExam;
+  if(!e || e.status!=='running' || !submitRetryHandle) return;
+  clearTimeout(submitRetryHandle); submitRetryAttempt=0;
+  submitRetryHandle=setTimeout(()=>{ const cur=ActiveExam; if(cur && cur.id===e.id && cur.status==='running') void submitExam(true); },300);
+  try{ toast('নেটওয়ার্ক ফিরল — ফলাফল আবার পাঠানো হচ্ছে…'); }catch(_){}
+});
 async function submitExam(autoSubmit){
   const e=ActiveExam;
   if(!e || e.isSubmitting) return;
@@ -4483,7 +4578,9 @@ async function boot(){
     const pending=JSON.parse(sessionStorage.getItem('admission_gemini_pending_note_v2')||'null');
     returningFromManualAi=!!pending && pending.source==='Flash Test' && pending.returnPath==='exam/running';
   } catch (_) {}
-  if(resumable){
+  if(resumable && resumable.configuration && resumable.configuration.resume===false){
+    try{ await dbDel('exams', resumable.id); CACHE.exams=await dbGetAll('exams'); } catch(_) {}
+  } else if(resumable){
     ActiveExam=applyExamBackup(resumable);
     if(resumable.mode==='mock' && computeRemaining(resumable)<=0){
       try{ await submitExam(true); } catch(submitErr){ console.warn('[AdmissionHub] boot auto-submit deferred', submitErr); }
@@ -4585,7 +4682,7 @@ function resumeActiveExam(){
     let content='';
     if(page===1) content=section(1,'Exam Mode',`<div class="choice-grid">${setupChoice(st.mode==='mock','📝 Mock Test',"setExamMode('mock')",'Timed exam simulation')}${setupChoice(st.mode==='flash','⚡ Flash Test',"setExamMode('flash')",'Instant feedback')}</div>`)+section(2,'Subjects',`<div class="filter-row">${setupChoice(st.subjectIds.length===0,'All Subjects',"ExamSetup.subjectIds=[];render()")}${subs.map(s=>setupChoice(st.subjectIds.includes(s.id),`${s.icon||'📘'} ${esc(s.name)}`,`toggleSetupSubject('${s.id}')`)).join('')}</div><div class="muted" style="margin-top:8px">${st.subjectIds.length?st.subjectIds.length+' selected':'All subjects included'}</div>`)+section(3,'Topics',`<div class="filter-row">${setupChoice(st.topicIds.length===0,'All Topics',"ExamSetup.topicIds=[];render()")}${topics.map(t=>setupChoice(st.topicIds.includes(t.id),`${esc(t.subjectName)} · ${esc(t.name)}`,`toggleSetupTopic('${t.id}')`)).join('')}</div>`)+section(4,'Question Source',`<div class="filter-row">${sourceLabels.map(([v,l])=>`<button class="chip ${st.selectionMode===v?'active':''}" onclick="setExamSelectionMode('${v}')">${l}</button>`).join('')}</div>`);
     if(page===2) content=section(5,'Question Count',`<div class="filter-row">${[10,20,30,50,100,200,300,500].filter(n=>n<=countAvailableSafe).map(n=>`<button class="chip ${st.totalCount===n?'active':''}" onclick="ExamSetup.totalCount=${n};render()">${n}</button>`).join('')}<button class="chip ${![10,20,30,50,100,200,300,500].includes(Number(st.totalCount))?'active':''}" onclick="document.getElementById('setupCount').focus()">Custom</button></div><input id="setupCount" type="number" min="1" max="${Math.max(1,countAvailableSafe)}" value="${st.totalCount}" oninput="ExamSetup.totalCount=Math.max(1,Math.min(${Math.max(1,countAvailableSafe)},Number(this.value)||1))">`)+section(6,'Question Distribution',`<div class="filter-row"><button class="chip ${st.distribution==='auto'?'active':''}" onclick="ExamSetup.distribution='auto';render()">Automatic</button><button class="chip ${st.distribution==='custom'?'active':''}" onclick="ExamSetup.distribution='custom';render()">Custom</button></div>${st.distribution==='custom'?`<div class="card" style="margin-top:9px">${topics.map(t=>`<div class="row between" style="margin:7px 0"><span class="muted">${esc(t.subjectName)} · ${esc(t.name)}</span><input style="width:74px;padding:7px" type="number" min="0" value="${st.customCounts[t.id]||0}" oninput="ExamSetup.customCounts['${t.id}']=Number(this.value)||0"></div>`).join('')}</div>`:''}`)+section(7,'Difficulty',`<div class="filter-row">${['easy','medium','hard','mixed'].map(v=>`<button class="chip ${(st.difficulty||'mixed')===v?'active':''}" onclick="ExamSetup.difficulty='${v}';render()">${v[0].toUpperCase()+v.slice(1)}</button>`).join('')}</div>`)+section(8,'Time',`<div class="filter-row">${[5,10,20,30,45,60,120,180].map(n=>`<button class="chip ${Number(st.duration)===n?'active':''}" onclick="ExamSetup.duration=${n};render()">${n>=60?`${n/60} hr`:n+' min'}</button>`).join('')}<button class="chip ${![5,10,20,30,45,60,120,180].includes(Number(st.duration))?'active':''}" onclick="openCustomDuration()">Custom</button></div>`);
-    if(page===3){const topicCount=st.topicIds.length||topics.length, customSpec=st.selectionMode==='custom'?parseCustomSerialSpec(st.customSerial):null, customTotal=st.selectionMode==='custom'?(customSpec&&customSpec.numbers.length?customSpec.numbers.length:'Custom'):st.distribution==='custom'?Object.values(st.customCounts||{}).reduce((a,b)=>a+Number(b||0),0):st.totalCount; content=section(9,'Negative Marking',`<div class="filter-row">${[0,.25,.5,1].map(v=>`<button class="chip ${Number(st.negative)===v?'active':''}" onclick="ExamSetup.negative=${v};render()">${v?'−'+v:'None'}</button>`).join('')}<button class="chip" onclick="openCustomNegative()">Custom</button></div>`)+section(10,'Question Order',`<div class="filter-row">${[['random','Random'],['sequential','Sequential'],['weak','Weak First'],['wrong','Mistakes First'],['unattempted','Unattempted First']].map(([v,l])=>`<button class="chip ${(st.order||st.selectionMode)==v?'active':''}" onclick="ExamSetup.order='${v}';if(ExamSetup.selectionMode==='custom')ExamSetup.selectionMode='${v}';ExamSetup.randomizeQ='${v}'==='random';render()">${l}</button>`).join('')}<button class="chip ${st.selectionMode==='custom'&&st.order==='custom'?'active':''}" onclick="ExamSetup.selectionMode='custom';ExamSetup.order='custom';ExamSetup.randomizeQ=false;render()">Custom Serial</button></div>${st.selectionMode==='custom'?`<div class="card" style="margin-top:10px;border-left:4px solid var(--emerald)"><b>Custom Question Serial</b><div class="muted" style="margin-top:5px">একটি Topic নির্বাচন করে serial লিখুন: 1-20 অথবা 45-50। একাধিক range: 1-20,45-50,88</div><input id="customSerialInput" type="text" inputmode="text" autocapitalize="off" autocomplete="off" spellcheck="false" enterkeyhint="done" value="${esc(st.customSerial||'')}" placeholder="যেমন: 1-20,45-50" oninput="ExamSetup.customSerial=this.value;const el=document.getElementById('customSerialError');if(el)el.textContent=''" style="margin-top:8px"><div id="customSerialError" class="muted" style="margin-top:6px;color:var(--red)">${st.topicIds.length===1?`এই Topic-এ ${topicQCount(st.topicIds[0])}টি প্রশ্ন আছে।`: 'Custom Serial-এর জন্য ঠিক ১টি Topic নির্বাচন করুন।'}</div></div>`:''}`)+section(11,'Exam Preferences',`<div class="card"><div class="togglerow"><span>Show question number</span><div class="toggle ${st.showQNumber!==false?'on':''}" onclick="ExamSetup.showQNumber=ExamSetup.showQNumber===false;render()"><div class="dot"></div></div></div><div class="togglerow"><span>Auto-save</span><div class="toggle ${st.autoSave!==false?'on':''}" onclick="ExamSetup.autoSave=ExamSetup.autoSave===false;render()"><div class="dot"></div></div></div><div class="togglerow"><span>Confirm before submit</span><div class="toggle ${st.confirmSubmit!==false?'on':''}" onclick="ExamSetup.confirmSubmit=ExamSetup.confirmSubmit===false;render()"><div class="dot"></div></div></div><div class="togglerow"><span>Resume interrupted exam</span><div class="toggle ${st.resume!==false?'on':''}" onclick="ExamSetup.resume=ExamSetup.resume===false;render()"><div class="dot"></div></div></div><div class="togglerow" style="display:block"><span style="display:block;margin-bottom:8px">🔀 Answer Options</span><div class="filter-row"><button class="chip ${!st.randomizeOpt?'active':''}" onclick="ExamSetup.randomizeOpt=false;render()">Original Order</button><button class="chip ${st.randomizeOpt?'active':''}" onclick="ExamSetup.randomizeOpt=true;render()">Shuffle Options</button></div></div><div class="togglerow" style="border-bottom:0"><span>Timer visibility</span><div class="toggle ${st.timerVisible!==false?'on':''}" onclick="ExamSetup.timerVisible=ExamSetup.timerVisible===false;render()"><div class="dot"></div></div></div></div>`)+section(12,'Final Review',`<div class="premium-card"><div style="font-size:11px;letter-spacing:.08em;font-weight:800;opacity:.8">EXAM READY</div><div class="summary-item"><span>Mode</span><b>${st.mode==='flash'?'Flash Test':'Mock Test'}</b></div><div class="summary-item"><span>Subjects</span><b>${st.subjectIds.length?st.subjectIds.map(id=>esc(subjectName(id))).join(' + '):'All subjects'}</b></div><div class="summary-item"><span>Topics</span><b>${topicCount}</b></div><div class="summary-item"><span>Questions</span><b>${customTotal}</b></div><div class="summary-item"><span>Time</span><b>${st.duration||'No'} ${st.duration?'minutes':'limit'}</b></div><div class="summary-item"><span>Negative mark</span><b>${st.negative?'−'+st.negative:'None'}</b></div><div class="summary-item"><span>Difficulty</span><b>${st.difficulty||'Mixed'}</b></div><div class="summary-item"><span>Order</span><b>${st.selectionMode==='custom'?'Custom: '+esc(st.customSerial||'Not set'):(st.order||'Random')}</b></div><div class="summary-item"><span>Answer options</span><b>${st.randomizeOpt?'Shuffle Options':'Original Order'}</b></div></div><button type="button" class="btn start-exam-cta" onclick="wizardNext()" style="display:inline-block;margin:14px auto 0;padding:11px 24px;font-size:15px;font-weight:800;letter-spacing:.03em;background:var(--emerald,#0f6b4f);color:#fff;border-radius:10px;box-shadow:0 5px 12px rgba(15,107,79,.18);">START EXAM</button>`);}
+    if(page===3){const topicCount=st.topicIds.length||topics.length, customSpec=st.selectionMode==='custom'?parseCustomSerialSpec(st.customSerial):null, customTotal=st.selectionMode==='custom'?(customSpec&&customSpec.numbers.length?customSpec.numbers.length:'Custom'):st.distribution==='custom'?Object.values(st.customCounts||{}).reduce((a,b)=>a+Number(b||0),0):st.totalCount; content=section(9,'Negative Marking',`<div class="filter-row">${[0,.25,.5,1].map(v=>`<button class="chip ${Number(st.negative)===v?'active':''}" onclick="ExamSetup.negative=${v};render()">${v?'−'+v:'None'}</button>`).join('')}<button class="chip" onclick="openCustomNegative()">Custom</button></div>`)+section(10,'Question Order',`<div class="filter-row">${[['random','Random'],['sequential','Sequential'],['weak','Weak First'],['wrong','Mistakes First'],['unattempted','Unattempted First'],['adaptive','Adaptive']].map(([v,l])=>`<button class="chip ${(st.order||st.selectionMode)==v?'active':''}" onclick="ExamSetup.order='${v}';if(ExamSetup.selectionMode==='custom')ExamSetup.selectionMode='${v}';ExamSetup.randomizeQ='${v}'==='random';render()">${l}</button>`).join('')}<button class="chip ${st.selectionMode==='custom'&&st.order==='custom'?'active':''}" onclick="ExamSetup.selectionMode='custom';ExamSetup.order='custom';ExamSetup.randomizeQ=false;render()">Custom Serial</button></div>${st.selectionMode==='custom'?`<div class="card" style="margin-top:10px;border-left:4px solid var(--emerald)"><b>Custom Question Serial</b><div class="muted" style="margin-top:5px">একটি Topic নির্বাচন করে serial লিখুন: 1-20 অথবা 45-50। একাধিক range: 1-20,45-50,88</div><input id="customSerialInput" type="text" inputmode="text" autocapitalize="off" autocomplete="off" spellcheck="false" enterkeyhint="done" value="${esc(st.customSerial||'')}" placeholder="যেমন: 1-20,45-50" oninput="ExamSetup.customSerial=this.value;const el=document.getElementById('customSerialError');if(el)el.textContent=''" style="margin-top:8px"><div id="customSerialError" class="muted" style="margin-top:6px;color:var(--red)">${st.topicIds.length===1?`এই Topic-এ ${topicQCount(st.topicIds[0])}টি প্রশ্ন আছে।`: 'Custom Serial-এর জন্য ঠিক ১টি Topic নির্বাচন করুন।'}</div></div>`:''}`)+section(11,'Exam Preferences',`<div class="card"><div class="togglerow"><span>Show question number</span><div class="toggle ${st.showQNumber!==false?'on':''}" onclick="ExamSetup.showQNumber=ExamSetup.showQNumber===false;render()"><div class="dot"></div></div></div><div class="togglerow"><span>Auto-save</span><div class="toggle ${st.autoSave!==false?'on':''}" onclick="ExamSetup.autoSave=ExamSetup.autoSave===false;render()"><div class="dot"></div></div></div><div class="togglerow"><span>Confirm before submit</span><div class="toggle ${st.confirmSubmit!==false?'on':''}" onclick="ExamSetup.confirmSubmit=ExamSetup.confirmSubmit===false;render()"><div class="dot"></div></div></div><div class="togglerow"><span>Resume interrupted exam</span><div class="toggle ${st.resume!==false?'on':''}" onclick="ExamSetup.resume=ExamSetup.resume===false;render()"><div class="dot"></div></div></div><div class="togglerow" style="display:block"><span style="display:block;margin-bottom:8px">🔀 Answer Options</span><div class="filter-row"><button class="chip ${!st.randomizeOpt?'active':''}" onclick="ExamSetup.randomizeOpt=false;render()">Original Order</button><button class="chip ${st.randomizeOpt?'active':''}" onclick="ExamSetup.randomizeOpt=true;render()">Shuffle Options</button></div></div><div class="togglerow" style="border-bottom:0"><span>Timer visibility</span><div class="toggle ${st.timerVisible!==false?'on':''}" onclick="ExamSetup.timerVisible=ExamSetup.timerVisible===false;render()"><div class="dot"></div></div></div></div>`)+section(12,'Final Review',`<div class="premium-card"><div style="font-size:11px;letter-spacing:.08em;font-weight:800;opacity:.8">EXAM READY</div><div class="summary-item"><span>Mode</span><b>${st.mode==='flash'?'Flash Test':'Mock Test'}</b></div><div class="summary-item"><span>Subjects</span><b>${st.subjectIds.length?st.subjectIds.map(id=>esc(subjectName(id))).join(' + '):'All subjects'}</b></div><div class="summary-item"><span>Topics</span><b>${topicCount}</b></div><div class="summary-item"><span>Questions</span><b>${customTotal}</b></div><div class="summary-item"><span>Time</span><b>${st.duration||'No'} ${st.duration?'minutes':'limit'}</b></div><div class="summary-item"><span>Negative mark</span><b>${st.negative?'−'+st.negative:'None'}</b></div><div class="summary-item"><span>Difficulty</span><b>${st.difficulty||'Mixed'}</b></div><div class="summary-item"><span>Order</span><b>${st.selectionMode==='custom'?'Custom: '+esc(st.customSerial||'Not set'):(st.order||'Random')}</b></div><div class="summary-item"><span>Answer options</span><b>${st.randomizeOpt?'Shuffle Options':'Original Order'}</b></div></div><button type="button" class="btn start-exam-cta" onclick="wizardNext()" style="display:inline-block;margin:14px auto 0;padding:11px 24px;font-size:15px;font-weight:800;letter-spacing:.03em;background:var(--emerald,#0f6b4f);color:#fff;border-radius:10px;box-shadow:0 5px 12px rgba(15,107,79,.18);">START EXAM</button>`);}
     const html=`<div class="explorer-head"><div class="explorer-kicker">Exam Setup</div><div class="explorer-title">${page===1?'Content':page===2?'Configuration':'Rules & Final Review'}</div><div class="explorer-subtitle">12 steps, organized into 3 fast scrolling pages.</div></div><div class="setup-progress">${[1,2,3].map(i=>`<span class="seg ${i===page?'active':i<page?'done':''}"></span>`).join('')}</div><div class="setup-scroll">${content}</div><div class="setup-footer ${page===3?'step12-footer':''}"><div class="row between"><button class="btn secondary sm" onclick="wizardBack()">${page===1?'Cancel':'← Back'}</button><button class="btn sm" onclick="wizardNext()">${page===3?'🚀 START EXAM':'Continue →'}</button></div></div>`; renderShell(html,{title:'Exam Setup'});
     requestAnimationFrame(()=>{const currentP=setupPage();if(window._lastExamSetupPage!==currentP){const scroller=document.querySelector('.setup-scroll'); if(scroller) scroller.scrollTop=0; window.scrollTo(0,0);}window._lastExamSetupPage=currentP;});
   };
@@ -5082,16 +5179,16 @@ window.__admissionBootPromise.catch(error => console.error('[Admission Hub] boot
     // The updated worker takes control now; the current document remains usable and the next launch uses the new shell.
     try{
 
-      const expectedSwVersion = 'v295-p07-question-engine-20261010';
+      const expectedSwVersion = 'v296-p08-adaptive-20261010';
       // register() on the same scope performs an in-place update. Never unregister
       // the active iOS worker first: that discards the instant offline shell.
-      const registration=await navigator.serviceWorker.register('./sw.js?v=v295-p07-question-engine-20261010',{scope:'./',updateViaCache:'none'});
+      const registration=await navigator.serviceWorker.register('./sw.js?v=v296-p08-adaptive-20261010',{scope:'./',updateViaCache:'none'});
       await registration.update().catch(()=>{});
       // Purge every old app-shell cache (any build id ≠ current). This guarantees
       // stale pre-retirement application shells can never be served from cache again.
       try {
 
-        const cur = 'admission-hub-shell-v295-p07-question-engine-20261010';
+        const cur = 'admission-hub-shell-v296-p08-adaptive-20261010';
         const names = await caches.keys();
         for (const name of names) {
           if (name.startsWith('admission-hub-shell-') && name !== cur) await caches.delete(name).catch(()=>{});
