@@ -15,7 +15,7 @@
  * keeps owning all of that. */
 (() => {
 'use strict';
-const base=new URL('.',document.currentScript.src),version='welcome-native-20261010-v31';
+const base=new URL('.',document.currentScript.src),version='welcome-native-20261011-v32';
 let timers=[],opened=false,mounted=null,bound=null,toastTimer=null;
 
 const $=id=>document.getElementById(id);

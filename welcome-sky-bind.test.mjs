@@ -145,5 +145,13 @@ test('the welcome fills the screen and the guest entry matches the other buttons
     'the guest entry must not be a dashed box');
   assert.ok(/\.ah-welcome-upgraded [^{]*\.ah-account-shell[^{]*\{border-radius:0/.test(css),
     'the shell must not round the welcome corners');
+  // The guest button used to sit inside the two-column .so grid, so it rendered
+  // half-width and stranded in the left column under Google/Facebook.
+  const so = TEMPLATE.match(/<div class="so[^"]*"[^>]*>([\s\S]*?)<\/div>/);
+  assert.ok(so, 'the two-column social grid must exist');
+  assert.ok(!/data-sky-slot="guest"/.test(so[1]),
+    'the guest entry must sit outside the two-column grid, at full width');
+  assert.ok(/<\/div>\s*<button class="b g rv"[^>]*data-sky-slot="guest"/.test(TEMPLATE),
+    'the guest entry must be a sibling of the social grid');
 });
 
