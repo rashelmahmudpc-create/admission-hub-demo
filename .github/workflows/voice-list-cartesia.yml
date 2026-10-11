@@ -25,24 +25,29 @@ jobs:
           CARTESIA_API_KEY: ${{ secrets.CARTESIA_API_KEY }}
         run: |
           set -eu
-          curl -s --max-time 30 "https://api.cartesia.ai/voices?limit=1000" \
-            -H "Cartesia-Version: 2026-08-14" \
-            -H "Authorization: Bearer $CARTESIA_API_KEY" \
-            -o /tmp/voices.json
-          echo "bytes: $(wc -c </tmp/voices.json)"
           node -e '
-            const j = JSON.parse(require("fs").readFileSync("/tmp/voices.json","utf8"));
-            const arr = Array.isArray(j) ? j : (j.data || j.voices || []);
-            console.log("count:", arr.length);
-            const bn = arr.filter(v => /bengali|বাংলা|bn-BD|"bn"/i.test(JSON.stringify(v)));
-            console.log("BNBENGALI_COUNT:", bn.length);
-            for (const v of bn) console.log("BN", v.id, v.name, v.gender, v.language, v.tagline || "");
-            console.log("sample-object:", JSON.stringify(arr[0]));
-            const g = v => typeof v.gender === "object" && v.gender ? v.gender.name || JSON.stringify(v.gender) : String(v.gender || "");
-            const l = v => typeof v.language === "object" && v.language ? v.language.name || JSON.stringify(v.language) : String(v.language || "");
-            for (const v of arr) console.log([v.id, v.name, "|g:", g(v), "|lang:", l(v), "|tag:", v.tagline || "", "|acc:", JSON.stringify(v.accents || [])].join(" "));
-            console.log("--- male ---");
-            for (const v of arr.filter(v => /male|man|boy/i.test(g(v)))) console.log(v.id, v.name, l(v));
-            console.log("--- languages seen ---");
-            console.log([...new Set(arr.map(l))].join(", "));
+            const fs = require("fs");
+            const VER = "2026-08-14", KEY = process.env.CARTESIA_API_KEY;
+            (async () => {
+              let all = [], cursor = null;
+              for (let page = 0; page < 40; page++) {
+                const url = "https://api.cartesia.ai/voices?limit=100" + (cursor ? "&starting_after=" + cursor : "");
+                const r = await fetch(url, { headers: { "Cartesia-Version": VER, Authorization: "Bearer " + KEY } });
+                const j = await r.json();
+                if (page === 0) console.log("TOPLEVEL_IS_ARRAY:", Array.isArray(j), "KEYS:", Object.keys(j).join(","));
+                const arr = Array.isArray(j) ? j : (j.data || j.voices || []);
+                if (!arr.length) break;
+                all = all.concat(arr);
+                cursor = arr[arr.length - 1].id;
+                if (arr.length < 100) break;
+              }
+              console.log("TOTAL:", all.length);
+              const g = v => typeof v.gender === "object" && v.gender ? v.gender.name || JSON.stringify(v.gender) : String(v.gender || "");
+              const l = v => typeof v.language === "object" && v.language ? v.language.name || JSON.stringify(v.language) : String(v.language || "");
+              const bn = all.filter(v => /bengali|বাংলা|bn-BD|"bn"|bangla/i.test(JSON.stringify(v)));
+              console.log("BNBENGALI_COUNT:", bn.length);
+              for (const v of bn) console.log("BN |", v.id, v.name, "|g:", g(v), "|lang:", l(v), "|tag:", v.tagline || "");
+              console.log("LANGS:", [...new Set(all.map(l))].sort().join(", "));
+              console.log("RUBEL:", all.filter(v => /rubel/i.test(v.name)).map(v => [v.id, v.name, g(v), l(v)].join(" ")).join(" ; ") || "none");
+            })().catch(e => { console.error("ERR", e.message); process.exit(1); });
           '
