@@ -25,7 +25,7 @@ jobs:
           CARTESIA_API_KEY: ${{ secrets.CARTESIA_API_KEY }}
         run: |
           set -eu
-          curl -s --max-time 30 "https://api.cartesia.ai/voices?limit=100" \
+          curl -s --max-time 30 "https://api.cartesia.ai/voices?limit=1000" \
             -H "Cartesia-Version: 2026-08-14" \
             -H "Authorization: Bearer $CARTESIA_API_KEY" \
             -o /tmp/voices.json
@@ -34,6 +34,9 @@ jobs:
             const j = JSON.parse(require("fs").readFileSync("/tmp/voices.json","utf8"));
             const arr = Array.isArray(j) ? j : (j.data || j.voices || []);
             console.log("count:", arr.length);
+            const bn = arr.filter(v => /bengali|বাংলা|bn-BD|"bn"/i.test(JSON.stringify(v)));
+            console.log("BNBENGALI_COUNT:", bn.length);
+            for (const v of bn) console.log("BN", v.id, v.name, v.gender, v.language, v.tagline || "");
             console.log("sample-object:", JSON.stringify(arr[0]));
             const g = v => typeof v.gender === "object" && v.gender ? v.gender.name || JSON.stringify(v.gender) : String(v.gender || "");
             const l = v => typeof v.language === "object" && v.language ? v.language.name || JSON.stringify(v.language) : String(v.language || "");
