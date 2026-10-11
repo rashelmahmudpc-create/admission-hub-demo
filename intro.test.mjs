@@ -43,6 +43,10 @@ t('১৫. নো-JS ফলব্যাক প্রতিটি কোর্স
 t('১৬. নো-JS ফলব্যাক বডিতেই থাকে (হেডের ফন্ট-ফলব্যাক অটুট)', doc.querySelectorAll('body noscript').length === 1);
 t('১৭. নো-JS ব্লকের স্টাইল হেডে (স্পেক-সম্মত, রানটাইমে নিষ্ক্রিয়)',
   !!doc.getElementById('ah-nojs-min'));
+t('১৮. Google Search Console মালিকানা-ট্যাগ হেডে (owner property-র জন্য)',
+  !!doc.querySelector('meta[name="google-site-verification"]') && doc.querySelector('meta[name="google-site-verification"]').getAttribute('content') === 'qSlzeztG7xsLD3oYQz-CuO4WOg4xUZvmY37OhsWWPXE');
+t('১৯. canonical আগের মতোই আছে (SEO-ট্যাগ যোগে বদলায়নি)',
+  doc.querySelector('link[rel="canonical"]') && doc.querySelector('link[rel="canonical"]').getAttribute('href') === 'https://admissionhub.pages.dev/');
 
 console.log(`\nINTRO-BOOTSHELL: ${pass} pass / ${fail} fail`);
 if (fail) process.exit(1);
