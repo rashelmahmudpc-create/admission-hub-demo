@@ -301,7 +301,23 @@ export default {
       if (path === '/api/health') return json({ ok: true, accountSystem: 'retired', legacyAccountSystem: 'retired', nativeAuth: 'cloudflare-native-v1', identity: 'firebase-account-or-ephemeral-guest', at: Date.now() });
       if (path === '/api/content/meta' && request.method === 'GET') {
         const raw = await env.PUB_KV.get('pubContentMeta');
-        if (raw) return json(JSON.parse(raw));
+        if (raw) {
+          const meta = JSON.parse(raw);
+          if (meta.categories) return json(meta);
+          /* One-time lazy backfill for a meta written before `categories`
+             existed: read the body once, fold the totals in, store them back.
+             After this the endpoint is a single small KV read again. */
+          try {
+            const full = await env.PUB_KV.get('pubContent');
+            const doc = full ? JSON.parse(full) : null;
+            if (doc) {
+              const enriched = { ...meta, counts: meta.counts || countsOf(doc), categories: categoryCountsOf(doc) };
+              await env.PUB_KV.put('pubContentMeta', JSON.stringify(enriched));
+              return json(enriched);
+            }
+          } catch (_) { /* fall through to the un-enriched meta */ }
+          return json(meta);
+        }
         const full = await env.PUB_KV.get('pubContent');
         const doc = full ? JSON.parse(full) : { v: 0, at: 0, questions: [] };
         return json({ v: doc.v || 0, at: doc.at || 0, sig: doc.sig || '', counts: countsOf(doc), categories: categoryCountsOf(doc) });
