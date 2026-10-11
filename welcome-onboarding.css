@@ -25,3 +25,21 @@ html:has(.ah-welcome-upgraded),body:has(.ah-welcome-upgraded){position:fixed!imp
 .ahw-artboard,.ahw-artboard>[data-w-style="w0"]{background:var(--bg,#f7f6fb)!important}
 .ahw-artboard>[data-w-style="w1"],.ahw-artboard>[data-w-style="w2"],.ahw-artboard>[data-w-style="w3"],.ahw-artboard>[data-w-style="w4"],.ahw-artboard>[data-w-style="w5"],.ahw-artboard>[data-w-style="w6"],.ahw-artboard>[data-w-style="w7"]{display:none!important}
 .ah-account-shell[data-visual-contract="code-native-page-system-v1"] .ah-account-view.ah-welcome-live{background:var(--bg,#f7f6fb)!important;padding:0!important;min-height:100svh!important}
+
+/* v27 — full-screen welcome: compact one-corner brand, no tagline, unboxed larger centre. */
+.ah-welcome-live [data-w-style="w16"]{display:none!important}
+.ah-welcome-live [data-w-style="w8"]{margin-top:2px!important}
+.ah-welcome-live [data-w-style="w10"]{width:36px!important;height:36px!important;border-radius:11px!important;box-shadow:none!important}
+.ah-welcome-live [data-w-style="w12"]{font-size:16px!important;letter-spacing:-0.2px!important}
+.ah-welcome-live [data-w-style="w14"]{height:32px!important;padding:0 10px!important;font-size:12.5px!important}
+.ah-welcome-live [data-w-style="w15"]{margin-top:clamp(10px,3.4svh,30px)!important;font-size:clamp(26px,7.6vw,34px)!important;line-height:1.28!important}
+.ah-welcome-live [data-w-style="w17"]{background:transparent!important;box-shadow:none!important;border-radius:0!important;margin-top:clamp(12px,4svh,34px)!important}
+.ah-welcome-live [data-w-style="w18"]{border-radius:26px!important}
+.ah-welcome-live [data-w-style="w20"]{padding:0 2px!important}
+.ah-welcome-live [data-w-style="w21"],.ah-welcome-live [data-w-style="w33"],.ah-welcome-live [data-w-style="w41"],.ah-welcome-live [data-w-style="w50"],.ah-welcome-live [data-w-style="w59"],.ah-welcome-live [data-w-style="w62"]{height:clamp(230px,38svh,300px)!important;border-radius:26px!important}
+.ah-welcome-live [data-w-style="w29"]{padding:16px 6px 6px!important}
+.ah-welcome-live [data-w-style="w31"]{font-size:20px!important}
+.ah-welcome-live [data-w-style="w32"]{font-size:15px!important}
+.ah-welcome-live [data-w-style="w71"]{margin-top:clamp(12px,3.4svh,26px)!important}
+.ah-welcome-live [data-w-style="w72"]{height:64px!important;border-radius:32px!important;font-size:19px!important}
+.ah-welcome-live [data-w-style="w73"]{margin-top:14px!important}
