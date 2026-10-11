@@ -5,6 +5,54 @@ const base=new URL('.',document.currentScript.src),version='welcome-native-20261
 const themes=[['#1d4ed8','#2563eb','#fff','37,99,235'],['#5b3df0','#6c4cf5','#fff','108,76,245'],['#078a68','#0a9a73','#fff','10,154,115'],['#d93f1c','#e8482a','#fff','232,72,42'],['#b8265a','#d6336c','#fff','214,51,108'],['#b45309','#ffb020','#2b1a00','255,176,32']];
 const english=[['All admission notices in one place','Never miss university, medical or GST admissions'],['Simple visual courses','Understand grammar with visuals and examples'],['Question bank and model tests','Sharpen your skills, one subject at a time'],['Learn from mistakes','See what went wrong and why the answer is correct'],['Track your progress','See clearly where you need to improve'],['AI help for any question','Ask when you get stuck and get a simple explanation']];
 let pending=false;
+/* Status-bar blend. The strip behind the phone's status bar must be exactly the colour of the screen below it,
+   on every account screen (welcome, personal, education, security). iOS 26 Safari tints that strip from a
+   fixed element at the top edge and older iOS from theme-color, so both follow the colour actually painted
+   at the top of the page. Outside the account screens the original theme-color is restored. */
+const probe=document.createElement('div'),watched=new WeakSet();
+let cap=null,savedTheme=null,lastColor='',applied='';
+const isClear=c=>!c||c==='transparent'||/^rgba\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*0(?:\.0+)?\s*\)$/.test(c);
+const safeTop=()=>{
+ if(!probe.isConnected&&document.body){probe.setAttribute('aria-hidden','true');probe.style.cssText='position:fixed;top:0;left:0;width:1px;height:env(safe-area-inset-top,0px);visibility:hidden;pointer-events:none';document.body.appendChild(probe);}
+ return probe.offsetHeight||0;
+};
+const topColor=()=>{
+ const y=Math.max(0,Math.min(innerHeight-1,safeTop()+4)),x=Math.max(1,Math.round(innerWidth/2));
+ let stack=[];try{stack=document.elementsFromPoint(x,y);}catch(_){}
+ for(const node of stack){
+  if(node===cap||node===probe)continue;
+  const color=getComputedStyle(node).backgroundColor;
+  if(!isClear(color))return color;
+ }
+ return '';
+};
+const blend=()=>{
+ const body=document.body,page=document.getElementById('ah-account-page');
+ if(!body||!page)return;
+ if(!watched.has(page)){watched.add(page);watcher.observe(page,{attributes:true,attributeFilter:['hidden','data-current-view','class']});}
+ let meta=document.querySelector('meta[name="theme-color"]');
+ if(!meta){meta=document.createElement('meta');meta.name='theme-color';document.head.appendChild(meta);}
+ if(savedTheme===null)savedTheme=meta.getAttribute('content')||'';
+ if(!cap){cap=document.createElement('div');cap.id='ah-statusbar-cap';cap.setAttribute('aria-hidden','true');body.appendChild(cap);}
+ if(!body.classList.contains('ah-account-page-active')||page.hidden){
+  cap.style.display='none';if(savedTheme)meta.setAttribute('content',savedTheme);
+  if(applied){document.documentElement.style.backgroundColor='';applied='';}
+  lastColor='';return;
+ }
+ const color=topColor()||lastColor;
+ if(!color||color===applied)return;
+ lastColor=applied=color;
+ cap.style.cssText='position:fixed;top:0;left:0;right:0;height:max(env(safe-area-inset-top,0px),4px);background:'+color+';z-index:2147483000;pointer-events:none';
+ meta.setAttribute('content',color);
+ document.documentElement.style.backgroundColor=color;
+};
+const schedule=()=>{requestAnimationFrame(blend);setTimeout(blend,150);setTimeout(blend,450);};
+const watcher=new MutationObserver(schedule);
+watcher.observe(document.documentElement,{attributes:true,attributeFilter:['data-theme','class']});
+const watchBody=()=>{if(!document.body)return;watcher.observe(document.body,{attributes:true,attributeFilter:['class'],childList:true});schedule();};
+if(document.body)watchBody();else document.addEventListener('DOMContentLoaded',watchBody,{once:true});
+['resize','orientationchange','pageshow','ah:lang','transitionend','animationend'].forEach(name=>window.addEventListener(name,schedule,{passive:true}));
+
 const mount=async()=>{
  const page=document.getElementById('ah-account-page'),view=page?.querySelector('[data-view="welcome"]');
  if(!view||pending||view.dataset.welcomeUpgrade)return;
@@ -39,7 +87,7 @@ const mount=async()=>{
   swipe.tabIndex=0;swipe.setAttribute('role','region');swipe.setAttribute('aria-roledescription','carousel');swipe.setAttribute('aria-label','Admission Hub features');
   const hadFocus=view.contains(document.activeElement);
   view.className='ah-account-view ah-welcome-live';view.dataset.welcomeUpgrade=version;view.replaceChildren(board);view.style.visibility='';page.classList.add('ah-welcome-upgraded');
-  (function(){var c=(getComputedStyle(document.documentElement).getPropertyValue('--bg')||'').trim()||'#f7f6fb';var m=document.querySelector('meta[name="theme-color"]');if(!m){m=document.createElement('meta');m.name='theme-color';document.head.appendChild(m)}m.setAttribute('content',c);document.documentElement.style.backgroundColor=c;document.body&&(document.body.style.backgroundColor=c);})();
+  schedule();
   let slide=0,timer=null,paused=matchMedia('(prefers-reduced-motion: reduce)').matches,hover=false,focused=false,start=null;
   const render=n=>{
    slide=(n+6)%6;const[accent,btn,ink,rgb]=themes[slide];
