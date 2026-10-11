@@ -177,7 +177,7 @@ await test('runtime: retired POST routes also resolve to 404', async () => {
     }), { PUB_KV: kv });
     if (response.status !== 404) return false;
   }
-  return kv.writes.length === 0 && kv.deletes.length === 0;
+  return kv.writes.filter(entry => !entry.key.startsWith('rlpub:')).length === 0 && kv.deletes.length === 0;
 });
 
 await test('runtime: dormant account/profile/onboarding/state records survive content publishing', async () => {
@@ -209,7 +209,8 @@ await test('runtime: AI status is guest-accessible and does not consume usage', 
   const kv = new MemoryKV();
   const response = await publicWorker.fetch(new Request('https://worker/api/ai/status', { headers: { 'X-AH-Guest': 'device-guest-00000001', 'CF-Connecting-IP': '203.0.113.7' } }), { PUB_KV: kv });
   const data = await response.json();
-  return response.status === 200 && data.ok === true && data.streaming === true && kv.writes.length === 0;
+  return response.status === 200 && data.ok === true && data.streaming === true &&
+    kv.writes.filter(entry => !entry.key.startsWith('rlpub:')).length === 0;
 });
 
 await test('runtime: guest AI calls are refused up front and never persist conversation content or raw guest IDs', async () => {
@@ -222,14 +223,16 @@ await test('runtime: guest AI calls are refused up front and never persist conve
       body: JSON.stringify({ messages: [{ role: 'user', content: 'বাংলা ব্যাকরণ বুঝাও' }] })
     }), env);
     // M7: a guest has no durable identity, so AI chat is refused before rate,
-    // memory or the provider — 401 sign_in_required, no KV write at all.
+    // memory or the provider — 401 sign_in_required, no conversation or guest
+    // record in KV. P14's network abuse counter (rlpub:) is the one write here
+    // and runs before the route, so it is excluded from this check.
     if (response.status !== 401) return false;
   }
   const keys = [...kv.data.keys()];
-  return keys.length === 0
-    && !keys.some(key => key.startsWith('chatmem:') || key.startsWith('chatmemsum:'))
+  return !keys.some(key => key.startsWith('chatmem:') || key.startsWith('chatmemsum:'))
     && !keys.some(key => key.startsWith('mem:'))
-    && !keys.some(key => key.includes('device-guest-'));
+    && !keys.some(key => key.includes('device-guest-'))
+    && !keys.some(key => !key.startsWith('rlpub:'));
 });
 
 await test('runtime: CORS preflight permits anonymous-device header', async () => {
