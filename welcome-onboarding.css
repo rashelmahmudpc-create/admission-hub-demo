@@ -302,6 +302,16 @@ html:has(#ah-account-page.ah-welcome-upgraded:not([hidden]) [data-view="welcome"
    forbids that scroll where overflow:hidden still allows a programmatic one. */
 .ahw-sky #sky-app{overflow:clip!important}
 /* Geometry restored to the approved preview: the 390x640 story stage is FITTED inside the band (brand row above, Get Started below) so nothing is cropped or overlapped. The safe areas are handled inside the art and the background is full-bleed under the status bar and home indicator, so the device edges are the same surface as the screen (no strips, no lines). */
-.ahw-sky.ahw-sky-board{padding-top:0;padding-bottom:0;background-image:linear-gradient(180deg,var(--skyt) 0%,color-mix(in srgb,var(--skyt) 40%,#fff) 60%,#fff 100%)}
-.ahw-sky .auth{padding-top:calc(env(safe-area-inset-top,0px) + 8px);padding-bottom:calc(env(safe-area-inset-bottom,0px) + 22px);background:linear-gradient(180deg,var(--skyt) 0,var(--skyt) 56px,transparent 150px),radial-gradient(90% 45% at 0% 100%,rgba(255,176,32,.18),transparent 60%),radial-gradient(100% 40% at 100% 38%,rgba(124,92,255,.16),transparent 60%),linear-gradient(180deg,#E3EEFF 0%,#F6F9FF 55%,#fff 100%)}
+.ahw-sky.ahw-sky-board{padding-top:0;padding-bottom:0;background-image:linear-gradient(180deg,var(--skyt) 0%,color-mix(in srgb,var(--skyt) 88%,#fff) 100%)}
+.ahw-sky #sky-app{background:none}
+.ahw-sky .auth{padding-top:calc(env(safe-area-inset-top,0px) + 8px);padding-bottom:calc(env(safe-area-inset-bottom,0px) + 22px);background:linear-gradient(180deg,var(--skyt) 0,var(--skyt) 56px,transparent 150px),radial-gradient(90% 45% at 0% 100%,rgba(255,176,32,.18),transparent 60%),radial-gradient(100% 40% at 100% 38%,rgba(124,92,255,.16),transparent 60%),linear-gradient(180deg,var(--skyt) 0%,color-mix(in srgb,var(--skyt) 88%,#fff) 100%)}
 .ahw-sky .toast{bottom:calc(env(safe-area-inset-bottom,0px) + 90px)}
+/* Every device: the Get Started label never wraps or clips, and browsers without color-mix() (older Android) still get a visible blue button instead of white text on a white one. */
+.ahw-sky .go{white-space:nowrap;line-height:1.2;padding:0 14px;min-width:0}
+.ahw-sky .go svg{flex:none}
+@supports not (background:color-mix(in srgb,red,blue)){
+.ahw-sky.ahw-sky-board{background-image:none}
+.ahw-sky .go.lit,.ahw-sky .gob,.ahw-sky .sub,.ahw-sky .hmp{background:linear-gradient(120deg,#2F6BFF,#6A4BEE);color:#fff}
+.ahw-sky .m.me{background:#4F46E5}
+.ahw-sky .auth{background:linear-gradient(180deg,var(--skyt),#F4F8FF)}
+}
