@@ -2369,7 +2369,7 @@ var publishGlobal = async (env, full) => {
   const questions = onlyRows(source.questions);
   const vocabulary = onlyRows(source.vocabulary);
   const vocabularyMaster = onlyRows(source.vocabularyMaster);
-  if (!questions.length && !vocabularyMaster.length) return { error: "empty" };
+  if (!questions.length && !vocabularyMaster.length && !subjects.length && !topics.length) return { error: "empty" };
   const sig = fingerprintGlobal({ subjects, topics, questions, vocabulary, vocabularyMaster });
   let previousMeta = { v: 0 };
   try {
@@ -2414,6 +2414,27 @@ var publishGlobal = async (env, full) => {
     return { error: "integrity" };
   }
   if (fingerprintGlobal(roundTrip) !== sig) return { error: "integrity" };
+  if (env.PROFILE_DB) {
+    try {
+      await env.PROFILE_DB.prepare("CREATE TABLE IF NOT EXISTS content_lists (kind TEXT NOT NULL, id TEXT NOT NULL, ord INTEGER NOT NULL DEFAULT 0, payload TEXT NOT NULL, PRIMARY KEY (kind, id))").run();
+      const present = [["subjects", subjects], ["topics", topics], ["vocabulary", vocabulary], ["vocabularyMaster", vocabularyMaster], ["exams", exams]];
+      const gone = present.filter(([, rows]) => !rows.length).map(([kind]) => kind);
+      if (gone.length) {
+        await env.PROFILE_DB.prepare(`DELETE FROM content_lists WHERE kind IN (${gone.map(() => "?").join(",")})`).bind(...gone).run();
+      }
+      for (const [kind, rows] of present) {
+        if (!rows.length) continue;
+        await env.PROFILE_DB.prepare("DELETE FROM content_lists WHERE kind = ?").bind(kind).run();
+        for (let i = 0; i < rows.length; i += 25) {
+          const chunk = rows.slice(i, i + 25);
+          await env.PROFILE_DB.prepare(
+            `INSERT INTO content_lists (kind, id, ord, payload) VALUES ${chunk.map(() => "(?,?,?,?)").join(",")}`
+          ).bind(...chunk.flatMap((row, j) => [kind, String(row.id), i + j, JSON.stringify(row)])).run();
+        }
+      }
+    } catch (_) {
+    }
+  }
   await env.PUB_KV.put("pubContent", raw);
   const meta = { v: doc.v, at: doc.at, sig: doc.sig, counts: countsOf(doc), categories: categoryCountsOf(doc) };
   await env.PUB_KV.put("pubContentMeta", JSON.stringify(meta));

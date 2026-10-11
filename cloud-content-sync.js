@@ -151,6 +151,21 @@
   const saveApplied = meta => {
     try { localStorage.setItem(META_KEY, JSON.stringify(meta)); } catch (_) {}
   };
+  /* A store whose rows are gone from the SERVER must be emptied on the device
+     too. applyDoc only writes what it receives, so an emptied vocabulary bank
+     would otherwise leave the device serving its old rows forever — the pull
+     would look "already applied" and every screen would keep showing words that
+     no longer exist upstream. Owner-ordered vocabulary erase (2026-10-11) is
+     the reason this exists. Keys absent from the document are ignored: a
+     partial payload must never be read as "everything was deleted". */
+  const EMPTIED_STORES = ['vocabularyMaster', 'vocabulary'];
+  const purgeServerEmptiedStores = async doc => {
+    if (typeof dbClear !== 'function') return;
+    for (const store of EMPTIED_STORES) {
+      if (!Array.isArray(doc[store]) || doc[store].length) continue;
+      try { await dbClear(store); } catch (_) {}
+    }
+  };
 
   const applyDoc = async doc => {
     if (!doc) return false;
@@ -164,6 +179,7 @@
     await putManyFast('subjects', subjects);
     await putManyFast('topics', topics);
     await putManyFast('questions', questions);
+    await purgeServerEmptiedStores(doc);
     if (vocabulary.length) await putManyFast('vocabulary', vocabulary.filter(x => x && x.id));
     if (typeof loadCache === 'function') await loadCache();
     if (typeof render === 'function') render();
@@ -174,6 +190,10 @@
        returned so the caller saves the signature only once the bank has landed
        too — otherwise a half-hydrated device would look up to date. */
     if (vocabularyMaster.length) return hydrateVocabularyInBackground(vocabularyMaster.filter(x => x && x.id));
+    /* The bank was emptied upstream: reload the tool so a screen that is already
+       open stops showing rows that no longer exist. */
+    const vm = window.VocabularyMaster;
+    if (vm && typeof vm.reload === 'function') { try { await vm.reload(); } catch (_) {} }
     return true;
   };
 

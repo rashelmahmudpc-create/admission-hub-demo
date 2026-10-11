@@ -172,6 +172,11 @@ export function createD1Reader(db) {
         try {
           const qres = await db.prepare('SELECT id, topic_id, subject_id, difficulty, sort_key, payload, updated_at FROM questions WHERE published = 1 ORDER BY sort_key ASC, id ASC').all();
           const questions = (qres && qres.results ? qres.results : []).map(normalizeRow).filter(Boolean);
+          /* Questions gate the read path: no questions means D1 cannot serve a
+             document at all, so the caller falls back to KV. An EMPTY bank is a
+             different case — the lists are authoritative and may legitimately
+             be empty (an owner-ordered vocabulary erase), and returning null
+             there would serve the stale KV copy forever. */
           if (!questions.length) return null;
           const lists = (await this.lists()) || {};
           return { questions, ...lists };

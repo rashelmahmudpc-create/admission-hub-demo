@@ -34,7 +34,9 @@ const hashText = text => {
   }
   return (h >>> 0).toString(36);
 };
-const fingerprintGlobal = doc => {
+/* Exported so P24 tooling can recompute the same signature the Worker signs a
+   publish with; a hand-written copy would silently drift. */
+export const fingerprintGlobal = doc => {
   const questions = doc.questions || [];
   const vocabularyMaster = doc.vocabularyMaster || [];
   const vocabulary = doc.vocabulary || [];
@@ -164,7 +166,13 @@ export const publishGlobal = async (env, full) => {
   const questions = onlyRows(source.questions);
   const vocabulary = onlyRows(source.vocabulary);
   const vocabularyMaster = onlyRows(source.vocabularyMaster);
-  if (!questions.length && !vocabularyMaster.length) return { error: 'empty' };
+  /* An all-empty document is refused because it is almost always a bad call
+     (a truncated payload or a failed pull), and publishing it would blank the
+     live product. But a deliberate, owner-ordered erase sends QUESTIONS plus an
+     emptied vocabulary bank, and that shape must be allowed through. So guard
+     on "nothing at all", not on the vocabulary bank: questions alone are a
+     legitimate document. */
+  if (!questions.length && !vocabularyMaster.length && !subjects.length && !topics.length) return { error: 'empty' };
 
   const sig = fingerprintGlobal({ subjects, topics, questions, vocabulary, vocabularyMaster });
   let previousMeta = { v: 0 };
@@ -212,6 +220,33 @@ export const publishGlobal = async (env, full) => {
     return { error: 'integrity' };
   }
   if (fingerprintGlobal(roundTrip) !== sig) return { error: 'integrity' };
+  /* P13 — mirror the small lists into D1 before the meta that signs them. The
+     D1 read path serves the bank from `content_lists`, so a publish that
+     removes rows must land in D1 too, or /api/content keeps serving the stale
+     rows whose hash still matches. `content_lists` is the authoritative mirror:
+     kinds that vanished from the document are deleted, present kinds replaced.
+     Failure here is non-fatal — KV stays correct on its own, and the stale D1
+     copy stops matching once the sig below changes. */
+  if (env.PROFILE_DB) {
+    try {
+      await env.PROFILE_DB.prepare('CREATE TABLE IF NOT EXISTS content_lists (kind TEXT NOT NULL, id TEXT NOT NULL, ord INTEGER NOT NULL DEFAULT 0, payload TEXT NOT NULL, PRIMARY KEY (kind, id))').run();
+      const present = [['subjects', subjects], ['topics', topics], ['vocabulary', vocabulary], ['vocabularyMaster', vocabularyMaster], ['exams', exams]];
+      const gone = present.filter(([, rows]) => !rows.length).map(([kind]) => kind);
+      if (gone.length) {
+        await env.PROFILE_DB.prepare(`DELETE FROM content_lists WHERE kind IN (${gone.map(() => '?').join(',')})`).bind(...gone).run();
+      }
+      for (const [kind, rows] of present) {
+        if (!rows.length) continue;
+        await env.PROFILE_DB.prepare('DELETE FROM content_lists WHERE kind = ?').bind(kind).run();
+        for (let i = 0; i < rows.length; i += 25) {
+          const chunk = rows.slice(i, i + 25);
+          await env.PROFILE_DB.prepare(
+            `INSERT INTO content_lists (kind, id, ord, payload) VALUES ${chunk.map(() => '(?,?,?,?)').join(',')}`
+          ).bind(...chunk.flatMap((row, j) => [kind, String(row.id), i + j, JSON.stringify(row)])).run();
+        }
+      }
+    } catch (_) { /* D1 is a mirror: KV remains the source of truth */ }
+  }
   await env.PUB_KV.put('pubContent', raw);
   const meta = { v: doc.v, at: doc.at, sig: doc.sig, counts: countsOf(doc), categories: categoryCountsOf(doc) };
   await env.PUB_KV.put('pubContentMeta', JSON.stringify(meta));

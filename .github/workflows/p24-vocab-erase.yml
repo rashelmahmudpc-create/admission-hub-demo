@@ -1,0 +1,96 @@
+name: P24 Vocabulary Erase (manual, destructive)
+
+# Owner-ordered erase (2026-10-11). Removes the vocabulary bank from every layer
+# of the live product so it can be rebuilt one category at a time:
+#
+#   1. snapshots the LIVE content document (so the erase is reversible),
+#   2. blanks ONLY vocabularyMaster + vocabulary — questions keep serving,
+#   3. replaces the published KV document and its signed meta,
+#   4. deletes the D1 content_lists mirror the read path serves from,
+#   5. verifies the live counts are zero.
+#
+# Never touches questions, subjects, topics or exams. Re-running is safe: it is
+# idempotent once the bank is empty (the second run finds nothing to blank).
+#
+# Required repository secrets: CLOUDFLARE_API_TOKEN (Workers KV:Edit + D1:Edit),
+# CLOUDFLARE_ACCOUNT_ID.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type ERASE-VOCABULARY to delete the vocabulary bank everywhere
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  erase:
+    if: ${{ inputs.confirmation == 'ERASE-VOCABULARY' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Snapshot the live content before erasing
+        run: |
+          set -eu
+          curl -fsS "https://admission-gk.admissionhub.workers.dev/api/content" -o content-before.json
+          test -s content-before.json
+          node -e "const d=JSON.parse(require('fs').readFileSync('content-before.json','utf8'));console.log('before: vocabularyMaster', (d.vocabularyMaster||[]).length, '| questions', (d.questions||[]).length);"
+      - name: Blank the vocabulary bank and build artifacts
+        run: |
+          set -eu
+          node scripts/p24-vocab-erase.mjs \
+            --in content-before.json \
+            --out content-after.json \
+            --meta content-meta.json \
+            --sql erase-content-lists.sql
+          grep -q "DELETE FROM content_lists WHERE kind IN ('vocabularyMaster', 'vocabulary');" erase-content-lists.sql
+          node -e "const d=JSON.parse(require('fs').readFileSync('content-after.json','utf8'));if((d.vocabularyMaster||[]).length||(d.vocabulary||[]).length)process.exit(1);if((d.questions||[]).length!==3000)process.exit(1);console.log('after: vocabulary 0 | questions', (d.questions||[]).length, '| sig', d.sig);"
+      - name: Apply the D1 cleanup
+        uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd # v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: '4.35.0'
+          command: d1 execute admission-profile --remote --file erase-content-lists.sql -y
+      - name: Replace the published KV document and meta
+        uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd # v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: '4.35.0'
+          command: kv key put pubContent --path content-after.json --namespace-id b9353515b098427687afcfb8654ed359 --remote
+      - name: Replace the signed meta
+        uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd # v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: '4.35.0'
+          command: kv key put pubContentMeta --path content-meta.json --namespace-id b9353515b098427687afcfb8654ed359 --remote
+      - name: Verify the live counts are zero
+        run: |
+          set -eu
+          sleep 5
+          curl -fsS "https://admission-gk.admissionhub.workers.dev/api/content/meta" -o meta-after.json
+          node -e "
+            const m=JSON.parse(require('fs').readFileSync('meta-after.json','utf8'));
+            console.log('live meta counts:', JSON.stringify(m.counts));
+            console.log('live categories:', JSON.stringify(m.categories));
+            if((m.counts&&m.counts.vocabularyMaster)||(m.counts&&m.counts.vocabulary)) process.exit(1);
+            if(m.categories&&Object.keys(m.categories).length) process.exit(1);
+          "
+      - name: Keep the pre-erase snapshot as a build artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: vocabulary-erase-snapshot
+          path: content-before.json
+          retention-days: 90
