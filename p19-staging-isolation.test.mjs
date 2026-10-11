@@ -30,15 +30,32 @@ test('p19s-৩: the shipped staging config carries no cron trigger', () => {
     'a cron on staging would send real notifications to real students');
 });
 
-test('p19s-৪: the shipped config is refused until setup-staging.sh fills the placeholders', () => {
-  const { ok, problems } = checkStagingConfig(CONFIG);
+test('p19s-৪: a config with unfilled placeholders is refused', () => {
+  // A synthetic config, not the shipped one: once tools/setup-staging.sh has
+  // run, the committed file carries real staging ids and this precondition is
+  // gone. The guard's job -- refuse a placeholder -- must be pinned regardless
+  // of whether provisioning has happened yet.
+  const unfilled = 'name = "admission-gk-staging"\n[[kv_namespaces]]\n'
+    + 'binding = "GK_KV"\nid = "REPLACE_WITH_STAGING_GK_KV_ID"\n';
+  const { ok, problems } = checkStagingConfig(unfilled);
   assert.equal(ok, false, 'an unfilled placeholder must block the deploy');
   assert.ok(problems.some(p => p.includes('unfilled placeholder')),
     'the refusal must name the placeholder problem');
 });
 
+test('p19s-৪b: the shipped config is deployable once provisioned, and isolated either way', () => {
+  // The shipped file is valid in exactly two states: still holding placeholders
+  // (not yet provisioned) or fully filled (provisioned). What it must NEVER do
+  // is reference a production resource -- p19s-১/২/৩ pin that separately.
+  const { ok, problems } = checkStagingConfig(CONFIG);
+  const onlyPlaceholders = problems.every(p => p.includes('unfilled placeholder'));
+  assert.ok(ok || onlyPlaceholders,
+    'the shipped config must be either filled or placeholder-only, never otherwise unsafe');
+});
+
 test('p19s-৫: the guard catches a production id', () => {
-  const bad = CONFIG.replace('REPLACE_WITH_STAGING_GK_KV_ID', PRODUCTION_IDS[0]);
+  const bad = 'name = "admission-gk-staging"\n[[kv_namespaces]]\n'
+    + `binding = "GK_KV"\nid = "${PRODUCTION_IDS[0]}"\n`;
   assert.deepEqual(findProductionIds(bad), [PRODUCTION_IDS[0]]);
   assert.equal(checkStagingConfig(bad).ok, false);
 });
