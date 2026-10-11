@@ -70,7 +70,7 @@ function readKeys(env, names) {
  * and read here — from the agent's point of view it behaves exactly like a
  * bound one.
  */
-const KV_SECRET_NAMES = ['CARTESIA_API_KEY', 'ELEVENLABS_API_KEY'];
+const KV_SECRET_NAMES = ['CARTESIA_API_KEY', 'ELEVENLABS_API_KEY', 'GROQ_API_KEY', 'DEEPGRAM_API_KEY'];
 
 /** Read the KV-held secrets, returning only the ones actually present. */
 async function kvSecrets(env) {

@@ -24839,7 +24839,7 @@ function groqLlm(provider, messages, opts = {}) {
     "https://api.groq.com/openai/v1/chat/completions",
     provider,
     messages,
-    { defaultModel: "llama-3.3-70b-versatile", ...opts },
+    { defaultModel: "openai/gpt-oss-120b", ...opts },
     "groq_llm"
   );
 }
@@ -25010,7 +25010,7 @@ function readKeys(env, names) {
   }
   return [];
 }
-var KV_SECRET_NAMES = ["CARTESIA_API_KEY", "ELEVENLABS_API_KEY"];
+var KV_SECRET_NAMES = ["CARTESIA_API_KEY", "ELEVENLABS_API_KEY", "GROQ_API_KEY", "DEEPGRAM_API_KEY"];
 async function kvSecrets(env) {
   if (!env || !env.GK_KV) return {};
   const out = {};

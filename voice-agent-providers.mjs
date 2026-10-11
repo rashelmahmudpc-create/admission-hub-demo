@@ -118,7 +118,7 @@ async function openAiChat(url, provider, messages, opts, fallbackName) {
 
 export function groqLlm(provider, messages, opts = {}) {
   return openAiChat('https://api.groq.com/openai/v1/chat/completions', provider, messages,
-    { defaultModel: 'llama-3.3-70b-versatile', ...opts }, 'groq_llm');
+    { defaultModel: 'openai/gpt-oss-120b', ...opts }, 'groq_llm');
 }
 
 export function openrouterLlm(provider, messages, opts = {}) {
