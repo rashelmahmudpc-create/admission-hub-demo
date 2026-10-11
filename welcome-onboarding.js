@@ -15,7 +15,7 @@
  * keeps owning all of that. */
 (() => {
 'use strict';
-const base=new URL('.',document.currentScript.src),version='welcome-native-20261011-v32';
+const base=new URL('.',document.currentScript.src),version='welcome-native-20261011-v33';
 let timers=[],opened=false,mounted=null,bound=null,toastTimer=null;
 
 const $=id=>document.getElementById(id);
@@ -39,6 +39,9 @@ const topColor=()=>{
  }
  return '';
 };
+const fixedNodes=()=>{const pg=document.getElementById('ah-account-page');return [document.documentElement,document.body,pg,pg&&pg.querySelector('.ah-account-shell'),pg&&pg.querySelector('.ah-account-body'),pg&&pg.querySelector('[data-view="welcome"]')].filter(Boolean);};
+const paint=color=>fixedNodes().forEach(n=>n.style.setProperty('background-color',color,'important'));
+const unpaint=()=>fixedNodes().forEach(n=>n.style.removeProperty('background-color'));
 const blend=()=>{
  const body=document.body,page=document.getElementById('ah-account-page');
  if(!body||!page)return;
@@ -49,15 +52,17 @@ const blend=()=>{
  if(!cap){cap=document.createElement('div');cap.id='ah-statusbar-cap';cap.setAttribute('aria-hidden','true');body.appendChild(cap);}
  if(!body.classList.contains('ah-account-page-active')||page.hidden){
   cap.style.display='none';if(savedTheme)meta.setAttribute('content',savedTheme);
-  if(applied){document.documentElement.style.removeProperty('background-color');applied='';}
-  lastColor='';return;
+  unpaint();applied='';lastColor='';return;
  }
+ /* Clear our own paint first so the probe sees the screen's real top colour, not the colour we painted last time. */
+ unpaint();
  const color=topColor()||lastColor;
- if(!color||color===applied)return;
- lastColor=applied=color;
+ if(!color){if(applied)paint(applied);return;}
+ lastColor=color;paint(color);
+ if(color===applied)return;
+ applied=color;
  cap.style.cssText='position:fixed;top:0;left:0;right:0;height:calc(max(env(safe-area-inset-top,0px),4px) + 4px);background:linear-gradient(to bottom,'+color+' 0,'+color+' calc(100% - 4px),transparent 100%);z-index:2147483000;pointer-events:none';
  meta.setAttribute('content',color);
- document.documentElement.style.setProperty('background-color',color,'important');
 };
 const schedule=()=>{requestAnimationFrame(blend);setTimeout(blend,150);setTimeout(blend,450);};
 const watcher=new MutationObserver(schedule);
