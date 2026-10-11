@@ -20,8 +20,8 @@ const LANG_VERSION_TO = 'lang-v5-single-email-button';
 // NOTE: SW_BUILD_TO must always equal the BUILD_ID in sw.js. Without a bump the
 // deploy ships new files under old ?v= tokens; browsers then serve them
 // immutable for a year, so students keep the old app and every fix misses them.
-const SW_BUILD_FROM = 'v311-vm-d1rows-20261011';
-const SW_BUILD_TO = 'v311-vm-d1rows-20261011';
+const SW_BUILD_FROM = 'v312-vm-scope-20261011';
+const SW_BUILD_TO = 'v312-vm-scope-20261011';
 
 const targets = [
   'index.html',

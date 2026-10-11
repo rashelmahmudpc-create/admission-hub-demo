@@ -986,6 +986,18 @@ const persistentDataScope=()=>/^[A-Za-z0-9_-]{8,128}$/.test(DATA_SCOPE);
 const scopedRecordId=id=>`${DATA_SCOPE}::${String(id)}`;
 const toScopedRecord=obj=>({...obj,id:scopedRecordId(obj.id),__ahOwner:DATA_SCOPE,__ahId:String(obj.id)});
 const fromScopedRecord=obj=>obj&&obj.__ahOwner===DATA_SCOPE?Object.fromEntries(Object.entries({...obj,id:obj.__ahId}).filter(([key])=>key!=='__ahOwner'&&key!=='__ahId')):null;
+/* The public backend fills the local stores over fetch, where `localStorage` is
+   scoped to the guest *user id*. That guest id is regenerated per browser, so it
+   never matches the fetch context's user — and every pulled row was dropped by
+   fromScopedRecord's owner check. The stores were physically full (6,256 rows in
+   vocabularyMaster) while every screen read 0. Downloaded content carries no
+   ownership metadata, so treat it as public device content: readable by the
+   signed-in account and by a signed-out guest. Account-owned rows stay private
+   to the account that owns them. */
+const publicRecordShape=raw=>Object.fromEntries(Object.entries({...raw,id:raw.__ahId??raw.id}).filter(([key])=>key!=='__ahOwner'&&key!=='__ahId'));
+const isOwnRecord=raw=>!!raw&&raw.__ahOwner===DATA_SCOPE;
+const isPublicRecord=raw=>!!raw&&raw.__ahOwner==null;
+const withViewableRecords=rows=>(rows||[]).filter(raw=>isOwnRecord(raw)||isPublicRecord(raw)).map(raw=>fromScopedRecord(raw)||publicRecordShape(raw));
 // Serialize local database requests and retry short-lived transaction failures.
 // This prevents rapid mobile taps, resume flows, and cache refreshes from
 // racing a transaction that has just completed or been aborted.
@@ -1101,15 +1113,36 @@ function runDbRequest(store,mode,requestFactory,attempts=2){
   // reads made Promise.all effectively sequential on iPhone; writes stay ordered.
   return mode==='readonly' ? execute() : queueDb(execute);
 }
+/* A signed-out guest still sees this device's downloaded content, which lives in
+   the persisted store rather than in the session memory map. Prefer memory (it
+   holds unsaved guest edits), then fall back to the store. */
+function readPublicStore(store){
+  if(!DB) return Promise.resolve([]);
+  return runDbRequest(store,'readonly',objectStore=>objectStore.getAll()).then(withViewableRecords).catch(()=>[]);
+}
 function dbGetAll(store){
-  if(!persistentDataScope()) return Promise.resolve([...(MEMORY_DB.get(store)?.values()||[])].map(row=>({...row})));
+  if(!persistentDataScope()){
+    const inMemory=[...(MEMORY_DB.get(store)?.values()||[])].map(row=>({...row}));
+    return readPublicStore(store).then(persisted=>{
+      const seen=new Set(inMemory.map(row=>String(row.id)));
+      return inMemory.concat(persisted.filter(row=>!seen.has(String(row.id))));
+    });
+  }
   if(!DB)return Promise.resolve([]);
-  return runDbRequest(store,'readonly',objectStore=>objectStore.getAll()).then(rows=>(rows||[]).map(fromScopedRecord).filter(Boolean));
+  return runDbRequest(store,'readonly',objectStore=>objectStore.getAll()).then(withViewableRecords);
 }
 function dbGet(store,id){
-  if(!persistentDataScope()) return Promise.resolve(MEMORY_DB.get(store)?.get(id));
+  if(!persistentDataScope()){
+    const inMemory=MEMORY_DB.get(store)?.get(id);
+    if(inMemory) return Promise.resolve(inMemory);
+    if(!DB) return Promise.resolve(undefined);
+    return runDbRequest(store,'readonly',objectStore=>objectStore.getAll()).then(withViewableRecords).then(rows=>rows.find(row=>String(row.id)===String(id))).catch(()=>undefined);
+  }
   if(!DB)return Promise.resolve(undefined);
-  return runDbRequest(store,'readonly',objectStore=>objectStore.get(scopedRecordId(id))).then(fromScopedRecord);
+  return runDbRequest(store,'readonly',objectStore=>objectStore.get(scopedRecordId(id))).then(record=>{
+    if(!record) return undefined;
+    return isOwnRecord(record)||isPublicRecord(record) ? (fromScopedRecord(record)||publicRecordShape(record)) : undefined;
+  });
 }
 /* Raw (unscoped-hiding) access, used only by the one-time legacy adoption. */
 function dbScanRaw(store){
@@ -5302,16 +5335,16 @@ window.__admissionBootPromise.catch(error => console.error('[Admission Hub] boot
     // The updated worker takes control now; the current document remains usable and the next launch uses the new shell.
     try{
 
-      const expectedSwVersion = 'v311-vm-d1rows-20261011';
+      const expectedSwVersion = 'v312-vm-scope-20261011';
       // register() on the same scope performs an in-place update. Never unregister
       // the active iOS worker first: that discards the instant offline shell.
-      const registration=await navigator.serviceWorker.register('./sw.js?v=v311-vm-d1rows-20261011',{scope:'./',updateViaCache:'none'});
+      const registration=await navigator.serviceWorker.register('./sw.js?v=v312-vm-scope-20261011',{scope:'./',updateViaCache:'none'});
       await registration.update().catch(()=>{});
       // Purge every old app-shell cache (any build id ≠ current). This guarantees
       // stale pre-retirement application shells can never be served from cache again.
       try {
 
-        const cur = 'admission-hub-shell-v311-vm-d1rows-20261011';
+        const cur = 'admission-hub-shell-v312-vm-scope-20261011';
         const names = await caches.keys();
         for (const name of names) {
           if (name.startsWith('admission-hub-shell-') && name !== cur) await caches.delete(name).catch(()=>{});
