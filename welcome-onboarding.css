@@ -283,8 +283,9 @@ html:has(#ah-account-page.ah-welcome-upgraded:not([hidden]) [data-view="welcome"
    a 390x640 stage with a reserved bottom bar. The account flow's mobile rule
    (padding-top:12px on .ah-welcome-view) and the 86px bottom band buffer are
    what left the empty strips. */
-.ahw-sky .band{top:0;bottom:0}
-.ahw-sky .cta{bottom:max(16px,env(safe-area-inset-bottom,0px))}
+.ahw-sky .top{top:calc(env(safe-area-inset-top,0px) + 12px)}
+.ahw-sky .band{top:calc(env(safe-area-inset-top,0px) + 54px);bottom:calc(env(safe-area-inset-bottom,0px) + 86px)}
+.ahw-sky .cta{bottom:calc(env(safe-area-inset-bottom,0px) + 16px)}
 .ah-welcome-upgraded .ah-account-view.ah-welcome-sky{padding:0!important;min-height:0!important;height:100%!important;display:block!important}
 /* Owner: the guest entry is a button like the others, not a dashed box. */
 .ahw-sky .b.g{height:56px;border-radius:21px;justify-content:center;gap:8px;background:#fff;border:0;box-shadow:0 12px 22px -16px rgba(70,90,245,.55),inset 0 0 0 1px var(--skyln);color:var(--skyink);font-weight:600;font-size:15.5px}
@@ -300,3 +301,7 @@ html:has(#ah-account-page.ah-welcome-upgraded:not([hidden]) [data-view="welcome"
    focus as the panel opens) then scrolled the whole art up. overflow:clip
    forbids that scroll where overflow:hidden still allows a programmatic one. */
 .ahw-sky #sky-app{overflow:clip!important}
+/* Geometry restored to the approved preview: the 390x640 story stage is FITTED inside the band (brand row above, Get Started below) so nothing is cropped or overlapped. The safe areas are handled inside the art and the background is full-bleed under the status bar and home indicator, so the device edges are the same surface as the screen (no strips, no lines). */
+.ahw-sky.ahw-sky-board{padding-top:0;padding-bottom:0;background-image:linear-gradient(180deg,var(--skyt) 0%,color-mix(in srgb,var(--skyt) 40%,#fff) 60%,#fff 100%)}
+.ahw-sky .auth{padding-top:calc(env(safe-area-inset-top,0px) + 8px);padding-bottom:calc(env(safe-area-inset-bottom,0px) + 22px);background:linear-gradient(180deg,var(--skyt) 0,var(--skyt) 56px,transparent 150px),radial-gradient(90% 45% at 0% 100%,rgba(255,176,32,.18),transparent 60%),radial-gradient(100% 40% at 100% 38%,rgba(124,92,255,.16),transparent 60%),linear-gradient(180deg,#E3EEFF 0%,#F6F9FF 55%,#fff 100%)}
+.ahw-sky .toast{bottom:calc(env(safe-area-inset-bottom,0px) + 90px)}
