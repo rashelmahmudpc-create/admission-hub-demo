@@ -4,6 +4,10 @@
    stored here. */
 const ORIGIN = 'https://admission-gk.admissionhub.workers.dev';
 const VOICE_ORIGIN = 'https://admission-voice.admissionhub.workers.dev';
+/* P23 — the live voice AGENT is served by the main Worker, not the vocabulary
+   voice worker, so its ticket/login/session calls must be proxied there. Every
+   other /api/voice path still belongs to the vocabulary voice worker. */
+const AGENT_API = /^\/api\/voice\/(agent|login|session)(\/|$)/;
 const RETIRED_ASSETS = new Set([
   '/premium-auth.js', '/premium-auth.css', '/auth-svg.js', '/user-account.js',
   '/onboarding.js', '/onboarding.css', '/curriculum-config.js', '/preview-onboarding.html',
@@ -127,7 +131,8 @@ export default {
 
     if (url.pathname.startsWith('/api/')) {
       try {
-        const base = url.pathname.startsWith('/api/voice') ? VOICE_ORIGIN : ORIGIN;
+        const base = AGENT_API.test(url.pathname) ? ORIGIN
+          : url.pathname.startsWith('/api/voice') ? VOICE_ORIGIN : ORIGIN;
         const target = new URL(base + url.pathname + url.search);
         const headers = new Headers(request.headers);
         headers.delete('host');

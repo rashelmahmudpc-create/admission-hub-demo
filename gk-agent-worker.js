@@ -453,8 +453,10 @@ export default {
      * upgrade, which no downstream handler should try to read. One object per
      * owner keeps the socket and the durable memory together. The ticket path is
      * matched too — without it the ticket request would 404 here and the socket
-     * could never be opened. */
-    if (url.pathname === '/api/voice/agent' || url.pathname.startsWith('/api/voice/agent/')) {
+     * could never be opened. The login/session paths are the owner's password
+     * gate for the page, and must reach the object for the same reason. */
+    if (url.pathname === '/api/voice/agent' || url.pathname.startsWith('/api/voice/agent/') ||
+        url.pathname === '/api/voice/login' || url.pathname === '/api/voice/session') {
       const id = env.VOICE_AGENT.idFromName(String(env.VOICE_OWNER_UID || 'owner'));
       return env.VOICE_AGENT.get(id).fetch(request);
     }

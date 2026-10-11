@@ -122,7 +122,7 @@ t('P23-৭৮. a large clip encodes without blowing the stack (chunked)',
     JSON.parse(manifest).icons.length >= 2);
   t('P23-৮৮. Pages routes the voice page and its login, or the gate has no page',
     worker.includes("'/voice-agent'") && worker.includes("'/voice-agent-login'") &&
-    worker.includes("'/voice-agent.html'"));
+    worker.includes("'/voice-agent.html'") && worker.includes('AGENT_API'));
   t('P23-৮৯. the page is not indexable, so the owner page stays private',
     /noindex/.test(src) && /noindex/.test(login));
 }

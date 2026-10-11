@@ -25867,7 +25867,7 @@ var maybeStart = async (request, env, ctx) => {
 var gk_agent_worker_default = {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
-    if (url.pathname === "/api/voice/agent" || url.pathname.startsWith("/api/voice/agent/")) {
+    if (url.pathname === "/api/voice/agent" || url.pathname.startsWith("/api/voice/agent/") || url.pathname === "/api/voice/login" || url.pathname === "/api/voice/session") {
       const id = env.VOICE_AGENT.idFromName(String(env.VOICE_OWNER_UID || "owner"));
       return env.VOICE_AGENT.get(id).fetch(request);
     }
