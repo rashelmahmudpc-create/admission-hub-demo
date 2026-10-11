@@ -226,6 +226,10 @@
        history) is the first thing on the dashboard, not buried in a list. */
     const prepare = '<section class="dv2-card"><div class="dv2-between"><div><div class="dv2-title">🎯 আমাকে প্রস্তুত করো</div><div class="dv2-muted">তোমার পরীক্ষার ইতিহাস দেখে আজ কী পড়বে, কত প্রশ্ন — সাজিয়ে দেয়</div></div><button class="dv2-btn" style="flex:0 0 auto;padding:9px 14px;font-size:12px" onclick="window.openStudyPlanPanel&&window.openStudyPlanPanel()">পরিকল্পনা দেখো</button></div></section>';
 
+    /* P18 — admission intelligence. Sits beside the P17 prepare-me card so the
+       two "what should I do" actions are together at the top, not buried. */
+    const intel = '<section class="dv2-card"><div class="dv2-between"><div><div class="dv2-title">🏆 ভর্তি-বুদ্ধি</div><div class="dv2-muted">তোমার বিশ্ববিদ্যালয় ও ইউনিটের সাবজেক্ট-কভারেজ, দুর্বলতা আর রিভিশন-প্ল্যান</div></div><button class="dv2-btn" style="flex:0 0 auto;padding:9px 14px;font-size:12px" onclick="window.openAdmissionIntelPanel&&window.openAdmissionIntelPanel()">দেখো</button></div></section>';
+
     const tools = '<section class="dv2-card"><div class="dv2-between"><div><div class="dv2-title">Command Center</div><div class="dv2-muted">এক জায়গায় সব টুল</div></div><button class="dv2-btn ghost" style="padding:7px 11px;font-size:11px;color:#0f6b4f" onclick="window.dv2AllTools&&dv2AllTools()">See more →</button></div>' +
       '<div class="dv2-tools">' +
       '<div class="dv2-tool" onclick="window.openSmartPracticeModal?openSmartPracticeModal():navigate(\'smart-practice\')"><span class="ic">⚡</span><span>Quick Practice</span></div>' +
@@ -270,7 +274,7 @@
       '<div class="dv2-tool" onclick="window.dv2AllTools&&dv2AllTools()"><span class="ic">🗂️</span><span>More Tools</span></div>' +
       '</div></section>';
 
-    return '<div class="dv2-root">' + header + prepare + mission + streak + perf + insight + contCard + tools + graph + radar + goalCard + roadmap + studyTools + '</div>';
+    return '<div class="dv2-root">' + header + prepare + intel + mission + streak + perf + insight + contCard + tools + graph + radar + goalCard + roadmap + studyTools + '</div>';
   }
 
   /* ── See-more: পুরনো ১১-টুল (গোপন করা হয় না) ── */

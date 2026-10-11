@@ -17,8 +17,8 @@ const UI_VERSION_FROM = '20261010-static-welcome-lock3';
 const UI_VERSION_TO = '20261010-static-welcome-lock3';
 const LANG_VERSION_FROM = 'lang-v5-single-email-button';
 const LANG_VERSION_TO = 'lang-v5-single-email-button';
-const SW_BUILD_FROM = 'v304-p17-prepare-me-20261011';
-const SW_BUILD_TO = 'v304-p17-prepare-me-20261011';
+const SW_BUILD_FROM = 'v305-p18-admission-intel-20261011';
+const SW_BUILD_TO = 'v305-p18-admission-intel-20261011';
 
 const targets = [
   'index.html',

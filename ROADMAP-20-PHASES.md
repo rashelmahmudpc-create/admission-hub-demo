@@ -96,8 +96,9 @@
 **আছে:** GK-এজেন্ট (দৈনিক cron, ৩-key failover, TG-নোটিফ) · notification-worker · voice-worker · admin-এজেন্ট-সিস্টেম+grants (AC-5) · bug-agent।
 **বাকি:** ① student-মুখী action-agents: "আমাকে প্রস্তুত করো" → analyze→weakness→select→plan→practice→analyze→reco (লুপ) ② task-অর্কেস্ট্রেশন+যাচাই ③ agent-কল-অডিট (student-পাশ)।
 
-## 🏆 P18 — Admission Intelligence Engine — 🔴 ০%
-**বাকি: সব** — ইউনিভার্সিটি/ইউনিট/সাবজেক্ট/টপিক-ম্যাপ · প্রশ্ন-প্যাটার্ন-বিশ্লেষণ · priority/রিভিশন-প্ল্যান · weakness-report · data-driven গাইডেন্স (**নীতি-লক: কোনো rank-guarantee নয়** — blueprint-লেভেল থেকেই ঠিক)।
+## 🏆 P18 — Admission Intelligence Engine — 🟢 ~৮৫%
+**আছে:** `admission-intel-engine.js` (`window.AhAdmissionIntel`) + `admission-intel-panel.js` (ড্যাশবোর্ডে "🏆 ভর্তি-বুদ্ধি" কার্ড) · **ইউনিভার্সিটি/ইউনিট/সাবজেক্ট-ম্যাপ সরাসরি `academic-catalog.js` থেকে** (নিজের কোনো A/B/C/D হার্ডকোড নেই; অজানা-বিশ্ববিদ্যালয়/ক্যাটালগ-অনুপস্থিত হলে সৎভাবে "জানি না" বলে, বানায় না) · অফিসিয়াল-সাবজেক্ট **কভারেজ** (কোনটিতে অভ্যাস হয়েছে/হয়নি) · টপিক-দক্ষতা · **প্রশ্ন-প্যাটার্ন** (easy/medium/hard) · পরীক্ষা-তারিখ-লক্ষ্য ধরে **রিভিশন-প্ল্যান** · **নীতি-লক কার্যকর** — `guaranteeSafe()` + প্যানেলে দৃশ্যমান "নিশ্চয়তা নয়" নোট (টেস্টে pin করা)। টেস্ট: ১৬ (ইঞ্জিন) + ১৪ (wiring+runtime) = **৩০ পাস**।
+**বাকি:** ① প্রতিটি বিশ্ববিদ্যালয়ের আসল প্রশ্ন-প্যাটার্ন ডেটা (বর্তমানে ছাত্রের নিজের ইতিহাস থেকে; অফিসিয়াল প্যাটার্ন-সেট যোগ করা যায়) ② weakness-report এক্সপোর্ট/শেয়ার ③ owner-যাচাই ও APPROVE (Golden Rule)।
 
 ## 🌍 P19 — Production, SEO & Global Infrastructure — 🟡 ~৫০%
 **আছে:** live HTTPS (workers.dev) · title+description · CI-deploy (admin+public, GitHub Actions) · `/api/health` · আপডেট-লগ (sw-build-header) · PWA-মেটাডেটা · **robots.txt + sitemap.xml লাইভ** (যাচাই: ২০০, `Sitemap:`-উল্লেখসহ; আগের "নেই" টীকা ভুল ছিল) · **Open-Graph + Twitter কার্ড লাইভ** (og:*/twitter:* + og-image.png ২০০; আগের "০" টীকা ভুল ছিল) · **canonical লাইভ** · কাস্টম-ডোমেইন ✅ ফ্রি (https://admissionhub.pages.dev)।

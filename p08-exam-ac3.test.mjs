@@ -39,8 +39,8 @@ t('discardActiveExam: retry-টাইমার ক্লিয়ার', /async
 
 /* ৬ — ভার্সন-ট্র্যাকিং v189 */
 
-t('sw BUILD_ID current shell', SW.includes("const BUILD_ID = 'v304-p17-prepare-me-20261011'"));
-t('index sw-marker current shell', H.includes('sw.js?v=v304-p17-prepare-me-20261011'));
+t('sw BUILD_ID current shell', SW.includes("const BUILD_ID = 'v305-p18-admission-intel-20261011'"));
+t('index sw-marker current shell', H.includes('sw.js?v=v305-p18-admission-intel-20261011'));
 
 console.log(`\nP08-AC3: ${pass} pass / ${fail} fail`);
 if (fail) process.exit(1);
