@@ -3,7 +3,7 @@ const CACHE_PREFIX = 'admission-hub-shell-';
 // hold user data; this one holds exactly one image and is trimmed on write.
 const AVATAR_CACHE = 'admission-hub-avatar-v1';
 
-const BUILD_ID = 'v303-statusbar-20261011a';
+const BUILD_ID = 'v304-p17-prepare-me-20261011';
 const CACHE_NAME = `${CACHE_PREFIX}${BUILD_ID}`;
 const VERSION_HEADER = 'X-Admission-Hub-Build';
 const DOCUMENT_NETWORK_TIMEOUT_MS = 2500;
@@ -45,6 +45,8 @@ const APP_SHELL = [
   './mistake-engine.js?v=p10-v1',
   './adaptive-engine.js?v=p11-v1',
   './adaptive-insights-panel.js?v=p11-v1',
+  './study-plan-engine.js?v=p17-v1',
+  './study-plan-panel.js?v=p17-v1',
   './p13-performance-core.js?v=p13-core-v1',
   './p13-performance-runtime.js?v=p13-runtime-v1',
   './student-data-sync.js?v=student-sync-v1',
@@ -62,13 +64,13 @@ const APP_SHELL = [
 // A truncated/corrupt download is NEVER written to the shell cache.
 const ASSET_DIGESTS = {
 /* sw-manifest:start */
-  "./index.html": "9e75f9e46ab0a1dd06f253462cb6874703c60fcc35ffedc385fff06a8e5db2f9",
+  "./index.html": "92580fab9bd5a0bc532c8454badc2f3e8adbebdade3eac36bb63ee7e4e7b0c56",
   "./manifest.json": "6dcf0e0c6f7671750549e53558ba8b9f0c2c83b0c6759072a6b5e2276331f491",
   "./manifest.webmanifest": "abcd26174710f6df3e183889a5a9da182f73ee8cdcc543b43db8fb4070cad54f",
   "./dashboard-v2.css?v=dash2f13-theme": "4541bc1e65fd158c593443562975400d128b8f1d3b636595df3c235b99e8cced",
   "./3d-loader.css?v=3d-v2": "43ca21b0a41be5d223c317fd63582f19ff6ffab5d010639ef26349464550da63",
   "./session-persist.js?v=session-v2": "99f3d1f49f6d5714fd25f1c12b2aa978ca97a009d6caba9a690a0442d082593c",
-  "./analytics-service.js?v=analytics-p2-v2-insights": "fbc3b6b1dc0cef3e76215b0c9b95fa83e112c0b7dd70affd327b348d8ebabd3b",
+  "./analytics-service.js?v=analytics-p2-v2-insights": "6fe46462d0cd144469504bd49f8418eb3bd0661be7a38834fd5e21e96f022cad",
   "./account-access.css?v=20261010-static-welcome-lock3": "56e418849f297f240d558116d13bcc259104be68df3e4eba5f7976434bb350d8",
   "./institutions-bd.js?v=bd-institutions-v2": "602c5549515e8207ad152b948ca9b8fe3ad0fbe429afb56380e4e21b662f779d",
   "./language-engine.js?v=lang-v5-single-email-button": "7e726c3cd194381201c7fdb2b1a49af78f4f48f38012e05ab68e13eee3ade3ad",
@@ -77,7 +79,7 @@ const ASSET_DIGESTS = {
   "./profile-ui.js?v=profile-v18-avatar-cache": "aaa1bf37e54b4dd44bad0a9ea6c904645f0457cea98d10aaa02bf39664d6b1b8",
   "./profile-ui.css?v=profile-v15-uni-tap": "6408a4b7ac8acf6845cd0148c58377a4953c8ff879d30b2c520eafae0314b98a",
   "./data-protection.js?v=dp-v3-fastboot": "359dc907ade4bcb3a6a722385969ebb6af47f7e436e6cdf2cce0dd6b7343723d",
-  "./dashboard-v2.js?v=dash2f16-avatar-cache": "34d501b9af4a669f4a4e05f6fd38ce254ef1760e6d6f49b97f769eaeaeeff4dc",
+  "./dashboard-v2.js?v=dash2f16-avatar-cache": "bd050e267235a6feb13ec41f80b43263e2733118d3ffb66941ad24517a0ba7d7",
   "./ai-agent-chat.js?v=agent-f1-ui-p06chat": "6b9794a856ecfd8b7afee0551f2dfabafcb1575bd3991d5947c1f79fec05864a",
   "./question-engine.js?v=qe1": "db404fefd97bea27dad177748bafb0a9ba7d87bedca094e3da795c5b77946cd4",
   "./question-engine-panel.js?v=qe1": "33376e371654d575484194b5fcf8e486f4e3329c13e5330ff8619caab0399ec4",
@@ -90,6 +92,8 @@ const ASSET_DIGESTS = {
   "./mistake-engine.js?v=p10-v1": "4266b9acb49107d4bf48cd88c0d82492d2324f351ca4b4235b6b156706b44f50",
   "./adaptive-engine.js?v=p11-v1": "4d684652043d4ab0fe38660546491a2c31f67264548cf4040be181aa39a63d45",
   "./adaptive-insights-panel.js?v=p11-v1": "bb3a42e5d386b2d3861ab088cf0a30354b981cb1b40c419603c0fbdf47fddb27",
+  "./study-plan-engine.js?v=p17-v1": "53a4161abec5fd4e0256d96bb41202a61625a8265ac770c404bc093372999b13",
+  "./study-plan-panel.js?v=p17-v1": "49c2e8a88ea5528fbe3224f46b7650b9be0d29f559223da2322bfc682ada2639",
   "./p13-performance-core.js?v=p13-core-v1": "a51cc8a619d04b2f7b2bed2d4752a2d4c1da652f9e2034faacd47addf8cdcdca",
   "./p13-performance-runtime.js?v=p13-runtime-v1": "60fb332e307a6606e3dec74100fbb2b4337d4497c6d0fe3ee2e40e0470c1391a",
   "./student-data-sync.js?v=student-sync-v1": "f81ed126b0c8104c29fc0838a8f373c6c444ac45f17c2050850805285ce479c1",

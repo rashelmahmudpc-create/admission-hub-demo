@@ -221,6 +221,11 @@
         '<div class="dv2-bar" style="margin-top:12px"><div style="width:' + cont.pct + '%"></div></div><div class="dv2-muted" style="margin-top:6px">' + cont.pct + '% বিষয়-দক্ষতা</div></section>'
       : '<section class="dv2-card"><div class="dv2-between"><div class="dv2-row"><div class="dv2-streak-ic">📖</div><div><div class="dv2-title">Continuous Learning</div><div class="dv2-muted">কোর্স চালু করো — এখানে অগ্রগতি দেখাবে</div></div></div><button class="dv2-btn ghost" style="padding:8px 12px;font-size:12px;color:#0f6b4f" onclick="navigate(\'courses\')">কোর্স →</button></div></section>';
 
+    /* P17 — the "prepare me" entry point. Sits above the tool grid so the
+       action a student actually wants (tell me what to study, from my own
+       history) is the first thing on the dashboard, not buried in a list. */
+    const prepare = '<section class="dv2-card"><div class="dv2-between"><div><div class="dv2-title">🎯 আমাকে প্রস্তুত করো</div><div class="dv2-muted">তোমার পরীক্ষার ইতিহাস দেখে আজ কী পড়বে, কত প্রশ্ন — সাজিয়ে দেয়</div></div><button class="dv2-btn" style="flex:0 0 auto;padding:9px 14px;font-size:12px" onclick="window.openStudyPlanPanel&&window.openStudyPlanPanel()">পরিকল্পনা দেখো</button></div></section>';
+
     const tools = '<section class="dv2-card"><div class="dv2-between"><div><div class="dv2-title">Command Center</div><div class="dv2-muted">এক জায়গায় সব টুল</div></div><button class="dv2-btn ghost" style="padding:7px 11px;font-size:11px;color:#0f6b4f" onclick="window.dv2AllTools&&dv2AllTools()">See more →</button></div>' +
       '<div class="dv2-tools">' +
       '<div class="dv2-tool" onclick="window.openSmartPracticeModal?openSmartPracticeModal():navigate(\'smart-practice\')"><span class="ic">⚡</span><span>Quick Practice</span></div>' +
@@ -265,7 +270,7 @@
       '<div class="dv2-tool" onclick="window.dv2AllTools&&dv2AllTools()"><span class="ic">🗂️</span><span>More Tools</span></div>' +
       '</div></section>';
 
-    return '<div class="dv2-root">' + header + mission + streak + perf + insight + contCard + tools + graph + radar + goalCard + roadmap + studyTools + '</div>';
+    return '<div class="dv2-root">' + header + prepare + mission + streak + perf + insight + contCard + tools + graph + radar + goalCard + roadmap + studyTools + '</div>';
   }
 
   /* ── See-more: পুরনো ১১-টুল (গোপন করা হয় না) ── */

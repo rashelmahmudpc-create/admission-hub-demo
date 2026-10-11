@@ -51,7 +51,7 @@ test('১১. protection snapshot runs as idle post-boot work',
 /* PWA lifecycle */
 test('১২. build/cache/static-Welcome and main-app AI versions are synchronized',
 
-  SW.includes("const BUILD_ID = 'v301-p16-a11y-20261010'") && H.includes("const expectedSwVersion = 'v301-p16-a11y-20261010'") && H.includes('sw.js?v=v301-p16-a11y-20261010') && H.includes('account-access.js?v=20261010-static-welcome-lock3') && SW.includes('account-access.js?v=20261010-static-welcome-lock3') && H.includes('ai-agent-chat.js?v=agent-f1-ui-p06chat') && SW.includes('ai-agent-chat.js?v=agent-f1-ui-p06chat'));
+  SW.includes("const BUILD_ID = 'v304-p17-prepare-me-20261011'") && H.includes("const expectedSwVersion = 'v304-p17-prepare-me-20261011'") && H.includes('sw.js?v=v304-p17-prepare-me-20261011') && H.includes('account-access.js?v=20261010-static-welcome-lock3') && SW.includes('account-access.js?v=20261010-static-welcome-lock3') && H.includes('ai-agent-chat.js?v=agent-f1-ui-p06chat') && SW.includes('ai-agent-chat.js?v=agent-f1-ui-p06chat'));
 test('১৩. service-worker activation never navigates or reloads open clients',
   !SW.includes('c.navigate(c.url)') && !SW.includes("self.clients.matchAll({ type: 'window', includeUncontrolled: true });\n      for"));
 test('১৪. installed PWA document is bounded network-first with fast offline fallback',
@@ -62,9 +62,10 @@ test('১৪. installed PWA document is bounded network-first with fast offline 
 test('১৫. precache stays lean because code-native entry pages add no raster assets',
   /* Bound tracks the hand-curated APP_SHELL list. It grew from 33 → 37 when the
      P16 accessibility core landed, then 37 → 39 with the P15 offline status
-     pill. The point of the ceiling is to catch an accidental bulk import, not
-     to pin an exact size. */
-  shellAssets > 0 && shellAssets <= 39 && !appShellBlock.includes('result-analysis-500.js') && !appShellBlock.includes("  '',"));
+     pill, then 39 → 41 with the two P17 study-plan assets (engine + panel). The
+     point of the ceiling is to catch an accidental bulk import, not to pin an
+     exact size. */
+  shellAssets > 0 && shellAssets <= 41 && !appShellBlock.includes('result-analysis-500.js') && !appShellBlock.includes("  '',"));
 test('১৬. PWA updates are in-place; active worker is never unregistered first', !H.includes('registration.unregister()'));
 
 /* AI composer and response */
