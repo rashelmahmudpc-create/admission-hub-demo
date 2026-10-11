@@ -1,6 +1,7 @@
 /* Offline status pill — a small, honest indicator of connection + pending sync. */
 .ah-offline-pill{
-  position:fixed; left:50%; bottom:calc(14px + env(safe-area-inset-bottom,0px));
+  /* Sits above the sticky bottom nav, never over it. */
+  position:fixed; left:50%; bottom:calc(70px + env(safe-area-inset-bottom,0px));
   transform:translateX(-50%) translateY(12px);
   z-index:9000; opacity:0; pointer-events:none;
   padding:7px 14px; border-radius:999px;

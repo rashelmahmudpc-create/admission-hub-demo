@@ -94,7 +94,9 @@ test('p15-09: the offline indicator is honest and shipped', () => {
   const js = readFileSync(new URL('./offline-status.js', import.meta.url), 'utf8');
   assert.match(js, /sync-status/, 'it must listen to the real sync status stream');
   assert.match(js, /অফলাইন/, 'it must show an offline state');
-  assert.match(js, /সিংক হচ্ছে/, 'it must show a syncing state');
+  // Owner decision (2026-10-11): the floating pill is offline-only. It must not
+  // linger a "syncing" message over the bottom nav while online.
+  assert.ok(!js.includes('সিংক হচ্ছে'), 'the online syncing pill must be removed');
   assert.ok(sw.includes('offline-status.js'), 'the indicator must be in the app shell');
   assert.match(indexHtml, /\.\/offline-status\.js/, 'index.html must load the indicator');
   // It must not claim success it cannot verify: no fabricated "saved" on error.

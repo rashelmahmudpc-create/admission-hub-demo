@@ -34,12 +34,12 @@ test('vocab-a: ids are fixed so re-seeding is a no-op', () => {
   assert.ok(cards.every(c => c.tool === 'vocabulary-master'));
 });
 
-test('vocab-a: the seed is loaded from index.html before the tool, and the tool refreshes it when empty', () => {
+test('vocab-a: the seed is loaded from index.html before the tool, and only planted when explicitly enabled', () => {
   const seedIdx = H.indexOf('./vocabulary-a-seed.js');
   const toolIdx = H.indexOf('./vocabulary-master-tool.js');
   assert.ok(seedIdx > 0 && toolIdx > seedIdx, 'seed script must be included before the vocabulary tool');
   assert.match(TOOL, /window\.AH_VOCAB_A_SEED/);
-  assert.match(TOOL, /await seedCategoryA\(\)/);
+  assert.match(TOOL, /AH_VOCAB_SEED_ENABLED === true\) await seedCategoryA\(\)/);
 });
 
 test('vocab-a: opening a category prefetches its words (and relations) into the voice cache', () => {

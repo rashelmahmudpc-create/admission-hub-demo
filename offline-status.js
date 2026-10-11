@@ -1,12 +1,11 @@
 /*
  * Offline status indicator — Admission Hub
  *
- * P15's promise is "works offline, syncs when the network returns". A student
- * needs to see that promise being kept, not guess. This shows a small, honest
- * pill:
+ * P15's promise is "works offline, syncs when the network returns". The device
+ * only speaks up when it is actually offline, and never over the UI:
  *   · offline with unsent changes  → tells them how many will be sent later,
- *   · offline with nothing pending → a quiet "offline" note,
- *   · back online with a queue      → "syncing…" then a brief "all synced".
+ *   · offline with nothing pending → a quiet "offline" note.
+ * While online it stays silent — the owner read a lingering sync pill as a bug.
  * It never blocks the UI and never claims success it cannot verify.
  */
 (() => {
@@ -35,9 +34,11 @@
     const pending = Number(state.pending) || 0;
     const want = [];
 
+    /* The status pill is gone. The owner asked for it off: a floating sync
+       message that lingers over the bottom nav reads as a bug, not a promise.
+       Keep only a quiet note when the device is actually offline, and nothing
+       at all while online. */
     if (!online) want.push(pending > 0 ? `পরে পাঠানো হবে · ${pending}` : 'অফলাইন');
-    else if (pending > 0) want.push('সিংক হচ্ছে…');
-    else if (last.pending > 0 && online) want.push('সব সিংক হয়েছে');
 
     if (!want.length) { el.hidden = true; return; }
     el.textContent = want[0];

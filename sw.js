@@ -3,7 +3,7 @@ const CACHE_PREFIX = 'admission-hub-shell-';
 // hold user data; this one holds exactly one image and is trimmed on write.
 const AVATAR_CACHE = 'admission-hub-avatar-v1';
 
-const BUILD_ID = 'v309-statusbar-feather-20261011';
+const BUILD_ID = 'v310-vm-scroll50-20261011';
 const CACHE_NAME = `${CACHE_PREFIX}${BUILD_ID}`;
 const VERSION_HEADER = 'X-Admission-Hub-Build';
 const DOCUMENT_NETWORK_TIMEOUT_MS = 2500;
@@ -57,8 +57,8 @@ const APP_SHELL = [
   './install-guide.js?v=install-v4',
   './a11y-core.css?v=a11y-v1',
   './a11y-core.js?v=a11y-v1',
-  './offline-status.css?v=offline-v1',
-  './offline-status.js?v=offline-v1',
+  './offline-status.css?v=offline-v2',
+  './offline-status.js?v=offline-v2',
   './icons/icon-192.png',
   './icons/icon-512.png'
 ];
@@ -67,13 +67,13 @@ const APP_SHELL = [
 // A truncated/corrupt download is NEVER written to the shell cache.
 const ASSET_DIGESTS = {
 /* sw-manifest:start */
-  "./index.html": "49c00347966cec594fcd01579bfb3f1f465989022faca65f84577119c0ecabd0",
+  "./index.html": "239d123dbea754a36650333bf0b9caafd8039f0237848eef11b71c49536a9c91",
   "./manifest.json": "6dcf0e0c6f7671750549e53558ba8b9f0c2c83b0c6759072a6b5e2276331f491",
   "./manifest.webmanifest": "abcd26174710f6df3e183889a5a9da182f73ee8cdcc543b43db8fb4070cad54f",
   "./dashboard-v2.css?v=dash2f13-theme": "4541bc1e65fd158c593443562975400d128b8f1d3b636595df3c235b99e8cced",
   "./3d-loader.css?v=3d-v2": "43ca21b0a41be5d223c317fd63582f19ff6ffab5d010639ef26349464550da63",
   "./session-persist.js?v=session-v2": "99f3d1f49f6d5714fd25f1c12b2aa978ca97a009d6caba9a690a0442d082593c",
-  "./analytics-service.js?v=analytics-p2-v2-insights": "5c2459567660b2d6e5af0082d9800e2b57e8d0201892870ee519497f9fd77046",
+  "./analytics-service.js?v=analytics-p2-v2-insights": "bb781501599a7c813482f768c5f2c6ea95c721d844c228d1378afa45cafa5b7a",
   "./account-access.css?v=20261010-static-welcome-lock3": "56e418849f297f240d558116d13bcc259104be68df3e4eba5f7976434bb350d8",
   "./institutions-bd.js?v=bd-institutions-v2": "602c5549515e8207ad152b948ca9b8fe3ad0fbe429afb56380e4e21b662f779d",
   "./language-engine.js?v=lang-v5-single-email-button": "7e726c3cd194381201c7fdb2b1a49af78f4f48f38012e05ab68e13eee3ade3ad",
@@ -107,8 +107,8 @@ const ASSET_DIGESTS = {
   "./install-guide.js?v=install-v4": "7242a29d444a2956428defae83100d3dd12c93e23b8878e43fb0a2672797abb3",
   "./a11y-core.css?v=a11y-v1": "c3829667c87b46bbe7effd4ca4e9732f02b58ed849c4ac481f9be7ef02026aac",
   "./a11y-core.js?v=a11y-v1": "633500e94e202d7035bccb5868f64d273c67324f1962e4c8b2e2df741ca5c6c5",
-  "./offline-status.css?v=offline-v1": "4760d6b1570b482eff9c79d69f97156b288333271a53bfe1b9428c73e7389ea4",
-  "./offline-status.js?v=offline-v1": "6991cef73a9adf91fccdfa36c5a947dd3d8181eb393b4f744abc1d78a08b8493",
+  "./offline-status.css?v=offline-v2": "da9bd572435484b98efc921273e7f244fb68ea18b9a926f6a5e928e6dcd87d58",
+  "./offline-status.js?v=offline-v2": "5bc0b303252cde7759111dd655d61f26f1294ceac3d2c3f051a2d22453ecbbf0",
   "./icons/icon-192.png": "777ce5566fbeff0f2e384c787c8dde4f47d7c869e455c6e577a503decd4f1683",
   "./icons/icon-512.png": "86459109582f82b1d891a3e5a82723fefd21a3c65e9d0d22ab4dae33bb540520",
 /* sw-manifest:end */
@@ -313,6 +313,10 @@ self.addEventListener('fetch', event => {
       const response = await fetch(request, {cache: 'no-store'});
       const contentType = response.headers.get('content-type') || '';
       if (isDocumentRequest(request) && !contentType.includes('text/html')) return offlineFallback(request);
+      // API reads are live: a dynamic JSON body (the ~5MB content document, the
+      // meta totals) must never be written into the shell cache. It bloats the
+      // cache and can pin a stale catalogue on a device that reconnects.
+      if (requestUrl.pathname.startsWith('/api/')) return response;
       return cacheNetworkResponse(request, response);
     } catch (_) {
       return offlineFallback(request);

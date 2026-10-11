@@ -52,5 +52,23 @@ test('meta carries per-category totals, kept out of the integrity counts', sourc
 test('the bundle carries the same per-category meta', bundle.includes('categoryCountsOf') && bundle.includes('categories'));
 test('the client fetches meta counts when the bank is empty', vmTool.includes('ensureCloudCounts') && vmTool.includes("fetch('/api/content/meta'"));
 test('hydration is public and carries no retired identity dependency', !/AHAuth|ahPubToken|authHeaders|\/api\/state/.test(cloud));
+
+/* Owner report (2026-10-11): "still zero" + "something sinking at the bottom".
+   The 30-card starter seed was planted on every cold load after the cloud pull,
+   so a device whose bank was only the seed showed "30 words" for ever and the
+   cloud short-circuit never re-fetched. And the offline pill floated over the
+   bottom nav. */
+test('the starter seed is off by default so the bank stays cloud-authoritative', vmTool.includes('AH_VOCAB_SEED_ENABLED === true) await seedCategoryA()'));
+test('a device behind the server pulls the whole bank, bypassing the sig short-circuit', vmTool.includes('refreshBankFromCloud') && /state\.records\.length < cloudTotal/.test(vmTool) && vmTool.includes("fetch('/api/content'"));
+test('the planted starter cards are removed once the real bank lands', vmTool.includes("record.id.startsWith('vm-seed-a-')") && vmTool.includes('dbDelRaw'));
+test('the offline pill sits above the bottom nav, never over it', readFileSync('offline-status.css','utf8').includes('bottom:calc(70px + env(safe-area-inset-bottom,0px))'));
+test('the pill never shows a lingering "syncing" state over the nav', !readFileSync('offline-status.js','utf8').includes('সিংক হচ্ছে'));
+test('the vocabulary page clears the sticky bottom nav', vmTool.includes('padding-bottom:calc(74px + env(safe-area-inset-bottom,0px))'));
+
+/* A changed asset under an unchanged ?v= is served immutable for a year, so a
+   device keeps the old file and the fix never lands. Every tool asset edited
+   alongside the bank must carry a fresh token. */
+const indexHtml = readFileSync('index.html', 'utf8');
+test('the vocabulary tool and the sync bridge carry fresh asset tokens', indexHtml.includes('vocabulary-master-tool.js?v=vm-scroll50-v109') && indexHtml.includes('cloud-content-sync.js?v=vm-d1meta-v222'));
 console.log(`\nPUBLIC CONTENT CORE: ${pass} pass / ${fail} fail`);
 if (fail) process.exit(1);
