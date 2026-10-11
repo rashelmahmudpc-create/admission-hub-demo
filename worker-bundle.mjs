@@ -25285,9 +25285,11 @@ var VoiceAgentSession = class {
     if (gateResponse) return gateResponse;
     if (url.pathname.endsWith("/health")) {
       const pools = await this.pools();
+      const gateway = pools.llm.some((p) => typeof p.url === "string" && p.url.includes("gateway.ai.cloudflare.com"));
       return Response.json({
         ok: true,
         version: VOICE_AGENT_VERSION,
+        gateway,
         pools: { stt: pools.stt.length, llm: pools.llm.length, tts: pools.tts.length }
       });
     }

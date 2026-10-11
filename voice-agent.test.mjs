@@ -376,6 +376,23 @@ function makeSession(env = POOLS) {
     p.tts.some(x => x.id === 'gemini-tts') && p.tts.length === 11);
   t('P23-১০৯. Cartesia still leads the tts pool when it is bound',
     p.tts[0].id === 'cartesia' && p.tts.findIndex(x => x.id === 'gemini-tts') > 0);
+  t('P23-১০৪b. with a gateway configured the Groq pool tries the gateway first, then direct',
+    await (async () => {
+      const g = await new VoiceAgentSession(ctx(), {
+        GROQ_API_KEY: 'gsk_one', CF_ACCOUNT_ID: 'acct123', CF_GATEWAY_ID: 'inflowsky',
+      }).pools();
+      const groq = g.llm.filter(x => x.id === 'groq-llama');
+      return groq.length === 2
+        && groq[0].url === 'https://gateway.ai.cloudflare.com/v1/acct123/inflowsky/groq/chat/completions'
+        && groq[1].url === null
+        && groq[0].failoverOnAnyError === true;
+    })());
+  t('P23-১০৪c. without a gateway the Groq pool stays a single direct entry',
+    await (async () => {
+      const g = await new VoiceAgentSession(ctx(), { GROQ_API_KEY: 'gsk_one' }).pools();
+      const groq = g.llm.filter(x => x.id === 'groq-llama');
+      return groq.length === 1 && groq[0].url === null;
+    })());
 }
 
 /* ── ১৬b. A key with no variable slot is read from KV ── */
