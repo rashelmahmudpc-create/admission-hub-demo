@@ -17,7 +17,7 @@ const H = readFileSync('index.html', 'utf8');
 const SW = readFileSync('sw.js', 'utf8');
 
 /* ── ১. same-origin-পথ ── */
-t('১. _worker.js: /api/voice → voice-worker (এবং /api/* → মূল-worker অটুট)', WK.includes("url.pathname.startsWith('/api/voice')") && WK.includes("const VOICE_ORIGIN = 'https://admission-voice.admissionhub.workers.dev'") && WK.includes("const base = url.pathname.startsWith('/api/voice') ? VOICE_ORIGIN : ORIGIN"));
+t('১. _worker.js: /api/voice → voice-worker, /api/voice/agent|login|session → মূল-worker (অটুট)', WK.includes("url.pathname.startsWith('/api/voice') ? VOICE_ORIGIN : ORIGIN") && WK.includes("const VOICE_ORIGIN = 'https://admission-voice.admissionhub.workers.dev'") && WK.includes('AGENT_API.test(url.pathname) ? ORIGIN'));
 t('২. ক্লায়েন্ট-ডিফল্ট same-origin ("" → /api/voice) + voiceOff-পৃথক', VE.includes("const DEFAULT_ENDPOINT = '';") && VE.includes('fetch(proxyUrl + \'/api/voice\',') && VE.includes('const configured = () => !voiceOff;'));
 t('৩. মাইগ্রেশন: পুরনো workers.dev সেভ-ভ্যালু → same-origin', VE.includes("if (saved && saved.includes('.workers.dev')) saved = '';"));
 t('৪. voice-worker-allowlist-এ pages.dev (CORS-ফাঁক-বন্ধ)', VW.includes("pages\\.dev$/.test(origin)") && VW.includes('P20 (v204)'));

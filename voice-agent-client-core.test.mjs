@@ -17,14 +17,14 @@ t('P23-৫৭. client core self-validation is clean', validateVoiceClientCore().
 /* ── Endpoint ── */
 t('P23-৫৮. the default endpoint is the Worker socket path',
   DEFAULT_WORKER === 'https://admission-gk.admissionhub.workers.dev' && VOICE_PATH === '/api/voice/agent');
-t('P23-৫৯. a Pages page dials the Worker over wss',
-  resolveEndpoint('https://admissionhub.pages.dev/index.html') === 'wss://admission-gk.admissionhub.workers.dev/api/voice/agent');
+t('P23-৫৯. a Pages page dials its own origin, so the session cookie travels',
+  resolveEndpoint('https://admissionhub.pages.dev/index.html') === 'wss://admissionhub.pages.dev/api/voice/agent');
 t('P23-৬০. a page on the Worker origin talks to itself, surviving a rename',
   resolveEndpoint('https://admission-gk.admissionhub.workers.dev/x') === 'wss://admission-gk.admissionhub.workers.dev/api/voice/agent'
   && isSameWorkerOrigin('https://admission-gk.admissionhub.workers.dev/x'));
-t('P23-৬১. a local page dials the https Worker over wss, and a local Worker over ws',
-  resolveEndpoint('http://localhost:8787/x') === 'wss://admission-gk.admissionhub.workers.dev/api/voice/agent'
-  && resolveEndpoint('http://localhost:8787/x', 'http://localhost:8787') === 'ws://localhost:8787/api/voice/agent');
+t('P23-৬১. a local page talks to itself over ws, and a non-http page falls back to the Worker',
+  resolveEndpoint('http://localhost:8787/x', 'http://localhost:8787') === 'ws://localhost:8787/api/voice/agent'
+  && resolveEndpoint('file:///tmp/x.html') === 'wss://admission-gk.admissionhub.workers.dev/api/voice/agent');
 t('P23-৬২. an explicit override wins, so staging needs no code change',
   resolveEndpoint('https://admissionhub.pages.dev/', DEFAULT_WORKER, 'https://staging.example.workers.dev')
     === 'wss://staging.example.workers.dev/api/voice/agent');
@@ -32,77 +32,77 @@ t('P23-৬৩. a malformed page URL cannot throw',
   typeof resolveEndpoint('not-a-url') === 'string' && resolveEndpoint('not-a-url').startsWith('wss://'));
 
 /* ── Ticket handshake ── */
-t('P23-৮৪. the ticket endpoint sits beside the socket on the same origin',
-  resolveTicketUrl('https://admissionhub.pages.dev/') === 'https://admission-gk.admissionhub.workers.dev/api/voice/agent/ticket'
+t('P23-৬৪. the ticket endpoint sits beside the socket on the same origin',
+  resolveTicketUrl('https://admissionhub.pages.dev/') === 'https://admissionhub.pages.dev/api/voice/agent/ticket'
   && resolveTicketUrl('https://admission-gk.admissionhub.workers.dev/x') === 'https://admission-gk.admissionhub.workers.dev/api/voice/agent/ticket');
-t('P23-৮৫. the ticket request carries the app header the worker already gates on',
+t('P23-৬৫. the ticket request carries the app header the worker already gates on',
   ticketHeaders()['X-AH-App'] === 'admission-hub' && !('X-Voice-Token' in ticketHeaders()));
-t('P23-৮৬. an access token is only sent when one is configured',
+t('P23-৬৬. an access token is only sent when one is configured',
   ticketHeaders('tok')['X-Voice-Token'] === 'tok');
-t('P23-৮৭. a ticket rides on the socket URL as a query parameter',
+t('P23-৬৭. a ticket rides on the socket URL as a query parameter',
   withTicket('wss://w.dev/api/voice/agent', 'abc123') === 'wss://w.dev/api/voice/agent?ticket=abc123'
   && withTicket('wss://w.dev/api/voice/agent', '') === 'wss://w.dev/api/voice/agent');
-t('P23-৮৮. a malformed socket URL is returned unchanged rather than throwing',
+t('P23-৬৮. a malformed socket URL is returned unchanged rather than throwing',
   withTicket('not a url', 't') === 'not a url');
 
 /* ── Microphone ── */
-t('P23-৬৪. the mic is requested mono with the three call filters on',
+t('P23-৬৯. the mic is requested mono with the three call filters on',
   (() => { const c = micConstraints(); return c.audio.channelCount === 1 && c.audio.echoCancellation
     && c.audio.noiseSuppression && c.audio.autoGainControl && c.video === false; })());
-t('P23-৬৫. no camera is ever requested', micConstraints().video === false);
+t('P23-৭০. no camera is ever requested', micConstraints().video === false);
 
 /* ── Recorder container ── */
-t('P23-৬৬. Opus-in-WebM is preferred when the browser supports it',
+t('P23-৭১. Opus-in-WebM is preferred when the browser supports it',
   pickMime(['audio/webm;codecs=opus', 'audio/mp4']) === 'audio/webm;codecs=opus');
-t('P23-৬৭. Safari falls back to mp4',
+t('P23-৭২. Safari falls back to mp4',
   pickMime(['audio/mp4']) === 'audio/mp4');
-t('P23-৬৮. a codec-less webm report still resolves',
+t('P23-৭৩. a codec-less webm report still resolves',
   pickMime(['audio/webm']) === 'audio/webm');
-t('P23-৬৯. an unsupported browser yields null instead of a bad type',
+t('P23-৭৪. an unsupported browser yields null instead of a bad type',
   pickMime([]) === null && pickMime(undefined) === null && pickMime(null) === null);
-t('P23-৭০. the preference list is frozen so a caller cannot reorder it',
+t('P23-৭৫. the preference list is frozen so a caller cannot reorder it',
   Object.isFrozen(MIME_PREFERENCE) && MIME_PREFERENCE[0].includes('opus'));
 
 /* ── Phases ── */
-t('P23-৭১. every phase has a Bengali label',
+t('P23-৭৬. every phase has a Bengali label',
   Object.values(PHASE).every(p => phaseLabel(p).length > 0));
-t('P23-৭২. an unknown phase has no label rather than a wrong one',
+t('P23-৭৭. an unknown phase has no label rather than a wrong one',
   phaseLabel('wat') === '');
-t('P23-৭৩. the push-to-talk phase says so', phaseLabel(PHASE.READY).includes('চেপে'));
+t('P23-৭৮. the push-to-talk phase says so', phaseLabel(PHASE.READY).includes('চেপে'));
 
 /* ── Latency line ── */
-t('P23-৭৪. latency shows only the stages that were measured',
+t('P23-৭৯. latency shows only the stages that were measured',
   (() => { const s = formatLatency({ stt: 280, llm: 480, tts: 390, total: 1250 });
     return s.includes('শোনা') && s.includes('ভাবা') && s.includes('কণ্ঠ') && s.includes('মোট'); })());
-t('P23-৭৫. a missing stage is omitted, not shown as zero',
+t('P23-৮০. a missing stage is omitted, not shown as zero',
   (() => { const s = formatLatency({ stt: 200, total: 900 }); return s.includes('শোনা') && !s.includes('ভাবা'); })());
-t('P23-৭৬. no measurement yields an empty line',
+t('P23-৮১. no measurement yields an empty line',
   formatLatency(null) === '' && formatLatency({}) === '');
 
 /* ── Payload ── */
-t('P23-৭৭. bytes encode to base64 that decodes back to the same bytes',
+t('P23-৮২. bytes encode to base64 that decodes back to the same bytes',
   (() => {
     const src = new Uint8Array([0, 1, 2, 250, 255]);
     const b64 = bytesToBase64(src);
     return Buffer.from(b64, 'base64').equals(Buffer.from(src));
   })());
-t('P23-৭৮. a large clip encodes without blowing the stack (chunked)',
+t('P23-৮৩. a large clip encodes without blowing the stack (chunked)',
   (() => { const big = new Uint8Array(200000).fill(7); return Buffer.from(bytesToBase64(big), 'base64').length === 200000; })());
 
 /* ── The page itself ── */
 {
   const src = readFileSync('voice-agent.html', 'utf8');
-  t('P23-৭৯. the page has a push-to-talk control and a transcript area',
+  t('P23-৮৪. the page has a push-to-talk control and a transcript area',
     /id="talk"/.test(src) && /id="log"/.test(src));
-  t('P23-৮০. the page never stores a provider key in the browser',
+  t('P23-৮৫. the page never stores a provider key in the browser',
     !/localStorage[\s\S]{0,80}(CARTESIA|ELEVENLABS|GROQ|API_KEY)/.test(src) && !/sk-[A-Za-z0-9]{20,}/.test(src));
-  t('P23-৮১. the page names the owner as স্যার',
+  t('P23-৮৬. the page names the owner as স্যার',
     src.includes('স্যার'));
-  t('P23-৮২. the page asks for the mic only when the owner presses the button',
+  t('P23-৮৭. the page asks for the mic only when the owner presses the button',
     /getUserMedia/.test(src) && /(pointerdown|click)/.test(src));
-  t('P23-৮৩. the page surfaces a latency line rather than hiding it',
+  t('P23-৮৮. the page surfaces a latency line rather than hiding it',
     /formatLatency|লেটেন্সি|মোট/.test(src));
-  t('P23-৮৪. the page sends the owner to the password page when the cookie is gone',
+  t('P23-৮৯. the page sends the owner to the password page when the cookie is gone',
     /status === 401/.test(src) && /location\.replace\('\/voice-agent-login'\)/.test(src));
 
   /* ── The PWA shell and the gate page ── */
@@ -110,20 +110,20 @@ t('P23-৭৮. a large clip encodes without blowing the stack (chunked)',
   const manifest = readFileSync('voice-agent.webmanifest', 'utf8');
   const worker = readFileSync('_worker.js', 'utf8');
 
-  t('P23-৮৫. the login page posts the password to the worker, never stores it',
+  t('P23-৯০. the login page posts the password to the worker, never stores it',
     /\/api\/voice\/login/.test(login) && /type="password"/.test(login) &&
     !/localStorage/.test(login));
-  t('P23-৮৬. the voice page is installable (manifest + iOS meta + theme)',
+  t('P23-৯১. the voice page is installable (manifest + iOS meta + theme)',
     /rel="manifest" href="\/voice-agent\.webmanifest"/.test(src) &&
     /apple-mobile-web-app-capable/.test(src) && /name="theme-color"/.test(src));
-  t('P23-৮৭. the manifest is standalone, scoped to the page, with real icons',
+  t('P23-৯২. the manifest is standalone, scoped to the page, with real icons',
     JSON.parse(manifest).display === 'standalone' &&
     JSON.parse(manifest).scope === '/voice-agent' &&
     JSON.parse(manifest).icons.length >= 2);
-  t('P23-৮৮. Pages routes the voice page and its login, or the gate has no page',
+  t('P23-৯৩. Pages routes the voice page and its login, or the gate has no page',
     worker.includes("'/voice-agent'") && worker.includes("'/voice-agent-login'") &&
     worker.includes("'/voice-agent.html'") && worker.includes('AGENT_API'));
-  t('P23-৮৯. the page is not indexable, so the owner page stays private',
+  t('P23-৯৪. the page is not indexable, so the owner page stays private',
     /noindex/.test(src) && /noindex/.test(login));
 }
 

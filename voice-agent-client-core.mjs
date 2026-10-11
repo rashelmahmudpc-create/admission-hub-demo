@@ -26,17 +26,37 @@ export function isSameWorkerOrigin(pageHref, workerUrl = DEFAULT_WORKER) {
 }
 
 /**
+ * Can the page reach the socket on its own origin?
+ *
+ * A page served over http(s) is served alongside the proxy that forwards
+ * /api/voice/agent to the Worker (Pages advanced mode, or `wrangler pages dev`),
+ * so it should dial itself. This is not just tidiness: the owner gate is a
+ * cookie, and a browser only sends a cookie to the origin that set it. A page on
+ * Pages dialling the Worker directly would carry no cookie and be refused.
+ */
+function canUsePageOrigin(pageHref) {
+  try {
+    const p = new URL(pageHref).protocol;
+    return p === 'http:' || p === 'https:';
+  } catch (_) {
+    return false;
+  }
+}
+
+/**
  * Resolve the WebSocket URL for the voice session.
  *
- * A page on the Worker origin talks to itself, which keeps working if the Worker
- * is renamed. Anywhere else — Pages, localhost — it dials the configured Worker.
- * An explicit override wins, so a staging Worker can be pointed at without a
+ * Same origin first, so the session cookie travels with the socket; a non-http
+ * page (file://, an opaque origin) falls back to the configured Worker. An
+ * explicit override still wins, so a staging Worker can be pointed at without a
  * code change.
  */
 export function resolveEndpoint(pageHref, workerUrl = DEFAULT_WORKER, override = '') {
   const base = override || workerUrl || DEFAULT_WORKER;
   let origin;
-  if (!override && isSameWorkerOrigin(pageHref, base)) {
+  if (override) {
+    origin = base;
+  } else if (canUsePageOrigin(pageHref) || isSameWorkerOrigin(pageHref, base)) {
     try { origin = new URL(pageHref).origin; } catch (_) { origin = base; }
   } else {
     origin = base;
@@ -57,7 +77,9 @@ function toSocketUrl(base, origin) {
 export function resolveTicketUrl(pageHref, workerUrl = DEFAULT_WORKER, override = '') {
   const base = override || workerUrl || DEFAULT_WORKER;
   let origin;
-  if (!override && isSameWorkerOrigin(pageHref, base)) {
+  if (override) {
+    origin = base;
+  } else if (canUsePageOrigin(pageHref) || isSameWorkerOrigin(pageHref, base)) {
     try { origin = new URL(pageHref).origin; } catch (_) { origin = base; }
   } else {
     origin = base;
