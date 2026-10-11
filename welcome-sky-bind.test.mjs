@@ -133,8 +133,12 @@ test('Get Started turns blue within three seconds of the story starting', async 
 
 test('the welcome fills the screen and the guest entry matches the other buttons', async () => {
   const css = readFileSync('welcome-onboarding.css', 'utf8');
-  assert.ok(css.includes('.ahw-sky .band{top:0;bottom:0}'),
-    'the story band must not reserve a bottom bar');
+  assert.ok(/\.ahw-sky \.band\{top:calc\(env\(safe-area-inset-top,0px\) \+ 54px\);bottom:calc\(env\(safe-area-inset-bottom,0px\) \+ 86px\)\}/.test(css),
+    'the stage must sit inside the band: brand row above, Get Started below');
+  assert.ok(JS.includes('Math.min(r.width/390,r.height/640)'), 'the stage must be fitted, never cropped');
+  assert.ok(/\.ahw-sky\.ahw-sky-board\{padding-top:0;padding-bottom:0;/.test(css),
+    'the background must be full-bleed under the status bar and home indicator');
+  assert.ok(JS.includes('ah-statusbar-cap') && JS.includes('theme-color'), 'the status bar must follow the screen colour');
   assert.ok(/\.ah-welcome-sky \[data-role="welcome-language"\]\{display:none/.test(css),
     'the language picker must stay hidden');
   assert.ok(/\.ahw-sky \.b\.g\{[^}]*border:0/.test(css),
