@@ -25,6 +25,18 @@ if (block) {
 }
 test('public content route still applies query pagination', source.includes("url.searchParams.get('limit')") && source.includes("url.searchParams.get('offset')") && bundle.includes('url.searchParams.get("limit")'));
 test('cloud hydration keeps offline local-data fallback', cloud.includes('__ahCloudOffline') && cloud.includes('applySeedIfEmpty') && cloud.includes('putManyFast'));
+
+/* The vocabulary bank is thousands of rows; writing it before render() is what
+   made first load look stuck. It must be deferred past the first paint. */
+const vmTool = readFileSync('vocabulary-master-tool.js', 'utf8');
+test('vocabulary hydration is deferred, not on the first-paint path', (() => {
+  const renderAt = cloud.indexOf('if (typeof render === \'function\') render();');
+  const vmWriteAt = cloud.indexOf("putManyFast('vocabularyMaster'");
+  return renderAt > -1 && vmWriteAt > -1 && renderAt < vmWriteAt;
+})());
+test('the deferred hydrate runs after a yield and returns a promise', cloud.includes('hydrateVocabularyInBackground') && /await new Promise\(r => setTimeout\(r, 0\)\)/.test(cloud));
+test('a failed hydrate leaves the signature unsaved so it retries', /return false; \/\* a failed hydrate leaves the sig unsaved/.test(cloud));
+test('the vocabulary tool exposes reload for the post-hydrate refresh', /async reload\(\)/.test(vmTool) && vmTool.includes('loadRecords(true)'));
 test('hydration is public and carries no retired identity dependency', !/AHAuth|ahPubToken|authHeaders|\/api\/state/.test(cloud));
 console.log(`\nPUBLIC CONTENT CORE: ${pass} pass / ${fail} fail`);
 if (fail) process.exit(1);

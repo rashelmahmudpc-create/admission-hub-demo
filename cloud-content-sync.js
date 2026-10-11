@@ -165,10 +165,33 @@
     await putManyFast('topics', topics);
     await putManyFast('questions', questions);
     if (vocabulary.length) await putManyFast('vocabulary', vocabulary.filter(x => x && x.id));
-    if (vocabularyMaster.length) await putManyFast('vocabularyMaster', vocabularyMaster.filter(x => x && x.id));
     if (typeof loadCache === 'function') await loadCache();
     if (typeof render === 'function') render();
+    /* The vocabulary bank is thousands of rows and is read on its own route, so
+       it must not sit on the first-paint path: writing 6k+ rows before render()
+       is what made the app look like it was loading for hours. Paint from the
+       core stores, then hydrate the bank in the background. `applied` is
+       returned so the caller saves the signature only once the bank has landed
+       too — otherwise a half-hydrated device would look up to date. */
+    if (vocabularyMaster.length) return hydrateVocabularyInBackground(vocabularyMaster.filter(x => x && x.id));
     return true;
+  };
+
+  let vocabularyHydrating = null;
+  const hydrateVocabularyInBackground = rows => {
+    if (vocabularyHydrating) return vocabularyHydrating;
+    vocabularyHydrating = (async () => {
+      try {
+        await new Promise(r => setTimeout(r, 0)); /* let the first paint land */
+        await putManyFast('vocabularyMaster', rows);
+        const vm = window.VocabularyMaster;
+        if (vm && typeof vm.reload === 'function') await vm.reload();
+        return true;
+      } catch (_) {
+        return false; /* a failed hydrate leaves the sig unsaved, so it retries */
+      } finally { vocabularyHydrating = null; }
+    })();
+    return vocabularyHydrating;
   };
 
   const applySeedIfEmpty = async () => {

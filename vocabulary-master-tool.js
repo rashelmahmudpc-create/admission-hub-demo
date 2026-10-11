@@ -1010,6 +1010,12 @@
     const modes = ['meaning','fill']; if (relations(record, 'synonyms').length) modes.push('synonym'); if (relations(record, 'antonyms').length) modes.push('antonym'); return shuffle(modes)[0];
   }
   const api = {
+    /* Called after the background cloud hydration finishes: re-read the store so
+       the bank shows the freshly written words without a manual refresh. */
+    async reload() {
+      await loadRecords(true);
+      refreshCategoryResults();
+    },
     async render() {
       await loadRecords();
       restoreResume(String(Router?.path || ''));
