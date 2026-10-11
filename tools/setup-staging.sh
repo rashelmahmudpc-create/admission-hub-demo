@@ -55,7 +55,23 @@ fi
 [ -n "$D1_ID" ] || { echo "setup-staging: could not create or find D1 'admission-profile-${SUFFIX}'" >&2; exit 1; }
 
 echo "==> R2 bucket"
-npx --yes wrangler@4.35.0 r2 bucket create "admission-hub-${SUFFIX}" 2>&1 | tail -1 || true
+# Creating an existing bucket is an error, so treat a failed create as "look for
+# it" rather than "give up". The bucket is a hard requirement: the staging Worker
+# binds FILE_BUCKET to it, and wrangler refuses to deploy a binding that points at
+# a bucket that does not exist. Fail here with a clear message instead of letting
+# the deploy fail later with a less obvious one.
+R2_CREATE=$(npx --yes wrangler@4.35.0 r2 bucket create "admission-hub-${SUFFIX}" 2>&1 || true)
+if ! printf '%s' "$R2_CREATE" | grep -qiE "created|already exists"; then
+  R2_LIST=$(npx --yes wrangler@4.35.0 r2 bucket list 2>&1 || true)
+  if ! printf '%s' "$R2_LIST" | grep -q "admission-hub-${SUFFIX}"; then
+    echo "setup-staging: could not create or find R2 bucket 'admission-hub-${SUFFIX}'." >&2
+    echo "  The Cloudflare token likely lacks R2:Edit. Add that permission to" >&2
+    echo "  CLOUDFLARE_API_TOKEN and re-run; KV and D1 above were already made." >&2
+    printf '%s\n' "$R2_CREATE" >&2
+    exit 1
+  fi
+fi
+echo "    admission-hub-${SUFFIX} ready"
 
 echo "==> Filling $CONFIG"
 node -e '

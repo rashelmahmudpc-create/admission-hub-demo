@@ -1,0 +1,86 @@
+name: Provision Staging Environment (manual)
+
+# P19 — create the staging resources and deploy the isolated staging Worker.
+#
+# This runs the one step that needs Cloudflare credentials. Those credentials
+# already exist as repository secrets (CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID)
+# and are the same ones the production deploy uses — so provisioning staging does
+# NOT need a new token from anyone. An earlier version of this phase said it did;
+# that was wrong, and the owner caught it (2026-10-11: "প্রথমতো cloudflare এর
+# এক্সেস GitHub এ আছে").
+#
+# Every resource it creates carries the -staging suffix and the isolation guard
+# refuses to proceed if a production id, a production name, an unfilled
+# placeholder or a cron trigger is present. Production is never touched.
+#
+# Required repository secrets: CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type PROVISION to create the staging resources and deploy staging
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: admission-hub-staging-provision
+  cancel-in-progress: false
+
+jobs:
+  provision:
+    if: ${{ inputs.confirmation == 'PROVISION' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Create the staging resources and fill the config
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: bash tools/setup-staging.sh
+      # The guard runs AFTER provisioning, not before: it refuses a config that
+      # still carries a REPLACE_ placeholder, and the whole point of the step
+      # above is to fill them. setup-staging.sh already calls it once at the end;
+      # this second call is the hard gate on the exact file the deploy uses.
+      - name: Refuse to deploy an unisolated staging config
+        run: node scripts/check-staging-isolation.mjs wrangler.staging.toml
+      - name: Verify the committed Worker bundle matches its sources
+        run: npm run check:worker-bundle
+      - name: Deploy staging Worker
+        uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd # v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: '4.35.0'
+          command: deploy --config wrangler.staging.toml
+      - name: Report the filled staging ids for the record
+        if: always()
+        run: |
+          echo "Filled staging config (ids are not secrets):"
+          grep -nE '^\s*(binding|id|database_id|bucket_name|name)\s*=' wrangler.staging.toml || true
+      # The ids must live in the repo, not only in this runner: the next
+      # deploy-staging run starts from a fresh checkout and would otherwise
+      # deploy the placeholder config and be refused by the isolation guard.
+      # Only wrangler.staging.toml is committed -- never the production config.
+      - name: Persist the filled staging ids
+        if: success()
+        run: |
+          if git diff --quiet -- wrangler.staging.toml; then
+            echo "wrangler.staging.toml unchanged; nothing to persist."
+            exit 0
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add wrangler.staging.toml
+          git commit -m "P19: fill staging resource ids (provisioned by workflow)"
+          git push
