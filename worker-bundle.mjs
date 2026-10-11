@@ -2270,6 +2270,14 @@ var countsOf = (doc) => ({
   vocabulary: (doc.vocabulary || []).length,
   vocabularyMaster: (doc.vocabularyMaster || []).length
 });
+var categoryCountsOf = (doc) => {
+  const out = {};
+  for (const row of doc.vocabularyMaster || []) {
+    const key = row && row.category;
+    if (key) out[key] = (out[key] || 0) + 1;
+  }
+  return out;
+};
 var paginateContent = (doc, limit, offset) => {
   if (!doc || typeof doc !== "object") return doc;
   const rawLimit = Number(limit);
@@ -2369,7 +2377,16 @@ var publishGlobal = async (env, full) => {
   } catch (_) {
   }
   if (previousMeta.sig === sig && previousMeta.v) {
-    return { published: false, unchanged: true, v: previousMeta.v, counts: previousMeta.counts || countsOf({ subjects, topics, questions, vocabulary, vocabularyMaster }) };
+    const counts = previousMeta.counts || countsOf({ subjects, topics, questions, vocabulary, vocabularyMaster });
+    if (!previousMeta.categories) {
+      const categories = categoryCountsOf({ vocabularyMaster });
+      try {
+        await env.PUB_KV.put("pubContentMeta", JSON.stringify({ ...previousMeta, counts, categories }));
+      } catch (_) {
+      }
+      return { published: false, unchanged: true, v: previousMeta.v, counts, categories };
+    }
+    return { published: false, unchanged: true, v: previousMeta.v, counts, categories: previousMeta.categories };
   }
   let exams = [{ id: "mock1", title: "মক পরীক্ষা ১", mins: 15, n: Math.min(15, questions.length || 1), published: true, desc: "সব বিষয় মিশিয়ে" }];
   try {
@@ -2398,7 +2415,7 @@ var publishGlobal = async (env, full) => {
   }
   if (fingerprintGlobal(roundTrip) !== sig) return { error: "integrity" };
   await env.PUB_KV.put("pubContent", raw);
-  const meta = { v: doc.v, at: doc.at, sig: doc.sig, counts: countsOf(doc) };
+  const meta = { v: doc.v, at: doc.at, sig: doc.sig, counts: countsOf(doc), categories: categoryCountsOf(doc) };
   await env.PUB_KV.put("pubContentMeta", JSON.stringify(meta));
   return { published: true, v: doc.v, counts: meta.counts };
 };
@@ -2481,7 +2498,7 @@ var public_worker_default = {
         if (raw) return json(JSON.parse(raw));
         const full = await env.PUB_KV.get("pubContent");
         const doc = full ? JSON.parse(full) : { v: 0, at: 0, questions: [] };
-        return json({ v: doc.v || 0, at: doc.at || 0, sig: doc.sig || "", counts: countsOf(doc) });
+        return json({ v: doc.v || 0, at: doc.at || 0, sig: doc.sig || "", counts: countsOf(doc), categories: categoryCountsOf(doc) });
       }
       if (path === "/api/content" && request.method === "GET") {
         if (env.PROFILE_DB) {

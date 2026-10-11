@@ -69,6 +69,18 @@ const countsOf = doc => ({
   vocabulary: (doc.vocabulary || []).length,
   vocabularyMaster: (doc.vocabularyMaster || []).length
 });
+/* Per-category totals ride in the meta (tiny, 26 keys) so the A–Z grid can show
+   real numbers on a first-ever open, before the bank itself is written to the
+   device. Kept out of countsOf on purpose: that object is compared byte-for-byte
+   by verifyIntegrity, so widening it would flag every already-stored meta. */
+const categoryCountsOf = doc => {
+  const out = {};
+  for (const row of (doc.vocabularyMaster || [])) {
+    const key = row && row.category;
+    if (key) out[key] = (out[key] || 0) + 1;
+  }
+  return out;
+};
 const paginateContent = (doc, limit, offset) => {
   if (!doc || typeof doc !== 'object') return doc;
   const rawLimit = Number(limit);
@@ -158,7 +170,16 @@ export const publishGlobal = async (env, full) => {
   let previousMeta = { v: 0 };
   try { previousMeta = JSON.parse((await env.PUB_KV.get('pubContentMeta')) || '{"v":0}'); } catch (_) {}
   if (previousMeta.sig === sig && previousMeta.v) {
-    return { published: false, unchanged: true, v: previousMeta.v, counts: previousMeta.counts || countsOf({ subjects, topics, questions, vocabulary, vocabularyMaster }) };
+    /* The body is unchanged, but a meta written before `categories` existed has
+       no per-category totals — backfill them once so the A–Z grid can show real
+       numbers on a first-ever open without a content re-publish. */
+    const counts = previousMeta.counts || countsOf({ subjects, topics, questions, vocabulary, vocabularyMaster });
+    if (!previousMeta.categories) {
+      const categories = categoryCountsOf({ vocabularyMaster });
+      try { await env.PUB_KV.put('pubContentMeta', JSON.stringify({ ...previousMeta, counts, categories })); } catch (_) {}
+      return { published: false, unchanged: true, v: previousMeta.v, counts, categories };
+    }
+    return { published: false, unchanged: true, v: previousMeta.v, counts, categories: previousMeta.categories };
   }
 
   let exams = [{ id: 'mock1', title: 'মক পরীক্ষা ১', mins: 15, n: Math.min(15, questions.length || 1), published: true, desc: 'সব বিষয় মিশিয়ে' }];
@@ -192,7 +213,7 @@ export const publishGlobal = async (env, full) => {
   }
   if (fingerprintGlobal(roundTrip) !== sig) return { error: 'integrity' };
   await env.PUB_KV.put('pubContent', raw);
-  const meta = { v: doc.v, at: doc.at, sig: doc.sig, counts: countsOf(doc) };
+  const meta = { v: doc.v, at: doc.at, sig: doc.sig, counts: countsOf(doc), categories: categoryCountsOf(doc) };
   await env.PUB_KV.put('pubContentMeta', JSON.stringify(meta));
   return { published: true, v: doc.v, counts: meta.counts };
 };
@@ -283,7 +304,7 @@ export default {
         if (raw) return json(JSON.parse(raw));
         const full = await env.PUB_KV.get('pubContent');
         const doc = full ? JSON.parse(full) : { v: 0, at: 0, questions: [] };
-        return json({ v: doc.v || 0, at: doc.at || 0, sig: doc.sig || '', counts: countsOf(doc) });
+        return json({ v: doc.v || 0, at: doc.at || 0, sig: doc.sig || '', counts: countsOf(doc), categories: categoryCountsOf(doc) });
       }
       if (path === '/api/content' && request.method === 'GET') {
         /* P13 — optional D1 fast path. Enabled by a flag row in content_meta

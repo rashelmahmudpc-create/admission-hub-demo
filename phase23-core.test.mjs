@@ -37,6 +37,20 @@ test('vocabulary hydration is deferred, not on the first-paint path', (() => {
 test('the deferred hydrate runs after a yield and returns a promise', cloud.includes('hydrateVocabularyInBackground') && /await new Promise\(r => setTimeout\(r, 0\)\)/.test(cloud));
 test('a failed hydrate leaves the signature unsaved so it retries', /return false; \/\* a failed hydrate leaves the sig unsaved/.test(cloud));
 test('the vocabulary tool exposes reload for the post-hydrate refresh', /async reload\(\)/.test(vmTool) && vmTool.includes('loadRecords(true)'));
+
+/* Owner voice note (2026-10-11): 50 words per scroll, real per-category counts
+   immediately (never a 0 flash), and one-time caching. */
+test('the vocabulary bank pages 50 at a time', /visible: 50/.test(vmTool) && vmTool.includes('state.visible += 50') && vmTool.includes('Load 50 more words'));
+test('scrolling loads the next page without a button press', vmTool.includes('vmLoadMoreSentinel') && vmTool.includes('IntersectionObserver') && vmTool.includes('api.loadMore()'));
+test('per-category counts are cached so a cold open shows real numbers', vmTool.includes("COUNTS_KEY = 'vmCategoryCounts'") && vmTool.includes('function categoryFoundCount') && vmTool.includes('categoryCounts()'));
+test('a category with no hydrated rows says "loading", not "0 words"', vmTool.includes('category-র শব্দ আসছে') && !/id="vmCategoryFound"[^`]*\$\{all\.length/.test(vmTool));
+
+/* A first-ever device has no cached counts, so the totals must come from the
+   meta endpoint. They stay out of countsOf because verifyIntegrity compares that
+   object byte-for-byte against already-stored metas. */
+test('meta carries per-category totals, kept out of the integrity counts', source.includes('const categoryCountsOf =') && source.includes('categories: categoryCountsOf(doc)') && !/vocabularyMaster: \(doc\.vocabularyMaster \|\| \[\]\)\.length,\s*\n\s*categories/.test(source));
+test('the bundle carries the same per-category meta', bundle.includes('categoryCountsOf') && bundle.includes('categories'));
+test('the client fetches meta counts when the bank is empty', vmTool.includes('ensureCloudCounts') && vmTool.includes("fetch('/api/content/meta'"));
 test('hydration is public and carries no retired identity dependency', !/AHAuth|ahPubToken|authHeaders|\/api\/state/.test(cloud));
 console.log(`\nPUBLIC CONTENT CORE: ${pass} pass / ${fail} fail`);
 if (fail) process.exit(1);
