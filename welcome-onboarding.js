@@ -42,7 +42,7 @@ const blend=()=>{
  const color=topColor()||lastColor;
  if(!color||color===applied)return;
  lastColor=applied=color;
- cap.style.cssText='position:fixed;top:0;left:0;right:0;height:max(env(safe-area-inset-top,0px),4px);background:'+color+';z-index:2147483000;pointer-events:none';
+ cap.style.cssText='position:fixed;top:0;left:0;right:0;height:calc(max(env(safe-area-inset-top,0px),4px) + 4px);background:linear-gradient(to bottom,'+color+' 0,'+color+' calc(100% - 4px),transparent 100%);z-index:2147483000;pointer-events:none';
  meta.setAttribute('content',color);
  document.documentElement.style.backgroundColor=color;
 };
