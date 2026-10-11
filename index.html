@@ -902,7 +902,7 @@ textarea{min-height:96px}
     const app=document.getElementById('app');
     const message=reason&&reason.message?String(reason.message):'Unexpected application error';
     console.error('[Admission Hub] recovered from runtime error:',reason);
-    if(app) app.innerHTML=`<main class="app-fallback" role="alert" data-admission-component="app-fallback"><div class="app-fallback-icon">⚠</div><h1>Something went wrong</h1><p>Your saved questions, vocabulary, progress, and settings were not deleted.</p><p class="app-fallback-detail">${message.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}</p><div class="app-fallback-actions"><button class="btn" type="button" onclick="window.__admissionRecover()">Try again</button><button class="btn ghost" type="button" onclick="window.__admissionGoDashboard()">Go to Dashboard</button></div></main>`;
+    if(app) app.innerHTML=`<main class="app-fallback" role="alert" data-admission-component="app-fallback"><div class="app-fallback-icon">⚠</div><h1>Something went wrong</h1><p>Your saved data may still be on this device; its status has not been verified.</p><p class="app-fallback-detail">${message.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}</p><div class="app-fallback-actions"><button class="btn" type="button" onclick="window.__admissionRecover()">Try again</button><button class="btn ghost" type="button" onclick="window.__admissionGoDashboard()">Go to Dashboard</button></div></main>`;
     document.body.classList.remove('keyboard-open');
     document.title=originalTitle;
   }
@@ -1186,10 +1186,52 @@ async function dbDel(store,id){
 }
 function dbDelPermanent(store,id){return dbDelRaw(store,id);}
 async function dbClear(store){
-  if(!persistentDataScope()){MEMORY_DB.get(store)?.clear();return true;}
-  const rows=await dbGetAll(store);
-  for(const row of rows) await dbDelRaw(store,row.id);
-  return true;
+  const counts=await dbClearStoresAtomically([store]);
+  return counts[store]||0;
+}
+async function dbClearStoresAtomically(stores){
+  const names=[...new Set((stores||[]).filter(Boolean))];
+  const counts=Object.create(null);
+  if(!names.length)return counts;
+  if(!persistentDataScope()){
+    for(const store of names){
+      const rows=[...(MEMORY_DB.get(store)?.values()||[])];
+      counts[store]=rows.length;
+      for(const row of rows) announceLocalWrite(store,row.id,'delete',null,Date.now());
+      MEMORY_DB.get(store)?.clear();
+    }
+    return counts;
+  }
+  const deferred=waitForBootStorage(()=>dbClearStoresAtomically(names));
+  if(deferred)return deferred;
+  if(!DB)throw new Error('Account storage is unavailable');
+  const KeyRange=window.IDBKeyRange;
+  if(!KeyRange||typeof KeyRange.bound!=='function')throw new Error('Scoped data reset is unavailable in this browser');
+  const prefix=String(DATA_SCOPE)+'::';
+  const range=KeyRange.bound(prefix,prefix+'\uffff');
+  const syncedIds=new Map();
+  await queueDb(()=>new Promise((resolve,reject)=>{
+    let tx,settled=false;
+    try{
+      tx=DB.transaction(names,'readwrite');
+      for(const name of names){
+        const objectStore=tx.objectStore(name);
+        const countRequest=objectStore.count(range);
+        countRequest.onsuccess=()=>{counts[name]=Number(countRequest.result)||0;};
+        if(STUDENT_SYNC_STORES.has(name)){
+          const rowsRequest=objectStore.getAll(range);
+          rowsRequest.onsuccess=()=>{syncedIds.set(name,(rowsRequest.result||[]).map(fromScopedRecord).filter(Boolean).map(row=>String(row.id)));};
+        }
+        // Range-delete by scoped primary key; do not deserialize Blob/File values.
+        objectStore.delete(range);
+      }
+      tx.oncomplete=()=>{if(!settled){settled=true;resolve(true);}};
+      tx.onerror=()=>{if(!settled){settled=true;reject(tx.error||new Error('Scoped data reset failed'));}};
+      tx.onabort=()=>{if(!settled){settled=true;reject(tx.error||new Error('Scoped data reset aborted'));}};
+    }catch(error){try{tx?.abort();}catch(_){}if(!settled){settled=true;reject(error);}}
+  }));
+  for(const [store,ids] of syncedIds)for(const id of ids)announceLocalWrite(store,id,'delete',null,Date.now());
+  return counts;
 }
 async function dbPutMany(store,arr){for(const o of arr) await dbPut(store,o); return true;}
 
@@ -4553,17 +4595,37 @@ async function doRestore(dataStr, strategy){
 }
 function resetStats(){
   confirmModal('Reset Statistics','This removes exam history, results, mistakes and daily stats — subjects, topics, questions and vocabulary are kept.', async ()=>{
-    for(const store of ['exams','examResults','mistakes','dailyStats','activityLogs']) await dbClear(store);
-    await loadCache(); closeModal(); toast('Statistics reset'); navigate('dashboard');
+    let cleared=false;
+    try{
+      await dbClearStoresAtomically(['exams','examResults','mistakes','dailyStats','activityLogs']);
+      cleared=true;
+      await loadCache(); closeModal(); toast('Statistics reset'); navigate('dashboard');
+    }catch(error){
+      console.error('[Admission Hub] Statistics reset failed.',error);
+      try{await loadCache();}catch(_){}
+      toast(cleared?'Statistics were cleared, but the screen did not refresh.':'Statistics reset failed; existing statistics were not changed.');
+    }
   }, 'Reset', true);
 }
 function resetAll(){
   confirmModal('Reset All Data','This permanently deletes EVERYTHING — subjects, topics, questions, exams, vocabulary, settings. This cannot be undone.', async ()=>{
-    for(const store of STORES) await dbClear(store);
-    await seedIfEmpty();
-    // Startup is read/validate-only; no automatic cleanup may alter user records.
-    await loadCache();
-    closeModal(); toast('All data reset'); navigate('dashboard');
+    const voices=window.VocabularyElevenLabs;
+    voices?.beginUserDataReset?.();
+    let cleared=false;
+    try{
+      await dbClearStoresAtomically(STORES);
+      cleared=true;
+      await seedIfEmpty();
+      // Startup is read/validate-only; no automatic cleanup may alter user records.
+      await loadCache();
+      closeModal(); toast('All data reset'); navigate('dashboard');
+    }catch(error){
+      console.error('[Admission Hub] Full data reset failed.',error);
+      try{await loadCache();}catch(_){}
+      toast(cleared?'Data was cleared, but reset setup did not finish. Restore a backup if needed.':'Reset failed; the stored data was not changed.');
+    }finally{
+      voices?.endUserDataReset?.();
+    }
   }, 'Delete Everything', true);
 }
 
@@ -5687,7 +5749,7 @@ setTimeout(() => { if (location.hash.replace(/^#/, '').split('?')[0] === 'dictio
 <script src="./one-time-mock-tool.js?v=20260824-native" defer></script>
 <script src="./vocabulary-master-tool.js?v=vm-autoimg-v108" defer></script>
 <script src="./vocabulary-pronunciation.js?v=voice-el-v104" defer></script>
-<script src="./vocabulary-elevenlabs.js?v=el-voice-v110" defer></script>
+<script src="./vocabulary-elevenlabs.js?v=el-voice-v111" defer></script>
 <script src="./vocabulary-srs-engine.js?v=vocab-srs-engine-v1" defer></script>
 <script src="./vocabulary-srs-tool.js?v=vocab-srs-p12-v1" defer></script>
 <script defer src="./notification-hub.js?v=notify-p3-v122"></script>

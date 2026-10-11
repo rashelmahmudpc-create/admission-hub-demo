@@ -1,5 +1,5 @@
-/* v109 — Voice pipeline for Vocabulary (provider = Cartesia, ElevenLabs fallback).
-   Generate once → save permanently in IndexedDB (voiceCache blob) → instant offline playback.
+/* v111 — Voice pipeline for Vocabulary (provider = Cartesia, ElevenLabs fallback).
+   Generate once → save binary audio bytes in IndexedDB (voiceCache) → instant offline playback.
    API key কখনো client-side থাকে না: অ্যাপ শুধু নিজের Cloudflare Worker proxy-তে কথা বলে।
    Worker Main = Cartesia (CARTESIA_API_KEY); key না থাকলে বা Cartesia ব্যর্থ হলে
    স্বয়ংক্রিয়ভাবে ElevenLabs-এ ফিরে যায় — তাই audio কখনো ভাঙে না।
@@ -40,9 +40,41 @@
     return 'vc-' + digest + '-' + n.slice(0, 40);
   };
 
-  // ── Storage: admissionHubDB → voiceCache (blob)। helpers না থাকলে in-memory ──
+  // ── Storage: IndexedDB uses binary bytes; in-memory fallback stays supported ──
   const mem = new Map();
+  let cacheResetting = false, cacheResetDepth = 0, cacheWriteEpoch = 0;
   const dbReady = () => typeof dbGet === 'function' && typeof dbPut === 'function' && typeof dbGetAll === 'function' && typeof dbDelRaw === 'function';
+  const cacheWritePermit = () => ({ allowed: !cacheResetting, epoch: cacheWriteEpoch });
+  const canCache = permit => !!permit && permit.allowed && !cacheResetting && permit.epoch === cacheWriteEpoch;
+  const beginUserDataReset = () => { cacheResetDepth++; cacheResetting = true; cacheWriteEpoch++; };
+  const endUserDataReset = () => { cacheResetDepth = Math.max(0, cacheResetDepth - 1); cacheResetting = cacheResetDepth > 0; cacheWriteEpoch++; };
+  const bytesFromBlob = blob => {
+    if (blob && typeof blob.arrayBuffer === 'function') return blob.arrayBuffer();
+    return new Promise((resolve, reject) => {
+      if (typeof FileReader !== 'function') { reject(new Error('ArrayBuffer audio storage is unavailable')); return; }
+      const reader = new FileReader();
+      reader.onerror = () => reject(reader.error || new Error('Could not read audio bytes'));
+      reader.onload = () => resolve(reader.result);
+      reader.readAsArrayBuffer(blob);
+    });
+  };
+  const blobFromRow = row => {
+    if (!row) return null;
+    const bytes = row.audioBytes;
+    const isArrayBuffer = bytes && Object.prototype.toString.call(bytes) === '[object ArrayBuffer]';
+    if (isArrayBuffer || (bytes && ArrayBuffer.isView(bytes))) {
+      try { return new Blob([bytes], { type: row.audioType || 'audio/mpeg' }); } catch (_) { return null; }
+    }
+    // Read-only compatibility for voice rows written by earlier app versions.
+    return row.audioBlob && typeof row.audioBlob.size === 'number' ? row.audioBlob : null;
+  };
+  const persistAudio = async (row, blob, permit) => {
+    if (!canCache(permit)) return false;
+    const audioBytes = await bytesFromBlob(blob);
+    if (!canCache(permit)) return false;
+    await putRow({ ...row, audioBytes, audioType: blob.type || 'audio/mpeg', size: blob.size });
+    return true;
+  };
   const getRow = key => dbReady() ? Promise.resolve(dbGet('voiceCache', key)).catch(() => undefined) : Promise.resolve(mem.get(key));
   const putRow = row => { if (!dbReady()) { mem.set(row.id, row); return Promise.resolve(row); } return Promise.resolve(dbPut('voiceCache', row)).catch(error => { throw error; }); };
   const allRows = () => dbReady() ? Promise.resolve(dbGetAll('voiceCache')).catch(() => [...mem.values()]) : Promise.resolve([...mem.values()]);
@@ -161,12 +193,16 @@
     if (!word) return done('empty', '', 0);
     const customLib = window.__vmVoiceLib, customKey = normalizeWord(word);
     if (customLib && customKey && customLib[customKey]) { playUrl(customLib[customKey]); return done('custom', word, 0); }
+    const cachePermit = cacheWritePermit();
+    if (!cachePermit.allowed) return fallbackTts(word, btn, 'data-reset-in-progress');
     const key = cacheKey(word);
     if (!key) return fallbackTts(word, btn, 'invalid-word');
     try {
       const row = await getRow(key);
-      if (row && row.audioBlob) { playBlob(row.audioBlob); return done('cache', word, 0); }
+      const cachedBlob = blobFromRow(row);
+      if (cachedBlob) { playBlob(cachedBlob); return done('cache', word, 0); }
     } catch (_) { /* cache read ব্যর্থ হলেও চলবে */ }
+    if (!canCache(cachePermit)) return fallbackTts(word, btn, 'data-reset-in-progress');
     if (pending.has(key)) {
       try { const blob = await pending.get(key); playBlob(blob); return done('cache-dedup', word, 0); }
       catch (_) { return fallbackTts(word, btn, 'error'); }
@@ -180,16 +216,18 @@
     apiCalls++;
     try {
       const blob = await job;
-      await putRow({
+      let cached = false;
+      try { cached = await persistAudio({
         id: key, wordKey: customKey, word: word.slice(0, VOICE_CONFIG.maxWordLength), type: 'vocabulary',
-        audioBlob: blob, voiceId: VOICE_CONFIG.voiceId, modelId: VOICE_CONFIG.modelId,
+        voiceId: VOICE_CONFIG.voiceId, modelId: VOICE_CONFIG.modelId,
         settingsVersion: VOICE_CONFIG.settingsVersion, lang: VOICE_CONFIG.lang,
-        createdAt: Date.now(), size: blob.size
-      });
+        createdAt: Date.now()
+      }, blob, cachePermit); } catch (storageError) { window.__lastVoiceError = String(storageError?.message || 'voice-cache-save-failed').slice(0, 90); }
       playBlob(blob);
-      btnState(btn, 'ok');
-      window.toast?.('✓ Voice saved — এখন অফলাইনেও বাজবে');
-      return done('generated', word, 1);
+      btnState(btn, cached ? 'ok' : 'warn');
+      if (cached) window.toast?.('✓ Voice saved — এখন অফলাইনেও বাজবে');
+      else if (canCache(cachePermit)) window.toast?.('Voice বাজছে, তবে offline cache save হয়নি।');
+      return done(cached ? 'generated' : 'generated-uncached', word, 1);
     } catch (err) {
       cooldown.set(key, Date.now() + VOICE_CONFIG.errorCooldownMs);
       btnState(btn, 'error');
@@ -207,27 +245,29 @@
   // Deduped against in-flight work and the local cache; capped concurrency.
   const prefetchWords = async (words, limit = 12) => {
     const list = [...new Set((Array.isArray(words) ? words : []).map(w => String(w || '').trim()).filter(Boolean))].slice(0, limit);
-    if (!list.length || !configured()) return 0;
+    if (!list.length || !configured() || cacheResetting) return 0;
     const customLib = window.__vmVoiceLib;
     let warmed = 0;
     const run = async word => {
+      const cachePermit = cacheWritePermit();
       const key = cacheKey(word);
-      if (!key || pending.has(key)) return;
+      if (!key || pending.has(key) || !cachePermit.allowed) return;
       if (customLib && customLib[normalizeWord(word)]) return;
-      try { const row = await getRow(key); if (row && row.audioBlob) return; } catch (_) { /* fall through */ }
+      try { const row = await getRow(key); if (blobFromRow(row)) return; } catch (_) { /* fall through */ }
+      if (!canCache(cachePermit)) return;
       if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
       const job = generateAudio(word);
       pending.set(key, job);
       apiCalls++;
       try {
         const blob = await job;
-        await putRow({
+        const saved = await persistAudio({
           id: key, wordKey: normalizeWord(word), word: word.slice(0, VOICE_CONFIG.maxWordLength), type: 'vocabulary',
-          audioBlob: blob, voiceId: VOICE_CONFIG.voiceId, modelId: VOICE_CONFIG.modelId,
+          voiceId: VOICE_CONFIG.voiceId, modelId: VOICE_CONFIG.modelId,
           settingsVersion: VOICE_CONFIG.settingsVersion, lang: VOICE_CONFIG.lang,
-          createdAt: Date.now(), size: blob.size
-        });
-        warmed++;
+          createdAt: Date.now()
+        }, blob, cachePermit);
+        if (saved) warmed++;
       } catch (_) { /* prefetch is best-effort, never surfaced */ }
       finally { pending.delete(key); }
     };
@@ -239,7 +279,16 @@
     const rows = await allRows();
     return { count: rows.length, bytes: rows.reduce((sum, row) => sum + (Number(row.size) || (row.audioBlob && row.audioBlob.size) || 0), 0) };
   };
-  const clearAll = async () => { const rows = await allRows(); for (const row of rows) await delRow(row.id); mem.clear(); return rows.length; };
+  const clearAll = async () => {
+    beginUserDataReset();
+    try {
+      if (dbReady() && typeof dbClear === 'function') { const count = await dbClear('voiceCache'); mem.clear(); return Number(count) || 0; }
+      const rows = await allRows();
+      for (const row of rows) await delRow(row.id);
+      mem.clear();
+      return rows.length;
+    } finally { endUserDataReset(); }
+  };
   const categoryKeys = category => {
     try {
       const entries = window.VocabularyMaster?.categoryVoiceEntries?.(category)?.entries || [];
@@ -263,9 +312,13 @@
     if (window.confirm(message)) action();
   };
   const confirmClearAll = () => confirmBox('Clear all vocabulary voices', 'সব cached ElevenLabs voice মুছে ফেলতে চান? Vocabulary ডেটা ও custom uploaded voice অক্ষত থাকবে — পরে কোনো word চাইলে আবার একবার generate হবে।', async () => {
-    const count = await clearAll();
-    window.toast?.(`🗑 ${count}টি voice cache মুছে গেছে (vocabulary অক্ষত)`);
-    hydrateSettingsSection();
+    try {
+      const count = await clearAll();
+      window.toast?.(`🗑 ${count}টি voice cache মুছে গেছে (vocabulary অক্ষত)`);
+    } catch (error) {
+      window.__lastVoiceError = String(error?.message || 'voice-cache-clear-failed').slice(0, 90);
+      window.toast?.('Voice cache clear failed — আবার চেষ্টা করুন।');
+    } finally { hydrateSettingsSection().catch(() => {}); }
   });
   const confirmClearCategory = category => {
     const label = String(category || '').toUpperCase() || 'ALL';
@@ -306,7 +359,7 @@
   };
 
   window.VocabularyElevenLabs = {
-    speakWord, playUrl, stopAudio, cacheKey, normalizeWord, prefetchWords,
+    speakWord, playUrl, stopAudio, cacheKey, normalizeWord, prefetchWords, beginUserDataReset, endUserDataReset,
     stats, clearAll, clearCategory, categoryStatus,
     confirmClearAll, confirmClearCategory,
     settingsSection, hydrateSettingsSection, saveEndpoint,
