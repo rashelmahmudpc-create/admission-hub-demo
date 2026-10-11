@@ -2,27 +2,32 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 const read=p=>readFileSync(new URL(p,import.meta.url),'utf8');
-test('native welcome has six slides and no design-tool or React runtime',()=>{
+test("native welcome ships the owner's v5 story design",()=>{
  const html=read('welcome-onboarding.html');
- assert.equal((html.match(/data-slide="\d"/g)||[]).length,6);
- assert.ok(html.includes('ভর্তির প্রস্তুতি'));
+ assert.ok(html.includes('ahw-sky-board'));
+ assert.ok(html.includes('Admission'));
  assert.ok(html.includes('Get Started'));
+ // The five entry paths the owner drew, each with a binding slot.
+ for(const slot of ['signup','login','google','facebook','guest']) assert.ok(html.includes(`data-sky-slot="${slot}"`),slot);
  assert.ok(!/\{\{|<x-dc|<sc-for|<script|react\.js/i.test(html));
 });
-test('welcome keeps Get Started as the only entry and drops the old auth links',()=>{
+test('welcome binds the design entry buttons to the real account controls',()=>{
  const js=read('welcome-onboarding.js');
- assert.ok(js.includes('welcome-signup'));
- assert.ok(js.includes('welcome-language'));
- assert.ok(js.includes('placeholder.replaceWith(signup)'));
- // Owner (2026-10-10): the "Already have an account? Log In" line and the
- // "More options" disclosure (Google + guest) are gone — only Get Started.
- assert.ok(!js.includes('welcome-login'));
- assert.ok(!js.includes('welcome-google-button'));
- assert.ok(!js.includes('continue-guest'));
- assert.ok(!js.includes('ahw-more'));
- assert.ok(!js.includes('link.replaceWith'));
- assert.ok(js.includes('closest(\'[data-w-style="w73"]\')'));
+ // account-access.js owns the flows; the design triggers those controls.
+ for(const role of ['welcome-signup','welcome-login','welcome-google-button','continue-guest']) assert.ok(js.includes(role),role);
+ assert.ok(js.includes('data-sky-slot="'));
+ // Facebook stays drawn but inert until the owner turns it on.
+ assert.ok(js.includes('শীঘ্রই আসছে'));
+ assert.ok(js.includes('dataset.welcomeUpgrade'));
  assert.ok(!/\/api\/|localStorage|sessionStorage|cloneNode|method:\s*['"]POST/.test(js));
+});
+test('the story stops when the student leaves the welcome view',()=>{
+ const js=read('welcome-onboarding.js');
+ // The preview's timer chain must not outlive the screen (and the page).
+ assert.ok(js.includes('const active='));
+ assert.ok(js.includes('const sync='));
+ assert.ok(js.includes("page.dataset.currentView==='welcome'"));
+ assert.ok(js.includes('pagehide'));
 });
 test('empty data seed stays empty and only loads the scoped UI',()=>{
  const loader=read('app-seed.js');
@@ -39,6 +44,6 @@ test('a successful mount reveals the welcome (regression: it stayed visibility:h
  const js=read('welcome-onboarding.js');
  // The scaffold is hidden while the template loads; every success path must
  // clear that inline style, or the whole welcome stays invisible.
- assert.ok(js.includes("view.style.visibility='hidden'"));
- assert.ok(js.includes("view.replaceChildren(board);view.style.visibility='';"));
+ assert.ok(js.includes("ctl.view.style.visibility='hidden'"));
+ assert.ok(js.includes("ctl.view.style.visibility='';"));
 });
