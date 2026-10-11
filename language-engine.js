@@ -655,6 +655,14 @@
     '✓ কপি হয়েছে': '✓ Copied',
     'ম্যানুয়ালি সিলেক্ট করে কপি করো': 'Select and copy manually',
     'আজকের প্রস্তুতি শুরু করো': 'Start today\'s preparation',
+    /* P17/P18 dashboard cards. These render as a single text node whose value
+       carries the emoji, so the key includes it. */
+    '🎯 আমাকে প্রস্তুত করো': '🎯 Prepare Me',
+    'তোমার পরীক্ষার ইতিহাস দেখে আজ কী পড়বে, কত প্রশ্ন — সাজিয়ে দেয়': 'Reads your exam history and lays out what to study today, and how many questions',
+    'পরিকল্পনা দেখো': 'See plan',
+    '🏆 ভর্তি-বুদ্ধি': '🏆 Admission Intel',
+    'তোমার বিশ্ববিদ্যালয় ও ইউনিটের সাবজেক্ট-কভারেজ, দুর্বলতা আর রিভিশন-প্ল্যান': 'Subject coverage for your university and unit, plus weak spots and a revision plan',
+    'দেখো': 'See',
     'Question Bank, Exam, AI ও Progress—সব টুল এক জায়গায়।': 'Question bank, exam, AI and progress — every tool in one place.',
     'শুধু একটি ইংরেজি শব্দ লিখুন।': 'Type a single English word.',
     'বাংলা অর্থ পাওয়া যায়নি।': 'No Bangla meaning found.',
