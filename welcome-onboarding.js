@@ -15,11 +15,57 @@
  * keeps owning all of that. */
 (() => {
 'use strict';
-const base=new URL('.',document.currentScript.src),version='welcome-native-20261010-v30';
+const base=new URL('.',document.currentScript.src),version='welcome-native-20261010-v31';
 let timers=[],opened=false,mounted=null,bound=null,toastTimer=null;
 
 const $=id=>document.getElementById(id);
 const at=(m,f)=>timers.push(setTimeout(f,m)),clr=()=>{timers.forEach(clearTimeout);timers=[]};
+
+/* Status-bar blend (restored). The strip behind the phone's status bar must be exactly the colour painted at the top of the page, on every account screen. iOS 26 Safari tints that strip from a fixed element at the top edge and older iOS from theme-color, so both follow the colour actually painted. Outside the account screens the original theme-color is restored. */
+const probe=document.createElement('div'),watched=new WeakSet();
+let cap=null,savedTheme=null,lastColor='',applied='';
+const isClear=c=>!c||c==='transparent'||/^rgba\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*0(?:\.0+)?\s*\)$/.test(c);
+const safeTop=()=>{
+ if(!probe.isConnected&&document.body){probe.setAttribute('aria-hidden','true');probe.style.cssText='position:fixed;top:0;left:0;width:1px;height:env(safe-area-inset-top,0px);visibility:hidden;pointer-events:none';document.body.appendChild(probe);}
+ return probe.offsetHeight||0;
+};
+const topColor=()=>{
+ const y=Math.max(0,Math.min(innerHeight-1,safeTop()+4)),x=Math.max(1,Math.round(innerWidth/2));
+ let stack=[];try{stack=document.elementsFromPoint(x,y);}catch(_){}
+ for(const node of stack){
+  if(node===cap||node===probe)continue;
+  const color=getComputedStyle(node).backgroundColor;
+  if(!isClear(color))return color;
+ }
+ return '';
+};
+const blend=()=>{
+ const body=document.body,page=document.getElementById('ah-account-page');
+ if(!body||!page)return;
+ if(!watched.has(page)){watched.add(page);watcher.observe(page,{attributes:true,attributeFilter:['hidden','data-current-view','class']});}
+ let meta=document.querySelector('meta[name="theme-color"]');
+ if(!meta){meta=document.createElement('meta');meta.name='theme-color';document.head.appendChild(meta);}
+ if(savedTheme===null)savedTheme=meta.getAttribute('content')||'';
+ if(!cap){cap=document.createElement('div');cap.id='ah-statusbar-cap';cap.setAttribute('aria-hidden','true');body.appendChild(cap);}
+ if(!body.classList.contains('ah-account-page-active')||page.hidden){
+  cap.style.display='none';if(savedTheme)meta.setAttribute('content',savedTheme);
+  if(applied){document.documentElement.style.removeProperty('background-color');applied='';}
+  lastColor='';return;
+ }
+ const color=topColor()||lastColor;
+ if(!color||color===applied)return;
+ lastColor=applied=color;
+ cap.style.cssText='position:fixed;top:0;left:0;right:0;height:calc(max(env(safe-area-inset-top,0px),4px) + 4px);background:linear-gradient(to bottom,'+color+' 0,'+color+' calc(100% - 4px),transparent 100%);z-index:2147483000;pointer-events:none';
+ meta.setAttribute('content',color);
+ document.documentElement.style.setProperty('background-color',color,'important');
+};
+const schedule=()=>{requestAnimationFrame(blend);setTimeout(blend,150);setTimeout(blend,450);};
+const watcher=new MutationObserver(schedule);
+watcher.observe(document.documentElement,{attributes:true,attributeFilter:['data-theme','class']});
+const watchBody=()=>{if(!document.body)return;watcher.observe(document.body,{attributes:true,attributeFilter:['class'],childList:true});schedule();};
+if(document.body)watchBody();else document.addEventListener('DOMContentLoaded',watchBody,{once:true});
+['resize','orientationchange','pageshow','ah:lang','transitionend','animationend'].forEach(name=>window.addEventListener(name,schedule,{passive:true}));
+const follow=()=>{const s=performance.now();const tick=()=>{blend();if(performance.now()-s<1300)requestAnimationFrame(tick);};requestAnimationFrame(tick);};
 
 function tap(x,y){const fg=$('sky-fing');if(!fg)return;fg.style.setProperty('--fx',(x-22)+'px');fg.style.setProperty('--fy',(y-4)+'px');fg.classList.add('show');at(700,()=>fg.classList.add('press'));at(950,()=>fg.classList.remove('press'));at(1600,()=>{fg.classList.remove('show');fg.style.setProperty('--fy','780px')})}
 
@@ -63,20 +109,17 @@ function bind(root,ctl){
     the DOM (the account flow owns it) but is never shown or moved into the
     design. */
  $('sky-bk')?.addEventListener('click',()=>{clr();opened=false;$('sky-app')?.classList.remove('open');at(800,()=>sync())});
- $('sky-go')?.addEventListener('click',()=>{clr();opened=true;const app=$('sky-app');app?.classList.remove('desk');document.documentElement.style.setProperty('--skyt','#E3EEFF');app?.classList.add('open');
+ $('sky-go')?.addEventListener('click',()=>{clr();opened=true;const app=$('sky-app');app?.classList.remove('desk');document.documentElement.style.setProperty('--skyt','#E3EEFF');follow();app?.classList.add('open');
   /* A focus scroll inside the panel must not move the art behind it (the
      overflow:clip rule is the belt; this is the braces for browsers that
      still honour a programmatic scroll). */
   if(app)app.scrollTop=0});
 }
 
-/* The story art is a 390x640 stage. The owner wants it to fill the phone top
-   to bottom ("উপরে মিশে যাবে"), so the stage covers the band instead of
-   letterboxing inside it: scale by the larger ratio and let the art bleed off
-   the sides, which are background. */
-function size(){const band=$('sky-band'),fit=$('sky-fit');if(!band||!fit)return;const r=band.getBoundingClientRect();if(!r.width||!r.height)return;fit.style.setProperty('--s',Math.max(r.width/390,r.height/640).toFixed(3))}
+/* The story art is a 390x640 stage, FITTED inside the band (brand row above, Get Started below) so nothing is cropped or overlapped; the background around it is full-bleed. */
+function size(){const band=$('sky-band'),fit=$('sky-fit');if(!band||!fit)return;const r=band.getBoundingClientRect();if(!r.width||!r.height)return;fit.style.setProperty('--s',Math.min(r.width/390,r.height/640).toFixed(3))}
 
-const start=()=>{if(opened)return;clr();play(0)};
+const start=()=>{if(opened)return;clr();size();schedule();play(0)};
 
 /* The story only runs while the welcome view is actually on screen, and it must
    stop the moment the student leaves — otherwise its timer chain outlives the
@@ -100,7 +143,7 @@ const T=[
  {p:'rt',ms:5800,v:'c',cam:'c-dn',held:1,tab:3,tag:'রুটিন',rate:1.3,ev:[[300,()=>tap(195,134)],[1900,()=>tap(195,288)]]},
  {p:'fin',ms:3600,sc:'fin'}];
 
-function pal(id){const c=P[id];if(!c)return;const r=document.documentElement;r.style.setProperty('--skyt',c[0]);r.style.setProperty('--skyp',c[1]);r.style.setProperty('--skyq',c[2])}
+function pal(id){const c=P[id];if(!c)return;const r=document.documentElement;r.style.setProperty('--skyt',c[0]);r.style.setProperty('--skyp',c[1]);r.style.setProperty('--skyq',c[2]);follow()}
 
 function play(i){if(!active()){clr();return}const s=T[i];if(!s)return;
  ['sp','a','fin','td'].forEach(id=>$('sky-'+id).classList.toggle('on',id===s.sc));
@@ -141,8 +184,7 @@ async function mount(){
   ctl.view.append(root);
   ctl.view.style.visibility='';
   page.classList.add('ah-welcome-upgraded');
-  mounted=root;
-  bind(root,ctl);
+  mounted=root;schedule();bind(root,ctl);
   size();
   sync();
   if(hadFocus)ctl.signup.focus({preventScroll:true});
