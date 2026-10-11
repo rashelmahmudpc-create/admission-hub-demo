@@ -58,20 +58,20 @@ VERIFICATION_AUTH_ACTIVATION = "disabled"
 
 [[kv_namespaces]]
 binding = "GK_KV"
-id = "REPLACE_WITH_STAGING_GK_KV_ID"
+id = "3d31d3705a7a48678b165dea05a56051"
 
 [[kv_namespaces]]
 binding = "PUB_KV"
-id = "REPLACE_WITH_STAGING_PUB_KV_ID"
+id = "2827bff9b9974101a305102e1fbd1214"
 
 [[kv_namespaces]]
 binding = "OLD_KV"
-id = "REPLACE_WITH_STAGING_OLD_KV_ID"
+id = "0037a05072004211a2f8dbe55d72f909"
 
 [[d1_databases]]
 binding = "PROFILE_DB"
 database_name = "admission-profile-staging"
-database_id = "REPLACE_WITH_STAGING_D1_ID"
+database_id = "47de4764-f58b-492e-9c2a-e3eca7e63a16"
 
 [[r2_buckets]]
 binding = "FILE_BUCKET"
