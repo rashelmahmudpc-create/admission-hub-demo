@@ -273,10 +273,30 @@ html:has(#ah-account-page.ah-welcome-upgraded:not([hidden]) [data-view="welcome"
 .ah-welcome-sky > .ah-welcome-header,
 .ah-welcome-sky > .ah-entry-actions{display:none!important}
 .ah-welcome-sky > .ahw-sky-board{display:block}
-.ahw-sky [data-role="welcome-language"]{position:absolute;right:18px;top:14px;left:auto;z-index:9;height:34px;padding:0 12px;border-radius:17px;border:1px solid rgba(11,27,58,.12);background:rgba(255,255,255,.75);color:var(--skyink);font:600 13px 'Hind Siliguri',sans-serif;cursor:pointer}
+/* Owner: the welcome carries no language picker — the scaffold's selector stays
+   hidden with the rest of the legacy header. */
+.ah-welcome-sky [data-role="welcome-language"]{display:none!important}
+/* Owner: no rounded edge or frame on the welcome — the shell's mobile radius
+   rounded the top and bottom corners into a visible border. */
+.ah-welcome-upgraded .ah-account-shell[data-visual-contract="code-native-page-system-v1"]{border-radius:0!important}
+/* Owner: the story must fill the screen top to bottom, not sit letterboxed in
+   a 390x640 stage with a reserved bottom bar. The account flow's mobile rule
+   (padding-top:12px on .ah-welcome-view) and the 86px bottom band buffer are
+   what left the empty strips. */
+.ahw-sky .band{top:0;bottom:0}
+.ahw-sky .cta{bottom:max(16px,env(safe-area-inset-bottom,0px))}
+.ah-welcome-upgraded .ah-account-view.ah-welcome-sky{padding:0!important;min-height:0!important;height:100%!important;display:block!important}
+/* Owner: the guest entry is a button like the others, not a dashed box. */
+.ahw-sky .b.g{height:56px;border-radius:21px;justify-content:center;gap:8px;background:#fff;border:0;box-shadow:0 12px 22px -16px rgba(70,90,245,.55),inset 0 0 0 1px var(--skyln);color:var(--skyink);font-weight:600;font-size:15.5px}
+.ahw-sky .b.g:after{content:"→";color:var(--skyp)}
 /* The design's Google pill stays as drawn; the real Google Identity button is
    laid over it invisibly, so the tap reaches the genuine control. */
 [data-sky-slot="google"]{position:relative;overflow:hidden}
 .ah-sky-google-overlay{position:absolute!important;inset:0;opacity:.001;overflow:hidden;border-radius:inherit;display:block}
 .ah-sky-google-overlay>*{width:100%!important;height:100%!important}
 [data-sky-slot="facebook"][aria-disabled="true"]{opacity:.62}
+/* Owner: nothing on the welcome may shift. Covering the band pushes the drawn
+   desk tiles past the viewport, and a focus scroll (the Google control gaining
+   focus as the panel opens) then scrolled the whole art up. overflow:clip
+   forbids that scroll where overflow:hidden still allows a programmatic one. */
+.ahw-sky #sky-app{overflow:clip!important}

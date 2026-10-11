@@ -59,12 +59,22 @@ function bind(root,ctl){
  if(gslot&&ctl.google){gslot.append(ctl.google);ctl.google.classList.add('ah-sky-google-overlay')}
  const fb=root.querySelector('[data-sky-slot="facebook"]');
  if(fb){fb.setAttribute('aria-disabled','true');fb.title='Facebook লগইন শীঘ্রই আসছে';fb.addEventListener('click',()=>toast('Facebook লগইন শীঘ্রই আসছে'))}
- if(ctl.language){const top=root.querySelector('#sky-top');if(top)top.append(ctl.language)}
+ /* Owner: no language picker on the welcome. The scaffold's selector stays in
+    the DOM (the account flow owns it) but is never shown or moved into the
+    design. */
  $('sky-bk')?.addEventListener('click',()=>{clr();opened=false;$('sky-app')?.classList.remove('open');at(800,()=>sync())});
- $('sky-go')?.addEventListener('click',()=>{clr();opened=true;$('sky-app')?.classList.remove('desk');document.documentElement.style.setProperty('--skyt','#E3EEFF');$('sky-app')?.classList.add('open')});
+ $('sky-go')?.addEventListener('click',()=>{clr();opened=true;const app=$('sky-app');app?.classList.remove('desk');document.documentElement.style.setProperty('--skyt','#E3EEFF');app?.classList.add('open');
+  /* A focus scroll inside the panel must not move the art behind it (the
+     overflow:clip rule is the belt; this is the braces for browsers that
+     still honour a programmatic scroll). */
+  if(app)app.scrollTop=0});
 }
 
-function size(){const band=$('sky-band'),fit=$('sky-fit');if(!band||!fit)return;const r=band.getBoundingClientRect();if(!r.width||!r.height)return;fit.style.setProperty('--s',Math.min(r.width/390,r.height/640).toFixed(3))}
+/* The story art is a 390x640 stage. The owner wants it to fill the phone top
+   to bottom ("উপরে মিশে যাবে"), so the stage covers the band instead of
+   letterboxing inside it: scale by the larger ratio and let the art bleed off
+   the sides, which are background. */
+function size(){const band=$('sky-band'),fit=$('sky-fit');if(!band||!fit)return;const r=band.getBoundingClientRect();if(!r.width||!r.height)return;fit.style.setProperty('--s',Math.max(r.width/390,r.height/640).toFixed(3))}
 
 const start=()=>{if(opened)return;clr();play(0)};
 
@@ -102,6 +112,9 @@ function play(i){if(!active()){clr();return}const s=T[i];if(!s)return;
  const tag=$('sky-tag');tag.textContent=s.tag||'';tag.classList.toggle('vis',!!s.tag);$('sky-top').classList.toggle('vis',i>0);
  $('sky-pip').classList.toggle('vis',!!s.pip);if(!s.pip)$('sky-pip').classList.remove('hap');
  if(i!==3)$('sky-t1')?.classList.remove('pr');
+ /* Owner: Get Started turns blue within three seconds of the story starting,
+    not at the end — so the light-up is timed from the first frame, once. */
+ if(i===0){$('sky-go')?.classList.remove('lit');at(2600,()=>$('sky-go')?.classList.add('lit'))}
  if(s.lnc){const l=$('sky-lnc');l.classList.remove('go');void l.offsetWidth;l.classList.add('go')}
  if(s.rate)setTimeout(()=>{$('sky-'+s.v)?.getAnimations?.({subtree:true}).forEach(a=>a.playbackRate=s.rate)},40);
  (s.ev||[]).forEach(([m,f])=>at(m,f));

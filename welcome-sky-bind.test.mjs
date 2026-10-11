@@ -104,3 +104,42 @@ test('leaving the welcome view stops the story and releases the lock', async () 
     assert.ok(!page.classList.contains('ah-welcome-upgraded'), 'the lock must be released');
   } finally { await shutdown(w); }
 });
+
+test('the welcome carries no language picker', async () => {
+  const { w } = await boot();
+  try {
+    const select = w.document.querySelector('[data-role="welcome-language"]');
+    assert.ok(select, 'the account flow keeps owning the selector');
+    assert.ok(!w.document.querySelector('#sky-top [data-role="welcome-language"]'),
+      'the selector must not be moved into the design');
+    assert.ok(!w.document.querySelector('.ahw-sky-board [data-role="welcome-language"]'),
+      'the design must contain no language control');
+  } finally { await shutdown(w); }
+});
+
+test('Get Started turns blue within three seconds of the story starting', async () => {
+  const { w } = await boot();
+  try {
+    const go = w.document.getElementById('sky-go');
+    assert.ok(go, 'the Get Started button must exist');
+    assert.ok(!go.classList.contains('lit'), 'it starts unlit');
+    const t0 = Date.now();
+    while (Date.now() - t0 < 3000 && !go.classList.contains('lit')) {
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    assert.ok(go.classList.contains('lit'), 'it must be lit within 3 seconds');
+  } finally { await shutdown(w); }
+});
+
+test('the welcome fills the screen and the guest entry matches the other buttons', async () => {
+  const css = readFileSync('welcome-onboarding.css', 'utf8');
+  assert.ok(css.includes('.ahw-sky .band{top:0;bottom:0}'),
+    'the story band must not reserve a bottom bar');
+  assert.ok(/\.ah-welcome-sky \[data-role="welcome-language"\]\{display:none/.test(css),
+    'the language picker must stay hidden');
+  assert.ok(/\.ahw-sky \.b\.g\{[^}]*border:0/.test(css),
+    'the guest entry must not be a dashed box');
+  assert.ok(/\.ah-welcome-upgraded [^{]*\.ah-account-shell[^{]*\{border-radius:0/.test(css),
+    'the shell must not round the welcome corners');
+});
+
