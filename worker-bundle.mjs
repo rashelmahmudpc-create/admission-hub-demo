@@ -1812,13 +1812,13 @@ function authVerificationGuidance(text) {
 }
 function guidanceResponse(text, stream) {
   if (!stream) return jsonResp({ text, intent: INTENTS.GENERAL_CHAT, pv: SYSTEM_PROMPT_V, agent: AGENT_VERSION, authoritative: false });
-  const encoder6 = new TextEncoder();
+  const encoder7 = new TextEncoder();
   return new Response(new ReadableStream({
     start(controller) {
-      controller.enqueue(encoder6.encode(`data: ${JSON.stringify({ text })}
+      controller.enqueue(encoder7.encode(`data: ${JSON.stringify({ text })}
 
 `));
-      controller.enqueue(encoder6.encode(`event: done
+      controller.enqueue(encoder7.encode(`event: done
 data: ${JSON.stringify({ intent: INTENTS.GENERAL_CHAT, pv: SYSTEM_PROMPT_V, agent: AGENT_VERSION, authoritative: false })}
 
 `));
@@ -2046,12 +2046,12 @@ async function agentChat(request, env, uid, opts = {}) {
     emitTrace({ fallbackReason: FALLBACK.PROVIDER_ERROR, validated: false });
     return jsonResp({ error: "provider_failed", message: "AI একটু ব্যস্ত — কয়েক সেকেন্ড পরে আবার চেষ্টা করো।", detail: lastErr, retryable: true }, 502);
   }
-  const encoder6 = new TextEncoder();
+  const encoder7 = new TextEncoder();
   const streamOut = new ReadableStream({
     async start(controller) {
       const push = (s) => {
         try {
-          controller.enqueue(encoder6.encode(s));
+          controller.enqueue(encoder7.encode(s));
         } catch (_) {
         }
       };
@@ -8004,15 +8004,15 @@ async function deriveTelegramWebhookSecret(rootSecret, cryptoImpl = globalThis.c
   const source = safeRootSecret(rootSecret);
   if (!source || !cryptoImpl?.subtle) return "";
   try {
-    const encoder6 = new TextEncoder();
+    const encoder7 = new TextEncoder();
     const key = await cryptoImpl.subtle.importKey(
       "raw",
-      encoder6.encode(source),
+      encoder7.encode(source),
       { name: "HMAC", hash: "SHA-256" },
       false,
       ["sign"]
     );
-    const signature = await cryptoImpl.subtle.sign("HMAC", key, encoder6.encode(WEBHOOK_CONTEXT));
+    const signature = await cryptoImpl.subtle.sign("HMAC", key, encoder7.encode(WEBHOOK_CONTEXT));
     const derived = base64Url(signature);
     return validTelegramWebhookSecret(derived) ? derived : "";
   } catch {
@@ -24994,7 +24994,67 @@ function pickAdapter(table, provider) {
   return fn;
 }
 
+// voice-agent-gate.mjs
+var COOKIE_NAME = "ah_voice";
+var SESSION_TTL_MS3 = 180 * 24 * 60 * 60 * 1e3;
+var encoder6 = new TextEncoder();
+var b64url = (bytes) => btoa(String.fromCharCode(...new Uint8Array(bytes))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+function gateSecret(env) {
+  return String(env && env.VOICE_PAGE_PASSWORD || "");
+}
+function gateConfigured(env) {
+  return gateSecret(env).length > 0;
+}
+async function sign(payload, secret) {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    encoder6.encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  return b64url(await crypto.subtle.sign("HMAC", key, encoder6.encode(payload)));
+}
+async function makeSession(env, now = Date.now(), ttl = SESSION_TTL_MS3) {
+  const secret = gateSecret(env);
+  if (!secret) return "";
+  const payload = `v1.${now + ttl}`;
+  return `${payload}.${await sign(payload, secret)}`;
+}
+async function sessionValid(env, request, now = Date.now()) {
+  const secret = gateSecret(env);
+  if (!secret) return false;
+  const raw = readCookie2(request.headers.get("Cookie") || "", COOKIE_NAME);
+  if (!raw) return false;
+  const cut = raw.lastIndexOf(".");
+  if (cut < 1) return false;
+  const payload = raw.slice(0, cut);
+  const given = raw.slice(cut + 1);
+  if (!/^v1\.\d+$/.test(payload)) return false;
+  if (Number(payload.slice(3)) <= now) return false;
+  const want = await sign(payload, secret);
+  return safeEqual(given, want);
+}
+function passwordMatches(env, given) {
+  const secret = gateSecret(env);
+  const value = String(given == null ? "" : given);
+  if (!secret || !value) return false;
+  return safeEqual(value, secret);
+}
+function readCookie2(header, name) {
+  for (const part of String(header).split(";")) {
+    const eq = part.indexOf("=");
+    if (eq < 0) continue;
+    if (part.slice(0, eq).trim() === name) return part.slice(eq + 1).trim();
+  }
+  return "";
+}
+function sessionCookieHeader(value, { secure = true, maxAge = Math.floor(SESSION_TTL_MS3 / 1e3) } = {}) {
+  return `${COOKIE_NAME}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secure ? "; Secure" : ""}`;
+}
+
 // voice-agent.mjs
+var jsonReply = (body, status, headers) => Response.json(body, { status, headers });
 var HISTORY_KEY = "va_history";
 var SUMMARY_KEY = "va_summary";
 var MEMORY_KEY = "va_memory";
@@ -25010,7 +25070,7 @@ function readKeys(env, names) {
   }
   return [];
 }
-var KV_SECRET_NAMES = ["CARTESIA_API_KEY", "ELEVENLABS_API_KEY", "GROQ_API_KEY", "DEEPGRAM_API_KEY"];
+var KV_SECRET_NAMES = ["CARTESIA_API_KEY", "ELEVENLABS_API_KEY", "GROQ_API_KEY", "DEEPGRAM_API_KEY", "VOICE_PAGE_PASSWORD"];
 async function kvSecrets(env) {
   if (!env || !env.GK_KV) return {};
   const out = {};
@@ -25093,9 +25153,61 @@ var VoiceAgentSession = class {
     if (token) return safeEqual(request.headers.get("X-Voice-Token"), token);
     return true;
   }
+  /* ── Owner gate (password, no login) ──
+   *
+   * The page is for the owner alone, so it is protected by a password rather
+   * than an account (owner's call). The password is checked here, in the
+   * Worker, and never reaches the browser: the browser only ever receives a
+   * signed cookie. Because the cookie is signed with the password itself,
+   * changing the password invalidates every session without a deploy.
+   *
+   * A cookie is only meaningful when the page and this endpoint share an
+   * origin — a browser will not send a cookie cross-site. The page is served
+   * from Pages and reaches this object through the same-origin Pages proxy
+   * (see _worker.js), which is what makes the gate work at all.
+   */
+  async gate(request) {
+    const url = new URL(request.url);
+    const wantsLogin = url.pathname.endsWith("/login");
+    const wantsSession = url.pathname.endsWith("/session");
+    if (!wantsLogin && !wantsSession) return null;
+    const env = await this.gateEnv();
+    if (!gateConfigured(env)) {
+      return jsonReply({ error: "gate_not_configured" }, 501);
+    }
+    if (wantsSession) {
+      const ok2 = await sessionValid(env, request);
+      return jsonReply({ ok: ok2 }, ok2 ? 200 : 401);
+    }
+    if (request.method !== "POST") return jsonReply({ error: "method_not_allowed" }, 405);
+    let given = "";
+    try {
+      const body = await request.json();
+      given = body && body.password;
+    } catch (_) {
+    }
+    if (!passwordMatches(env, given)) return jsonReply({ error: "bad_password" }, 403);
+    const value = await makeSession(env);
+    return jsonReply({ ok: true }, 200, { "Set-Cookie": sessionCookieHeader(value) });
+  }
+  /**
+   * The environment the gate reads: the bound variables plus the KV-held
+   * secrets, with a bound variable winning. Mirrors pools() so a password put in
+   * KV behaves exactly like a bound one.
+   */
+  async gateEnv() {
+    if (!this.kvSecretCache) {
+      const found = await kvSecrets(this.env);
+      if (Object.keys(found).length) this.kvSecretCache = found;
+    }
+    const extra = this.kvSecretCache || {};
+    return Object.keys(extra).length ? { ...extra, ...this.env } : this.env;
+  }
   /* ── HTTP entry: issue a ticket, upgrade to a socket, or answer a health probe ── */
   async fetch(request) {
     const url = new URL(request.url);
+    const gateResponse = await this.gate(request);
+    if (gateResponse) return gateResponse;
     if (url.pathname.endsWith("/health")) {
       const pools = await this.pools();
       return Response.json({
@@ -25107,6 +25219,10 @@ var VoiceAgentSession = class {
     if (url.pathname.endsWith("/ticket")) {
       if (request.method !== "POST") return new Response("method not allowed", { status: 405 });
       if (!this.approved(request)) return new Response("forbidden", { status: 403 });
+      const gateEnv = await this.gateEnv();
+      if (gateConfigured(gateEnv) && !await sessionValid(gateEnv, request)) {
+        return new Response("unauthorized", { status: 401 });
+      }
       await this.load();
       const now = Date.now();
       this.tickets = pruneTickets(this.tickets, now).slice(-(MAX_LIVE_TICKETS - 1));

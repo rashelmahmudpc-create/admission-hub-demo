@@ -102,6 +102,29 @@ t('P23-৭৮. a large clip encodes without blowing the stack (chunked)',
     /getUserMedia/.test(src) && /(pointerdown|click)/.test(src));
   t('P23-৮৩. the page surfaces a latency line rather than hiding it',
     /formatLatency|লেটেন্সি|মোট/.test(src));
+  t('P23-৮৪. the page sends the owner to the password page when the cookie is gone',
+    /status === 401/.test(src) && /location\.replace\('\/voice-agent-login'\)/.test(src));
+
+  /* ── The PWA shell and the gate page ── */
+  const login = readFileSync('voice-agent-login.html', 'utf8');
+  const manifest = readFileSync('voice-agent.webmanifest', 'utf8');
+  const worker = readFileSync('_worker.js', 'utf8');
+
+  t('P23-৮৫. the login page posts the password to the worker, never stores it',
+    /\/api\/voice\/login/.test(login) && /type="password"/.test(login) &&
+    !/localStorage/.test(login));
+  t('P23-৮৬. the voice page is installable (manifest + iOS meta + theme)',
+    /rel="manifest" href="\/voice-agent\.webmanifest"/.test(src) &&
+    /apple-mobile-web-app-capable/.test(src) && /name="theme-color"/.test(src));
+  t('P23-৮৭. the manifest is standalone, scoped to the page, with real icons',
+    JSON.parse(manifest).display === 'standalone' &&
+    JSON.parse(manifest).scope === '/voice-agent' &&
+    JSON.parse(manifest).icons.length >= 2);
+  t('P23-৮৮. Pages routes the voice page and its login, or the gate has no page',
+    worker.includes("'/voice-agent'") && worker.includes("'/voice-agent-login'") &&
+    worker.includes("'/voice-agent.html'"));
+  t('P23-৮৯. the page is not indexable, so the owner page stays private',
+    /noindex/.test(src) && /noindex/.test(login));
 }
 
 console.log(`\n  voice-agent client: ${pass} pass / ${fail} fail`);

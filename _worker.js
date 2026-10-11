@@ -34,7 +34,13 @@ const PUBLIC_ROUTES = new Set([
   '/splash-preview', '/splash-preview.html',
   '/verification-control-center', '/verification-control-center.html',
   '/ai-performance-analysis-live', '/ai-performance-analysis-live.html',
-  '/notification-command-center', '/notification-command-center.html'
+  '/notification-command-center', '/notification-command-center.html',
+  /* Owner-only live voice page, behind a password (owner's call, no login).
+     The page and its module must be reachable, or the gate has nothing to
+     protect; the socket and login calls are refused without the signed cookie
+     the password issues. */
+  '/voice-agent', '/voice-agent.html',
+  '/voice-agent-login', '/voice-agent-login.html'
 ]);
 const PUBLIC_FILES = new Set([
   '/robots.txt', '/sitemap.xml', '/favicon.ico', '/og-image.png',

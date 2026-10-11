@@ -32,7 +32,13 @@ import {
   makeTicket, pruneTickets, consumeTicket, safeEqual, TICKET_TTL_MS, MAX_LIVE_TICKETS,
 } from './voice-agent-core.mjs';
 import { STT, LLM, TTS, pickAdapter } from './voice-agent-providers.mjs';
+import {
+  gateConfigured, passwordMatches, makeSession, sessionValid, sessionCookieHeader,
+} from './voice-agent-gate.mjs';
 import { renderMemory, upsertMemory, extractMemoryCandidates, makeMemory, resolveMemoryOwner } from './memory-engine.js';
+
+/** JSON reply. A Set-Cookie must survive, so the status and headers are explicit. */
+const jsonReply = (body, status, headers) => Response.json(body, { status, headers });
 
 const HISTORY_KEY = 'va_history';
 const SUMMARY_KEY = 'va_summary';
@@ -70,7 +76,7 @@ function readKeys(env, names) {
  * and read here — from the agent's point of view it behaves exactly like a
  * bound one.
  */
-const KV_SECRET_NAMES = ['CARTESIA_API_KEY', 'ELEVENLABS_API_KEY', 'GROQ_API_KEY', 'DEEPGRAM_API_KEY'];
+const KV_SECRET_NAMES = ['CARTESIA_API_KEY', 'ELEVENLABS_API_KEY', 'GROQ_API_KEY', 'DEEPGRAM_API_KEY', 'VOICE_PAGE_PASSWORD'];
 
 /** Read the KV-held secrets, returning only the ones actually present. */
 async function kvSecrets(env) {
@@ -166,9 +172,71 @@ export class VoiceAgentSession {
     return true;
   }
 
+  /* ── Owner gate (password, no login) ──
+   *
+   * The page is for the owner alone, so it is protected by a password rather
+   * than an account (owner's call). The password is checked here, in the
+   * Worker, and never reaches the browser: the browser only ever receives a
+   * signed cookie. Because the cookie is signed with the password itself,
+   * changing the password invalidates every session without a deploy.
+   *
+   * A cookie is only meaningful when the page and this endpoint share an
+   * origin — a browser will not send a cookie cross-site. The page is served
+   * from Pages and reaches this object through the same-origin Pages proxy
+   * (see _worker.js), which is what makes the gate work at all.
+   */
+  async gate(request) {
+    const url = new URL(request.url);
+    const wantsLogin = url.pathname.endsWith('/login');
+    const wantsSession = url.pathname.endsWith('/session');
+    if (!wantsLogin && !wantsSession) return null;
+
+    /* The password may live in KV (it is one more thing that does not fit in
+     * the Worker's 64-variable budget), so resolve it the same way the provider
+     * keys are resolved before asking the gate anything. */
+    const env = await this.gateEnv();
+    if (!gateConfigured(env)) {
+      return jsonReply({ error: 'gate_not_configured' }, 501);
+    }
+    if (wantsSession) {
+      const ok = await sessionValid(env, request);
+      return jsonReply({ ok }, ok ? 200 : 401);
+    }
+    if (request.method !== 'POST') return jsonReply({ error: 'method_not_allowed' }, 405);
+
+    let given = '';
+    try {
+      const body = await request.json();
+      given = body && body.password;
+    } catch (_) { /* a malformed body is simply a wrong password */ }
+    if (!passwordMatches(env, given)) return jsonReply({ error: 'bad_password' }, 403);
+
+    const value = await makeSession(env);
+    return jsonReply({ ok: true }, 200, { 'Set-Cookie': sessionCookieHeader(value) });
+  }
+
+  /**
+   * The environment the gate reads: the bound variables plus the KV-held
+   * secrets, with a bound variable winning. Mirrors pools() so a password put in
+   * KV behaves exactly like a bound one.
+   */
+  async gateEnv() {
+    if (!this.kvSecretCache) {
+      const found = await kvSecrets(this.env);
+      if (Object.keys(found).length) this.kvSecretCache = found;
+    }
+    const extra = this.kvSecretCache || {};
+    return Object.keys(extra).length ? { ...extra, ...this.env } : this.env;
+  }
+
   /* ── HTTP entry: issue a ticket, upgrade to a socket, or answer a health probe ── */
   async fetch(request) {
     const url = new URL(request.url);
+
+    /* Owner gate first: the login and session probes must answer before any
+     * socket logic, and they are the only paths that carry no ticket. */
+    const gateResponse = await this.gate(request);
+    if (gateResponse) return gateResponse;
 
     if (url.pathname.endsWith('/health')) {
       const pools = await this.pools();
@@ -184,6 +252,12 @@ export class VoiceAgentSession {
     if (url.pathname.endsWith('/ticket')) {
       if (request.method !== 'POST') return new Response('method not allowed', { status: 405 });
       if (!this.approved(request)) return new Response('forbidden', { status: 403 });
+      /* Once a password is set, the app header alone is not enough — it is
+       * public knowledge. The signed cookie is what proves the owner. */
+      const gateEnv = await this.gateEnv();
+      if (gateConfigured(gateEnv) && !(await sessionValid(gateEnv, request))) {
+        return new Response('unauthorized', { status: 401 });
+      }
       await this.load();
       const now = Date.now();
       this.tickets = pruneTickets(this.tickets, now).slice(-(MAX_LIVE_TICKETS - 1));

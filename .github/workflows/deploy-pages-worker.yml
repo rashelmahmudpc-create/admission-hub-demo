@@ -64,10 +64,14 @@ jobs:
           set -eu
           rm -rf dist
           mkdir -p dist
-          rsync -a --exclude='.git' --exclude='node_modules' --exclude='docs' --exclude='AGENT_RESUME' --exclude='ai-proxy' --exclude='auth' --exclude='auth-native' --exclude='email-gateway' --exclude='apps-script' --exclude='uploads' --exclude='.github' --exclude='gk-agent-worker.js' --exclude='public-worker.js' --exclude='ai-agent.js' --exclude='worker-bundle.mjs' --exclude='voice-worker.js' --exclude='voice-agent.mjs' --exclude='voice-agent-core.mjs' --exclude='voice-agent-providers.mjs' --exclude='voice-agent-client-core.mjs' --exclude='notification-worker.js' --exclude='fcm-notification.mjs' --exclude='wrangler.toml' --exclude='package.json' --exclude='package-lock.json' --exclude='*.test.mjs' --exclude='*.md' ./ dist/
+          rsync -a --exclude='.git' --exclude='node_modules' --exclude='docs' --exclude='AGENT_RESUME' --exclude='ai-proxy' --exclude='auth' --exclude='auth-native' --exclude='email-gateway' --exclude='apps-script' --exclude='uploads' --exclude='.github' --exclude='gk-agent-worker.js' --exclude='public-worker.js' --exclude='ai-agent.js' --exclude='worker-bundle.mjs' --exclude='voice-worker.js' --exclude='voice-agent.mjs' --exclude='voice-agent-core.mjs' --exclude='voice-agent-providers.mjs' --exclude='voice-agent-gate.mjs' --exclude='notification-worker.js' --exclude='fcm-notification.mjs' --exclude='wrangler.toml' --exclude='package.json' --exclude='package-lock.json' --exclude='*.test.mjs' --exclude='*.md' ./ dist/
           test -s dist/index.html
           test -s dist/sw.js
           test -s dist/account-access.js
+          # The voice page loads its module by relative path; without it the
+          # page 404s the import and the gate protects a page that cannot run.
+          test -s dist/voice-agent-client-core.mjs
+          ! test -e dist/voice-agent-gate.mjs
           ! test -e dist/onboarding-welcome-hero.webp
           ! test -e dist/onboarding-personal-hero.webp
       - name: Deploy Pages UI

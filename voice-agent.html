@@ -4,6 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0b1220">
+<meta name="robots" content="noindex, nofollow">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="কণ্ঠসহায়ক">
+<link rel="manifest" href="/voice-agent.webmanifest">
+<link rel="apple-touch-icon" href="/icons/icon-192.png">
+<link rel="icon" href="/icons/icon-192.png">
 <title>🎙️ লাইভ কণ্ঠসহায়ক</title>
 <style>
   :root{
@@ -128,6 +135,9 @@ async function connect() {
     url = withTicket(resolveEndpoint(location.href, DEFAULT_WORKER), t);
   } catch (e) {
     dot.classList.remove('on');
+    /* No cookie (or an expired one) is not a retryable fault — send the owner
+     * to the password page instead of looping on the error state. */
+    if (e && e.status === 401) { location.replace('/voice-agent-login'); return; }
     setPhase(PHASE.ERROR, e && e.status === 403 ? 'অনুমতি নেই' : 'সংযোগে সমস্যা');
     if (retry < 5) { retry++; setTimeout(connect, 800 * retry); }
     return;

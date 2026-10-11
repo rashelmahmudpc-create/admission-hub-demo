@@ -482,5 +482,78 @@ function makeSession(env = POOLS) {
   t('P23-১১৯. a reply with no audio is an error, never a zero-length clip', emptyErr === 1);
 }
 
+/* ── ১৬d. Owner password gate (no login) ──
+ * The page is the owner's alone, so it is protected by a password rather than
+ * an account. The password must never reach the browser, a wrong guess must be
+ * refused, and the app header alone must not be enough once a password is set. */
+{
+  const gateEnv = (extra = {}) => ({
+    ...POOLS, VOICE_PAGE_PASSWORD: 'zayanzozo',
+    VOICE_AGENT: { idFromName: () => 'owner' }, ...extra,
+  });
+  const post = (body, headers = {}) => new Request('https://voice.test/api/voice/agent/login', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'X-AH-App': 'admission-hub', ...headers },
+    body: JSON.stringify(body),
+  });
+
+  // No password configured → the gate is honest about it rather than open.
+  const unset = new VoiceAgentSession(ctx(), { ...POOLS });
+  const unsetRes = await unset.fetch(post({ password: 'anything' }));
+  t('P23-১২৬. with no password set the gate says so (501), it does not open',
+    unsetRes.status === 501);
+
+  const s = new VoiceAgentSession(ctx(), gateEnv());
+  const bad = await s.fetch(post({ password: 'wrong' }));
+  t('P23-১২৭. a wrong password is refused', bad.status === 403);
+
+  const empty = await s.fetch(post({ password: '' }));
+  t('P23-১২৮. an empty password is refused, never treated as a match', empty.status === 403);
+
+  const ok = await s.fetch(post({ password: 'zayanzozo' }));
+  const setCookie = ok.headers.get('Set-Cookie') || '';
+  const cookie = setCookie.split(';')[0];
+  t('P23-১২৯. the right password sets an HttpOnly session cookie',
+    ok.status === 200 && /ah_voice=/.test(setCookie) && /HttpOnly/.test(setCookie));
+  t('P23-১৩০. the password itself is never echoed back to the browser',
+    !(await ok.text()).includes('zayanzozo') && !setCookie.includes('zayanzozo'));
+
+  const withCookie = await s.fetch(new Request('https://voice.test/api/voice/agent/session', {
+    headers: { 'X-AH-App': 'admission-hub', Cookie: cookie },
+  }));
+  t('P23-১৩১. the cookie proves the session', withCookie.status === 200);
+
+  const tampered = await s.fetch(new Request('https://voice.test/api/voice/agent/session', {
+    headers: { 'X-AH-App': 'admission-hub', Cookie: 'ah_voice=v1.9999999999999.forged' },
+  }));
+  t('P23-১৩২. a forged cookie is refused', tampered.status === 401);
+
+  // The app header is public knowledge, so once a password exists the ticket
+  // endpoint must require the cookie as well.
+  const noCookie = await s.fetch(new Request('https://voice.test/api/voice/agent/ticket', {
+    method: 'POST', headers: { 'X-AH-App': 'admission-hub' },
+  }));
+  t('P23-১৩৩. the app header alone no longer buys a ticket', noCookie.status === 401);
+
+  const withTicketCookie = await s.fetch(new Request('https://voice.test/api/voice/agent/ticket', {
+    method: 'POST', headers: { 'X-AH-App': 'admission-hub', Cookie: cookie },
+  }));
+  t('P23-১৩৪. the cookie buys a ticket', withTicketCookie.status === 200);
+
+  // A cookie signed for one password must not survive a password change.
+  const changed = new VoiceAgentSession(ctx(), gateEnv({ VOICE_PAGE_PASSWORD: 'different' }));
+  const stale = await changed.fetch(new Request('https://voice.test/api/voice/agent/session', {
+    headers: { 'X-AH-App': 'admission-hub', Cookie: cookie },
+  }));
+  t('P23-১৩৫. changing the password invalidates an existing session', stale.status === 401);
+
+  // An expired cookie is refused without any lookup.
+  const { makeSession } = await import('./voice-agent-gate.mjs');
+  const old = await makeSession(gateEnv(), Date.now() - 200 * 24 * 60 * 60 * 1000, 1000);
+  const expired = await s.fetch(new Request('https://voice.test/api/voice/agent/session', {
+    headers: { 'X-AH-App': 'admission-hub', Cookie: `ah_voice=${old}` },
+  }));
+  t('P23-১৩৬. an expired cookie is refused', expired.status === 401);
+}
+
 console.log(`\n  voice-agent DO: ${pass} pass / ${fail} fail`);
 if (fail) process.exit(1);

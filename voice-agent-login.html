@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0b1220">
+<meta name="robots" content="noindex, nofollow">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="কণ্ঠসহায়ক">
+<link rel="manifest" href="./voice-agent.webmanifest">
+<link rel="apple-touch-icon" href="./icons/icon-192.png">
+<link rel="icon" href="./icons/icon-192.png">
+<title>🎙️ কণ্ঠসহায়ক — প্রবেশ</title>
+<style>
+  :root{ --bg:#0b1220; --panel:#121c2e; --line:#243352; --ink:#e8eef8;
+    --dim:#93a4c0; --accent:#4ade80; --hot:#f87171; }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  body{margin:0;min-height:100dvh;background:var(--bg);color:var(--ink);
+    display:grid;place-content:center;justify-items:center;gap:14px;padding:28px 22px;
+    font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans Bengali",sans-serif}
+  .mark{display:grid;place-items:center;width:62px;height:62px;border-radius:20px;
+    background:var(--panel);border:1px solid var(--line);font-size:30px}
+  h1{margin:2px 0 0;font-size:19px;text-align:center}
+  p.sub{margin:0;color:var(--dim);font-size:13.5px;text-align:center;max-width:30ch}
+  form{display:flex;flex-direction:column;gap:10px;width:min(340px,86vw);margin-top:6px}
+  label{font-size:13px;color:var(--dim)}
+  input{width:100%;padding:15px 14px;border-radius:14px;border:1px solid var(--line);
+    background:var(--panel);color:var(--ink);font:inherit;outline:none}
+  input:focus{border-color:var(--accent)}
+  button{padding:16px;border:none;border-radius:14px;font:inherit;font-weight:700;
+    color:#06210f;background:var(--accent);cursor:pointer}
+  button[disabled]{opacity:.6;cursor:not-allowed}
+  #err{min-height:20px;color:var(--hot);font-size:13.5px;text-align:center}
+  .foot{color:var(--dim);font-size:12px;text-align:center;max-width:30ch}
+</style>
+</head>
+<body>
+  <div class="mark">🎙️</div>
+  <h1>লাইভ কণ্ঠসহায়ক</h1>
+  <p class="sub">শুধু স্যারের জন্য। পাসওয়ার্ড দিয়ে ঢুকুন।</p>
+
+  <form id="f" autocomplete="off">
+    <label for="pw">পাসওয়ার্ড</label>
+    <input id="pw" type="password" name="password" autocomplete="current-password"
+      inputmode="text" autocapitalize="off" autocorrect="off" spellcheck="false" required>
+    <button id="go" type="submit">ঢুকুন</button>
+    <div id="err" role="alert" aria-live="polite"></div>
+  </form>
+  <div class="foot">একবার ঢুকলে এই ফোনে মনে রাখবে — বারবার দিতে হবে না।</div>
+
+<script>
+(function(){
+  var f = document.getElementById('f'), pw = document.getElementById('pw'),
+      go = document.getElementById('go'), err = document.getElementById('err');
+  // A signed-in visit skips the form entirely.
+  fetch('/api/voice/session', { headers: { 'X-AH-App': 'admission-hub' } })
+    .then(function(r){ return r.ok ? r.json() : null; })
+    .then(function(d){ if (d && d.ok) location.replace('/voice-agent'); })
+    .catch(function(){});
+  f.addEventListener('submit', function(e){
+    e.preventDefault();
+    go.disabled = true; err.textContent = '';
+    fetch('/api/voice/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-AH-App': 'admission-hub' },
+      body: JSON.stringify({ password: pw.value })
+    }).then(function(r){
+      if (r.ok) { location.replace('/voice-agent'); return; }
+      return r.json().catch(function(){ return {}; }).then(function(d){
+        err.textContent = r.status === 403 ? 'পাসওয়ার্ড মিলল না'
+          : r.status === 501 ? 'পাসওয়ার্ড এখনো বসানো হয়নি'
+          : 'এখন হচ্ছে না, আবার চেষ্টা করুন';
+      });
+    }).catch(function(){ err.textContent = 'সংযোগে সমস্যা'; })
+      .finally(function(){ go.disabled = false; pw.select(); });
+  });
+})();
+</script>
+</body>
+</html>

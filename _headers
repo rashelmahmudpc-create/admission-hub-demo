@@ -53,6 +53,11 @@
   Content-Type: application/manifest+json
   Cache-Control: public, max-age=86400
 
+# Owner-only voice page PWA manifest (see voice-agent.webmanifest).
+/voice-agent.webmanifest
+  Content-Type: application/manifest+json
+  Cache-Control: public, max-age=86400
+
 # Social preview assets.
 /og-image.png
   Cache-Control: public, max-age=604800
