@@ -7,6 +7,7 @@ import {
   makeAuditRecord, parseAudit, appendAudit, STATUS, actionsEnabled
 } from './action-engine.js';
 import { checkAbuse, isGuarded } from './p14-abuse-guard.mjs';
+import { recordError, summarizeErrors } from './p19-error-monitor.mjs';
 
 const JSONH = {
   'Content-Type': 'application/json',
@@ -315,6 +316,16 @@ const admin = async (request, env, path) => {
     }
     return json({ error: 'প্রশ্ন খালি' }, 400);
   }
+  if (path === '/api/admin/errors' && request.method === 'GET') {
+    /* P19 — what the Worker actually caught. Reads the same KV the catch block
+       writes; an empty list is reported as empty, never padded. */
+    let log = [];
+    try {
+      const raw = await env.PUB_KV.get('errlog:v1');
+      log = raw ? JSON.parse(raw) : [];
+    } catch (_) { log = []; }
+    return json(summarizeErrors(log));
+  }
   return json({ error: 'not-found' }, 404);
 };
 
@@ -517,7 +528,15 @@ export default {
       }
       return json({ error: 'not-found' }, 404);
     } catch (error) {
-      return json({ error: String(error?.message || error).slice(0, 180) }, error?.status || 500);
+      const status = Number(error?.status) || 500;
+      /* P19 — an uncaught route failure must leave a trace. A 4xx is a caller
+         mistake the caller already sees; only a real failure (5xx) is recorded,
+         so the log stays a list of things that actually broke. Best-effort:
+         recordError never throws and never delays the reply. */
+      if (status >= 500) {
+        await recordError(env, { path, method: request.method, status, message: error?.message || String(error) });
+      }
+      return json({ error: String(error?.message || error).slice(0, 180) }, status);
     }
   }
 };

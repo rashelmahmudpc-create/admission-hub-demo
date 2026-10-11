@@ -2216,6 +2216,95 @@ async function checkAbuse(request, env, opts = {}) {
   return { allowed: true, limit, windowMs, remaining: limit - count - 1 };
 }
 
+// p19-error-monitor.mjs
+var ERROR_LOG_KEY = "errlog:v1";
+var MAX_KINDS = 50;
+var MAX_MESSAGE = 180;
+var SECRET_PATTERNS = [
+  /\bsk-[A-Za-z0-9_-]{8,}/g,
+  /\bghp_[A-Za-z0-9]{8,}/g,
+  /\bgithub_pat_[A-Za-z0-9_]{8,}/g,
+  /\bAIza[0-9A-Za-z_-]{10,}/g,
+  /\bck_[A-Za-z0-9]{8,}/g,
+  /\bgsk_[A-Za-z0-9]{8,}/g,
+  /\bxox[baprs]-[A-Za-z0-9-]{8,}/g,
+  /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{5,}/g,
+  /\b\d{8,10}:[A-Za-z0-9_-]{30,}/g,
+  /(password|passwd|secret|token|api[_-]?key|authorization)\s*[=:]\s*\S+/gi
+];
+function sanitizeErrorText(text) {
+  let out = String(text == null ? "" : text);
+  for (const re of SECRET_PATTERNS) out = out.replace(re, (match) => /password|passwd|secret|token|api[_-]?key|authorization/i.test(match) ? match.replace(/[=:]\s*\S+/, "=[REDACTED]") : "[REDACTED]");
+  return out.slice(0, MAX_MESSAGE);
+}
+function errorSignature(path, message) {
+  return `${path || "/"} :: ${sanitizeErrorText(message)}`;
+}
+function makeErrorEntry({ path, method, status, message, at }) {
+  return {
+    path: String(path || "/").slice(0, 120),
+    method: String(method || "GET").toUpperCase().slice(0, 10),
+    status: Number(status) || 500,
+    message: sanitizeErrorText(message),
+    at: Number(at) || 0
+  };
+}
+function appendError(log, entry) {
+  const list = Array.isArray(log) ? log.slice() : [];
+  const sig = errorSignature(entry.path, entry.message);
+  const idx = list.findIndex((e) => e && e.sig === sig);
+  if (idx >= 0) {
+    const seen = list[idx];
+    list[idx] = {
+      ...seen,
+      count: (Number(seen.count) || 1) + 1,
+      lastAt: entry.at,
+      method: entry.method,
+      status: entry.status,
+      message: entry.message
+    };
+    return list.slice(0, MAX_KINDS);
+  }
+  list.unshift({ sig, count: 1, firstAt: entry.at, lastAt: entry.at, ...entry });
+  return list.slice(0, MAX_KINDS);
+}
+function totalErrors(log) {
+  return (Array.isArray(log) ? log : []).reduce((n, e) => n + (Number(e?.count) || 0), 0);
+}
+function summarizeErrors(log) {
+  const list = Array.isArray(log) ? log : [];
+  return {
+    ok: true,
+    kinds: list.length,
+    total: totalErrors(list),
+    errors: list.map((e) => ({
+      path: e.path,
+      method: e.method,
+      status: e.status,
+      message: e.message,
+      count: Number(e.count) || 1,
+      firstAt: e.firstAt || e.at || 0,
+      lastAt: e.lastAt || e.at || 0
+    }))
+  };
+}
+async function recordError(env, { path, method, status, message, now } = {}) {
+  try {
+    if (!env || !env.PUB_KV || typeof env.PUB_KV.get !== "function") return;
+    const entry = makeErrorEntry({ path, method, status, message, at: (now || Date.now)() });
+    const raw = await env.PUB_KV.get(ERROR_LOG_KEY);
+    let log = [];
+    try {
+      log = raw ? JSON.parse(raw) : [];
+    } catch (_) {
+      log = [];
+    }
+    const next = appendError(log, entry);
+    await env.PUB_KV.put(ERROR_LOG_KEY, JSON.stringify(next));
+  } catch (_) {
+  }
+}
+
 // public-worker.js
 var JSONH = {
   "Content-Type": "application/json",
@@ -2499,6 +2588,16 @@ var admin = async (request, env, path) => {
     }
     return json({ error: "প্রশ্ন খালি" }, 400);
   }
+  if (path === "/api/admin/errors" && request.method === "GET") {
+    let log = [];
+    try {
+      const raw = await env.PUB_KV.get("errlog:v1");
+      log = raw ? JSON.parse(raw) : [];
+    } catch (_) {
+      log = [];
+    }
+    return json(summarizeErrors(log));
+  }
   return json({ error: "not-found" }, 404);
 };
 var public_worker_default = {
@@ -2682,7 +2781,11 @@ var public_worker_default = {
       }
       return json({ error: "not-found" }, 404);
     } catch (error) {
-      return json({ error: String(error?.message || error).slice(0, 180) }, error?.status || 500);
+      const status = Number(error?.status) || 500;
+      if (status >= 500) {
+        await recordError(env, { path, method: request.method, status, message: error?.message || String(error) });
+      }
+      return json({ error: String(error?.message || error).slice(0, 180) }, status);
     }
   }
 };
