@@ -20,6 +20,9 @@ import { handleFilesStorageRequest } from './files-storage.mjs';
 import { compressResponse } from './p13-api-compression.mjs';
 export { EmailGatewayCoordinator } from './email-gateway/worker/email-coordinator.mjs';
 export { AdmissionAuthAuthority } from './auth-native/worker/auth-authority-do.mjs';
+/* P23 — live voice agent. One Durable Object per owner holds the socket and the
+ * durable memory, so a provider-key swap never loses context. */
+export { VoiceAgentSession } from './voice-agent.mjs';
 
 const nativeAuthHandler = createNativeAuthHandler();
 /**
@@ -446,6 +449,13 @@ const maybeStart = async (request, env, ctx) => {
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+    /* P23 — live voice agent. Routed first because it answers a WebSocket
+     * upgrade, which no downstream handler should try to read. One object per
+     * owner keeps the socket and the durable memory together. */
+    if (url.pathname === '/api/voice/agent' || url.pathname === '/api/voice/agent/health') {
+      const id = env.VOICE_AGENT.idFromName(String(env.VOICE_OWNER_UID || 'owner'));
+      return env.VOICE_AGENT.get(id).fetch(request);
+    }
     const authResponse = await nativeAuthHandler(request, env, ctx);
     if (authResponse) return authResponse;
     const emailResponse = await handleInternalEmailRequest(request, env, ctx);

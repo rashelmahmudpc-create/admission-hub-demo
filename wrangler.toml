@@ -58,6 +58,14 @@ class_name = "EmailGatewayCoordinator"
 name = "AUTH_AUTHORITY"
 class_name = "AdmissionAuthAuthority"
 
+# P23 — live voice agent. Holds the WebSocket for one conversation and owns the
+# durable memory, so a provider-key swap never loses context. Provider pools are
+# secrets (VOICE_STT_POOL / VOICE_LLM_POOL / VOICE_TTS_POOL), not vars: the
+# Worker already sits on the Workers Free ceiling of 64 variables.
+[[durable_objects.bindings]]
+name = "VOICE_AGENT"
+class_name = "VoiceAgentSession"
+
 [[migrations]]
 tag = "v1-email-gateway-coordinator"
 new_sqlite_classes = ["EmailGatewayCoordinator"]
@@ -65,6 +73,10 @@ new_sqlite_classes = ["EmailGatewayCoordinator"]
 [[migrations]]
 tag = "v2-native-auth-authority"
 new_sqlite_classes = ["AdmissionAuthAuthority"]
+
+[[migrations]]
+tag = "v3-voice-agent"
+new_sqlite_classes = ["VoiceAgentSession"]
 
 [[kv_namespaces]]
 binding = "GK_KV"

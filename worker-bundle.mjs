@@ -2056,7 +2056,7 @@ async function agentChat(request, env, uid, opts = {}) {
         }
       };
       try {
-        let ok = false;
+        let ok2 = false;
         let lastErr = "";
         for (const c of chain) {
           try {
@@ -2071,7 +2071,7 @@ async function agentChat(request, env, uid, opts = {}) {
 `);
             }
             if (full.trim()) {
-              ok = true;
+              ok2 = true;
               await finalize(c.model, c.provider, full);
               const check = validateResponse(full, validationCtx);
               if (check.enforced) push(`event: replace
@@ -2093,7 +2093,7 @@ data: ${JSON.stringify({ model: c.model, provider: c.provider, intent, quiz: qui
             } else lastErr = String(e.message || e);
           }
         }
-        if (!ok) {
+        if (!ok2) {
           emitTrace({ fallbackReason: FALLBACK.PROVIDER_ERROR, validated: false });
           push(`event: error
 data: ${JSON.stringify({ error: "provider_failed", message: "AI একটু ব্যস্ত — কয়েক সেকেন্ড পরে আবার চেষ্টা করো।", detail: lastErr, retryable: true })}
@@ -11318,7 +11318,7 @@ async function sendGlobal(env, store, row, request) {
     }
   }
   reach = await store.activeDeviceCount();
-  const ok = topicRes.ok || fallbackSent > 0;
+  const ok2 = topicRes.ok || fallbackSent > 0;
   const delivered = topicRes.ok ? reach : fallbackSent;
   if (deferred > 0) {
     await store.updateGlobalStatus(row.id, {
@@ -11327,17 +11327,17 @@ async function sendGlobal(env, store, row, request) {
       reachEstimate: reach,
       delivered
     });
-    return { ok, topicOk: topicRes.ok, fallbackSent, fallbackFailed, reach, delivered, deferred };
+    return { ok: ok2, topicOk: topicRes.ok, fallbackSent, fallbackFailed, reach, delivered, deferred };
   }
   await store.updateGlobalStatus(row.id, {
-    status: ok ? "sent" : "failed",
+    status: ok2 ? "sent" : "failed",
     sentAt: Date.now(),
     fcmMessageId: topicRes.name || null,
     reachEstimate: reach,
     delivered,
-    error: ok ? null : String(topicRes.detail || "send-failed").slice(0, 200)
+    error: ok2 ? null : String(topicRes.detail || "send-failed").slice(0, 200)
   });
-  return { ok, topicOk: topicRes.ok, fallbackSent, fallbackFailed, reach, delivered, deferred: 0 };
+  return { ok: ok2, topicOk: topicRes.ok, fallbackSent, fallbackFailed, reach, delivered, deferred: 0 };
 }
 async function analyticsFor(env, items) {
   const store = new AnalyticsStore(env?.PROFILE_DB);
@@ -12997,8 +12997,8 @@ function computePerformance(rows = []) {
     const kind = String(r?.kind || "unknown");
     const variant = String(r?.variant || "A");
     const hour = Number.isFinite(Number(r?.hour)) ? Number(r.hour) : null;
-    const ok = r?.status !== "failed";
-    if (ok) sent += 1;
+    const ok2 = r?.status !== "failed";
+    if (ok2) sent += 1;
     else failed += 1;
     if (r?.openedAt) opened += 1;
     if (r?.clickedAt) clicked += 1;
@@ -13006,7 +13006,7 @@ function computePerformance(rows = []) {
     for (const [bucket, key] of [[byKind, kind], [byVariant, variant], [byHour, hour == null ? "unknown" : String(hour)]]) {
       if (key == null) continue;
       const b = bucket[key] || (bucket[key] = { sent: 0, opened: 0, clicked: 0, converted: 0, failed: 0 });
-      if (ok) b.sent += 1;
+      if (ok2) b.sent += 1;
       else b.failed += 1;
       if (r?.openedAt) b.opened += 1;
       if (r?.clickedAt) b.clicked += 1;
@@ -23088,17 +23088,17 @@ async function dispatchSecurityNotifications({
           sent.push(item);
           continue;
         }
-        let ok = false;
+        let ok2 = false;
         let reason2 = null;
         try {
           const result = await sendSecurityEmail(item);
-          ok = result?.ok !== false;
-          reason2 = ok ? null : String(result?.reason || "send-failed");
+          ok2 = result?.ok !== false;
+          reason2 = ok2 ? null : String(result?.reason || "send-failed");
         } catch (_) {
-          ok = false;
+          ok2 = false;
           reason2 = "send-error";
         }
-        sent.push(Object.freeze({ template: item.template, ok, ...reason2 ? { reason: reason2 } : {} }));
+        sent.push(Object.freeze({ template: item.template, ok: ok2, ...reason2 ? { reason: reason2 } : {} }));
       }
     }
   }
@@ -24446,6 +24446,692 @@ var AdmissionAuthAuthority = class {
   }
 };
 
+// voice-agent-core.mjs
+var VOICE_AGENT_VERSION = "voice-v1";
+var KIND2 = Object.freeze({
+  STT: "stt",
+  // speech  -> text
+  LLM: "llm",
+  // text    -> text
+  TTS: "tts"
+  // text    -> speech
+});
+var PROVIDERS = Object.freeze({
+  "groq-whisper": { kind: KIND2.STT, label: "Groq Whisper" },
+  "deepgram": { kind: KIND2.STT, label: "Deepgram" },
+  "gemini-stt": { kind: KIND2.STT, label: "Gemini" },
+  "groq-llama": { kind: KIND2.LLM, label: "Groq Llama" },
+  "gemini-llm": { kind: KIND2.LLM, label: "Gemini Flash" },
+  "openrouter": { kind: KIND2.LLM, label: "OpenRouter" },
+  "cartesia": { kind: KIND2.TTS, label: "Cartesia" },
+  "cartesia-2": { kind: KIND2.TTS, label: "Cartesia (secondary)" },
+  "elevenlabs": { kind: KIND2.TTS, label: "ElevenLabs" }
+});
+function isFailoverStatus(status) {
+  const n = Number(status);
+  if (!Number.isFinite(n)) return false;
+  return n === 401 || n === 402 || n === 403 || n === 429 || n >= 500 && n < 600;
+}
+var SECRET_PATTERNS2 = [
+  /sk-[A-Za-z0-9_-]{16,}/g,
+  /gsk_[A-Za-z0-9_-]{16,}/g,
+  /ghp_[A-Za-z0-9_-]{16,}/g,
+  /AIza[0-9A-Za-z_-]{20,}/g,
+  /ck_[A-Za-z0-9_-]{16,}/g,
+  /xoxb-[A-Za-z0-9-]{10,}/g,
+  /\bBearer\s+[A-Za-z0-9._-]{12,}/gi,
+  /\beyJ[A-Za-z0-9._-]{20,}/g
+];
+function sanitizeSecret(text) {
+  let out = String(text == null ? "" : text);
+  for (const re of SECRET_PATTERNS2) out = out.replace(re, "[redacted]");
+  return out;
+}
+function parsePool(raw, kind) {
+  let list = raw;
+  if (typeof raw === "string") {
+    const trimmed = raw.trim();
+    if (!trimmed) return [];
+    try {
+      list = JSON.parse(trimmed);
+    } catch (_) {
+      return [];
+    }
+  }
+  if (!Array.isArray(list)) return [];
+  const seen = /* @__PURE__ */ new Set();
+  const out = [];
+  for (const entry of list) {
+    if (!entry || typeof entry !== "object") continue;
+    const id = typeof entry.id === "string" ? entry.id.trim() : "";
+    const spec = PROVIDERS[id];
+    if (!spec || spec.kind !== kind) continue;
+    const key = typeof entry.key === "string" ? entry.key.trim() : "";
+    if (!key) continue;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    out.push(Object.freeze({
+      id,
+      label: spec.label,
+      key,
+      model: typeof entry.model === "string" && entry.model.trim() ? entry.model.trim() : null,
+      voiceId: typeof entry.voiceId === "string" && entry.voiceId.trim() ? entry.voiceId.trim() : null
+    }));
+  }
+  return out;
+}
+function parseProviderPools(config = {}) {
+  return Object.freeze({
+    stt: parsePool(config.stt, KIND2.STT),
+    llm: parsePool(config.llm, KIND2.LLM),
+    tts: parsePool(config.tts, KIND2.TTS)
+  });
+}
+async function runWithFailover(pool, call, onFailover) {
+  if (!Array.isArray(pool) || pool.length === 0) {
+    const err2 = new Error("no_provider_configured");
+    err2.status = 503;
+    throw err2;
+  }
+  let lastError = null;
+  for (let i = 0; i < pool.length; i++) {
+    const provider = pool[i];
+    try {
+      return { result: await call(provider, i), provider: provider.id, index: i };
+    } catch (e) {
+      lastError = e;
+      const status = e && e.status;
+      const failover = isFailoverStatus(status);
+      if (typeof onFailover === "function") {
+        try {
+          onFailover({
+            provider: provider.id,
+            index: i,
+            status: Number.isFinite(Number(status)) ? Number(status) : null,
+            reason: sanitizeSecret(e && e.message || "error").slice(0, 160),
+            failover,
+            remaining: pool.length - i - 1
+          });
+        } catch (_) {
+        }
+      }
+      if (!failover) throw e;
+    }
+  }
+  const err = new Error(`all_providers_exhausted: ${sanitizeSecret(lastError && lastError.message)}`);
+  err.status = 502;
+  err.cause = lastError;
+  throw err;
+}
+var STATE = Object.freeze({
+  IDLE: "idle",
+  // connected, waiting for the owner to speak
+  LISTENING: "listening",
+  // capturing audio
+  THINKING: "thinking",
+  // STT done, LLM working
+  SPEAKING: "speaking",
+  // audio streaming back
+  CLOSED: "closed"
+});
+var TRANSITIONS2 = Object.freeze({
+  [STATE.IDLE]: [STATE.LISTENING, STATE.CLOSED],
+  [STATE.LISTENING]: [STATE.THINKING, STATE.IDLE, STATE.CLOSED],
+  [STATE.THINKING]: [STATE.SPEAKING, STATE.IDLE, STATE.CLOSED],
+  [STATE.SPEAKING]: [STATE.LISTENING, STATE.IDLE, STATE.CLOSED],
+  [STATE.CLOSED]: []
+});
+function canTransition(from, to) {
+  const allowed2 = TRANSITIONS2[from];
+  return Array.isArray(allowed2) && allowed2.includes(to);
+}
+function createSession(now = () => Date.now()) {
+  let state = STATE.IDLE;
+  let history = [];
+  const turns = [];
+  let summary = "";
+  let pendingTurn = null;
+  return {
+    get state() {
+      return state;
+    },
+    get history() {
+      return history.slice();
+    },
+    get turns() {
+      return turns.slice();
+    },
+    get summary() {
+      return summary;
+    },
+    /**
+     * Rehydrate from durable storage after a reconnect or redeploy. Kept here
+     * rather than letting a caller push onto the `history` getter, which returns
+     * a copy and would silently discard the restore.
+     */
+    restore(savedHistory, savedSummary, limit = 200) {
+      history = Array.isArray(savedHistory) ? savedHistory.slice(-limit) : [];
+      summary = typeof savedSummary === "string" ? savedSummary.slice(0, MAX_SUMMARY_LEN2) : "";
+      state = STATE.IDLE;
+      return history.length;
+    },
+    transition(to) {
+      if (!canTransition(state, to)) {
+        const err = new Error(`illegal_transition:${state}->${to}`);
+        err.status = 409;
+        throw err;
+      }
+      state = to;
+      return state;
+    },
+    /** Begin a turn: the owner started speaking. */
+    beginTurn() {
+      this.transition(STATE.LISTENING);
+      pendingTurn = { startedAt: now(), sttMs: null, llmMs: null, ttsMs: null };
+      return pendingTurn;
+    },
+    /** STT finished; `text` is what the owner said. */
+    endListening(text, sttMs) {
+      this.transition(STATE.THINKING);
+      if (pendingTurn) pendingTurn.sttMs = sttMs;
+      const said = String(text || "").trim();
+      if (said) history.push({ role: "user", text: said, ts: now() });
+      return said;
+    },
+    /** The agent produced a reply. */
+    endThinking(replyText, llmMs) {
+      this.transition(STATE.SPEAKING);
+      if (pendingTurn) pendingTurn.llmMs = llmMs;
+      const said = String(replyText || "").trim();
+      if (said) history.push({ role: "agent", text: said, ts: now() });
+      return said;
+    },
+    /** Audio finished streaming; the turn is over. */
+    endSpeaking(ttsMs) {
+      if (pendingTurn) {
+        pendingTurn.ttsMs = ttsMs;
+        pendingTurn.totalMs = now() - pendingTurn.startedAt;
+        turns.push(Object.freeze({ ...pendingTurn }));
+        pendingTurn = null;
+      }
+      this.transition(STATE.IDLE);
+      return turns[turns.length - 1] || null;
+    },
+    /** Barge-in: the owner talks over the agent. */
+    interrupt() {
+      if (pendingTurn) {
+        pendingTurn.totalMs = now() - pendingTurn.startedAt;
+        turns.push(Object.freeze({ ...pendingTurn }));
+        pendingTurn = null;
+      }
+      if (state === STATE.SPEAKING || state === STATE.THINKING) {
+        this.transition(STATE.LISTENING);
+      }
+      return state;
+    },
+    setSummary(text) {
+      summary = String(text || "").slice(0, MAX_SUMMARY_LEN2);
+      return summary;
+    },
+    close() {
+      if (state !== STATE.CLOSED) state = STATE.CLOSED;
+    },
+    /* Latency rollup — the number the owner actually feels. */
+    stats() {
+      if (!turns.length) return { turns: 0, avgTotalMs: null, p95TotalMs: null };
+      const totals = turns.map((t) => t.totalMs).filter(Number.isFinite).sort((a, b) => a - b);
+      const sum2 = totals.reduce((a, b) => a + b, 0);
+      return {
+        turns: turns.length,
+        avgTotalMs: Math.round(sum2 / totals.length),
+        p95TotalMs: totals[Math.min(totals.length - 1, Math.floor(totals.length * 0.95))]
+      };
+    }
+  };
+}
+var MAX_SUMMARY_LEN2 = 1200;
+var HISTORY_WINDOW = 12;
+function buildSystemPrompt2({ brain = "", memory = "", summary = "", ownerName = "স্যার" } = {}) {
+  const parts = [
+    `তুমি একটি লাইভ কণ্ঠসহায়ক। ব্যবহারকারীকে সবসময় "${ownerName}" বলে সম্বোধন করবে।`,
+    "সংক্ষিপ্ত, স্পষ্ট, মানুষের মতো বাংলায় কথা বলবে — যেন ফোনে বলা হচ্ছে।",
+    "একটি উত্তর দুই-তিন বাক্যের বেশি নয়, কারণ উত্তর শোনা হচ্ছে, পড়া হচ্ছে না।"
+  ];
+  if (brain) parts.push("", "— ব্রেইন —", String(brain).slice(0, 4e3));
+  if (memory) parts.push("", "— দীর্ঘমেয়াদি স্মৃতি —", String(memory).slice(0, 2e3));
+  if (summary) parts.push("", "— আগের কথার সারমর্ম —", String(summary).slice(0, MAX_SUMMARY_LEN2));
+  return parts.join("\n");
+}
+function buildMessages(history = [], summary = "") {
+  const msgs = [];
+  if (summary) msgs.push({ role: "assistant", content: `[আগের সারমর্ম] ${summary}` });
+  const recent = history.slice(-HISTORY_WINDOW);
+  for (const turn of recent) {
+    msgs.push({ role: turn.role === "agent" ? "assistant" : "user", content: String(turn.text || "") });
+  }
+  return msgs;
+}
+function foldSummary(history, summary = "", keep = HISTORY_WINDOW) {
+  if (history.length <= keep) return { summary: String(summary || ""), folded: 0 };
+  const overflow = history.slice(0, history.length - keep);
+  const lines = overflow.map((t) => `${t.role === "agent" ? "সহায়ক" : "ব্যবহারকারী"}: ${String(t.text || "").trim()}`);
+  const combined = [summary, ...lines].filter(Boolean).join("\n");
+  return { summary: combined.slice(-MAX_SUMMARY_LEN2), folded: overflow.length };
+}
+
+// voice-agent-providers.mjs
+var ok = (r) => r && typeof r.ok === "boolean" ? r.ok : false;
+async function statusError(res, fallback) {
+  let detail = "";
+  try {
+    detail = String((await res.json())?.error?.message || (await res.json())?.message || "");
+  } catch (_) {
+  }
+  const err = new Error(sanitizeSecret(detail || `${fallback}_${res.status}`).slice(0, 200));
+  err.status = res.status;
+  return err;
+}
+async function groqStt(provider, audio, opts = {}) {
+  const f = opts.fetch || fetch;
+  const form = new FormData();
+  form.append("file", new Blob([audio], { type: opts.mime || "audio/webm" }), "clip.webm");
+  form.append("model", provider.model || "whisper-large-v3");
+  form.append("language", opts.language || "bn");
+  form.append("response_format", "json");
+  const res = await f("https://api.groq.com/openai/v1/audio/transcriptions", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${provider.key}` },
+    body: form
+  });
+  if (!ok(res)) throw await statusError(res, "groq_stt");
+  const data = await res.json();
+  return { text: String(data.text || "").trim(), provider: provider.id };
+}
+async function deepgramStt(provider, audio, opts = {}) {
+  const f = opts.fetch || fetch;
+  const params = new URLSearchParams({ model: provider.model || "nova-3", language: opts.language || "bn", smart_format: "true" });
+  const res = await f(`https://api.deepgram.com/v1/listen?${params}`, {
+    method: "POST",
+    headers: { Authorization: `Token ${provider.key}`, "Content-Type": opts.mime || "audio/webm" },
+    body: audio
+  });
+  if (!ok(res)) throw await statusError(res, "deepgram_stt");
+  const data = await res.json();
+  const alt = data?.results?.channels?.[0]?.alternatives?.[0];
+  return { text: String(alt?.transcript || "").trim(), provider: provider.id };
+}
+async function geminiStt(provider, audio, opts = {}) {
+  const f = opts.fetch || fetch;
+  const b64 = opts.base64 || base64From(audio);
+  const model = provider.model || "gemini-2.5-flash";
+  const res = await f(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-goog-api-key": provider.key },
+    body: JSON.stringify({
+      contents: [{ parts: [
+        { text: "এই অডিওটি বাংলায় হুবহু লিখে দাও। শুধু লেখাটা দাও, আর কিছু নয়।" },
+        { inline_data: { mime_type: opts.mime || "audio/webm", data: b64 } }
+      ] }]
+    })
+  });
+  if (!ok(res)) throw await statusError(res, "gemini_stt");
+  const data = await res.json();
+  return { text: String(data?.candidates?.[0]?.content?.parts?.[0]?.text || "").trim(), provider: provider.id };
+}
+function base64From(audio) {
+  const bytes = audio instanceof Uint8Array ? audio : new Uint8Array(audio);
+  let bin = "";
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin);
+}
+async function openAiChat(url, provider, messages, opts, fallbackName) {
+  const f = opts.fetch || fetch;
+  const res = await f(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${provider.key}` },
+    body: JSON.stringify({
+      model: provider.model || opts.defaultModel,
+      messages,
+      temperature: opts.temperature == null ? 0.6 : opts.temperature,
+      max_tokens: opts.maxTokens || 400
+    })
+  });
+  if (!ok(res)) throw await statusError(res, fallbackName);
+  const data = await res.json();
+  return { text: String(data?.choices?.[0]?.message?.content || "").trim(), provider: provider.id };
+}
+function groqLlm(provider, messages, opts = {}) {
+  return openAiChat(
+    "https://api.groq.com/openai/v1/chat/completions",
+    provider,
+    messages,
+    { defaultModel: "llama-3.3-70b-versatile", ...opts },
+    "groq_llm"
+  );
+}
+function openrouterLlm(provider, messages, opts = {}) {
+  return openAiChat(
+    "https://openrouter.ai/api/v1/chat/completions",
+    provider,
+    messages,
+    { defaultModel: "meta-llama/llama-3.3-70b-instruct:free", ...opts },
+    "openrouter_llm"
+  );
+}
+async function geminiLlm(provider, messages, opts = {}) {
+  const f = opts.fetch || fetch;
+  const model = provider.model || "gemini-2.5-flash";
+  const system = opts.system || "";
+  const contents = messages.map((m) => ({
+    role: m.role === "assistant" ? "model" : "user",
+    parts: [{ text: String(m.content || "") }]
+  }));
+  const res = await f(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-goog-api-key": provider.key },
+    body: JSON.stringify({
+      ...system ? { system_instruction: { parts: [{ text: system }] } } : {},
+      contents,
+      generationConfig: { temperature: opts.temperature == null ? 0.6 : opts.temperature, maxOutputTokens: opts.maxTokens || 400 }
+    })
+  });
+  if (!ok(res)) throw await statusError(res, "gemini_llm");
+  const data = await res.json();
+  return { text: String(data?.candidates?.[0]?.content?.parts?.[0]?.text || "").trim(), provider: provider.id };
+}
+var CARTESIA_URL = "https://api.cartesia.ai/tts/bytes";
+var CARTESIA_VERSION = "2026-08-14";
+var CARTESIA_VOICE_BN = "db6b0ed5-d5d3-463d-ae85-518a07d3c2b4";
+async function cartesiaTts(provider, text, opts = {}) {
+  const f = opts.fetch || fetch;
+  const res = await f(CARTESIA_URL, {
+    method: "POST",
+    headers: {
+      "Cartesia-Version": CARTESIA_VERSION,
+      Authorization: `Bearer ${provider.key}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      model_id: provider.model || "sonic-3.6",
+      transcript: text,
+      voice: { id: provider.voiceId || opts.voiceId || CARTESIA_VOICE_BN },
+      language: opts.language || "bn",
+      generation_config: { speed: opts.speed || 0.95 },
+      output_format: { container: "mp3", sample_rate: 44100, bit_rate: 128e3 }
+    })
+  });
+  if (!ok(res)) throw await statusError(res, "cartesia_tts");
+  const buf = await res.arrayBuffer();
+  if (!buf.byteLength) {
+    const e = new Error("empty_audio");
+    e.status = 502;
+    throw e;
+  }
+  return { audio: buf, mime: "audio/mpeg", provider: provider.id };
+}
+async function elevenTts(provider, text, opts = {}) {
+  const f = opts.fetch || fetch;
+  const voiceId = provider.voiceId || opts.voiceId || "EXAVITQu4vr4xnSDxMaL";
+  const format = opts.format || "mp3_22050_32";
+  const res = await f(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=${format}`, {
+    method: "POST",
+    headers: { "xi-api-key": provider.key, "Content-Type": "application/json", Accept: "audio/mpeg" },
+    body: JSON.stringify({
+      text,
+      model_id: provider.model || "eleven_flash_v2_5",
+      voice_settings: { stability: 0.5, similarity_boost: 0.75, style: 0, use_speaker_boost: true, speed: 1 }
+    })
+  });
+  if (!ok(res)) throw await statusError(res, "elevenlabs_tts");
+  const buf = await res.arrayBuffer();
+  if (!buf.byteLength) {
+    const e = new Error("empty_audio");
+    e.status = 502;
+    throw e;
+  }
+  return { audio: buf, mime: "audio/mpeg", provider: provider.id };
+}
+var STT = { "groq-whisper": groqStt, deepgram: deepgramStt, "gemini-stt": geminiStt };
+var LLM = { "groq-llama": groqLlm, openrouter: openrouterLlm, "gemini-llm": geminiLlm };
+var TTS = { cartesia: cartesiaTts, "cartesia-2": cartesiaTts, elevenlabs: elevenTts };
+function pickAdapter(table, provider) {
+  const fn = table[provider && provider.id];
+  if (!fn) {
+    const e = new Error("unknown_provider:" + (provider && provider.id));
+    e.status = 500;
+    throw e;
+  }
+  return fn;
+}
+
+// voice-agent.mjs
+var HISTORY_KEY = "va_history";
+var SUMMARY_KEY = "va_summary";
+var MEMORY_KEY = "va_memory";
+var MAX_STORED_TURNS = 200;
+function fallbackPool(env, kind) {
+  const map = {
+    stt: [
+      { env: "GROQ_API_KEY", id: "groq-whisper" },
+      { env: "GEMINI_API_KEY", id: "gemini-stt" }
+    ],
+    llm: [
+      { env: "GROQ_API_KEY", id: "groq-llama" },
+      { env: "GEMINI_API_KEY", id: "gemini-llm" }
+    ],
+    tts: [
+      { env: "CARTESIA_API_KEY", id: "cartesia" },
+      { env: "ELEVENLABS_API_KEY", id: "elevenlabs" }
+    ]
+  };
+  const out = [];
+  for (const entry of map[kind] || []) {
+    const key = env && env[entry.env];
+    if (typeof key === "string" && key.trim()) {
+      out.push(Object.freeze({ id: entry.id, key: key.trim(), model: null, voiceId: null }));
+    }
+  }
+  return out;
+}
+function toBase64(buf) {
+  const bytes = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
+  let bin = "";
+  const CHUNK = 32768;
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+  }
+  return btoa(bin);
+}
+function fromBase64(b64) {
+  const bin = atob(String(b64 || ""));
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+var VoiceAgentSession = class {
+  constructor(ctx, env) {
+    this.ctx = ctx;
+    this.env = env;
+    this.session = null;
+    this.sockets = /* @__PURE__ */ new Set();
+    this.ownerUid = null;
+    this.brain = "";
+    this.memory = [];
+    this.loaded = false;
+  }
+  /* ── HTTP entry: upgrade to a socket, or answer a health probe ── */
+  async fetch(request) {
+    const url = new URL(request.url);
+    if (url.pathname.endsWith("/health")) {
+      const pools = this.pools();
+      return Response.json({
+        ok: true,
+        version: VOICE_AGENT_VERSION,
+        pools: { stt: pools.stt.length, llm: pools.llm.length, tts: pools.tts.length }
+      });
+    }
+    if (request.headers.get("Upgrade") !== "websocket") {
+      return new Response("expected websocket", { status: 426 });
+    }
+    await this.load();
+    const pair = new WebSocketPair();
+    const [client, server] = Object.values(pair);
+    server.accept();
+    this.sockets.add(server);
+    server.addEventListener("message", (ev) => {
+      this.handle(server, ev.data).catch((e) => {
+        this.send(server, { type: "error", message: sanitizeSecret(e && e.message).slice(0, 200), status: e && e.status || 500 });
+      });
+    });
+    const drop = () => {
+      this.sockets.delete(server);
+      this.persist();
+    };
+    server.addEventListener("close", drop);
+    server.addEventListener("error", drop);
+    this.send(server, {
+      type: "ready",
+      version: VOICE_AGENT_VERSION,
+      pools: (() => {
+        const p = this.pools();
+        return { stt: p.stt.length, llm: p.llm.length, tts: p.tts.length };
+      })(),
+      resumed: this.session ? this.session.history.length : 0
+    });
+    return new Response(null, { status: 101, webSocket: client });
+  }
+  /* ── Provider pools, rebuilt from env on every use so a new dashboard key
+   *    takes effect without a redeploy of this object's state.
+   *
+   *    A configured pool wins. When a pool is absent the object falls back to
+   *    the single-key secrets the Worker already holds, so the agent is usable
+   *    before any new secret exists. Adding a pool later upgrades it to the
+   *    multi-key behaviour without a code change. ── */
+  pools() {
+    const configured = parseProviderPools({
+      stt: this.env.VOICE_STT_POOL,
+      llm: this.env.VOICE_LLM_POOL,
+      tts: this.env.VOICE_TTS_POOL
+    });
+    return {
+      stt: configured.stt.length ? configured.stt : fallbackPool(this.env, "stt"),
+      llm: configured.llm.length ? configured.llm : fallbackPool(this.env, "llm"),
+      tts: configured.tts.length ? configured.tts : fallbackPool(this.env, "tts")
+    };
+  }
+  /* ── Durable memory ── */
+  async load() {
+    if (this.loaded) return;
+    const history = await this.ctx.storage.get(HISTORY_KEY);
+    const summary = await this.ctx.storage.get(SUMMARY_KEY);
+    const memory = await this.ctx.storage.get(MEMORY_KEY);
+    this.session = createSession();
+    this.session.restore(history, summary, MAX_STORED_TURNS);
+    this.memory = Array.isArray(memory) ? memory : [];
+    this.brain = String(this.env.VOICE_BRAIN || "");
+    this.loaded = true;
+  }
+  async persist() {
+    if (!this.session) return;
+    try {
+      await this.ctx.storage.put(HISTORY_KEY, this.session.history.slice(-MAX_STORED_TURNS));
+      await this.ctx.storage.put(SUMMARY_KEY, this.session.summary);
+      await this.ctx.storage.put(MEMORY_KEY, this.memory.slice(-500));
+    } catch (_) {
+    }
+  }
+  send(ws, obj) {
+    try {
+      ws.send(JSON.stringify(obj));
+    } catch (_) {
+    }
+  }
+  async handle(ws, raw) {
+    await this.load();
+    let msg;
+    try {
+      msg = JSON.parse(raw);
+    } catch (_) {
+      return this.send(ws, { type: "error", message: "bad_json", status: 400 });
+    }
+    const type = msg && msg.type;
+    if (type === "reset") {
+      this.session = createSession();
+      await this.persist();
+      return this.send(ws, { type: "ready", reset: true });
+    }
+    if (type === "stats") return this.send(ws, { type: "stats", ...this.session.stats() });
+    if (type === "interrupt") {
+      this.session.interrupt();
+      return this.send(ws, { type: "interrupted", state: this.session.state });
+    }
+    if (type === "turn") return this.runTurn(ws, msg);
+    return this.send(ws, { type: "error", message: "unknown_type:" + type, status: 400 });
+  }
+  /* ── The turn: STT → LLM → TTS, each step through the pool ── */
+  async runTurn(ws, msg) {
+    const pools = this.pools();
+    const now = () => Date.now();
+    const clock = { t0: now() };
+    this.session.beginTurn();
+    const audio = fromBase64(msg.audio);
+    if (!audio.byteLength) {
+      this.session.transition(STATE.IDLE);
+      return this.send(ws, { type: "error", message: "empty_audio", status: 400 });
+    }
+    const sttRun = await runWithFailover(pools.stt, (p) => pickAdapter(STT, p)(p, audio, { mime: msg.mime || "audio/webm", base64: msg.audio }));
+    const sttMs = now() - clock.t0;
+    const heard = this.session.endListening(sttRun.result.text, sttMs);
+    this.send(ws, { type: "transcript", text: heard, provider: sttRun.provider });
+    if (!heard) {
+      this.session.transition(STATE.IDLE);
+      return this.send(ws, { type: "done", ms: { stt: sttMs, llm: 0, tts: 0, total: now() - clock.t0 } });
+    }
+    const t1 = now();
+    const system = buildSystemPrompt2({
+      brain: this.brain,
+      memory: renderMemory(this.memory),
+      summary: this.session.summary,
+      ownerName: this.env.VOICE_OWNER_NAME || "স্যার"
+    });
+    const messages = buildMessages(this.session.history, "");
+    const llmRun = await runWithFailover(pools.llm, (p) => pickAdapter(LLM, p)(p, messages, { system, maxTokens: 400 }));
+    const llmMs = now() - t1;
+    const reply = this.session.endThinking(llmRun.result.text, llmMs);
+    this.send(ws, { type: "reply", text: reply, provider: llmRun.provider });
+    const t2 = now();
+    let audioOut = null;
+    try {
+      const ttsRun = await runWithFailover(pools.tts, (p) => pickAdapter(TTS, p)(p, reply, { language: "bn" }));
+      audioOut = ttsRun.result;
+      this.send(ws, { type: "audio", data: toBase64(audioOut.audio), mime: audioOut.mime, provider: ttsRun.provider });
+    } catch (e) {
+      this.send(ws, { type: "error", message: "tts_failed:" + sanitizeSecret(e && e.message).slice(0, 120), status: e && e.status || 502 });
+    }
+    const ttsMs = now() - t2;
+    const folded = foldSummary(this.session.history, this.session.summary);
+    if (folded.folded) this.session.setSummary(folded.summary);
+    this.absorbMemory(heard, reply);
+    const turn = this.session.endSpeaking(ttsMs);
+    this.send(ws, { type: "done", ms: { stt: sttMs, llm: llmMs, tts: ttsMs, total: turn && turn.totalMs || now() - clock.t0 } });
+    await this.persist();
+  }
+  /* Long-term memory is the same engine the text agent uses, so the voice agent
+   * and the chat agent share one brain rather than drifting apart. */
+  absorbMemory(heard, reply) {
+    try {
+      const owner = resolveMemoryOwner(this.ownerUid || this.env.VOICE_OWNER_UID || "voice-owner");
+      if (!owner) return;
+      const candidates = extractMemoryCandidates(String(reply || "") + "\n" + String(heard || ""));
+      for (const c of candidates || []) {
+        const rec = makeMemory(c, owner);
+        if (rec) this.memory = upsertMemory(this.memory, rec, owner);
+      }
+    } catch (_) {
+    }
+  }
+};
+
 // gk-agent-worker.js
 var nativeAuthHandler = createNativeAuthHandler();
 var APP_HEADER = "admission-hub";
@@ -24494,9 +25180,9 @@ var NEWS_SCHEMA = {
 };
 var cors = (request) => {
   const origin = request.headers.get("Origin") || "";
-  const ok = /^https:\/\/([a-z0-9-]+\.)?github\.io$/.test(origin) || /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin) || /^https:\/\/[a-z0-9-]+\.e2b\.app$/.test(origin);
+  const ok2 = /^https:\/\/([a-z0-9-]+\.)?github\.io$/.test(origin) || /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin) || /^https:\/\/[a-z0-9-]+\.e2b\.app$/.test(origin);
   const headers = { "Access-Control-Allow-Methods": "GET, POST, OPTIONS", "Access-Control-Allow-Headers": "Content-Type, X-AH-App", "Access-Control-Max-Age": "86400" };
-  if (ok) headers["Access-Control-Allow-Origin"] = origin;
+  if (ok2) headers["Access-Control-Allow-Origin"] = origin;
   return headers;
 };
 var json6 = (request, obj, status = 200) => new Response(JSON.stringify(obj), { status, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", ...cors(request) } });
@@ -24897,6 +25583,10 @@ var maybeStart = async (request, env, ctx) => {
 var gk_agent_worker_default = {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+    if (url.pathname === "/api/voice/agent" || url.pathname === "/api/voice/agent/health") {
+      const id = env.VOICE_AGENT.idFromName(String(env.VOICE_OWNER_UID || "owner"));
+      return env.VOICE_AGENT.get(id).fetch(request);
+    }
     const authResponse = await nativeAuthHandler(request, env, ctx);
     if (authResponse) return authResponse;
     const emailResponse = await handleInternalEmailRequest(request, env, ctx);
@@ -25024,6 +25714,7 @@ var __test = { tryCreate, createWithFailover, parseOutput, dhakaToday, keys, GK_
 export {
   AdmissionAuthAuthority,
   EmailGatewayCoordinator,
+  VoiceAgentSession,
   __test,
   gk_agent_worker_default as default
 };
