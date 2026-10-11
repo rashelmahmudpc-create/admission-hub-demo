@@ -89,3 +89,20 @@ test('p13b-10: --all mirrors the small lists so the doc can be assembled from D1
   const plain = buildSql(doc, { now: 1 });
   assert.ok(!/INSERT INTO content_lists/.test(plain), 'without --all the KV lists are left alone');
 });
+
+test('p13b-11: a large mirrored list is split so no statement trips SQLITE_TOOBIG', () => {
+  // 6,256 vocabulary rows in ONE INSERT is what failed the live backfill:
+  // SQLITE_TOOBIG. Every emitted statement must stay under the byte cap.
+  const vocabularyMaster = Array.from({ length: 6256 }, (_, i) => ({
+    id: `vm-${i}`, word: `Word${i}`, meaning: 'অর্থ', synonyms: [], antonyms: [], tips: 'ব্যাখ্যা',
+  }));
+  const sql = buildSql({ ...DOC, vocabularyMaster }, { now: 1, all: true });
+  const statements = sql.split('\n').filter(line => line.startsWith('INSERT INTO content_lists'));
+  assert.ok(statements.length > 1, 'the 6,256-row list must span multiple INSERT statements');
+  for (const stmt of sql.split(';\n')) {
+    assert.ok(stmt.length <= 900 * 1024 + 4096, 'no single statement may exceed the byte cap');
+  }
+  const rows = (sql.match(/INSERT INTO content_lists \(kind, id, ord, payload\) VALUES/g) || []).length;
+  assert.ok(rows >= 2, 'content_lists inserts must be batched, not one giant statement');
+});
+

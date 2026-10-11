@@ -13,6 +13,11 @@ import { SCHEMA } from '../p13-d1-read.mjs';
 
 const DIFFICULTY = { easy: 1, medium: 2, hard: 3, mixed: 0 };
 const BATCH = 25;
+/* D1/SQLite rejects a statement past its size ceiling with SQLITE_TOOBIG. A
+   count cap alone is not enough: a mirrored list can hold thousands of rows, so
+   one INSERT built from them overflows even at a modest row count. Cap every
+   statement by bytes as well as rows. */
+const MAX_STMT_BYTES = 900 * 1024;
 
 const sqlStr = v => (v === null || v === undefined) ? 'NULL' : `'${String(v).replace(/'/g, "''")}'`;
 const sqlInt = v => { const n = Number(v); return Number.isFinite(n) ? String(Math.trunc(n)) : '0'; };
@@ -45,6 +50,27 @@ export function questionToRow(q, now = Date.now()) {
   };
 }
 
+/* Split tuples into INSERT statements that stay under both the row cap and the
+   byte cap, so no single statement can trip SQLITE_TOOBIG. Returns each
+   statement's tuple lines (without the leading keyword or trailing suffix). */
+function batchTuples(lines, batch) {
+  const groups = [];
+  let cur = [];
+  let curBytes = 0;
+  for (const line of lines) {
+    const size = line.length + 2;
+    if (cur.length && (cur.length >= batch || curBytes + size > MAX_STMT_BYTES)) {
+      groups.push(cur);
+      cur = [];
+      curBytes = 0;
+    }
+    cur.push(line);
+    curBytes += size;
+  }
+  if (cur.length) groups.push(cur);
+  return groups;
+}
+
 export function buildSql(doc, { now = Date.now(), batch = BATCH, all = false } = {}) {
   const questions = Array.isArray(doc && doc.questions) ? doc.questions : [];
   const rows = questions.filter(q => q && q.id).map(q => questionToRow(q, now));
@@ -55,12 +81,11 @@ export function buildSql(doc, { now = Date.now(), batch = BATCH, all = false } =
   // transaction statements (wrangler: "use state.storage.transaction()").
   // `d1 execute` applies the file atomically anyway.
   out.push('DELETE FROM questions;');
-  for (let i = 0; i < rows.length; i += batch) {
-    const chunk = rows.slice(i, i + batch);
+  const qLines = rows.map(r =>
+    `  (${sqlStr(r.id)}, ${sqlStr(r.topic_id)}, ${sqlStr(r.subject_id)}, ${sqlInt(r.difficulty)}, 1, ${sqlStr(r.sort_key)}, ${sqlStr(r.payload)}, ${sqlInt(r.updated_at)})`);
+  for (const chunk of batchTuples(qLines, batch)) {
     out.push('INSERT INTO questions (id, topic_id, subject_id, difficulty, published, sort_key, payload, updated_at) VALUES');
-    out.push(chunk.map(r =>
-      `  (${sqlStr(r.id)}, ${sqlStr(r.topic_id)}, ${sqlStr(r.subject_id)}, ${sqlInt(r.difficulty)}, 1, ${sqlStr(r.sort_key)}, ${sqlStr(r.payload)}, ${sqlInt(r.updated_at)})`
-    ).join(',\n') + '\nON CONFLICT(id) DO UPDATE SET topic_id=excluded.topic_id, subject_id=excluded.subject_id, difficulty=excluded.difficulty, published=excluded.published, sort_key=excluded.sort_key, payload=excluded.payload, updated_at=excluded.updated_at;');
+    out.push(chunk.join(',\n') + '\nON CONFLICT(id) DO UPDATE SET topic_id=excluded.topic_id, subject_id=excluded.subject_id, difficulty=excluded.difficulty, published=excluded.published, sort_key=excluded.sort_key, payload=excluded.payload, updated_at=excluded.updated_at;');
   }
   /* Record the content signature these rows came from. The read path refuses to
      serve a table whose sig does not match the live meta, so a stale D1 copy can
@@ -77,8 +102,11 @@ export function buildSql(doc, { now = Date.now(), batch = BATCH, all = false } =
     for (const kind of KINDS) {
       const list = Array.isArray(doc && doc[kind]) ? doc[kind].filter(x => x && x.id) : [];
       if (!list.length) continue;
-      out.push(`INSERT INTO content_lists (kind, id, ord, payload) VALUES`);
-      out.push(list.map((x, i) => `  (${sqlStr(kind)}, ${sqlStr(x.id)}, ${sqlInt(i)}, ${sqlStr(JSON.stringify(x))})`).join(',\n') + '\nON CONFLICT(kind, id) DO UPDATE SET ord=excluded.ord, payload=excluded.payload;');
+      const lLines = list.map((x, i) => `  (${sqlStr(kind)}, ${sqlStr(x.id)}, ${sqlInt(i)}, ${sqlStr(JSON.stringify(x))})`);
+      for (const chunk of batchTuples(lLines, batch)) {
+        out.push(`INSERT INTO content_lists (kind, id, ord, payload) VALUES`);
+        out.push(chunk.join(',\n') + '\nON CONFLICT(kind, id) DO UPDATE SET ord=excluded.ord, payload=excluded.payload;');
+      }
     }
   }
   out.push(`SELECT COUNT(*) AS rows FROM questions;`);
