@@ -25010,7 +25010,21 @@ function readKeys(env, names) {
   }
   return [];
 }
-function fallbackPool(env, kind) {
+var KV_SECRET_NAMES = ["CARTESIA_API_KEY", "ELEVENLABS_API_KEY"];
+async function kvSecrets(env) {
+  if (!env || !env.GK_KV) return {};
+  const out = {};
+  for (const name of KV_SECRET_NAMES) {
+    try {
+      const value = await env.GK_KV.get(`secret:${name}`);
+      if (typeof value === "string" && value.trim()) out[name] = value.trim();
+    } catch (_) {
+    }
+  }
+  return out;
+}
+function fallbackPool(env, kind, extra = {}) {
+  const source = Object.keys(extra).length ? { ...extra, ...env } : env;
   const map = {
     stt: [
       { names: ["GROQ_API_KEY", "GROQ_KEYS"], id: "groq-whisper" },
@@ -25032,7 +25046,7 @@ function fallbackPool(env, kind) {
   };
   const out = [];
   for (const entry of map[kind] || []) {
-    for (const key of readKeys(env, entry.names)) {
+    for (const key of readKeys(source, entry.names)) {
       out.push(Object.freeze({ id: entry.id, key, model: null, voiceId: null }));
     }
   }
@@ -25063,6 +25077,7 @@ var VoiceAgentSession = class {
     this.brain = "";
     this.memory = [];
     this.tickets = [];
+    this.kvSecretCache = null;
     this.loaded = false;
   }
   /**
@@ -25082,7 +25097,7 @@ var VoiceAgentSession = class {
   async fetch(request) {
     const url = new URL(request.url);
     if (url.pathname.endsWith("/health")) {
-      const pools = this.pools();
+      const pools = await this.pools();
       return Response.json({
         ok: true,
         version: VOICE_AGENT_VERSION,
@@ -25128,13 +25143,11 @@ var VoiceAgentSession = class {
     };
     server.addEventListener("close", drop);
     server.addEventListener("error", drop);
+    const readyPools = await this.pools();
     this.send(server, {
       type: "ready",
       version: VOICE_AGENT_VERSION,
-      pools: (() => {
-        const p = this.pools();
-        return { stt: p.stt.length, llm: p.llm.length, tts: p.tts.length };
-      })(),
+      pools: { stt: readyPools.stt.length, llm: readyPools.llm.length, tts: readyPools.tts.length },
       resumed: this.session ? this.session.history.length : 0
     });
     return new Response(null, { status: 101, webSocket: client });
@@ -25146,16 +25159,27 @@ var VoiceAgentSession = class {
    *    the single-key secrets the Worker already holds, so the agent is usable
    *    before any new secret exists. Adding a pool later upgrades it to the
    *    multi-key behaviour without a code change. ── */
-  pools() {
+  /**
+   * The provider pools for this session.
+   *
+   * async because a key the Worker could not bind lives in KV (see
+   * KV_SECRET_NAMES). The KV read is cached for the instance's lifetime: a
+   * Durable Object is long-lived and single-threaded per request, so a pool
+   * does not change under a live call and re-reading it on every turn would
+   * only add latency to speech.
+   */
+  async pools() {
+    if (!this.kvSecretCache) this.kvSecretCache = await kvSecrets(this.env);
+    const extra = this.kvSecretCache;
     const configured = parseProviderPools({
       stt: this.env.VOICE_STT_POOL,
       llm: this.env.VOICE_LLM_POOL,
       tts: this.env.VOICE_TTS_POOL
     });
     return {
-      stt: configured.stt.length ? configured.stt : fallbackPool(this.env, "stt"),
-      llm: configured.llm.length ? configured.llm : fallbackPool(this.env, "llm"),
-      tts: configured.tts.length ? configured.tts : fallbackPool(this.env, "tts")
+      stt: configured.stt.length ? configured.stt : fallbackPool(this.env, "stt", extra),
+      llm: configured.llm.length ? configured.llm : fallbackPool(this.env, "llm", extra),
+      tts: configured.tts.length ? configured.tts : fallbackPool(this.env, "tts", extra)
     };
   }
   /* ── Durable memory ── */
@@ -25211,7 +25235,7 @@ var VoiceAgentSession = class {
   }
   /* ── The turn: STT → LLM → TTS, each step through the pool ── */
   async runTurn(ws, msg) {
-    const pools = this.pools();
+    const pools = await this.pools();
     const now = () => Date.now();
     const clock = { t0: now() };
     this.session.beginTurn();

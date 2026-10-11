@@ -63,26 +63,27 @@ function makeSession(env = POOLS) {
 /* ── ১. Pools come from env and are rebuilt per call ── */
 {
   const { s } = makeSession();
-  const p = s.pools();
+  const p = await s.pools();
   t('P23-৩২. the DO reads three pools from env', p.stt.length === 1 && p.llm.length === 2 && p.tts.length === 2);
   const s2 = new VoiceAgentSession(ctx(), { ...POOLS, VOICE_TTS_POOL: JSON.stringify([{ id: 'cartesia', key: 'only' }]) });
   t('P23-৩৩. a dashboard key change takes effect without rebuilding the object',
-    s2.pools().tts.length === 1);
+    (await s2.pools()).tts.length === 1);
 }
 
 /* ── ১b. Fallback to the secrets the Worker already holds ── */
 {
   const bare = new VoiceAgentSession(ctx(), { GROQ_API_KEY: 'g', GEMINI_API_KEY: 'm', CARTESIA_API_KEY: 'c' });
-  const p = bare.pools();
+  const p = await bare.pools();
   t('P23-৫৪. with no pool configured, existing single-key secrets are used',
     p.stt.length === 2 && p.llm.length === 2 && p.tts.length === 2
     && p.tts[0].id === 'cartesia' && p.tts[1].id === 'gemini-tts');
-  const none = new VoiceAgentSession(ctx(), {});
+  const none = await new VoiceAgentSession(ctx(), {}).pools();
   t('P23-৫৫. with no secrets at all the pools are empty, not broken',
-    none.pools().stt.length === 0 && none.pools().tts.length === 0);
+    none.stt.length === 0 && none.tts.length === 0);
   const partial = new VoiceAgentSession(ctx(), { VOICE_TTS_POOL: JSON.stringify([{ id: 'elevenlabs', key: 'e' }]), CARTESIA_API_KEY: 'c' });
+  const pp = await partial.pools();
   t('P23-৫৬. a configured pool wins over the fallback for that kind only',
-    partial.pools().tts.length === 1 && partial.pools().tts[0].id === 'elevenlabs');
+    pp.tts.length === 1 && pp.tts[0].id === 'elevenlabs');
 }
 
 /* ── ২. Health probe never leaks a key ── */
@@ -344,7 +345,7 @@ function makeSession(env = POOLS) {
   const s = new VoiceAgentSession(ctx(), {
     GEMINI_KEYS: many, GROQ_API_KEY: 'gsk_live', CARTESIA_API_KEY: 'ck_live',
   });
-  const p = s.pools();
+  const p = await s.pools();
   t('P23-১০১. a comma-separated GEMINI_KEYS expands to one pool entry per key',
     p.llm.filter(x => x.id === 'gemini-llm').length === 10
     && p.stt.filter(x => x.id === 'gemini-stt').length === 10);
@@ -355,26 +356,51 @@ function makeSession(env = POOLS) {
   t('P23-১০৪. ordering is Groq first, then Gemini — the fast path leads',
     p.llm[0].id === 'groq-llama' && p.llm[1].id === 'gemini-llm');
   t('P23-১০৫. blank and whitespace keys are dropped, never sent as a credential',
-    (() => {
+    await (async () => {
       const b = new VoiceAgentSession(ctx(), { GEMINI_KEYS: 'a, ,,b,', GROQ_API_KEY: '   ' });
-      const bp = b.pools();
+      const bp = await b.pools();
       return bp.llm.filter(x => x.id === 'gemini-llm').length === 2 && !bp.llm.some(x => x.id === 'groq-llama');
     })());
   t('P23-১০৬. no bindings at all yields empty pools rather than a crash',
-    (() => { const e = new VoiceAgentSession(ctx(), {}).pools(); return e.stt.length === 0 && e.llm.length === 0 && e.tts.length === 0; })());
+    await (async () => { const e = await new VoiceAgentSession(ctx(), {}).pools(); return e.stt.length === 0 && e.llm.length === 0 && e.tts.length === 0; })());
   t('P23-১০৭. a configured pool takes precedence over the fallback',
-    (() => {
+    await (async () => {
       const c = new VoiceAgentSession(ctx(), {
         VOICE_LLM_POOL: JSON.stringify([{ id: 'openrouter', key: 'sk-abc' }]),
         GEMINI_KEYS: many,
       });
-      const cp = c.pools();
+      const cp = await c.pools();
       return cp.llm.length === 1 && cp.llm[0].id === 'openrouter';
     })());
   t('P23-১০৮. Gemini fills the tts pool too, so the agent is never mute',
     p.tts.some(x => x.id === 'gemini-tts') && p.tts.length === 11);
   t('P23-১০৯. Cartesia still leads the tts pool when it is bound',
     p.tts[0].id === 'cartesia' && p.tts.findIndex(x => x.id === 'gemini-tts') > 0);
+}
+
+/* ── ১৬b. A key with no variable slot is read from KV ── */
+{
+  // admission-gk sits at the Free plan's 64-variable cap, so CARTESIA_API_KEY
+  // cannot be bound with `wrangler secret put` (code 10055). It lives in GK_KV
+  // instead and must still reach the pool like any bound secret.
+  const kv = { get: async (k) => (k === 'secret:CARTESIA_API_KEY' ? 'kv-cartesia' : null) };
+  const s = new VoiceAgentSession(ctx(), { GK_KV: kv, GEMINI_KEYS: 'g1' });
+  const p = await s.pools();
+  t('P23-১২০. a key held in KV reaches the pool like a bound one',
+    p.tts.some(x => x.id === 'cartesia' && x.key === 'kv-cartesia') && p.tts[0].id === 'cartesia');
+
+  // A bound variable must win, so binding the key later needs no cleanup.
+  const both = new VoiceAgentSession(ctx(), { GK_KV: kv, CARTESIA_API_KEY: 'bound-wins' });
+  const bp = await both.pools();
+  t('P23-১২১. a bound variable wins over the KV copy',
+    bp.tts.filter(x => x.id === 'cartesia').length === 1 && bp.tts[0].key === 'bound-wins');
+
+  // A KV outage must leave the agent working, not take the whole turn down.
+  const broken = { get: async () => { throw new Error('kv down'); } };
+  const b = new VoiceAgentSession(ctx(), { GK_KV: broken, GEMINI_KEYS: 'g1' });
+  const brp = await b.pools();
+  t('P23-১২২. a KV failure leaves the agent working without the optional voice',
+    brp.tts.some(x => x.id === 'gemini-tts') && !brp.tts.some(x => x.id === 'cartesia'));
 }
 
 /* ── ১৭. The Gemini voice adapter: the TTS path that needs no new credential ── */
