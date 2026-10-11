@@ -41,30 +41,50 @@ const TICKETS_KEY = 'va_tickets';
 const MAX_STORED_TURNS = 200;
 
 /**
- * Build a one-entry pool from a single-key secret the Worker already holds.
- * This is what makes the agent usable before any new secret is created; it is
- * deliberately read-only over `env` and never invents a credential.
+ * Build pools from the bindings the Worker already holds, without inventing a
+ * credential. This is what makes the agent usable before any new secret exists.
+ *
+ * A binding may hold one key or a comma-separated list, and the names differ per
+ * provider: the Worker already binds GEMINI_KEYS (a list) and GROQ_API_KEY, while
+ * Cartesia is a single key. Reading only a singular name silently produced an
+ * empty pool, which reads as "the agent is broken" rather than "one name is wrong".
  */
+function readKeys(env, names) {
+  if (!env) return [];
+  for (const name of names) {
+    const raw = env[name];
+    if (typeof raw !== 'string' || !raw.trim()) continue;
+    const list = raw.split(',').map(k => k.trim()).filter(Boolean);
+    if (list.length) return list;
+  }
+  return [];
+}
+
+/** Build one-entry-per-key pools from the single-key secrets already bound. */
 function fallbackPool(env, kind) {
   const map = {
     stt: [
-      { env: 'GROQ_API_KEY', id: 'groq-whisper' },
-      { env: 'GEMINI_API_KEY', id: 'gemini-stt' },
+      { names: ['GROQ_API_KEY', 'GROQ_KEYS'], id: 'groq-whisper' },
+      { names: ['GEMINI_KEYS', 'GEMINI_API_KEY'], id: 'gemini-stt' },
+      { names: ['DEEPGRAM_API_KEY'], id: 'deepgram' },
     ],
     llm: [
-      { env: 'GROQ_API_KEY', id: 'groq-llama' },
-      { env: 'GEMINI_API_KEY', id: 'gemini-llm' },
+      { names: ['GROQ_API_KEY', 'GROQ_KEYS'], id: 'groq-llama' },
+      { names: ['GEMINI_KEYS', 'GEMINI_API_KEY'], id: 'gemini-llm' },
+      { names: ['OPENROUTER_API_KEY', 'OPENROUTER_KEYS'], id: 'openrouter' },
     ],
     tts: [
-      { env: 'CARTESIA_API_KEY', id: 'cartesia' },
-      { env: 'ELEVENLABS_API_KEY', id: 'elevenlabs' },
+      { names: ['CARTESIA_API_KEY', 'CARTESIA_KEYS'], id: 'cartesia' },
+      { names: ['ELEVENLABS_API_KEY', 'ELEVENLABS_KEYS'], id: 'elevenlabs' },
+      // Last, because Cartesia/ElevenLabs sound better — but it needs no new
+      // credential, so without it a deployment with no TTS key is mute.
+      { names: ['GEMINI_KEYS', 'GEMINI_API_KEY'], id: 'gemini-tts' },
     ],
   };
   const out = [];
   for (const entry of map[kind] || []) {
-    const key = env && env[entry.env];
-    if (typeof key === 'string' && key.trim()) {
-      out.push(Object.freeze({ id: entry.id, key: key.trim(), model: null, voiceId: null }));
+    for (const key of readKeys(env, entry.names)) {
+      out.push(Object.freeze({ id: entry.id, key, model: null, voiceId: null }));
     }
   }
   return out;

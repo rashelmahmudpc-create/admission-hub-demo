@@ -38,6 +38,7 @@ export const PROVIDERS = Object.freeze({
   'cartesia':     { kind: KIND.TTS, label: 'Cartesia' },
   'cartesia-2':   { kind: KIND.TTS, label: 'Cartesia (secondary)' },
   'elevenlabs':   { kind: KIND.TTS, label: 'ElevenLabs' },
+  'gemini-tts':   { kind: KIND.TTS, label: 'Gemini Voice' },
 });
 
 /* An HTTP status that means "this key is done for now, try the next".

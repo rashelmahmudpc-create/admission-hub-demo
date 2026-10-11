@@ -87,6 +87,15 @@ function base64From(audio) {
   return btoa(bin);
 }
 
+/* The reverse. Gemini's voice reply arrives as base64 PCM, and node has no atob
+ * in every context, so this does not depend on one. */
+function fromBase64(b64) {
+  const bin = atob(String(b64));
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
 /* ── Text → text ────────────────────────────────────────────────────────── */
 
 /** OpenAI-compatible chat completion — shared by Groq and OpenRouter. */
@@ -171,6 +180,70 @@ export async function cartesiaTts(provider, text, opts = {}) {
   return { audio: buf, mime: 'audio/mpeg', provider: provider.id };
 }
 
+/**
+ * Wrap raw PCM in a WAV container.
+ *
+ * Gemini's voice models return headerless 16-bit mono PCM, which a browser
+ * cannot play. 44 bytes of RIFF header turns it into something `new Audio()`
+ * accepts, with no audio library and no dependency.
+ */
+export function pcmToWav(pcm, sampleRate = 24000, channels = 1, bits = 16) {
+  const bytes = pcm instanceof Uint8Array ? pcm : new Uint8Array(pcm);
+  const blockAlign = channels * bits / 8;
+  const out = new Uint8Array(44 + bytes.length);
+  const view = new DataView(out.buffer);
+  const ascii = (off, s) => { for (let i = 0; i < s.length; i++) out[off + i] = s.charCodeAt(i); };
+  ascii(0, 'RIFF');
+  view.setUint32(4, 36 + bytes.length, true);
+  ascii(8, 'WAVE');
+  ascii(12, 'fmt ');
+  view.setUint32(16, 16, true);          // PCM chunk size
+  view.setUint16(20, 1, true);           // format: PCM
+  view.setUint16(22, channels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * blockAlign, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, bits, true);
+  ascii(36, 'data');
+  view.setUint32(40, bytes.length, true);
+  out.set(bytes, 44);
+  return out;
+}
+
+/**
+ * Gemini voice (the TTS preview models). Returns WAV bytes.
+ *
+ * This is the only TTS path that needs no new credential — it rides the same
+ * Gemini keys already bound for the LLM — so the agent can speak on a
+ * deployment where Cartesia is not configured.
+ */
+export async function geminiTts(provider, text, opts = {}) {
+  const f = opts.fetch || fetch;
+  const model = provider.model || 'gemini-2.5-flash-preview-tts';
+  const voice = provider.voiceId || opts.voiceId || 'Kore';
+  const res = await f(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': provider.key },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text }] }],
+      generationConfig: {
+        responseModalities: ['AUDIO'],
+        speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } },
+      },
+    }),
+  });
+  if (!ok(res)) throw await statusError(res, 'gemini_tts');
+  const data = await res.json();
+  const inline = data && data.candidates && data.candidates[0]
+    && data.candidates[0].content && data.candidates[0].content.parts
+    && data.candidates[0].content.parts[0] && data.candidates[0].content.parts[0].inlineData;
+  if (!inline || !inline.data) { const e = new Error('empty_audio'); e.status = 502; throw e; }
+  const pcm = fromBase64(inline.data);
+  const rate = Number((/rate=(\d+)/.exec(inline.mimeType || '') || [])[1]) || 24000;
+  if (!pcm.length) { const e = new Error('empty_audio'); e.status = 502; throw e; }
+  return { audio: pcmToWav(pcm, rate), mime: 'audio/wav', provider: provider.id };
+}
+
 /** ElevenLabs. The fallback voice. */
 export async function elevenTts(provider, text, opts = {}) {
   const f = opts.fetch || fetch;
@@ -195,7 +268,7 @@ export async function elevenTts(provider, text, opts = {}) {
 
 export const STT = { 'groq-whisper': groqStt, deepgram: deepgramStt, 'gemini-stt': geminiStt };
 export const LLM = { 'groq-llama': groqLlm, openrouter: openrouterLlm, 'gemini-llm': geminiLlm };
-export const TTS = { cartesia: cartesiaTts, 'cartesia-2': cartesiaTts, elevenlabs: elevenTts };
+export const TTS = { cartesia: cartesiaTts, 'cartesia-2': cartesiaTts, elevenlabs: elevenTts, 'gemini-tts': geminiTts };
 
 export function pickAdapter(table, provider) {
   const fn = table[provider && provider.id];

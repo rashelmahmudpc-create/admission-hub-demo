@@ -24465,7 +24465,8 @@ var PROVIDERS = Object.freeze({
   "openrouter": { kind: KIND2.LLM, label: "OpenRouter" },
   "cartesia": { kind: KIND2.TTS, label: "Cartesia" },
   "cartesia-2": { kind: KIND2.TTS, label: "Cartesia (secondary)" },
-  "elevenlabs": { kind: KIND2.TTS, label: "ElevenLabs" }
+  "elevenlabs": { kind: KIND2.TTS, label: "ElevenLabs" },
+  "gemini-tts": { kind: KIND2.TTS, label: "Gemini Voice" }
 });
 function isFailoverStatus(status) {
   const n = Number(status);
@@ -24811,6 +24812,12 @@ function base64From(audio) {
   for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
   return btoa(bin);
 }
+function fromBase64(b64) {
+  const bin = atob(String(b64));
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
 async function openAiChat(url, provider, messages, opts, fallbackName) {
   const f = opts.fetch || fetch;
   const res = await f(url, {
@@ -24896,6 +24903,62 @@ async function cartesiaTts(provider, text, opts = {}) {
   }
   return { audio: buf, mime: "audio/mpeg", provider: provider.id };
 }
+function pcmToWav(pcm, sampleRate = 24e3, channels = 1, bits = 16) {
+  const bytes = pcm instanceof Uint8Array ? pcm : new Uint8Array(pcm);
+  const blockAlign = channels * bits / 8;
+  const out = new Uint8Array(44 + bytes.length);
+  const view = new DataView(out.buffer);
+  const ascii = (off, s) => {
+    for (let i = 0; i < s.length; i++) out[off + i] = s.charCodeAt(i);
+  };
+  ascii(0, "RIFF");
+  view.setUint32(4, 36 + bytes.length, true);
+  ascii(8, "WAVE");
+  ascii(12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, channels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * blockAlign, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, bits, true);
+  ascii(36, "data");
+  view.setUint32(40, bytes.length, true);
+  out.set(bytes, 44);
+  return out;
+}
+async function geminiTts(provider, text, opts = {}) {
+  const f = opts.fetch || fetch;
+  const model = provider.model || "gemini-2.5-flash-preview-tts";
+  const voice = provider.voiceId || opts.voiceId || "Kore";
+  const res = await f(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-goog-api-key": provider.key },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text }] }],
+      generationConfig: {
+        responseModalities: ["AUDIO"],
+        speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } }
+      }
+    })
+  });
+  if (!ok(res)) throw await statusError(res, "gemini_tts");
+  const data = await res.json();
+  const inline = data && data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts && data.candidates[0].content.parts[0] && data.candidates[0].content.parts[0].inlineData;
+  if (!inline || !inline.data) {
+    const e = new Error("empty_audio");
+    e.status = 502;
+    throw e;
+  }
+  const pcm = fromBase64(inline.data);
+  const rate2 = Number((/rate=(\d+)/.exec(inline.mimeType || "") || [])[1]) || 24e3;
+  if (!pcm.length) {
+    const e = new Error("empty_audio");
+    e.status = 502;
+    throw e;
+  }
+  return { audio: pcmToWav(pcm, rate2), mime: "audio/wav", provider: provider.id };
+}
 async function elevenTts(provider, text, opts = {}) {
   const f = opts.fetch || fetch;
   const voiceId = provider.voiceId || opts.voiceId || "EXAVITQu4vr4xnSDxMaL";
@@ -24920,7 +24983,7 @@ async function elevenTts(provider, text, opts = {}) {
 }
 var STT = { "groq-whisper": groqStt, deepgram: deepgramStt, "gemini-stt": geminiStt };
 var LLM = { "groq-llama": groqLlm, openrouter: openrouterLlm, "gemini-llm": geminiLlm };
-var TTS = { cartesia: cartesiaTts, "cartesia-2": cartesiaTts, elevenlabs: elevenTts };
+var TTS = { cartesia: cartesiaTts, "cartesia-2": cartesiaTts, elevenlabs: elevenTts, "gemini-tts": geminiTts };
 function pickAdapter(table, provider) {
   const fn = table[provider && provider.id];
   if (!fn) {
@@ -24937,26 +25000,40 @@ var SUMMARY_KEY = "va_summary";
 var MEMORY_KEY = "va_memory";
 var TICKETS_KEY = "va_tickets";
 var MAX_STORED_TURNS = 200;
+function readKeys(env, names) {
+  if (!env) return [];
+  for (const name of names) {
+    const raw = env[name];
+    if (typeof raw !== "string" || !raw.trim()) continue;
+    const list = raw.split(",").map((k) => k.trim()).filter(Boolean);
+    if (list.length) return list;
+  }
+  return [];
+}
 function fallbackPool(env, kind) {
   const map = {
     stt: [
-      { env: "GROQ_API_KEY", id: "groq-whisper" },
-      { env: "GEMINI_API_KEY", id: "gemini-stt" }
+      { names: ["GROQ_API_KEY", "GROQ_KEYS"], id: "groq-whisper" },
+      { names: ["GEMINI_KEYS", "GEMINI_API_KEY"], id: "gemini-stt" },
+      { names: ["DEEPGRAM_API_KEY"], id: "deepgram" }
     ],
     llm: [
-      { env: "GROQ_API_KEY", id: "groq-llama" },
-      { env: "GEMINI_API_KEY", id: "gemini-llm" }
+      { names: ["GROQ_API_KEY", "GROQ_KEYS"], id: "groq-llama" },
+      { names: ["GEMINI_KEYS", "GEMINI_API_KEY"], id: "gemini-llm" },
+      { names: ["OPENROUTER_API_KEY", "OPENROUTER_KEYS"], id: "openrouter" }
     ],
     tts: [
-      { env: "CARTESIA_API_KEY", id: "cartesia" },
-      { env: "ELEVENLABS_API_KEY", id: "elevenlabs" }
+      { names: ["CARTESIA_API_KEY", "CARTESIA_KEYS"], id: "cartesia" },
+      { names: ["ELEVENLABS_API_KEY", "ELEVENLABS_KEYS"], id: "elevenlabs" },
+      // Last, because Cartesia/ElevenLabs sound better — but it needs no new
+      // credential, so without it a deployment with no TTS key is mute.
+      { names: ["GEMINI_KEYS", "GEMINI_API_KEY"], id: "gemini-tts" }
     ]
   };
   const out = [];
   for (const entry of map[kind] || []) {
-    const key = env && env[entry.env];
-    if (typeof key === "string" && key.trim()) {
-      out.push(Object.freeze({ id: entry.id, key: key.trim(), model: null, voiceId: null }));
+    for (const key of readKeys(env, entry.names)) {
+      out.push(Object.freeze({ id: entry.id, key, model: null, voiceId: null }));
     }
   }
   return out;
@@ -24970,7 +25047,7 @@ function toBase64(buf) {
   }
   return btoa(bin);
 }
-function fromBase64(b64) {
+function fromBase642(b64) {
   const bin = atob(String(b64 || ""));
   const out = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
@@ -25138,7 +25215,7 @@ var VoiceAgentSession = class {
     const now = () => Date.now();
     const clock = { t0: now() };
     this.session.beginTurn();
-    const audio = fromBase64(msg.audio);
+    const audio = fromBase642(msg.audio);
     if (!audio.byteLength) {
       this.session.transition(STATE.IDLE);
       return this.send(ws, { type: "error", message: "empty_audio", status: 400 });

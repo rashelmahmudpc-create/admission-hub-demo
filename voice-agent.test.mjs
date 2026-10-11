@@ -75,7 +75,8 @@ function makeSession(env = POOLS) {
   const bare = new VoiceAgentSession(ctx(), { GROQ_API_KEY: 'g', GEMINI_API_KEY: 'm', CARTESIA_API_KEY: 'c' });
   const p = bare.pools();
   t('P23-৫৪. with no pool configured, existing single-key secrets are used',
-    p.stt.length === 2 && p.llm.length === 2 && p.tts.length === 1 && p.tts[0].id === 'cartesia');
+    p.stt.length === 2 && p.llm.length === 2 && p.tts.length === 2
+    && p.tts[0].id === 'cartesia' && p.tts[1].id === 'gemini-tts');
   const none = new VoiceAgentSession(ctx(), {});
   t('P23-৫৫. with no secrets at all the pools are empty, not broken',
     none.pools().stt.length === 0 && none.pools().tts.length === 0);
@@ -333,6 +334,102 @@ function makeSession(env = POOLS) {
   t('P23-১০০. the worker routes the whole /api/voice/agent subtree, ticket included',
     /url\.pathname === '\/api\/voice\/agent' \|\| url\.pathname\.startsWith\('\/api\/voice\/agent\/'\)/.test(src)
     && /env\.VOICE_AGENT\.get\(/.test(src));
+}
+
+/* ── ১৬. The env fallback reads the bindings the Worker actually holds ── */
+{
+  // The live Worker binds GEMINI_KEYS (a list) and GROQ_API_KEY; the earlier
+  // fallback read GEMINI_API_KEY, which does not exist, so the pool was empty.
+  const many = Array.from({ length: 10 }, (_, i) => `k${i}`).join(',');
+  const s = new VoiceAgentSession(ctx(), {
+    GEMINI_KEYS: many, GROQ_API_KEY: 'gsk_live', CARTESIA_API_KEY: 'ck_live',
+  });
+  const p = s.pools();
+  t('P23-১০১. a comma-separated GEMINI_KEYS expands to one pool entry per key',
+    p.llm.filter(x => x.id === 'gemini-llm').length === 10
+    && p.stt.filter(x => x.id === 'gemini-stt').length === 10);
+  t('P23-১০২. the single-key bindings are picked up too',
+    p.llm.some(x => x.id === 'groq-llama') && p.stt.some(x => x.id === 'groq-whisper'));
+  t('P23-১০৩. a TTS key on the Worker leads the tts pool',
+    p.tts[0].id === 'cartesia' && p.tts.length === 11);
+  t('P23-১০৪. ordering is Groq first, then Gemini — the fast path leads',
+    p.llm[0].id === 'groq-llama' && p.llm[1].id === 'gemini-llm');
+  t('P23-১০৫. blank and whitespace keys are dropped, never sent as a credential',
+    (() => {
+      const b = new VoiceAgentSession(ctx(), { GEMINI_KEYS: 'a, ,,b,', GROQ_API_KEY: '   ' });
+      const bp = b.pools();
+      return bp.llm.filter(x => x.id === 'gemini-llm').length === 2 && !bp.llm.some(x => x.id === 'groq-llama');
+    })());
+  t('P23-১০৬. no bindings at all yields empty pools rather than a crash',
+    (() => { const e = new VoiceAgentSession(ctx(), {}).pools(); return e.stt.length === 0 && e.llm.length === 0 && e.tts.length === 0; })());
+  t('P23-১০৭. a configured pool takes precedence over the fallback',
+    (() => {
+      const c = new VoiceAgentSession(ctx(), {
+        VOICE_LLM_POOL: JSON.stringify([{ id: 'openrouter', key: 'sk-abc' }]),
+        GEMINI_KEYS: many,
+      });
+      const cp = c.pools();
+      return cp.llm.length === 1 && cp.llm[0].id === 'openrouter';
+    })());
+  t('P23-১০৮. Gemini fills the tts pool too, so the agent is never mute',
+    p.tts.some(x => x.id === 'gemini-tts') && p.tts.length === 11);
+  t('P23-১০৯. Cartesia still leads the tts pool when it is bound',
+    p.tts[0].id === 'cartesia' && p.tts.findIndex(x => x.id === 'gemini-tts') > 0);
+}
+
+/* ── ১৭. The Gemini voice adapter: the TTS path that needs no new credential ── */
+{
+  const { pcmToWav, geminiTts, TTS: TT } = await import('./voice-agent-providers.mjs');
+
+  // A WAV header a browser will actually accept, checked field by field.
+  const wav = pcmToWav(new Uint8Array([1, 2, 3, 4]), 24000);
+  const dv = new DataView(wav.buffer);
+  const tag = (o, n) => String.fromCharCode(...wav.slice(o, o + n));
+  t('P23-১১০. the WAV wrapper writes a valid RIFF/WAVE header',
+    tag(0, 4) === 'RIFF' && tag(8, 4) === 'WAVE' && tag(12, 4) === 'fmt ' && tag(36, 4) === 'data');
+  t('P23-১১১. the header declares PCM, mono, 24kHz, 16-bit',
+    dv.getUint16(20, true) === 1 && dv.getUint16(22, true) === 1
+    && dv.getUint32(24, true) === 24000 && dv.getUint16(34, true) === 16);
+  t('P23-১১২. the size fields agree with the payload',
+    dv.getUint32(40, true) === 4 && dv.getUint32(4, true) === 40 && wav.length === 48
+    && dv.getUint32(28, true) === 48000);
+  t('P23-১১৩. the adapter is registered in the TTS table',
+    typeof TT['gemini-tts'] === 'function');
+
+  // The request the adapter builds, and the reply it decodes. Stubbed, so this
+  // is deterministic and never spends a real key.
+  const pcm = new Uint8Array(4800).fill(7);
+  const b64 = Buffer.from(pcm).toString('base64');
+  let seen = null;
+  const fake = async (url, init) => {
+    seen = { url, body: JSON.parse(init.body), key: init.headers['x-goog-api-key'] };
+    return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ inlineData: { mimeType: 'audio/L16;codec=pcm;rate=24000', data: b64 } }] } }] }), { status: 200 });
+  };
+  const out = await geminiTts({ id: 'gemini-tts', key: 'K', model: null, voiceId: null }, 'হ্যালো', { fetch: fake });
+  t('P23-১১৪. the adapter asks for AUDIO output with a named voice',
+    seen.body.generationConfig.responseModalities[0] === 'AUDIO'
+    && seen.body.generationConfig.speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName === 'Kore');
+  t('P23-১১৫. the key travels in the header, never the URL',
+    seen.key === 'K' && !seen.url.includes('K'));
+  t('P23-১১৬. the PCM reply becomes playable WAV bytes',
+    out.mime === 'audio/wav' && out.audio.length === 44 + pcm.length
+    && String.fromCharCode(...new Uint8Array(out.audio).slice(0, 4)) === 'RIFF');
+  t('P23-১১৭. the sample rate is read from the reply, not assumed',
+    (() => {
+      const w = new DataView(new Uint8Array(out.audio).buffer);
+      return w.getUint32(24, true) === 24000;
+    })());
+
+  // Failure shapes must fail over rather than look like success.
+  const dead = async () => new Response('nope', { status: 429 });
+  let threw = 0;
+  try { await geminiTts({ id: 'gemini-tts', key: 'K' }, 'x', { fetch: dead }); } catch (e) { if (e.status === 429) threw++; }
+  t('P23-১১৮. a 429 surfaces as a failover status, not silent success', threw === 1);
+
+  const empty = async () => new Response(JSON.stringify({ candidates: [] }), { status: 200 });
+  let emptyErr = 0;
+  try { await geminiTts({ id: 'gemini-tts', key: 'K' }, 'x', { fetch: empty }); } catch (e) { if (e.message === 'empty_audio') emptyErr++; }
+  t('P23-১১৯. a reply with no audio is an error, never a zero-length clip', emptyErr === 1);
 }
 
 console.log(`\n  voice-agent DO: ${pass} pass / ${fail} fail`);
