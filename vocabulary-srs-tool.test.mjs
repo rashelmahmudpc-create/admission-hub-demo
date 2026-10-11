@@ -116,3 +116,15 @@ test('p12w-06: the dashboard entry is injected into the study tools list', () =>
   assert.equal(appended.length, 1);
   assert.equal(appended[0].dataset.vocabSrsEntry, 'true');
 });
+
+/* The cloud copy (D1/KV) and the P13 backfill ship vocabularyMaster rows with no
+   `tool` field. Requiring `tool === 'vocabulary-master'` dropped every one of
+   them, so a device that had only ever pulled from the cloud saw an empty deck. */
+test('p12w-07: cloud-shaped rows without a tool marker still form the deck', async () => {
+  const cloudShaped = rows.map(({ tool, ...rest }) => rest);
+  const { window, location } = makeEnv(cloudShaped);
+  location.hash = '#vocabulary-srs';
+  await window.VocabSrsTool.start();
+  const plan = window.VocabSrsEngine.buildDailyPlan(20);
+  assert.ok(plan.length >= 1, 'the deck must not be empty when rows carry no tool field');
+});

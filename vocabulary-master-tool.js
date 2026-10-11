@@ -149,7 +149,12 @@
   async function loadRecords(force = false) {
     if (recordsLoaded && !force) return state.records;
     const rows = typeof dbGetAll === 'function' ? await dbGetAll(STORE) : [];
-    state.records = (rows || []).filter(row => row && row.tool === 'vocabulary-master').map(normalizeRecord).sort((a,b) => (Number(a.order) - Number(b.order)) || (Number(a.createdAt) - Number(b.createdAt)) || a.id.localeCompare(b.id));
+    /* The bank's own IDB store is dedicated to this tool, so a row without a
+       `tool` marker is still a vocabulary row. The D1/KV cloud copy (and the
+       P13 backfill) ships rows carrying no `tool` field at all; requiring it
+       here dropped all 6,256 cloud rows and the bank rendered "0 words" on
+       every device that had only ever pulled from the cloud. */
+    state.records = (rows || []).filter(row => row && (!row.tool || row.tool === 'vocabulary-master')).map(normalizeRecord).sort((a,b) => (Number(a.order) - Number(b.order)) || (Number(a.createdAt) - Number(b.createdAt)) || a.id.localeCompare(b.id));
     /* The starter cards are off by default. On a device whose bank is still the
        30-card seed (a pre-cloud install), they used to be the only rows the bank
        ever saw — the cloud pull ran first and then the seed was added, so the
@@ -1118,6 +1123,12 @@
     const modes = ['meaning','fill']; if (relations(record, 'synonyms').length) modes.push('synonym'); if (relations(record, 'antonyms').length) modes.push('antonym'); return shuffle(modes)[0];
   }
   const api = {
+    /* Number of rows the bank actually loaded. The vocabulary store is its own
+       IDB store, so this is the honest count a screen can trust. */
+    async bankCount() {
+      await loadRecords(true);
+      return state.records.length;
+    },
     /* Called after the background cloud hydration finishes: re-read the store so
        the bank shows the freshly written words without a manual refresh. */
     async reload() {

@@ -69,6 +69,6 @@ test('the vocabulary page clears the sticky bottom nav', vmTool.includes('paddin
    device keeps the old file and the fix never lands. Every tool asset edited
    alongside the bank must carry a fresh token. */
 const indexHtml = readFileSync('index.html', 'utf8');
-test('the vocabulary tool and the sync bridge carry fresh asset tokens', indexHtml.includes('vocabulary-master-tool.js?v=vm-scroll50-v109') && indexHtml.includes('cloud-content-sync.js?v=vm-d1meta-v222'));
+test('the vocabulary tool and the sync bridge carry fresh asset tokens', indexHtml.includes('vocabulary-master-tool.js?v=vm-d1tool-v110') && indexHtml.includes('cloud-content-sync.js?v=vm-d1meta-v222'));
 console.log(`\nPUBLIC CONTENT CORE: ${pass} pass / ${fail} fail`);
 if (fail) process.exit(1);

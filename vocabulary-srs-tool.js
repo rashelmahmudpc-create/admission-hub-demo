@@ -35,8 +35,11 @@
   async function loadWords() {
     let rows = [];
     try { rows = typeof dbGetAll === 'function' ? await dbGetAll('vocabularyMaster') : []; } catch (_) {}
+    /* Mirror vocabulary-master-tool's loader: the store is dedicated to the
+       bank, and the cloud copy ships rows with no `tool` marker, so requiring
+       it emptied the SRS deck as well. */
     const words = (rows || [])
-      .filter(r => r && r.tool === 'vocabulary-master' && r.word)
+      .filter(r => r && (!r.tool || r.tool === 'vocabulary-master') && r.word)
       .map(r => ({ word: r.word, meaning: r.meaning || '', synonyms: relItems(r.synonyms), antonyms: relItems(r.antonyms), category: String(r.category || String(r.word)[0] || '#').toUpperCase() }));
     const have = new Set(words.map(w => S().keyOf(w.word)));
     for (const seed of (window.AH_VOCAB_A_SEED || [])) {
