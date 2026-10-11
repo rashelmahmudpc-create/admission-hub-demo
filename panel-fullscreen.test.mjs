@@ -84,9 +84,12 @@ test('fs-04: the nav-hide rule is present and scoped to the panel class', () => 
 
 test('fs-05: the intel panel is full-screen and toggles the nav-hide class', () => {
   const css = INTEL.slice(INTEL.indexOf('const CSS'), INTEL.indexOf('function injectCss'));
-  assert.match(css, /\.ai-overlay\{position:fixed;inset:0;z-index:10050/, 'intel overlay must be full-viewport above the nav');
-  assert.match(css, /\.ai-sheet\{[^}]*height:100%/, 'intel sheet must fill the height');
+  assert.match(css, /#aiPanel\.ai-overlay\{position:fixed;inset:0;z-index:10050/, 'intel overlay must be full-viewport above the nav');
+  assert.match(css, /#aiPanel \.ai-sheet\{[^}]*height:100%/, 'intel sheet must fill the height');
   assert.ok(!/border-radius:20px 20px 0 0/.test(css), 'the bottom-sheet corner styling must be gone');
+  // The .ai-sheet/.ai-overlay names are also used by the global AI-agent UI; scoping
+  // under #aiPanel keeps its own max-height/max-width from leaking into this panel.
+  assert.ok(!/(^|\})\s*\.ai-/.test(css), 'every intel rule must be scoped under #aiPanel');
 
   const w = bootIntel();
   w.openAdmissionIntelPanel();

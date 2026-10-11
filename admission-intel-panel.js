@@ -18,32 +18,32 @@
   const catalog = () => (typeof self !== 'undefined' ? self.AH_AcademicCatalog : undefined);
 
   const CSS = `
-  .ai-overlay{position:fixed;inset:0;z-index:10050;background:var(--bg,#fff);display:flex;justify-content:center}
-  .ai-sheet{width:100%;max-width:560px;height:100%;display:flex;flex-direction:column;background:var(--card,#fff);overflow:hidden}
-  .ai-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:calc(12px + env(safe-area-inset-top,0px)) 18px 12px;border-bottom:1px solid var(--line,rgba(15,107,79,.12));font-size:16px}
-  .ai-x{border:0;background:none;font-size:22px;line-height:1;cursor:pointer;color:var(--sub,#5F7A72)}
-  .ai-body{padding:16px 18px calc(24px + env(safe-area-inset-bottom,0px));overflow-y:auto;flex:1;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
+#aiPanel.ai-overlay{position:fixed;inset:0;z-index:10050;background:var(--bg,#fff);display:flex;justify-content:center}
+#aiPanel .ai-sheet{width:100%;max-width:560px;height:100%;display:flex;flex-direction:column;background:var(--card,#fff);overflow:hidden}
+#aiPanel .ai-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:calc(12px + env(safe-area-inset-top,0px)) 18px 12px;border-bottom:1px solid var(--line,rgba(15,107,79,.12));font-size:16px}
+#aiPanel .ai-x{border:0;background:none;font-size:22px;line-height:1;cursor:pointer;color:var(--sub,#5F7A72)}
+#aiPanel .ai-body{padding:16px 18px calc(24px + env(safe-area-inset-bottom,0px));overflow-y:auto;flex:1;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
   /* While a full-screen panel owns the page the bottom nav must not show through. */
   body.ah-panel-open #navRoot{visibility:hidden!important;pointer-events:none!important}
-  .ai-hero{border-radius:14px;padding:14px 15px;background:linear-gradient(135deg,#EFF7F2,#DBF3E6);margin-bottom:16px}
-  .ai-hero small{color:var(--sub,#5F7A72);font-size:11.5px}
-  .ai-hero p{margin:5px 0 0;font-size:13.5px;line-height:1.5;color:var(--ink,#16302A)}
-  .ai-sec{margin-bottom:18px}
-  .ai-sec h4{margin:0 0 9px;font-size:12.5px;color:var(--sub,#5F7A72);text-transform:uppercase;letter-spacing:.04em}
-  .ai-chips{display:flex;flex-wrap:wrap;gap:6px}
-  .ai-chip{font-size:11.5px;padding:4px 10px;border-radius:20px;background:rgba(15,107,79,.12);color:#0E6B4F;font-weight:600}
-  .ai-chip.miss{background:rgba(192,57,43,.12);color:#C0392B}
-  .ai-row{display:flex;align-items:center;gap:9px;padding:8px 0;border-bottom:1px solid var(--line,rgba(15,107,79,.08))}
-  .ai-row:last-child{border-bottom:0}
-  .ai-row .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;color:var(--ink,#16302A)}
-  .ai-bar{flex:0 0 84px;height:7px;border-radius:5px;background:rgba(15,107,79,.12);overflow:hidden}
-  .ai-bar i{display:block;height:100%;background:#0E6B4F}
-  .ai-bar i.low{background:#C0392B}
-  .ai-pc{flex:0 0 38px;text-align:right;font-size:12px;font-weight:700;color:var(--sub,#5F7A72)}
-  .ai-day{border:1px solid var(--line,rgba(15,107,79,.12));border-radius:12px;padding:11px 12px;margin-bottom:8px}
-  .ai-day b{font-size:13px;color:var(--ink,#16302A)}
-  .ai-day p{margin:6px 0 0;font-size:12.5px;color:var(--sub,#5F7A72)}
-  .ai-note{margin-top:14px;font-size:11.5px;line-height:1.5;color:var(--sub,#5F7A72);border-top:1px solid var(--line,rgba(15,107,79,.12));padding-top:12px}`;
+#aiPanel .ai-hero{border-radius:14px;padding:14px 15px;background:linear-gradient(135deg,#EFF7F2,#DBF3E6);margin-bottom:16px}
+#aiPanel .ai-hero small{color:var(--sub,#5F7A72);font-size:11.5px}
+#aiPanel .ai-hero p{margin:5px 0 0;font-size:13.5px;line-height:1.5;color:var(--ink,#16302A)}
+#aiPanel .ai-sec{margin-bottom:18px}
+#aiPanel .ai-sec h4{margin:0 0 9px;font-size:12.5px;color:var(--sub,#5F7A72);text-transform:uppercase;letter-spacing:.04em}
+#aiPanel .ai-chips{display:flex;flex-wrap:wrap;gap:6px}
+#aiPanel .ai-chip{font-size:11.5px;padding:4px 10px;border-radius:20px;background:rgba(15,107,79,.12);color:#0E6B4F;font-weight:600}
+#aiPanel .ai-chip.miss{background:rgba(192,57,43,.12);color:#C0392B}
+#aiPanel .ai-row{display:flex;align-items:center;gap:9px;padding:8px 0;border-bottom:1px solid var(--line,rgba(15,107,79,.08))}
+#aiPanel .ai-row:last-child{border-bottom:0}
+#aiPanel .ai-row .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;color:var(--ink,#16302A)}
+#aiPanel .ai-bar{flex:0 0 84px;height:7px;border-radius:5px;background:rgba(15,107,79,.12);overflow:hidden}
+#aiPanel .ai-bar i{display:block;height:100%;background:#0E6B4F}
+#aiPanel .ai-bar i.low{background:#C0392B}
+#aiPanel .ai-pc{flex:0 0 38px;text-align:right;font-size:12px;font-weight:700;color:var(--sub,#5F7A72)}
+#aiPanel .ai-day{border:1px solid var(--line,rgba(15,107,79,.12));border-radius:12px;padding:11px 12px;margin-bottom:8px}
+#aiPanel .ai-day b{font-size:13px;color:var(--ink,#16302A)}
+#aiPanel .ai-day p{margin:6px 0 0;font-size:12.5px;color:var(--sub,#5F7A72)}
+#aiPanel .ai-note{margin-top:14px;font-size:11.5px;line-height:1.5;color:var(--sub,#5F7A72);border-top:1px solid var(--line,rgba(15,107,79,.12));padding-top:12px}`;
 
   function injectCss() {
     if (document.getElementById('aiStyle')) return;
