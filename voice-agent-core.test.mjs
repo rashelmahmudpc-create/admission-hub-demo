@@ -208,5 +208,32 @@ t('P23-৪৪. the default Bengali voice is the MASCULINE "Rubel" the owner aske
 t('P23-৪৫. an OpenAI-compatible provider exists so a stronger model can be pointed at without a code change',
   Boolean(PROVIDERS['openai-compat']) && PROVIDERS['openai-compat'].kind === KIND.LLM);
 
+/* ── Gateway entries fail over on any error, so a bad gateway is a detour ── */
+  const gwPool = [
+    { id: 'groq-llama', key: 'k', failoverOnAnyError: true },
+    { id: 'groq-llama', key: 'k' },
+  ];
+t('P23-৪৬. a gateway entry hands off on a client error that a plain entry would not',
+  await (async () => {
+    let calls = 0;
+    const r = await runWithFailover(gwPool, async (p, i) => {
+      calls++;
+      if (i === 0) { const e = new Error('gateway_404'); e.status = 404; throw e; }
+      return 'direct-ok';
+    });
+    return r.result === 'direct-ok' && calls === 2;
+  })());
+t('P23-৪৭. without the flag the same 404 is a hard stop, not a detour',
+  await (async () => {
+    let calls = 0;
+    let threw = false;
+    try {
+      await runWithFailover([{ id: 'groq-llama', key: 'k' }], async () => {
+        calls++; const e = new Error('nope'); e.status = 404; throw e;
+      });
+    } catch (_) { threw = true; }
+    return threw && calls === 1;
+  })());
+
 console.log(`\n  voice-agent-core: ${pass} pass / ${fail} fail`);
 if (fail) process.exit(1);

@@ -1,0 +1,97 @@
+name: Voice Agent — Cloudflare AI Gateway setup (manual)
+
+# Manual, one-time setup for the Cloudflare AI Gateway the voice agent routes
+# its Groq calls through. It does three things:
+#   1. creates the gateway `inflowsky` (idempotent — updates if it exists),
+#   2. stores the account id and gateway id in GK_KV so the Worker can build the
+#      gateway URL without a code change and without spending one of its 64
+#      Worker variables,
+#   3. proves the gateway works by making a REAL Groq call through it.
+#
+# The gateway is created with authentication OFF. That is deliberate: the
+# gateway still requires the caller to present a valid Groq key (which it
+# proxies), so the provider credential is what gates usage. Turning on
+# "Authenticated Gateway" would need an extra token that has no create API.
+#
+# Required repository secrets: CLOUDFLARE_API_TOKEN (needs "AI Gateway Write"),
+# CLOUDFLARE_ACCOUNT_ID, GROQ_API_KEY.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type SETUP to create the gateway and store its coordinates
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  setup:
+    if: ${{ inputs.confirmation == 'SETUP' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Create the gateway and store its coordinates in GK_KV
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: |
+          set -eu
+          GW="inflowsky"
+          API="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/ai-gateway/gateways"
+
+          echo "creating gateway ${GW} ..."
+          code="$(curl -s -o /tmp/create.json -w '%{http_code}' -X POST "$API" \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+            -H 'Content-Type: application/json' \
+            -d "{\"id\":\"${GW}\",\"authentication\":false,\"collect_logs\":true,\"cache_ttl\":0}")"
+          echo "create HTTP ${code}"
+          head -c 600 /tmp/create.json; echo
+          if [ "$code" != "200" ] && [ "$code" != "201" ]; then
+            # A duplicate id is the one benign failure: update it instead.
+            echo "create did not succeed — trying update"
+            curl -s -X PUT "$API/${GW}" \
+              -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+              -H 'Content-Type: application/json' \
+              -d '{"authentication":false,"collect_logs":true}' -o /tmp/upd.json -w 'update HTTP %{http_code}\n'
+            head -c 400 /tmp/upd.json; echo
+          fi
+
+      - name: Store the coordinates in GK_KV
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -eu
+          npm i -g wrangler@4.35.0 >/dev/null 2>&1
+          put() {
+            name="$1"; value="$2"; tmp="$(mktemp)"
+            printf '%s' "$value" > "$tmp"
+            wrangler kv key put --namespace-id b9353515b098427687afcfb8654ed359 \
+              --remote "secret:$name" --path "$tmp"
+            rm -f "$tmp"
+            echo "stored $name"
+          }
+          put CF_ACCOUNT_ID "$CLOUDFLARE_ACCOUNT_ID"
+          put CF_GATEWAY_ID "inflowsky"
+
+      - name: Prove the gateway answers a real Groq call
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: |
+          set -eu
+          URL="https://gateway.ai.cloudflare.com/v1/${CLOUDFLARE_ACCOUNT_ID}/inflowsky/groq/chat/completions"
+          code="$(curl -s -o /tmp/gw.json -w '%{http_code}' "$URL" \
+            -H "Authorization: Bearer ${GROQ_API_KEY}" \
+            -H 'Content-Type: application/json' \
+            -d '{"model":"openai/gpt-oss-120b","reasoning_effort":"low","messages":[{"role":"user","content":"বাংলায় এক শব্দে বলো: রাজধানী?"}],"max_tokens":60}')"
+          echo "gateway call HTTP ${code}"
+          head -c 500 /tmp/gw.json; echo
+          [ "$code" = "200" ] || { echo "::error::the gateway did not answer — check the AI Gateway Write permission"; exit 1; }
+          grep -q '"choices"' /tmp/gw.json || { echo "::error::gateway replied without choices"; exit 1; }
+          echo "GATEWAY OK — Groq answered through Cloudflare AI Gateway"

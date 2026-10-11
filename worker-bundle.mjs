@@ -24518,7 +24518,8 @@ function parsePool(raw, kind) {
       key,
       model: typeof entry.model === "string" && entry.model.trim() ? entry.model.trim() : null,
       voiceId: typeof entry.voiceId === "string" && entry.voiceId.trim() ? entry.voiceId.trim() : null,
-      url: typeof entry.url === "string" && entry.url.trim() ? entry.url.trim() : null
+      url: typeof entry.url === "string" && entry.url.trim() ? entry.url.trim() : null,
+      gatewayToken: typeof entry.gatewayToken === "string" && entry.gatewayToken.trim() ? entry.gatewayToken.trim() : null
     }));
   }
   return out;
@@ -24544,7 +24545,7 @@ async function runWithFailover(pool, call, onFailover) {
     } catch (e) {
       lastError = e;
       const status = e && e.status;
-      const failover = isFailoverStatus(status);
+      const failover = provider.failoverOnAnyError ? true : isFailoverStatus(status);
       if (typeof onFailover === "function") {
         try {
           onFailover({
@@ -24770,6 +24771,12 @@ function safeEqual(a, b) {
   for (let i = 0; i < x.length; i++) diff |= x.charCodeAt(i) ^ y.charCodeAt(i);
   return diff === 0;
 }
+function gatewayBase(accountId, gatewayId) {
+  const acct = String(accountId || "").trim();
+  const gw = String(gatewayId || "").trim();
+  if (!acct || !gw) return null;
+  return `https://gateway.ai.cloudflare.com/v1/${acct}/${gw}/groq`;
+}
 
 // voice-agent-providers.mjs
 var ok = (r) => r && typeof r.ok === "boolean" ? r.ok : false;
@@ -24844,26 +24851,35 @@ function fromBase64(b64) {
 }
 async function openAiChat(url, provider, messages, opts, fallbackName) {
   const f = opts.fetch || fetch;
-  const res = await f(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${provider.key}` },
-    body: JSON.stringify({
-      model: provider.model || opts.defaultModel,
-      messages,
-      temperature: opts.temperature == null ? 0.6 : opts.temperature,
-      max_tokens: opts.maxTokens || 400
-    })
-  });
+  const system = opts.system ? String(opts.system) : "";
+  const headers = { "Content-Type": "application/json", Authorization: `Bearer ${provider.key}` };
+  if (provider.gatewayToken) headers["cf-aig-authorization"] = `Bearer ${provider.gatewayToken}`;
+  const body = {
+    model: provider.model || opts.defaultModel,
+    // The persona and the relevance rules ride in the system turn. Without
+    // this the OpenAI-compatible providers answered with no instructions at
+    // all — the reason replies drifted off-topic.
+    messages: system ? [{ role: "system", content: system }, ...messages] : messages,
+    temperature: opts.temperature == null ? 0.6 : opts.temperature,
+    max_tokens: opts.maxTokens || 400
+  };
+  if (opts.reasoningEffort) body.reasoning_effort = opts.reasoningEffort;
+  const res = await f(url, { method: "POST", headers, body: JSON.stringify(body) });
   if (!ok(res)) throw await statusError(res, fallbackName);
   const data = await res.json();
-  return { text: String(data?.choices?.[0]?.message?.content || "").trim(), provider: provider.id };
+  const text = String(data?.choices?.[0]?.message?.content || "").trim();
+  if (!text && data?.choices?.[0]?.message?.reasoning && !opts._retried) {
+    return openAiChat(url, provider, messages, { ...opts, maxTokens: (opts.maxTokens || 400) * 3, _retried: true }, fallbackName);
+  }
+  return { text, provider: provider.id };
 }
 function groqLlm(provider, messages, opts = {}) {
+  const url = provider.url || "https://api.groq.com/openai/v1/chat/completions";
   return openAiChat(
-    "https://api.groq.com/openai/v1/chat/completions",
+    url,
     provider,
     messages,
-    { defaultModel: "openai/gpt-oss-120b", ...opts },
+    { defaultModel: "openai/gpt-oss-120b", reasoningEffort: "low", ...opts },
     "groq_llm"
   );
 }
@@ -25109,7 +25125,7 @@ function readKeys(env, names) {
   }
   return [];
 }
-var KV_SECRET_NAMES = ["CARTESIA_API_KEY", "ELEVENLABS_API_KEY", "GROQ_API_KEY", "DEEPGRAM_API_KEY", "VOICE_PAGE_PASSWORD"];
+var KV_SECRET_NAMES = ["CARTESIA_API_KEY", "ELEVENLABS_API_KEY", "GROQ_API_KEY", "DEEPGRAM_API_KEY", "VOICE_PAGE_PASSWORD", "CF_ACCOUNT_ID", "CF_GATEWAY_ID", "CF_GATEWAY_TOKEN"];
 async function kvSecrets(env) {
   if (!env || !env.GK_KV) return {};
   const out = {};
@@ -25144,9 +25160,29 @@ function fallbackPool(env, kind, extra = {}) {
     ]
   };
   const out = [];
+  const gwBase = gatewayBase(source.CF_ACCOUNT_ID || env.CF_ACCOUNT_ID, source.CF_GATEWAY_ID || env.CF_GATEWAY_ID || "inflowsky");
+  const gwToken = source.CF_GATEWAY_TOKEN || env.CF_GATEWAY_TOKEN || null;
   for (const entry of map[kind] || []) {
     for (const key of readKeys(source, entry.names)) {
-      out.push(Object.freeze({ id: entry.id, key, model: null, voiceId: null }));
+      if (entry.id === "groq-llama" && gwBase) {
+        out.push(Object.freeze({
+          id: entry.id,
+          key,
+          model: null,
+          voiceId: null,
+          url: `${gwBase}/chat/completions`,
+          gatewayToken: gwToken,
+          failoverOnAnyError: true
+        }));
+      }
+      out.push(Object.freeze({
+        id: entry.id,
+        key,
+        model: null,
+        voiceId: null,
+        url: null,
+        gatewayToken: null
+      }));
     }
   }
   return out;
@@ -25417,8 +25453,8 @@ var VoiceAgentSession = class {
       summary: this.session.summary,
       ownerName: this.env.VOICE_OWNER_NAME || "স্যার"
     });
-    const messages = buildMessages(this.session.history, "");
-    const llmRun = await runWithFailover(pools.llm, (p) => pickAdapter(LLM, p)(p, messages, { system, maxTokens: 220 }));
+    const messages = buildMessages(this.session.history, this.session.summary);
+    const llmRun = await runWithFailover(pools.llm, (p) => pickAdapter(LLM, p)(p, messages, { system, maxTokens: 260, reasoningEffort: "low" }));
     const llmMs = now() - t1;
     const reply = this.session.endThinking(llmRun.result.text, llmMs);
     this.send(ws, { type: "reply", text: reply, provider: llmRun.provider });

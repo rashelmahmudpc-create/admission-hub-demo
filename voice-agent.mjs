@@ -30,7 +30,7 @@ import {
   VOICE_AGENT_VERSION, createSession, parseProviderPools, runWithFailover,
   buildSystemPrompt, buildMessages, foldSummary, sanitizeSecret, STATE,
   makeTicket, pruneTickets, consumeTicket, safeEqual, TICKET_TTL_MS, MAX_LIVE_TICKETS,
-  splitSentences,
+  splitSentences, gatewayBase,
 } from './voice-agent-core.mjs';
 import { STT, LLM, TTS, pickAdapter } from './voice-agent-providers.mjs';
 import {
@@ -77,7 +77,7 @@ function readKeys(env, names) {
  * and read here — from the agent's point of view it behaves exactly like a
  * bound one.
  */
-const KV_SECRET_NAMES = ['CARTESIA_API_KEY', 'ELEVENLABS_API_KEY', 'GROQ_API_KEY', 'DEEPGRAM_API_KEY', 'VOICE_PAGE_PASSWORD'];
+const KV_SECRET_NAMES = ['CARTESIA_API_KEY', 'ELEVENLABS_API_KEY', 'GROQ_API_KEY', 'DEEPGRAM_API_KEY', 'VOICE_PAGE_PASSWORD', 'CF_ACCOUNT_ID', 'CF_GATEWAY_ID', 'CF_GATEWAY_TOKEN'];
 
 /** Read the KV-held secrets, returning only the ones actually present. */
 async function kvSecrets(env) {
@@ -120,9 +120,25 @@ function fallbackPool(env, kind, extra = {}) {
     ],
   };
   const out = [];
+  // Cloudflare AI Gateway, when the account id and gateway token are present.
+  // Every Groq entry then routes through it, which adds caching, retries,
+  // fallbacks and per-request analytics without changing the call. Absent, the
+  // entries call Groq directly — the gateway is an improvement, not a dependency.
+  const gwBase = gatewayBase(source.CF_ACCOUNT_ID || env.CF_ACCOUNT_ID, source.CF_GATEWAY_ID || env.CF_GATEWAY_ID || 'inflowsky');
+  const gwToken = source.CF_GATEWAY_TOKEN || env.CF_GATEWAY_TOKEN || null;
   for (const entry of map[kind] || []) {
     for (const key of readKeys(source, entry.names)) {
-      out.push(Object.freeze({ id: entry.id, key, model: null, voiceId: null }));
+      // Groq first tries the gateway, then falls back to Groq itself, so a
+      // gateway that is misconfigured costs one failed hop, not the turn.
+      if (entry.id === 'groq-llama' && gwBase) {
+        out.push(Object.freeze({
+          id: entry.id, key, model: null, voiceId: null,
+          url: `${gwBase}/chat/completions`, gatewayToken: gwToken, failoverOnAnyError: true,
+        }));
+      }
+      out.push(Object.freeze({
+        id: entry.id, key, model: null, voiceId: null, url: null, gatewayToken: null,
+      }));
     }
   }
   return out;
@@ -431,9 +447,9 @@ export class VoiceAgentSession {
       summary: this.session.summary,
       ownerName: this.env.VOICE_OWNER_NAME || 'স্যার',
     });
-    const messages = buildMessages(this.session.history, '');
+    const messages = buildMessages(this.session.history, this.session.summary);
     const llmRun = await runWithFailover(pools.llm, (p) =>
-      pickAdapter(LLM, p)(p, messages, { system, maxTokens: 220 }));
+      pickAdapter(LLM, p)(p, messages, { system, maxTokens: 260, reasoningEffort: 'low' }));
     const llmMs = now() - t1;
     const reply = this.session.endThinking(llmRun.result.text, llmMs);
     this.send(ws, { type: 'reply', text: reply, provider: llmRun.provider });

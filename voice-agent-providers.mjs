@@ -98,27 +98,43 @@ function fromBase64(b64) {
 
 /* ── Text → text ────────────────────────────────────────────────────────── */
 
-/** OpenAI-compatible chat completion — shared by Groq and OpenRouter. */
+/** OpenAI-compatible chat completion — shared by Groq, OpenRouter and the gateway. */
 async function openAiChat(url, provider, messages, opts, fallbackName) {
   const f = opts.fetch || fetch;
-  const res = await f(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${provider.key}` },
-    body: JSON.stringify({
-      model: provider.model || opts.defaultModel,
-      messages,
-      temperature: opts.temperature == null ? 0.6 : opts.temperature,
-      max_tokens: opts.maxTokens || 400,
-    }),
-  });
+  const system = opts.system ? String(opts.system) : '';
+  const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${provider.key}` };
+  // An Authenticated Gateway needs its own token, separate from the provider key.
+  if (provider.gatewayToken) headers['cf-aig-authorization'] = `Bearer ${provider.gatewayToken}`;
+  const body = {
+    model: provider.model || opts.defaultModel,
+    // The persona and the relevance rules ride in the system turn. Without
+    // this the OpenAI-compatible providers answered with no instructions at
+    // all — the reason replies drifted off-topic.
+    messages: system ? [{ role: 'system', content: system }, ...messages] : messages,
+    temperature: opts.temperature == null ? 0.6 : opts.temperature,
+    max_tokens: opts.maxTokens || 400,
+  };
+  // Reasoning models (gpt-oss, qwen3) otherwise spend the whole token budget on
+  // hidden reasoning and return empty content. Low effort keeps them answering.
+  if (opts.reasoningEffort) body.reasoning_effort = opts.reasoningEffort;
+  const res = await f(url, { method: 'POST', headers, body: JSON.stringify(body) });
   if (!ok(res)) throw await statusError(res, fallbackName);
   const data = await res.json();
-  return { text: String(data?.choices?.[0]?.message?.content || '').trim(), provider: provider.id };
+  const text = String(data?.choices?.[0]?.message?.content || '').trim();
+  // A reasoning model can still answer entirely inside `reasoning`. One retry
+  // with a bigger budget beats handing the owner a silent turn.
+  if (!text && data?.choices?.[0]?.message?.reasoning && !opts._retried) {
+    return openAiChat(url, provider, messages, { ...opts, maxTokens: (opts.maxTokens || 400) * 3, _retried: true }, fallbackName);
+  }
+  return { text, provider: provider.id };
 }
 
 export function groqLlm(provider, messages, opts = {}) {
-  return openAiChat('https://api.groq.com/openai/v1/chat/completions', provider, messages,
-    { defaultModel: 'openai/gpt-oss-120b', ...opts }, 'groq_llm');
+  // `provider.url` points at the Cloudflare AI Gateway when it is configured,
+  // otherwise at Groq directly. Same request either way.
+  const url = provider.url || 'https://api.groq.com/openai/v1/chat/completions';
+  return openAiChat(url, provider, messages,
+    { defaultModel: 'openai/gpt-oss-120b', reasoningEffort: 'low', ...opts }, 'groq_llm');
 }
 
 export function openrouterLlm(provider, messages, opts = {}) {

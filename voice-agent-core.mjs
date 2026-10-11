@@ -109,6 +109,7 @@ export function parsePool(raw, kind) {
       model: typeof entry.model === 'string' && entry.model.trim() ? entry.model.trim() : null,
       voiceId: typeof entry.voiceId === 'string' && entry.voiceId.trim() ? entry.voiceId.trim() : null,
       url: typeof entry.url === 'string' && entry.url.trim() ? entry.url.trim() : null,
+      gatewayToken: typeof entry.gatewayToken === 'string' && entry.gatewayToken.trim() ? entry.gatewayToken.trim() : null,
     }));
   }
   return out;
@@ -153,7 +154,10 @@ export async function runWithFailover(pool, call, onFailover) {
     } catch (e) {
       lastError = e;
       const status = e && e.status;
-      const failover = isFailoverStatus(status);
+      // A gateway entry opts into failing over on ANY error, because the direct
+      // provider entry behind it is a real fallback — a gateway 404 must not
+      // take the turn down the way a plain client error would.
+      const failover = provider.failoverOnAnyError ? true : isFailoverStatus(status);
       if (typeof onFailover === 'function') {
         try {
           onFailover({
@@ -433,6 +437,21 @@ export function safeEqual(a, b) {
 }
 
 /* ── Self-validation ────────────────────────────────────────────────────── */
+
+/**
+ * Cloudflare AI Gateway. It sits in front of a provider (here: Groq) and its
+ * only difference at the call site is the URL — the provider key still travels
+ * as `Authorization`. Returns null when the gateway is not configured, so the
+ * caller can fall back to calling Groq directly.
+ *
+ *   accountId + gatewayId -> https://gateway.ai.cloudflare.com/v1/{acct}/{gw}/groq
+ */
+export function gatewayBase(accountId, gatewayId) {
+  const acct = String(accountId || '').trim();
+  const gw = String(gatewayId || '').trim();
+  if (!acct || !gw) return null;
+  return `https://gateway.ai.cloudflare.com/v1/${acct}/${gw}/groq`;
+}
 
 export function validateVoiceAgentCore() {
   const problems = [];

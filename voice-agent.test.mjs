@@ -555,5 +555,44 @@ function makeSession(env = POOLS) {
   t('P23-১৩৬. an expired cookie is refused', expired.status === 401);
 }
 
+/* ── ১৮. Cloudflare AI Gateway + the system-prompt fix ── */
+{
+  const { gatewayBase } = await import('./voice-agent-core.mjs');
+  t('P23-১৩৭. the gateway base is the documented Groq path, and null when unconfigured',
+    gatewayBase('acct123', 'inflowsky') === 'https://gateway.ai.cloudflare.com/v1/acct123/inflowsky/groq'
+    && gatewayBase('', 'inflowsky') === null && gatewayBase('acct123', '') === null);
+
+  const { groqLlm } = await import('./voice-agent-providers.mjs');
+  const capture = () => {
+    let seen = null;
+    const fetch = async (url, init) => {
+      seen = { url, init, body: JSON.parse(init.body) };
+      return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: 'ঠিক আছে স্যার' } }] }) };
+    };
+    return { fetch, seen: () => seen };
+  };
+
+  const direct = capture();
+  await groqLlm({ id: 'groq-llama', key: 'gsk_x' }, [{ role: 'user', content: 'হ্যালো' }],
+    { system: 'নিয়ম', fetch: direct.fetch });
+  const d = direct.seen();
+  t('P23-১৩৮. with no gateway the call still goes straight to Groq',
+    d.url === 'https://api.groq.com/openai/v1/chat/completions' && !d.init.headers['cf-aig-authorization']);
+  t('P23-১৩৯. the system prompt now reaches the OpenAI-compatible model',
+    d.body.messages[0].role === 'system' && d.body.messages[0].content === 'নিয়ম'
+    && d.body.messages[1].content === 'হ্যালো');
+  t('P23-১৪০. the reasoning model is asked for low effort so it answers, not thinks',
+    d.body.reasoning_effort === 'low');
+
+  const via = capture();
+  await groqLlm({ id: 'groq-llama', key: 'gsk_x', url: 'https://gateway.ai.cloudflare.com/v1/acct123/inflowsky/groq/chat/completions', gatewayToken: 'gwtok' },
+    [{ role: 'user', content: 'হ্যালো' }], { system: 'নিয়ম', fetch: via.fetch });
+  const v = via.seen();
+  t('P23-১৪১. with a gateway the same request goes through it, provider key intact',
+    v.url.startsWith('https://gateway.ai.cloudflare.com/v1/acct123/inflowsky/groq')
+    && v.init.headers.Authorization === 'Bearer gsk_x'
+    && v.init.headers['cf-aig-authorization'] === 'Bearer gwtok');
+}
+
 console.log(`\n  voice-agent DO: ${pass} pass / ${fail} fail`);
 if (fail) process.exit(1);
