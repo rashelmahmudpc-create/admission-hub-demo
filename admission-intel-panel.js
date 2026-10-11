@@ -18,32 +18,32 @@
   const catalog = () => (typeof self !== 'undefined' ? self.AH_AcademicCatalog : undefined);
 
   const CSS = `
-#aiPanel.ai-overlay{position:fixed;inset:0;z-index:10050;background:var(--bg,#fff);display:flex;justify-content:center}
-#aiPanel .ai-sheet{width:100%;max-width:560px;height:100%;display:flex;flex-direction:column;background:var(--card,#fff);overflow:hidden}
-#aiPanel .ai-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:calc(12px + env(safe-area-inset-top,0px)) 18px 12px;border-bottom:1px solid var(--line,rgba(15,107,79,.12));font-size:16px}
-#aiPanel .ai-x{border:0;background:none;font-size:22px;line-height:1;cursor:pointer;color:var(--sub,#5F7A72)}
-#aiPanel .ai-body{padding:16px 18px calc(24px + env(safe-area-inset-bottom,0px));overflow-y:auto;flex:1;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
+.ip-overlay{position:fixed;inset:0;z-index:10050;background:var(--bg,#fff);display:flex;justify-content:center}
+.ip-sheet{width:100%;max-width:560px;height:100%;display:flex;flex-direction:column;background:var(--card,#fff);overflow:hidden}
+.ip-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:calc(12px + env(safe-area-inset-top,0px)) 18px 12px;border-bottom:1px solid var(--line,rgba(15,107,79,.12));font-size:16px}
+.ip-x{border:0;background:none;font-size:22px;line-height:1;cursor:pointer;color:var(--sub,#5F7A72)}
+.ip-body{padding:16px 18px calc(24px + env(safe-area-inset-bottom,0px));overflow-y:auto;flex:1;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
   /* While a full-screen panel owns the page the bottom nav must not show through. */
   body.ah-panel-open #navRoot{visibility:hidden!important;pointer-events:none!important}
-#aiPanel .ai-hero{border-radius:14px;padding:14px 15px;background:linear-gradient(135deg,#EFF7F2,#DBF3E6);margin-bottom:16px}
-#aiPanel .ai-hero small{color:var(--sub,#5F7A72);font-size:11.5px}
-#aiPanel .ai-hero p{margin:5px 0 0;font-size:13.5px;line-height:1.5;color:var(--ink,#16302A)}
-#aiPanel .ai-sec{margin-bottom:18px}
-#aiPanel .ai-sec h4{margin:0 0 9px;font-size:12.5px;color:var(--sub,#5F7A72);text-transform:uppercase;letter-spacing:.04em}
-#aiPanel .ai-chips{display:flex;flex-wrap:wrap;gap:6px}
-#aiPanel .ai-chip{font-size:11.5px;padding:4px 10px;border-radius:20px;background:rgba(15,107,79,.12);color:#0E6B4F;font-weight:600}
-#aiPanel .ai-chip.miss{background:rgba(192,57,43,.12);color:#C0392B}
-#aiPanel .ai-row{display:flex;align-items:center;gap:9px;padding:8px 0;border-bottom:1px solid var(--line,rgba(15,107,79,.08))}
-#aiPanel .ai-row:last-child{border-bottom:0}
-#aiPanel .ai-row .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;color:var(--ink,#16302A)}
-#aiPanel .ai-bar{flex:0 0 84px;height:7px;border-radius:5px;background:rgba(15,107,79,.12);overflow:hidden}
-#aiPanel .ai-bar i{display:block;height:100%;background:#0E6B4F}
-#aiPanel .ai-bar i.low{background:#C0392B}
-#aiPanel .ai-pc{flex:0 0 38px;text-align:right;font-size:12px;font-weight:700;color:var(--sub,#5F7A72)}
-#aiPanel .ai-day{border:1px solid var(--line,rgba(15,107,79,.12));border-radius:12px;padding:11px 12px;margin-bottom:8px}
-#aiPanel .ai-day b{font-size:13px;color:var(--ink,#16302A)}
-#aiPanel .ai-day p{margin:6px 0 0;font-size:12.5px;color:var(--sub,#5F7A72)}
-#aiPanel .ai-note{margin-top:14px;font-size:11.5px;line-height:1.5;color:var(--sub,#5F7A72);border-top:1px solid var(--line,rgba(15,107,79,.12));padding-top:12px}`;
+.ip-hero{border-radius:14px;padding:14px 15px;background:linear-gradient(135deg,#EFF7F2,#DBF3E6);margin-bottom:16px}
+.ip-hero small{color:var(--sub,#5F7A72);font-size:11.5px}
+.ip-hero p{margin:5px 0 0;font-size:13.5px;line-height:1.5;color:var(--ink,#16302A)}
+.ip-sec{margin-bottom:18px}
+.ip-sec h4{margin:0 0 9px;font-size:12.5px;color:var(--sub,#5F7A72);text-transform:uppercase;letter-spacing:.04em}
+.ip-chips{display:flex;flex-wrap:wrap;gap:6px}
+.ip-chip{font-size:11.5px;padding:4px 10px;border-radius:20px;background:rgba(15,107,79,.12);color:#0E6B4F;font-weight:600}
+.ip-chip.miss{background:rgba(192,57,43,.12);color:#C0392B}
+.ip-row{display:flex;align-items:center;gap:9px;padding:8px 0;border-bottom:1px solid var(--line,rgba(15,107,79,.08))}
+.ip-row:last-child{border-bottom:0}
+.ip-row .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;color:var(--ink,#16302A)}
+.ip-bar{flex:0 0 84px;height:7px;border-radius:5px;background:rgba(15,107,79,.12);overflow:hidden}
+.ip-bar i{display:block;height:100%;background:#0E6B4F}
+.ip-bar i.low{background:#C0392B}
+.ip-pc{flex:0 0 38px;text-align:right;font-size:12px;font-weight:700;color:var(--sub,#5F7A72)}
+.ip-day{border:1px solid var(--line,rgba(15,107,79,.12));border-radius:12px;padding:11px 12px;margin-bottom:8px}
+.ip-day b{font-size:13px;color:var(--ink,#16302A)}
+.ip-day p{margin:6px 0 0;font-size:12.5px;color:var(--sub,#5F7A72)}
+.ip-note{margin-top:14px;font-size:11.5px;line-height:1.5;color:var(--sub,#5F7A72);border-top:1px solid var(--line,rgba(15,107,79,.12));padding-top:12px}`;
 
   function injectCss() {
     if (document.getElementById('aiStyle')) return;
@@ -68,30 +68,30 @@
 
   function coverageHtml(cov, mapReason) {
     if (!cov.total) {
-      return `<div class="ai-hero"><small>সাবজেক্ট-মানচিত্র</small><p>বিশ্ববিদ্যালয় ও ইউনিট সেট করলে তোমার অফিসিয়াল সাবজেক্টের তালিকা এখানে দেখাবে।</p></div>`;
+      return `<div class="ip-hero"><small>সাবজেক্ট-মানচিত্র</small><p>বিশ্ববিদ্যালয় ও ইউনিট সেট করলে তোমার অফিসিয়াল সাবজেক্টের তালিকা এখানে দেখাবে।</p></div>`;
     }
-    return `<div class="ai-hero"><small>${esc(mapReason === 'ok' ? 'তোমার সাবজেক্ট-কভারেজ' : 'সাবজেক্ট')}</small><p>অফিসিয়াল ${cov.total}টি সাবজেক্টের মধ্যে ${cov.covered}টিতে অভ্যাস হয়েছে (${cov.percent}%)।</p></div>
-      <div class="ai-sec"><h4>অফিসিয়াল সাবজেক্ট</h4><div class="ai-chips">${cov.subjects.map((s) =>
-        `<span class="ai-chip${s.practised ? '' : ' miss'}">${esc(s.subject)}</span>`).join('')}</div></div>`;
+    return `<div class="ip-hero"><small>${esc(mapReason === 'ok' ? 'তোমার সাবজেক্ট-কভারেজ' : 'সাবজেক্ট')}</small><p>অফিসিয়াল ${cov.total}টি সাবজেক্টের মধ্যে ${cov.covered}টিতে অভ্যাস হয়েছে (${cov.percent}%)।</p></div>
+      <div class="ip-sec"><h4>অফিসিয়াল সাবজেক্ট</h4><div class="ip-chips">${cov.subjects.map((s) =>
+        `<span class="ip-chip${s.practised ? '' : ' miss'}">${esc(s.subject)}</span>`).join('')}</div></div>`;
   }
 
   function topicsHtml(list) {
     if (!list.length) return '';
-    return `<div class="ai-sec"><h4>টপিক-দক্ষতা</h4>${list.slice(0, 8).map((t) =>
-      `<div class="ai-row"><span class="nm">${esc(t.name)}${t.confident ? '' : ' · কম ডেটা'}</span><span class="ai-bar"><i class="${t.accuracy < 50 ? 'low' : ''}" style="width:${t.accuracy}%"></i></span><span class="ai-pc">${t.accuracy}%</span></div>`).join('')}</div>`;
+    return `<div class="ip-sec"><h4>টপিক-দক্ষতা</h4>${list.slice(0, 8).map((t) =>
+      `<div class="ip-row"><span class="nm">${esc(t.name)}${t.confident ? '' : ' · কম ডেটা'}</span><span class="ip-bar"><i class="${t.accuracy < 50 ? 'low' : ''}" style="width:${t.accuracy}%"></i></span><span class="ip-pc">${t.accuracy}%</span></div>`).join('')}</div>`;
   }
 
   function patternHtml(rows) {
     const any = rows.some((r) => r.attempted);
     if (!any) return '';
-    return `<div class="ai-sec"><h4>প্রশ্ন-প্যাটার্ন</h4>${rows.map((r) =>
-      `<div class="ai-row"><span class="nm">${esc(DIFF_LABEL[r.difficulty])}</span><span class="ai-bar"><i class="${r.accuracy < 50 ? 'low' : ''}" style="width:${r.accuracy}%"></i></span><span class="ai-pc">${r.attempted ? r.accuracy + '%' : '—'}</span></div>`).join('')}</div>`;
+    return `<div class="ip-sec"><h4>প্রশ্ন-প্যাটার্ন</h4>${rows.map((r) =>
+      `<div class="ip-row"><span class="nm">${esc(DIFF_LABEL[r.difficulty])}</span><span class="ip-bar"><i class="${r.accuracy < 50 ? 'low' : ''}" style="width:${r.accuracy}%"></i></span><span class="ip-pc">${r.attempted ? r.accuracy + '%' : '—'}</span></div>`).join('')}</div>`;
   }
 
   function planHtml(days) {
     if (!days.length) return '';
-    return `<div class="ai-sec"><h4>রিভিশন-প্ল্যান</h4>${days.map((d) =>
-      `<div class="ai-day"><b>দিন ${d.day}</b>${d.blocks.map((b) =>
+    return `<div class="ip-sec"><h4>রিভিশন-প্ল্যান</h4>${days.map((d) =>
+      `<div class="ip-day"><b>দিন ${d.day}</b>${d.blocks.map((b) =>
         `<p>${esc(b.name || b.subject)}${b.questions ? ' · ' + b.questions + ' প্রশ্ন' : ''} — ${esc(safeText(b.why))}</p>`).join('')}</div>`).join('')}</div>`;
   }
 
@@ -104,21 +104,21 @@
     if (!el) {
       el = document.createElement('div');
       el.id = 'aiPanel';
-      el.className = 'ai-overlay';
+      el.className = 'ip-overlay';
       document.body.appendChild(el);
     }
     const head = plan.university ? `${esc(plan.university.name)} — ${esc(plan.unit ? plan.unit.label + ' Unit' : '')}` : '';
     el.innerHTML = `
-      <div class="ai-sheet">
-        <div class="ai-head"><b>🏆 ভর্তি-বুদ্ধি</b><button class="ai-x" onclick="window.closeAdmissionIntelPanel()">×</button></div>
-        <div class="ai-body">
-          ${head ? `<div class="ai-hero"><small>তোমার লক্ষ্য</small><p>${head}</p></div>` : ''}
-          <div class="ai-hero"><small>সারসংক্ষেপ</small><p>${esc(safeText(plan.message))}</p></div>
+      <div class="ip-sheet">
+        <div class="ip-head"><b>🏆 ভর্তি-বুদ্ধি</b><button class="ip-x" onclick="window.closeAdmissionIntelPanel()">×</button></div>
+        <div class="ip-body">
+          ${head ? `<div class="ip-hero"><small>তোমার লক্ষ্য</small><p>${head}</p></div>` : ''}
+          <div class="ip-hero"><small>সারসংক্ষেপ</small><p>${esc(safeText(plan.message))}</p></div>
           ${coverageHtml(plan.coverage, plan.mapReason)}
           ${topicsHtml(plan.topics)}
           ${patternHtml(plan.pattern)}
           ${planHtml(plan.plan)}
-          <div class="ai-note">এটা তোমার নিজের অভ্যাসের ডেটা থেকে তৈরি পরামর্শ — কোনো র‍্যাঙ্ক, পাস বা আসনের নিশ্চয়তা নয়।</div>
+          <div class="ip-note">এটা তোমার নিজের অভ্যাসের ডেটা থেকে তৈরি পরামর্শ — কোনো র‍্যাঙ্ক, পাস বা আসনের নিশ্চয়তা নয়।</div>
         </div>
       </div>`;
     document.body.classList.add('ah-panel-open');

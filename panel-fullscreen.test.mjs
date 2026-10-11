@@ -84,12 +84,14 @@ test('fs-04: the nav-hide rule is present and scoped to the panel class', () => 
 
 test('fs-05: the intel panel is full-screen and toggles the nav-hide class', () => {
   const css = INTEL.slice(INTEL.indexOf('const CSS'), INTEL.indexOf('function injectCss'));
-  assert.match(css, /#aiPanel\.ai-overlay\{position:fixed;inset:0;z-index:10050/, 'intel overlay must be full-viewport above the nav');
-  assert.match(css, /#aiPanel \.ai-sheet\{[^}]*height:100%/, 'intel sheet must fill the height');
+  assert.match(css, /\.ip-overlay\{position:fixed;inset:0;z-index:10050/, 'intel overlay must be full-viewport above the nav');
+  assert.match(css, /\.ip-sheet\{[^}]*height:100%/, 'intel sheet must fill the height');
   assert.ok(!/border-radius:20px 20px 0 0/.test(css), 'the bottom-sheet corner styling must be gone');
-  // The .ai-sheet/.ai-overlay names are also used by the global AI-agent UI; scoping
-  // under #aiPanel keeps its own max-height/max-width from leaking into this panel.
-  assert.ok(!/(^|\})\s*\.ai-/.test(css), 'every intel rule must be scoped under #aiPanel');
+  // The .ai-sheet/.ai-overlay names are also used by the global AI-agent UI, whose
+  // .ai-sheet{max-width:760px;max-height:88dvh} kept this panel from filling the
+  // screen. Its own classes are namespaced under ip- so nothing can collide.
+  assert.ok(!/\bai-[a-z-]+/.test(css), 'intel CSS must not reuse the shared ai- class names');
+  assert.ok(!/\bai-[a-z-]+/.test(INTEL.slice(INTEL.indexOf('el.innerHTML'), INTEL.indexOf('window.openAdmissionIntelPanel'))), 'intel markup must not reuse the shared ai- class names');
 
   const w = bootIntel();
   w.openAdmissionIntelPanel();
