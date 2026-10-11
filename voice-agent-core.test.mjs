@@ -7,7 +7,7 @@ import {
   VOICE_AGENT_VERSION, KIND, PROVIDERS, STATE,
   isFailoverStatus, sanitizeSecret, parsePool, parseProviderPools,
   runWithFailover, canTransition, createSession,
-  buildSystemPrompt, buildMessages, foldSummary, splitSentences,
+  buildSystemPrompt, buildMessages, foldSummary, splitSentences, stripLeadingGreeting,
   validateVoiceAgentCore, MAX_SUMMARY_LEN, HISTORY_WINDOW,
   makeTicket, pruneTickets, consumeTicket, safeEqual, TICKET_TTL_MS,
 } from './voice-agent-core.mjs';
@@ -199,6 +199,21 @@ t('P23-৪২. no chunk exceeds the limit, and nothing is lost',
     return s.every(c => c.length <= 12) && s.join(' ').replace(/\s+/g, '') === text.replace(/\s+/g, ''); })());
 t('P23-৪৩. empty or missing text yields no chunk rather than a blank clip',
   splitSentences('').length === 0 && splitSentences(null).length === 0 && splitSentences('   ').length === 0);
+t('P23-৪৩b. a decimal is never split, so "৩.৫" is not read as two numbers',
+  (() => { const s = splitSentences('তাপমাত্রা আজ ৩.৫ ডিগ্রি সেলসিয়াস, আর কাল ৪.২ হবে।', 15);
+    return s.some(c => c.includes('৩.৫')) && s.some(c => c.includes('৪.২'))
+      && !s.some(c => /৩\.$/.test(c)); })());
+t('P23-৪৩c. a full stop at a sentence end still splits',
+  splitSentences('First part here is long enough. Second part is long enough too.', 20).length >= 2);
+
+/* ── The repeated greeting the owner complained about ── */
+t('P23-৪৩d. a greeting stapled to a real reply is stripped',
+  stripLeadingGreeting('ওয়ালাইকুম আসসালাম, স্যার! আমি প্রশ্নের উত্তর দিতে পারি।')
+    === 'আমি প্রশ্নের উত্তর দিতে পারি।');
+t('P23-৪৩e. a bare greeting reply is left intact, not emptied',
+  stripLeadingGreeting('ওয়ালাইকুম আসসালাম স্যার') === 'ওয়ালাইকুম আসসালাম স্যার');
+t('P23-৪৩f. a reply with no greeting is unchanged',
+  stripLeadingGreeting('ঢাকা বাংলাদেশের রাজধানী।') === 'ঢাকা বাংলাদেশের রাজধানী।');
 
 /* ── The owner's named voice and the gateway provider ── */
 t('P23-৪৪. the default Bengali voice is the MASCULINE "Rubel" the owner asked for',

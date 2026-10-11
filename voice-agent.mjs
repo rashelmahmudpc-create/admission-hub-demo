@@ -30,7 +30,7 @@ import {
   VOICE_AGENT_VERSION, createSession, parseProviderPools, runWithFailover,
   buildSystemPrompt, buildMessages, foldSummary, sanitizeSecret, STATE,
   makeTicket, pruneTickets, consumeTicket, safeEqual, TICKET_TTL_MS, MAX_LIVE_TICKETS,
-  splitSentences, gatewayBase,
+  splitSentences, gatewayBase, stripLeadingGreeting,
 } from './voice-agent-core.mjs';
 import { STT, LLM, TTS, pickAdapter } from './voice-agent-providers.mjs';
 import {
@@ -453,9 +453,9 @@ export class VoiceAgentSession {
     });
     const messages = buildMessages(this.session.history, this.session.summary);
     const llmRun = await runWithFailover(pools.llm, (p) =>
-      pickAdapter(LLM, p)(p, messages, { system, maxTokens: 260, reasoningEffort: 'low' }));
+      pickAdapter(LLM, p)(p, messages, { system, maxTokens: 320 }));
     const llmMs = now() - t1;
-    const reply = this.session.endThinking(llmRun.result.text, llmMs);
+    const reply = this.session.endThinking(stripLeadingGreeting(llmRun.result.text), llmMs);
     this.send(ws, { type: 'reply', text: reply, provider: llmRun.provider });
 
     /* 3. Reply → speech, one sentence at a time.

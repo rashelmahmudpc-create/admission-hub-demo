@@ -16,6 +16,10 @@ import { sanitizeSecret } from './voice-agent-core.mjs';
 
 const ok = (r) => r && typeof r.ok === 'boolean' ? r.ok : false;
 
+/* The model the owner asked for. Kept as a named constant so it appears in one
+ * place; a pool entry can still override it with `model`. */
+export const OPENROUTER_DEFAULT_MODEL = 'openai/gpt-5.6-luna';
+
 async function statusError(res, fallback) {
   let detail = '';
   try { detail = String((await res.json())?.error?.message || (await res.json())?.message || ''); } catch (_) { /* non-json */ }
@@ -138,8 +142,10 @@ export function groqLlm(provider, messages, opts = {}) {
 }
 
 export function openrouterLlm(provider, messages, opts = {}) {
+  // Default to the owner's chosen model (gpt-5.6-luna); a pool entry can still
+  // override it with `model`.
   return openAiChat('https://openrouter.ai/api/v1/chat/completions', provider, messages,
-    { defaultModel: 'meta-llama/llama-3.3-70b-instruct:free', ...opts }, 'openrouter_llm');
+    { defaultModel: OPENROUTER_DEFAULT_MODEL, ...opts }, 'openrouter_llm');
 }
 
 /**

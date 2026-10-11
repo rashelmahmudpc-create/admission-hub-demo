@@ -24703,6 +24703,7 @@ function buildSystemPrompt2({ brain = "", memory = "", summary = "", ownerName =
     "শুধু ব্যবহারকারীর ঠিক যে প্রশ্নটি করেছে তার উত্তর দেবে। বিষয় বদলাবে না, নিজের ইতিহাস নিয়ে বলবে না, নিজের ক্ষমতা বা প্রোগ্রাম নিয়ে কথা তুলবে না।",
     "প্রশ্ন অস্পষ্ট হলে এক লাইনে জিজ্ঞেস করবে — অনুমান করে লম্বা উত্তর দেবে না।",
     "কোনো সংখ্যা, তারিখ বা তথ্য নিশ্চিত না হলে বানিয়ে বলবে না; বলবে যে জানা নেই।",
+    'প্রতিটি উত্তরে "স্যার" বলবে না — যে প্রশ্ন করছে সে স্যার, তাই প্রতিবার সম্বোধনের দরকার নেই। ওয়ালাইকুম আসসালাম বা কোনো সম্ভাষণ প্রতি উত্তরে বলবে না; কেবল প্রথমবার কেউ সালাম দিলে একবার উত্তর দেবে।',
     "উত্তর শুরুতেই মূল কথা বলবে — ভূমিকা, তালিকা বা বিন্যাস নয়।"
   ];
   if (brain) parts.push("", "— ব্রেইন —", String(brain).slice(0, 4e3));
@@ -24710,13 +24711,19 @@ function buildSystemPrompt2({ brain = "", memory = "", summary = "", ownerName =
   if (summary) parts.push("", "— আগের কথার সারমর্ম —", String(summary).slice(0, MAX_SUMMARY_LEN2));
   return parts.join("\n");
 }
+var LEADING_GREETING = /^(?:ওয়ালাইকুম[\s-]*আসসালাম|আসসালামু[\s-]*আলাইকুম|ওয়ালাইকুম\s*সালাম|আসসালাম)[,!।\-–—\s]*(?:স্যার[,!।\s]*)?/;
+function stripLeadingGreeting(text) {
+  const s = String(text == null ? "" : text).trim();
+  const rest = s.replace(LEADING_GREETING, "").trim();
+  return rest.length >= 12 ? rest : s;
+}
 function splitSentences(text, max = 200) {
   const clean = String(text == null ? "" : text).trim();
   if (!clean) return [];
   if (clean.length <= max) return [clean];
   const out = [];
   let buf = "";
-  const parts = clean.split(/(?<=[।!?.\n])/);
+  const parts = clean.split(/(?<=[।!?\n])|(?<!\d)\.(?=\s|$)/);
   for (const raw of parts) {
     const piece = raw.trim();
     if (!piece) continue;
@@ -24780,6 +24787,7 @@ function gatewayBase(accountId, gatewayId) {
 
 // voice-agent-providers.mjs
 var ok = (r) => r && typeof r.ok === "boolean" ? r.ok : false;
+var OPENROUTER_DEFAULT_MODEL = "openai/gpt-5.6-luna";
 async function statusError(res, fallback) {
   let detail = "";
   try {
@@ -24888,7 +24896,7 @@ function openrouterLlm(provider, messages, opts = {}) {
     "https://openrouter.ai/api/v1/chat/completions",
     provider,
     messages,
-    { defaultModel: "meta-llama/llama-3.3-70b-instruct:free", ...opts },
+    { defaultModel: OPENROUTER_DEFAULT_MODEL, ...opts },
     "openrouter_llm"
   );
 }
@@ -25456,9 +25464,9 @@ var VoiceAgentSession = class {
       ownerName: this.env.VOICE_OWNER_NAME || "স্যার"
     });
     const messages = buildMessages(this.session.history, this.session.summary);
-    const llmRun = await runWithFailover(pools.llm, (p) => pickAdapter(LLM, p)(p, messages, { system, maxTokens: 260, reasoningEffort: "low" }));
+    const llmRun = await runWithFailover(pools.llm, (p) => pickAdapter(LLM, p)(p, messages, { system, maxTokens: 320 }));
     const llmMs = now() - t1;
-    const reply = this.session.endThinking(llmRun.result.text, llmMs);
+    const reply = this.session.endThinking(stripLeadingGreeting(llmRun.result.text), llmMs);
     this.send(ws, { type: "reply", text: reply, provider: llmRun.provider });
     const t2 = now();
     const chunks = splitSentences(reply);

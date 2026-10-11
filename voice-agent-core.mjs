@@ -325,12 +325,27 @@ export function buildSystemPrompt({ brain = '', memory = '', summary = '', owner
     'শুধু ব্যবহারকারীর ঠিক যে প্রশ্নটি করেছে তার উত্তর দেবে। বিষয় বদলাবে না, নিজের ইতিহাস নিয়ে বলবে না, নিজের ক্ষমতা বা প্রোগ্রাম নিয়ে কথা তুলবে না।',
     'প্রশ্ন অস্পষ্ট হলে এক লাইনে জিজ্ঞেস করবে — অনুমান করে লম্বা উত্তর দেবে না।',
     'কোনো সংখ্যা, তারিখ বা তথ্য নিশ্চিত না হলে বানিয়ে বলবে না; বলবে যে জানা নেই।',
+    'প্রতিটি উত্তরে "স্যার" বলবে না — যে প্রশ্ন করছে সে স্যার, তাই প্রতিবার সম্বোধনের দরকার নেই। ওয়ালাইকুম আসসালাম বা কোনো সম্ভাষণ প্রতি উত্তরে বলবে না; কেবল প্রথমবার কেউ সালাম দিলে একবার উত্তর দেবে।',
     'উত্তর শুরুতেই মূল কথা বলবে — ভূমিকা, তালিকা বা বিন্যাস নয়।'
   ];
   if (brain) parts.push('', '— ব্রেইন —', String(brain).slice(0, 4000));
   if (memory) parts.push('', '— দীর্ঘমেয়াদি স্মৃতি —', String(memory).slice(0, 2000));
   if (summary) parts.push('', '— আগের কথার সারমর্ম —', String(summary).slice(0, MAX_SUMMARY_LEN));
   return parts.join('\n');
+}
+
+/**
+ * Drop a greeting the model stapled to the front of a reply when it has already
+ * been said this session. The model answers from a window that starts with the
+ * owner's "assalamu alaikum", so it greeted every single turn otherwise — the
+ * owner's complaint. Only a leading greeting tied to a following clause is
+ * removed, so a reply that is itself a greeting is left alone.
+ */
+const LEADING_GREETING = /^(?:ওয়ালাইকুম[\s-]*আসসালাম|আসসালামু[\s-]*আলাইকুম|ওয়ালাইকুম\s*সালাম|আসসালাম)[,!।\-–—\s]*(?:স্যার[,!।\s]*)?/;
+export function stripLeadingGreeting(text) {
+  const s = String(text == null ? '' : text).trim();
+  const rest = s.replace(LEADING_GREETING, '').trim();
+  return rest.length >= 12 ? rest : s;
 }
 
 /**
@@ -344,8 +359,10 @@ export function splitSentences(text, max = 200) {
   if (clean.length <= max) return [clean];
   const out = [];
   let buf = '';
-  // Bengali দাঁড়ি (।) plus Latin terminators; the lookbehind keeps the mark.
-  const parts = clean.split(/(?<=[।!?.\n])/);
+  // Bengali দাঁড়ি (।) and ?! always end a sentence. A full stop only ends one
+  // when it is NOT between digits — otherwise "৩.৫ ডিগ্রি" was split into "৩."
+  // and "৫", and the voice read a decimal as two broken numbers.
+  const parts = clean.split(/(?<=[।!?\n])|(?<!\d)\.(?=\s|$)/);
   for (const raw of parts) {
     const piece = raw.trim();
     if (!piece) continue;
