@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0b1220">
+<title>🎙️ লাইভ কণ্ঠসহায়ক</title>
+<style>
+  :root{
+    --bg:#0b1220; --panel:#121c2e; --panel2:#182339; --line:#243352;
+    --ink:#e8eef8; --dim:#93a4c0; --accent:#4ade80; --accent2:#38bdf8;
+    --hot:#f87171; --warn:#fbbf24;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%}
+  body{margin:0;background:var(--bg);color:var(--ink);display:flex;flex-direction:column;
+    font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans Bengali",sans-serif}
+  header{padding:14px 16px 10px;display:flex;align-items:center;gap:10px;
+    border-bottom:1px solid var(--line)}
+  header b{font-size:16px}
+  #dot{width:9px;height:9px;border-radius:50%;background:var(--hot);flex:0 0 auto}
+  #dot.on{background:var(--accent);box-shadow:0 0 8px var(--accent)}
+  #who{margin-left:auto;color:var(--dim);font-size:13px}
+
+  #log{flex:1;overflow-y:auto;padding:14px 16px 4px;-webkit-overflow-scrolling:touch}
+  .turn{margin:0 0 14px;max-width:88%}
+  .turn.me{margin-left:auto}
+  .turn .who{font-size:12px;color:var(--dim);margin-bottom:3px}
+  .turn.me .who{text-align:right}
+  .bub{background:var(--panel);border:1px solid var(--line);border-radius:14px;
+    padding:10px 13px;white-space:pre-wrap;word-break:break-word}
+  .turn.me .bub{background:var(--panel2);border-color:var(--accent2)}
+  .bub.err{border-color:var(--hot);color:#ffd9d9}
+  .meta{font-size:12px;color:var(--dim);margin-top:4px}
+  .turn.me .meta{text-align:right}
+  .empty{color:var(--dim);text-align:center;padding:34px 10px;font-size:14.5px}
+
+  footer{border-top:1px solid var(--line);padding:12px 16px calc(14px + env(safe-area-inset-bottom))}
+  #talk{width:100%;border:none;border-radius:16px;padding:17px;font-size:17px;font-weight:700;
+    font-family:inherit;color:#06210f;background:var(--accent);cursor:pointer;
+    transition:transform .08s,background .15s}
+  #talk:active{transform:scale(.985)}
+  #talk[data-phase="recording"]{background:var(--hot);color:#fff}
+  #talk[data-phase="waiting"]{background:var(--warn);color:#2a1e00}
+  #talk[data-phase="speaking"]{background:var(--accent2);color:#04202f}
+  #talk[data-phase="offline"],#talk[data-phase="error"]{background:var(--panel2);color:var(--dim)}
+  #talk[disabled]{cursor:not-allowed}
+  #hint{text-align:center;color:var(--dim);font-size:12.5px;margin-top:8px;min-height:17px}
+</style>
+</head>
+<body>
+
+<header>
+  <span id="dot"></span>
+  <b>🎙️ লাইভ কণ্ঠসহায়ক</b>
+  <span id="who">স্যার</span>
+</header>
+
+<div id="log"><div class="empty" id="empty">নিচের বোতাম চেপে ধরে বলুন।<br>ছেড়ে দিলে আমি উত্তর দেব।</div></div>
+
+<footer>
+  <button id="talk" data-phase="offline">সংযোগ নেই</button>
+  <div id="hint"></div>
+</footer>
+
+<script type="module">
+import {
+  DEFAULT_WORKER, PHASE, resolveEndpoint, resolveTicketUrl, withTicket,
+  ticketHeaders, micConstraints, pickMime,
+  bytesToBase64, phaseLabel, formatLatency,
+} from './voice-agent-client-core.mjs';
+
+const $ = (id) => document.getElementById(id);
+const log = $('log'), talk = $('talk'), hint = $('hint'), dot = $('dot'), empty = $('empty');
+
+let ws = null, phase = PHASE.OFFLINE, recorder = null, chunks = [], startedAt = 0;
+let mime = null, audioCtx = null, retry = 0;
+
+function setPhase(p, note) {
+  phase = p;
+  talk.dataset.phase = p;
+  talk.textContent = phaseLabel(p);
+  talk.disabled = (p === PHASE.OFFLINE || p === PHASE.ERROR || p === PHASE.WAITING || p === PHASE.SPEAKING);
+  if (note !== undefined) hint.textContent = note;
+}
+
+function bubble(role, text, meta) {
+  if (empty && empty.parentNode) empty.remove();
+  const wrap = document.createElement('div');
+  wrap.className = 'turn' + (role === 'me' ? ' me' : '');
+  const who = document.createElement('div');
+  who.className = 'who';
+  who.textContent = role === 'me' ? 'আপনি' : 'সহায়ক';
+  const bub = document.createElement('div');
+  bub.className = 'bub' + (role === 'err' ? ' err' : '');
+  bub.textContent = text;
+  wrap.append(who, bub);
+  if (meta) {
+    const m = document.createElement('div');
+    m.className = 'meta';
+    m.textContent = meta;
+    wrap.append(m);
+  }
+  log.append(wrap);
+  log.scrollTop = log.scrollHeight;
+  return bub;
+}
+
+/* ── Socket ── */
+async function ticket() {
+  // The socket itself cannot carry a header, so the page proves itself here
+  // first and gets a short-lived, single-use ticket to present on the upgrade.
+  const url = resolveTicketUrl(location.href, DEFAULT_WORKER);
+  const res = await fetch(url, { method: 'POST', headers: ticketHeaders(), body: '{}' });
+  if (!res.ok) {
+    const e = new Error(res.status === 403 ? 'forbidden' : 'ticket_failed');
+    e.status = res.status;
+    throw e;
+  }
+  const data = await res.json();
+  return data.ticket;
+}
+
+async function connect() {
+  let url;
+  try {
+    const t = await ticket();
+    url = withTicket(resolveEndpoint(location.href, DEFAULT_WORKER), t);
+  } catch (e) {
+    dot.classList.remove('on');
+    setPhase(PHASE.ERROR, e && e.status === 403 ? 'অনুমতি নেই' : 'সংযোগে সমস্যা');
+    if (retry < 5) { retry++; setTimeout(connect, 800 * retry); }
+    return;
+  }
+  try { ws = new WebSocket(url); } catch (e) { return fail('ঠিকানা ভুল'); }
+  ws.onopen = () => { dot.classList.add('on'); retry = 0; setPhase(PHASE.READY, 'চেপে ধরে বলুন'); };
+  ws.onclose = () => {
+    dot.classList.remove('on');
+    if (phase !== PHASE.ERROR) setPhase(PHASE.OFFLINE, 'সংযোগ গেল — আবার চেষ্টা করছি');
+    if (retry < 5) { retry++; setTimeout(connect, 800 * retry); }
+  };
+  ws.onerror = () => { if (phase !== PHASE.RECORDING) setPhase(PHASE.OFFLINE, 'সংযোগে সমস্যা'); };
+  ws.onmessage = (ev) => {
+    let msg;
+    try { msg = JSON.parse(ev.data); } catch (_) { return; }
+    onServer(msg);
+  };
+}
+
+function onServer(msg) {
+  if (msg.type === 'ready') {
+    if (msg.reset) { log.innerHTML = ''; }
+    return;
+  }
+  if (msg.type === 'transcript') {
+    bubble('me', msg.text || '…');
+    setPhase(PHASE.WAITING, 'ভাবছি…');
+    return;
+  }
+  if (msg.type === 'reply') {
+    bubble('agent', msg.text || '…');
+    return;
+  }
+  if (msg.type === 'audio') {
+    setPhase(PHASE.SPEAKING, 'বলছি…');
+    play(msg.data, msg.mime);
+    return;
+  }
+  if (msg.type === 'done') {
+    const line = formatLatency(msg.ms);
+    const last = log.querySelector('.turn:last-child .meta');
+    if (last && line) last.textContent = line;
+    else if (line) hint.textContent = line;
+    setPhase(PHASE.READY, 'চেপে ধরে বলুন');
+    return;
+  }
+  if (msg.type === 'interrupted') { stopAudio(); setPhase(PHASE.READY, 'থামিয়ে দিলাম'); return; }
+  if (msg.type === 'stats') { hint.textContent = `এ পর্যন্ত ${msg.turns} বার · গড় ${(msg.avgTotalMs / 1000).toFixed(1)}s`; return; }
+  if (msg.type === 'error') {
+    // A TTS outage still delivered the words, so it is a warning, not a failure.
+    if (/tts_failed/.test(msg.message || '')) { hint.textContent = 'কণ্ঠ আসেনি, লেখা পেয়েছেন'; setPhase(PHASE.READY, 'চেপে ধরে বলুন'); return; }
+    fail(friendly(msg));
+  }
+}
+
+function friendly(msg) {
+  const m = String(msg.message || '');
+  if (m === 'no_provider_configured') return 'এখনো কোনো কী দেওয়া হয়নি';
+  if (m === 'empty_audio') return 'শব্দ পাইনি — আবার বলুন';
+  if (m === 'bad_json') return 'বার্তা বুঝতে পারিনি';
+  if (/all_providers_exhausted/.test(m)) return 'সব কী-এর লিমিট শেষ';
+  if (/tts_failed/.test(m)) return 'কণ্ঠ বানানো যায়নি';
+  return 'সমস্যা হয়েছে';
+}
+
+function fail(note) {
+  setPhase(PHASE.ERROR, note);
+  bubble('err', note);
+  setTimeout(() => { if (phase === PHASE.ERROR) setPhase(PHASE.READY, 'আবার চেষ্টা করুন'); }, 1800);
+}
+
+/* ── Recording (push to talk) ── */
+async function startTalking() {
+  if (!ws || ws.readyState !== WebSocket.OPEN) { fail('সংযোগ নেই'); return; }
+  if (!navigator.mediaDevices || !window.MediaRecorder) { fail('এই ব্রাউজারে চলে না'); return; }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia(micConstraints());
+    mime = pickMime(MediaRecorder.isTypeSupported ? [
+      'audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4',
+    ].filter(m => MediaRecorder.isTypeSupported(m)) : []);
+    if (!mime) { stream.getTracks().forEach(t => t.stop()); return fail('রেকর্ডিং চলে না'); }
+
+    chunks = [];
+    recorder = new MediaRecorder(stream, { mimeType: mime });
+    recorder.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+    recorder.onstop = () => {
+      stream.getTracks().forEach(t => t.stop());
+      const blob = new Blob(chunks, { type: mime });
+      if (!blob.size) { setPhase(PHASE.READY, 'শব্দ পাইনি'); return; }
+      blob.arrayBuffer().then((buf) => {
+        ws.send(JSON.stringify({ type: 'turn', audio: bytesToBase64(buf), mime }));
+      });
+      setPhase(PHASE.WAITING, 'ভাবছি…');
+    };
+    recorder.start();
+    startedAt = Date.now();
+    setPhase(PHASE.RECORDING, 'শুনছি… ছেড়ে দিলে পাঠাব');
+  } catch (e) {
+    fail(e && e.name === 'NotAllowedError' ? 'মাইক্রোফোনের অনুমতি দিন' : 'মাইক খুলল না');
+  }
+}
+
+function stopTalking() {
+  if (recorder && recorder.state === 'recording') {
+    if (Date.now() - startedAt < 350) { setTimeout(() => { if (recorder && recorder.state === 'recording') recorder.stop(); }, 350 - (Date.now() - startedAt)); return; }
+    recorder.stop();
+  }
+}
+
+/* Press and hold: pointer events cover mouse, touch and pen in one path. */
+talk.addEventListener('pointerdown', (e) => { e.preventDefault(); if (phase === PHASE.READY) startTalking(); });
+talk.addEventListener('pointerup', (e) => { e.preventDefault(); stopTalking(); });
+talk.addEventListener('pointercancel', () => stopTalking());
+talk.addEventListener('pointerleave', () => stopTalking());
+/* Keyboard users get space/enter as the same hold gesture. */
+talk.addEventListener('keydown', (e) => { if ((e.key === ' ' || e.key === 'Enter') && !e.repeat && phase === PHASE.READY) { e.preventDefault(); startTalking(); } });
+talk.addEventListener('keyup', (e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); stopTalking(); } });
+
+/* ── Playback ── */
+let currentAudio = null;
+function play(b64, mimeType) {
+  stopAudio();
+  try {
+    const bin = atob(b64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const url = URL.createObjectURL(new Blob([bytes], { type: mimeType || 'audio/mpeg' }));
+    currentAudio = new Audio(url);
+    currentAudio.onended = () => { URL.revokeObjectURL(url); currentAudio = null; };
+    currentAudio.play().catch(() => { hint.textContent = 'চাপ দিয়ে কণ্ঠ চালু করুন'; });
+  } catch (_) { hint.textContent = 'কণ্ঠ চালানো যায়নি'; }
+}
+function stopAudio() {
+  if (currentAudio) { try { currentAudio.pause(); } catch (_) {} currentAudio = null; }
+}
+
+/* Tapping the agent while it speaks interrupts it — the barge-in path. */
+log.addEventListener('click', () => {
+  if (phase === PHASE.SPEAKING && ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: 'interrupt' }));
+  }
+});
+
+setPhase(PHASE.OFFLINE, 'সংযোগ করছি…');
+connect();
+</script>
+</body>
+</html>

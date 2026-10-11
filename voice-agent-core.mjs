@@ -350,6 +350,57 @@ export function foldSummary(history, summary = '', keep = HISTORY_WINDOW) {
   return { summary: combined.slice(-MAX_SUMMARY_LEN), folded: overflow.length };
 }
 
+/* ── Session tickets ────────────────────────────────────────────────────── */
+
+/**
+ * The socket spends the owner's paid provider quota, so it must not be open to
+ * anyone who finds the URL. A browser cannot set a header on a WebSocket
+ * handshake, so the page first proves itself over HTTP (where headers work),
+ * receives a single-use ticket, and presents that on the upgrade.
+ *
+ * Tickets are short-lived and consumed on use: a leaked URL from a log or a
+ * screenshot is worthless a minute later.
+ */
+export const TICKET_TTL_MS = 60000;
+export const MAX_LIVE_TICKETS = 5;
+
+export function makeTicket(nowMs, rand) {
+  const id = rand ? rand()
+    : (globalThis.crypto && globalThis.crypto.randomUUID ? globalThis.crypto.randomUUID()
+      : Math.random().toString(36).slice(2) + Date.now().toString(36));
+  return { id: String(id), exp: nowMs + TICKET_TTL_MS };
+}
+
+/** Drop expired tickets. Called before every issue and every check. */
+export function pruneTickets(tickets, nowMs) {
+  const list = Array.isArray(tickets) ? tickets : [];
+  return list.filter(t => t && typeof t.id === 'string' && Number.isFinite(t.exp) && t.exp > nowMs);
+}
+
+/**
+ * Consume a ticket. Returns the remaining tickets and whether it was valid.
+ * A used or expired ticket never survives: one presentation, one socket.
+ */
+export function consumeTicket(tickets, presented, nowMs) {
+  const live = pruneTickets(tickets, nowMs);
+  const id = String(presented || '');
+  if (!id) return { ok: false, reason: 'missing', tickets: live };
+  const idx = live.findIndex(t => t.id === id);
+  if (idx === -1) return { ok: false, reason: 'invalid', tickets: live };
+  live.splice(idx, 1);
+  return { ok: true, tickets: live };
+}
+
+/** Constant-time-ish compare for the optional access token. */
+export function safeEqual(a, b) {
+  const x = String(a == null ? '' : a);
+  const y = String(b == null ? '' : b);
+  if (x.length !== y.length) return false;
+  let diff = 0;
+  for (let i = 0; i < x.length; i++) diff |= x.charCodeAt(i) ^ y.charCodeAt(i);
+  return diff === 0;
+}
+
 /* ── Self-validation ────────────────────────────────────────────────────── */
 
 export function validateVoiceAgentCore() {

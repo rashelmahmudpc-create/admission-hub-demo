@@ -31,7 +31,7 @@
     "test:load": "node p13-load-runner.mjs",
     "test:p17": "node --test --test-concurrency=1 study-plan-engine.test.mjs p17-prepare-me.test.mjs p17-prepare-me-runtime.test.mjs",
     "test:p18": "node --test --test-concurrency=1 admission-intel-engine.test.mjs question-pattern.test.mjs p18-admission-intel.test.mjs",
-    "test:p23": "node voice-agent-core.test.mjs && node voice-agent.test.mjs",
+    "test:p23": "node voice-agent-core.test.mjs && node voice-agent.test.mjs && node voice-agent-client-core.test.mjs",
     "test:scroll-lock": "node --test --test-force-exit welcome-scroll-lock.test.mjs"
   },
   "dependencies": {

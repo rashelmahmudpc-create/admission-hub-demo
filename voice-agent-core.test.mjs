@@ -9,6 +9,7 @@ import {
   runWithFailover, canTransition, createSession,
   buildSystemPrompt, buildMessages, foldSummary,
   validateVoiceAgentCore, MAX_SUMMARY_LEN, HISTORY_WINDOW,
+  makeTicket, pruneTickets, consumeTicket, safeEqual, TICKET_TTL_MS,
 } from './voice-agent-core.mjs';
 
 let pass = 0, fail = 0;
@@ -145,6 +146,46 @@ t('P23-৩১. nothing in the core hardcodes a provider key or a single-provider
     return !/AIza[0-9A-Za-z_-]{20,}|sk-[A-Za-z0-9]{20,}|gsk_[A-Za-z0-9]{20,}/.test(src)
       && /parseProviderPools/.test(src) && /runWithFailover/.test(src);
   })());
+
+/* ── ৮. Tickets: the socket is gated and a ticket is single-use ── */
+const T0 = 1_000_000;
+t('P23-৩২. a ticket is opaque and carries a short expiry',
+  (() => { const tk = makeTicket(T0, () => 'abc'); return tk.id === 'abc' && tk.exp === T0 + TICKET_TTL_MS && TICKET_TTL_MS <= 120000; })());
+t('P23-৩৩. two tickets are never the same', (() => {
+  const a = makeTicket(T0), b = makeTicket(T0);
+  return a.id !== b.id && a.id.length > 8;
+})());
+t('P23-৩৪. an expired ticket is pruned',
+  (() => {
+    const list = [{ id: 'old', exp: T0 - 1 }, { id: 'live', exp: T0 + 1000 }];
+    const kept = pruneTickets(list, T0);
+    return kept.length === 1 && kept[0].id === 'live';
+  })());
+t('P23-৩৫. junk in the ticket list cannot crash a prune',
+  pruneTickets([null, {}, { id: 5 }, 'x'], T0).length === 0
+  && pruneTickets(undefined, T0).length === 0);
+t('P23-৩৬. a valid ticket is consumed exactly once',
+  (() => {
+    const list = [{ id: 'a', exp: T0 + 1000 }, { id: 'b', exp: T0 + 1000 }];
+    const first = consumeTicket(list, 'a', T0);
+    const second = consumeTicket(first.tickets, 'a', T0);
+    return first.ok && first.tickets.length === 1 && !second.ok && second.reason === 'invalid';
+  })());
+t('P23-৩৭. a missing or unknown ticket is refused with a reason',
+  (() => {
+    const none = consumeTicket([], '', T0);
+    const unknown = consumeTicket([], 'nope', T0);
+    return !none.ok && none.reason === 'missing' && !unknown.ok && unknown.reason === 'invalid';
+  })());
+t('P23-৩৮. a ticket that expires between issue and use is refused',
+  (() => {
+    const list = [makeTicket(T0, () => 't')];
+    const later = consumeTicket(list, 't', T0 + TICKET_TTL_MS + 1);
+    return !later.ok && later.reason === 'invalid';
+  })());
+t('P23-৩৯. the token compare is length-safe and exact',
+  safeEqual('abc', 'abc') && !safeEqual('abc', 'abd') && !safeEqual('abc', 'ab') && !safeEqual('', 'x')
+  && safeEqual(null, null));
 
 console.log(`\n  voice-agent-core: ${pass} pass / ${fail} fail`);
 if (fail) process.exit(1);

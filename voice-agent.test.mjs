@@ -39,6 +39,20 @@ function stubFetch(handler) { const prev = globalThis.fetch; globalThis.fetch = 
 const okJson = (obj) => new Response(JSON.stringify(obj), { status: 200, headers: { 'Content-Type': 'application/json' } });
 const audioRes = (bytes = 'MP3DATA') => new Response(bytes, { status: 200, headers: { 'Content-Type': 'audio/mpeg' } });
 
+/* The Cloudflare runtime supplies WebSocketPair and permits a 101 Response; node
+ * does neither. The stand-in records that the pair was built, which is the point
+ * the upgrade has passed the gate — asserting on 101 itself would only be testing
+ * node's Response limits. */
+function withFakeWebSocketPair(onPair) {
+  const prev = globalThis.WebSocketPair;
+  globalThis.WebSocketPair = function () {
+    if (typeof onPair === 'function') onPair();
+    const mk = () => ({ sent: [], accept() {}, send(s) { this.sent.push(s); }, addEventListener() {}, close() {} });
+    return { 0: mk(), 1: mk() };
+  };
+  return () => { globalThis.WebSocketPair = prev; };
+}
+
 function makeSession(env = POOLS) {
   const s = new VoiceAgentSession(ctx(), { ...env });
   const ws = new FakeSocket();
@@ -230,6 +244,95 @@ function makeSession(env = POOLS) {
   const src = (await import('fs')).readFileSync('voice-agent.mjs', 'utf8');
   t('P23-৫৩. the DO source contains no hardcoded provider key',
     !/AIza[0-9A-Za-z_-]{20,}|sk-[A-Za-z0-9]{20,}|gsk_[A-Za-z0-9]{20,}/.test(src));
+}
+
+/* ── ১২. The socket is gated: a ticket must be earned and is single-use ── */
+{
+  const { s } = makeSession();
+  const up = (ticket) => new Request(`https://x/api/voice/agent${ticket === undefined ? '' : '?ticket=' + ticket}`, {
+    headers: { Upgrade: 'websocket' },
+  });
+
+  // No ticket at all: refused.
+  const bare = await s.fetch(up());
+  t('P23-৮৯. a socket with no ticket is refused with 401', bare.status === 401);
+
+  // A forged ticket: refused.
+  const forged = await s.fetch(up('not-a-real-ticket'));
+  t('P23-৯০. a forged ticket is refused', forged.status === 401);
+
+  // The ticket endpoint requires the app header.
+  const noHeader = await s.fetch(new Request('https://x/api/voice/agent/ticket', { method: 'POST' }));
+  t('P23-৯১. the ticket endpoint refuses a caller without the app header', noHeader.status === 403);
+
+  const issued = await s.fetch(new Request('https://x/api/voice/agent/ticket', {
+    method: 'POST', headers: { 'X-AH-App': 'admission-hub' },
+  }));
+  const body = await issued.json();
+  t('P23-৯২. an approved caller receives a short-lived ticket',
+    issued.status === 200 && typeof body.ticket === 'string' && body.ticket.length > 8 && body.ttl > 0);
+
+  let upgraded = false;
+  const restorePair = withFakeWebSocketPair(() => { upgraded = true; });
+  try {
+    await s.fetch(up(body.ticket)).catch(() => null);
+  } finally { restorePair(); }
+  t('P23-৯৩. the issued ticket passes the gate and the socket is built', upgraded === true);
+
+  const replay = await s.fetch(up(body.ticket));
+  t('P23-৯৪. the same ticket cannot be reused — one presentation, one socket', replay.status === 401);
+
+  const wrongMethod = await s.fetch(new Request('https://x/api/voice/agent/ticket', {
+    method: 'GET', headers: { 'X-AH-App': 'admission-hub' },
+  }));
+  t('P23-৯৫. the ticket endpoint is POST-only', wrongMethod.status === 405);
+}
+
+/* ── ১৩. An optional access token, when bound, is required ── */
+{
+  const { s } = makeSession({ ...POOLS, VOICE_ACCESS_TOKEN: 'sekret' });
+  const noTok = await s.fetch(new Request('https://x/api/voice/agent/ticket', {
+    method: 'POST', headers: { 'X-AH-App': 'admission-hub' },
+  }));
+  t('P23-৯৬. with a token bound, the app header alone is not enough', noTok.status === 403);
+
+  const badTok = await s.fetch(new Request('https://x/api/voice/agent/ticket', {
+    method: 'POST', headers: { 'X-AH-App': 'admission-hub', 'X-Voice-Token': 'wrong' },
+  }));
+  t('P23-৯৭. a wrong token is refused', badTok.status === 403);
+
+  const goodTok = await s.fetch(new Request('https://x/api/voice/agent/ticket', {
+    method: 'POST', headers: { 'X-AH-App': 'admission-hub', 'X-Voice-Token': 'sekret' },
+  }));
+  t('P23-৯৮. the right token is accepted', goodTok.status === 200);
+}
+
+/* ── ১৪. A stale ticket does not survive a restart ── */
+{
+  const shared = ctx();
+  const restore = stubFetch(async () => new Response('x', { status: 404 }));
+  try {
+    const a = new VoiceAgentSession(shared, { ...POOLS });
+    const res = await a.fetch(new Request('https://x/api/voice/agent/ticket', {
+      method: 'POST', headers: { 'X-AH-App': 'admission-hub' },
+    }));
+    const { ticket } = await res.json();
+
+    // A different object over the same storage, an hour later: the ticket is dead.
+    const b = new VoiceAgentSession(shared, { ...POOLS });
+    b.loaded = true;
+    b.tickets = [{ id: ticket, exp: Date.now() - 1000 }];
+    const stale = await b.fetch(new Request(`https://x/api/voice/agent?ticket=${ticket}`, { headers: { Upgrade: 'websocket' } }));
+    t('P23-৯৯. an expired ticket is refused', stale.status === 401);
+  } finally { restore(); }
+}
+
+/* ── ১৫. The worker must actually route the ticket path to this object ── */
+{
+  const src = (await import('fs')).readFileSync('gk-agent-worker.js', 'utf8');
+  t('P23-১০০. the worker routes the whole /api/voice/agent subtree, ticket included',
+    /url\.pathname === '\/api\/voice\/agent' \|\| url\.pathname\.startsWith\('\/api\/voice\/agent\/'\)/.test(src)
+    && /env\.VOICE_AGENT\.get\(/.test(src));
 }
 
 console.log(`\n  voice-agent DO: ${pass} pass / ${fail} fail`);

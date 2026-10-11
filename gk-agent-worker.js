@@ -451,8 +451,10 @@ export default {
     const url = new URL(request.url);
     /* P23 — live voice agent. Routed first because it answers a WebSocket
      * upgrade, which no downstream handler should try to read. One object per
-     * owner keeps the socket and the durable memory together. */
-    if (url.pathname === '/api/voice/agent' || url.pathname === '/api/voice/agent/health') {
+     * owner keeps the socket and the durable memory together. The ticket path is
+     * matched too — without it the ticket request would 404 here and the socket
+     * could never be opened. */
+    if (url.pathname === '/api/voice/agent' || url.pathname.startsWith('/api/voice/agent/')) {
       const id = env.VOICE_AGENT.idFromName(String(env.VOICE_OWNER_UID || 'owner'));
       return env.VOICE_AGENT.get(id).fetch(request);
     }

@@ -24718,6 +24718,33 @@ function foldSummary(history, summary = "", keep = HISTORY_WINDOW) {
   const combined = [summary, ...lines].filter(Boolean).join("\n");
   return { summary: combined.slice(-MAX_SUMMARY_LEN2), folded: overflow.length };
 }
+var TICKET_TTL_MS = 6e4;
+var MAX_LIVE_TICKETS = 5;
+function makeTicket(nowMs, rand) {
+  const id = rand ? rand() : globalThis.crypto && globalThis.crypto.randomUUID ? globalThis.crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now().toString(36);
+  return { id: String(id), exp: nowMs + TICKET_TTL_MS };
+}
+function pruneTickets(tickets, nowMs) {
+  const list = Array.isArray(tickets) ? tickets : [];
+  return list.filter((t) => t && typeof t.id === "string" && Number.isFinite(t.exp) && t.exp > nowMs);
+}
+function consumeTicket(tickets, presented, nowMs) {
+  const live = pruneTickets(tickets, nowMs);
+  const id = String(presented || "");
+  if (!id) return { ok: false, reason: "missing", tickets: live };
+  const idx = live.findIndex((t) => t.id === id);
+  if (idx === -1) return { ok: false, reason: "invalid", tickets: live };
+  live.splice(idx, 1);
+  return { ok: true, tickets: live };
+}
+function safeEqual(a, b) {
+  const x = String(a == null ? "" : a);
+  const y = String(b == null ? "" : b);
+  if (x.length !== y.length) return false;
+  let diff = 0;
+  for (let i = 0; i < x.length; i++) diff |= x.charCodeAt(i) ^ y.charCodeAt(i);
+  return diff === 0;
+}
 
 // voice-agent-providers.mjs
 var ok = (r) => r && typeof r.ok === "boolean" ? r.ok : false;
@@ -24908,6 +24935,7 @@ function pickAdapter(table, provider) {
 var HISTORY_KEY = "va_history";
 var SUMMARY_KEY = "va_summary";
 var MEMORY_KEY = "va_memory";
+var TICKETS_KEY = "va_tickets";
 var MAX_STORED_TURNS = 200;
 function fallbackPool(env, kind) {
   const map = {
@@ -24957,9 +24985,23 @@ var VoiceAgentSession = class {
     this.ownerUid = null;
     this.brain = "";
     this.memory = [];
+    this.tickets = [];
     this.loaded = false;
   }
-  /* ── HTTP entry: upgrade to a socket, or answer a health probe ── */
+  /**
+   * Who may open a socket. The app header is the same gate the existing voice
+   * worker uses, so the two agree. When VOICE_ACCESS_TOKEN is bound it is also
+   * required — that is the stronger option, and the owner can add it later
+   * without a code change.
+   */
+  approved(request) {
+    const appOk = request.headers.get("X-AH-App") === "admission-hub";
+    const token = this.env && this.env.VOICE_ACCESS_TOKEN;
+    if (!appOk) return false;
+    if (token) return safeEqual(request.headers.get("X-Voice-Token"), token);
+    return true;
+  }
+  /* ── HTTP entry: issue a ticket, upgrade to a socket, or answer a health probe ── */
   async fetch(request) {
     const url = new URL(request.url);
     if (url.pathname.endsWith("/health")) {
@@ -24970,11 +25012,31 @@ var VoiceAgentSession = class {
         pools: { stt: pools.stt.length, llm: pools.llm.length, tts: pools.tts.length }
       });
     }
+    if (url.pathname.endsWith("/ticket")) {
+      if (request.method !== "POST") return new Response("method not allowed", { status: 405 });
+      if (!this.approved(request)) return new Response("forbidden", { status: 403 });
+      await this.load();
+      const now = Date.now();
+      this.tickets = pruneTickets(this.tickets, now).slice(-(MAX_LIVE_TICKETS - 1));
+      const ticket = makeTicket(now);
+      this.tickets.push(ticket);
+      await this.ctx.storage.put(TICKETS_KEY, this.tickets);
+      return Response.json({ ticket: ticket.id, exp: ticket.exp, ttl: TICKET_TTL_MS });
+    }
     if (request.headers.get("Upgrade") !== "websocket") {
       return new Response("expected websocket", { status: 426 });
     }
     await this.load();
-    const pair = new WebSocketPair();
+    const presented = url.searchParams.get("ticket") || "";
+    const check = consumeTicket(this.tickets, presented, Date.now());
+    this.tickets = check.tickets;
+    await this.ctx.storage.put(TICKETS_KEY, this.tickets);
+    if (!check.ok) {
+      return new Response("unauthorized", { status: 401 });
+    }
+    const Pair = globalThis.WebSocketPair;
+    if (typeof Pair !== "function") return new Response("websocket unsupported", { status: 501 });
+    const pair = new Pair();
     const [client, server] = Object.values(pair);
     server.accept();
     this.sockets.add(server);
@@ -25025,9 +25087,11 @@ var VoiceAgentSession = class {
     const history = await this.ctx.storage.get(HISTORY_KEY);
     const summary = await this.ctx.storage.get(SUMMARY_KEY);
     const memory = await this.ctx.storage.get(MEMORY_KEY);
+    const tickets = await this.ctx.storage.get(TICKETS_KEY);
     this.session = createSession();
     this.session.restore(history, summary, MAX_STORED_TURNS);
     this.memory = Array.isArray(memory) ? memory : [];
+    this.tickets = pruneTickets(Array.isArray(tickets) ? tickets : [], Date.now());
     this.brain = String(this.env.VOICE_BRAIN || "");
     this.loaded = true;
   }
@@ -25583,7 +25647,7 @@ var maybeStart = async (request, env, ctx) => {
 var gk_agent_worker_default = {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
-    if (url.pathname === "/api/voice/agent" || url.pathname === "/api/voice/agent/health") {
+    if (url.pathname === "/api/voice/agent" || url.pathname.startsWith("/api/voice/agent/")) {
       const id = env.VOICE_AGENT.idFromName(String(env.VOICE_OWNER_UID || "owner"));
       return env.VOICE_AGENT.get(id).fetch(request);
     }

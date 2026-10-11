@@ -29,6 +29,7 @@
 import {
   VOICE_AGENT_VERSION, createSession, parseProviderPools, runWithFailover,
   buildSystemPrompt, buildMessages, foldSummary, sanitizeSecret, STATE,
+  makeTicket, pruneTickets, consumeTicket, safeEqual, TICKET_TTL_MS, MAX_LIVE_TICKETS,
 } from './voice-agent-core.mjs';
 import { STT, LLM, TTS, pickAdapter } from './voice-agent-providers.mjs';
 import { renderMemory, upsertMemory, extractMemoryCandidates, makeMemory, resolveMemoryOwner } from './memory-engine.js';
@@ -36,6 +37,7 @@ import { renderMemory, upsertMemory, extractMemoryCandidates, makeMemory, resolv
 const HISTORY_KEY = 'va_history';
 const SUMMARY_KEY = 'va_summary';
 const MEMORY_KEY = 'va_memory';
+const TICKETS_KEY = 'va_tickets';
 const MAX_STORED_TURNS = 200;
 
 /**
@@ -94,10 +96,25 @@ export class VoiceAgentSession {
     this.ownerUid = null;
     this.brain = '';
     this.memory = [];
+    this.tickets = [];
     this.loaded = false;
   }
 
-  /* ── HTTP entry: upgrade to a socket, or answer a health probe ── */
+  /**
+   * Who may open a socket. The app header is the same gate the existing voice
+   * worker uses, so the two agree. When VOICE_ACCESS_TOKEN is bound it is also
+   * required — that is the stronger option, and the owner can add it later
+   * without a code change.
+   */
+  approved(request) {
+    const appOk = request.headers.get('X-AH-App') === 'admission-hub';
+    const token = this.env && this.env.VOICE_ACCESS_TOKEN;
+    if (!appOk) return false;
+    if (token) return safeEqual(request.headers.get('X-Voice-Token'), token);
+    return true;
+  }
+
+  /* ── HTTP entry: issue a ticket, upgrade to a socket, or answer a health probe ── */
   async fetch(request) {
     const url = new URL(request.url);
 
@@ -110,13 +127,39 @@ export class VoiceAgentSession {
       });
     }
 
+    /* Ticket issue. This is the request that must prove itself, because it is
+     * the only one that can carry a header. */
+    if (url.pathname.endsWith('/ticket')) {
+      if (request.method !== 'POST') return new Response('method not allowed', { status: 405 });
+      if (!this.approved(request)) return new Response('forbidden', { status: 403 });
+      await this.load();
+      const now = Date.now();
+      this.tickets = pruneTickets(this.tickets, now).slice(-(MAX_LIVE_TICKETS - 1));
+      const ticket = makeTicket(now);
+      this.tickets.push(ticket);
+      await this.ctx.storage.put(TICKETS_KEY, this.tickets);
+      return Response.json({ ticket: ticket.id, exp: ticket.exp, ttl: TICKET_TTL_MS });
+    }
+
     if (request.headers.get('Upgrade') !== 'websocket') {
       return new Response('expected websocket', { status: 426 });
     }
 
+    /* Upgrade. A browser cannot set a header here, so the ticket is the proof. */
     await this.load();
+    const presented = url.searchParams.get('ticket') || '';
+    const check = consumeTicket(this.tickets, presented, Date.now());
+    this.tickets = check.tickets;
+    await this.ctx.storage.put(TICKETS_KEY, this.tickets);
+    if (!check.ok) {
+      return new Response('unauthorized', { status: 401 });
+    }
 
-    const pair = new WebSocketPair();
+    /* WebSocketPair is a runtime global. Referenced through globalThis so a test
+     * can supply one, and so the missing-global case fails clearly. */
+    const Pair = globalThis.WebSocketPair;
+    if (typeof Pair !== 'function') return new Response('websocket unsupported', { status: 501 });
+    const pair = new Pair();
     const [client, server] = Object.values(pair);
     server.accept();
     this.sockets.add(server);
@@ -165,10 +208,12 @@ export class VoiceAgentSession {
     const history = await this.ctx.storage.get(HISTORY_KEY);
     const summary = await this.ctx.storage.get(SUMMARY_KEY);
     const memory = await this.ctx.storage.get(MEMORY_KEY);
+    const tickets = await this.ctx.storage.get(TICKETS_KEY);
 
     this.session = createSession();
     this.session.restore(history, summary, MAX_STORED_TURNS);
     this.memory = Array.isArray(memory) ? memory : [];
+    this.tickets = pruneTickets(Array.isArray(tickets) ? tickets : [], Date.now());
     this.brain = String(this.env.VOICE_BRAIN || '');
     this.loaded = true;
   }
