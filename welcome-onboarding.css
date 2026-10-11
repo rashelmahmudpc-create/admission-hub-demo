@@ -7,8 +7,15 @@ html:has(.ah-welcome-upgraded),body:has(.ah-welcome-upgraded),body:has(.ah-welco
 /* Owner: the welcome must be locked — nothing may scroll or move, ever. Pin the
    page and the account layer to the visible area and kill every scroll/gesture
    path (browser chrome resize, overscroll bounce, pull-to-refresh). */
-html:has(.ah-welcome-upgraded),body:has(.ah-welcome-upgraded){position:fixed!important;inset:0!important;width:100%!important;height:100%!important;overflow:hidden!important;overscroll-behavior:none!important;touch-action:none}
-.ah-account-page:has(.ah-welcome-upgraded),.ah-account-page:has(.ah-welcome-upgraded) .ah-account-shell,.ah-account-page:has(.ah-welcome-upgraded) .ah-account-body{position:fixed!important;inset:0!important;width:100%!important;height:100%!important;min-height:0!important;margin:0!important;max-width:none!important;overflow:hidden!important;overscroll-behavior:none!important}
+/* LOCK SCOPED TO THE WELCOME VIEW. It used to key on .ah-welcome-upgraded
+   alone, but that class is added once and never removed when the student leaves
+   the welcome screen — so position:fixed + overflow:hidden on html/body stuck
+   and froze scrolling across the whole app (owner report 2026-10-11). The lock
+   now applies only while the account page is shown AND its welcome view is the
+   visible one, so leaving welcome releases it. welcome-onboarding.js also drops
+   the class on exit; this selector is the belt to that pair of braces. */
+html:has(#ah-account-page.ah-welcome-upgraded:not([hidden]) [data-view="welcome"]:not([hidden])),body:has(#ah-account-page.ah-welcome-upgraded:not([hidden]) [data-view="welcome"]:not([hidden])){position:fixed!important;inset:0!important;width:100%!important;height:100%!important;overflow:hidden!important;overscroll-behavior:none!important;touch-action:none}
+.ah-account-page.ah-welcome-upgraded:not([hidden]):has([data-view="welcome"]:not([hidden])),.ah-account-page.ah-welcome-upgraded:not([hidden]):has([data-view="welcome"]:not([hidden])) .ah-account-shell,.ah-account-page.ah-welcome-upgraded:not([hidden]):has([data-view="welcome"]:not([hidden])) .ah-account-body{position:fixed!important;inset:0!important;width:100%!important;height:100%!important;min-height:0!important;margin:0!important;max-width:none!important;overflow:hidden!important;overscroll-behavior:none!important}
 /* The decorative colour glows tint the extreme top/bottom edge, so the device
    status/nav bar (theme-colour #f7f6fb) no longer matched the app edge. Put the
    glows behind a soft base-coloured veil whose strength fades with distance

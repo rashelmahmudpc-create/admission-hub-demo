@@ -25,7 +25,7 @@ t('৫. Pages proxy preserves method, headers and request body', WK.includes('ne
 
 /* ── ২. ভার্সন-অখণ্ডতা v204 ── */
 
-t('৬. el-voice-v110 stays deferred outside the lean current app shell', H.includes('vocabulary-elevenlabs.js?v=el-voice-v110') && !SW.includes("'./vocabulary-elevenlabs.js?v=el-voice-v110'") && SW.includes("const BUILD_ID = 'v305-p18-admission-intel-20261011'") && H.includes('sw.js?v=v305-p18-admission-intel-20261011') && H.includes("const expectedSwVersion = 'v305-p18-admission-intel-20261011'") && H.includes("const cur = 'admission-hub-shell-v305-p18-admission-intel-20261011'"));
+t('৬. el-voice-v110 stays deferred outside the lean current app shell', H.includes('vocabulary-elevenlabs.js?v=el-voice-v110') && !SW.includes("'./vocabulary-elevenlabs.js?v=el-voice-v110'") && SW.includes("const BUILD_ID = 'v306-welcome-scroll-lock-fix-20261011'") && H.includes('sw.js?v=v306-welcome-scroll-lock-fix-20261011') && H.includes("const expectedSwVersion = 'v306-welcome-scroll-lock-fix-20261011'") && H.includes("const cur = 'admission-hub-shell-v306-welcome-scroll-lock-fix-20261011'"));
 
 /* ── ৩. রানটাইম: এক-ক্লিক → generate+সেভ → ২য়-ক্লিক-নেট-নয় → অফলাইনে-বাজে ── */
 t('৭. রানটাইম: ১ম-ক্লিক generate+ক্যাশ ("generated") → ২য়-ক্লিক ক্যাশ থেকে ("cache", নেট-০) → অফলাইনেও বাজে', (async () => {

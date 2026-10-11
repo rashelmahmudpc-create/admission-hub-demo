@@ -122,5 +122,18 @@ const mount=async()=>{
   render(0);translate();sync();if(hadFocus)signup.focus({preventScroll:true});discover.disconnect();
  }catch(error){view.style.visibility='';view.classList.remove('ah-welcome-live');page.classList.remove('ah-welcome-upgraded');view.dataset.welcomeUpgrade='failed';console.warn('[welcome-ui] Original welcome controls restored:',error.message);}finally{pending=false;}
 };
+/* The upgraded welcome look adds .ah-welcome-upgraded, which the CSS turns into
+   a full-page scroll lock while the welcome view is active. Leaving the welcome
+   view must drop the class, or the lock's selector keeps matching. Belt-and-
+   braces with the CSS [data-current-view] guard: the class is removed the moment
+   the page is hidden or its current view is no longer welcome. */
+const releaseLock=()=>{
+ if(typeof document==='undefined'||!document)return;
+ const page=document.getElementById('ah-account-page');
+ if(!page)return;
+ if(page.hidden||page.dataset.currentView!=='welcome')page.classList.remove('ah-welcome-upgraded');
+};
+new MutationObserver(releaseLock).observe(document.documentElement,{childList:true,subtree:true,attributes:true,attributeFilter:['hidden','data-current-view']});
+releaseLock();
 const discover=new MutationObserver(mount);discover.observe(document.documentElement,{childList:true,subtree:true});mount();window.addEventListener('pagehide',()=>discover.disconnect(),{once:true});
 })();
