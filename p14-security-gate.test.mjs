@@ -86,7 +86,7 @@ test('content integrity: a clean doc verifies, drift is reported', () => {
     v: 4, subjects: [{ id: 's1' }], topics: [], questions: [{ id: 'q1', question: 'abc' }],
     vocabulary: [], vocabularyMaster: []
   };
-  const sig = '1:0:1:0:0:3';
+  const sig = '1:0:1:0:0:3:0:0';
   const clean = verifyIntegrity({ ...doc, sig, counts: { subjects: 1, topics: 0, questions: 1, vocabulary: 0, vocabularyMaster: 0 } });
   assert.equal(clean.ok, true);
   assert.equal(clean.sig, sig);
@@ -101,7 +101,7 @@ test('content integrity: a clean doc verifies, drift is reported', () => {
 
 test('content integrity: the admin verify route is token-gated', async () => {
   const kv = new MemoryKV();
-  const doc = { v: 9, sig: '0:0:0:0:0:0', counts: { subjects: 0, topics: 0, questions: 0, vocabulary: 0, vocabularyMaster: 0 }, questions: [] };
+  const doc = { v: 9, sig: '0:0:0:0:0:0:0:0', counts: { subjects: 0, topics: 0, questions: 0, vocabulary: 0, vocabularyMaster: 0 }, questions: [] };
   await kv.put('pubContent', JSON.stringify(doc));
   const env = { PUB_KV: kv, ADMIN_TOKEN: 'sekret' };
   const denied = await publicWorker.fetch(req('/api/admin/verify'), env);

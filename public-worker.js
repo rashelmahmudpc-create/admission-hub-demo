@@ -22,15 +22,44 @@ const onlyRows = rows => (Array.isArray(rows) ? rows : []).filter(row => row && 
   }
   return clean;
 });
+/* A cheap, deterministic string hash (FNV-1a). The signature must change when a
+   word's meaning, synonym/antonym gloss or tips change — a length-only
+   fingerprint does not, so a corrected gloss would never leave the KV blob: the
+   D1 read path would keep serving the stale copy forever. */
+const hashText = text => {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(36);
+};
 const fingerprintGlobal = doc => {
   const questions = doc.questions || [];
+  const vocabularyMaster = doc.vocabularyMaster || [];
+  const vocabulary = doc.vocabulary || [];
+  // Per-word content hash, order-independent, so an edit changes the signature
+  // without the cost of hashing the whole multi-megabyte document.
+  let vmHash = 0;
+  for (const row of vocabularyMaster) {
+    const text = `${row.word}|${row.meaning}|${row.tips || ''}|` +
+      (row.synonyms || []).map(r => `${r.word}=${r.meaning}`).join(',') + '|' +
+      (row.antonyms || []).map(r => `${r.word}=${r.meaning}`).join(',');
+    vmHash = (vmHash + parseInt(hashText(text), 36)) % 0xffffffff;
+  }
+  let vHash = 0;
+  for (const row of vocabulary) {
+    vHash = (vHash + parseInt(hashText(`${row.word}|${row.meaning}`), 36)) % 0xffffffff;
+  }
   return [
     (doc.subjects || []).length,
     (doc.topics || []).length,
     questions.length,
-    (doc.vocabulary || []).length,
-    (doc.vocabularyMaster || []).length,
-    questions.reduce((total, row) => total + String(row.question || row.q || '').length, 0)
+    vocabulary.length,
+    vocabularyMaster.length,
+    questions.reduce((total, row) => total + String(row.question || row.q || '').length, 0),
+    vmHash.toString(36),
+    vHash.toString(36)
   ].join(':');
 };
 const countsOf = doc => ({

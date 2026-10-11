@@ -2231,15 +2231,36 @@ var onlyRows = (rows) => (Array.isArray(rows) ? rows : []).filter((row) => row &
   }
   return clean;
 });
+var hashText = (text) => {
+  let h = 2166136261;
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return (h >>> 0).toString(36);
+};
 var fingerprintGlobal = (doc) => {
   const questions = doc.questions || [];
+  const vocabularyMaster = doc.vocabularyMaster || [];
+  const vocabulary = doc.vocabulary || [];
+  let vmHash = 0;
+  for (const row of vocabularyMaster) {
+    const text = `${row.word}|${row.meaning}|${row.tips || ""}|` + (row.synonyms || []).map((r) => `${r.word}=${r.meaning}`).join(",") + "|" + (row.antonyms || []).map((r) => `${r.word}=${r.meaning}`).join(",");
+    vmHash = (vmHash + parseInt(hashText(text), 36)) % 4294967295;
+  }
+  let vHash = 0;
+  for (const row of vocabulary) {
+    vHash = (vHash + parseInt(hashText(`${row.word}|${row.meaning}`), 36)) % 4294967295;
+  }
   return [
     (doc.subjects || []).length,
     (doc.topics || []).length,
     questions.length,
-    (doc.vocabulary || []).length,
-    (doc.vocabularyMaster || []).length,
-    questions.reduce((total, row) => total + String(row.question || row.q || "").length, 0)
+    vocabulary.length,
+    vocabularyMaster.length,
+    questions.reduce((total, row) => total + String(row.question || row.q || "").length, 0),
+    vmHash.toString(36),
+    vHash.toString(36)
   ].join(":");
 };
 var countsOf = (doc) => ({
