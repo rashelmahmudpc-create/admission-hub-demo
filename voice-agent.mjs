@@ -252,8 +252,14 @@ export class VoiceAgentSession {
    * only add latency to speech.
    */
   async pools() {
-    if (!this.kvSecretCache) this.kvSecretCache = await kvSecrets(this.env);
-    const extra = this.kvSecretCache;
+    // Only a non-empty read is cached: caching an empty one would pin the agent
+    // to the Gemini-only fallback for the object's whole lifetime after a key is
+    // added to KV, which is exactly when the owner expects it to start working.
+    if (!this.kvSecretCache) {
+      const found = await kvSecrets(this.env);
+      if (Object.keys(found).length) this.kvSecretCache = found;
+    }
+    const extra = this.kvSecretCache || {};
     const configured = parseProviderPools({
       stt: this.env.VOICE_STT_POOL,
       llm: this.env.VOICE_LLM_POOL,

@@ -25169,8 +25169,11 @@ var VoiceAgentSession = class {
    * only add latency to speech.
    */
   async pools() {
-    if (!this.kvSecretCache) this.kvSecretCache = await kvSecrets(this.env);
-    const extra = this.kvSecretCache;
+    if (!this.kvSecretCache) {
+      const found = await kvSecrets(this.env);
+      if (Object.keys(found).length) this.kvSecretCache = found;
+    }
+    const extra = this.kvSecretCache || {};
     const configured = parseProviderPools({
       stt: this.env.VOICE_STT_POOL,
       llm: this.env.VOICE_LLM_POOL,

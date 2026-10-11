@@ -401,6 +401,17 @@ function makeSession(env = POOLS) {
   const brp = await b.pools();
   t('P23-১২২. a KV failure leaves the agent working without the optional voice',
     brp.tts.some(x => x.id === 'gemini-tts') && !brp.tts.some(x => x.id === 'cartesia'));
+
+  // A key added to KV after the object is already serving must be picked up on a
+  // later call, so an empty read must not be cached for the object's lifetime.
+  const store = new Map();
+  const live = { get: async (k) => store.get(k) ?? null };
+  const l = new VoiceAgentSession(ctx(), { GK_KV: live, GEMINI_KEYS: 'g1' });
+  const before = await l.pools();
+  store.set('secret:CARTESIA_API_KEY', 'later-key');
+  const after = await l.pools();
+  t('P23-১২৫. a key added to KV later is picked up, not masked by an empty cache',
+    !before.tts.some(x => x.id === 'cartesia') && after.tts.some(x => x.id === 'cartesia'));
 }
 
 /* ── ১৬c. The Gemini model names are ones the API still serves ── */
