@@ -355,6 +355,8 @@ function makeSession(env = POOLS) {
     p.tts[0].id === 'cartesia' && p.tts.length === 11);
   t('P23-১০৪. ordering is Groq first, then Gemini — the fast path leads',
     p.llm[0].id === 'groq-llama' && p.llm[1].id === 'gemini-llm');
+  t('P23-১০৪b. Gemini leads stt, because it hears Bengali far better than Whisper',
+    p.stt[0].id === 'gemini-stt' && p.stt.indexOf(p.stt.find(x => x.id === 'groq-whisper')) === 10);
   t('P23-১০৫. blank and whitespace keys are dropped, never sent as a credential',
     await (async () => {
       const b = new VoiceAgentSession(ctx(), { GEMINI_KEYS: 'a, ,,b,', GROQ_API_KEY: '   ' });
@@ -439,8 +441,9 @@ function makeSession(env = POOLS) {
   const prov = (await import('fs')).readFileSync('voice-agent-providers.mjs', 'utf8');
   t('P23-১২৩. no retired Gemini model name is hardcoded',
     !/gemini-2\.5-flash(?!-image)/.test(prov) && !prov.includes('gemini-2.5-pro'));
-  t('P23-১২৪. stt, llm and tts all default to a current Gemini model',
-    (prov.match(/provider\.model \|\| 'gemini-3\.8-flash'/g) || []).length === 2
+  t('P23-১২৪. stt and llm default to the Gemini model this key actually serves',
+    (prov.match(/provider\.model \|\| 'gemini-3\.5-flash-lite'/g) || []).length === 2
+    && !/provider\.model \|\| 'gemini-3\.8-flash'/.test(prov)
     && prov.includes("provider.model || 'gemini-3.8-flash-tts'"));
 }
 
@@ -609,6 +612,33 @@ function makeSession(env = POOLS) {
     v.url.startsWith('https://gateway.ai.cloudflare.com/v1/acct123/inflowsky/groq')
     && v.init.headers.Authorization === 'Bearer gsk_x'
     && v.init.headers['cf-aig-authorization'] === 'Bearer gwtok');
+}
+
+/* ── STT: the Bengali prompt bias the owner's "অস্পষ্ট" complaint needs ── */
+{
+  const { groqStt, BN_STT_PROMPT } = await import('./voice-agent-providers.mjs');
+  const captureStt = () => {
+    let seen = null;
+    const fetch = async (url, init) => {
+      seen = { url, init, form: init.body };
+      return { ok: true, status: 200, json: async () => ({ text: 'হ্যালো আসসালামু আলাইকুম' }) };
+    };
+    return { fetch, seen: () => seen };
+  };
+
+  const via = captureStt();
+  const out = await groqStt({ id: 'groq-whisper', key: 'gsk_x' }, new Uint8Array([1, 2, 3]),
+    { mime: 'audio/webm', language: 'bn', fetch: via.fetch });
+  const f = via.seen().form;
+  t('P23-১৪২. Groq STT sends the Bengali prompt so script and accent are pinned',
+    f.get('prompt') === BN_STT_PROMPT && f.get('language') === 'bn' && f.get('temperature') === '0');
+  t('P23-১৪৩. the transcription is returned trimmed, not raw',
+    out.text === 'হ্যালো আসসালামু আলাইকুম');
+
+  const off = captureStt();
+  await groqStt({ id: 'groq-whisper', key: 'gsk_x' }, new Uint8Array([1]), { prompt: null, fetch: off.fetch });
+  t('P23-১৪৪. a caller can disable the prompt, so the bias is never forced',
+    off.seen().form.get('prompt') === null);
 }
 
 console.log(`\n  voice-agent DO: ${pass} pass / ${fail} fail`);

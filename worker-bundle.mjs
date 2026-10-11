@@ -24798,6 +24798,7 @@ async function statusError(res, fallback) {
   err.status = res.status;
   return err;
 }
+var BN_STT_PROMPT = "বাংলা কথ্য ভাষা। হ্যালো আসসালামু আলাইকুম, আপনি কেমন আছেন? আমি ভালো আছি, ধন্যবাদ।";
 async function groqStt(provider, audio, opts = {}) {
   const f = opts.fetch || fetch;
   const form = new FormData();
@@ -24805,6 +24806,8 @@ async function groqStt(provider, audio, opts = {}) {
   form.append("model", provider.model || "whisper-large-v3");
   form.append("language", opts.language || "bn");
   form.append("response_format", "json");
+  form.append("temperature", "0");
+  if (opts.prompt !== null) form.append("prompt", String(opts.prompt || BN_STT_PROMPT).slice(0, 800));
   const res = await f("https://api.groq.com/openai/v1/audio/transcriptions", {
     method: "POST",
     headers: { Authorization: `Bearer ${provider.key}` },
@@ -24830,7 +24833,7 @@ async function deepgramStt(provider, audio, opts = {}) {
 async function geminiStt(provider, audio, opts = {}) {
   const f = opts.fetch || fetch;
   const b64 = opts.base64 || base64From(audio);
-  const model = provider.model || "gemini-3.8-flash";
+  const model = provider.model || "gemini-3.5-flash-lite";
   const res = await f(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "x-goog-api-key": provider.key },
@@ -24917,7 +24920,7 @@ function openaiCompatLlm(provider, messages, opts = {}) {
 }
 async function geminiLlm(provider, messages, opts = {}) {
   const f = opts.fetch || fetch;
-  const model = provider.model || "gemini-3.8-flash";
+  const model = provider.model || "gemini-3.5-flash-lite";
   const system = opts.system || "";
   const contents = messages.map((m) => ({
     role: m.role === "assistant" ? "model" : "user",
@@ -25150,8 +25153,12 @@ function fallbackPool(env, kind, extra = {}) {
   const source = Object.keys(extra).length ? { ...extra, ...env } : env;
   const map = {
     stt: [
-      { names: ["GROQ_API_KEY", "GROQ_KEYS"], id: "groq-whisper" },
+      // Gemini leads because it transcribes Bengali markedly better than Whisper
+      // did on the owner's own clips ("আমার কথা অস্পষ্ট"), at comparable
+      // latency; Groq stays second as the fallback, with the Bengali prompt
+      // bias that makes its output usable.
       { names: ["GEMINI_KEYS", "GEMINI_API_KEY"], id: "gemini-stt" },
+      { names: ["GROQ_API_KEY", "GROQ_KEYS"], id: "groq-whisper" },
       { names: ["DEEPGRAM_API_KEY"], id: "deepgram" }
     ],
     llm: [

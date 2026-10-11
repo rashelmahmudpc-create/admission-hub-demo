@@ -102,8 +102,12 @@ function fallbackPool(env, kind, extra = {}) {
   const source = Object.keys(extra).length ? { ...extra, ...env } : env;
   const map = {
     stt: [
-      { names: ['GROQ_API_KEY', 'GROQ_KEYS'], id: 'groq-whisper' },
+      // Gemini leads because it transcribes Bengali markedly better than Whisper
+      // did on the owner's own clips ("আমার কথা অস্পষ্ট"), at comparable
+      // latency; Groq stays second as the fallback, with the Bengali prompt
+      // bias that makes its output usable.
       { names: ['GEMINI_KEYS', 'GEMINI_API_KEY'], id: 'gemini-stt' },
+      { names: ['GROQ_API_KEY', 'GROQ_KEYS'], id: 'groq-whisper' },
       { names: ['DEEPGRAM_API_KEY'], id: 'deepgram' },
     ],
     llm: [

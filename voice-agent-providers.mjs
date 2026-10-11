@@ -30,6 +30,15 @@ async function statusError(res, fallback) {
 
 /* ── Speech → text ──────────────────────────────────────────────────────── */
 
+/**
+ * Whisper conditions strongly on this. Without it, Bengali came back mangled in
+ * testing on even a clean synthetic clip — "আসসালামু আলাইকুম" was heard as
+ * "আশ্যারমো আলাইকুম" — which is the owner's "আমার কথা অস্পষ্ট" complaint. The
+ * word "বাংলা" plus a couple of everyday phrases pins the script and accent, so
+ * the same clip transcribes correctly. Capped so it cannot dominate a long turn.
+ */
+export const BN_STT_PROMPT = 'বাংলা কথ্য ভাষা। হ্যালো আসসালামু আলাইকুম, আপনি কেমন আছেন? আমি ভালো আছি, ধন্যবাদ।';
+
 /** Groq Whisper. Multipart upload of the recorded clip. */
 export async function groqStt(provider, audio, opts = {}) {
   const f = opts.fetch || fetch;
@@ -38,6 +47,8 @@ export async function groqStt(provider, audio, opts = {}) {
   form.append('model', provider.model || 'whisper-large-v3');
   form.append('language', opts.language || 'bn');
   form.append('response_format', 'json');
+  form.append('temperature', '0');
+  if (opts.prompt !== null) form.append('prompt', String(opts.prompt || BN_STT_PROMPT).slice(0, 800));
   const res = await f('https://api.groq.com/openai/v1/audio/transcriptions', {
     method: 'POST',
     headers: { Authorization: `Bearer ${provider.key}` },
@@ -67,7 +78,10 @@ export async function deepgramStt(provider, audio, opts = {}) {
 export async function geminiStt(provider, audio, opts = {}) {
   const f = opts.fetch || fetch;
   const b64 = opts.base64 || base64From(audio);
-  const model = provider.model || 'gemini-3.8-flash';
+  // gemini-3.8-flash 429s and 3.7-flash 503s on this key; 3.5-flash-lite was the
+  // one model that answered Bengali reliably, so it is the default rather than a
+  // nominal stronger one that leaves the fallback dead.
+  const model = provider.model || 'gemini-3.5-flash-lite';
   const res = await f(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-goog-api-key': provider.key },
@@ -169,7 +183,10 @@ export function openaiCompatLlm(provider, messages, opts = {}) {
 /** Gemini chat. The system prompt goes in system_instruction, history as turns. */
 export async function geminiLlm(provider, messages, opts = {}) {
   const f = opts.fetch || fetch;
-  const model = provider.model || 'gemini-3.8-flash';
+  // gemini-3.8-flash returns 429 for this key; the lite model answered, so the
+  // fallback chain leads with the one that actually serves rather than 429ing
+  // through to Groq.
+  const model = provider.model || 'gemini-3.5-flash-lite';
   const system = opts.system || '';
   const contents = messages.map(m => ({
     role: m.role === 'assistant' ? 'model' : 'user',
