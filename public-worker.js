@@ -309,13 +309,15 @@ export default {
              mirrored list there and fall back to the KV blob; fold the totals
              into the meta and store them back. After this the endpoint is a
              single small KV read again. */
+          let diag = null;
           try {
             let vocabRows = null;
             if (env.PROFILE_DB) {
               const { createD1Reader } = await import('./p13-d1-read.mjs');
               const lists = await createD1Reader(env.PROFILE_DB).lists();
+              diag = { listsKeys: lists ? Object.keys(lists) : null };
               if (lists && Array.isArray(lists.vocabularyMaster)) vocabRows = lists.vocabularyMaster;
-            }
+            } else { diag = { noDb: true }; }
             if (!vocabRows) {
               const full = await env.PUB_KV.get('pubContent');
               const doc = full ? JSON.parse(full) : null;
@@ -326,7 +328,8 @@ export default {
               await env.PUB_KV.put('pubContentMeta', JSON.stringify(enriched));
               return json(enriched);
             }
-          } catch (_) { /* fall through to the un-enriched meta */ }
+            return json({ ...meta, diag: { ...diag, vocabRows: vocabRows ? vocabRows.length : null } });
+          } catch (e) { /* fall through to the un-enriched meta */ return json({ ...meta, diag: { err: String(e && e.message || e) } }); }
           return json(meta);
         }
         const full = await env.PUB_KV.get('pubContent');
