@@ -126,6 +126,24 @@ export function openrouterLlm(provider, messages, opts = {}) {
     { defaultModel: 'meta-llama/llama-3.3-70b-instruct:free', ...opts }, 'openrouter_llm');
 }
 
+/**
+ * Any OpenAI-compatible chat endpoint — OpenAI, OpenRouter, or Cloudflare AI
+ * Gateway — with the URL carried on the provider entry so the owner can point
+ * it at a stronger model (Claude, GPT, Gemini) without a code change.
+ *
+ *   [{"id":"openai-compat","key":"...","model":"anthropic/claude-sonnet-4-5",
+ *     "url":"https://gateway.ai.cloudflare.com/v1/{acct}/{gw}/compat/chat/completions"}]
+ *
+ * AI Gateway speaks exactly this dialect, so switching a call to route through
+ * it is a URL change, not an adapter change.
+ */
+export function openaiCompatLlm(provider, messages, opts = {}) {
+  const url = provider.url || opts.baseUrl;
+  if (!url) { const e = new Error('openai_compat_needs_url'); e.status = 500; throw e; }
+  return openAiChat(url, provider, messages,
+    { defaultModel: opts.defaultModel || '', ...opts }, 'openai_compat_llm');
+}
+
 /** Gemini chat. The system prompt goes in system_instruction, history as turns. */
 export async function geminiLlm(provider, messages, opts = {}) {
   const f = opts.fetch || fetch;
@@ -153,7 +171,11 @@ export async function geminiLlm(provider, messages, opts = {}) {
 
 const CARTESIA_URL = 'https://api.cartesia.ai/tts/bytes';
 const CARTESIA_VERSION = '2026-08-14';
-const CARTESIA_VOICE_BN = 'db6b0ed5-d5d3-463d-ae85-518a07d3c2b4';
+/**
+ * "Rubel – City Guide" — the Bengali MASCULINE voice the owner asked for by
+ * name. The previous default was a feminine voice, which he rejected.
+ */
+const CARTESIA_VOICE_BN = '2ba861ea-7cdc-43d1-8608-4045b5a41de5';
 
 /** Cartesia Sonic. Returns MP3 bytes. Used for both pool slots. */
 export async function cartesiaTts(provider, text, opts = {}) {
@@ -267,7 +289,7 @@ export async function elevenTts(provider, text, opts = {}) {
 /* ── Dispatch tables ────────────────────────────────────────────────────── */
 
 export const STT = { 'groq-whisper': groqStt, deepgram: deepgramStt, 'gemini-stt': geminiStt };
-export const LLM = { 'groq-llama': groqLlm, openrouter: openrouterLlm, 'gemini-llm': geminiLlm };
+export const LLM = { 'groq-llama': groqLlm, openrouter: openrouterLlm, 'gemini-llm': geminiLlm, 'openai-compat': openaiCompatLlm };
 export const TTS = { cartesia: cartesiaTts, 'cartesia-2': cartesiaTts, elevenlabs: elevenTts, 'gemini-tts': geminiTts };
 
 export function pickAdapter(table, provider) {

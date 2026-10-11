@@ -68,7 +68,7 @@ t('P23-৭৬. every phase has a Bengali label',
   Object.values(PHASE).every(p => phaseLabel(p).length > 0));
 t('P23-৭৭. an unknown phase has no label rather than a wrong one',
   phaseLabel('wat') === '');
-t('P23-৭৮. the push-to-talk phase says so', phaseLabel(PHASE.READY).includes('চেপে'));
+t('P23-৭৮. the ready phase invites a single tap, not a press-and-hold', phaseLabel(PHASE.READY).includes('চাপ দিয়ে') && !phaseLabel(PHASE.READY).includes('চেপে ধরে'));
 
 /* ── Latency line ── */
 t('P23-৭৯. latency shows only the stages that were measured',
@@ -98,8 +98,9 @@ t('P23-৮৩. a large clip encodes without blowing the stack (chunked)',
     !/localStorage[\s\S]{0,80}(CARTESIA|ELEVENLABS|GROQ|API_KEY)/.test(src) && !/sk-[A-Za-z0-9]{20,}/.test(src));
   t('P23-৮৬. the page names the owner as স্যার',
     src.includes('স্যার'));
-  t('P23-৮৭. the page asks for the mic only when the owner presses the button',
-    /getUserMedia/.test(src) && /(pointerdown|click)/.test(src));
+  t('P23-৮৭. the page asks for the mic on tap and a second tap stops it',
+    /getUserMedia/.test(src) && /addEventListener\('click'/.test(src) &&
+    /function toggleTalk/.test(src) && !/pointerdown/.test(src));
   t('P23-৮৮. the page surfaces a latency line rather than hiding it',
     /formatLatency|লেটেন্সি|মোট/.test(src));
   t('P23-৮৯. the page sends the owner to the password page when the cookie is gone',

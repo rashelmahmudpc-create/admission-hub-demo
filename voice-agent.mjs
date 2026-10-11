@@ -30,6 +30,7 @@ import {
   VOICE_AGENT_VERSION, createSession, parseProviderPools, runWithFailover,
   buildSystemPrompt, buildMessages, foldSummary, sanitizeSecret, STATE,
   makeTicket, pruneTickets, consumeTicket, safeEqual, TICKET_TTL_MS, MAX_LIVE_TICKETS,
+  splitSentences,
 } from './voice-agent-core.mjs';
 import { STT, LLM, TTS, pickAdapter } from './voice-agent-providers.mjs';
 import {
@@ -432,25 +433,40 @@ export class VoiceAgentSession {
     });
     const messages = buildMessages(this.session.history, '');
     const llmRun = await runWithFailover(pools.llm, (p) =>
-      pickAdapter(LLM, p)(p, messages, { system, maxTokens: 400 }));
+      pickAdapter(LLM, p)(p, messages, { system, maxTokens: 220 }));
     const llmMs = now() - t1;
     const reply = this.session.endThinking(llmRun.result.text, llmMs);
     this.send(ws, { type: 'reply', text: reply, provider: llmRun.provider });
 
-    /* 3. Reply → speech */
+    /* 3. Reply → speech, one sentence at a time.
+     *
+     * Streaming the FIRST sentence before the rest is synthesised is the single
+     * biggest latency win: the owner hears the beginning while the tail is still
+     * being made. A one-sentence reply takes the same path with one chunk, so
+     * there is no special case. */
     const t2 = now();
-    let audioOut = null;
-    try {
-      const ttsRun = await runWithFailover(pools.tts, (p) =>
-        pickAdapter(TTS, p)(p, reply, { language: 'bn' }));
-      audioOut = ttsRun.result;
-      this.send(ws, { type: 'audio', data: toBase64(audioOut.audio), mime: audioOut.mime, provider: ttsRun.provider });
-    } catch (e) {
-      // The words are already delivered, so a TTS failure is a degraded turn,
-      // not a failed one — report it and let the client decide.
-      this.send(ws, { type: 'error', message: 'tts_failed:' + sanitizeSecret(e && e.message).slice(0, 120), status: e && e.status || 502 });
+    const chunks = splitSentences(reply);
+    let firstAudioMs = null;
+    let spoke = 0;
+    if (chunks.length) {
+      for (let i = 0; i < chunks.length; i++) {
+        try {
+          const ttsRun = await runWithFailover(pools.tts, (p) =>
+            pickAdapter(TTS, p)(p, chunks[i], { language: 'bn' }));
+          const audioOut = ttsRun.result;
+          if (firstAudioMs === null) firstAudioMs = now() - t2;
+          spoke++;
+          this.send(ws, { type: 'audio', data: toBase64(audioOut.audio), mime: audioOut.mime, provider: ttsRun.provider, seq: i, last: i === chunks.length - 1 });
+        } catch (e) {
+          // The words are already delivered, so a TTS failure on any chunk is a
+          // degraded turn, not a failed one.
+          this.send(ws, { type: 'error', message: 'tts_failed:' + sanitizeSecret(e && e.message).slice(0, 120), status: e && e.status || 502 });
+          break;
+        }
+      }
     }
-    const ttsMs = now() - t2;
+    const ttsMs = firstAudioMs === null ? now() - t2 : firstAudioMs;
+    const chunksSpoken = spoke;
 
     /* 4. Fold old turns into the summary, then remember anything worth keeping */
     const folded = foldSummary(this.session.history, this.session.summary);

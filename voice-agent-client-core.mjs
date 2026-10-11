@@ -173,8 +173,8 @@ export function bytesToBase64(buffer) {
 export function phaseLabel(phase) {
   return {
     [PHASE.OFFLINE]: 'সংযোগ নেই',
-    [PHASE.READY]: 'চেপে ধরে বলুন',
-    [PHASE.RECORDING]: 'শুনছি…',
+    [PHASE.READY]: 'চাপ দিয়ে বলুন',
+    [PHASE.RECORDING]: 'শুনছি… থামাতে চাপ দিন',
     [PHASE.WAITING]: 'ভাবছি…',
     [PHASE.SPEAKING]: 'বলছি…',
     [PHASE.ERROR]: 'সমস্যা হয়েছে',

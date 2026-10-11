@@ -34,6 +34,7 @@ export const PROVIDERS = Object.freeze({
   'groq-llama':   { kind: KIND.LLM, label: 'Groq Llama' },
   'gemini-llm':   { kind: KIND.LLM, label: 'Gemini Flash' },
   'openrouter':   { kind: KIND.LLM, label: 'OpenRouter' },
+  'openai-compat':{ kind: KIND.LLM, label: 'OpenAI/Gateway' },
 
   'cartesia':     { kind: KIND.TTS, label: 'Cartesia' },
   'cartesia-2':   { kind: KIND.TTS, label: 'Cartesia (secondary)' },
@@ -107,6 +108,7 @@ export function parsePool(raw, kind) {
       key,
       model: typeof entry.model === 'string' && entry.model.trim() ? entry.model.trim() : null,
       voiceId: typeof entry.voiceId === 'string' && entry.voiceId.trim() ? entry.voiceId.trim() : null,
+      url: typeof entry.url === 'string' && entry.url.trim() ? entry.url.trim() : null,
     }));
   }
   return out;
@@ -316,12 +318,40 @@ export function buildSystemPrompt({ brain = '', memory = '', summary = '', owner
     `তুমি একটি লাইভ কণ্ঠসহায়ক। ব্যবহারকারীকে সবসময় "${ownerName}" বলে সম্বোধন করবে।`,
     'সংক্ষিপ্ত, স্পষ্ট, মানুষের মতো বাংলায় কথা বলবে — যেন ফোনে বলা হচ্ছে।',
     'একটি উত্তর দুই-তিন বাক্যের বেশি নয়, কারণ উত্তর শোনা হচ্ছে, পড়া হচ্ছে না।',
+    'শুধু ব্যবহারকারীর ঠিক যে প্রশ্নটি করেছে তার উত্তর দেবে। বিষয় বদলাবে না, নিজের ইতিহাস নিয়ে বলবে না, নিজের ক্ষমতা বা প্রোগ্রাম নিয়ে কথা তুলবে না।',
+    'প্রশ্ন অস্পষ্ট হলে এক লাইনে জিজ্ঞেস করবে — অনুমান করে লম্বা উত্তর দেবে না।',
+    'কোনো সংখ্যা, তারিখ বা তথ্য নিশ্চিত না হলে বানিয়ে বলবে না; বলবে যে জানা নেই।',
+    'উত্তর শুরুতেই মূল কথা বলবে — ভূমিকা, তালিকা বা বিন্যাস নয়।'
   ];
   if (brain) parts.push('', '— ব্রেইন —', String(brain).slice(0, 4000));
   if (memory) parts.push('', '— দীর্ঘমেয়াদি স্মৃতি —', String(memory).slice(0, 2000));
   if (summary) parts.push('', '— আগের কথার সারমর্ম —', String(summary).slice(0, MAX_SUMMARY_LEN));
   return parts.join('\n');
 }
+
+/**
+ * Split a reply into sentence-sized chunks so the first one can be spoken
+ * before the rest arrives — the fix for "too slow". A short reply stays whole,
+ * and no chunk exceeds `max`, so even a run-on reply streams in pieces.
+ */
+export function splitSentences(text, max = 200) {
+  const clean = String(text == null ? '' : text).trim();
+  if (!clean) return [];
+  if (clean.length <= max) return [clean];
+  const out = [];
+  let buf = '';
+  // Bengali দাঁড়ি (।) plus Latin terminators; the lookbehind keeps the mark.
+  const parts = clean.split(/(?<=[।!?.\n])/);
+  for (const raw of parts) {
+    const piece = raw.trim();
+    if (!piece) continue;
+    if (buf && (buf + ' ' + piece).length > max) { out.push(buf); buf = piece; }
+    else buf = buf ? buf + ' ' + piece : piece;
+  }
+  if (buf) out.push(buf);
+  return out;
+}
+
 
 /**
  * Build the model messages: the rolling summary as a prior turn, then the raw

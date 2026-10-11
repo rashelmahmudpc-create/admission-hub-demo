@@ -24463,6 +24463,7 @@ var PROVIDERS = Object.freeze({
   "groq-llama": { kind: KIND2.LLM, label: "Groq Llama" },
   "gemini-llm": { kind: KIND2.LLM, label: "Gemini Flash" },
   "openrouter": { kind: KIND2.LLM, label: "OpenRouter" },
+  "openai-compat": { kind: KIND2.LLM, label: "OpenAI/Gateway" },
   "cartesia": { kind: KIND2.TTS, label: "Cartesia" },
   "cartesia-2": { kind: KIND2.TTS, label: "Cartesia (secondary)" },
   "elevenlabs": { kind: KIND2.TTS, label: "ElevenLabs" },
@@ -24516,7 +24517,8 @@ function parsePool(raw, kind) {
       label: spec.label,
       key,
       model: typeof entry.model === "string" && entry.model.trim() ? entry.model.trim() : null,
-      voiceId: typeof entry.voiceId === "string" && entry.voiceId.trim() ? entry.voiceId.trim() : null
+      voiceId: typeof entry.voiceId === "string" && entry.voiceId.trim() ? entry.voiceId.trim() : null,
+      url: typeof entry.url === "string" && entry.url.trim() ? entry.url.trim() : null
     }));
   }
   return out;
@@ -24696,12 +24698,34 @@ function buildSystemPrompt2({ brain = "", memory = "", summary = "", ownerName =
   const parts = [
     `তুমি একটি লাইভ কণ্ঠসহায়ক। ব্যবহারকারীকে সবসময় "${ownerName}" বলে সম্বোধন করবে।`,
     "সংক্ষিপ্ত, স্পষ্ট, মানুষের মতো বাংলায় কথা বলবে — যেন ফোনে বলা হচ্ছে।",
-    "একটি উত্তর দুই-তিন বাক্যের বেশি নয়, কারণ উত্তর শোনা হচ্ছে, পড়া হচ্ছে না।"
+    "একটি উত্তর দুই-তিন বাক্যের বেশি নয়, কারণ উত্তর শোনা হচ্ছে, পড়া হচ্ছে না।",
+    "শুধু ব্যবহারকারীর ঠিক যে প্রশ্নটি করেছে তার উত্তর দেবে। বিষয় বদলাবে না, নিজের ইতিহাস নিয়ে বলবে না, নিজের ক্ষমতা বা প্রোগ্রাম নিয়ে কথা তুলবে না।",
+    "প্রশ্ন অস্পষ্ট হলে এক লাইনে জিজ্ঞেস করবে — অনুমান করে লম্বা উত্তর দেবে না।",
+    "কোনো সংখ্যা, তারিখ বা তথ্য নিশ্চিত না হলে বানিয়ে বলবে না; বলবে যে জানা নেই।",
+    "উত্তর শুরুতেই মূল কথা বলবে — ভূমিকা, তালিকা বা বিন্যাস নয়।"
   ];
   if (brain) parts.push("", "— ব্রেইন —", String(brain).slice(0, 4e3));
   if (memory) parts.push("", "— দীর্ঘমেয়াদি স্মৃতি —", String(memory).slice(0, 2e3));
   if (summary) parts.push("", "— আগের কথার সারমর্ম —", String(summary).slice(0, MAX_SUMMARY_LEN2));
   return parts.join("\n");
+}
+function splitSentences(text, max = 200) {
+  const clean = String(text == null ? "" : text).trim();
+  if (!clean) return [];
+  if (clean.length <= max) return [clean];
+  const out = [];
+  let buf = "";
+  const parts = clean.split(/(?<=[।!?.\n])/);
+  for (const raw of parts) {
+    const piece = raw.trim();
+    if (!piece) continue;
+    if (buf && (buf + " " + piece).length > max) {
+      out.push(buf);
+      buf = piece;
+    } else buf = buf ? buf + " " + piece : piece;
+  }
+  if (buf) out.push(buf);
+  return out;
 }
 function buildMessages(history = [], summary = "") {
   const msgs = [];
@@ -24852,6 +24876,21 @@ function openrouterLlm(provider, messages, opts = {}) {
     "openrouter_llm"
   );
 }
+function openaiCompatLlm(provider, messages, opts = {}) {
+  const url = provider.url || opts.baseUrl;
+  if (!url) {
+    const e = new Error("openai_compat_needs_url");
+    e.status = 500;
+    throw e;
+  }
+  return openAiChat(
+    url,
+    provider,
+    messages,
+    { defaultModel: opts.defaultModel || "", ...opts },
+    "openai_compat_llm"
+  );
+}
 async function geminiLlm(provider, messages, opts = {}) {
   const f = opts.fetch || fetch;
   const model = provider.model || "gemini-3.8-flash";
@@ -24875,7 +24914,7 @@ async function geminiLlm(provider, messages, opts = {}) {
 }
 var CARTESIA_URL = "https://api.cartesia.ai/tts/bytes";
 var CARTESIA_VERSION = "2026-08-14";
-var CARTESIA_VOICE_BN = "db6b0ed5-d5d3-463d-ae85-518a07d3c2b4";
+var CARTESIA_VOICE_BN = "2ba861ea-7cdc-43d1-8608-4045b5a41de5";
 async function cartesiaTts(provider, text, opts = {}) {
   const f = opts.fetch || fetch;
   const res = await f(CARTESIA_URL, {
@@ -24982,7 +25021,7 @@ async function elevenTts(provider, text, opts = {}) {
   return { audio: buf, mime: "audio/mpeg", provider: provider.id };
 }
 var STT = { "groq-whisper": groqStt, deepgram: deepgramStt, "gemini-stt": geminiStt };
-var LLM = { "groq-llama": groqLlm, openrouter: openrouterLlm, "gemini-llm": geminiLlm };
+var LLM = { "groq-llama": groqLlm, openrouter: openrouterLlm, "gemini-llm": geminiLlm, "openai-compat": openaiCompatLlm };
 var TTS = { cartesia: cartesiaTts, "cartesia-2": cartesiaTts, elevenlabs: elevenTts, "gemini-tts": geminiTts };
 function pickAdapter(table, provider) {
   const fn = table[provider && provider.id];
@@ -25379,20 +25418,30 @@ var VoiceAgentSession = class {
       ownerName: this.env.VOICE_OWNER_NAME || "স্যার"
     });
     const messages = buildMessages(this.session.history, "");
-    const llmRun = await runWithFailover(pools.llm, (p) => pickAdapter(LLM, p)(p, messages, { system, maxTokens: 400 }));
+    const llmRun = await runWithFailover(pools.llm, (p) => pickAdapter(LLM, p)(p, messages, { system, maxTokens: 220 }));
     const llmMs = now() - t1;
     const reply = this.session.endThinking(llmRun.result.text, llmMs);
     this.send(ws, { type: "reply", text: reply, provider: llmRun.provider });
     const t2 = now();
-    let audioOut = null;
-    try {
-      const ttsRun = await runWithFailover(pools.tts, (p) => pickAdapter(TTS, p)(p, reply, { language: "bn" }));
-      audioOut = ttsRun.result;
-      this.send(ws, { type: "audio", data: toBase64(audioOut.audio), mime: audioOut.mime, provider: ttsRun.provider });
-    } catch (e) {
-      this.send(ws, { type: "error", message: "tts_failed:" + sanitizeSecret(e && e.message).slice(0, 120), status: e && e.status || 502 });
+    const chunks = splitSentences(reply);
+    let firstAudioMs = null;
+    let spoke = 0;
+    if (chunks.length) {
+      for (let i = 0; i < chunks.length; i++) {
+        try {
+          const ttsRun = await runWithFailover(pools.tts, (p) => pickAdapter(TTS, p)(p, chunks[i], { language: "bn" }));
+          const audioOut = ttsRun.result;
+          if (firstAudioMs === null) firstAudioMs = now() - t2;
+          spoke++;
+          this.send(ws, { type: "audio", data: toBase64(audioOut.audio), mime: audioOut.mime, provider: ttsRun.provider, seq: i, last: i === chunks.length - 1 });
+        } catch (e) {
+          this.send(ws, { type: "error", message: "tts_failed:" + sanitizeSecret(e && e.message).slice(0, 120), status: e && e.status || 502 });
+          break;
+        }
+      }
     }
-    const ttsMs = now() - t2;
+    const ttsMs = firstAudioMs === null ? now() - t2 : firstAudioMs;
+    const chunksSpoken = spoke;
     const folded = foldSummary(this.session.history, this.session.summary);
     if (folded.folded) this.session.setSummary(folded.summary);
     this.absorbMemory(heard, reply);

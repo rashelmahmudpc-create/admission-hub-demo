@@ -63,7 +63,7 @@
   <span id="who">স্যার</span>
 </header>
 
-<div id="log"><div class="empty" id="empty">নিচের বোতাম চেপে ধরে বলুন।<br>ছেড়ে দিলে আমি উত্তর দেব।</div></div>
+<div id="log"><div class="empty" id="empty">নিচের বোতামে একবার চাপ দিয়ে বলুন।<br>শেষ হলে আবার চাপ দিন।</div></div>
 
 <footer>
   <button id="talk" data-phase="offline">সংযোগ নেই</button>
@@ -143,7 +143,7 @@ async function connect() {
     return;
   }
   try { ws = new WebSocket(url); } catch (e) { return fail('ঠিকানা ভুল'); }
-  ws.onopen = () => { dot.classList.add('on'); retry = 0; setPhase(PHASE.READY, 'চেপে ধরে বলুন'); };
+  ws.onopen = () => { dot.classList.add('on'); retry = 0; setPhase(PHASE.READY, 'চাপ দিয়ে বলুন'); };
   ws.onclose = () => {
     dot.classList.remove('on');
     if (phase !== PHASE.ERROR) setPhase(PHASE.OFFLINE, 'সংযোগ গেল — আবার চেষ্টা করছি');
@@ -173,7 +173,7 @@ function onServer(msg) {
   }
   if (msg.type === 'audio') {
     setPhase(PHASE.SPEAKING, 'বলছি…');
-    play(msg.data, msg.mime);
+    enqueue(msg.data, msg.mime, msg.last);
     return;
   }
   if (msg.type === 'done') {
@@ -181,14 +181,15 @@ function onServer(msg) {
     const last = log.querySelector('.turn:last-child .meta');
     if (last && line) last.textContent = line;
     else if (line) hint.textContent = line;
-    setPhase(PHASE.READY, 'চেপে ধরে বলুন');
+    turnDone = true;
+    if (!playing && !queue.length) setPhase(PHASE.READY, 'চাপ দিয়ে বলুন');
     return;
   }
   if (msg.type === 'interrupted') { stopAudio(); setPhase(PHASE.READY, 'থামিয়ে দিলাম'); return; }
   if (msg.type === 'stats') { hint.textContent = `এ পর্যন্ত ${msg.turns} বার · গড় ${(msg.avgTotalMs / 1000).toFixed(1)}s`; return; }
   if (msg.type === 'error') {
     // A TTS outage still delivered the words, so it is a warning, not a failure.
-    if (/tts_failed/.test(msg.message || '')) { hint.textContent = 'কণ্ঠ আসেনি, লেখা পেয়েছেন'; setPhase(PHASE.READY, 'চেপে ধরে বলুন'); return; }
+    if (/tts_failed/.test(msg.message || '')) { hint.textContent = 'কণ্ঠ আসেনি, লেখা পেয়েছেন'; setPhase(PHASE.READY, 'চাপ দিয়ে বলুন'); return; }
     fail(friendly(msg));
   }
 }
@@ -234,7 +235,7 @@ async function startTalking() {
     };
     recorder.start();
     startedAt = Date.now();
-    setPhase(PHASE.RECORDING, 'শুনছি… ছেড়ে দিলে পাঠাব');
+    setPhase(PHASE.RECORDING, 'শুনছি… শেষ হলে চাপ দিন');
   } catch (e) {
     fail(e && e.name === 'NotAllowedError' ? 'মাইক্রোফোনের অনুমতি দিন' : 'মাইক খুলল না');
   }
@@ -242,35 +243,62 @@ async function startTalking() {
 
 function stopTalking() {
   if (recorder && recorder.state === 'recording') {
+    // A tap can be near-instant, which records silence. Give the clip a floor
+    // so a quick tap is still heard.
     if (Date.now() - startedAt < 350) { setTimeout(() => { if (recorder && recorder.state === 'recording') recorder.stop(); }, 350 - (Date.now() - startedAt)); return; }
     recorder.stop();
   }
 }
 
-/* Press and hold: pointer events cover mouse, touch and pen in one path. */
-talk.addEventListener('pointerdown', (e) => { e.preventDefault(); if (phase === PHASE.READY) startTalking(); });
-talk.addEventListener('pointerup', (e) => { e.preventDefault(); stopTalking(); });
-talk.addEventListener('pointercancel', () => stopTalking());
-talk.addEventListener('pointerleave', () => stopTalking());
-/* Keyboard users get space/enter as the same hold gesture. */
-talk.addEventListener('keydown', (e) => { if ((e.key === ' ' || e.key === 'Enter') && !e.repeat && phase === PHASE.READY) { e.preventDefault(); startTalking(); } });
-talk.addEventListener('keyup', (e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); stopTalking(); } });
+/* Tap to start, tap again to stop — the owner asked to stop pressing and
+ * holding. One handler covers mouse, touch, pen and keyboard. */
+function toggleTalk() {
+  if (phase === PHASE.READY) startTalking();
+  else if (phase === PHASE.RECORDING) stopTalking();
+}
+talk.addEventListener('click', (e) => { e.preventDefault(); toggleTalk(); });
+talk.addEventListener('keydown', (e) => {
+  if ((e.key === ' ' || e.key === 'Enter') && !e.repeat) { e.preventDefault(); toggleTalk(); }
+});
 
 /* ── Playback ── */
 let currentAudio = null;
-function play(b64, mimeType) {
-  stopAudio();
+const queue = [];       // sentence clips waiting to be played, in order
+let playing = false;
+let turnDone = false;
+
+function enqueue(b64, mimeType, isLast) {
+  queue.push({ b64, mimeType, isLast });
+  if (!playing) playNext();
+}
+
+function playNext() {
+  const item = queue.shift();
+  if (!item) {
+    playing = false;
+    currentAudio = null;
+    if (turnDone && phase === PHASE.SPEAKING) setPhase(PHASE.READY, 'চাপ দিয়ে বলুন');
+    return;
+  }
+  turnDone = false;
+  playing = true;
+  let url;
   try {
-    const bin = atob(b64);
+    const bin = atob(item.b64);
     const bytes = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-    const url = URL.createObjectURL(new Blob([bytes], { type: mimeType || 'audio/mpeg' }));
+    url = URL.createObjectURL(new Blob([bytes], { type: item.mimeType || 'audio/mpeg' }));
     currentAudio = new Audio(url);
-    currentAudio.onended = () => { URL.revokeObjectURL(url); currentAudio = null; };
-    currentAudio.play().catch(() => { hint.textContent = 'চাপ দিয়ে কণ্ঠ চালু করুন'; });
-  } catch (_) { hint.textContent = 'কণ্ঠ চালানো যায়নি'; }
+    currentAudio.onended = () => { URL.revokeObjectURL(url); playNext(); };
+    currentAudio.onerror = () => { URL.revokeObjectURL(url); playNext(); };
+    currentAudio.play().catch(() => { hint.textContent = 'চাপ দিয়ে কণ্ঠ চালু করুন'; playNext(); });
+  } catch (_) { hint.textContent = 'কণ্ঠ চালানো যায়নি'; playNext(); }
 }
+
 function stopAudio() {
+  queue.length = 0;
+  turnDone = false;
+  playing = false;
   if (currentAudio) { try { currentAudio.pause(); } catch (_) {} currentAudio = null; }
 }
 

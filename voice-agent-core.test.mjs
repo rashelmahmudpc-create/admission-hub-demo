@@ -7,7 +7,7 @@ import {
   VOICE_AGENT_VERSION, KIND, PROVIDERS, STATE,
   isFailoverStatus, sanitizeSecret, parsePool, parseProviderPools,
   runWithFailover, canTransition, createSession,
-  buildSystemPrompt, buildMessages, foldSummary,
+  buildSystemPrompt, buildMessages, foldSummary, splitSentences,
   validateVoiceAgentCore, MAX_SUMMARY_LEN, HISTORY_WINDOW,
   makeTicket, pruneTickets, consumeTicket, safeEqual, TICKET_TTL_MS,
 } from './voice-agent-core.mjs';
@@ -186,6 +186,27 @@ t('P23-৩৮. a ticket that expires between issue and use is refused',
 t('P23-৩৯. the token compare is length-safe and exact',
   safeEqual('abc', 'abc') && !safeEqual('abc', 'abd') && !safeEqual('abc', 'ab') && !safeEqual('', 'x')
   && safeEqual(null, null));
+
+/* ── Sentence streaming (the "too slow" fix) ── */
+t('P23-৪০. a short reply is spoken whole, in one chunk',
+  splitSentences('হ্যাঁ স্যার।').length === 1);
+t('P23-৪১. a long reply splits on Bengali দাঁড়ি so the first part is heard early',
+  (() => { const s = splitSentences('প্রথম বাক্য এখানে অনেক লম্বা করে লিখছি। দ্বিতীয় বাক্যটিও বেশ লম্বা করে লিখছি যাতে ভাগ হয়।', 20);
+    return s.length >= 2 && s[0].includes('প্রথম'); })());
+t('P23-৪২. no chunk exceeds the limit, and nothing is lost',
+  (() => { const text = 'এক। দুই। তিন। চার। পাঁচ। ছয়। সাত। আট।';
+    const s = splitSentences(text, 12);
+    return s.every(c => c.length <= 12) && s.join(' ').replace(/\s+/g, '') === text.replace(/\s+/g, ''); })());
+t('P23-৪৩. empty or missing text yields no chunk rather than a blank clip',
+  splitSentences('').length === 0 && splitSentences(null).length === 0 && splitSentences('   ').length === 0);
+
+/* ── The owner's named voice and the gateway provider ── */
+t('P23-৪৪. the default Bengali voice is the MASCULINE "Rubel" the owner asked for',
+  (() => { const src = readFileSync('voice-agent-providers.mjs', 'utf8');
+    return /CARTESIA_VOICE_BN = '2ba861ea-7cdc-43d1-8608-4045b5a41de5'/.test(src)
+      && !/db6b0ed5/.test(src); })());
+t('P23-৪৫. an OpenAI-compatible provider exists so a stronger model can be pointed at without a code change',
+  Boolean(PROVIDERS['openai-compat']) && PROVIDERS['openai-compat'].kind === KIND.LLM);
 
 console.log(`\n  voice-agent-core: ${pass} pass / ${fail} fail`);
 if (fail) process.exit(1);
