@@ -1,0 +1,54 @@
+name: Deploy Staging Worker (manual)
+
+# P19 — publish the committed Worker bundle to the isolated staging script.
+# Manual and DEPLOY-gated, like deploy-pages-worker.yml: staging is a test
+# surface, not something a push should reach on its own.
+#
+# It deploys `wrangler.staging.toml` (script `admission-gk-staging`) and refuses
+# to run if the isolation guard finds a production id, a production name, an
+# unfilled placeholder, or a cron trigger. The guard runs twice on purpose: once
+# before the build, so a bad config fails fast, and once against the checked-out
+# file the deploy actually uses.
+#
+# Required repository secrets: CLOUDFLARE_API_TOKEN (Workers Scripts:Edit),
+# CLOUDFLARE_ACCOUNT_ID.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type DEPLOY to publish the committed Worker bundle to staging
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: admission-hub-staging-deploy
+  cancel-in-progress: false
+
+jobs:
+  staging:
+    if: ${{ inputs.confirmation == 'DEPLOY' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Refuse to deploy an unisolated staging config
+        run: node scripts/check-staging-isolation.mjs wrangler.staging.toml
+      - name: Verify the committed Worker bundle matches its sources
+        run: npm run check:worker-bundle
+      - name: Deploy staging Worker
+        uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd # v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: '4.35.0'
+          command: deploy --config wrangler.staging.toml

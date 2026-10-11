@@ -9,6 +9,11 @@ let html=readFileSync(indexPath,'utf8');
 const matches=html.match(/app-seed\.js\?v=[^"']+/g)||[];
 if(matches.length!==1)throw Error('Expected exactly one existing app-seed loader');
 html=html.replace(matches[0],`app-seed.js?v=${version}`);
+/* The P19 preload hints point at the same versioned welcome assets app-seed
+   injects. If they drift, the browser downloads one URL and app-seed requests
+   another — the preload is wasted and the fetch is paid twice. */
+html=html.replace(/welcome-onboarding\.(css|js)\?v=[^"']+/g,(m,ext)=>`welcome-onboarding.${ext}?v=${version}`);
+if((html.match(/welcome-onboarding\.(css|js)\?v=/g)||[]).length<2)throw Error('Expected the welcome preload hints in index.html');
 writeFileSync(indexPath,html);
 const swPath=join(root,'sw.js');
 let sw=readFileSync(swPath,'utf8');

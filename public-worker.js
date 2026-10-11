@@ -8,6 +8,7 @@ import {
 } from './action-engine.js';
 import { checkAbuse, isGuarded } from './p14-abuse-guard.mjs';
 import { recordError, summarizeErrors } from './p19-error-monitor.mjs';
+import { createSnapshot, listSnapshots, restoreSnapshot } from './p19-backup.mjs';
 
 const JSONH = {
   'Content-Type': 'application/json',
@@ -325,6 +326,29 @@ const admin = async (request, env, path) => {
       log = raw ? JSON.parse(raw) : [];
     } catch (_) { log = []; }
     return json(summarizeErrors(log));
+  }
+  if (path === '/api/admin/backup' && request.method === 'GET') {
+    /* P19 — what snapshots exist, newest first. Real index, never padded. */
+    return json(await listSnapshots(env));
+  }
+  if (path === '/api/admin/backup' && request.method === 'POST') {
+    /* P19 — take a snapshot now. The daily cron does this too; this is the
+       on-demand door for the owner before a risky change. */
+    try {
+      const entry = await createSnapshot(env);
+      return json({ ok: true, snapshot: entry });
+    } catch (error) {
+      return json({ ok: false, error: String(error?.message || error) }, 500);
+    }
+  }
+  if (path === '/api/admin/restore' && request.method === 'POST') {
+    /* P19 — write a snapshot's KV keys back. Explicit key, explicit action:
+       the body must name the snapshot, so a bare POST cannot guess a target. */
+    const body = await request.json().catch(() => ({}));
+    const key = String(body.key || '').trim();
+    if (!key) return json({ ok: false, error: 'key-required' }, 400);
+    const result = await restoreSnapshot(env, key);
+    return json(result, result.ok ? 200 : 404);
   }
   return json({ error: 'not-found' }, 404);
 };

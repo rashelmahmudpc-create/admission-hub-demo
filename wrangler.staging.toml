@@ -1,0 +1,96 @@
+# 🧪 PHASE 19 — staging environment.
+#
+# A standalone Wrangler config for a SEPARATE Worker script (`admission-gk-staging`)
+# that shares no data with production. It exists so a risky change can be
+# exercised against real bindings before it reaches the owner's live data.
+#
+#   npx wrangler deploy --config wrangler.staging.toml
+#
+# ── What is deliberately NOT here ────────────────────────────────────────────
+#
+#  * No production resource ids. Every id below is a placeholder (REPLACE_*).
+#    `tools/setup-staging.sh` creates the real staging resources and fills them
+#    in. `npm run check:staging-isolation` refuses a deploy while any REPLACE_
+#    placeholder remains, or if a production id (b9353515…, 942828aa…,
+#    8f7cf101…) ever appears here. Staging must never write to live KV, D1 or R2.
+#
+#  * No secrets. A separate script starts with none, so an API key or admin token
+#    must be set explicitly with
+#      npx wrangler secret put <NAME> --config wrangler.staging.toml
+#    That is the point — staging must not send real email or push real
+#    notifications just because production can.
+#
+#  * No cron trigger. Production runs the notification scheduler every minute;
+#    staging must not, or it would send real reminders to real students. The
+#    [triggers] block is omitted on purpose.
+#
+# ── First run ───────────────────────────────────────────────────────────────
+#
+#   bash tools/setup-staging.sh               # create resources, fill this file
+#   npm run check:staging-isolation           # refuse if a placeholder remains
+#   npx wrangler deploy --config wrangler.staging.toml
+#
+# The deploy is also wired as a manual workflow: .github/workflows/deploy-staging.yml
+
+name = "admission-gk-staging"
+main = "worker-bundle.mjs"
+compatibility_date = "2024-11-01"
+workers_dev = true
+
+[vars]
+# Staging is a test surface: point the post-verification redirect at the staging
+# Pages host, never production, so a test sign-in cannot land on the live site.
+FIREBASE_CONTINUE_URL = "https://admissionhub-staging.pages.dev/?firebaseVerified=1"
+# Auth providers stay off until explicitly turned on for a test, so a staging
+# deployment cannot issue a real session or send a real OTP by accident.
+GOOGLE_AUTH_ACTIVATION = "disabled"
+PASSKEY_AUTH_ACTIVATION = "disabled"
+VERIFICATION_AUTH_ACTIVATION = "disabled"
+
+# ── Bindings: placeholders until tools/setup-staging.sh fills them ──────────
+
+[[kv_namespaces]]
+binding = "GK_KV"
+id = "REPLACE_WITH_STAGING_GK_KV_ID"
+
+[[kv_namespaces]]
+binding = "PUB_KV"
+id = "REPLACE_WITH_STAGING_PUB_KV_ID"
+
+[[kv_namespaces]]
+binding = "OLD_KV"
+id = "REPLACE_WITH_STAGING_OLD_KV_ID"
+
+[[d1_databases]]
+binding = "PROFILE_DB"
+database_name = "admission-profile-staging"
+database_id = "REPLACE_WITH_STAGING_D1_ID"
+
+[[r2_buckets]]
+binding = "FILE_BUCKET"
+bucket_name = "admission-hub-staging"
+
+[[durable_objects.bindings]]
+name = "EMAIL_COORDINATOR"
+class_name = "EmailGatewayCoordinator"
+
+[[durable_objects.bindings]]
+name = "AUTH_AUTHORITY"
+class_name = "AdmissionAuthAuthority"
+
+[[durable_objects.bindings]]
+name = "VOICE_AGENT"
+class_name = "VoiceAgentSession"
+
+# This script is new, so its own migration history starts at tag v1.
+[[migrations]]
+tag = "v1-email-gateway-coordinator"
+new_sqlite_classes = ["EmailGatewayCoordinator"]
+
+[[migrations]]
+tag = "v2-native-auth-authority"
+new_sqlite_classes = ["AdmissionAuthAuthority"]
+
+[[migrations]]
+tag = "v3-voice-agent"
+new_sqlite_classes = ["VoiceAgentSession"]

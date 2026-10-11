@@ -18,6 +18,7 @@ import { aiGenerate } from './ai-analytics-provider.mjs';
 import { handleFilesStorageRequest } from './files-storage.mjs';
 /* P13 — gzip/br for large JSON replies (read path scale). */
 import { compressResponse } from './p13-api-compression.mjs';
+import { createSnapshot } from './p19-backup.mjs';
 export { EmailGatewayCoordinator } from './email-gateway/worker/email-coordinator.mjs';
 export { AdmissionAuthAuthority } from './auth-native/worker/auth-authority-do.mjs';
 /* P23 — live voice agent. One Durable Object per owner holds the socket and the
@@ -515,6 +516,11 @@ export default {
           AUTH_AUTHORITY: env.AUTH_AUTHORITY,
           OLD_KV: env.OLD_KV || env.GK_KV,
           ADMIN_TOKEN: env.ADMIN_TOKEN,
+          /* P19 — backup/restore reads GK_KV and writes snapshots to R2. Without
+             these two the admin backup routes answer "no-backup-bucket" even
+             though the bindings exist on the outer Worker. */
+          GK_KV: env.GK_KV,
+          FILE_BUCKET: env.FILE_BUCKET,
           GEMINI_KEYS: env.GEMINI_KEYS,
           GROQ_API_KEY: env.GROQ_API_KEY,
           CLOUDFLARE_ACCOUNT_ID: env.CLOUDFLARE_ACCOUNT_ID,
@@ -591,6 +597,17 @@ export default {
      * cron tick is harmless. */
     try { await runScheduledEventNotifications(env); } catch (_) {}
     try { await runScheduledDigests(env); } catch (_) {}
+    /* P19 — a daily restorable snapshot, taken once per Dhaka day. Guarded by
+       the same day key the GK run uses, so the per-minute cron does not produce
+       a snapshot every minute; best-effort, since a failed backup must not stop
+       the notification work above it. */
+    try {
+      const backupDay = `backupDay:${dhakaToday()}`;
+      if (env.PUB_KV && (await env.PUB_KV.get(backupDay)) !== 'done') {
+        await createSnapshot(env);
+        await env.PUB_KV.put(backupDay, 'done');
+      }
+    } catch (_) {}
     if (!env.GK_KV || !keys(env).length) return;
     const date = dhakaToday();
     try { if ((await env.GK_KV.get('gkDay')) === date) return; } catch (_) {}

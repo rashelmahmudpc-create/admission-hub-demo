@@ -2305,6 +2305,171 @@ async function recordError(env, { path, method, status, message, now } = {}) {
   }
 }
 
+// p19-backup.mjs
+var BACKUP_PREFIX = "backups/";
+var BACKUP_INDEX_KEY = "backup:index:v1";
+var MAX_INDEX = 30;
+var MAX_VALUE = 2e5;
+var KV_BINDINGS = ["GK_KV", "PUB_KV", "OLD_KV"];
+function redactSnapshot(value, depth = 0) {
+  if (depth > 12) return "[deep]";
+  if (value == null) return value;
+  if (typeof value === "string") return sanitizeErrorText(value);
+  if (typeof value === "number" || typeof value === "boolean") return value;
+  if (Array.isArray(value)) return value.map((v) => redactSnapshot(v, depth + 1));
+  if (typeof value === "object") {
+    const out = {};
+    for (const k of Object.keys(value)) out[k] = redactSnapshot(value[k], depth + 1);
+    return out;
+  }
+  return String(value);
+}
+function redactKvValue(raw) {
+  if (raw == null) return null;
+  let parsed = raw;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (_) {
+  }
+  const redacted = redactSnapshot(parsed);
+  return typeof redacted === "string" ? redacted.slice(0, MAX_VALUE) : redacted;
+}
+function snapshotName(at) {
+  const iso = new Date(Number(at) || Date.now()).toISOString();
+  return `${BACKUP_PREFIX}${iso.replace(/[:.]/g, "-")}.json`;
+}
+function makeIndexEntry({ key, at, kvCount, d1Count, bytes }) {
+  return {
+    key,
+    at: Number(at) || 0,
+    kvKeys: Number(kvCount) || 0,
+    d1Rows: Number(d1Count) || 0,
+    bytes: Number(bytes) || 0
+  };
+}
+function appendIndex(index, entry) {
+  const list = Array.isArray(index) ? index.slice() : [];
+  const without = list.filter((e) => e && e.key !== entry.key);
+  return [entry, ...without].sort((a, b) => (b.at || 0) - (a.at || 0)).slice(0, MAX_INDEX);
+}
+function planRestore(snapshot) {
+  const kv2 = snapshot && snapshot.kv && typeof snapshot.kv === "object" ? snapshot.kv : {};
+  const plan = [];
+  for (const binding of Object.keys(kv2)) {
+    for (const key of Object.keys(kv2[binding] || {})) plan.push({ binding, key });
+  }
+  return plan;
+}
+async function listAllKeys(ns) {
+  const keys2 = [];
+  let cursor;
+  do {
+    const page = await ns.list(cursor ? { cursor } : void 0);
+    for (const k of page.keys || []) keys2.push(k.name);
+    cursor = page.list_complete ? void 0 : page.cursor;
+  } while (cursor);
+  return keys2;
+}
+async function listTables(db) {
+  const res = await db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").all();
+  return (res.results || []).map((r) => r.name).filter(Boolean);
+}
+async function collectSnapshot(env, { now } = {}) {
+  const at = Number((now || Date.now)()) || Date.now();
+  const kv2 = {};
+  const notes = [];
+  for (const binding of KV_BINDINGS) {
+    const ns = env && env[binding];
+    kv2[binding] = {};
+    if (!ns || typeof ns.list !== "function") {
+      notes.push(`${binding}:absent`);
+      continue;
+    }
+    try {
+      const names = await listAllKeys(ns);
+      for (const name of names) {
+        try {
+          kv2[binding][name] = redactKvValue(await ns.get(name));
+        } catch (_) {
+          notes.push(`${binding}:${name}:unreadable`);
+        }
+      }
+    } catch (e) {
+      notes.push(`${binding}:list-failed`);
+    }
+  }
+  const d1 = {};
+  const db = env && env.PROFILE_DB;
+  if (db && typeof db.prepare === "function") {
+    try {
+      for (const table of await listTables(db)) {
+        try {
+          const res = await db.prepare(`SELECT * FROM "${table}"`).all();
+          d1[table] = redactSnapshot(res.results || []);
+        } catch (_) {
+          notes.push(`d1:${table}:unreadable`);
+        }
+      }
+    } catch (_) {
+      notes.push("d1:list-failed");
+    }
+  } else {
+    notes.push("d1:absent");
+  }
+  return { version: 1, at, kv: kv2, d1, notes };
+}
+async function createSnapshot(env, { now } = {}) {
+  const bucket = env && env.FILE_BUCKET;
+  if (!bucket || typeof bucket.put !== "function") throw new Error("no-backup-bucket");
+  const snapshot = await collectSnapshot(env, { now });
+  const key = snapshotName(snapshot.at);
+  const body = JSON.stringify(snapshot);
+  await bucket.put(key, body, { httpMetadata: { contentType: "application/json" } });
+  const kvCount = Object.values(snapshot.kv).reduce((n, m) => n + Object.keys(m || {}).length, 0);
+  const d1Count = Object.values(snapshot.d1).reduce((n, rows) => n + (Array.isArray(rows) ? rows.length : 0), 0);
+  const entry = makeIndexEntry({ key, at: snapshot.at, kvCount, d1Count, bytes: body.length });
+  try {
+    const raw = env.PUB_KV ? await env.PUB_KV.get(BACKUP_INDEX_KEY) : null;
+    const index = raw ? JSON.parse(raw) : [];
+    if (env.PUB_KV) await env.PUB_KV.put(BACKUP_INDEX_KEY, JSON.stringify(appendIndex(index, entry)));
+  } catch (_) {
+  }
+  return entry;
+}
+async function listSnapshots(env) {
+  let index = [];
+  try {
+    const raw = env && env.PUB_KV ? await env.PUB_KV.get(BACKUP_INDEX_KEY) : null;
+    index = raw ? JSON.parse(raw) : [];
+  } catch (_) {
+    index = [];
+  }
+  return { ok: true, count: index.length, snapshots: Array.isArray(index) ? index : [] };
+}
+async function restoreSnapshot(env, key) {
+  const bucket = env && env.FILE_BUCKET;
+  if (!bucket || typeof bucket.get !== "function") return { ok: false, error: "no-backup-bucket" };
+  const obj = await bucket.get(key);
+  if (!obj) return { ok: false, error: "snapshot-not-found" };
+  let snapshot;
+  try {
+    snapshot = JSON.parse(await obj.text());
+  } catch (_) {
+    return { ok: false, error: "snapshot-unreadable" };
+  }
+  const plan = planRestore(snapshot);
+  const applied = [];
+  for (const { binding, key: kvKey } of plan) {
+    const ns = env[binding];
+    if (!ns || typeof ns.put !== "function") continue;
+    const value = snapshot.kv[binding][kvKey];
+    const body = typeof value === "string" ? value : JSON.stringify(value);
+    await ns.put(kvKey, body);
+    applied.push({ binding, key: kvKey });
+  }
+  return { ok: true, key, at: snapshot.at || 0, restored: applied.length, keys: applied };
+}
+
 // public-worker.js
 var JSONH = {
   "Content-Type": "application/json",
@@ -2597,6 +2762,24 @@ var admin = async (request, env, path) => {
       log = [];
     }
     return json(summarizeErrors(log));
+  }
+  if (path === "/api/admin/backup" && request.method === "GET") {
+    return json(await listSnapshots(env));
+  }
+  if (path === "/api/admin/backup" && request.method === "POST") {
+    try {
+      const entry = await createSnapshot(env);
+      return json({ ok: true, snapshot: entry });
+    } catch (error) {
+      return json({ ok: false, error: String(error?.message || error) }, 500);
+    }
+  }
+  if (path === "/api/admin/restore" && request.method === "POST") {
+    const body = await request.json().catch(() => ({}));
+    const key = String(body.key || "").trim();
+    if (!key) return json({ ok: false, error: "key-required" }, 400);
+    const result = await restoreSnapshot(env, key);
+    return json(result, result.ok ? 200 : 404);
   }
   return json({ error: "not-found" }, 404);
 };
@@ -26009,6 +26192,11 @@ var gk_agent_worker_default = {
           AUTH_AUTHORITY: env.AUTH_AUTHORITY,
           OLD_KV: env.OLD_KV || env.GK_KV,
           ADMIN_TOKEN: env.ADMIN_TOKEN,
+          /* P19 — backup/restore reads GK_KV and writes snapshots to R2. Without
+             these two the admin backup routes answer "no-backup-bucket" even
+             though the bindings exist on the outer Worker. */
+          GK_KV: env.GK_KV,
+          FILE_BUCKET: env.FILE_BUCKET,
           GEMINI_KEYS: env.GEMINI_KEYS,
           GROQ_API_KEY: env.GROQ_API_KEY,
           CLOUDFLARE_ACCOUNT_ID: env.CLOUDFLARE_ACCOUNT_ID,
@@ -26084,6 +26272,14 @@ var gk_agent_worker_default = {
     }
     try {
       await runScheduledDigests(env);
+    } catch (_) {
+    }
+    try {
+      const backupDay = `backupDay:${dhakaToday()}`;
+      if (env.PUB_KV && await env.PUB_KV.get(backupDay) !== "done") {
+        await createSnapshot(env);
+        await env.PUB_KV.put(backupDay, "done");
+      }
     } catch (_) {
     }
     if (!env.GK_KV || !keys(env).length) return;
