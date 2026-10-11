@@ -45,10 +45,13 @@ jobs:
           API="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/ai-gateway/gateways"
 
           echo "creating gateway ${GW} ..."
+          # cache_invalidate_on_update and the rate-limit numbers are required by
+          # the API even when zero — omitting them arrives as NaN and a 400.
+          BODY="{\"id\":\"${GW}\",\"cache_invalidate_on_update\":true,\"cache_ttl\":0,\"collect_logs\":true,\"rate_limiting_interval\":0,\"rate_limiting_limit\":0,\"authentication\":false}"
           code="$(curl -s -o /tmp/create.json -w '%{http_code}' -X POST "$API" \
             -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
             -H 'Content-Type: application/json' \
-            -d "{\"id\":\"${GW}\",\"authentication\":false,\"collect_logs\":true,\"cache_ttl\":0}")"
+            -d "$BODY")"
           echo "create HTTP ${code}"
           head -c 600 /tmp/create.json; echo
           if [ "$code" != "200" ] && [ "$code" != "201" ]; then
@@ -57,7 +60,7 @@ jobs:
             curl -s -X PUT "$API/${GW}" \
               -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
               -H 'Content-Type: application/json' \
-              -d '{"authentication":false,"collect_logs":true}' -o /tmp/upd.json -w 'update HTTP %{http_code}\n'
+              -d '{"cache_invalidate_on_update":true,"cache_ttl":0,"collect_logs":true,"rate_limiting_interval":0,"rate_limiting_limit":0,"authentication":false}' -o /tmp/upd.json -w 'update HTTP %{http_code}\n'
             head -c 400 /tmp/upd.json; echo
           fi
 
