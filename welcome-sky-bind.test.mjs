@@ -139,6 +139,10 @@ test('the welcome fills the screen and the guest entry matches the other buttons
   assert.ok(/\.ahw-sky\.ahw-sky-board\{padding-top:0;padding-bottom:0;/.test(css),
     'the background must be full-bleed under the status bar and home indicator');
   assert.ok(JS.includes('ah-statusbar-cap') && JS.includes('theme-color'), 'the status bar must follow the screen colour');
+  assert.ok(JS.includes('const paint=') && JS.includes("pg.querySelector('.ah-account-shell')") && JS.includes('document.body'),
+    'every full-screen layer the browser may sample must carry the screen colour, not only <html>');
+  assert.ok(css.includes('@supports not (background:color-mix'), 'browsers without color-mix must still get a visible Get Started button');
+  assert.ok(css.includes('.ahw-sky .go{white-space:nowrap'), 'the Get Started label must never wrap or clip');
   assert.ok(/\.ah-welcome-sky \[data-role="welcome-language"\]\{display:none/.test(css),
     'the language picker must stay hidden');
   assert.ok(/\.ahw-sky \.b\.g\{[^}]*border:0/.test(css),
