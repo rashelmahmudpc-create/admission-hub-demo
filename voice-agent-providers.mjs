@@ -63,7 +63,7 @@ export async function deepgramStt(provider, audio, opts = {}) {
 export async function geminiStt(provider, audio, opts = {}) {
   const f = opts.fetch || fetch;
   const b64 = opts.base64 || base64From(audio);
-  const model = provider.model || 'gemini-2.5-flash';
+  const model = provider.model || 'gemini-3.8-flash';
   const res = await f(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-goog-api-key': provider.key },
@@ -129,7 +129,7 @@ export function openrouterLlm(provider, messages, opts = {}) {
 /** Gemini chat. The system prompt goes in system_instruction, history as turns. */
 export async function geminiLlm(provider, messages, opts = {}) {
   const f = opts.fetch || fetch;
-  const model = provider.model || 'gemini-2.5-flash';
+  const model = provider.model || 'gemini-3.8-flash';
   const system = opts.system || '';
   const contents = messages.map(m => ({
     role: m.role === 'assistant' ? 'model' : 'user',
@@ -219,7 +219,7 @@ export function pcmToWav(pcm, sampleRate = 24000, channels = 1, bits = 16) {
  */
 export async function geminiTts(provider, text, opts = {}) {
   const f = opts.fetch || fetch;
-  const model = provider.model || 'gemini-2.5-flash-preview-tts';
+  const model = provider.model || 'gemini-3.8-flash-tts';
   const voice = provider.voiceId || opts.voiceId || 'Kore';
   const res = await f(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
     method: 'POST',

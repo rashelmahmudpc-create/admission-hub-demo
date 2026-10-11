@@ -403,6 +403,19 @@ function makeSession(env = POOLS) {
     brp.tts.some(x => x.id === 'gemini-tts') && !brp.tts.some(x => x.id === 'cartesia'));
 }
 
+/* ── ১৬c. The Gemini model names are ones the API still serves ── */
+{
+  // gemini-2.5-flash was retired for new users and returned 404 at runtime,
+  // which took the whole turn down (found live 2026-10-11). Pin the names so a
+  // revert to a retired model fails here instead of on the owner's phone.
+  const prov = (await import('fs')).readFileSync('voice-agent-providers.mjs', 'utf8');
+  t('P23-১২৩. no retired Gemini model name is hardcoded',
+    !/gemini-2\.5-flash(?!-image)/.test(prov) && !prov.includes('gemini-2.5-pro'));
+  t('P23-১২৪. stt, llm and tts all default to a current Gemini model',
+    (prov.match(/provider\.model \|\| 'gemini-3\.8-flash'/g) || []).length === 2
+    && prov.includes("provider.model || 'gemini-3.8-flash-tts'"));
+}
+
 /* ── ১৭. The Gemini voice adapter: the TTS path that needs no new credential ── */
 {
   const { pcmToWav, geminiTts, TTS: TT } = await import('./voice-agent-providers.mjs');
