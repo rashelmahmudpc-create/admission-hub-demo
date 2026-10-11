@@ -3,7 +3,7 @@ const CACHE_PREFIX = 'admission-hub-shell-';
 // hold user data; this one holds exactly one image and is trimmed on write.
 const AVATAR_CACHE = 'admission-hub-avatar-v1';
 
-const BUILD_ID = 'v307-panel-fullscreen-20261011';
+const BUILD_ID = 'v308-p18-official-pattern-20261011';
 const CACHE_NAME = `${CACHE_PREFIX}${BUILD_ID}`;
 const VERSION_HEADER = 'X-Admission-Hub-Build';
 const DOCUMENT_NETWORK_TIMEOUT_MS = 2500;
@@ -47,8 +47,9 @@ const APP_SHELL = [
   './adaptive-insights-panel.js?v=p11-v1',
   './study-plan-engine.js?v=p17-v1',
   './study-plan-panel.js?v=p17-v2',
-  './admission-intel-engine.js?v=p18-v1',
-  './admission-intel-panel.js?v=p18-v2',
+  './question-pattern.js?v=p18-v1',
+  './admission-intel-engine.js?v=p18-v3',
+  './admission-intel-panel.js?v=p18-v3',
   './p13-performance-core.js?v=p13-core-v1',
   './p13-performance-runtime.js?v=p13-runtime-v1',
   './student-data-sync.js?v=student-sync-v1',
@@ -66,13 +67,13 @@ const APP_SHELL = [
 // A truncated/corrupt download is NEVER written to the shell cache.
 const ASSET_DIGESTS = {
 /* sw-manifest:start */
-  "./index.html": "b222ffd06eef9381262fdfa27c2dc43effc43b7e3bd217e45a03127aabf04594",
+  "./index.html": "9b4e54d267d5ab80387672e295f9ce4dca7b5286cc2c6bb9f5186b26af3b814c",
   "./manifest.json": "6dcf0e0c6f7671750549e53558ba8b9f0c2c83b0c6759072a6b5e2276331f491",
   "./manifest.webmanifest": "abcd26174710f6df3e183889a5a9da182f73ee8cdcc543b43db8fb4070cad54f",
   "./dashboard-v2.css?v=dash2f13-theme": "4541bc1e65fd158c593443562975400d128b8f1d3b636595df3c235b99e8cced",
   "./3d-loader.css?v=3d-v2": "43ca21b0a41be5d223c317fd63582f19ff6ffab5d010639ef26349464550da63",
   "./session-persist.js?v=session-v2": "99f3d1f49f6d5714fd25f1c12b2aa978ca97a009d6caba9a690a0442d082593c",
-  "./analytics-service.js?v=analytics-p2-v2-insights": "69d97622224842bb414ad90e6d922d44bba1ad0d3e29ed3244b1c2c4b5fa52e5",
+  "./analytics-service.js?v=analytics-p2-v2-insights": "5c2459567660b2d6e5af0082d9800e2b57e8d0201892870ee519497f9fd77046",
   "./account-access.css?v=20261010-static-welcome-lock3": "56e418849f297f240d558116d13bcc259104be68df3e4eba5f7976434bb350d8",
   "./institutions-bd.js?v=bd-institutions-v2": "602c5549515e8207ad152b948ca9b8fe3ad0fbe429afb56380e4e21b662f779d",
   "./language-engine.js?v=lang-v5-single-email-button": "7e726c3cd194381201c7fdb2b1a49af78f4f48f38012e05ab68e13eee3ade3ad",
@@ -96,8 +97,9 @@ const ASSET_DIGESTS = {
   "./adaptive-insights-panel.js?v=p11-v1": "bb3a42e5d386b2d3861ab088cf0a30354b981cb1b40c419603c0fbdf47fddb27",
   "./study-plan-engine.js?v=p17-v1": "53a4161abec5fd4e0256d96bb41202a61625a8265ac770c404bc093372999b13",
   "./study-plan-panel.js?v=p17-v2": "e5e0eff07f36d62666c2e9cc4d8cc72c17713cdb12a4035b517076b646b99dbc",
-  "./admission-intel-engine.js?v=p18-v1": "0332e261930404e68b9a614617d867a7b63bb39e2ab31e4eaf74765d901a82f5",
-  "./admission-intel-panel.js?v=p18-v2": "27f6bbb5e676056e00df824732295355ae26b058d6191a12b197a415c3359589",
+  "./question-pattern.js?v=p18-v1": "ded5c7732ade141097aedc168a008c1d11aa461c6e706e8d22e5ba4accd03a1b",
+  "./admission-intel-engine.js?v=p18-v3": "25e07bec32a568776866208879df3ff892577d11481d8ecf86e496f5ec02239a",
+  "./admission-intel-panel.js?v=p18-v3": "77b821900b78c42a4ffb8dc2f55e58edcfa6e7eeb0cee5a5f357a7ecd4dd1c42",
   "./p13-performance-core.js?v=p13-core-v1": "a51cc8a619d04b2f7b2bed2d4752a2d4c1da652f9e2034faacd47addf8cdcdca",
   "./p13-performance-runtime.js?v=p13-runtime-v1": "60fb332e307a6606e3dec74100fbb2b4337d4497c6d0fe3ee2e40e0470c1391a",
   "./student-data-sync.js?v=student-sync-v1": "f81ed126b0c8104c29fc0838a8f373c6c444ac45f17c2050850805285ce479c1",

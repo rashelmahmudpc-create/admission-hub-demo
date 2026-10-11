@@ -51,7 +51,7 @@ test('১১. protection snapshot runs as idle post-boot work',
 /* PWA lifecycle */
 test('১২. build/cache/static-Welcome and main-app AI versions are synchronized',
 
-  SW.includes("const BUILD_ID = 'v307-panel-fullscreen-20261011'") && H.includes("const expectedSwVersion = 'v307-panel-fullscreen-20261011'") && H.includes('sw.js?v=v307-panel-fullscreen-20261011') && H.includes('account-access.js?v=20261010-static-welcome-lock3') && SW.includes('account-access.js?v=20261010-static-welcome-lock3') && H.includes('ai-agent-chat.js?v=agent-f1-ui-p06chat') && SW.includes('ai-agent-chat.js?v=agent-f1-ui-p06chat'));
+  SW.includes("const BUILD_ID = 'v308-p18-official-pattern-20261011'") && H.includes("const expectedSwVersion = 'v308-p18-official-pattern-20261011'") && H.includes('sw.js?v=v308-p18-official-pattern-20261011') && H.includes('account-access.js?v=20261010-static-welcome-lock3') && SW.includes('account-access.js?v=20261010-static-welcome-lock3') && H.includes('ai-agent-chat.js?v=agent-f1-ui-p06chat') && SW.includes('ai-agent-chat.js?v=agent-f1-ui-p06chat'));
 test('১৩. service-worker activation never navigates or reloads open clients',
   !SW.includes('c.navigate(c.url)') && !SW.includes("self.clients.matchAll({ type: 'window', includeUncontrolled: true });\n      for"));
 test('১৪. installed PWA document is bounded network-first with fast offline fallback',
@@ -62,10 +62,11 @@ test('১৪. installed PWA document is bounded network-first with fast offline 
 test('১৫. precache stays lean because code-native entry pages add no raster assets',
   /* Bound tracks the hand-curated APP_SHELL list. It grew from 33 → 37 when the
      P16 accessibility core landed, then 37 → 39 with the P15 offline status
-     pill, then 39 → 41 with the two P17 study-plan assets, then 41 → 43 with the two P18 admission-intelligence assets. The
+     pill, then 39 → 41 with the two P17 study-plan assets, then 41 → 43 with the two P18 admission-intelligence assets, then 43 → 44
+     with the P18 official question-pattern dataset. The
      point of the ceiling is to catch an accidental bulk import, not to pin an
      exact size. */
-  shellAssets > 0 && shellAssets <= 43 && !appShellBlock.includes('result-analysis-500.js') && !appShellBlock.includes("  '',"));
+  shellAssets > 0 && shellAssets <= 44 && !appShellBlock.includes('result-analysis-500.js') && !appShellBlock.includes("  '',"));
 test('১৬. PWA updates are in-place; active worker is never unregistered first', !H.includes('registration.unregister()'));
 
 /* AI composer and response */

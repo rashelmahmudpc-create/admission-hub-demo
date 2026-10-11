@@ -5240,16 +5240,16 @@ window.__admissionBootPromise.catch(error => console.error('[Admission Hub] boot
     // The updated worker takes control now; the current document remains usable and the next launch uses the new shell.
     try{
 
-      const expectedSwVersion = 'v307-panel-fullscreen-20261011';
+      const expectedSwVersion = 'v308-p18-official-pattern-20261011';
       // register() on the same scope performs an in-place update. Never unregister
       // the active iOS worker first: that discards the instant offline shell.
-      const registration=await navigator.serviceWorker.register('./sw.js?v=v307-panel-fullscreen-20261011',{scope:'./',updateViaCache:'none'});
+      const registration=await navigator.serviceWorker.register('./sw.js?v=v308-p18-official-pattern-20261011',{scope:'./',updateViaCache:'none'});
       await registration.update().catch(()=>{});
       // Purge every old app-shell cache (any build id ≠ current). This guarantees
       // stale pre-retirement application shells can never be served from cache again.
       try {
 
-        const cur = 'admission-hub-shell-v307-panel-fullscreen-20261011';
+        const cur = 'admission-hub-shell-v308-p18-official-pattern-20261011';
         const names = await caches.keys();
         for (const name of names) {
           if (name.startsWith('admission-hub-shell-') && name !== cur) await caches.delete(name).catch(()=>{});
@@ -5484,8 +5484,9 @@ setTimeout(() => { if (location.hash.replace(/^#/, '').split('?')[0] === 'dictio
 <script defer src="./adaptive-insights-panel.js?v=p11-v1"></script>
 <script defer src="./study-plan-engine.js?v=p17-v1"></script>
 <script defer src="./study-plan-panel.js?v=p17-v2"></script>
-<script defer src="./admission-intel-engine.js?v=p18-v1"></script>
-<script defer src="./admission-intel-panel.js?v=p18-v2"></script>
+<script defer src="./question-pattern.js?v=p18-v1"></script>
+<script defer src="./admission-intel-engine.js?v=p18-v3"></script>
+<script defer src="./admission-intel-panel.js?v=p18-v3"></script>
 <script defer src="mistake-analysis.js?v=p10-v2"></script>
 <script defer src="question-bank-performance.js?v=11-aiex"></script>
 <script defer src="p13-performance-core.js?v=p13-core-v1"></script>

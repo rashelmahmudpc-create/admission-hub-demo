@@ -12,24 +12,28 @@ const H = readFileSync('index.html', 'utf8');
 const SW = readFileSync('sw.js', 'utf8');
 const V2 = readFileSync('dashboard-v2.js', 'utf8');
 const CAT = readFileSync('academic-catalog.js', 'utf8');
+const PATTERNS = readFileSync('question-pattern.js', 'utf8');
 const ENGINE = readFileSync('admission-intel-engine.js', 'utf8');
 const PANEL = readFileSync('admission-intel-panel.js', 'utf8');
 
-test('p18-01: engine and panel are loaded by the shell', () => {
-  assert.ok(H.includes('./admission-intel-engine.js?v=p18-v1'), 'index.html must load the engine');
-  assert.ok(H.includes('./admission-intel-panel.js?v=p18-v2'), 'index.html must load the panel');
+test('p18-01: engine, pattern dataset and panel are loaded by the shell', () => {
+  assert.ok(H.includes('./question-pattern.js?v=p18-v1'), 'index.html must load the pattern dataset');
+  assert.ok(H.includes('./admission-intel-engine.js?v=p18-v3'), 'index.html must load the engine');
+  assert.ok(H.includes('./admission-intel-panel.js?v=p18-v3'), 'index.html must load the panel');
 });
 
-test('p18-02: both P18 assets are in the service-worker precache', () => {
-  assert.ok(SW.includes("'./admission-intel-engine.js?v=p18-v1'"), 'sw.js must precache the engine');
-  assert.ok(SW.includes("'./admission-intel-panel.js?v=p18-v2'"), 'sw.js must precache the panel');
+test('p18-02: every P18 asset is in the service-worker precache', () => {
+  assert.ok(SW.includes("'./question-pattern.js?v=p18-v1'"), 'sw.js must precache the pattern dataset');
+  assert.ok(SW.includes("'./admission-intel-engine.js?v=p18-v3'"), 'sw.js must precache the engine');
+  assert.ok(SW.includes("'./admission-intel-panel.js?v=p18-v3'"), 'sw.js must precache the panel');
 });
 
-test('p18-03: the catalog loads before the engine that reads it', () => {
+test('p18-03: the catalog and pattern dataset load before the engine that reads them', () => {
   const c = H.indexOf('academic-catalog.js');
-  const e = H.indexOf('admission-intel-engine.js?v=p18-v1');
-  const p = H.indexOf('admission-intel-panel.js?v=p18-v2');
-  assert.ok(c > -1 && e > -1 && p > -1 && c < e && e < p, 'catalog → engine → panel order');
+  const q = H.indexOf('question-pattern.js?v=p18-v1');
+  const e = H.indexOf('admission-intel-engine.js?v=p18-v3');
+  const p = H.indexOf('admission-intel-panel.js?v=p18-v3');
+  assert.ok(c > -1 && q > -1 && e > -1 && p > -1 && c < e && q < e && e < p, 'catalog+patterns → engine → panel order');
 });
 
 test('p18-04: the dashboard exposes a guarded admission-intel entry point', () => {
@@ -68,7 +72,7 @@ function boot(cache) {
   w.renderDashboard = function () { return 'OLD'; };
   w.navigate = () => {}; w.toast = () => {}; w.openModal = () => {};
   if (cache) run(`const CACHE = ${JSON.stringify(cache)};`);
-  run(CAT); run(ENGINE); run(PANEL); run(V2);
+  run(CAT); run(PATTERNS); run(ENGINE); run(PANEL); run(V2);
   w.renderDashboard();
   return w;
 }
@@ -135,4 +139,38 @@ test('p18r-05: the rendered panel never contains a rank/pass promise', () => {
   w.openAdmissionIntelPanel();
   const html = w.document.getElementById('aiPanel').innerHTML;
   assert.doesNotMatch(html, /নিশ্চিত ভর্তি|গ্যারান্টি|guarantee/i, 'no promise may reach the student');
+});
+
+test('p18r-06: the official question pattern for the goal unit is shown with its source', () => {
+  const w = boot(WITH_GOAL);
+  w.openAdmissionIntelPanel();
+  const html = w.document.getElementById('aiPanel').innerHTML;
+  assert.match(html, /অফিসিয়াল প্রশ্ন-প্যাটার্ন/, 'the official pattern section must render');
+  // RU A unit: 100 marks, 80 questions, one hour, 0.25 per wrong.
+  assert.match(html, />80</, 'the official question count must be shown');
+  assert.match(html, /0\.25/, 'the negative-marking rule must be shown');
+  assert.match(html, /সূত্র:/, 'the source must be attributed');
+});
+
+test('p18r-07: an unknown unit shows no official pattern rather than inventing one', () => {
+  const w = boot({
+    subjects: [], topics: [], questions: [], examResults: [], mistakes: [],
+    settings: { dv2Goal: { university: 'Rajshahi University', unit: 'Z Unit', examDate: '2099-01-01' } }
+  });
+  w.openAdmissionIntelPanel();
+  const html = w.document.getElementById('aiPanel').innerHTML;
+  assert.doesNotMatch(html, /মোট নম্বর/, 'no invented pattern for an unknown unit');
+});
+
+test('p18r-08: the weakness report can be shared and carries the no-guarantee line', () => {
+  const w = boot(WITH_GOAL);
+  let shared = null;
+  w.navigator.share = (data) => { shared = data; return Promise.resolve(); };
+  w.openAdmissionIntelPanel();
+  const btn = w.document.querySelector('#aiPanel .ip-actions button');
+  assert.ok(btn, 'the share button must be present');
+  w.shareAdmissionIntelReport();
+  assert.ok(shared && /ভর্তি-বুদ্ধি রিপোর্ট/.test(shared.text), 'the report must be handed to share()');
+  assert.match(shared.text, /কোনো নিশ্চয়তা নয়/, 'the report must keep the no-guarantee line');
+  assert.doesNotMatch(shared.text, /নিশ্চিত ভর্তি|গ্যারান্টি/i, 'the report must carry no promise');
 });

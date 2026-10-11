@@ -18,7 +18,7 @@ const UI_VERSION_TO = '20261010-static-welcome-lock3';
 const LANG_VERSION_FROM = 'lang-v5-single-email-button';
 const LANG_VERSION_TO = 'lang-v5-single-email-button';
 const SW_BUILD_FROM = 'v307-panel-fullscreen-20261011';
-const SW_BUILD_TO = 'v307-panel-fullscreen-20261011';
+const SW_BUILD_TO = 'v308-p18-official-pattern-20261011';
 
 const targets = [
   'index.html',

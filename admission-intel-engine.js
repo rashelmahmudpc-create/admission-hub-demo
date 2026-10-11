@@ -197,6 +197,7 @@
     const topics = Array.isArray(o.topics) ? o.topics : [];
     const goal = o.goal || {};
     const catalog = o.catalog || null;
+    const patterns = o.patterns || null;
     const session = o.session || null;
 
     const questionsById = new Map(questions.map((q) => [q.id, q]));
@@ -205,6 +206,10 @@
     const stats = topicStats(rows, topics);
     const coverageInfo = coverage(rows, topics, map.subjects);
     const patt = pattern(rows);
+    // Official format comes only from the dataset; a missing entry stays null
+    // so the panel says "no official data" instead of inventing a pattern.
+    const official = (map.ok && patterns && typeof patterns.forUnit === 'function')
+      ? patterns.forUnit(map.university.id, map.unit.id) : null;
     const daysLeft = num(goal.daysLeft);
     const plan = revisionPlan(stats, coverageInfo, daysLeft, o.opts);
 
@@ -218,6 +223,7 @@
       coverage: coverageInfo,
       topics: stats,
       pattern: patt,
+      official,
       plan,
       daysLeft,
       totals: { answered: rows.length, topics: stats.length, days: plan.length },
