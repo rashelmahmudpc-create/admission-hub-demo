@@ -305,13 +305,24 @@ export default {
           const meta = JSON.parse(raw);
           if (meta.categories) return json(meta);
           /* One-time lazy backfill for a meta written before `categories`
-             existed: read the body once, fold the totals in, store them back.
-             After this the endpoint is a single small KV read again. */
+             existed. The vocabulary bank now lives in D1, so read the small
+             mirrored list there and fall back to the KV blob; fold the totals
+             into the meta and store them back. After this the endpoint is a
+             single small KV read again. */
           try {
-            const full = await env.PUB_KV.get('pubContent');
-            const doc = full ? JSON.parse(full) : null;
-            if (doc) {
-              const enriched = { ...meta, counts: meta.counts || countsOf(doc), categories: categoryCountsOf(doc) };
+            let vocabRows = null;
+            if (env.PROFILE_DB) {
+              const { createD1Reader } = await import('./p13-d1-read.mjs');
+              const lists = await createD1Reader(env.PROFILE_DB).lists();
+              if (lists && Array.isArray(lists.vocabularyMaster)) vocabRows = lists.vocabularyMaster;
+            }
+            if (!vocabRows) {
+              const full = await env.PUB_KV.get('pubContent');
+              const doc = full ? JSON.parse(full) : null;
+              if (doc) vocabRows = doc.vocabularyMaster || [];
+            }
+            if (vocabRows) {
+              const enriched = { ...meta, categories: categoryCountsOf({ vocabularyMaster: vocabRows }) };
               await env.PUB_KV.put('pubContentMeta', JSON.stringify(enriched));
               return json(enriched);
             }

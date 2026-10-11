@@ -2499,10 +2499,19 @@ var public_worker_default = {
           const meta = JSON.parse(raw);
           if (meta.categories) return json(meta);
           try {
-            const full2 = await env.PUB_KV.get("pubContent");
-            const doc2 = full2 ? JSON.parse(full2) : null;
-            if (doc2) {
-              const enriched = { ...meta, counts: meta.counts || countsOf(doc2), categories: categoryCountsOf(doc2) };
+            let vocabRows = null;
+            if (env.PROFILE_DB) {
+              const { createD1Reader: createD1Reader2 } = await Promise.resolve().then(() => (init_p13_d1_read(), p13_d1_read_exports));
+              const lists = await createD1Reader2(env.PROFILE_DB).lists();
+              if (lists && Array.isArray(lists.vocabularyMaster)) vocabRows = lists.vocabularyMaster;
+            }
+            if (!vocabRows) {
+              const full2 = await env.PUB_KV.get("pubContent");
+              const doc2 = full2 ? JSON.parse(full2) : null;
+              if (doc2) vocabRows = doc2.vocabularyMaster || [];
+            }
+            if (vocabRows) {
+              const enriched = { ...meta, categories: categoryCountsOf({ vocabularyMaster: vocabRows }) };
               await env.PUB_KV.put("pubContentMeta", JSON.stringify(enriched));
               return json(enriched);
             }
