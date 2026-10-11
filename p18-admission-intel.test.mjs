@@ -17,18 +17,18 @@ const PANEL = readFileSync('admission-intel-panel.js', 'utf8');
 
 test('p18-01: engine and panel are loaded by the shell', () => {
   assert.ok(H.includes('./admission-intel-engine.js?v=p18-v1'), 'index.html must load the engine');
-  assert.ok(H.includes('./admission-intel-panel.js?v=p18-v1'), 'index.html must load the panel');
+  assert.ok(H.includes('./admission-intel-panel.js?v=p18-v2'), 'index.html must load the panel');
 });
 
 test('p18-02: both P18 assets are in the service-worker precache', () => {
   assert.ok(SW.includes("'./admission-intel-engine.js?v=p18-v1'"), 'sw.js must precache the engine');
-  assert.ok(SW.includes("'./admission-intel-panel.js?v=p18-v1'"), 'sw.js must precache the panel');
+  assert.ok(SW.includes("'./admission-intel-panel.js?v=p18-v2'"), 'sw.js must precache the panel');
 });
 
 test('p18-03: the catalog loads before the engine that reads it', () => {
   const c = H.indexOf('academic-catalog.js');
   const e = H.indexOf('admission-intel-engine.js?v=p18-v1');
-  const p = H.indexOf('admission-intel-panel.js?v=p18-v1');
+  const p = H.indexOf('admission-intel-panel.js?v=p18-v2');
   assert.ok(c > -1 && e > -1 && p > -1 && c < e && e < p, 'catalog → engine → panel order');
 });
 

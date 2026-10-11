@@ -18,11 +18,13 @@
   const catalog = () => (typeof self !== 'undefined' ? self.AH_AcademicCatalog : undefined);
 
   const CSS = `
-  .ai-overlay{position:fixed;inset:0;z-index:9000;background:rgba(8,30,24,.55);display:flex;align-items:flex-end;justify-content:center}
-  .ai-sheet{width:100%;max-width:560px;max-height:92vh;display:flex;flex-direction:column;background:var(--card,#fff);border-radius:20px 20px 0 0;overflow:hidden;box-shadow:0 -8px 40px rgba(0,0,0,.3)}
-  .ai-head{display:flex;align-items:center;justify-content:space-between;padding:16px 18px;border-bottom:1px solid var(--line,rgba(15,107,79,.12));font-size:16px}
+  .ai-overlay{position:fixed;inset:0;z-index:10050;background:var(--bg,#fff);display:flex;justify-content:center}
+  .ai-sheet{width:100%;max-width:560px;height:100%;display:flex;flex-direction:column;background:var(--card,#fff);overflow:hidden}
+  .ai-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:calc(12px + env(safe-area-inset-top,0px)) 18px 12px;border-bottom:1px solid var(--line,rgba(15,107,79,.12));font-size:16px}
   .ai-x{border:0;background:none;font-size:22px;line-height:1;cursor:pointer;color:var(--sub,#5F7A72)}
-  .ai-body{padding:16px 18px;overflow-y:auto}
+  .ai-body{padding:16px 18px calc(24px + env(safe-area-inset-bottom,0px));overflow-y:auto;flex:1;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
+  /* While a full-screen panel owns the page the bottom nav must not show through. */
+  body.ah-panel-open #navRoot{visibility:hidden!important;pointer-events:none!important}
   .ai-hero{border-radius:14px;padding:14px 15px;background:linear-gradient(135deg,#EFF7F2,#DBF3E6);margin-bottom:16px}
   .ai-hero small{color:var(--sub,#5F7A72);font-size:11.5px}
   .ai-hero p{margin:5px 0 0;font-size:13.5px;line-height:1.5;color:var(--ink,#16302A)}
@@ -119,8 +121,9 @@
           <div class="ai-note">এটা তোমার নিজের অভ্যাসের ডেটা থেকে তৈরি পরামর্শ — কোনো র‍্যাঙ্ক, পাস বা আসনের নিশ্চয়তা নয়।</div>
         </div>
       </div>`;
+    document.body.classList.add('ah-panel-open');
   }
 
   window.openAdmissionIntelPanel = open;
-  window.closeAdmissionIntelPanel = () => { const el = document.getElementById('aiPanel'); if (el) el.remove(); };
+  window.closeAdmissionIntelPanel = () => { const el = document.getElementById('aiPanel'); if (el) el.remove(); document.body.classList.remove('ah-panel-open'); };
 })();

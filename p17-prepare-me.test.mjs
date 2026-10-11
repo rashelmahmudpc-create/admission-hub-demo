@@ -14,17 +14,17 @@ const V2 = readFileSync('dashboard-v2.js', 'utf8');
 
 test('p17-01: engine and panel are loaded by the shell', () => {
   assert.ok(H.includes('./study-plan-engine.js?v=p17-v1'), 'index.html must load study-plan-engine.js');
-  assert.ok(H.includes('./study-plan-panel.js?v=p17-v1'), 'index.html must load study-plan-panel.js');
+  assert.ok(H.includes('./study-plan-panel.js?v=p17-v2'), 'index.html must load study-plan-panel.js');
 });
 
 test('p17-02: both P17 assets are in the service-worker precache', () => {
   assert.ok(SW.includes("'./study-plan-engine.js?v=p17-v1'"), 'sw.js APP_SHELL must precache the engine');
-  assert.ok(SW.includes("'./study-plan-panel.js?v=p17-v1'"), 'sw.js APP_SHELL must precache the panel');
+  assert.ok(SW.includes("'./study-plan-panel.js?v=p17-v2'"), 'sw.js APP_SHELL must precache the panel');
 });
 
 test('p17-03: the engine loads before the panel that reads it', () => {
   const e = H.indexOf('study-plan-engine.js?v=p17-v1');
-  const p = H.indexOf('study-plan-panel.js?v=p17-v1');
+  const p = H.indexOf('study-plan-panel.js?v=p17-v2');
   assert.ok(e > -1 && p > -1 && e < p, 'engine script tag must precede the panel script tag');
 });
 
