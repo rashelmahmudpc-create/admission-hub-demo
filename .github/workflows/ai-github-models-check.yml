@@ -1,0 +1,39 @@
+name: GitHub Models reachability check (manual, read-only)
+
+# The sandbox egress proxy answers some hosts with a fake 200 "OK", so local
+# curl can't be trusted for GitHub Models. This runs on a real runner and uses
+# the Actions-provided token with `models: read` — the least-privilege way to
+# confirm the product works before wiring a personal token into the app.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type CHECK to test GitHub Models from a real runner
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  models: read
+
+jobs:
+  check:
+    if: ${{ inputs.confirmation == 'CHECK' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Call GitHub Models with the Actions token
+        env:
+          GH_MODELS_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          echo "token length: ${#GH_MODELS_TOKEN}"
+          code=$(curl -s -o /tmp/r.json -w "%{http_code}" --max-time 40 \
+            -X POST "https://models.github.ai/inference/chat/completions" \
+            -H "Authorization: Bearer ${GH_MODELS_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "Content-Type: application/json" \
+            -d '{"model":"openai/gpt-4o-mini","messages":[{"role":"user","content":"say hi"}],"max_tokens":16}')
+          echo "HTTP $code"
+          head -c 500 /tmp/r.json; echo
