@@ -81,7 +81,8 @@ jobs:
           for (const [name,k,url,model] of compat) {
             const key = String(k||'').split(',')[0].trim();
             if(!key){ console.log('  '+name+': no key'); continue; }
-            const s = await statusOf(url, key, model);
+            const ov = String(kv[name+'_API_KEYS_MODELS']||'').split(',').map(s=>s.trim()).filter(Boolean);
+            const s = await statusOf(url, key, ov.length ? ov[0] : model);
             total++; if(s===200)ok++;
             console.log('  '+name+':', s);
           }
