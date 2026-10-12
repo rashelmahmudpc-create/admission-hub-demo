@@ -398,7 +398,7 @@ body.ah-account-page-active>.ah-account-launcher{display:none!important}
     linear-gradient(165deg,#f3f9f6 0%,#fff 50%,#eff7f4 100%);
 }
 .ah-account-page[data-current-view="signup"] .ah-account-shell[data-current-view="signup"]{width:100%;max-width:none;margin:0;background:transparent}
-.ah-signup-view{position:relative;box-sizing:border-box;min-height:100dvh;padding:0 0 calc(32px + env(safe-area-inset-bottom));overflow:hidden;background:transparent}
+.ah-signup-view{position:relative;box-sizing:border-box;height:100dvh;min-height:0;padding:0 0 calc(32px + env(safe-area-inset-bottom));overflow-x:hidden;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;background:transparent}
 .ah-signup-topbar{width:min(calc(100% - 32px),1040px);min-height:76px;display:flex;box-sizing:border-box;align-items:center;justify-content:space-between;gap:14px;margin:0 auto;padding:calc(9px + env(safe-area-inset-top)) 0 0 58px}
 .ah-signup-brand{display:flex;min-width:0;align-items:center;gap:9px;color:var(--ah-ink-mid)}.ah-signup-brand-mark{width:38px;height:32px;flex:0 0 auto}.ah-signup-brand-mark svg{display:block;width:100%;height:100%}.ah-signup-brand-mark path:first-child{fill:#087153}.ah-signup-brand-mark path:nth-child(2){fill:#0a9168}.ah-signup-brand-mark path:nth-child(3),.ah-signup-brand-mark circle{stroke:#e2a62d;fill:#e2a62d;stroke-width:2}.ah-signup-brand>span:last-child{min-width:0}.ah-signup-brand strong,.ah-signup-brand small{display:block;white-space:nowrap}.ah-signup-brand strong{font-size:16px;font-weight:900;letter-spacing:-.03em}.ah-signup-brand strong em{color:var(--ah-brand-ink);font-style:normal}.ah-signup-brand small{margin-top:3px;color:var(--ah-ink-soft);font-size:8px;font-weight:650;letter-spacing:.025em}
 .ah-signup-secure{display:inline-flex;align-items:center;gap:6px;min-height:30px;padding:0 10px;border:1px solid #d3e7df;border-radius:999px;background:rgba(255,255,255,.72);color:var(--ah-ink-soft);font-size:9px;font-weight:900;letter-spacing:.06em}.ah-signup-secure i{width:7px;height:7px;border-radius:50%;background:var(--ah-brand-fill);box-shadow:0 0 0 4px rgba(13,161,116,.1)}
@@ -1273,3 +1273,44 @@ html[data-theme="green"] .ah-account-shell[data-visual-contract="code-native-pag
 html[data-theme="green"] .ah-account-page{background:#eef7f1}
 html[data-theme="green"] .ah-account-shell[data-visual-contract="code-native-page-system-v1"]{background:#ffffff}
 .ah-email-ownership-view{text-align:center}.ah-email-ownership-view .ah-six-code{margin:0 auto}.ah-email-ownership-view[data-state="success"] .ah-account-field{opacity:.6}
+
+/* ===== Keyboard-safe sign-up (owner voice note 2026-10-12) =====
+   The education steps sat in a 100svh-height grid inside an overflow:hidden view,
+   so when the phone keyboard opened the search input the panel kept its full
+   height and the Next button slid below the visible area ("Next বাটন ঠিক জায়গায়
+   থাকত না, সব একটার ওপর উঠে যাচ্ছিল"). The view now scrolls and follows the real
+   visual viewport, and the Next button sticks to the bottom of the visible area,
+   so it stays reachable with the keyboard open and nothing overlaps. */
+.ah-signup-view{height:var(--visual-viewport-height,100dvh)}
+body.keyboard-open .ah-signup-view{
+  padding-bottom:calc(10px + env(safe-area-inset-bottom));
+}
+/* Education steps: never impose the full screen height — let the panel be its
+   own height instead of stretched, which is what let the top and bottom drift. */
+@media(max-width:760px){
+  .ah-signup-panel.ah-education-panel{min-height:0}
+}
+body.keyboard-open .ah-signup-panel.ah-education-panel{min-height:0}
+body.keyboard-open .ah-signup-topbar{min-height:46px;padding-top:calc(6px + env(safe-area-inset-top))}
+body.keyboard-open .ah-signup-progress{margin-top:2px;height:auto}
+body.keyboard-open [data-view="signup"]:is([data-signup-current-step="school"],[data-signup-current-step="college"]) .ah-education-panel{
+  padding-bottom:0;
+}
+/* Suggestions scroll inside their own box instead of growing the panel. */
+body.keyboard-open .ah-education-panel .ah-institution-results{
+  max-height:min(22vh,124px);
+  overflow-y:auto;
+  -webkit-overflow-scrolling:touch;
+  overscroll-behavior:contain;
+}
+/* Keep Next reachable: pin the actions row to the bottom of the visible area. */
+body.keyboard-open .ah-education-panel .ah-education-actions{
+  position:sticky;
+  bottom:0;
+  z-index:5;
+  margin-top:10px;
+  padding-top:12px;
+  background:linear-gradient(180deg,rgba(255,255,255,0),var(--ah-paper,#fff) 32%);
+}
+body.keyboard-open .ah-education-panel .ah-edu-assist{display:none}
+

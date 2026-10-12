@@ -3,7 +3,7 @@ const CACHE_PREFIX = 'admission-hub-shell-';
 // hold user data; this one holds exactly one image and is trimmed on write.
 const AVATAR_CACHE = 'admission-hub-avatar-v1';
 
-const BUILD_ID = 'v315-fixui-20261012';
+const BUILD_ID = 'v316-kbsafe-20261012';
 const CACHE_NAME = `${CACHE_PREFIX}${BUILD_ID}`;
 const VERSION_HEADER = 'X-Admission-Hub-Build';
 const DOCUMENT_NETWORK_TIMEOUT_MS = 2500;
@@ -67,14 +67,14 @@ const APP_SHELL = [
 // A truncated/corrupt download is NEVER written to the shell cache.
 const ASSET_DIGESTS = {
 /* sw-manifest:start */
-  "./index.html": "f29835a26d5ac840e1d9e8c51c47a4db97cafebdbcde0ce68b80b11edf027976",
+  "./index.html": "e67d91ba9a23eb4179a34078782b98f3542f76cc260d3c35dcb2f0cf7675e991",
   "./manifest.json": "6dcf0e0c6f7671750549e53558ba8b9f0c2c83b0c6759072a6b5e2276331f491",
   "./manifest.webmanifest": "abcd26174710f6df3e183889a5a9da182f73ee8cdcc543b43db8fb4070cad54f",
   "./dashboard-v2.css?v=dash2f13-theme": "4541bc1e65fd158c593443562975400d128b8f1d3b636595df3c235b99e8cced",
   "./3d-loader.css?v=3d-v2": "43ca21b0a41be5d223c317fd63582f19ff6ffab5d010639ef26349464550da63",
   "./session-persist.js?v=session-v2": "99f3d1f49f6d5714fd25f1c12b2aa978ca97a009d6caba9a690a0442d082593c",
   "./analytics-service.js?v=analytics-p2-v2-insights": "a6d2ad8c3b7e118f1dae40c26302a6e378c5e3c02c1a56162e3ea740b9b2d54b",
-  "./account-access.css?v=20261010-static-welcome-lock3": "56e418849f297f240d558116d13bcc259104be68df3e4eba5f7976434bb350d8",
+  "./account-access.css?v=20261010-static-welcome-lock3": "ad7c63a49e618532475853138424b01e0471389e0825c0564d0ea2717761b49b",
   "./institutions-bd.js?v=bd-institutions-v2": "602c5549515e8207ad152b948ca9b8fe3ad0fbe429afb56380e4e21b662f779d",
   "./language-engine.js?v=lang-v5-single-email-button": "41e161139e15b262375d10d05579cc29852973045e47de974bba5a3deee93e7d",
   "./account-access.js?v=20261010-static-welcome-lock3": "8fcb84e0e23ad3d22683651bc76716ed47abeec8ad1f51753a4e4ab51753522d",
