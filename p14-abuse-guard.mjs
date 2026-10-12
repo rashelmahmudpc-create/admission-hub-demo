@@ -47,6 +47,25 @@ export function windowKey(hash, now, windowMs) {
   return `rlpub:${hash}:${Math.floor(now / windowMs)}`;
 }
 
+/* Fixed-window per-network counter. The Durable Object is preferred when bound:
+   it is one of the three KV writes a chat that capped the free plan, and the DO
+   free allowance is 100,000 requests a day. Returns null when the binding is
+   absent so the KV path below stays the fallback. */
+async function consumeViaDo(env, hash, limit, windowMs, now) {
+  const binding = env && env.AI_STATE;
+  if (!binding || typeof binding.idFromName !== 'function' || typeof binding.get !== 'function') return null;
+  try {
+    const stub = binding.get(binding.idFromName('net:' + hash));
+    const response = await stub.fetch(new Request('https://ai-state/rate/consume', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ limit, windowMs, now })
+    }));
+    if (!response.ok) return null;
+    return await response.json();
+  } catch (_) { return null; }
+}
+
 /* Returns { allowed, remaining, limit, retryAfter } — never throws. A KV failure
    fails OPEN (allowed) so a lookup hiccup never bricks the public site; the
    per-device cap inside agentChat still backs the AI path. */
@@ -55,8 +74,18 @@ export async function checkAbuse(request, env, opts = {}) {
   const windowMs = clamp(opts.windowMs ?? (env && env.PUBLIC_RATE_WINDOW_MS), 1000, 3600000, RATE_DEFAULTS.windowMs);
   const now = Number(opts.now) || Date.now();
   const store = env && env.PUB_KV;
-  if (!store) return { allowed: true, limit, windowMs, remaining: limit };
+  const hasDo = Boolean(env && env.AI_STATE && typeof env.AI_STATE.idFromName === 'function');
+  if (!store && !hasDo) return { allowed: true, limit, windowMs, remaining: limit };
   const hash = await networkHash(request, opts.salt || '');
+  if (hasDo) {
+    const viaDo = await consumeViaDo(env, hash, limit, windowMs, now);
+    if (viaDo) {
+      return viaDo.allowed === false
+        ? { allowed: false, limit: viaDo.limit, windowMs: viaDo.windowMs, remaining: 0, retryAfter: viaDo.retryAfter }
+        : { allowed: true, limit: viaDo.limit, windowMs: viaDo.windowMs, remaining: viaDo.remaining };
+    }
+  }
+  if (!store) return { allowed: true, limit, windowMs, remaining: limit };
   const key = windowKey(hash, now, windowMs);
   let count = 0;
   try { count = Number(await store.get(key)) || 0; } catch (_) { return { allowed: true, limit, windowMs, remaining: limit }; }

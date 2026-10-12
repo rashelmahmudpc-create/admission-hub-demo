@@ -1,0 +1,145 @@
+/* Admission Hub — per-user AI state in a Durable Object.
+ *
+ * Why this exists: the AI chat path wrote to Workers KV three times per message
+ * (a rate counter, a memory blob, and the abuse guard's per-network counter).
+ * On the Workers Free plan KV allows 1,000 writes a day, so the whole app was
+ * capped at roughly 300-500 chats a day no matter how few students used it. The
+ * Durable Objects free tier allows 100,000 requests a day, about a hundred times
+ * that, and the app already runs three SQLite-backed objects.
+ *
+ * One object per user. A Durable Object is single-threaded per instance, so the
+ * read-modify-write in consume() needs no lock: two messages from the same
+ * student cannot both see the same "used" count.
+ *
+ * The wire format is deliberately tiny and JSON-only, matching the existing
+ * EmailGatewayCoordinator store, so it is unit-testable with a fake ctx.
+ */
+
+export const AI_STATE_VERSION = 'ai-state-v1';
+
+/* Matches the KV default in ai-agent.js so behaviour does not shift when the
+   storage moves. The cap itself is passed in, never read from storage. */
+export const RL_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+const K_QUOTA = 'quota';
+
+const json = (body, status = 200) => new Response(JSON.stringify(body), {
+  status,
+  headers: { 'Content-Type': 'application/json' }
+});
+
+const num = (v, fallback = 0) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : fallback;
+};
+
+/* Storage entries are `{ v, exp }` rather than bare values so a key can expire
+   like its KV counterpart did; a Durable Object has no per-key TTL. An expired
+   entry reads as absent and is deleted on the way out. */
+export class AiStateObject {
+  constructor(ctx, env) {
+    this.ctx = ctx;
+    this.env = env;
+  }
+
+  async #entry(key) {
+    const raw = await this.ctx.storage.get(key);
+    if (!raw || typeof raw !== 'object') return null;
+    if (raw.exp && num(raw.exp) <= Date.now()) {
+      await this.ctx.storage.delete(key).catch(() => {});
+      return null;
+    }
+    return raw;
+  }
+
+  /* Rolling 24-hour window, first message starts it — the same rule the KV
+     version used, so a Dhaka morning does not hand out a second allowance. */
+  async consume({ uid, cap, now }) {
+    const limit = Math.max(1, Math.min(500, num(cap, 10)));
+    const t = num(now, Date.now());
+    const cur = await this.#entry(K_QUOTA);
+    let n = cur ? num(cur.v && cur.v.n) : 0;
+    let start = cur && cur.v ? num(cur.v.start, t) : t;
+    if (t - start >= RL_WINDOW_MS) { n = 0; start = t; }
+    if (n >= limit) {
+      return { allowed: false, used: n, cap: limit, remaining: 0, start, uid: String(uid || '') };
+    }
+    await this.ctx.storage.put(K_QUOTA, { v: { n: n + 1, start }, exp: 0 });
+    return { allowed: true, used: n + 1, cap: limit, remaining: limit - n - 1, start, uid: String(uid || '') };
+  }
+
+  async getState({ key, now }) {
+    const entry = await this.#entry(String(key));
+    return { value: entry ? entry.v : null };
+  }
+
+  async putState({ key, value, ttlMs }) {
+    const ttl = num(ttlMs);
+    const exp = ttl > 0 ? Date.now() + ttl : 0;
+    await this.ctx.storage.put(String(key), { v: value, exp });
+    return { ok: true };
+  }
+
+  /* Fixed-window per-network counter, the Durable Object half of the P14 abuse
+     guard. Same arithmetic as p14-abuse-guard.mjs so the two agree. */
+  async consumeRate({ limit, windowMs, now }) {
+    const lim = Math.max(1, Math.min(5000, num(limit, 120)));
+    const win = Math.max(1000, Math.min(3600000, num(windowMs, 60000)));
+    const t = num(now, Date.now());
+    const key = 'rate:' + Math.floor(t / win);
+    const cur = await this.#entry(key);
+    const count = cur ? num(cur.v) : 0;
+    if (count >= lim) {
+      const retryAfter = Math.max(1, Math.ceil((win - (t % win)) / 1000));
+      return { allowed: false, limit: lim, windowMs: win, remaining: 0, retryAfter };
+    }
+    /* The window index in the key already separates windows, so this entry is
+       only cleanup: it expires on the real clock, never on the caller's `now`,
+       which in a test is a small fixed number and would expire it instantly. */
+    await this.ctx.storage.put(key, { v: count + 1, exp: Date.now() + win + 2000 });
+    return { allowed: true, limit: lim, windowMs: win, remaining: lim - count - 1 };
+  }
+
+  async fetch(request) {
+    const path = new URL(request.url).pathname;
+    let body = {};
+    if (request.method === 'POST') body = await request.json().catch(() => ({}));
+    try {
+      switch (path) {
+        case '/quota/consume': return json(await this.consume(body));
+        case '/state/get': return json(await this.getState(body));
+        case '/state/put': return json(await this.putState(body));
+        case '/rate/consume': return json(await this.consumeRate(body));
+        default: return json({ error: 'not_found' }, 404);
+      }
+    } catch (error) {
+      return json({ error: 'ai_state_error', message: String((error && error.message) || error) }, 500);
+    }
+  }
+}
+
+/* Client used from the Worker. Returns null when the binding is absent, which is
+   what keeps every caller's KV fallback — and the existing tests — working. */
+export function aiStateStore(env) {
+  const binding = env && env.AI_STATE;
+  if (!binding || typeof binding.idFromName !== 'function' || typeof binding.get !== 'function') return null;
+
+  const call = async (uid, path, body) => {
+    const stub = binding.get(binding.idFromName(String(uid)));
+    const response = await stub.fetch(new Request('https://ai-state' + path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body || {})
+    }));
+    if (!response.ok) throw new Error('ai-state-' + response.status);
+    return response.json();
+  };
+
+  return {
+    version: AI_STATE_VERSION,
+    consumeQuota: (uid, cap) => call(uid, '/quota/consume', { cap }),
+    get: async (uid, key) => (await call(uid, '/state/get', { key })).value,
+    put: (uid, key, value, ttlMs) => call(uid, '/state/put', { key, value, ttlMs }),
+    consumeRate: (uid, limit, windowMs, now) => call(uid, '/rate/consume', { limit, windowMs, now })
+  };
+}

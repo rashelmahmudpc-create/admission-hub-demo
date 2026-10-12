@@ -55,7 +55,7 @@ function buildQuery(params = {}) {
     where.push("(sort_key, id) > (?, ?)");
     bind2.push(after.sortKey, after.id);
   }
-  const limit = clamp2(num2(params.limit, DEFAULT_LIMIT), 1, MAX_LIMIT);
+  const limit = clamp2(num3(params.limit, DEFAULT_LIMIT), 1, MAX_LIMIT);
   const sql = "SELECT id, topic_id, subject_id, difficulty, sort_key, payload, updated_at FROM questions" + (where.length ? " WHERE " + where.join(" AND ") : "") + " ORDER BY sort_key ASC, id ASC LIMIT ?";
   bind2.push(limit);
   return { sql, bind: bind2, limit };
@@ -71,15 +71,15 @@ function normalizeRow(row) {
     id: String(row.id),
     topicId: row.topic_id,
     subjectId: row.subject_id,
-    difficulty: num2(row.difficulty, 1),
+    difficulty: num3(row.difficulty, 1),
     sortKey: String(row.sort_key),
-    updatedAt: num2(row.updated_at),
+    updatedAt: num3(row.updated_at),
     ...payload
   };
 }
 function toPage(rows, limit) {
   const list = (rows || []).map(normalizeRow).filter(Boolean);
-  const hasMore = list.length >= num2(limit, DEFAULT_LIMIT);
+  const hasMore = list.length >= num3(limit, DEFAULT_LIMIT);
   return { items: list, nextCursor: hasMore ? encodeCursor({ sort_key: list[list.length - 1].sortKey, id: list[list.length - 1].id }) : null, count: list.length };
 }
 function createD1Reader(db) {
@@ -185,11 +185,11 @@ function createD1Reader(db) {
       const sql = "SELECT COUNT(*) AS n FROM questions" + (where.length ? " WHERE " + where.join(" AND ") : "");
       const stmt = db.prepare(sql);
       const res = await (bind2.length ? stmt.bind(...bind2) : stmt).first();
-      return res ? num2(res.n) : 0;
+      return res ? num3(res.n) : 0;
     }
   };
 }
-var SCHEMA, MAX_LIMIT, DEFAULT_LIMIT, clamp2, num2;
+var SCHEMA, MAX_LIMIT, DEFAULT_LIMIT, clamp2, num3;
 var init_p13_d1_read = __esm({
   "p13-d1-read.mjs"() {
     SCHEMA = `
@@ -227,7 +227,7 @@ CREATE INDEX IF NOT EXISTS idx_list_kind ON content_lists(kind, ord);
     MAX_LIMIT = 100;
     DEFAULT_LIMIT = 20;
     clamp2 = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
-    num2 = (v, d = 0) => {
+    num3 = (v, d = 0) => {
       const n = Number(v);
       return isFinite(n) ? n : d;
     };
@@ -1214,6 +1214,121 @@ function describeObservability() {
   };
 }
 
+// ai-state-do.mjs
+var AI_STATE_VERSION = "ai-state-v1";
+var RL_WINDOW_MS = 24 * 60 * 60 * 1e3;
+var K_QUOTA = "quota";
+var json = (body, status = 200) => new Response(JSON.stringify(body), {
+  status,
+  headers: { "Content-Type": "application/json" }
+});
+var num2 = (v, fallback = 0) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : fallback;
+};
+var AiStateObject = class {
+  constructor(ctx, env) {
+    this.ctx = ctx;
+    this.env = env;
+  }
+  async #entry(key) {
+    const raw = await this.ctx.storage.get(key);
+    if (!raw || typeof raw !== "object") return null;
+    if (raw.exp && num2(raw.exp) <= Date.now()) {
+      await this.ctx.storage.delete(key).catch(() => {
+      });
+      return null;
+    }
+    return raw;
+  }
+  /* Rolling 24-hour window, first message starts it — the same rule the KV
+     version used, so a Dhaka morning does not hand out a second allowance. */
+  async consume({ uid, cap, now }) {
+    const limit = Math.max(1, Math.min(500, num2(cap, 10)));
+    const t = num2(now, Date.now());
+    const cur = await this.#entry(K_QUOTA);
+    let n = cur ? num2(cur.v && cur.v.n) : 0;
+    let start = cur && cur.v ? num2(cur.v.start, t) : t;
+    if (t - start >= RL_WINDOW_MS) {
+      n = 0;
+      start = t;
+    }
+    if (n >= limit) {
+      return { allowed: false, used: n, cap: limit, remaining: 0, start, uid: String(uid || "") };
+    }
+    await this.ctx.storage.put(K_QUOTA, { v: { n: n + 1, start }, exp: 0 });
+    return { allowed: true, used: n + 1, cap: limit, remaining: limit - n - 1, start, uid: String(uid || "") };
+  }
+  async getState({ key, now }) {
+    const entry = await this.#entry(String(key));
+    return { value: entry ? entry.v : null };
+  }
+  async putState({ key, value, ttlMs }) {
+    const ttl = num2(ttlMs);
+    const exp = ttl > 0 ? Date.now() + ttl : 0;
+    await this.ctx.storage.put(String(key), { v: value, exp });
+    return { ok: true };
+  }
+  /* Fixed-window per-network counter, the Durable Object half of the P14 abuse
+     guard. Same arithmetic as p14-abuse-guard.mjs so the two agree. */
+  async consumeRate({ limit, windowMs, now }) {
+    const lim = Math.max(1, Math.min(5e3, num2(limit, 120)));
+    const win = Math.max(1e3, Math.min(36e5, num2(windowMs, 6e4)));
+    const t = num2(now, Date.now());
+    const key = "rate:" + Math.floor(t / win);
+    const cur = await this.#entry(key);
+    const count = cur ? num2(cur.v) : 0;
+    if (count >= lim) {
+      const retryAfter = Math.max(1, Math.ceil((win - t % win) / 1e3));
+      return { allowed: false, limit: lim, windowMs: win, remaining: 0, retryAfter };
+    }
+    await this.ctx.storage.put(key, { v: count + 1, exp: Date.now() + win + 2e3 });
+    return { allowed: true, limit: lim, windowMs: win, remaining: lim - count - 1 };
+  }
+  async fetch(request) {
+    const path = new URL(request.url).pathname;
+    let body = {};
+    if (request.method === "POST") body = await request.json().catch(() => ({}));
+    try {
+      switch (path) {
+        case "/quota/consume":
+          return json(await this.consume(body));
+        case "/state/get":
+          return json(await this.getState(body));
+        case "/state/put":
+          return json(await this.putState(body));
+        case "/rate/consume":
+          return json(await this.consumeRate(body));
+        default:
+          return json({ error: "not_found" }, 404);
+      }
+    } catch (error) {
+      return json({ error: "ai_state_error", message: String(error && error.message || error) }, 500);
+    }
+  }
+};
+function aiStateStore(env) {
+  const binding = env && env.AI_STATE;
+  if (!binding || typeof binding.idFromName !== "function" || typeof binding.get !== "function") return null;
+  const call = async (uid, path, body) => {
+    const stub = binding.get(binding.idFromName(String(uid)));
+    const response3 = await stub.fetch(new Request("https://ai-state" + path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body || {})
+    }));
+    if (!response3.ok) throw new Error("ai-state-" + response3.status);
+    return response3.json();
+  };
+  return {
+    version: AI_STATE_VERSION,
+    consumeQuota: (uid, cap) => call(uid, "/quota/consume", { cap }),
+    get: async (uid, key) => (await call(uid, "/state/get", { key })).value,
+    put: (uid, key, value, ttlMs) => call(uid, "/state/put", { key, value, ttlMs }),
+    consumeRate: (uid, limit, windowMs, now) => call(uid, "/rate/consume", { limit, windowMs, now })
+  };
+}
+
 // ai-agent.js
 var AGENT_VERSION = "agent-f1";
 var SYSTEM_PROMPT_V = "sys-f1-3-ai-personalization";
@@ -1333,17 +1448,17 @@ function sanitizeOnboardingContext(value) {
 }
 function capStats(stats) {
   if (!stats || typeof stats !== "object") return null;
-  const num3 = (v, min, max) => {
+  const num4 = (v, min, max) => {
     const n = Number(v);
     if (!isFinite(n) || n < 0) return 0;
     return Math.min(max, Math.round(n));
   };
   const s = {};
-  if (stats.exams != null) s.exams = num3(stats.exams, 0, 1e5);
-  if (stats.questions != null) s.questions = num3(stats.questions, 0, 1e6);
-  if (stats.accuracy != null) s.accuracy = num3(stats.accuracy, 0, 100);
-  if (stats.streak != null) s.streak = num3(stats.streak, 0, 3650);
-  if (stats.mistakes != null) s.mistakes = num3(stats.mistakes, 0, 1e5);
+  if (stats.exams != null) s.exams = num4(stats.exams, 0, 1e5);
+  if (stats.questions != null) s.questions = num4(stats.questions, 0, 1e6);
+  if (stats.accuracy != null) s.accuracy = num4(stats.accuracy, 0, 100);
+  if (stats.streak != null) s.streak = num4(stats.streak, 0, 3650);
+  if (stats.mistakes != null) s.mistakes = num4(stats.mistakes, 0, 1e5);
   const name = (v, max) => String(v == null ? "" : v).replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, max);
   const pii = (v) => /[\w.+-]+@[\w-]+\.[\w.]+|(?:\+?880|0)1[3-9]\d{8}|\b\d{10,}\b/.test(v);
   const rows = (input, limit) => {
@@ -1355,7 +1470,7 @@ function capStats(stats) {
       const n = name(row.name, 60);
       if (!n || seen.has(n) || pii(n)) continue;
       seen.add(n);
-      out.push({ name: n, attempts: num3(row.attempts, 0, 1e5), accuracy: num3(row.accuracy, 0, 100) });
+      out.push({ name: n, attempts: num4(row.attempts, 0, 1e5), accuracy: num4(row.accuracy, 0, 100) });
       if (out.length >= limit) break;
     }
     return out.length ? out : null;
@@ -1366,7 +1481,7 @@ function capStats(stats) {
   if (subs) s.subjects = subs;
   const period = (input) => {
     if (!input || typeof input !== "object") return null;
-    return { exams: num3(input.exams, 0, 1e3), accuracy: num3(input.accuracy, 0, 100) };
+    return { exams: num4(input.exams, 0, 1e3), accuracy: num4(input.accuracy, 0, 100) };
   };
   const weekly = period(stats.weekly);
   if (weekly) s.weekly = weekly;
@@ -1544,10 +1659,10 @@ function sseParse(raw) {
   for (const line of String(raw || "").split("\n")) {
     const s = line.trim();
     if (!s.startsWith("data:")) continue;
-    const json7 = s.slice(5).trim();
-    if (!json7 || json7 === "[DONE]") continue;
+    const json8 = s.slice(5).trim();
+    if (!json8 || json8 === "[DONE]") continue;
     try {
-      out.push(JSON.parse(json7));
+      out.push(JSON.parse(json8));
     } catch (_) {
     }
   }
@@ -1814,7 +1929,7 @@ function routerChain(env, tier, badSet = /* @__PURE__ */ new Set(), kv2 = {}) {
   return chain;
 }
 var dayKey = () => (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
-var RL_WINDOW_MS = 24 * 60 * 60 * 1e3;
+var RL_WINDOW_MS2 = 24 * 60 * 60 * 1e3;
 function readQuota(raw, now) {
   let n = 0, start = now;
   if (raw !== null && raw !== void 0 && raw !== "") {
@@ -1831,7 +1946,7 @@ function readQuota(raw, now) {
       n = Math.max(0, Number(parsed) || 0);
     }
   }
-  if (now - start >= RL_WINDOW_MS) {
+  if (now - start >= RL_WINDOW_MS2) {
     n = 0;
     start = now;
   }
@@ -1899,18 +2014,49 @@ async function agentChat(request, env, uid, opts = {}) {
   if (onboarding && v.messages.some((message) => message.role === "user" && onboardingSecretDetected(message.content))) {
     return guidanceResponse("নিরাপত্তার জন্য Password, verification code বা গোপন তথ্য Assistant নেয় না। এমন কিছু লিখে থাকলে সেটি বদলে শুধু সাধারণ প্রশ্ন করো।", stream);
   }
+  const aiState = aiStateStore(env);
+  const stateGet = async (key) => {
+    if (aiState) {
+      try {
+        return await aiState.get(sendCtx.uid, key);
+      } catch (_) {
+      }
+    }
+    return getKv(env.PUB_KV, key);
+  };
+  const statePut = async (key, val, ttlMs) => {
+    if (aiState) {
+      try {
+        await aiState.put(sendCtx.uid, key, val, ttlMs);
+        return;
+      } catch (_) {
+      }
+    }
+    return putKv(env.PUB_KV, key, val, ttlMs ? Math.round(ttlMs / 1e3) : void 0);
+  };
   const cap = Math.max(1, Math.min(500, Number(env && env.AGENT_DAILY_CAP || 10)));
-  const rlKey = "airl:" + sendCtx.uid;
   const now = Date.now();
-  let quotaNow = { n: 0, start: now };
-  try {
-    quotaNow = readQuota(await getKv(env.PUB_KV, rlKey), now);
-  } catch (_) {
-    quotaNow = { n: 0, start: now };
+  let quota = null;
+  if (aiState) {
+    try {
+      const q = await aiState.consumeQuota(sendCtx.uid, cap);
+      quota = { exhausted: !q.allowed, remaining: q.remaining };
+    } catch (_) {
+      quota = null;
+    }
   }
-  const quota = quotaState({ used: quotaNow.n, cap });
+  if (!quota) {
+    const rlKey = "airl:" + sendCtx.uid;
+    let quotaNow = { n: 0, start: now };
+    try {
+      quotaNow = readQuota(await getKv(env.PUB_KV, rlKey), now);
+    } catch (_) {
+      quotaNow = { n: 0, start: now };
+    }
+    quota = quotaState({ used: quotaNow.n, cap });
+    if (!quota.exhausted) await putKv(env.PUB_KV, rlKey, JSON.stringify({ n: quotaNow.n + 1, start: quotaNow.start }), 172800);
+  }
   if (quota.exhausted) return jsonResp({ error: "rate_limited", message: "আজকের AI-চ্যাট সীমা শেষ — ২৪ ঘণ্টা পর আবার চেষ্টা করো।", cap, remaining: quota.remaining }, 429);
-  await putKv(env.PUB_KV, rlKey, JSON.stringify({ n: quotaNow.n + 1, start: quotaNow.start }), 172800);
   const verificationGuidance = authVerificationGuidance(v.messages[v.messages.length - 1].content);
   if (verificationGuidance) return guidanceResponse(verificationGuidance, stream);
   const intentCls = classifyIntent(v.messages[v.messages.length - 1].content);
@@ -1931,7 +2077,7 @@ async function agentChat(request, env, uid, opts = {}) {
   let mem = [];
   if (memoryOn) {
     try {
-      const rawMem = await getKv(env.PUB_KV, "chatmem:" + sendCtx.uid);
+      const rawMem = await stateGet("chatmem:" + sendCtx.uid);
       const parsedMem = JSON.parse(rawMem || "[]");
       mem = Array.isArray(parsedMem) ? parsedMem : [];
     } catch (_) {
@@ -1943,7 +2089,7 @@ async function agentChat(request, env, uid, opts = {}) {
   if (!freshThread && msgs.length < 3 && mem.length) msgs = mem.concat(msgs);
   if (msgs.length > 16) {
     const summary = summarizeTo(msgs);
-    if (memoryOn) await putKv(env.PUB_KV, "chatmemsum:" + sendCtx.uid, summary);
+    if (memoryOn) await statePut("chatmemsum:" + sendCtx.uid, summary);
     msgs = msgs.slice(-12);
   }
   msgs = msgs.slice(-24);
@@ -1951,12 +2097,12 @@ async function agentChat(request, env, uid, opts = {}) {
   const profileCtx = sendCtx.uid.startsWith("account-") ? sanitizeProfileContext(body?.context?.profile) : null;
   const ctxBundle = contextEngineEnabled(env) ? buildContext({ uid: sendCtx.uid, prefs: aiPrefs, stats, onboarding, profile: profileCtx, memoryOn }) : null;
   const ctxText = ctxBundle ? renderContext(ctxBundle) : "";
-  let summaryText = memoryOn && !freshThread ? await getKv(env.PUB_KV, "chatmemsum:" + sendCtx.uid) : "";
+  let summaryText = memoryOn && !freshThread ? await stateGet("chatmemsum:" + sendCtx.uid) : "";
   const memKey = "mem:" + MEMORY_VERSION + ":" + sendCtx.uid;
   let memRecords = [];
   if (memoryOn) {
     try {
-      const rawLong = await getKv(env.PUB_KV, memKey);
+      const rawLong = await stateGet(memKey);
       memRecords = parseMemory(rawLong, sendCtx.uid);
     } catch (_) {
       memRecords = [];
@@ -1975,9 +2121,9 @@ async function agentChat(request, env, uid, opts = {}) {
           sendCtx.uid
         );
         if (record) {
-          const rawLong = await getKv(env.PUB_KV, memKey);
+          const rawLong = await stateGet(memKey);
           const stored = parseMemory(rawLong, sendCtx.uid).filter((r) => !(r.kind === KIND.STUDIES && r.key === "last-topic"));
-          await putKv(env.PUB_KV, memKey, JSON.stringify(upsertMemory(stored, record, sendCtx.uid)));
+          await statePut(memKey, JSON.stringify(upsertMemory(stored, record, sendCtx.uid)));
         }
       } catch (_) {
       }
@@ -2060,7 +2206,7 @@ async function agentChat(request, env, uid, opts = {}) {
     if (!validateResponse(text, validationCtx).persistable) return text;
     try {
       const next = msgs.concat([{ role: "user", content: v.messages[v.messages.length - 1].content }, { role: "assistant", content: text }]).slice(-24).map((x) => ({ role: x.role, content: x.content }));
-      await putKv(env.PUB_KV, "chatmem:" + sendCtx.uid, JSON.stringify(next));
+      await statePut("chatmem:" + sendCtx.uid, JSON.stringify(next));
     } catch (_) {
     }
     try {
@@ -2068,7 +2214,7 @@ async function agentChat(request, env, uid, opts = {}) {
       const candidates = extractMemoryCandidates(latest);
       if (candidates.length) {
         const key = "mem:" + MEMORY_VERSION + ":" + sendCtx.uid;
-        let list = parseMemory(await getKv(env.PUB_KV, key), sendCtx.uid);
+        let list = parseMemory(await stateGet(key), sendCtx.uid);
         let changed = false;
         for (const candidate of candidates) {
           const record = makeMemory(candidate, sendCtx.uid);
@@ -2076,7 +2222,7 @@ async function agentChat(request, env, uid, opts = {}) {
           list = upsertMemory(list, record, sendCtx.uid);
           changed = true;
         }
-        if (changed) await putKv(env.PUB_KV, key, JSON.stringify(list));
+        if (changed) await statePut(key, JSON.stringify(list));
       }
     } catch (_) {
     }
@@ -2247,13 +2393,37 @@ function isGuarded(request, path) {
 function windowKey(hash, now, windowMs) {
   return `rlpub:${hash}:${Math.floor(now / windowMs)}`;
 }
+async function consumeViaDo(env, hash, limit, windowMs, now) {
+  const binding = env && env.AI_STATE;
+  if (!binding || typeof binding.idFromName !== "function" || typeof binding.get !== "function") return null;
+  try {
+    const stub = binding.get(binding.idFromName("net:" + hash));
+    const response3 = await stub.fetch(new Request("https://ai-state/rate/consume", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ limit, windowMs, now })
+    }));
+    if (!response3.ok) return null;
+    return await response3.json();
+  } catch (_) {
+    return null;
+  }
+}
 async function checkAbuse(request, env, opts = {}) {
   const limit = clamp(opts.limit ?? (env && env.PUBLIC_RATE_LIMIT), 1, 5e3, RATE_DEFAULTS.limit);
   const windowMs = clamp(opts.windowMs ?? (env && env.PUBLIC_RATE_WINDOW_MS), 1e3, 36e5, RATE_DEFAULTS.windowMs);
   const now = Number(opts.now) || Date.now();
   const store = env && env.PUB_KV;
-  if (!store) return { allowed: true, limit, windowMs, remaining: limit };
+  const hasDo = Boolean(env && env.AI_STATE && typeof env.AI_STATE.idFromName === "function");
+  if (!store && !hasDo) return { allowed: true, limit, windowMs, remaining: limit };
   const hash = await networkHash(request, opts.salt || "");
+  if (hasDo) {
+    const viaDo = await consumeViaDo(env, hash, limit, windowMs, now);
+    if (viaDo) {
+      return viaDo.allowed === false ? { allowed: false, limit: viaDo.limit, windowMs: viaDo.windowMs, remaining: 0, retryAfter: viaDo.retryAfter } : { allowed: true, limit: viaDo.limit, windowMs: viaDo.windowMs, remaining: viaDo.remaining };
+    }
+  }
+  if (!store) return { allowed: true, limit, windowMs, remaining: limit };
   const key = windowKey(hash, now, windowMs);
   let count = 0;
   try {
@@ -2533,7 +2703,7 @@ var JSONH = {
   "Access-Control-Allow-Headers": "authorization,content-type,x-ah-app,x-ah-guest",
   "Access-Control-Allow-Methods": "GET,POST,OPTIONS"
 };
-var json = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: JSONH });
+var json2 = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: JSONH });
 var onlyRows = (rows) => (Array.isArray(rows) ? rows : []).filter((row) => row && row.id).map((row) => {
   const clean = { ...row };
   for (const key of ["imageDataUrl", "image", "thumbnail"]) {
@@ -2778,16 +2948,16 @@ var writeAudit = async (env, uid, records) => {
 };
 var admin = async (request, env, path) => {
   const token = String(request.headers.get("Authorization") || "").replace("Bearer ", "").trim();
-  if (!env.ADMIN_TOKEN || token !== env.ADMIN_TOKEN) return json({ error: "forbidden" }, 403);
+  if (!env.ADMIN_TOKEN || token !== env.ADMIN_TOKEN) return json2({ error: "forbidden" }, 403);
   if (path === "/api/admin/content" && request.method === "GET") {
     const raw = await env.PUB_KV.get("pubContent");
-    return json(raw ? JSON.parse(raw) : { v: 0, questions: [], vocabulary: [], exams: [] });
+    return json2(raw ? JSON.parse(raw) : { v: 0, questions: [], vocabulary: [], exams: [] });
   }
   if (path === "/api/admin/verify" && request.method === "GET") {
     const raw = await env.PUB_KV.get("pubContent");
     const doc = raw ? JSON.parse(raw) : {};
     const report = verifyIntegrity(doc);
-    return json(report, report.ok ? 200 : 409);
+    return json2(report, report.ok ? 200 : 409);
   }
   if (path === "/api/admin/publish" && request.method === "POST") {
     const body = await request.json().catch(() => ({}));
@@ -2802,12 +2972,12 @@ var admin = async (request, env, path) => {
     }
     if (full && Array.isArray(full.questions) && full.questions.some((row) => row && row.id)) {
       const result = await publishGlobal(env, full);
-      if (result.error === "empty") return json({ error: "প্রশ্ন খালি" }, 400);
-      if (result.error === "too-large") return json({ error: "কনটেন্ট আকারসীমার বেশি — কমানো ছবি বাদ দিয়ে আবার চেষ্টা করো", code: "too-large" }, 413);
-      if (result.error === "integrity") return json({ error: "কনটেন্ট যাচাইয়ে ব্যর্থ — আগের সংস্করণই থাকল", code: "integrity" }, 409);
-      return json(result);
+      if (result.error === "empty") return json2({ error: "প্রশ্ন খালি" }, 400);
+      if (result.error === "too-large") return json2({ error: "কনটেন্ট আকারসীমার বেশি — কমানো ছবি বাদ দিয়ে আবার চেষ্টা করো", code: "too-large" }, 413);
+      if (result.error === "integrity") return json2({ error: "কনটেন্ট যাচাইয়ে ব্যর্থ — আগের সংস্করণই থাকল", code: "integrity" }, 409);
+      return json2(result);
     }
-    return json({ error: "প্রশ্ন খালি" }, 400);
+    return json2({ error: "প্রশ্ন খালি" }, 400);
   }
   if (path === "/api/admin/errors" && request.method === "GET") {
     let log = [];
@@ -2817,27 +2987,27 @@ var admin = async (request, env, path) => {
     } catch (_) {
       log = [];
     }
-    return json(summarizeErrors(log));
+    return json2(summarizeErrors(log));
   }
   if (path === "/api/admin/backup" && request.method === "GET") {
-    return json(await listSnapshots(env));
+    return json2(await listSnapshots(env));
   }
   if (path === "/api/admin/backup" && request.method === "POST") {
     try {
       const entry = await createSnapshot(env);
-      return json({ ok: true, snapshot: entry });
+      return json2({ ok: true, snapshot: entry });
     } catch (error) {
-      return json({ ok: false, error: String(error?.message || error) }, 500);
+      return json2({ ok: false, error: String(error?.message || error) }, 500);
     }
   }
   if (path === "/api/admin/restore" && request.method === "POST") {
     const body = await request.json().catch(() => ({}));
     const key = String(body.key || "").trim();
-    if (!key) return json({ ok: false, error: "key-required" }, 400);
+    if (!key) return json2({ ok: false, error: "key-required" }, 400);
     const result = await restoreSnapshot(env, key);
-    return json(result, result.ok ? 200 : 404);
+    return json2(result, result.ok ? 200 : 404);
   }
-  return json({ error: "not-found" }, 404);
+  return json2({ error: "not-found" }, 404);
 };
 var public_worker_default = {
   async fetch(request, env) {
@@ -2848,15 +3018,15 @@ var public_worker_default = {
       if (isGuarded(request, path)) {
         const guard = await checkAbuse(request, env, { salt: env.PUBLIC_RATE_SALT || "" });
         if (!guard.allowed) {
-          return json({ error: "rate_limited", message: "একটু বেশি অনুরোধ এসেছে — কিছুক্ষণ পরে আবার চেষ্টা করো।", retryAfter: guard.retryAfter }, 429);
+          return json2({ error: "rate_limited", message: "একটু বেশি অনুরোধ এসেছে — কিছুক্ষণ পরে আবার চেষ্টা করো।", retryAfter: guard.retryAfter }, 429);
         }
       }
-      if (path === "/api/health") return json({ ok: true, accountSystem: "retired", legacyAccountSystem: "retired", nativeAuth: "cloudflare-native-v1", identity: "firebase-account-or-ephemeral-guest", at: Date.now() });
+      if (path === "/api/health") return json2({ ok: true, accountSystem: "retired", legacyAccountSystem: "retired", nativeAuth: "cloudflare-native-v1", identity: "firebase-account-or-ephemeral-guest", at: Date.now() });
       if (path === "/api/content/meta" && request.method === "GET") {
         const raw = await env.PUB_KV.get("pubContentMeta");
         if (raw) {
           const meta = JSON.parse(raw);
-          if (meta.categories) return json(meta);
+          if (meta.categories) return json2(meta);
           try {
             let vocabRows = null;
             if (env.PROFILE_DB) {
@@ -2872,15 +3042,15 @@ var public_worker_default = {
             if (vocabRows) {
               const enriched = { ...meta, categories: categoryCountsOf({ vocabularyMaster: vocabRows }) };
               await env.PUB_KV.put("pubContentMeta", JSON.stringify(enriched));
-              return json(enriched);
+              return json2(enriched);
             }
           } catch (_) {
           }
-          return json(meta);
+          return json2(meta);
         }
         const full = await env.PUB_KV.get("pubContent");
         const doc = full ? JSON.parse(full) : { v: 0, at: 0, questions: [] };
-        return json({ v: doc.v || 0, at: doc.at || 0, sig: doc.sig || "", counts: countsOf(doc), categories: categoryCountsOf(doc) });
+        return json2({ v: doc.v || 0, at: doc.at || 0, sig: doc.sig || "", counts: countsOf(doc), categories: categoryCountsOf(doc) });
       }
       if (path === "/api/content" && request.method === "GET") {
         if (env.PROFILE_DB) {
@@ -2900,7 +3070,7 @@ var public_worker_default = {
                   if (paged && paged.items) {
                     const slice = offset < window ? paged.items.slice(offset, offset + pageLimit) : [];
                     const lists = await reader.lists() || {};
-                    return json({
+                    return json2({
                       v: meta.v || 0,
                       at: meta.at || 0,
                       sig: meta.sig,
@@ -2913,14 +3083,14 @@ var public_worker_default = {
                   }
                 }
                 const document = await reader.document();
-                if (document) return json({ v: meta.v || 0, at: meta.at || 0, sig: meta.sig, ...document, source: "d1" });
+                if (document) return json2({ v: meta.v || 0, at: meta.at || 0, sig: meta.sig, ...document, source: "d1" });
               }
             }
           } catch (_) {
           }
         }
         const raw = await env.PUB_KV.get("pubContent");
-        return json(paginateContent(raw ? JSON.parse(raw) : { v: 0, at: 0, questions: [], vocabulary: [], exams: [] }, url.searchParams.get("limit"), url.searchParams.get("offset")));
+        return json2(paginateContent(raw ? JSON.parse(raw) : { v: 0, at: 0, questions: [], vocabulary: [], exams: [] }, url.searchParams.get("limit"), url.searchParams.get("offset")));
       }
       if (path.startsWith("/api/admin/")) return admin(request, env, path);
       if (path === "/api/ai/status" && request.method === "GET") {
@@ -2936,42 +3106,42 @@ var public_worker_default = {
         } catch (_) {
           prefs = null;
         }
-        return json({ prefs: prefs || AI_PREFS_DEFAULT });
+        return json2({ prefs: prefs || AI_PREFS_DEFAULT });
       }
       if (path === "/api/ai/prefs" && request.method === "POST") {
         const identity = await aiRequestIdentity(request, env, false);
-        if (!identity.authenticated) return json({ error: "sign_in_required", message: "AI Personalization save-এর জন্য login দরকার।" }, 401);
+        if (!identity.authenticated) return json2({ error: "sign_in_required", message: "AI Personalization save-এর জন্য login দরকার।" }, 401);
         const body = await request.json().catch(() => null);
         const prefs = sanitizeAiPrefs(body);
-        if (!prefs) return json({ error: "invalid_prefs", message: "সঠিক preference দাও।" }, 400);
+        if (!prefs) return json2({ error: "invalid_prefs", message: "সঠিক preference দাও।" }, 400);
         try {
           await env.PUB_KV.put("aiprefs:" + identity.uid, JSON.stringify(prefs));
         } catch (_) {
-          return json({ error: "save_failed", message: "এখন save করা গেল না — আবার চেষ্টা করো।" }, 500);
+          return json2({ error: "save_failed", message: "এখন save করা গেল না — আবার চেষ্টা করো।" }, 500);
         }
-        return json({ ok: true, prefs });
+        return json2({ ok: true, prefs });
       }
       if (path === "/api/ai/actions/propose" && request.method === "POST") {
         const identity = await aiRequestIdentity(request, env, false);
-        if (!identity.authenticated) return json({ error: "sign_in_required", message: "AI action ব্যবহার করতে লগইন করো।" }, 401);
+        if (!identity.authenticated) return json2({ error: "sign_in_required", message: "AI action ব্যবহার করতে লগইন করো।" }, 401);
         const body = await request.json().catch(() => null);
         const name = String(body?.action || "");
         const auth = authorizeAction(name, { uid: identity.uid, args: body?.args, enabled: actionsEnabled(env) });
-        if (!auth.allowed) return json({ error: "action_denied", reason: auth.reason }, 403);
+        if (!auth.allowed) return json2({ error: "action_denied", reason: auth.reason }, 403);
         const proposal = makeProposal(name, { uid: identity.uid, args: auth.args, id: crypto.randomUUID(), enabled: actionsEnabled(env) });
-        if (!proposal) return json({ error: "action_denied", reason: "no-proposal" }, 403);
+        if (!proposal) return json2({ error: "action_denied", reason: "no-proposal" }, 403);
         try {
           await env.PUB_KV.put("actprop:" + identity.uid, JSON.stringify(proposal), { expirationTtl: Math.ceil((proposal.expiresAt - Date.now()) / 1e3) });
           const audit = await readAudit(env, identity.uid);
           await writeAudit(env, identity.uid, appendAudit(audit, makeAuditRecord({ proposal, status: STATUS.PROPOSED, uid: identity.uid }), identity.uid));
         } catch (_) {
-          return json({ error: "propose_failed", message: "এখন proposal তৈরি করা গেল না — আবার চেষ্টা করো।" }, 500);
+          return json2({ error: "propose_failed", message: "এখন proposal তৈরি করা গেল না — আবার চেষ্টা করো।" }, 500);
         }
-        return json({ ok: true, proposal: { id: proposal.id, action: proposal.action, permission: proposal.permission, riskLevel: proposal.riskLevel, summary: proposal.summary, expiresAt: proposal.expiresAt } });
+        return json2({ ok: true, proposal: { id: proposal.id, action: proposal.action, permission: proposal.permission, riskLevel: proposal.riskLevel, summary: proposal.summary, expiresAt: proposal.expiresAt } });
       }
       if (path === "/api/ai/actions/confirm" && request.method === "POST") {
         const identity = await aiRequestIdentity(request, env, false);
-        if (!identity.authenticated) return json({ error: "sign_in_required", message: "AI action ব্যবহার করতে লগইন করো।" }, 401);
+        if (!identity.authenticated) return json2({ error: "sign_in_required", message: "AI action ব্যবহার করতে লগইন করো।" }, 401);
         const body = await request.json().catch(() => null);
         const token = String(body?.token || "");
         let stored = null;
@@ -2985,7 +3155,7 @@ var public_worker_default = {
         if (!decision.ok) {
           const audit2 = await readAudit(env, identity.uid);
           if (stored) await writeAudit(env, identity.uid, appendAudit(audit2, makeAuditRecord({ proposal: stored, status: decision.status, uid: identity.uid, detail: decision.reason }), identity.uid));
-          return json({ error: "confirm_denied", reason: decision.reason }, 403);
+          return json2({ error: "confirm_denied", reason: decision.reason }, 403);
         }
         try {
           await env.PUB_KV.delete("actprop:" + identity.uid);
@@ -2996,35 +3166,35 @@ var public_worker_default = {
         } catch (_) {
           const audit2 = await readAudit(env, identity.uid);
           await writeAudit(env, identity.uid, appendAudit(audit2, makeAuditRecord({ proposal: stored, status: STATUS.FAILED, uid: identity.uid, detail: "write-failed" }), identity.uid));
-          return json({ error: "action_failed", message: "কাজটা সম্পন্ন করা গেল না — আবার চেষ্টা করো।" }, 500);
+          return json2({ error: "action_failed", message: "কাজটা সম্পন্ন করা গেল না — আবার চেষ্টা করো।" }, 500);
         }
         const audit = await readAudit(env, identity.uid);
         const record = makeAuditRecord({ proposal: stored, status: STATUS.CONFIRMED, uid: identity.uid });
         await writeAudit(env, identity.uid, appendAudit(audit, record, identity.uid));
-        return json({ ok: true, action: decision.action, status: STATUS.CONFIRMED });
+        return json2({ ok: true, action: decision.action, status: STATUS.CONFIRMED });
       }
       if (path === "/api/ai/actions/audit" && request.method === "GET") {
         const identity = await aiRequestIdentity(request, env, false);
-        if (!identity.authenticated) return json({ error: "sign_in_required", message: "AI action ব্যবহার করতে লগইন করো।" }, 401);
-        return json({ ok: true, actionsEnabled: actionsEnabled(env), audit: await readAudit(env, identity.uid) });
+        if (!identity.authenticated) return json2({ error: "sign_in_required", message: "AI action ব্যবহার করতে লগইন করো।" }, 401);
+        return json2({ ok: true, actionsEnabled: actionsEnabled(env), audit: await readAudit(env, identity.uid) });
       }
       if (path === "/api/ai/chat" && request.method === "POST") {
         const identity = await aiRequestIdentity(request, env, false);
-        if (!identity.authenticated) return json({ error: "sign_in_required", message: "AI চ্যাট ব্যবহার করতে লগইন করো।" }, 401);
+        if (!identity.authenticated) return json2({ error: "sign_in_required", message: "AI চ্যাট ব্যবহার করতে লগইন করো।" }, 401);
         return await agentChat(request, env, identity.uid, { persistMemory: identity.persistMemory });
       }
       if (path === "/api/ai" && request.method === "POST") {
         const identity = await aiRequestIdentity(request, env, false);
-        if (!identity.authenticated) return json({ error: "sign_in_required", message: "AI চ্যাট ব্যবহার করতে লগইন করো।" }, 401);
+        if (!identity.authenticated) return json2({ error: "sign_in_required", message: "AI চ্যাট ব্যবহার করতে লগইন করো।" }, 401);
         return await agentChat(request, env, identity.uid, { stream: false, persistMemory: identity.persistMemory });
       }
-      return json({ error: "not-found" }, 404);
+      return json2({ error: "not-found" }, 404);
     } catch (error) {
       const status = Number(error?.status) || 500;
       if (status >= 500) {
         await recordError(env, { path, method: request.method, status, message: error?.message || String(error) });
       }
-      return json({ error: String(error?.message || error).slice(0, 180) }, status);
+      return json2({ error: String(error?.message || error).slice(0, 180) }, status);
     }
   }
 };
@@ -5371,8 +5541,8 @@ var HEADERS = Object.freeze({
   "X-Content-Type-Options": "nosniff",
   "Referrer-Policy": "no-referrer"
 });
-var json2 = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: HEADERS });
-var notFound = () => json2({ error: "not-found" }, 404);
+var json3 = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: HEADERS });
+var notFound = () => json3({ error: "not-found" }, 404);
 async function readBoundedBody(request, maximum) {
   const declared = Number(request.headers.get("Content-Length") || 0);
   if (Number.isFinite(declared) && declared > maximum) throw new EmailGatewayError({ code: EMAIL_FAILURE_CODES.INVALID_REQUEST, safeMessage: "Email request body is too large.", status: 413 });
@@ -5407,7 +5577,7 @@ async function handleInternalEmailRequest(request, env = {}, ctx = {}, runtime =
   try {
     const config = runtime.config || safeParseEmailGatewayConfig(env.EMAIL_GATEWAY_CONFIG);
     const expectedMethod = url.pathname === INTERNAL_EMAIL_PATHS.HEALTH ? "GET" : "POST";
-    if (request.method !== expectedMethod) return json2({ error: "method-not-allowed" }, 405);
+    if (request.method !== expectedMethod) return json3({ error: "method-not-allowed" }, 405);
     const bodyText = expectedMethod === "GET" ? "" : await readBoundedBody(request, config.request.maxBodyBytes);
     const store = runtime.store || new DurableObjectEmailStore(env.EMAIL_COORDINATOR, { now: runtime.now });
     await verifyInternalRequest({ request, bodyText, secrets, store, config, now: runtime.now, crypto: runtime.crypto });
@@ -5419,7 +5589,7 @@ async function handleInternalEmailRequest(request, env = {}, ctx = {}, runtime =
       runtime: { ...runtime, fetchImpl: runtime.fetchImpl || globalThis.fetch }
     });
     if (url.pathname === INTERNAL_EMAIL_PATHS.HEALTH) {
-      return json2(await gateway.healthCheck({ includeEvents: url.searchParams.get("events") === "1" }));
+      return json3(await gateway.healthCheck({ includeEvents: url.searchParams.get("events") === "1" }));
     }
     let input;
     try {
@@ -5427,13 +5597,13 @@ async function handleInternalEmailRequest(request, env = {}, ctx = {}, runtime =
     } catch (_) {
       throw new EmailGatewayError({ code: EMAIL_FAILURE_CODES.INVALID_REQUEST, safeMessage: "Email request JSON is invalid.", status: 400 });
     }
-    if (url.pathname === INTERNAL_EMAIL_PATHS.SEND) return json2(await gateway.send(input), 202);
-    if (url.pathname === INTERNAL_EMAIL_PATHS.DELIVERY_EVENT) return json2(await gateway.recordDeliveryEvent(input), 202);
+    if (url.pathname === INTERNAL_EMAIL_PATHS.SEND) return json3(await gateway.send(input), 202);
+    if (url.pathname === INTERNAL_EMAIL_PATHS.DELIVERY_EVENT) return json3(await gateway.recordDeliveryEvent(input), 202);
     return notFound();
   } catch (error) {
     const normalized = asEmailGatewayError(error);
     const safe = toPublicEmailError(normalized);
-    return json2({ ok: false, error: safe }, normalized.status || 500);
+    return json3({ ok: false, error: safe }, normalized.status || 500);
   }
 }
 var __emailWorkerTest = Object.freeze({ readBoundedBody });
@@ -8307,7 +8477,7 @@ var corsHeaders = (request) => {
     "Access-Control-Allow-Credentials": "true"
   } : {};
 };
-var json3 = (request, status, body, extraHeaders = {}) => {
+var json4 = (request, status, body, extraHeaders = {}) => {
   const headers = new Headers({ ...JSON_HEADERS, ...corsHeaders(request) });
   for (const [name, value] of Object.entries(extraHeaders || {})) {
     if (Array.isArray(value)) value.forEach((item) => headers.append(name, item));
@@ -8649,7 +8819,7 @@ var authSuccess = (request, established, refreshToken, context, verification = {
   const emailVerified = verification.emailVerified !== false;
   const telegramVerified = verification.telegramVerified === true;
   const emailOwnershipProven2 = verification.emailOwnershipProven === true;
-  return json3(request, 200, {
+  return json4(request, 200, {
     ok: true,
     authenticated: true,
     accountVerified: emailVerified || telegramVerified || emailOwnershipProven2,
@@ -8700,7 +8870,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
     ].includes(url.pathname);
     const originOptional = request.method === "GET" || telegramOperation;
     if (!origin && !originOptional || origin && !allowedOrigin(origin)) {
-      return json3(request, 403, { ok: false, error: { code: "ORIGIN_FORBIDDEN", message: "অনুমোদিত উৎস নয়।" } });
+      return json4(request, 403, { ok: false, error: { code: "ORIGIN_FORBIDDEN", message: "অনুমোদিত উৎস নয়।" } });
     }
     if (request.method === "OPTIONS") {
       return new Response(null, {
@@ -8727,12 +8897,12 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         `${AUTH_API_PREFIX}/telegram/canary/deactivate`
       ].includes(url.pathname)) {
         if (url.hostname !== "admission-gk.admissionhub.workers.dev" || !["canary", "enabled"].includes(env?.VERIFICATION_AUTH_ACTIVATION) || !telegramActivationAuthorized(request, env)) {
-          return json3(request, 403, { ok: false, error: { code: "FORBIDDEN", message: "অনুমতি নেই।" } });
+          return json4(request, 403, { ok: false, error: { code: "FORBIDDEN", message: "অনুমতি নেই।" } });
         }
         await readJson(request);
         const action = url.pathname.endsWith("/deactivate") ? "deactivate" : "activate";
         const result = await callAuthority(env, `/internal/verification/telegram/${action}`, {});
-        return json3(request, 200, {
+        return json4(request, 200, {
           ok: true,
           ...action === "activate" ? {
             ready: result?.ready === true,
@@ -8747,21 +8917,21 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         const expected = await resolveTelegramWebhookSecret(env);
         const supplied = String(request.headers.get("X-Telegram-Bot-Api-Secret-Token") || "");
         if (!validTelegramWebhookSecret(expected) || supplied.length !== expected.length || !constantTimeEqual(supplied, expected)) {
-          return json3(request, 403, { ok: false, error: { code: "FORBIDDEN", message: "অনুমতি নেই।" } });
+          return json4(request, 403, { ok: false, error: { code: "FORBIDDEN", message: "অনুমতি নেই।" } });
         }
         const payload = await readJson(request);
         let input;
         try {
           input = telegramWebhookInput(payload);
         } catch {
-          return json3(request, 200, { ok: true });
+          return json4(request, 200, { ok: true });
         }
         try {
           await callAuthority(env, "/internal/verification/telegram/webhook", { input });
         } catch (cause) {
           if (cause?.code !== AUTH_ERROR_CODES.OTP_INVALID) throw cause;
         }
-        return json3(request, 200, { ok: true });
+        return json4(request, 200, { ok: true });
       }
       if (request.method === "GET" && url.pathname === `${AUTH_API_PREFIX}/config`) {
         const googleCanary = googleCanaryRequested(env, url);
@@ -8770,7 +8940,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         const cacheVariant = `${googleCanary ? "google-canary" : "public"}:${passkeyCanary ? "passkey-canary" : "public"}:${telegramCanary ? "telegram-canary" : "public"}`;
         const cache = publicConfigCache.get(env);
         const cached = cache?.get(cacheVariant);
-        if (cached && cached.expiresAt > Date.now()) return json3(request, 200, cached.body);
+        if (cached && cached.expiresAt > Date.now()) return json4(request, 200, cached.body);
         const health = await callAuthority(env, "/internal/ping", null, "GET");
         let firebaseReady = false;
         let project = null;
@@ -8903,7 +9073,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         const nextCache = cache || /* @__PURE__ */ new Map();
         nextCache.set(cacheVariant, { body, expiresAt: Date.now() + 3e4 });
         if (!cache) publicConfigCache.set(env, nextCache);
-        return json3(request, 200, body);
+        return json4(request, 200, body);
       }
       if (request.method === "POST" && url.pathname === `${AUTH_API_PREFIX}/signup`) {
         if (!provider.configured) throw new NativeAuthError(AUTH_ERROR_CODES.NOT_CONFIGURED);
@@ -8931,7 +9101,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
               },
               context
             });
-            return json3(request, 202, {
+            return json4(request, 202, {
               ok: true,
               accountCreated: true,
               authenticated: false,
@@ -8967,7 +9137,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           }
           throw cause instanceof NativeAuthError ? cause : providerError(cause, "verification");
         }
-        return json3(request, 202, {
+        return json4(request, 202, {
           ok: true,
           accountCreated: true,
           authenticated: false,
@@ -8995,7 +9165,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           const privateAccountResult = cause instanceof FirebaseRequestError && ["EMAIL_NOT_FOUND", "USER_DISABLED", "INVALID_EMAIL", "MISSING_EMAIL"].includes(cause.reason);
           if (!privateAccountResult) throw providerError(cause, "password-reset");
         }
-        return json3(request, 202, {
+        return json4(request, 202, {
           ok: true,
           accepted: true,
           deliveryDisclosed: false,
@@ -9019,14 +9189,14 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           throw providerError(cause, "lookup");
         }
         assertProviderUser(signed, user);
-        if (user.emailVerified) return json3(request, 200, { ok: true, alreadyVerified: true, authenticated: false });
+        if (user.emailVerified) return json4(request, 200, { ok: true, alreadyVerified: true, authenticated: false });
         await callAuthority(env, "/internal/firebase/rate", { input: { operation: "verification-send", email: user.email }, context });
         try {
           await provider.sendVerificationEmail(signed.idToken, user.email);
         } catch (cause) {
           throw providerError(cause, "verification");
         }
-        return json3(request, 202, {
+        return json4(request, 202, {
           ok: true,
           authenticated: false,
           verification: { sent: true, emailMasked: prepared.emailMask, dailyCapacity: 1e3, resendAfter: FIREBASE_VERIFICATION_RESEND_SECONDS }
@@ -9037,7 +9207,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         const input = credentials(await readJson(request));
         const prepared = await callAuthority(env, "/internal/firebase/rate", { input: { operation: "login", email: input.email }, context });
         if (Number(prepared?.retryAfter) > 0) {
-          return json3(request, 429, { ok: false, error: { code: "RATE_LIMITED", message: "অনেকবার চেষ্টা হয়েছে—একটু পরে আবার চেষ্টা করুন।" } }, { "Retry-After": String(prepared.retryAfter) });
+          return json4(request, 429, { ok: false, error: { code: "RATE_LIMITED", message: "অনেকবার চেষ্টা হয়েছে—একটু পরে আবার চেষ্টা করুন।" } }, { "Retry-After": String(prepared.retryAfter) });
         }
         let signed;
         let user;
@@ -9091,7 +9261,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
               },
               context
             });
-            return json3(request, 202, {
+            return json4(request, 202, {
               ok: true,
               authenticated: false,
               accountVerified: false,
@@ -9143,7 +9313,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
               message: "নিরাপত্তার জন্য এই ডিভাইসটি এখন যাচাই করা যাচ্ছে না—একটু পরে আবার চেষ্টা করুন।"
             });
           }
-          return json3(request, 202, {
+          return json4(request, 202, {
             ok: true,
             authenticated: false,
             accountVerified: true,
@@ -9303,7 +9473,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         assertProviderUser(refreshed, user);
         const ownershipAlreadyProven = !user.emailVerified && await emailOwnershipProven({ env, user, context, allowed: true });
         if (user.emailVerified || ownershipAlreadyProven) {
-          return json3(request, 200, { ok: true, alreadyVerified: true, authenticated: false });
+          return json4(request, 200, { ok: true, alreadyVerified: true, authenticated: false });
         }
         await callAuthority(env, "/internal/firebase/rate", { input: { operation: "verification-send", email: user.email }, context });
         try {
@@ -9311,7 +9481,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         } catch (cause) {
           throw providerError(cause, "verification");
         }
-        return json3(request, 202, {
+        return json4(request, 202, {
           ok: true,
           authenticated: false,
           verification: {
@@ -9348,7 +9518,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         if (user.emailVerified !== true) {
           const ownershipVerified = await emailOwnershipProven({ env, user, context, allowed: true });
           if (!ownershipVerified) {
-            return json3(request, 200, {
+            return json4(request, 200, {
               ok: true,
               authenticated: false,
               emailVerified: false,
@@ -9395,7 +9565,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         }
         assertProviderUser(refreshed, user);
         if (user.emailVerified) {
-          return json3(request, 200, { ok: true, alreadyVerified: true, authenticated: false });
+          return json4(request, 200, { ok: true, alreadyVerified: true, authenticated: false });
         }
         await callAuthority(env, "/internal/firebase/rate", { input: { operation: "verification-send", email: user.email }, context });
         let result;
@@ -9415,7 +9585,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           } catch (sendCause) {
             throw sendCause instanceof NativeAuthError ? sendCause : providerError(sendCause, "verification");
           }
-          return json3(request, 202, {
+          return json4(request, 202, {
             ok: true,
             authenticated: false,
             delivery: {
@@ -9427,7 +9597,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
             }
           }, context.isNewDevice ? { "Set-Cookie": deviceCookie(context.deviceId) } : {});
         }
-        return json3(request, 202, {
+        return json4(request, 202, {
           ok: true,
           authenticated: false,
           delivery: { method: "email-otp", sent: result?.sent !== false, fallback: false },
@@ -9509,7 +9679,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         }
         assertProviderUser(refreshed, user);
         if (!user.emailVerified) {
-          return json3(request, 200, { ok: true, authenticated: false, emailVerified: false });
+          return json4(request, 200, { ok: true, authenticated: false, emailVerified: false });
         }
         const established = await callAuthority(env, "/internal/firebase/account-verification/complete", {
           input: { verificationTicket, email: user.email, subject: user.subject },
@@ -9531,7 +9701,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           input: { verificationTicket },
           context
         });
-        return json3(request, 202, { ok: true, ...result }, context.isNewDevice ? { "Set-Cookie": deviceCookie(context.deviceId) } : {});
+        return json4(request, 202, { ok: true, ...result }, context.isNewDevice ? { "Set-Cookie": deviceCookie(context.deviceId) } : {});
       }
       if (request.method === "GET" && url.pathname === `${AUTH_API_PREFIX}/telegram/verification/pending`) {
         if (!provider.configured || !telegramVerificationRequested(env, url)) {
@@ -9546,7 +9716,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
             context
           })
         ]);
-        return json3(request, 200, {
+        return json4(request, 200, {
           ok: true,
           ...result,
           ...!result?.pending ? {
@@ -9570,7 +9740,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           input: { verificationTicket },
           context
         });
-        return json3(request, 202, { ok: true, ...result }, context.isNewDevice ? { "Set-Cookie": deviceCookie(context.deviceId) } : {});
+        return json4(request, 202, { ok: true, ...result }, context.isNewDevice ? { "Set-Cookie": deviceCookie(context.deviceId) } : {});
       }
       if (request.method === "POST" && url.pathname === `${AUTH_API_PREFIX}/telegram/verification/verify`) {
         if (!provider.configured || !telegramVerificationRequested(env, url)) {
@@ -9637,7 +9807,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           input: profile,
           context
         });
-        return json3(
+        return json4(
           request,
           200,
           { ok: true, saved: result?.saved === true },
@@ -9667,7 +9837,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           },
           context
         });
-        return json3(request, 200, { ok: true, saved: result?.saved === true, profile: result?.profile || null }, {
+        return json4(request, 200, { ok: true, saved: result?.saved === true, profile: result?.profile || null }, {
           "Set-Cookie": sessionCookies(current.session, current.refreshed.refreshToken, context)
         });
       }
@@ -9688,7 +9858,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           },
           context
         });
-        return json3(request, 200, {
+        return json4(request, 200, {
           ok: true,
           profile: result?.profile || null,
           publicId: result?.publicId || null,
@@ -9726,7 +9896,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           },
           context
         });
-        return json3(request, 200, { ok: true, saved: result?.saved === true, profile: result?.profile || null }, {
+        return json4(request, 200, { ok: true, saved: result?.saved === true, profile: result?.profile || null }, {
           "Set-Cookie": sessionCookies(current.session, current.refreshed.refreshToken, context)
         });
       }
@@ -9754,7 +9924,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           },
           context
         });
-        return json3(request, 200, { ok: true, saved: result?.saved === true }, {
+        return json4(request, 200, { ok: true, saved: result?.saved === true }, {
           "Set-Cookie": sessionCookies(current.session, current.refreshed.refreshToken, context)
         });
       }
@@ -9779,7 +9949,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           },
           context
         });
-        return json3(request, 200, { ok: true, deleted: result?.deleted === true }, {
+        return json4(request, 200, { ok: true, deleted: result?.deleted === true }, {
           "Set-Cookie": sessionCookies(current.session, current.refreshed.refreshToken, context)
         });
       }
@@ -9800,7 +9970,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           },
           context
         });
-        if (!result?.present) return json3(request, 404, { ok: false, error: { code: "AVATAR_NOT_FOUND" } });
+        if (!result?.present) return json4(request, 404, { ok: false, error: { code: "AVATAR_NOT_FOUND" } });
         const bytes = Uint8Array.from(atob(result.data), (char) => char.charCodeAt(0));
         const etag = `"av-${result.updatedAt || result.bytes || 0}"`;
         if (request.headers.get("If-None-Match") === etag) {
@@ -9829,7 +9999,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           const result2 = await callAuthority(env, "/internal/public-profile/avatar", {
             input: { publicId }
           });
-          if (!result2?.present) return json3(request, 404, { ok: false, error: { code: "AVATAR_NOT_FOUND" } });
+          if (!result2?.present) return json4(request, 404, { ok: false, error: { code: "AVATAR_NOT_FOUND" } });
           const bytes = Uint8Array.from(atob(result2.data), (char) => char.charCodeAt(0));
           return new Response(bytes, {
             status: 200,
@@ -9845,7 +10015,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         const result = await callAuthority(env, "/internal/public-profile/get", {
           input: { publicId }
         });
-        return json3(request, 200, { ok: true, profile: result?.profile || null });
+        return json4(request, 200, { ok: true, profile: result?.profile || null });
       }
       if (request.method === "GET" && url.pathname === `${AUTH_API_PREFIX}/account`) {
         if (!provider.configured) throw new NativeAuthError(AUTH_ERROR_CODES.NOT_CONFIGURED);
@@ -9861,7 +10031,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           input: { email: current.user.email, subject: current.user.subject },
           context
         });
-        return json3(request, 200, { ok: true, account: result?.account || null }, {
+        return json4(request, 200, { ok: true, account: result?.account || null }, {
           "Set-Cookie": sessionCookies(current.session, current.refreshed.refreshToken, context)
         });
       }
@@ -9879,23 +10049,23 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           input: { email: current.user.email, subject: current.user.subject },
           context
         });
-        return json3(request, 200, { ok: true, identities: result?.identities || [] }, {
+        return json4(request, 200, { ok: true, identities: result?.identities || [] }, {
           "Set-Cookie": sessionCookies(current.session, current.refreshed.refreshToken, context)
         });
       }
       if (request.method === "GET" && url.pathname === `${AUTH_API_PREFIX}/admin/identity/health`) {
-        if (!adminAuthorized(request, env)) return json3(request, 403, { ok: false, error: { code: "FORBIDDEN", message: "অনুমতি নেই।" } });
+        if (!adminAuthorized(request, env)) return json4(request, 403, { ok: false, error: { code: "FORBIDDEN", message: "অনুমতি নেই।" } });
         const result = await callAuthority(env, "/internal/identity/health", {});
-        return json3(request, 200, { ok: true, health: result?.health || null });
+        return json4(request, 200, { ok: true, health: result?.health || null });
       }
       if (request.method === "POST" && url.pathname === `${AUTH_API_PREFIX}/admin/account/state`) {
-        if (!adminAuthorized(request, env)) return json3(request, 403, { ok: false, error: { code: "FORBIDDEN", message: "অনুমতি নেই।" } });
+        if (!adminAuthorized(request, env)) return json4(request, 403, { ok: false, error: { code: "FORBIDDEN", message: "অনুমতি নেই।" } });
         const body = await readJson(request);
         const result = await callAuthority(env, "/internal/account/state/set", {
           userId: String(body?.userId || "").slice(0, 256),
           status: String(body?.status || "")
         });
-        return json3(request, 200, { ok: true, account: result?.account || null });
+        return json4(request, 200, { ok: true, account: result?.account || null });
       }
       if (request.method === "POST" && url.pathname === `${AUTH_API_PREFIX}/passkey/registration/begin`) {
         if (!provider.configured || !passkeyEndpointReady(env)) throw new NativeAuthError(AUTH_ERROR_CODES.PASSKEY_UNAVAILABLE);
@@ -9909,7 +10079,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           },
           context
         });
-        return json3(request, 200, { ok: true, ...result }, {
+        return json4(request, 200, { ok: true, ...result }, {
           "Set-Cookie": sessionCookies(current.session, current.refreshed.refreshToken, context)
         });
       }
@@ -9928,14 +10098,14 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           },
           context
         });
-        return json3(request, 200, { ok: true, ...result }, {
+        return json4(request, 200, { ok: true, ...result }, {
           "Set-Cookie": sessionCookies(current.session, current.refreshed.refreshToken, context)
         });
       }
       if (request.method === "POST" && url.pathname === `${AUTH_API_PREFIX}/passkey/authentication/begin`) {
         if (!provider.configured || !passkeyEndpointReady(env)) throw new NativeAuthError(AUTH_ERROR_CODES.PASSKEY_UNAVAILABLE);
         const result = await callAuthority(env, "/internal/passkey/authentication/begin", { context });
-        return json3(request, 200, { ok: true, ...result }, context.isNewDevice ? { "Set-Cookie": deviceCookie(context.deviceId) } : {});
+        return json4(request, 200, { ok: true, ...result }, context.isNewDevice ? { "Set-Cookie": deviceCookie(context.deviceId) } : {});
       }
       if (request.method === "POST" && url.pathname === `${AUTH_API_PREFIX}/passkey/authentication/finish`) {
         if (!provider.configured || !passkeyEndpointReady(env)) throw new NativeAuthError(AUTH_ERROR_CODES.PASSKEY_UNAVAILABLE);
@@ -9985,7 +10155,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           input: { sessionToken: current.sessionToken, email: current.user.email, subject: current.user.subject },
           context
         });
-        return json3(request, 200, { ok: true, ...result }, {
+        return json4(request, 200, { ok: true, ...result }, {
           "Set-Cookie": sessionCookies(current.session, current.refreshed.refreshToken, context)
         });
       }
@@ -10002,7 +10172,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           },
           context
         });
-        return json3(request, 200, { ok: true, ...result }, {
+        return json4(request, 200, { ok: true, ...result }, {
           "Set-Cookie": sessionCookies(current.session, current.refreshed.refreshToken, context)
         });
       }
@@ -10027,7 +10197,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           },
           context
         });
-        return json3(request, 202, { ok: true, ...result }, {
+        return json4(request, 202, { ok: true, ...result }, {
           "Set-Cookie": sessionCookies(current.session, current.refreshed.refreshToken, context)
         });
       }
@@ -10049,26 +10219,26 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           },
           context
         });
-        return json3(request, 200, { ok: true, ...result }, {
+        return json4(request, 200, { ok: true, ...result }, {
           "Set-Cookie": sessionCookies(current.session, current.refreshed.refreshToken, context)
         });
       }
       if (request.method === "GET" && url.pathname === `${AUTH_API_PREFIX}/admin/verification/status`) {
-        if (!adminAuthorized(request, env)) return json3(request, 403, { ok: false, error: { code: "FORBIDDEN", message: "অনুমতি নেই।" } });
+        if (!adminAuthorized(request, env)) return json4(request, 403, { ok: false, error: { code: "FORBIDDEN", message: "অনুমতি নেই।" } });
         const result = await callAuthority(env, "/internal/verification/admin/status", {});
-        return json3(request, 200, { ok: true, ...result });
+        return json4(request, 200, { ok: true, ...result });
       }
       if (request.method === "POST" && url.pathname === `${AUTH_API_PREFIX}/admin/verification/config`) {
-        if (!adminAuthorized(request, env)) return json3(request, 403, { ok: false, error: { code: "FORBIDDEN", message: "অনুমতি নেই।" } });
+        if (!adminAuthorized(request, env)) return json4(request, 403, { ok: false, error: { code: "FORBIDDEN", message: "অনুমতি নেই।" } });
         const body = await readJson(request);
         const result = await callAuthority(env, "/internal/verification/admin/config", { config: verificationConfig(body.config) });
         publicConfigCache.delete(env);
-        return json3(request, 200, { ok: true, ...result });
+        return json4(request, 200, { ok: true, ...result });
       }
       if (request.method === "GET" && url.pathname === `${AUTH_API_PREFIX}/session`) {
         const current = await firebaseReadySession({ provider, jar, env, context, allowTelegram: telegramVerificationRequested(env, url), trackRefresh: true });
         const maxAge = Math.max(1, Math.min(SESSION_SECONDS, Math.floor((Number(current.session.expiresAt) - Date.now()) / 1e3)));
-        return json3(request, 200, {
+        return json4(request, 200, {
           ok: true,
           authenticated: true,
           accountVerified: true,
@@ -10082,7 +10252,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
       if (request.method === "POST" && url.pathname === `${AUTH_API_PREFIX}/session/logout`) {
         const sessionToken = jar[AUTH_SESSION_COOKIE];
         if (sessionToken) await callAuthority(env, "/internal/session/revoke", { sessionToken });
-        return json3(request, 200, { ok: true, authenticated: false }, { "Set-Cookie": clearAuthCookies() });
+        return json4(request, 200, { ok: true, authenticated: false }, { "Set-Cookie": clearAuthCookies() });
       }
       if (request.method === "POST" && url.pathname === `${AUTH_API_PREFIX}/session/logout-all`) {
         const body = await readJson(request);
@@ -10092,7 +10262,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           input: { email: current.user.email, subject: current.user.subject, stepUpToken: String(body?.stepUpToken || "") },
           context
         });
-        return json3(request, 200, { ok: true, authenticated: false, revoked: Number(result?.revoked || 0) }, { "Set-Cookie": clearAuthCookies() });
+        return json4(request, 200, { ok: true, authenticated: false, revoked: Number(result?.revoked || 0) }, { "Set-Cookie": clearAuthCookies() });
       }
       if (request.method === "POST" && url.pathname === `${AUTH_API_PREFIX}/security/challenge/request`) {
         const body = await readJson(request);
@@ -10107,7 +10277,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           },
           context
         });
-        return json3(request, 200, { ok: true, ...result }, {
+        return json4(request, 200, { ok: true, ...result }, {
           "Set-Cookie": sessionCookies(current.session, current.refreshed.refreshToken, context)
         });
       }
@@ -10125,7 +10295,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           },
           context
         });
-        return json3(request, 200, { ok: true, ...result }, {
+        return json4(request, 200, { ok: true, ...result }, {
           "Set-Cookie": sessionCookies(current.session, current.refreshed.refreshToken, context)
         });
       }
@@ -10142,7 +10312,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           },
           context
         });
-        return json3(request, 200, { ok: true, ...result }, {
+        return json4(request, 200, { ok: true, ...result }, {
           "Set-Cookie": sessionCookies(current.session, current.refreshed.refreshToken, context)
         });
       }
@@ -10153,7 +10323,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           input: { sessionToken: current.sessionToken, email: current.user.email, subject: current.user.subject },
           context
         });
-        return json3(request, 200, { ok: true, ...result }, {
+        return json4(request, 200, { ok: true, ...result }, {
           "Set-Cookie": sessionCookies(current.session, current.refreshed.refreshToken, context)
         });
       }
@@ -10163,7 +10333,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           input: { sessionToken: current.sessionToken, email: current.user.email, subject: current.user.subject },
           context
         });
-        return json3(request, 200, { ok: true, ...result }, {
+        return json4(request, 200, { ok: true, ...result }, {
           "Set-Cookie": sessionCookies(current.session, current.refreshed.refreshToken, context)
         });
       }
@@ -10173,7 +10343,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           input: { sessionToken: current.sessionToken, email: current.user.email, subject: current.user.subject },
           context
         });
-        return json3(request, 200, { ok: true, ...result }, {
+        return json4(request, 200, { ok: true, ...result }, {
           "Set-Cookie": sessionCookies(current.session, current.refreshed.refreshToken, context)
         });
       }
@@ -10191,23 +10361,23 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           },
           context
         });
-        return json3(request, 200, { ok: true, ...result }, {
+        return json4(request, 200, { ok: true, ...result }, {
           "Set-Cookie": sessionCookies(current.session, current.refreshed.refreshToken, context)
         });
       }
       if (request.method === "GET" && url.pathname === `${AUTH_API_PREFIX}/admin/security/health`) {
-        if (!adminAuthorized(request, env)) return json3(request, 403, { ok: false, error: { code: "FORBIDDEN", message: "অনুমতি নেই।" } });
+        if (!adminAuthorized(request, env)) return json4(request, 403, { ok: false, error: { code: "FORBIDDEN", message: "অনুমতি নেই।" } });
         const result = await callAuthority(env, "/internal/admin/security/health", {});
-        return json3(request, 200, { ok: true, result });
+        return json4(request, 200, { ok: true, result });
       }
       if (request.method === "GET" && url.pathname === `${AUTH_API_PREFIX}/admin/security/events`) {
-        if (!adminAuthorized(request, env)) return json3(request, 403, { ok: false, error: { code: "FORBIDDEN", message: "অনুমতি নেই।" } });
+        if (!adminAuthorized(request, env)) return json4(request, 403, { ok: false, error: { code: "FORBIDDEN", message: "অনুমতি নেই।" } });
         const limit = Math.min(Math.max(Number(url.searchParams.get("limit")) || 50, 1), 200);
         const before = url.searchParams.get("before") ? Number(url.searchParams.get("before")) : null;
         const result = await callAuthority(env, "/internal/admin/security/events", { input: { limit, before } });
-        return json3(request, 200, { ok: true, ...result });
+        return json4(request, 200, { ok: true, ...result });
       }
-      return json3(request, 404, { ok: false, error: { code: "NOT_FOUND", message: "Endpoint পাওয়া যায়নি।" } });
+      return json4(request, 404, { ok: false, error: { code: "NOT_FOUND", message: "Endpoint পাওয়া যায়নি।" } });
     } catch (cause) {
       const error = asNativeAuthError(cause);
       const clearSession = Boolean(jar[AUTH_SESSION_COOKIE]) && [AUTH_ERROR_CODES.SESSION_INVALID, AUTH_ERROR_CODES.EMAIL_NOT_VERIFIED, AUTH_ERROR_CODES.ACCOUNT_DISABLED].includes(error.code);
@@ -10218,7 +10388,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         }
       }
       const providerDiagnosticCode = /^[A-Z0-9_]{1,80}$/.test(String(error.providerDiagnostic || "")) ? String(error.providerDiagnostic) : "";
-      return json3(request, error.status, { ok: false, error: error.toPublic() }, {
+      return json4(request, error.status, { ok: false, error: error.toPublic() }, {
         ...error.retryAfter ? { "Retry-After": String(error.retryAfter) } : {},
         ...providerDiagnosticCode ? { "X-AH-Auth-Diagnostic": providerDiagnosticCode } : {},
         ...clearSession ? { "Set-Cookie": clearAuthCookies() } : {}
@@ -10555,7 +10725,7 @@ var hmacHex = async (env, label, value) => {
   const mac = await crypto.subtle.sign("HMAC", key, encoder5.encode(`${label}:${value}`));
   return [...new Uint8Array(mac)].map((b) => b.toString(16).padStart(2, "0")).join("");
 };
-var json4 = (obj, status = 200) => new Response(JSON.stringify(obj), {
+var json5 = (obj, status = 200) => new Response(JSON.stringify(obj), {
   status,
   headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" }
 });
@@ -10634,12 +10804,12 @@ var statusPayload = async (env, request) => {
 };
 async function handleRegister(request, env) {
   const body = await readBody(request);
-  if (!body) return json4({ error: "invalid-json" }, 400);
+  if (!body) return json5({ error: "invalid-json" }, 400);
   const challengeId = String(body.challengeId || "");
   const challenge = await takeChallenge(env, challengeId);
-  if (!challenge || challenge.purpose !== "register") return json4({ error: "challenge-expired" }, 400);
+  if (!challenge || challenge.purpose !== "register") return json5({ error: "challenge-expired" }, 400);
   const credentials2 = await listCredentials(env);
-  if (credentials2.length >= MAX_ADMIN_CREDENTIALS) return json4({ error: "too-many-credentials" }, 409);
+  if (credentials2.length >= MAX_ADMIN_CREDENTIALS) return json5({ error: "too-many-credentials" }, 409);
   let verified;
   try {
     verified = await verifyPasskeyRegistration({
@@ -10649,7 +10819,7 @@ async function handleRegister(request, env) {
       allowedOrigins: PASSKEY_ORIGINS
     });
   } catch {
-    return json4({ error: "registration-failed" }, 400);
+    return json5({ error: "registration-failed" }, 400);
   }
   const record = {
     credentialId: verified.credentialId,
@@ -10663,17 +10833,17 @@ async function handleRegister(request, env) {
     createdAt: Date.now()
   };
   await saveCredential(env, record);
-  return json4({ registered: true, credentialCount: (await listCredentials(env)).length });
+  return json5({ registered: true, credentialCount: (await listCredentials(env)).length });
 }
 async function handleAssert(request, env) {
   const body = await readBody(request);
-  if (!body) return json4({ error: "invalid-json" }, 400);
+  if (!body) return json5({ error: "invalid-json" }, 400);
   const challengeId = String(body.challengeId || "");
   const challenge = await takeChallenge(env, challengeId);
-  if (!challenge || challenge.purpose !== "assert") return json4({ error: "challenge-expired" }, 400);
+  if (!challenge || challenge.purpose !== "assert") return json5({ error: "challenge-expired" }, 400);
   const credentialId = String(body.response?.rawId || "");
   const record = credentialId ? JSON.parse(await kv(env).get(`${CRED_PREFIX}${credentialId}`) || "null") : null;
-  if (!record) return json4({ error: "credential-not-found" }, 404);
+  if (!record) return json5({ error: "credential-not-found" }, 404);
   let verified;
   try {
     verified = await verifyPasskeyAuthentication({
@@ -10684,28 +10854,28 @@ async function handleAssert(request, env) {
       credential: record
     });
   } catch {
-    return json4({ error: "authentication-failed" }, 401);
+    return json5({ error: "authentication-failed" }, 401);
   }
   await saveCredential(env, { ...record, counter: verified.counter, lastUsedAt: Date.now() });
   const session = await mintSession(env, record.credentialId);
-  return json4({ authenticated: true, session, expiresAt: Date.now() + SESSION_TTL_MS2 });
+  return json5({ authenticated: true, session, expiresAt: Date.now() + SESSION_TTL_MS2 });
 }
 async function handleAdminPasskeyRequest(request, env) {
   const url = new URL(request.url);
   if (!isAdminPasskeyPath(url.pathname)) return null;
-  if (!env?.ADMIN_TOKEN) return json4({ error: "not-configured" }, 503);
-  if (!kv(env)) return json4({ error: "storage-unavailable" }, 503);
+  if (!env?.ADMIN_TOKEN) return json5({ error: "not-configured" }, 503);
+  if (!kv(env)) return json5({ error: "storage-unavailable" }, 503);
   const bearer = String(request.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "").trim();
   const hasAdminToken = bearer && bearer === env.ADMIN_TOKEN;
   if (url.pathname === "/api/admin/webauthn/status" && request.method === "GET") {
-    return json4(await statusPayload(env, request));
+    return json5(await statusPayload(env, request));
   }
   if (url.pathname === "/api/admin/webauthn/challenge" && request.method === "POST") {
     const body = await readBody(request);
     const purpose = body?.purpose === "register" ? "register" : "assert";
-    if (purpose === "register" && !hasAdminToken) return json4({ error: "forbidden" }, 403);
+    if (purpose === "register" && !hasAdminToken) return json5({ error: "forbidden" }, 403);
     if (purpose === "assert" && !hasAdminToken && !(await listCredentials(env)).length) {
-      return json4({ error: "no-credential" }, 404);
+      return json5({ error: "no-credential" }, 404);
     }
     const challengeId = randomToken2(24);
     const challenge = randomToken2(32);
@@ -10717,7 +10887,7 @@ async function handleAdminPasskeyRequest(request, env) {
     });
     const credentials2 = await listCredentials(env);
     const rp = { id: PASSKEY_RP_ID2, name: PASSKEY_RP_NAME };
-    return json4({
+    return json5({
       challengeId,
       options: {
         challenge,
@@ -10735,13 +10905,13 @@ async function handleAdminPasskeyRequest(request, env) {
     });
   }
   if (url.pathname === "/api/admin/webauthn/register" && request.method === "POST") {
-    if (!hasAdminToken) return json4({ error: "forbidden" }, 403);
+    if (!hasAdminToken) return json5({ error: "forbidden" }, 403);
     return handleRegister(request, env);
   }
   if (url.pathname === "/api/admin/webauthn/assert" && request.method === "POST") {
     return handleAssert(request, env);
   }
-  return json4({ error: "method-not-allowed" }, 405);
+  return json5({ error: "method-not-allowed" }, 405);
 }
 var __adminPasskeyTest = Object.freeze({
   sha256Hex: sha256Hex2,
@@ -14923,13 +15093,13 @@ function linearTrend(values = [], options = {}) {
   const n = slice.length;
   const meanX = (n - 1) / 2;
   const meanY = sum(slice, (v) => v) / n;
-  let num3 = 0;
+  let num4 = 0;
   let den = 0;
   for (let i = 0; i < n; i += 1) {
-    num3 += (i - meanX) * (slice[i] - meanY);
+    num4 += (i - meanX) * (slice[i] - meanY);
     den += (i - meanX) ** 2;
   }
-  const slope = den > 0 ? num3 / den : 0;
+  const slope = den > 0 ? num4 / den : 0;
   const strength = meanY > 0 ? clamp01(Math.abs(slope) / meanY) : 0;
   const direction = strength < (options.minStrength ?? 0.05) ? "flat" : slope > 0 ? "up" : "down";
   return { slope: round(slope, 3), direction, strength: round(strength, 3), mean: round(meanY, 2) };
@@ -18519,7 +18689,7 @@ async function handleAiAnalyticsRequest(request, env, ctx, deps = {}) {
   if (path !== "/api/analytics/ai" && !path.startsWith(AI_ANALYTICS_PREFIX)) return null;
   if (request.method === "OPTIONS") return preflight(request);
   const store = deps.aiStore || new AiAnalyticsStore(env?.PROFILE_DB);
-  if (!store.available()) return json5(request, { error: "storage-unavailable" }, 503);
+  if (!store.available()) return json6(request, { error: "storage-unavailable" }, 503);
   const analyticsStore = deps.store || new AnalyticsStore2(env?.PROFILE_DB);
   const adminToken = String(request.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "").trim();
   const isAdmin = Boolean(env?.ADMIN_TOKEN) && adminToken === env.ADMIN_TOKEN;
@@ -18528,7 +18698,7 @@ async function handleAiAnalyticsRequest(request, env, ctx, deps = {}) {
   const route = path === "/api/analytics/ai" ? "" : path.slice(AI_ANALYTICS_PREFIX.length).replace(/\/$/, "");
   if (route === "me" && request.method === "GET") {
     const session = await resolveSession(env, request);
-    if (!session?.user?.id) return json5(request, { error: "auth-required" }, 401);
+    if (!session?.user?.id) return json6(request, { error: "auth-required" }, 401);
     const userId = String(session.user.id);
     const bundle = await buildStudentIntelligence(store, analyticsStore, env, userId, filters, deps);
     if (bundle.actions?.best) {
@@ -18542,21 +18712,21 @@ async function handleAiAnalyticsRequest(request, env, ctx, deps = {}) {
       });
       bundle.decisionId = logged.id;
     }
-    return json5(request, bundle);
+    return json6(request, bundle);
   }
   if (route === "feedback" && request.method === "POST") {
     const session = await resolveSession(env, request);
-    if (!session?.user?.id) return json5(request, { error: "auth-required" }, 401);
+    if (!session?.user?.id) return json6(request, { error: "auth-required" }, 401);
     const body = await readBody3(request);
     const decisionId = String(body?.decisionId || "").slice(0, 120);
-    if (!decisionId) return json5(request, { error: "decision-required" }, 400);
+    if (!decisionId) return json6(request, { error: "decision-required" }, 400);
     const match = await store.getDecision(decisionId);
     if (!match || match.studentId !== String(session.user.id)) {
-      return json5(request, { error: "forbidden" }, 403);
+      return json6(request, { error: "forbidden" }, 403);
     }
     const actionTaken = body?.actionTaken == null ? "ignored" : String(body.actionTaken);
     if (!["accepted", "rejected", "ignored"].includes(actionTaken)) {
-      return json5(request, { error: "bad-action" }, 400);
+      return json6(request, { error: "bad-action" }, 400);
     }
     const result = await store.logDecision({
       id: decisionId,
@@ -18569,13 +18739,13 @@ async function handleAiAnalyticsRequest(request, env, ctx, deps = {}) {
         learned: body?.learned === true
       }
     });
-    return json5(request, { ok: result.stored });
+    return json6(request, { ok: result.stored });
   }
-  if (!isAdmin) return json5(request, { error: "forbidden" }, 403);
+  if (!isAdmin) return json6(request, { error: "forbidden" }, 403);
   if (route === "chat" && request.method === "POST") {
     const body = await readBody3(request);
     const question = String(body?.question || "").slice(0, 600);
-    if (!question.trim()) return json5(request, { error: "question-required", ...examples() }, 400);
+    if (!question.trim()) return json6(request, { error: "question-required", ...examples() }, 400);
     const window = body?.days ? Math.max(1, Math.min(Number(body.days) || 30, 365)) : filters.days;
     const questionFilters = { ...filters, days: window };
     const gate = policyEnvelope({
@@ -18585,12 +18755,12 @@ async function handleAiAnalyticsRequest(request, env, ctx, deps = {}) {
       counters: await aiCounters(store, "copilot-question"),
       modelContext: { signalSamples: 1, remainingBudget: Number(env?.AI_DAILY_BUDGET ?? -1) }
     });
-    if (!gate.ok) return json5(request, { error: "policy-denied", checks: gate.failed, ...examples() }, 429);
+    if (!gate.ok) return json6(request, { error: "policy-denied", checks: gate.failed, ...examples() }, 429);
     const dashboard = await buildAdminDashboard(analyticsStore, questionFilters);
     const cacheKey = `copilot:${await digest(question)}:${window}`;
     const cached = await store.getCache(cacheKey);
     if (cached?.payload) {
-      return json5(request, { ok: true, cached: true, ...cached.payload });
+      return json6(request, { ok: true, cached: true, ...cached.payload });
     }
     const modelGate = shouldCallModel("copilot-question", { cachedFresh: false, signalSamples: 1 });
     const answer = await answerQuestion(question, {
@@ -18609,7 +18779,7 @@ async function handleAiAnalyticsRequest(request, env, ctx, deps = {}) {
       confidence: answer.ok ? 0.9 : 0.2,
       latencyMs: answer.latencyMs
     });
-    return json5(request, { ok: answer.ok, cached: false, ...answer }, answer.ok ? 200 : 200);
+    return json6(request, { ok: answer.ok, cached: false, ...answer }, answer.ok ? 200 : 200);
   }
   if (route === "insights" && request.method === "GET") {
     const dashboard = await buildAdminDashboard(analyticsStore, filters);
@@ -18621,7 +18791,7 @@ async function handleAiAnalyticsRequest(request, env, ctx, deps = {}) {
       recentSample: dashboard.totals?.students || 0,
       baselineSample: dashboard.totals?.students || 0
     }, { minSample: 5 });
-    return json5(request, {
+    return json6(request, {
       version: AI_INTELLIGENCE_VERSION,
       scope: "admin",
       generatedAt: Date.now(),
@@ -18643,7 +18813,7 @@ async function handleAiAnalyticsRequest(request, env, ctx, deps = {}) {
     const inactive = Number(counts.inactive) || 0;
     const riskRatio = total > 0 ? (atRisk + inactive) / total : 0;
     const confidence = Math.min(1, total / CONFIDENCE_TARGETS.risk);
-    return json5(request, {
+    return json6(request, {
       version: AI_INTELLIGENCE_VERSION,
       scope: "admin",
       filters,
@@ -18660,7 +18830,7 @@ async function handleAiAnalyticsRequest(request, env, ctx, deps = {}) {
   if (route === "notifications" && request.method === "GET") {
     const dashboard = await buildAdminDashboard(analyticsStore, filters);
     const notifications = dashboard.notifications || {};
-    return json5(request, {
+    return json6(request, {
       version: AI_INTELLIGENCE_VERSION,
       scope: "admin",
       filters,
@@ -18676,7 +18846,7 @@ async function handleAiAnalyticsRequest(request, env, ctx, deps = {}) {
   if (route === "trends" && request.method === "GET") {
     const dashboard = await buildAdminDashboard(analyticsStore, filters);
     const signals = buildAdminAiSignals({ dashboard, series: seriesFromTrends(dashboard) }, { horizonDays: 7 });
-    return json5(request, {
+    return json6(request, {
       version: AI_INTELLIGENCE_VERSION,
       scope: "admin",
       filters,
@@ -18687,7 +18857,7 @@ async function handleAiAnalyticsRequest(request, env, ctx, deps = {}) {
   }
   if (route === "decisions" && request.method === "GET") {
     const rows = await store.listDecisions({ limit: Number(url.searchParams.get("limit")) || 100 });
-    return json5(request, {
+    return json6(request, {
       version: AI_INTELLIGENCE_VERSION,
       decisions: rows,
       performance: evaluateAiPerformance(rows)
@@ -18696,12 +18866,12 @@ async function handleAiAnalyticsRequest(request, env, ctx, deps = {}) {
   if (route === "experiments" && request.method === "GET") {
     const name = String(url.searchParams.get("experiment") || "notification-copy");
     const rows = await store.experimentResults(name);
-    return json5(request, { version: AI_INTELLIGENCE_VERSION, experiment: name, variants: rows, optimisation: optimiseExperiment(rows) });
+    return json6(request, { version: AI_INTELLIGENCE_VERSION, experiment: name, variants: rows, optimisation: optimiseExperiment(rows) });
   }
   if (route === "approvals" && request.method === "GET") {
     const status = url.searchParams.get("status") || void 0;
     const rows = await store.listApprovals({ status, limit: 100 });
-    return json5(request, {
+    return json6(request, {
       version: AI_INTELLIGENCE_VERSION,
       policyVersion: AI_POLICY_VERSION,
       approvals: rows,
@@ -18715,19 +18885,19 @@ async function handleAiAnalyticsRequest(request, env, ctx, deps = {}) {
     const body = await readBody3(request);
     const status = String(body?.status || "");
     const actor = String(body?.actor || "").slice(0, 120);
-    if (!actor) return json5(request, { error: "actor-required" }, 400);
+    if (!actor) return json6(request, { error: "actor-required" }, 400);
     const result = await store.decideApproval(decodeURIComponent(decideMatch[1]), status, actor, {
       note: body?.note,
       payload: body?.payload
     });
-    if (!result.stored) return json5(request, { error: result.reason || "not-found" }, 400);
+    if (!result.stored) return json6(request, { error: result.reason || "not-found" }, 400);
     const approval = await store.getApproval(decodeURIComponent(decideMatch[1]));
-    return json5(request, { ok: true, approval, satisfied: approvalSatisfied(approval) });
+    return json6(request, { ok: true, approval, satisfied: approvalSatisfied(approval) });
   }
   if (route === "notify" && request.method === "POST") {
     const body = await readBody3(request);
     const kind = String(body?.kind || "").slice(0, 60);
-    if (!kind) return json5(request, { error: "kind-required" }, 400);
+    if (!kind) return json6(request, { error: "kind-required" }, 400);
     const audience = Number(body?.audience) || 0;
     const trigger = "notification-wording";
     const gate = policyEnvelope({
@@ -18737,7 +18907,7 @@ async function handleAiAnalyticsRequest(request, env, ctx, deps = {}) {
       counters: await aiCounters(store, trigger),
       modelContext: { signalSamples: 1, remainingBudget: Number(env?.AI_DAILY_BUDGET ?? -1) }
     });
-    if (!gate.ok) return json5(request, { error: "policy-denied", checks: gate.failed }, 429);
+    if (!gate.ok) return json6(request, { error: "policy-denied", checks: gate.failed }, 429);
     const written = await writeNotification(kind, body?.params || {}, {
       lang: body?.lang === "en" ? "en" : "bn",
       fallbackCopy: body?.fallbackCopy || null,
@@ -18759,7 +18929,7 @@ async function handleAiAnalyticsRequest(request, env, ctx, deps = {}) {
       confidence: written.ok ? 0.7 : 0.2,
       latencyMs: written.latencyMs
     });
-    return json5(request, {
+    return json6(request, {
       version: AI_COPILOT_VERSION,
       ok: written.ok,
       copy: written.copy,
@@ -18775,7 +18945,7 @@ async function handleAiAnalyticsRequest(request, env, ctx, deps = {}) {
   }
   if (route === "health" && request.method === "GET") {
     const health = await store.health();
-    return json5(request, {
+    return json6(request, {
       version: AI_INTELLIGENCE_VERSION,
       policyVersion: AI_POLICY_VERSION,
       copilotVersion: AI_COPILOT_VERSION,
@@ -18786,7 +18956,7 @@ async function handleAiAnalyticsRequest(request, env, ctx, deps = {}) {
       capabilities: ["admin:read-aggregate", "admin:approve", "student:read-self"]
     });
   }
-  return json5(request, { error: "not-found", ...examples() }, 404);
+  return json6(request, { error: "not-found", ...examples() }, 404);
 }
 async function buildStudentIntelligence(store, analyticsStore, env, userId, filters, deps = {}) {
   const dashboard = await buildStudentDashboard(analyticsStore, userId, { filters });
@@ -18883,7 +19053,7 @@ async function digest(text) {
   }
   return h.toString(36);
 }
-function json5(request, payload, status = 200) {
+function json6(request, payload, status = 200) {
   return new Response(JSON.stringify(payload), {
     status,
     headers: {
@@ -25810,7 +25980,7 @@ var cors = (request) => {
   if (ok2) headers["Access-Control-Allow-Origin"] = origin;
   return headers;
 };
-var json6 = (request, obj, status = 200) => new Response(JSON.stringify(obj), { status, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", ...cors(request) } });
+var json7 = (request, obj, status = 200) => new Response(JSON.stringify(obj), { status, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", ...cors(request) } });
 var dhakaToday = () => new Date(Date.now() + 6 * 36e5).toISOString().slice(0, 10);
 var sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 var keys = (env) => String(env.BROWSER_USE_API_KEYS || "").split(",").map((k) => k.trim()).filter(Boolean);
@@ -25996,7 +26166,7 @@ var bankUpload = async (request, env) => {
     } catch (_) {
     }
     const bank = normalizeBank(body.questions, body.stats);
-    if (!bank.qs.length) return json6(request, { error: "empty-bank" }, 400);
+    if (!bank.qs.length) return json7(request, { error: "empty-bank" }, 400);
     await env.GK_KV.put("userBank", JSON.stringify({ ...bank, history: Array.isArray(body.history) ? body.history.slice(0, 500) : [], mistakes: Array.isArray(body.mistakes) ? body.mistakes.slice(0, 400) : [], vocabulary: Array.isArray(body.vocabulary) ? body.vocabulary.slice(0, 1500) : [], activity: body.activity && typeof body.activity === "object" ? body.activity : {}, ...body.full && typeof body.full === "object" ? { full: body.full } : {}, savedAt: Date.now() }));
     if (body.full && typeof body.full === "object" && env.PUB_KV) {
       try {
@@ -26004,23 +26174,23 @@ var bankUpload = async (request, env) => {
       } catch (_) {
       }
     }
-    return json6(request, { saved: true, count: bank.qs.length });
+    return json7(request, { saved: true, count: bank.qs.length });
   } catch (_) {
-    return json6(request, { error: "bank-failed" }, 500);
+    return json7(request, { error: "bank-failed" }, 500);
   }
 };
 var bankInfo = async (request, env) => {
   try {
     const raw = await env.GK_KV.get("userBank");
-    if (!raw) return json6(request, { saved: false });
+    if (!raw) return json7(request, { saved: false });
     try {
-      if (new URL(request.url).searchParams.get("full") === "1") return json6(request, { saved: true, bank: JSON.parse(raw) });
+      if (new URL(request.url).searchParams.get("full") === "1") return json7(request, { saved: true, bank: JSON.parse(raw) });
     } catch (_) {
     }
     const b = JSON.parse(raw);
-    return json6(request, { saved: true, count: b.qs.length, stats: b.stats, savedAt: b.savedAt, history: Array.isArray(b.history) ? b.history.length : 0, mistakes: Array.isArray(b.mistakes) ? b.mistakes.length : 0, vocabulary: Array.isArray(b.vocabulary) ? b.vocabulary.length : 0, activity: b.activity || {} });
+    return json7(request, { saved: true, count: b.qs.length, stats: b.stats, savedAt: b.savedAt, history: Array.isArray(b.history) ? b.history.length : 0, mistakes: Array.isArray(b.mistakes) ? b.mistakes.length : 0, vocabulary: Array.isArray(b.vocabulary) ? b.vocabulary.length : 0, activity: b.activity || {} });
   } catch (_) {
-    return json6(request, { saved: false });
+    return json7(request, { saved: false });
   }
 };
 var histBlock = (b) => {
@@ -26071,8 +26241,8 @@ var createAsk = async (request, env, ctx) => {
     }
     const question = String(body.question || "").trim().slice(0, 600);
     const context = String(body.context || "").trim().slice(0, 1200);
-    if (!question) return json6(request, { error: "empty-question" }, 400);
-    if (!keys(env).length) return json6(request, { error: "keys-not-configured" }, 503);
+    if (!question) return json7(request, { error: "empty-question" }, 400);
+    if (!keys(env).length) return json7(request, { error: "keys-not-configured" }, 503);
     const id = newId();
     const source = String(body.source || "auto").slice(0, 60);
     let bankBlock = "";
@@ -26098,33 +26268,33 @@ ${(q.o || []).map((o, oi) => `   ${"কখগঘঙ"[oi] || oi + 1}) ${o}`).join
     }
     const askBody = { task: ASK_PROMPT(question, context, bankBlock, histB), llm: env.BU_LLM || "browser-use-2.0", maxSteps: 14, structuredOutput: JSON.stringify(ASK_SCHEMA), flashMode: false };
     const askKey = String(env.ASK_API_KEY || "").trim();
-    if (!askKey) return json6(request, { error: "ask-key-not-configured" }, 503);
+    if (!askKey) return json7(request, { error: "ask-key-not-configured" }, 503);
     let job = await createWithFailover(env, date, askBody, 0, [askKey]);
     let dedicated = !!job;
     if (!job) job = await createWithFailover(env, date, askBody, Math.floor(Date.now() / 6e4));
-    if (!job) return json6(request, { error: "all-keys-exhausted" }, 429);
+    if (!job) return json7(request, { error: "all-keys-exhausted" }, 429);
     await env.GK_KV.put(`ask:${id}`, JSON.stringify({ id, jobId: job.id, keyIndex: job.keyIndex, dedicated, date, status: "running", createdAt: Date.now() }), { expirationTtl: 86400 * 3 });
-    return json6(request, { id, started: true });
+    return json7(request, { id, started: true });
   } catch (_) {
-    return json6(request, { error: "ask-failed" }, 500);
+    return json7(request, { error: "ask-failed" }, 500);
   }
 };
 var askStatus = async (request, env, id) => {
   try {
-    if (!/^[a-f0-9-]{8,40}$/i.test(id)) return json6(request, { error: "bad-id" }, 400);
+    if (!/^[a-f0-9-]{8,40}$/i.test(id)) return json7(request, { error: "bad-id" }, 400);
     const rec = await env.GK_KV.get(`ask:${id}`);
-    if (!rec) return json6(request, { error: "not-found" }, 404);
+    if (!rec) return json7(request, { error: "not-found" }, 404);
     const ask = JSON.parse(rec);
-    if (ask.status !== "running") return json6(request, ask);
+    if (ask.status !== "running") return json7(request, ask);
     const all = keys(env);
     const key = ask.dedicated ? String(env.ASK_API_KEY || "").trim() || all[0] : all[ask.keyIndex] || all[0];
     let task = await getTask(key, ask.jobId).catch(() => null);
     if (!task && String(env.ASK_API_KEY || "").trim() && key !== String(env.ASK_API_KEY).trim()) task = await getTask(String(env.ASK_API_KEY).trim(), ask.jobId).catch(() => null);
-    if (!task) return json6(request, { status: "running" });
+    if (!task) return json7(request, { status: "running" });
     if (task.status === "failed") {
       ask.status = "failed";
       await env.GK_KV.put(`ask:${id}`, JSON.stringify(ask));
-      return json6(request, { status: "failed" });
+      return json7(request, { status: "failed" });
     }
     const out = parseOutput(task);
     if (out && typeof out.answer === "string" && out.answer.trim()) {
@@ -26132,11 +26302,11 @@ var askStatus = async (request, env, id) => {
       ask.answer = String(out.answer).slice(0, 4e3);
       ask.sources = Array.isArray(out.sources) ? out.sources.map((x) => String(x).slice(0, 120)).slice(0, 6) : [];
       await env.GK_KV.put(`ask:${id}`, JSON.stringify(ask));
-      return json6(request, { status: "finished", answer: ask.answer, sources: ask.sources });
+      return json7(request, { status: "finished", answer: ask.answer, sources: ask.sources });
     }
-    return json6(request, { status: task.status === "finished" ? "failed" : "running" });
+    return json7(request, { status: task.status === "finished" ? "failed" : "running" });
   } catch (_) {
-    return json6(request, { error: "status-failed" }, 500);
+    return json7(request, { error: "status-failed" }, 500);
   }
 };
 var healTasks = async (env, date) => {
@@ -26164,9 +26334,9 @@ var healTasks = async (env, date) => {
 };
 var startNewsOnly = async (request, env, ctx, date) => {
   try {
-    if (!keys(env).length) return json6(request, { error: "keys-not-configured" }, 503);
+    if (!keys(env).length) return json7(request, { error: "keys-not-configured" }, 503);
     const newsJob = await createWithFailover(env, date, newsTaskBody(env, date), 1);
-    if (!newsJob) return json6(request, { error: "all-keys-exhausted" }, 429);
+    if (!newsJob) return json7(request, { error: "all-keys-exhausted" }, 429);
     const job = { kind: "news", id: newsJob.id, keyIndex: newsJob.keyIndex };
     const rec = await env.GK_KV.get(`gkTasks:${date}`);
     const tasksRec = rec ? JSON.parse(rec) : { jobs: [], startedAt: Date.now() };
@@ -26174,9 +26344,9 @@ var startNewsOnly = async (request, env, ctx, date) => {
     await env.GK_KV.put(`gkTasks:${date}`, JSON.stringify(tasksRec));
     if (ctx && ctx.waitUntil) ctx.waitUntil(runBackground(env, date, [job]));
     else runBackground(env, date, [job]);
-    return json6(request, { started: true, kind: "news" });
+    return json7(request, { started: true, kind: "news" });
   } catch (_) {
-    return json6(request, { error: "run-failed" }, 500);
+    return json7(request, { error: "run-failed" }, 500);
   }
 };
 var maybeStart = async (request, env, ctx) => {
@@ -26186,9 +26356,9 @@ var maybeStart = async (request, env, ctx) => {
     const lastDay = await env.GK_KV.get("gkDay");
     if (lastDay === date) {
       const stored = await env.GK_KV.get(`gkData:${date}`);
-      return json6(request, stored ? { already: true, ready: true } : { already: true, ready: false });
+      return json7(request, stored ? { already: true, ready: true } : { already: true, ready: false });
     }
-    if (!keys(env).length) return json6(request, { error: "keys-not-configured" }, 503);
+    if (!keys(env).length) return json7(request, { error: "keys-not-configured" }, 503);
     await env.GK_KV.put("gkDay", date);
     const gkJob = await createWithFailover(env, date, { task: GK_PROMPT(date), llm: env.BU_LLM || "browser-use-2.0", maxSteps: 45, structuredOutput: JSON.stringify(GK_SCHEMA), flashMode: false });
     const newsJob = await createWithFailover(env, date, newsTaskBody(env, date), 1);
@@ -26197,12 +26367,12 @@ var maybeStart = async (request, env, ctx) => {
       newsJob ? { kind: "news", id: newsJob.id, keyIndex: newsJob.keyIndex } : null
     ].filter(Boolean);
     await env.GK_KV.put(`gkTasks:${date}`, JSON.stringify({ jobs, startedAt: Date.now() }));
-    if (!jobs.length) return json6(request, { error: "all-keys-exhausted" }, 429);
+    if (!jobs.length) return json7(request, { error: "all-keys-exhausted" }, 429);
     if (ctx && ctx.waitUntil) ctx.waitUntil(runBackground(env, date, jobs));
     else runBackground(env, date, jobs);
-    return json6(request, { started: true, tasks: jobs.length });
+    return json7(request, { started: true, tasks: jobs.length });
   } catch (error) {
-    return json6(request, { error: "run-failed" }, 500);
+    return json7(request, { error: "run-failed" }, 500);
   }
 };
 var gk_agent_worker_default = {
@@ -26271,11 +26441,11 @@ var gk_agent_worker_default = {
       }
     }
     if (url.pathname === "/health") {
-      return json6(request, { ok: true, keys: keys(env).length, askKey: !!env.ASK_API_KEY, kv: !!env.GK_KV, tg: !!env.TG_BOT_TOKEN, agent: "agent-f1", gemini: !!env.GEMINI_KEYS, groq: !!env.GROQ_API_KEY, lastDay: env.GK_KV ? await env.GK_KV.get("gkDay") : null });
+      return json7(request, { ok: true, keys: keys(env).length, askKey: !!env.ASK_API_KEY, kv: !!env.GK_KV, tg: !!env.TG_BOT_TOKEN, agent: "agent-f1", gemini: !!env.GEMINI_KEYS, groq: !!env.GROQ_API_KEY, lastDay: env.GK_KV ? await env.GK_KV.get("gkDay") : null });
     }
     const isApp = request.headers.get("X-AH-App") === APP_HEADER;
     const beaconOk = !isApp && request.method === "POST" && url.pathname === "/api/bank" && request.headers.get("Origin") === "https://sheikhrashel47-stack.github.io";
-    if (!isApp && !beaconOk) return json6(request, { error: "forbidden" }, 403);
+    if (!isApp && !beaconOk) return json7(request, { error: "forbidden" }, 403);
     if (request.method === "POST" && url.pathname === "/api/ask") return await createAsk(request, env, ctx);
     if (request.method === "POST" && url.pathname === "/api/bank") return await bankUpload(request, env);
     if (request.method === "GET" && url.pathname === "/api/bank") return await bankInfo(request, env);
@@ -26286,9 +26456,9 @@ var gk_agent_worker_default = {
       } catch (_) {
       }
       const result = await publishGlobal(env, body);
-      if (result.error === "empty") return json6(request, { error: "empty-global" }, 400);
-      if (result.error) return json6(request, result, 500);
-      return json6(request, result);
+      if (result.error === "empty") return json7(request, { error: "empty-global" }, 400);
+      if (result.error) return json7(request, result, 500);
+      return json7(request, result);
     }
     if (request.method === "GET" && url.pathname.startsWith("/api/ask/")) return await askStatus(request, env, url.pathname.split("/").pop() || "");
     if (request.method === "POST" && url.pathname === "/api/gk/run") return maybeStart(request, env, ctx);
@@ -26298,16 +26468,16 @@ var gk_agent_worker_default = {
         const tasks = await env.GK_KV.get(`gkTasks:${date}`);
         if (tasks) {
           const healed = await healTasks(env, date);
-          if (healed) return json6(request, { ready: true, date, payload: healed });
+          if (healed) return json7(request, { ready: true, date, payload: healed });
         }
         const stored = await env.GK_KV.get(`gkData:${date}`);
-        if (stored) return json6(request, { ready: true, date, payload: JSON.parse(stored) });
-        return json6(request, { ready: false, date, running: !!tasks });
+        if (stored) return json7(request, { ready: true, date, payload: JSON.parse(stored) });
+        return json7(request, { ready: false, date, running: !!tasks });
       } catch (_) {
-        return json6(request, { ready: false, date, running: false });
+        return json7(request, { ready: false, date, running: false });
       }
     }
-    return json6(request, { error: "not_found" }, 404);
+    return json7(request, { error: "not_found" }, 404);
   },
   async scheduled(event, env, ctx) {
     try {
@@ -26351,6 +26521,7 @@ var gk_agent_worker_default = {
 var __test = { tryCreate, createWithFailover, parseOutput, dhakaToday, keys, GK_PROMPT, GK_SCHEMA, NEWS_SCHEMA, finalizeResults, normalizeBank, bankPick, bankUpload, bankInfo, ASK_PROMPT, histBlock };
 export {
   AdmissionAuthAuthority,
+  AiStateObject,
   EmailGatewayCoordinator,
   VoiceAgentSession,
   __test,

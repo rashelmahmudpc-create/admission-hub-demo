@@ -164,7 +164,24 @@ t('M10-২৯. agentStatus advertises observability as shape, not capability',
   && describeObservability().pricedProviders.length === 0);
 t('M10-৩০. the rate limit still answers 429 with the same error code and cap',
   AGENT_SRC.includes("error: 'rate_limited'") && AGENT_SRC.includes('}, 429)')
-  && AGENT_SRC.includes('const quota = quotaState({ used: quotaNow.n, cap })'));
+  && AGENT_SRC.includes('quotaState({ used: quotaNow.n, cap })'));
+
+/* ── ৭ক. The per-user state moved to a Durable Object ──
+ * The KV path allowed only 1,000 writes a day on the free plan and the chat
+ * wrote three keys a message, which capped the feature. These assert the object
+ * is the preferred path and KV remains the fallback, so a missing binding still
+ * works and the earlier KV-based behaviour is not silently deleted. */
+t('M10-৩০ক. agentChat prefers the AI-state Durable Object and keeps KV as fallback',
+  AGENT_SRC.includes("import { aiStateStore } from './ai-state-do.mjs'")
+  && AGENT_SRC.includes('const aiState = aiStateStore(env);')
+  && AGENT_SRC.includes('await aiState.consumeQuota(sendCtx.uid, cap)')
+  && AGENT_SRC.includes("return getKv(env.PUB_KV, key);"));
+t('M10-৩০খ. memory reads and writes go through the state helpers, not KV directly',
+  AGENT_SRC.includes("await stateGet('chatmem:' + sendCtx.uid)")
+  && AGENT_SRC.includes("await statePut('chatmem:' + sendCtx.uid, JSON.stringify(next))")
+  && AGENT_SRC.includes('await stateGet(memKey)')
+  && !AGENT_SRC.includes("putKv(env.PUB_KV, 'chatmem:' + sendCtx.uid")
+  && !AGENT_SRC.includes("getKv(env.PUB_KV, memKey)"));
 
 /* ── ৮. Token estimate is labelled an estimate ── */
 t('M10-৩১. estimateTokens is a documented approximation, not a tokeniser',

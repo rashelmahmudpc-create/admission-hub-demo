@@ -66,6 +66,14 @@ class_name = "AdmissionAuthAuthority"
 name = "VOICE_AGENT"
 class_name = "VoiceAgentSession"
 
+# AI chat state — per-user quota and memory, moved off Workers KV. The free KV
+# allowance is 1,000 writes a day and the chat wrote three keys a message, so
+# the whole feature was capped at a few hundred chats; this object allows
+# 100,000 requests a day.
+[[durable_objects.bindings]]
+name = "AI_STATE"
+class_name = "AiStateObject"
+
 [[migrations]]
 tag = "v1-email-gateway-coordinator"
 new_sqlite_classes = ["EmailGatewayCoordinator"]
@@ -77,6 +85,10 @@ new_sqlite_classes = ["AdmissionAuthAuthority"]
 [[migrations]]
 tag = "v3-voice-agent"
 new_sqlite_classes = ["VoiceAgentSession"]
+
+[[migrations]]
+tag = "v4-ai-state"
+new_sqlite_classes = ["AiStateObject"]
 
 [[kv_namespaces]]
 binding = "GK_KV"

@@ -24,6 +24,9 @@ export { AdmissionAuthAuthority } from './auth-native/worker/auth-authority-do.m
 /* P23 — live voice agent. One Durable Object per owner holds the socket and the
  * durable memory, so a provider-key swap never loses context. */
 export { VoiceAgentSession } from './voice-agent.mjs';
+/* Per-user AI state (quota + memory) moved out of Workers KV, whose free plan
+ * allows 1,000 writes a day and capped the whole chat feature. */
+export { AiStateObject } from './ai-state-do.mjs';
 
 const nativeAuthHandler = createNativeAuthHandler();
 /**

@@ -22,6 +22,7 @@ import { extractMemoryCandidates, makeMemory, upsertMemory, parseMemory, renderM
 import { validateResponse, describeResponseValidation, RESPONSE_VALIDATION_VERSION } from './response-validator.js';
 import { describeActions, ACTION_VERSION } from './action-engine.js';
 import { makeTrace, makeRequestId, callerRef, quotaState, renderTrace, estimateTokens, FALLBACK, OBSERVABILITY_VERSION, describeObservability, parseTraces, appendTrace, addUsage, emptyUsage, estimateCost, validateObservability } from './observability.js';
+import { aiStateStore } from './ai-state-do.mjs';
 
 export const AGENT_VERSION = 'agent-f1';
 export const SYSTEM_PROMPT_V = 'sys-f1-3-ai-personalization';
@@ -823,15 +824,38 @@ export async function agentChat(request, env, uid, opts = {}) {
     return guidanceResponse('নিরাপত্তার জন্য Password, verification code বা গোপন তথ্য Assistant নেয় না। এমন কিছু লিখে থাকলে সেটি বদলে শুধু সাধারণ প্রশ্ন করো।', stream);
   }
 
-  /* rate limit: প্রতি-user rolling 24h window-এ cap (KV ১ রাইট/চ্যাট) */
+  /* Per-user AI state lives in a Durable Object when the binding is present.
+     The KV path wrote three keys a message, and the free plan allows only 1,000
+     KV writes a day, which capped the whole app. The object allows 100,000
+     requests a day. KV stays as the fallback so a missing binding still works. */
+  const aiState = aiStateStore(env);
+  const stateGet = async (key) => {
+    if (aiState) { try { return await aiState.get(sendCtx.uid, key); } catch (_) { /* fall through */ } }
+    return getKv(env.PUB_KV, key);
+  };
+  const statePut = async (key, val, ttlMs) => {
+    if (aiState) { try { await aiState.put(sendCtx.uid, key, val, ttlMs); return; } catch (_) { /* fall through */ } }
+    return putKv(env.PUB_KV, key, val, ttlMs ? Math.round(ttlMs / 1000) : undefined);
+  };
+
+  /* rate limit: প্রতি-user rolling 24h window-এ cap */
   const cap = Math.max(1, Math.min(500, Number((env && env.AGENT_DAILY_CAP) || 10)));
-  const rlKey = 'airl:' + sendCtx.uid;
   const now = Date.now();
-  let quotaNow = { n: 0, start: now };
-  try { quotaNow = readQuota(await getKv(env.PUB_KV, rlKey), now); } catch (_) { quotaNow = { n: 0, start: now }; }
-  const quota = quotaState({ used: quotaNow.n, cap });
+  let quota = null;
+  if (aiState) {
+    try {
+      const q = await aiState.consumeQuota(sendCtx.uid, cap);
+      quota = { exhausted: !q.allowed, remaining: q.remaining };
+    } catch (_) { quota = null; }
+  }
+  if (!quota) {
+    const rlKey = 'airl:' + sendCtx.uid;
+    let quotaNow = { n: 0, start: now };
+    try { quotaNow = readQuota(await getKv(env.PUB_KV, rlKey), now); } catch (_) { quotaNow = { n: 0, start: now }; }
+    quota = quotaState({ used: quotaNow.n, cap });
+    if (!quota.exhausted) await putKv(env.PUB_KV, rlKey, JSON.stringify({ n: quotaNow.n + 1, start: quotaNow.start }), 172800);
+  }
   if (quota.exhausted) return jsonResp({ error: 'rate_limited', message: 'আজকের AI-চ্যাট সীমা শেষ — ২৪ ঘণ্টা পর আবার চেষ্টা করো।', cap, remaining: quota.remaining }, 429);
-  await putKv(env.PUB_KV, rlKey, JSON.stringify({ n: quotaNow.n + 1, start: quotaNow.start }), 172800);
 
   const verificationGuidance = authVerificationGuidance(v.messages[v.messages.length - 1].content);
   if (verificationGuidance) return guidanceResponse(verificationGuidance, stream);
@@ -859,7 +883,7 @@ export async function agentChat(request, env, uid, opts = {}) {
   let mem = [];
   if (memoryOn) {
     try {
-      const rawMem = await getKv(env.PUB_KV, 'chatmem:' + sendCtx.uid);
+      const rawMem = await stateGet('chatmem:' + sendCtx.uid);
       const parsedMem = JSON.parse(rawMem || '[]');
       mem = Array.isArray(parsedMem) ? parsedMem : [];
     } catch (_) { mem = []; }
@@ -874,7 +898,7 @@ export async function agentChat(request, env, uid, opts = {}) {
   if (!freshThread && msgs.length < 3 && mem.length) msgs = mem.concat(msgs);
   if (msgs.length > 16) {
     const summary = summarizeTo(msgs);
-    if (memoryOn) await putKv(env.PUB_KV, 'chatmemsum:' + sendCtx.uid, summary);
+    if (memoryOn) await statePut('chatmemsum:' + sendCtx.uid, summary);
     msgs = msgs.slice(-12);
   }
   msgs = msgs.slice(-24);
@@ -895,7 +919,7 @@ export async function agentChat(request, env, uid, opts = {}) {
   const ctxText = ctxBundle ? renderContext(ctxBundle) : '';
   /* The rolling summary carries older topics too, so it is suppressed with
      memory — otherwise the stale subject leaks back through the system prompt. */
-  let summaryText = memoryOn && !freshThread ? await getKv(env.PUB_KV, 'chatmemsum:' + sendCtx.uid) : '';
+  let summaryText = memoryOn && !freshThread ? await stateGet('chatmemsum:' + sendCtx.uid) : '';
 
   /* M7 long-term memory: read the caller's own records, render only the newest,
      most confident few. Storage is bounded by the engine and the owner is the
@@ -904,7 +928,7 @@ export async function agentChat(request, env, uid, opts = {}) {
   let memRecords = [];
   if (memoryOn) {
     try {
-      const rawLong = await getKv(env.PUB_KV, memKey);
+      const rawLong = await stateGet(memKey);
       memRecords = parseMemory(rawLong, sendCtx.uid);
     } catch (_) { memRecords = []; }
   }
@@ -927,9 +951,9 @@ export async function agentChat(request, env, uid, opts = {}) {
           sendCtx.uid
         );
         if (record) {
-          const rawLong = await getKv(env.PUB_KV, memKey);
+          const rawLong = await stateGet(memKey);
           const stored = parseMemory(rawLong, sendCtx.uid).filter(r => !(r.kind === KIND.STUDIES && r.key === 'last-topic'));
-          await putKv(env.PUB_KV, memKey, JSON.stringify(upsertMemory(stored, record, sendCtx.uid)));
+          await statePut(memKey, JSON.stringify(upsertMemory(stored, record, sendCtx.uid)));
         }
       } catch (_) {}
     }
@@ -1021,7 +1045,7 @@ export async function agentChat(request, env, uid, opts = {}) {
     if (!validateResponse(text, validationCtx).persistable) return text;
     try {
       const next = msgs.concat([{ role: 'user', content: v.messages[v.messages.length - 1].content }, { role: 'assistant', content: text }]).slice(-24).map(x => ({ role: x.role, content: x.content }));
-      await putKv(env.PUB_KV, 'chatmem:' + sendCtx.uid, JSON.stringify(next));
+      await statePut('chatmem:' + sendCtx.uid, JSON.stringify(next));
     } catch (_) {}
 
     /* M7: both triggers the owner asked for — an explicit "মনে রাখো" and a
@@ -1033,7 +1057,7 @@ export async function agentChat(request, env, uid, opts = {}) {
       const candidates = extractMemoryCandidates(latest);
       if (candidates.length) {
         const key = 'mem:' + MEMORY_VERSION + ':' + sendCtx.uid;
-        let list = parseMemory(await getKv(env.PUB_KV, key), sendCtx.uid);
+        let list = parseMemory(await stateGet(key), sendCtx.uid);
         let changed = false;
         for (const candidate of candidates) {
           const record = makeMemory(candidate, sendCtx.uid);
@@ -1041,7 +1065,7 @@ export async function agentChat(request, env, uid, opts = {}) {
           list = upsertMemory(list, record, sendCtx.uid);
           changed = true;
         }
-        if (changed) await putKv(env.PUB_KV, key, JSON.stringify(list));
+        if (changed) await statePut(key, JSON.stringify(list));
       }
     } catch (_) {}
   };
