@@ -1719,22 +1719,63 @@ var CLOUDFLARE_ADAPTER = {
     return openAiCompatStream({ url, key, model: entry.model, payload });
   }
 };
-var PROVIDER_ADAPTERS = [GEMINI_ADAPTER, GROQ_ADAPTER, CLOUDFLARE_ADAPTER];
+var OPENAI_COMPAT_ADAPTER = {
+  id: "openai-compat",
+  matches: (entry) => entry.provider === "openai-compat",
+  oneShot: false,
+  async chatOnce() {
+    throw new ProviderError("openai-compat-এ non-stream পথ এখনো নেই", { retryable: false, bad: false });
+  },
+  chatStream(entry, payload) {
+    return openAiCompatStream({ url: entry.url, key: entry.key, model: entry.model, payload });
+  }
+};
+var PROVIDER_ADAPTERS = [GEMINI_ADAPTER, GROQ_ADAPTER, CLOUDFLARE_ADAPTER, OPENAI_COMPAT_ADAPTER];
 function adapterFor(entry) {
   return PROVIDER_ADAPTERS.find((a) => a.matches(entry)) || null;
 }
-function providerChain(env, tier = "FAST", badSet = /* @__PURE__ */ new Set()) {
-  return routerChain(env, tier, badSet).filter((c) => {
+function providerChain(env, tier = "FAST", badSet = /* @__PURE__ */ new Set(), kv2 = {}) {
+  return routerChain(env, tier, badSet, kv2).filter((c) => {
     const adapter = adapterFor(c);
     return Boolean(adapter) && adapter.oneShot === true;
   });
 }
-function routerChain(env, tier, badSet = /* @__PURE__ */ new Set()) {
+var COMPAT_PROVIDERS = [
+  { key: "OPENROUTER_API_KEYS", url: "https://openrouter.ai/api/v1/chat/completions", models: ["openai/gpt-4o-mini"] },
+  { key: "GITHUB_MODELS_TOKEN", url: "https://models.github.ai/inference/chat/completions", models: ["openai/gpt-4o-mini"] },
+  { key: "MISTRAL_API_KEYS", url: "https://api.mistral.ai/v1/chat/completions", models: ["mistral-small-latest"] },
+  { key: "CEREBRAS_API_KEYS", url: "https://api.cerebras.ai/v1/chat/completions", models: ["llama-3.3-70b"] }
+];
+var AI_KV_JSON_KEY = "secret:AI_KEYS";
+var AI_KV_NAME_DEFAULTS = ["GROQ_API_KEY"];
+async function aiKeyOverlay(env) {
+  const out = {};
+  try {
+    const raw = await env.PUB_KV.get(AI_KV_JSON_KEY);
+    const j = raw ? JSON.parse(raw) : null;
+    if (j && typeof j === "object") {
+      for (const [k, v] of Object.entries(j)) if (v && String(v).trim()) out[k] = String(v).trim();
+    }
+  } catch (_) {
+  }
+  const declared = String(env?.AI_KV_KEY_NAMES || "").split(",").map((s) => s.trim()).filter(Boolean);
+  for (const name of declared.length ? declared : AI_KV_NAME_DEFAULTS) {
+    if (out[name]) continue;
+    try {
+      const v = await env.PUB_KV.get("secret:" + name);
+      if (v && String(v).trim()) out[name] = String(v).trim();
+    } catch (_) {
+    }
+  }
+  return out;
+}
+var pickKey = (env, kv2, name) => String(env && env[name] || kv2[name] || "").trim();
+function routerChain(env, tier, badSet = /* @__PURE__ */ new Set(), kv2 = {}) {
   const geminiModels = String(env && env.AGENT_GEMINI_MODELS || "").split(",").map((s) => s.trim()).filter(Boolean);
   const chain = [];
   const addGem = (m) => {
     if (!m) return;
-    const k = (env.GEMINI_KEYS || "").split(",").map((s) => s.trim()).filter(Boolean);
+    const k = String(pickKey(env, kv2, "GEMINI_KEYS") || "").split(",").map((s) => s.trim()).filter(Boolean);
     for (const key of k) {
       const sig = String(key).slice(0, 12) + ":" + m;
       if (badSet.has(sig)) continue;
@@ -1748,14 +1789,27 @@ function routerChain(env, tier, badSet = /* @__PURE__ */ new Set()) {
     addGem(first);
     addGem(second);
   }
-  if (env && env.GROQ_API_KEY) {
-    chain.push({ provider: "groq", key: env.GROQ_API_KEY, model: "llama-3.3-70b-versatile" });
-    chain.push({ provider: "groq", key: env.GROQ_API_KEY, model: "llama-3.1-8b-instant" });
+  const groqKey = pickKey(env, kv2, "GROQ_API_KEY");
+  if (groqKey) {
+    chain.push({ provider: "groq", key: groqKey, model: "llama-3.3-70b-versatile" });
+    chain.push({ provider: "groq", key: groqKey, model: "llama-3.1-8b-instant" });
   }
-  if (env && env.CLOUDFLARE_ACCOUNT_ID && env.CLOUDFLARE_AI_API_KEY) {
-    const cfModels = String(env.AGENT_CLOUDFLARE_MODELS || "").split(",").map((s) => s.trim()).filter(Boolean);
+  const cfAccount = pickKey(env, kv2, "CLOUDFLARE_ACCOUNT_ID");
+  const cfKey = pickKey(env, kv2, "CLOUDFLARE_AI_API_KEY");
+  if (cfAccount && cfKey) {
+    const cfModels = String(env && env.AGENT_CLOUDFLARE_MODELS || kv2.AGENT_CLOUDFLARE_MODELS || "").split(",").map((s) => s.trim()).filter(Boolean);
     const list = cfModels.length ? cfModels : ["@cf/meta/llama-3.3-70b-instruct-fp8-fast"];
-    for (const m of list) chain.push({ provider: "cloudflare", key: env.CLOUDFLARE_AI_API_KEY, model: m });
+    for (const m of list) chain.push({ provider: "cloudflare", key: cfKey, model: m });
+  }
+  for (const p of COMPAT_PROVIDERS) {
+    const key = pickKey(env, kv2, p.key);
+    if (!key) continue;
+    const models = String(env && env[p.key + "_MODELS"] || kv2[p.key + "_MODELS"] || "").split(",").map((s) => s.trim()).filter(Boolean);
+    for (const m of models.length ? models : p.models) {
+      const sig = String(key).slice(0, 12) + ":" + m;
+      if (badSet.has(sig)) continue;
+      chain.push({ provider: "openai-compat", key, model: m, url: p.url });
+    }
   }
   return chain;
 }
@@ -1950,14 +2004,15 @@ async function agentChat(request, env, uid, opts = {}) {
     contents: msgs.map((m) => ({ role: m.role, parts: partsOf(m) }))
   });
   const payloadO = () => ({ messages: [{ role: "system", content: sys }].concat(msgs.map((m) => ({ role: m.role, content: m.content }))) });
+  const kvKeys = await aiKeyOverlay(env);
   const badSet = /* @__PURE__ */ new Set();
-  for (const c of routerChain(env, tier, /* @__PURE__ */ new Set())) {
+  for (const c of routerChain(env, tier, /* @__PURE__ */ new Set(), kvKeys)) {
     try {
       if (await getKv(env.PUB_KV, badKeyName(c.key, c.model))) badSet.add(String(c.key).slice(0, 12) + ":" + c.model);
     } catch (_) {
     }
   }
-  let chain = routerChain(env, tier, badSet);
+  let chain = routerChain(env, tier, badSet, kvKeys);
   if (hasImage) chain = chain.filter((c) => c.provider === "gemini");
   if (!chain.length) {
     const msg = { error: "no_providers", message: "AI-সেবা এখন কনফিগার করা নেই — দয়া করে মালিককে জানাও (GEMINI_KEYS)।" };
@@ -2028,7 +2083,7 @@ async function agentChat(request, env, uid, opts = {}) {
   };
   if (!stream) {
     let lastErr = "";
-    for (const c of providerChain(env, tier, badSet)) {
+    for (const c of providerChain(env, tier, badSet, kvKeys)) {
       try {
         const raw = await GEMINI_ADAPTER.chatOnce(c, payloadG());
         if (raw) {
@@ -2125,9 +2180,10 @@ data: ${JSON.stringify({ error: "stream_failed", message: "যুক্তি-�
   });
 }
 async function agentStatus(request, env, uid) {
-  const hasGemini = !!String(env.GEMINI_KEYS || "").trim();
-  const hasGroq = !!String(env.GROQ_API_KEY || "").trim();
-  const hasCloudflare = !!String(env.CLOUDFLARE_ACCOUNT_ID || "").trim() && !!String(env.CLOUDFLARE_AI_API_KEY || "").trim();
+  const kv2 = await aiKeyOverlay(env);
+  const hasGemini = !!pickKey(env, kv2, "GEMINI_KEYS");
+  const hasGroq = !!pickKey(env, kv2, "GROQ_API_KEY");
+  const hasCloudflare = !!pickKey(env, kv2, "CLOUDFLARE_ACCOUNT_ID") && !!pickKey(env, kv2, "CLOUDFLARE_AI_API_KEY");
   const ctxOn = contextEngineEnabled(env);
   return jsonResp({
     ok: true,

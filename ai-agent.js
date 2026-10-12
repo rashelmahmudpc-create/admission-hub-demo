@@ -616,7 +616,22 @@ export const CLOUDFLARE_ADAPTER = {
   }
 };
 
-export const PROVIDER_ADAPTERS = [GEMINI_ADAPTER, GROQ_ADAPTER, CLOUDFLARE_ADAPTER];
+/* Extra OpenAI-compatible providers (OpenRouter, GitHub Models, Mistral,
+   Cerebras, …). One adapter covers them all because they share the wire format;
+   a provider is described by data (url + model list), not by a new reader. */
+export const OPENAI_COMPAT_ADAPTER = {
+  id: 'openai-compat',
+  matches: (entry) => entry.provider === 'openai-compat',
+  oneShot: false,
+  async chatOnce() {
+    throw new ProviderError('openai-compat-এ non-stream পথ এখনো নেই', { retryable: false, bad: false });
+  },
+  chatStream(entry, payload) {
+    return openAiCompatStream({ url: entry.url, key: entry.key, model: entry.model, payload });
+  }
+};
+
+export const PROVIDER_ADAPTERS = [GEMINI_ADAPTER, GROQ_ADAPTER, CLOUDFLARE_ADAPTER, OPENAI_COMPAT_ADAPTER];
 
 export function adapterFor(entry) {
   return PROVIDER_ADAPTERS.find(a => a.matches(entry)) || null;
@@ -625,21 +640,69 @@ export function adapterFor(entry) {
 /* Chain for the non-streaming route: the router chain restricted to adapters
    that actually have a one-shot path (Gemini today). Unknown providers are
    dropped rather than dispatched to a missing adapter. */
-export function providerChain(env, tier = 'FAST', badSet = new Set()) {
-  return routerChain(env, tier, badSet).filter(c => {
+export function providerChain(env, tier = 'FAST', badSet = new Set(), kv = {}) {
+  return routerChain(env, tier, badSet, kv).filter(c => {
     const adapter = adapterFor(c);
     return Boolean(adapter) && adapter.oneShot === true;
   });
 }
 
 /* ── Model Router (basic): intent-tier → provider-chain ------------------ */
-export function routerChain(env, tier, badSet = new Set()) {
+/* OpenAI-compatible providers the router can reach when a key exists. Each is
+   data only — a URL plus a default model — because they share one stream reader.
+   A `<NAME>_MODELS` value (env or KV) overrides the default list. */
+const COMPAT_PROVIDERS = [
+  { key: 'OPENROUTER_API_KEYS', url: 'https://openrouter.ai/api/v1/chat/completions', models: ['openai/gpt-4o-mini'] },
+  { key: 'GITHUB_MODELS_TOKEN', url: 'https://models.github.ai/inference/chat/completions', models: ['openai/gpt-4o-mini'] },
+  { key: 'MISTRAL_API_KEYS', url: 'https://api.mistral.ai/v1/chat/completions', models: ['mistral-small-latest'] },
+  { key: 'CEREBRAS_API_KEYS', url: 'https://api.cerebras.ai/v1/chat/completions', models: ['llama-3.3-70b'] }
+];
+
+/* Provider keys that live in KV rather than as Worker variables. The Workers Free
+   plan caps a Worker at 64 variables and admission-gk sits on that cap, so a new
+   key cannot be bound with `wrangler secret put`. GK_KV and PUB_KV are the same
+   namespace, so a key the voice agent already stored is visible here too.
+
+   Two paths, both needing no new variable:
+   - `secret:AI_KEYS` — one JSON object of name→value, read in a single KV get.
+     This is the path to use for OpenRouter and anything added later.
+   - `secret:<NAME>` — one entry per name, which is what the voice workflow
+     writes; GROQ_API_KEY is picked up from there automatically.
+   `AI_KV_KEY_NAMES` overrides the name list only if an operator wants to. */
+const AI_KV_JSON_KEY = 'secret:AI_KEYS';
+const AI_KV_NAME_DEFAULTS = ['GROQ_API_KEY'];
+
+export async function aiKeyOverlay(env) {
+  const out = {};
+  try {
+    const raw = await env.PUB_KV.get(AI_KV_JSON_KEY);
+    const j = raw ? JSON.parse(raw) : null;
+    if (j && typeof j === 'object') {
+      for (const [k, v] of Object.entries(j)) if (v && String(v).trim()) out[k] = String(v).trim();
+    }
+  } catch (_) { /* absent or malformed blob is simply no keys */ }
+  const declared = String(env?.AI_KV_KEY_NAMES || '').split(',').map(s => s.trim()).filter(Boolean);
+  for (const name of (declared.length ? declared : AI_KV_NAME_DEFAULTS)) {
+    if (out[name]) continue;
+    try {
+      const v = await env.PUB_KV.get('secret:' + name);
+      if (v && String(v).trim()) out[name] = String(v).trim();
+    } catch (_) { /* KV miss is simply an absent key */ }
+  }
+  return out;
+}
+
+/* A key from KV wins over the env one only when the env slot is empty, so an
+   operator can always override from the dashboard without touching KV. */
+const pickKey = (env, kv, name) => String((env && env[name]) || kv[name] || '').trim();
+
+export function routerChain(env, tier, badSet = new Set(), kv = {}) {
   const geminiModels = String(env && env.AGENT_GEMINI_MODELS || '')
     .split(',').map(s => s.trim()).filter(Boolean);
   const chain = [];
   const addGem = (m) => {
     if (!m) return;
-    const k = (env.GEMINI_KEYS || '').split(',').map(s => s.trim()).filter(Boolean);
+    const k = String(pickKey(env, kv, 'GEMINI_KEYS') || '').split(',').map(s => s.trim()).filter(Boolean);
     for (const key of k) {
       const sig = String(key).slice(0, 12) + ':' + m;
       if (badSet.has(sig)) continue;
@@ -652,19 +715,34 @@ export function routerChain(env, tier, badSet = new Set()) {
     const second = tier === TIER.SMART ? GEMINI_MODELS.FAST : GEMINI_MODELS.SMART;
     addGem(first); addGem(second);
   }
-  if (env && env.GROQ_API_KEY) {
-    chain.push({ provider: 'groq', key: env.GROQ_API_KEY, model: 'llama-3.3-70b-versatile' });
-    chain.push({ provider: 'groq', key: env.GROQ_API_KEY, model: 'llama-3.1-8b-instant' });
+  const groqKey = pickKey(env, kv, 'GROQ_API_KEY');
+  if (groqKey) {
+    chain.push({ provider: 'groq', key: groqKey, model: 'llama-3.3-70b-versatile' });
+    chain.push({ provider: 'groq', key: groqKey, model: 'llama-3.1-8b-instant' });
   }
   /* Cloudflare Workers AI backup (Phase 9 M2.5). Needs both the account id and
      an API token; either missing means the slot is simply absent, exactly like
      a missing GEMINI_KEYS/GROQ_API_KEY. Model list is overridable because
      Cloudflare rotates its catalogue. */
-  if (env && env.CLOUDFLARE_ACCOUNT_ID && env.CLOUDFLARE_AI_API_KEY) {
-    const cfModels = String(env.AGENT_CLOUDFLARE_MODELS || '')
+  const cfAccount = pickKey(env, kv, 'CLOUDFLARE_ACCOUNT_ID');
+  const cfKey = pickKey(env, kv, 'CLOUDFLARE_AI_API_KEY');
+  if (cfAccount && cfKey) {
+    const cfModels = String((env && env.AGENT_CLOUDFLARE_MODELS) || kv.AGENT_CLOUDFLARE_MODELS || '')
       .split(',').map(s => s.trim()).filter(Boolean);
     const list = cfModels.length ? cfModels : ['@cf/meta/llama-3.3-70b-instruct-fp8-fast'];
-    for (const m of list) chain.push({ provider: 'cloudflare', key: env.CLOUDFLARE_AI_API_KEY, model: m });
+    for (const m of list) chain.push({ provider: 'cloudflare', key: cfKey, model: m });
+  }
+  /* Extra OpenAI-compatible providers — each appears only when its key exists. */
+  for (const p of COMPAT_PROVIDERS) {
+    const key = pickKey(env, kv, p.key);
+    if (!key) continue;
+    const models = String((env && env[p.key + '_MODELS']) || kv[p.key + '_MODELS'] || '')
+      .split(',').map(s => s.trim()).filter(Boolean);
+    for (const m of (models.length ? models : p.models)) {
+      const sig = String(key).slice(0, 12) + ':' + m;
+      if (badSet.has(sig)) continue;
+      chain.push({ provider: 'openai-compat', key, model: m, url: p.url });
+    }
   }
   return chain;
 }
@@ -880,11 +958,12 @@ export async function agentChat(request, env, uid, opts = {}) {
   const payloadO = () => ({ messages: [{ role: 'system', content: sys }].concat(msgs.map(m => ({ role: m.role, content: m.content }))) });
 
   /* bad-set (আজ-মার্ক-করা key/model) */
+  const kvKeys = await aiKeyOverlay(env);
   const badSet = new Set();
-  for (const c of routerChain(env, tier, new Set())) {
+  for (const c of routerChain(env, tier, new Set(), kvKeys)) {
     try { if (await getKv(env.PUB_KV, badKeyName(c.key, c.model))) badSet.add(String(c.key).slice(0, 12) + ':' + c.model); } catch (_) {}
   }
-  let chain = routerChain(env, tier, badSet);
+  let chain = routerChain(env, tier, badSet, kvKeys);
   if (hasImage) chain = chain.filter(c => c.provider === 'gemini');
   if (!chain.length) {
     const msg = { error: 'no_providers', message: 'AI-সেবা এখন কনফিগার করা নেই — দয়া করে মালিককে জানাও (GEMINI_KEYS)।' };
@@ -969,7 +1048,7 @@ export async function agentChat(request, env, uid, opts = {}) {
 
   if (!stream) {
     let lastErr = '';
-    for (const c of providerChain(env, tier, badSet)) {
+    for (const c of providerChain(env, tier, badSet, kvKeys)) {
       try {
         const raw = await GEMINI_ADAPTER.chatOnce(c, payloadG());
         if (raw) {
@@ -1051,9 +1130,10 @@ export async function agentChat(request, env, uid, opts = {}) {
 
 /* ── GET /api/ai/status ---------------------------------------------------- */
 export async function agentStatus(request, env, uid) {
-  const hasGemini = !!String(env.GEMINI_KEYS || '').trim();
-  const hasGroq = !!String(env.GROQ_API_KEY || '').trim();
-  const hasCloudflare = !!String(env.CLOUDFLARE_ACCOUNT_ID || '').trim() && !!String(env.CLOUDFLARE_AI_API_KEY || '').trim();
+  const kv = await aiKeyOverlay(env);
+  const hasGemini = !!pickKey(env, kv, 'GEMINI_KEYS');
+  const hasGroq = !!pickKey(env, kv, 'GROQ_API_KEY');
+  const hasCloudflare = !!pickKey(env, kv, 'CLOUDFLARE_ACCOUNT_ID') && !!pickKey(env, kv, 'CLOUDFLARE_AI_API_KEY');
   const ctxOn = contextEngineEnabled(env);
   return jsonResp({
     ok: true, agent: AGENT_VERSION, pv: SYSTEM_PROMPT_V,

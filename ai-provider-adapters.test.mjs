@@ -154,5 +154,86 @@ t('M2.5-১০. agentStatus reports the cloudflare slot', (async () => {
   return d.providers.cloudflare === true && d.providers.gemini === true;
 })(), { timeout: 10000 });
 
+/* ── ৬. KV key overlay (Workers Free 64-variable cap) ── */
+t('M2.6-১. aiKeyOverlay reads secret:<NAME> for each declared name', (async () => {
+  const { store, env } = stubEnv({ AI_KV_KEY_NAMES: 'GROQ_API_KEY, OPENROUTER_API_KEYS' });
+  store.set('secret:GROQ_API_KEY', 'kv-groq');
+  store.set('secret:OPENROUTER_API_KEYS', 'kv-or');
+  const kv = await A.aiKeyOverlay(env);
+  return kv.GROQ_API_KEY === 'kv-groq' && kv.OPENROUTER_API_KEYS === 'kv-or';
+})());
+
+t('M2.6-২. a KV-backed Groq key reaches the chain with no env var at all', (() => {
+  const c = routerChain({}, 'FAST', new Set(), { GROQ_API_KEY: 'kv-groq' });
+  return c.filter(x => x.provider === 'groq').length === 2;
+})());
+
+t('M2.6-৩. an env key wins over the KV copy (dashboard can always override)', (() => {
+  const c = routerChain({ GROQ_API_KEY: 'env-groq' }, 'FAST', new Set(), { GROQ_API_KEY: 'kv-groq' });
+  return c.filter(x => x.provider === 'groq').every(x => x.key === 'env-groq');
+})());
+
+t('M2.6-৪. aiKeyOverlay is silent when no names are declared or KV is absent', (async () => {
+  const a = await A.aiKeyOverlay({ PUB_KV: stubEnv().env.PUB_KV });
+  const b = await A.aiKeyOverlay({ AI_KV_KEY_NAMES: 'GROQ_API_KEY' });
+  return Object.keys(a).length === 0 && Object.keys(b).length === 0;
+})());
+
+t('M2.6-৫. a stored secret:GROQ_API_KEY is picked up with no variable at all', (async () => {
+  const { store, env } = stubEnv();
+  store.set('secret:GROQ_API_KEY', 'kv-groq');
+  const kv = await A.aiKeyOverlay(env);
+  return kv.GROQ_API_KEY === 'kv-groq';
+})());
+
+t('M2.6-৬. the secret:AI_KEYS JSON blob carries any number of keys in one get', (async () => {
+  const { store, env } = stubEnv();
+  store.set('secret:AI_KEYS', JSON.stringify({ OPENROUTER_API_KEYS: 'or-1', MISTRAL_API_KEYS: 'm-1', '': 'skip-me' }));
+  const kv = await A.aiKeyOverlay(env);
+  return kv.OPENROUTER_API_KEYS === 'or-1' && kv.MISTRAL_API_KEYS === 'm-1' && !('' in kv);
+})());
+
+t('M2.6-৭. a malformed AI_KEYS blob degrades to no keys instead of throwing', (async () => {
+  const { store, env } = stubEnv();
+  store.set('secret:AI_KEYS', '{not json');
+  const kv = await A.aiKeyOverlay(env);
+  return Object.keys(kv).length === 0;
+})());
+
+t('M2.6-৮. an AI_KEYS entry reaches the chain end to end', (() => {
+  const c = routerChain({}, 'FAST', new Set(), { OPENROUTER_API_KEYS: 'or-kv' }).filter(x => x.provider === 'openai-compat');
+  return c.length === 1 && c[0].key === 'or-kv';
+})());
+
+/* ── ৭. OpenAI-compatible providers (OpenRouter and friends) ── */
+t('M2.7-১. openai-compat adapter is registered and maps by provider id', (() => {
+  const ad = adapterFor({ provider: 'openai-compat' });
+  return Boolean(ad) && ad.id === 'openai-compat' && ad.oneShot === false;
+})());
+
+t('M2.7-২. a compat key adds its entry with the provider URL, none without it', (() => {
+  const off = routerChain({}, 'FAST', new Set()).filter(x => x.provider === 'openai-compat');
+  const on = routerChain({ OPENROUTER_API_KEYS: 'or-k' }, 'FAST', new Set()).filter(x => x.provider === 'openai-compat');
+  return off.length === 0 && on.length === 1 && on[0].url === 'https://openrouter.ai/api/v1/chat/completions';
+})());
+
+t('M2.7-৩. a compat model list overrides the default', (() => {
+  const c = routerChain({ MISTRAL_API_KEYS: 'm-k', MISTRAL_API_KEYS_MODELS: 'mistral-large-latest,mistral-medium-latest' }, 'FAST', new Set())
+    .filter(x => x.provider === 'openai-compat');
+  return c.length === 2 && c[0].model === 'mistral-large-latest';
+})());
+
+t('M2.7-৪. a KV-backed compat key works too (64-cap workaround holds for new APIs)', (() => {
+  const c = routerChain({}, 'FAST', new Set(), { OPENROUTER_API_KEYS: 'kv-or' }).filter(x => x.provider === 'openai-compat');
+  return c.length === 1 && c[0].key === 'kv-or';
+})());
+
+t('M2.7-৫. compat entries honour the bad-set like every other provider', (() => {
+  const key = 'or-badkey-1234567890';
+  const bad = new Set([key.slice(0, 12) + ':openai/gpt-4o-mini']);
+  const c = routerChain({ OPENROUTER_API_KEYS: key }, 'FAST', bad).filter(x => x.provider === 'openai-compat');
+  return c.length === 0;
+})());
+
 console.log(`\n🧩 PHASE9-M2-ADAPTERS: ${pass} pass / ${fail} fail`);
 process.exit(fail ? 1 : 0);
