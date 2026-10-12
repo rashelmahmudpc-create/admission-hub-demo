@@ -2339,11 +2339,13 @@ async function agentStatus(request, env, uid) {
     pv: SYSTEM_PROMPT_V,
     providers: { gemini: hasGemini, groq: hasGroq, cloudflare: hasCloudflare },
     models: { fast: GEMINI_MODELS.FAST, smart: GEMINI_MODELS.SMART },
-    /* The provider chain the router would actually try, in order. A bare
+    /* The provider chain the streaming chat actually walks, in order. A bare
        `providers.groq: true` only proves a key exists — it said true while both
-       Groq models in the chain were already retired and answering 404. Listing
-       the chain makes a dead model visible here instead of only in the logs. */
-    chain: providerChain(env, TIER.FAST, /* @__PURE__ */ new Set(), kv2).map((c) => c.provider + ":" + c.model),
+       Groq models in the chain were already retired and answering 404. This is
+       routerChain, not providerChain: the latter filters to adapters with a
+       one-shot path, which is Gemini alone, so it would report a two-entry
+       chain while the chat really tries Gemini, then Groq, then Cloudflare. */
+    chain: routerChain(env, TIER.FAST, /* @__PURE__ */ new Set(), kv2).map((c) => c.provider + ":" + c.model),
     limits: { perDay: Math.max(1, Math.min(500, Number(env.AGENT_DAILY_CAP || 10))) },
     /* Which store the per-user state actually uses. Without this the migration
        off KV could only be inferred; here it is observable from the status
