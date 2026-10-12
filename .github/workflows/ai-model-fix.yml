@@ -1,0 +1,49 @@
+name: Fix wrong provider model ids (manual, owner-authorised)
+
+# Owner: "যেগুলো নামের জন্য ভুল এগুলো ঠিক করো". The router already accepts a
+# per-provider model override from KV (`<NAME>_API_KEYS_MODELS`), so this adds
+# only the model-name fixes — no code change, no redeploy. Cerebras was calling
+# `llama-3.3-70b`, which 404s; its live catalogue offers `gpt-oss-120b`.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type FIX-MODELS to apply the model-id overrides
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  fix:
+    if: ${{ inputs.confirmation == 'FIX-MODELS' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Apply model-id overrides in secret:AI_KEYS
+        env:
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ACCT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          NS: b9353515b098427687afcfb8654ed359
+        run: |
+          set -eu
+          URI="https://api.cloudflare.com/client/v4/accounts/${CF_ACCT}/storage/kv/namespaces/${NS}/values/secret:AI_KEYS"
+          curl -fsS "$URI" -H "Authorization: Bearer ${CF_TOKEN}" -o /tmp/aikeys.json
+          node -e '
+            const fs=require("fs");
+            const j=JSON.parse(fs.readFileSync("/tmp/aikeys.json","utf8"));
+            const want={ CEREBRAS_API_KEYS_MODELS:"gpt-oss-120b", LLM7_API_KEYS_MODELS:"DeepSeek-V4-Flash-0731" };
+            for (const [k,v] of Object.entries(want)) {
+              const had=j[k]; j[k]=v;
+              console.log("set", k, "->", v, had?("(was "+had+")"):"(new)");
+            }
+            fs.writeFileSync("/tmp/new.json", JSON.stringify(j));
+            console.log("total names:", Object.keys(j).length);
+          '
+          curl -fsS -X PUT "$URI" -H "Authorization: Bearer ${CF_TOKEN}" \
+            -H "Content-Type: application/json" --data-binary @/tmp/new.json -o /tmp/put.json
+          node -e 'const r=JSON.parse(require("fs").readFileSync("/tmp/put.json","utf8")); console.log("write success:", r.success);'
+          curl -fsS "$URI" -H "Authorization: Bearer ${CF_TOKEN}" -o /tmp/v.json
+          node -e 'const j=JSON.parse(require("fs").readFileSync("/tmp/v.json","utf8")); console.log("verify CEREBRAS:", j.CEREBRAS_API_KEYS_MODELS, "| LLM7:", j.LLM7_API_KEYS_MODELS);'
