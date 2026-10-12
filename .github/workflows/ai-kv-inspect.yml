@@ -64,17 +64,18 @@ jobs:
                 const p=Number(m[1]);
                 const win=(a,b)=>raw.slice(Math.max(0,a),Math.min(raw.length,b));
                 const mask=s=>s.replace(/[A-Za-z0-9_\-]/g,'•');
-                console.log('char at error:',JSON.stringify(raw[p]),'| char before:',JSON.stringify(raw[p-1]));
+                const C34=34;
+                console.log('char code at error:',raw.charCodeAt(p),'| char before code:',raw.charCodeAt(p-1));
                 console.log('total length:',raw.length,'| error is',raw.length-p,'chars from the end');
                 // Property NAMES are configuration names, not secret values -> safe to print.
-                const nameRe=/[\u201C\u201D"]([A-Za-z0-9_]+)[\u201C\u201D"]\s*:/g;
+                const nameRe=/[\u201C\u201D\x22]([A-Za-z0-9_]+)[\u201C\u201D\x22]\s*:/g;
                 let mm, idx=0;
-                console.log('property names found (name + quote style):');
+                console.log('property names found (name + opening-quote style):');
                 while((mm=nameRe.exec(raw))!==null){
                   idx++;
-                  const open=raw[mm.index];
-                  const style=(open==='"'||open==='\u201C'||open==='\u201D')?(open==='"'?'straight':'CURLY'):'?';
-                  const bad=(mm.index<=p && p<=mm.index+mm[0].length)?'  <== the broken one':'';
+                  const oc=raw.charCodeAt(mm.index);
+                  const style=(oc===C34)?'straight':'CURLY';
+                  const bad=(mm.index<=p && p<=mm.index+mm[0].length)?'  <== broken':'';
                   console.log('  #'+idx, mm[1], '|', style, bad);
                 }
               }
