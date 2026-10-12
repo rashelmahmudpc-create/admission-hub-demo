@@ -6,13 +6,29 @@ window.AH_SEED = { subjects: [], topics: [], questions: [], vocabulary: [], voca
 (() => {
   if (document.getElementById('ah-welcome-ui-style')) return;
   const base = new URL('.', document.currentScript.src);
-  const version = 'welcome-native-20261011-v33';
+  const version = 'welcome-native-20261011-v34';
   const style = document.createElement('link');
   style.id = 'ah-welcome-ui-style'; style.rel = 'stylesheet';
   style.href = new URL(`welcome-onboarding.css?v=${version}`, base);
   style.onload = () => {
     const script = document.createElement('script');
     script.src = new URL(`welcome-onboarding.js?v=${version}`, base);
+    script.defer = true; document.head.append(script);
+  };
+  document.head.append(style);
+})();
+
+/* Sign-up flow UI loader. It only drives the original sign-up and verification controls; authentication code is unchanged. */
+(() => {
+  if (document.getElementById('ah-signup-ui-style')) return;
+  const base = new URL('.', document.currentScript.src);
+  const version = 'welcome-native-20261011-v34';
+  const style = document.createElement('link');
+  style.id = 'ah-signup-ui-style'; style.rel = 'stylesheet';
+  style.href = new URL(`signup-flow.css?v=${version}`, base);
+  style.onload = () => {
+    const script = document.createElement('script');
+    script.src = new URL(`signup-flow.js?v=${version}`, base);
     script.defer = true; document.head.append(script);
   };
   document.head.append(style);
