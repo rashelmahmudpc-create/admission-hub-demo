@@ -75,6 +75,11 @@ test('১৪. installed PWA serves the current-build shell instantly, then reval
   /* a slow-but-working first navigation must not be aborted and handed the splash */
   !SW.includes('controller.abort(), DOCUMENT_NETWORK_TIMEOUT_MS') &&
   SW.includes('return offlineFallback(request);'));
+test('১৪খ. a route whose tool script lands late recovers itself — no dead "লোড হয়নি" card',
+  H.includes('function waitForRenderer(') &&
+  H.includes("const LAZY_RENDERER = { ai: 'renderAiAgentPage'") &&
+  H.includes("waitForRenderer('my-profile', () => typeof window.renderProfilePage === 'function')") &&
+  H.includes('if (Router.path === path) render();'));
 test('১৫. precache stays lean because code-native entry pages add no raster assets',
   /* Bound tracks the hand-curated APP_SHELL list. It grew from 33 → 37 when the
      P16 accessibility core landed, then 37 → 39 with the P15 offline status
