@@ -15,7 +15,7 @@
  * keeps owning all of that. */
 (() => {
 'use strict';
-const base=new URL('.',document.currentScript.src),version='welcome-native-20261011-v33';
+const base=new URL('.',document.currentScript.src),version='welcome-native-20261011-v34';
 let timers=[],opened=false,mounted=null,bound=null,toastTimer=null;
 
 const $=id=>document.getElementById(id);
@@ -71,6 +71,7 @@ const watchBody=()=>{if(!document.body)return;watcher.observe(document.body,{att
 if(document.body)watchBody();else document.addEventListener('DOMContentLoaded',watchBody,{once:true});
 ['resize','orientationchange','pageshow','ah:lang','transitionend','animationend'].forEach(name=>window.addEventListener(name,schedule,{passive:true}));
 const follow=()=>{const s=performance.now();const tick=()=>{blend();if(performance.now()-s<1300)requestAnimationFrame(tick);};requestAnimationFrame(tick);};
+window.ahBlendFollow=follow;window.ahBlendSchedule=schedule;
 
 function tap(x,y){const fg=$('sky-fing');if(!fg)return;fg.style.setProperty('--fx',(x-22)+'px');fg.style.setProperty('--fy',(y-4)+'px');fg.classList.add('show');at(700,()=>fg.classList.add('press'));at(950,()=>fg.classList.remove('press'));at(1600,()=>{fg.classList.remove('show');fg.style.setProperty('--fy','780px')})}
 
