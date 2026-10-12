@@ -47,7 +47,9 @@ t('__dashboardV2Installed গার্ড (দ্বিগুণ-ইনস্ট
 t('dv2AllTools: পুরনো ১১+ টুল No-loss (Bank/Mock/Progress/Settings…)', V2.includes("navigate('question-bank')") && V2.includes("navigate('progress')") && V2.includes("navigate('settings')") && V2.includes("navigate('vocabulary-master')"));
 
 /* ৫ — রিগ্রেশন লক (অর্থাৎ আগের পোস্টার-কি অক্ষত) */
-t('retired account/onboarding assets are absent from index and shell', !/premium-auth|auth-svg|onboarding\.js|onboarding\.css|curriculum-config/.test(H + SW));
+// Anchored on the path boundary so welcome-onboarding.js/css (live assets) do not
+// trip a guard meant for the retired onboarding.js/css.
+t('retired account/onboarding assets are absent from index and shell', !/premium-auth|auth-svg|(?<![\w-])onboarding\.js|(?<![\w-])onboarding\.css|curriculum-config/.test(H + SW));
 t('performance-hardening.js?v=2 remains deferred outside lean shell', H.includes('<script defer src="performance-hardening.js?v=2"></script>') && !SW.includes("'./performance-hardening.js?v=2'"));
 
 /* ৬ — CSS-শৈলী-উপস্থিতি */

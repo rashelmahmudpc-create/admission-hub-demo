@@ -20,7 +20,10 @@ const deferCount = (H.match(/<script defer src=/g) || []).length;
 test('optional internal modules remain deferred', deferCount >= 40);
 test('boot-critical local scripts remain parser-ordered', /src="\.\/session-persist\.js/.test(H) && /src="data-protection\.js/.test(H));
 test('heavy app seed and result analysis remain deferred', /app-seed\.js[^>]*defer/.test(H) && /result-analysis-500\.js[^>]*defer/.test(H));
-test('retired identity/onboarding scripts are no longer boot-critical or loaded', !/premium-auth|onboarding\.js|curriculum-config|accounts\.google\.com/.test(H));
+// Guard the retired assets by name, not by substring: a bare onboarding\.js also
+// matches the live welcome-onboarding.js, so the pattern is anchored on the
+// path boundary to keep catching a real regression without flagging the current asset.
+test('retired identity/onboarding scripts are no longer boot-critical or loaded', !/premium-auth|(?<![\w-])onboarding\.js|curriculum-config|accounts\.google\.com/.test(H));
 
 
 test('service-worker build marker is synchronized', SW.includes("const BUILD_ID = 'v312-vm-scope-20261011'") && H.includes('sw.js?v=v312-vm-scope-20261011'));
