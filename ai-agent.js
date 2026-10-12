@@ -1174,7 +1174,7 @@ export async function agentStatus(request, env, uid) {
        `providers.groq: true` only proves a key exists — it said true while both
        Groq models in the chain were already retired and answering 404. Listing
        the chain makes a dead model visible here instead of only in the logs. */
-    chain: providerChain(env, TIER.FAST).map(c => c.provider + ':' + c.model),
+    chain: providerChain(env, TIER.FAST, new Set(), kv).map(c => c.provider + ':' + c.model),
     limits: { perDay: Math.max(1, Math.min(500, Number(env.AGENT_DAILY_CAP || 10))) },
     /* Which store the per-user state actually uses. Without this the migration
        off KV could only be inferred; here it is observable from the status
