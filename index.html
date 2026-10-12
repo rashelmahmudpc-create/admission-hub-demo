@@ -863,6 +863,22 @@ textarea{min-height:96px}
 </head>
 <body class="app-booting">
 <div id="app"><main class="app-loading" id="ahSplash" role="status"><div class="ah-boot"><span class="ah-boot-mark">✦</span><b>Admission Hub</b><i>লোড হচ্ছে…</i></div></main></div>
+<script>
+/* NO-BLANK GUARD: on a slow link the account gate hides #app (body.ah-account-page-active)
+   before its own page has visible content, so the device shows a blank screen for many
+   seconds. Cover that gap with a body-level splash overlay until a real page (the app
+   page, the account page, or the usable shell) is actually visible. */
+(function(){
+  var o=document.createElement('div');o.id='ahBootGuard';
+  o.style.cssText='position:fixed;inset:0;z-index:2147483000;display:grid;place-content:center;justify-items:center;gap:9px;background:#f1faf6;color:#17221d;text-align:center';
+  o.innerHTML='<span class="ah-boot-mark">✦</span><b style="font-size:19px;font-weight:800">Admission Hub</b><i style="font-style:normal;font-size:12px;color:#5e7168">লোড হচ্ছে…</i>';
+  function vis(el){return !!el && !el.hidden && el.getClientRects().length>0 && (el.innerText||'').trim().length>0;}
+  function real(){return vis(document.querySelector('#app .page'))||vis(document.querySelector('.ah-account-page'))||vis(document.querySelector('[data-admission-usable="true"]'));}
+  var iv=setInterval(function(){if(real()){if(o.parentNode)o.remove();clearInterval(iv);}},150);
+  setTimeout(function(){if(o.parentNode)o.remove();clearInterval(iv);},60000);
+  document.body.appendChild(o);
+})();
+</script>
 <div id="navRoot" aria-label="Primary navigation"></div>
 <div id="toast" class="toast"></div>
 <div id="modalRoot"></div>
@@ -5347,16 +5363,16 @@ window.__admissionBootPromise.catch(error => console.error('[Admission Hub] boot
     // The updated worker takes control now; the current document remains usable and the next launch uses the new shell.
     try{
 
-      const expectedSwVersion = 'v313-sw-selfheal-20261012';
+      const expectedSwVersion = 'v315-fixui-20261012';
       // register() on the same scope performs an in-place update. Never unregister
       // the active iOS worker first: that discards the instant offline shell.
-      const registration=await navigator.serviceWorker.register('./sw.js?v=v313-sw-selfheal-20261012',{scope:'./',updateViaCache:'none'});
+      const registration=await navigator.serviceWorker.register('./sw.js?v=v315-fixui-20261012',{scope:'./',updateViaCache:'none'});
       await registration.update().catch(()=>{});
       // Purge every old app-shell cache (any build id ≠ current). This guarantees
       // stale pre-retirement application shells can never be served from cache again.
       try {
 
-        const cur = 'admission-hub-shell-v313-sw-selfheal-20261012';
+        const cur = 'admission-hub-shell-v315-fixui-20261012';
         const names = await caches.keys();
         for (const name of names) {
           if (name.startsWith('admission-hub-shell-') && name !== cur) await caches.delete(name).catch(()=>{});
