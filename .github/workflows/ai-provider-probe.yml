@@ -28,9 +28,9 @@ jobs:
           CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CF_ACCT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           GEMINI_ENV: ${{ secrets.GEMINI_API_KEY }}
+          NS: b9353515b098427687afcfb8654ed359
         run: |
           set -eu
-          NS=b9353515b098427687afcfb8654ed359
           curl -fsS "https://api.cloudflare.com/client/v4/accounts/${CF_ACCT}/storage/kv/namespaces/${NS}/values/secret:AI_KEYS" \
             -H "Authorization: Bearer ${CF_TOKEN}" -o /tmp/aikeys.json
           cat > /tmp/probe.mjs <<'NODE'
@@ -85,6 +85,17 @@ jobs:
             total++; if(s===200)ok++;
             console.log('  '+name+':', s);
           }
+          console.log('== Groq + Cloudflare (special adapters) ==');
+          try {
+            const gk = await fetch('https://api.cloudflare.com/client/v4/accounts/'+process.env.CF_ACCT+'/storage/kv/namespaces/'+process.env.NS+'/values/secret:GROQ_API_KEY',
+              { headers:{ 'Authorization':'Bearer '+process.env.CF_TOKEN } });
+            const gkey = (await gk.text()).trim();
+            if (gkey) {
+              const s = await statusOf('https://api.groq.com/openai/v1/chat/completions', gkey, 'openai/gpt-oss-120b');
+              total++; if(s===200)ok++;
+              console.log('  GROQ (gpt-oss-120b):', s);
+            } else console.log('  GROQ: no key');
+          } catch(e) { console.log('  GROQ: read err', String(e).slice(0,40)); }
           console.log('== TOTAL: '+ok+' of '+total+' keys answered 200 ==');
           NODE
           sed -i 's/^          //' /tmp/probe.mjs
