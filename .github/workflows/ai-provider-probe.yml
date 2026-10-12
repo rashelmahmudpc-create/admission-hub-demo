@@ -60,10 +60,18 @@ jobs:
               return r.status;
             } catch (e) { return 'ERR:'+(e.name||e.message).slice(0,20); }
           }
+          async function gemStatus(key) {
+            try {
+              const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key='+encodeURIComponent(key),
+                { method:'POST', headers:{'Content-Type':'application/json'},
+                  body: JSON.stringify({ contents:[{ parts:[{ text:'hi' }] }] }), signal: AbortSignal.timeout(20000) });
+              return r.status;
+            } catch (e) { return 'ERR:'+(e.name||e.message).slice(0,20); }
+          }
           let ok=0, total=0;
           console.log('== Gemini key pool (model gemini-3.1-flash-lite) ==');
           console.log('keys found:', gem.length, '(source:', (kv.GEMINI_KEYS?'GEMINI_KEYS':(kv.GEMINI_API_KEYS?'GEMINI_API_KEYS':'env')), ')');
-          const gemStatuses = await Promise.all(gem.map(k=>statusOf('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key='+encodeURIComponent(k),'', '')));
+          const gemStatuses = await Promise.all(gem.map(gemStatus));
           gemStatuses.forEach((s,i)=>{total++; if(s===200)ok++; console.log('  key'+(i+1)+':', s);});
           console.log('== OpenAI-compatible providers (1 key each) ==');
           for (const [name,k,url,model] of compat) {
