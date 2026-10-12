@@ -1,0 +1,70 @@
+name: AI KV inspect (manual, read-only)
+
+# READ-ONLY diagnostic for the AI provider key overlay. The Worker reads its
+# provider keys from KV under `secret:AI_KEYS` (a JSON name->value blob) plus
+# `secret:<NAME>` single entries. When the live /api/ai/status chain does not
+# grow, the cause is almost always one of: the Key name is not exactly
+# `secret:AI_KEYS`, the value is not valid JSON, or it sits in a namespace the
+# Worker does not bind. This workflow answers all three WITHOUT printing any
+# secret value — it lists key names, whether the blob parses, and how many
+# comma-separated keys each provider name carries.
+#
+# Required repository secrets: CLOUDFLARE_API_TOKEN (Workers KV:Read),
+# CLOUDFLARE_ACCOUNT_ID.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type INSPECT to list KV key names and validate secret:AI_KEYS
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    if: ${{ inputs.confirmation == 'INSPECT' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: List KV key names and validate the AI_KEYS blob (no values printed)
+        env:
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ACCT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -eu
+          # PUB_KV / GK_KV share this namespace id (wrangler.toml).
+          NS=b9353515b098427687afcfb8654ed359
+          echo "== KV key names with prefix 'secret:' (values hidden) =="
+          curl -fsS "https://api.cloudflare.com/client/v4/accounts/${CF_ACCT}/storage/kv/namespaces/${NS}/keys?prefix=secret%3A&limit=200" \
+            -H "Authorization: Bearer ${CF_TOKEN}" | node -e "
+              let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{
+                let j;try{j=JSON.parse(s);}catch(e){console.log('LIST parse failed:',e.message);process.exit(1);}
+                if(!j.success){console.log('LIST FAILED:',JSON.stringify(j.errors));process.exit(1);}
+                const names=(j.result||[]).map(k=>k.name);
+                console.log('secret: key count:',names.length);
+                names.forEach(n=>console.log('  -',n));
+              });"
+          echo ""
+          echo "== validate secret:AI_KEYS =="
+          if ! curl -fsS "https://api.cloudflare.com/client/v4/accounts/${CF_ACCT}/storage/kv/namespaces/${NS}/values/secret:AI_KEYS" \
+              -H "Authorization: Bearer ${CF_TOKEN}" -o /tmp/aikeys.json; then
+            echo "NOT FOUND: no KV entry named exactly 'secret:AI_KEYS' in this namespace"
+            exit 0
+          fi
+          node -e "
+            const raw=require('fs').readFileSync('/tmp/aikeys.json','utf8');
+            console.log('value bytes:',raw.length);
+            let j;try{j=JSON.parse(raw);}catch(e){console.log('JSON PARSE: FAILED ->',e.message);process.exit(0);}
+            if(!j||typeof j!=='object'||Array.isArray(j)){console.log('JSON PARSE: not an object');process.exit(0);}
+            console.log('JSON PARSE: OK');
+            const names=Object.keys(j);
+            console.log('provider names:',names.length);
+            for(const n of names){
+              const v=j[n];
+              const cnt=typeof v==='string'?v.split(',').map(x=>x.trim()).filter(Boolean).length:0;
+              console.log('  -',n,'| nonempty:',!!(v&&String(v).trim()),'| keys:',cnt);
+            }
+          "
