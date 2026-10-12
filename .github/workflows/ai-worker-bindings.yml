@@ -1,0 +1,39 @@
+name: AI worker binding names (manual, read-only)
+
+# Lists the binding NAMES on the admission-gk Worker so we can see whether a
+# Worker variable `GEMINI_KEYS` exists (and shadows the KV value). Names and
+# types only; no secret value is printed.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type LIST to list worker binding names
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  list:
+    if: ${{ inputs.confirmation == 'LIST' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: List binding names on admission-gk
+        env:
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ACCT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -eu
+          curl -fsS "https://api.cloudflare.com/client/v4/accounts/${CF_ACCT}/workers/scripts/admission-gk/settings" \
+            -H "Authorization: Bearer ${CF_TOKEN}" -o /tmp/settings.json
+          node -e '
+            const j = JSON.parse(require("fs").readFileSync("/tmp/settings.json","utf8"));
+            const bs = (j.result && j.result.bindings) || [];
+            console.log("binding count:", bs.length);
+            for (const b of bs) console.log("  -", b.name, "|", b.type);
+            const g = bs.filter(b=>/GEMINI/i.test(b.name));
+            console.log("GEMINI-named bindings:", g.map(b=>b.name+"("+b.type+")").join(", ") || "none");
+          '
