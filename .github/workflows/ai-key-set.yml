@@ -1,0 +1,56 @@
+name: Install provider keys into KV (manual, owner-authorised)
+
+# The repo is PUBLIC, so owner-supplied keys are held as ENCRYPTED repo secrets
+# and read via secrets.* here — never passed as a workflow input, never printed.
+# Each secret is copied to the KV name the app reads (secret:AI_KEYS).
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type SET-KEYS to install the configured keys into KV
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  set:
+    if: ${{ inputs.confirmation == 'SET-KEYS' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Write provider keys into secret:AI_KEYS
+        env:
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ACCT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          NS: b9353515b098427687afcfb8654ed359
+          VERCEL_AI_GATEWAY_KEY: ${{ secrets.VERCEL_AI_GATEWAY_KEY }}
+          MISTRAL_API_KEYS: ${{ secrets.MISTRAL_API_KEYS }}
+        run: |
+          set -eu
+          URI="https://api.cloudflare.com/client/v4/accounts/${CF_ACCT}/storage/kv/namespaces/${NS}/values/secret:AI_KEYS"
+          curl -fsS "$URI" -H "Authorization: Bearer ${CF_TOKEN}" -o /tmp/aikeys.json
+          node -e '
+            const fs=require("fs");
+            const j=JSON.parse(fs.readFileSync("/tmp/aikeys.json","utf8"));
+            const map={
+              VERCEL_AI_GATEWAY_KEY: process.env.VERCEL_AI_GATEWAY_KEY,
+              MISTRAL_API_KEYS: process.env.MISTRAL_API_KEYS,
+            };
+            for (const [k,v] of Object.entries(map)) {
+              v=String(v||"").trim();
+              if (!v) { console.log("skip (no secret set):", k); continue; }
+              const had = j[k] ? "replaced" : "new";
+              j[k]=v;
+              console.log("set", k, "("+had+")", "len", v.length);
+            }
+            fs.writeFileSync("/tmp/new.json", JSON.stringify(j));
+            console.log("total names:", Object.keys(j).length);
+          '
+          curl -fsS -X PUT "$URI" -H "Authorization: Bearer ${CF_TOKEN}" \
+            -H "Content-Type: application/json" --data-binary @/tmp/new.json -o /tmp/put.json
+          node -e 'const r=JSON.parse(require("fs").readFileSync("/tmp/put.json","utf8")); console.log("write success:", r.success);'
+          curl -fsS "$URI" -H "Authorization: Bearer ${CF_TOKEN}" -o /tmp/v.json
+          node -e 'const j=JSON.parse(require("fs").readFileSync("/tmp/v.json","utf8")); console.log("VERCEL present:", !!j.VERCEL_AI_GATEWAY_KEY, "| MISTRAL present:", !!j.MISTRAL_API_KEYS);'

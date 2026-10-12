@@ -654,8 +654,14 @@ export function providerChain(env, tier = 'FAST', badSet = new Set(), kv = {}) {
    A `<NAME>_MODELS` value (env or KV) overrides the default list. */
 const COMPAT_PROVIDERS = [
   { key: 'OPENROUTER_API_KEYS', url: 'https://openrouter.ai/api/v1/chat/completions', models: ['openai/gpt-4o-mini'] },
+  /* Vercel AI Gateway is an OpenAI-compatible front door to many models; the
+   * free tier serves openai/gpt-4o-mini. Its 400 floor on max_output_tokens is
+   * satisfied by the agent core's normal token budget. */
+  { key: 'VERCEL_AI_GATEWAY_KEY', url: 'https://ai-gateway.vercel.sh/v1/chat/completions', models: ['openai/gpt-4o-mini'] },
   { key: 'GITHUB_MODELS_TOKEN', url: 'https://models.github.ai/inference/chat/completions', models: ['openai/gpt-4o-mini'] },
-  { key: 'MISTRAL_API_KEYS', url: 'https://api.mistral.ai/v1/chat/completions', models: ['mistral-small-latest'] },
+  /* mistral-small-latest is a paid-plan model and answers 429 on the free tier;
+   * ministral-14b-latest is served to free accounts. */
+  { key: 'MISTRAL_API_KEYS', url: 'https://api.mistral.ai/v1/chat/completions', models: ['ministral-14b-latest'] },
   { key: 'CEREBRAS_API_KEYS', url: 'https://api.cerebras.ai/v1/chat/completions', models: ['llama-3.3-70b'] },
   { key: 'SAMBANOVA_API_KEYS', url: 'https://api.sambanova.ai/v1/chat/completions', models: ['Meta-Llama-3.3-70B-Instruct'] },
   { key: 'COHERE_API_KEYS', url: 'https://api.cohere.ai/compatibility/v1/chat/completions', models: ['command-r7b-12-2024'] },
