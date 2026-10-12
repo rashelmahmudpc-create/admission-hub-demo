@@ -172,10 +172,13 @@ t('M10-৩০. the rate limit still answers 429 with the same error code and cap
  * is the preferred path and KV remains the fallback, so a missing binding still
  * works and the earlier KV-based behaviour is not silently deleted. */
 t('M10-৩০ক. agentChat prefers the AI-state Durable Object and keeps KV as fallback',
-  AGENT_SRC.includes("import { aiStateStore } from './ai-state-do.mjs'")
+  AGENT_SRC.includes("from './ai-state-do.mjs'")
   && AGENT_SRC.includes('const aiState = aiStateStore(env);')
   && AGENT_SRC.includes('await aiState.consumeQuota(sendCtx.uid, cap)')
   && AGENT_SRC.includes("return getKv(env.PUB_KV, key);"));
+t('M10-৩০গ. the status endpoint reports which state store is live',
+  AGENT_SRC.includes("state: aiStateStore(env) ? { store: 'durable-object'")
+  && AGENT_SRC.includes("{ store: 'kv', version: 'kv-fallback' }"));
 t('M10-৩০খ. memory reads and writes go through the state helpers, not KV directly',
   AGENT_SRC.includes("await stateGet('chatmem:' + sendCtx.uid)")
   && AGENT_SRC.includes("await statePut('chatmem:' + sendCtx.uid, JSON.stringify(next))")

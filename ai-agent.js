@@ -22,7 +22,7 @@ import { extractMemoryCandidates, makeMemory, upsertMemory, parseMemory, renderM
 import { validateResponse, describeResponseValidation, RESPONSE_VALIDATION_VERSION } from './response-validator.js';
 import { describeActions, ACTION_VERSION } from './action-engine.js';
 import { makeTrace, makeRequestId, callerRef, quotaState, renderTrace, estimateTokens, FALLBACK, OBSERVABILITY_VERSION, describeObservability, parseTraces, appendTrace, addUsage, emptyUsage, estimateCost, validateObservability } from './observability.js';
-import { aiStateStore } from './ai-state-do.mjs';
+import { aiStateStore, AI_STATE_VERSION } from './ai-state-do.mjs';
 
 export const AGENT_VERSION = 'agent-f1';
 export const SYSTEM_PROMPT_V = 'sys-f1-3-ai-personalization';
@@ -1164,6 +1164,10 @@ export async function agentStatus(request, env, uid) {
     providers: { gemini: hasGemini, groq: hasGroq, cloudflare: hasCloudflare },
     models: { fast: GEMINI_MODELS.FAST, smart: GEMINI_MODELS.SMART },
     limits: { perDay: Math.max(1, Math.min(500, Number(env.AGENT_DAILY_CAP || 10))) },
+    /* Which store the per-user state actually uses. Without this the migration
+       off KV could only be inferred; here it is observable from the status
+       endpoint, so a missing binding is visible rather than assumed. */
+    state: aiStateStore(env) ? { store: 'durable-object', version: AI_STATE_VERSION } : { store: 'kv', version: 'kv-fallback' },
     streaming: true,
     tools: { version: TOOL_REGISTRY_VERSION, declared: listTools() },
     memory: { version: MEMORY_VERSION, mode: 'auto', scope: 'account-only' },
