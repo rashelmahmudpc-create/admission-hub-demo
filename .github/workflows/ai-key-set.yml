@@ -39,8 +39,8 @@ jobs:
               VERCEL_AI_GATEWAY_KEY: process.env.VERCEL_AI_GATEWAY_KEY,
               MISTRAL_API_KEYS: process.env.MISTRAL_API_KEYS,
             };
-            for (const [k,v] of Object.entries(map)) {
-              v=String(v||"").trim();
+            for (const [k,raw] of Object.entries(map)) {
+              const v=String(raw||"").trim();
               if (!v) { console.log("skip (no secret set):", k); continue; }
               const had = j[k] ? "replaced" : "new";
               j[k]=v;
