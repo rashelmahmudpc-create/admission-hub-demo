@@ -718,8 +718,15 @@ export function routerChain(env, tier, badSet = new Set(), kv = {}) {
   }
   const groqKey = pickKey(env, kv, 'GROQ_API_KEY');
   if (groqKey) {
-    chain.push({ provider: 'groq', key: groqKey, model: 'llama-3.3-70b-versatile' });
-    chain.push({ provider: 'groq', key: groqKey, model: 'llama-3.1-8b-instant' });
+    /* Groq retired the llama-3.x lineup; both of these used to be here and now
+       answer 404 model_not_found, which the chain treated as a transient
+       failure and retried on every request. The gpt-oss models are the current
+       free-tier text models. AGENT_GROQ_MODELS overrides this list. */
+    const groqModels = String((env && env.AGENT_GROQ_MODELS) || kv.AGENT_GROQ_MODELS || '')
+      .split(',').map(s => s.trim()).filter(Boolean);
+    for (const m of (groqModels.length ? groqModels : ['openai/gpt-oss-120b', 'openai/gpt-oss-20b'])) {
+      chain.push({ provider: 'groq', key: groqKey, model: m });
+    }
   }
   /* Cloudflare Workers AI backup (Phase 9 M2.5). Needs both the account id and
      an API token; either missing means the slot is simply absent, exactly like
@@ -1163,6 +1170,11 @@ export async function agentStatus(request, env, uid) {
     ok: true, agent: AGENT_VERSION, pv: SYSTEM_PROMPT_V,
     providers: { gemini: hasGemini, groq: hasGroq, cloudflare: hasCloudflare },
     models: { fast: GEMINI_MODELS.FAST, smart: GEMINI_MODELS.SMART },
+    /* The provider chain the router would actually try, in order. A bare
+       `providers.groq: true` only proves a key exists — it said true while both
+       Groq models in the chain were already retired and answering 404. Listing
+       the chain makes a dead model visible here instead of only in the logs. */
+    chain: providerChain(env, TIER.FAST).map(c => c.provider + ':' + c.model),
     limits: { perDay: Math.max(1, Math.min(500, Number(env.AGENT_DAILY_CAP || 10))) },
     /* Which store the per-user state actually uses. Without this the migration
        off KV could only be inferred; here it is observable from the status

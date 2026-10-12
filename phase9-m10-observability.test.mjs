@@ -187,6 +187,15 @@ t('M10-৩০গ. the status endpoint reports which state store is live',
 t('M10-৩০ঘ. AI_STATE is passed into the public handler whitelist',
   WORKER_SRC.includes('AI_STATE: env.AI_STATE')
   && /envPub = \{[\s\S]*?AI_STATE: env\.AI_STATE[\s\S]*?\};/.test(WORKER_SRC));
+/* Groq retired llama-3.3-70b-versatile and llama-3.1-8b-instant; both answer
+ * 404 model_not_found now. A 404 from a provider is not transient, so leaving a
+ * dead model in the chain means every request pays a wasted round-trip to Groq
+ * before falling through. */
+t('M10-৩০ঙ. the chain names only Groq models that still exist',
+  !AGENT_SRC.includes('llama-3.3-70b-versatile')
+  && !AGENT_SRC.includes('llama-3.1-8b-instant')
+  && AGENT_SRC.includes("'openai/gpt-oss-120b'")
+  && AGENT_SRC.includes("'openai/gpt-oss-20b'"));
 t('M10-৩০খ. memory reads and writes go through the state helpers, not KV directly',
   AGENT_SRC.includes("await stateGet('chatmem:' + sendCtx.uid)")
   && AGENT_SRC.includes("await statePut('chatmem:' + sendCtx.uid, JSON.stringify(next))")

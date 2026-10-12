@@ -4,7 +4,7 @@
   const GK_CACHE_KEY='daily-gk-live-v1';
   const GK_TTL=24*60*60*1000;
   const GROQ_ENDPOINT='https://api.groq.com/openai/v1/chat/completions';
-  const GROQ_MODEL='llama-3.1-8b-instant';
+  const GROQ_MODEL='openai/gpt-oss-20b';
   // GitHub Pages is client-only, so this key is intentionally read from one place.
   // Configure window.GROQ_API_KEY before this script, or save a key as localStorage.groq_api_key.
   const GROQ_API_KEY=String(window.GROQ_API_KEY||localStorage.getItem('groq_api_key')||'').trim();
