@@ -39,7 +39,8 @@ jobs:
           const gem = String(kv.GEMINI_KEYS||kv.GEMINI_API_KEYS||process.env.GEMINI_ENV||'').split(',').map(s=>s.trim()).filter(Boolean);
           const compat = [
             ['OPENROUTER', kv.OPENROUTER_API_KEYS, 'https://openrouter.ai/api/v1/chat/completions', 'openai/gpt-4o-mini'],
-            ['MISTRAL', kv.MISTRAL_API_KEYS, 'https://api.mistral.ai/v1/chat/completions', 'mistral-small-latest'],
+            ['VERCEL', kv.VERCEL_AI_GATEWAY_KEY, 'https://ai-gateway.vercel.sh/v1/chat/completions', 'openai/gpt-4o-mini'],
+            ['MISTRAL', kv.MISTRAL_API_KEYS, 'https://api.mistral.ai/v1/chat/completions', 'ministral-14b-latest'],
             ['CEREBRAS', kv.CEREBRAS_API_KEYS, 'https://api.cerebras.ai/v1/chat/completions', 'llama-3.3-70b'],
             ['SAMBANOVA', kv.SAMBANOVA_API_KEYS, 'https://api.sambanova.ai/v1/chat/completions', 'Meta-Llama-3.3-70B-Instruct'],
             ['COHERE', kv.COHERE_API_KEYS, 'https://api.cohere.ai/compatibility/v1/chat/completions', 'command-r7b-12-2024'],
@@ -56,7 +57,7 @@ jobs:
           async function statusOf(url, key, model) {
             try {
               const r = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},
-                body: JSON.stringify({ model, messages:[{role:'user',content:'hi'}], max_tokens:1 }), signal: AbortSignal.timeout(20000) });
+                body: JSON.stringify({ model, messages:[{role:'user',content:'hi'}], max_tokens:16 }), signal: AbortSignal.timeout(20000) });
               return r.status;
             } catch (e) { return 'ERR:'+(e.name||e.message).slice(0,20); }
           }
