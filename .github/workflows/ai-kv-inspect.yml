@@ -64,9 +64,19 @@ jobs:
                 const p=Number(m[1]);
                 const win=(a,b)=>raw.slice(Math.max(0,a),Math.min(raw.length,b));
                 const mask=s=>s.replace(/[A-Za-z0-9_\-]/g,'•');
-                console.log('context (alnum masked): ...'+mask(win(p-25,p))+'<<HERE>>'+mask(win(p,p+25))+'...');
                 console.log('char at error:',JSON.stringify(raw[p]),'| char before:',JSON.stringify(raw[p-1]));
                 console.log('total length:',raw.length,'| error is',raw.length-p,'chars from the end');
+                // Property NAMES are configuration names, not secret values -> safe to print.
+                const nameRe=/[\u201C\u201D"]([A-Za-z0-9_]+)[\u201C\u201D"]\s*:/g;
+                let mm, idx=0;
+                console.log('property names found (name + quote style):');
+                while((mm=nameRe.exec(raw))!==null){
+                  idx++;
+                  const open=raw[mm.index];
+                  const style=(open==='"'||open==='\u201C'||open==='\u201D')?(open==='"'?'straight':'CURLY'):'?';
+                  const bad=(mm.index<=p && p<=mm.index+mm[0].length)?'  <== the broken one':'';
+                  console.log('  #'+idx, mm[1], '|', style, bad);
+                }
               }
               process.exit(0);
             }
