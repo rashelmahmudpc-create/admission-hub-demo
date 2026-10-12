@@ -1932,13 +1932,15 @@ function routerChain(env, tier, badSet = /* @__PURE__ */ new Set(), kv2 = {}) {
     for (const m of list) chain.push({ provider: "cloudflare", key: cfKey, model: m });
   }
   for (const p of COMPAT_PROVIDERS) {
-    const key = pickKey(env, kv2, p.key);
-    if (!key) continue;
+    const keys2 = String(pickKey(env, kv2, p.key) || "").split(",").map((s) => s.trim()).filter(Boolean);
+    if (!keys2.length) continue;
     const models = String(env && env[p.key + "_MODELS"] || kv2[p.key + "_MODELS"] || "").split(",").map((s) => s.trim()).filter(Boolean);
-    for (const m of models.length ? models : p.models) {
-      const sig = String(key).slice(0, 12) + ":" + m;
-      if (badSet.has(sig)) continue;
-      chain.push({ provider: "openai-compat", key, model: m, url: p.url });
+    for (const key of keys2) {
+      for (const m of models.length ? models : p.models) {
+        const sig = String(key).slice(0, 12) + ":" + m;
+        if (badSet.has(sig)) continue;
+        chain.push({ provider: "openai-compat", key, model: m, url: p.url });
+      }
     }
   }
   return chain;

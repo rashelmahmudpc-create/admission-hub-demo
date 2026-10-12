@@ -235,5 +235,29 @@ t('M2.7-৫. compat entries honour the bad-set like every other provider', (() =
   return c.length === 0;
 })());
 
+t('M2.7-৬. a comma-separated compat value yields one entry per key', (() => {
+  const c = routerChain({ MISTRAL_API_KEYS: 'm-one,m-two' }, 'FAST', new Set())
+    .filter(x => x.provider === 'openai-compat');
+  return c.length === 2 && c[0].key === 'm-one' && c[1].key === 'm-two';
+})());
+
+t('M2.7-৭. a bad-set hit on one compat key leaves the other in the chain', (() => {
+  const dead = 'm-dead-key-0000';
+  const bad = new Set([dead.slice(0, 12) + ':mistral-small-latest']);
+  const c = routerChain({ MISTRAL_API_KEYS: 'm-live-key,m-dead-key-0000' }, 'FAST', bad)
+    .filter(x => x.provider === 'openai-compat');
+  return c.length === 1 && c[0].key === 'm-live-key';
+})());
+
+t('M2.7-৮. every added provider keeps the openai-compat shape and a URL', (() => {
+  const names = ['SAMBANOVA_API_KEYS', 'COHERE_API_KEYS', 'HUGGINGFACE_API_KEYS', 'DEEPINFRA_API_KEYS',
+    'TOGETHER_API_KEYS', 'KIMI_API_KEYS', 'AIML_API_KEYS', 'LLM7_API_KEYS', 'SILICONFLOW_API_KEYS',
+    'STEPFUN_API_KEYS', 'MINIMAX_API_KEYS'];
+  return names.every(n => {
+    const c = routerChain({ [n]: 'k' }, 'FAST', new Set()).filter(x => x.provider === 'openai-compat');
+    return c.length === 1 && c[0].key === 'k' && /^https:\/\//.test(c[0].url) && Boolean(c[0].model);
+  });
+})());
+
 console.log(`\n🧩 PHASE9-M2-ADAPTERS: ${pass} pass / ${fail} fail`);
 process.exit(fail ? 1 : 0);

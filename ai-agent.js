@@ -753,16 +753,21 @@ export function routerChain(env, tier, badSet = new Set(), kv = {}) {
     const list = cfModels.length ? cfModels : ['@cf/meta/llama-3.3-70b-instruct-fp8-fast'];
     for (const m of list) chain.push({ provider: 'cloudflare', key: cfKey, model: m });
   }
-  /* Extra OpenAI-compatible providers — each appears only when its key exists. */
+  /* Extra OpenAI-compatible providers — each appears only when its key exists.
+     A comma-separated value yields one chain entry per key, the same shape
+     GEMINI_KEYS already uses, so a second key for a provider is rotated to
+     instead of being sent verbatim as a single invalid credential. */
   for (const p of COMPAT_PROVIDERS) {
-    const key = pickKey(env, kv, p.key);
-    if (!key) continue;
+    const keys = String(pickKey(env, kv, p.key) || '').split(',').map(s => s.trim()).filter(Boolean);
+    if (!keys.length) continue;
     const models = String((env && env[p.key + '_MODELS']) || kv[p.key + '_MODELS'] || '')
       .split(',').map(s => s.trim()).filter(Boolean);
-    for (const m of (models.length ? models : p.models)) {
-      const sig = String(key).slice(0, 12) + ':' + m;
-      if (badSet.has(sig)) continue;
-      chain.push({ provider: 'openai-compat', key, model: m, url: p.url });
+    for (const key of keys) {
+      for (const m of (models.length ? models : p.models)) {
+        const sig = String(key).slice(0, 12) + ':' + m;
+        if (badSet.has(sig)) continue;
+        chain.push({ provider: 'openai-compat', key, model: m, url: p.url });
+      }
     }
   }
   return chain;
