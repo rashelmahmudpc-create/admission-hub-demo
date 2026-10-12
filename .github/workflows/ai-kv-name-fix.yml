@@ -1,0 +1,48 @@
+name: AI KV name fix (manual, writes KV once)
+
+# One-off, owner-authorised fix. The Worker reads the Gemini key pool from the
+# KV name `GEMINI_KEYS`, but the keys were stored under `GEMINI_API_KEYS`, so the
+# app currently uses none of them. This reads the existing `secret:AI_KEYS` JSON,
+# adds a `GEMINI_KEYS` entry with the same value (the original is NOT deleted),
+# writes it back, and verifies. Values are handled only inside the runner and
+# are never printed.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type FIX-KV to add the GEMINI_KEYS name to the AI keys blob
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  fix:
+    if: ${{ inputs.confirmation == 'FIX-KV' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Add GEMINI_KEYS name to secret:AI_KEYS (value copied, original kept)
+        env:
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ACCT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -eu
+          NS=b9353515b098427687afcfb8654ed359
+          API="https://api.cloudflare.com/client/v4/accounts/${CF_ACCT}/storage/kv/namespaces/${NS}"
+          curl -fsS "$API/values/secret:AI_KEYS" -H "Authorization: Bearer ${CF_TOKEN}" -o /tmp/in.json
+          node -e '
+            const fs = require("fs");
+            const j = JSON.parse(fs.readFileSync("/tmp/in.json", "utf8"));
+            console.log("before:", Object.keys(j).join(","));
+            if (!j.GEMINI_KEYS && j.GEMINI_API_KEYS) { j.GEMINI_KEYS = j.GEMINI_API_KEYS; console.log("action: added GEMINI_KEYS (copied value)"); }
+            else { console.log("action: none (GEMINI_KEYS already present:", !!j.GEMINI_KEYS, ")"); }
+            fs.writeFileSync("/tmp/out.json", JSON.stringify(j));
+            console.log("after:", Object.keys(j).join(","));
+          '
+          curl -fsS -X PUT "$API/values/secret:AI_KEYS" -H "Authorization: Bearer ${CF_TOKEN}" -H "Content-Type: text/plain" --data-binary @/tmp/out.json
+          echo "write: ok"
+          curl -fsS "$API/values/secret:AI_KEYS" -H "Authorization: Bearer ${CF_TOKEN}" -o /tmp/verify.json
+          node -e 'const j=JSON.parse(require("fs").readFileSync("/tmp/verify.json","utf8")); console.log("verify names:", Object.keys(j).join(",")); console.log("verify GEMINI_KEYS present:", !!j.GEMINI_KEYS);'
