@@ -36,7 +36,11 @@ jobs:
             -H "Content-Type: application/json" \
             -d '{"model":"openai/gpt-4o-mini","messages":[{"role":"user","content":"say hi"}],"max_tokens":16}')
           echo "HTTP $code"
-          echo "--- rate-limit headers ---"
-          grep -iE "ratelimit|retry-after|retention" /tmp/h.txt | tr -d '\r' || true
-          echo "--- body ---"
-          head -c 300 /tmp/r.json; echo
+          echo "--- all response headers ---"
+          tr -d '\r' < /tmp/h.txt
+          echo "--- body (bytes: $(wc -c </tmp/r.json)) ---"
+          cat /tmp/r.json; echo
+          echo "--- catalog probe ---"
+          curl -s -o /tmp/c.json -w "catalog HTTP %{http_code}\n" --max-time 30 \
+            "https://models.github.ai/catalog/models" -H "Authorization: Bearer ${GH_MODELS_TOKEN}"
+          head -c 300 /tmp/c.json; echo
