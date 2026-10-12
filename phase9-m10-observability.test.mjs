@@ -13,6 +13,7 @@ const t = (n, c) => { if (c) { pass++; console.log('  ✓', n); } else { fail++;
 
 const O = await import('./observability.js');
 const AGENT_SRC = readFileSync('ai-agent.js', 'utf8');
+const WORKER_SRC = readFileSync('gk-agent-worker.js', 'utf8');
 const {
   OBSERVABILITY_VERSION, MAX_TRACES, FALLBACK, PRICING, TRACE_FIELDS,
   FORBIDDEN_TRACE_KEYS, QUOTA_WARN_AT, estimateTokens, makeRequestId, callerRef,
@@ -179,6 +180,13 @@ t('M10-৩০ক. agentChat prefers the AI-state Durable Object and keeps KV as 
 t('M10-৩০গ. the status endpoint reports which state store is live',
   AGENT_SRC.includes("state: aiStateStore(env) ? { store: 'durable-object'")
   && AGENT_SRC.includes("{ store: 'kv', version: 'kv-fallback' }"));
+/* The public handler gets an explicit env whitelist. A binding left out of it is
+ * silently absent downstream, and both the quota and the abuse guard then fall
+ * back to KV — which is exactly what happened on the first deploy of this
+ * change. This asserts the binding is in the whitelist so it cannot recur. */
+t('M10-৩০ঘ. AI_STATE is passed into the public handler whitelist',
+  WORKER_SRC.includes('AI_STATE: env.AI_STATE')
+  && /envPub = \{[\s\S]*?AI_STATE: env\.AI_STATE[\s\S]*?\};/.test(WORKER_SRC));
 t('M10-৩০খ. memory reads and writes go through the state helpers, not KV directly',
   AGENT_SRC.includes("await stateGet('chatmem:' + sendCtx.uid)")
   && AGENT_SRC.includes("await statePut('chatmem:' + sendCtx.uid, JSON.stringify(next))")

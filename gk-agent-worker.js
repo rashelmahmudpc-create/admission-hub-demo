@@ -535,7 +535,12 @@ export default {
           AGENT_GEMINI_MODELS: env.AGENT_GEMINI_MODELS,
           /* P13 — D1 read path (public question/content lists). Absent binding
              leaves the KV path in place, so this is additive. */
-          PROFILE_DB: env.PROFILE_DB
+          PROFILE_DB: env.PROFILE_DB,
+          /* AI chat state. This object is a whitelist: a binding left out here
+             is invisible to the public handler, and both the per-user quota and
+             the P14 abuse guard fall back to KV without saying so. The AI status
+             endpoint reports which store is live, which is how this was caught. */
+          AI_STATE: env.AI_STATE
         };
         const pubResponse = await pubHandler.fetch(new Request(u2p.href, request), envPub, ctx);
         return await compressResponse(request, pubResponse);
