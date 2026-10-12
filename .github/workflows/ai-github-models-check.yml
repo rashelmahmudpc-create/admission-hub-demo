@@ -29,11 +29,14 @@ jobs:
         run: |
           set -eu
           echo "token length: ${#GH_MODELS_TOKEN}"
-          code=$(curl -s -o /tmp/r.json -w "%{http_code}" --max-time 40 \
+          code=$(curl -s -D /tmp/h.txt -o /tmp/r.json -w "%{http_code}" --max-time 40 \
             -X POST "https://models.github.ai/inference/chat/completions" \
             -H "Authorization: Bearer ${GH_MODELS_TOKEN}" \
             -H "Accept: application/vnd.github+json" \
             -H "Content-Type: application/json" \
             -d '{"model":"openai/gpt-4o-mini","messages":[{"role":"user","content":"say hi"}],"max_tokens":16}')
           echo "HTTP $code"
-          head -c 500 /tmp/r.json; echo
+          echo "--- rate-limit headers ---"
+          grep -iE "ratelimit|retry-after|retention" /tmp/h.txt | tr -d '\r' || true
+          echo "--- body ---"
+          head -c 300 /tmp/r.json; echo
