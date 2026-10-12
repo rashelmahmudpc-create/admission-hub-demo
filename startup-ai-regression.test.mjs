@@ -51,13 +51,29 @@ test('১১. protection snapshot runs as idle post-boot work',
 /* PWA lifecycle */
 test('১২. build/cache/static-Welcome and main-app AI versions are synchronized',
 
-  SW.includes("const BUILD_ID = 'v312-vm-scope-20261011'") && H.includes("const expectedSwVersion = 'v312-vm-scope-20261011'") && H.includes('sw.js?v=v312-vm-scope-20261011') && H.includes('account-access.js?v=20261010-static-welcome-lock3') && SW.includes('account-access.js?v=20261010-static-welcome-lock3') && H.includes('ai-agent-chat.js?v=agent-f1-ui-p06chat') && SW.includes('ai-agent-chat.js?v=agent-f1-ui-p06chat'));
+  (() => {
+    const m = H.match(/const expectedSwVersion = '([^']+)'/);
+    const build = m && m[1];
+    return Boolean(build) && SW.includes(`const BUILD_ID = '${build}'`) && H.includes(`sw.js?v=${build}`);
+  })() &&
+  /* The shell must precache the exact account-access build the page loads; a
+     drift here silently leaves the offline shell on an older UI (found during
+     the 2026-10-12 audit: shell pinned v…-static-welcome-lock3 while the page
+     loaded v…-kbsafe1). */
+  (() => {
+    const loaded = H.match(/account-access\.(?:css|js)\?v=([^"']+)/);
+    return Boolean(loaded) && SW.includes(`account-access.css?v=${loaded[1]}`) && SW.includes(`account-access.js?v=${loaded[1]}`);
+  })() &&
+  H.includes('ai-agent-chat.js?v=agent-f1-ui-p06chat') && SW.includes('ai-agent-chat.js?v=agent-f1-ui-p06chat'));
 test('১৩. service-worker activation never navigates or reloads open clients',
   !SW.includes('c.navigate(c.url)') && !SW.includes("self.clients.matchAll({ type: 'window', includeUncontrolled: true });\n      for"));
-test('১৪. installed PWA document is bounded network-first with fast offline fallback',
+test('১৪. installed PWA serves the current-build shell instantly, then revalidates; a first visit is never aborted on a timer',
   SW.indexOf('if (isDocumentRequest(request)) {') < SW.indexOf('const staticAsset =') &&
-  SW.includes('const DOCUMENT_NETWORK_TIMEOUT_MS = 2500') &&
-  SW.includes("fetch(request, { cache: 'no-store', signal: controller.signal })") &&
+  /* current-build shell is the SAME build, so serving it cannot show an old UI */
+  SW.includes("const shell = await caches.match('./index.html');") &&
+  SW.includes('event.waitUntil(') &&
+  /* a slow-but-working first navigation must not be aborted and handed the splash */
+  !SW.includes('controller.abort(), DOCUMENT_NETWORK_TIMEOUT_MS') &&
   SW.includes('return offlineFallback(request);'));
 test('১৫. precache stays lean because code-native entry pages add no raster assets',
   /* Bound tracks the hand-curated APP_SHELL list. It grew from 33 → 37 when the

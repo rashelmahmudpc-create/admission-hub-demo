@@ -118,7 +118,7 @@ test('index.html: profile assets linked with versions (v262)', () => {
 
 test('sw.js caches the profile assets (v262)', () => {
 
-  assert.match(SW, /const BUILD_ID = 'v312-vm-scope-20261011';/);
+  assert.match(SW, /const BUILD_ID = 'v319-audit-20261012';/);
   assert.match(SW, /'\.\/academic-catalog\.js\?v=acad-cat-v2',/);
   assert.match(SW, /'\.\/profile-ui\.js\?v=profile-v18-avatar-cache',/);
   assert.match(SW, /'\.\/profile-ui\.css\?v=profile-v15-uni-tap',/);
@@ -643,7 +643,7 @@ test('v263: truncated-script self-heal (owner bug: "SyntaxError: Unexpected EOF"
   // friendly Bengali message if the truncation repeats within the guard window
   assert.match(HTML, /অসম্পূর্ণ এসেছে/);
   // service worker bounds static-asset fetches (no infinite hang on stalled links)
-  assert.match(SW, /STATIC_ASSET_TIMEOUT_MS = 12000/);
+  assert.match(SW, /STATIC_ASSET_TIMEOUT_MS = 20000/);
   assert.match(SW, /controller\.abort\(\), STATIC_ASSET_TIMEOUT_MS/);
 });
 

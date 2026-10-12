@@ -62,7 +62,7 @@ test('p15-04: every precached asset matches its recorded SHA-256 (no corrupt she
 test('p15-05: the worker refuses a corrupt download and can be told to take over', () => {
   assert.match(sw, /isCurrentBuild/, 'a build-marker check must gate what is cached');
   assert.match(sw, /SKIP_WAITING/, 'the update flow needs a skipWaiting escape hatch');
-  assert.match(sw, /DOCUMENT_NETWORK_TIMEOUT_MS/, 'a stalled navigation must not hang offline');
+  assert.match(sw, /caches\.match\('\.\/index\.html'\)/, 'a current-build shell must be served from cache');
 });
 
 test('p15-06: the install-guide pop-up ships and is precached', () => {

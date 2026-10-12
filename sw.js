@@ -3,13 +3,22 @@ const CACHE_PREFIX = 'admission-hub-shell-';
 // hold user data; this one holds exactly one image and is trimmed on write.
 const AVATAR_CACHE = 'admission-hub-avatar-v1';
 
-const BUILD_ID = 'v318-noblank-slow-20261012';
+const BUILD_ID = 'v319-audit-20261012';
 const CACHE_NAME = `${CACHE_PREFIX}${BUILD_ID}`;
 const VERSION_HEADER = 'X-Admission-Hub-Build';
 const DOCUMENT_NETWORK_TIMEOUT_MS = 2500;
-// A stalled asset connection must never hang a script/style load forever.
-const STATIC_ASSET_TIMEOUT_MS = 12000;
+// A stalled asset connection must never hang a script/style load forever. Kept
+// generous because a real asset on a slow link can legitimately take a while;
+// this is only the "connection is dead" guard, not a speed budget.
+const STATIC_ASSET_TIMEOUT_MS = 20000;
 const isCurrentBuild = response => response && response.headers && response.headers.get(VERSION_HEADER) === BUILD_ID;
+// A flood of oversized PNG art on this app once overwrote IndexedDB, so the
+// over-quota error name is treated as a recoverable environment error too.
+const isStorageQuotaError = error => {
+  const name = String((error && error.name) || '');
+  const message = String((error && error.message) || error || '');
+  return /QuotaExceeded|NS_ERROR_DOM_QUOTA_REACHED/i.test(name) || /quota|storage is full|disk/i.test(message);
+};
 function markBuild(response) {
   if (!response || !response.ok) return response;
   const headers = new Headers(response.headers);
@@ -24,10 +33,10 @@ const APP_SHELL = [
   './3d-loader.css?v=3d-v2',
   './session-persist.js?v=session-v2',
   './analytics-service.js?v=analytics-p2-v2-insights',
-  './account-access.css?v=20261010-static-welcome-lock3',
+  './account-access.css?v=20261012-kbsafe1',
   './institutions-bd.js?v=bd-institutions-v2',
   './language-engine.js?v=lang-v5-single-email-button',
-  './account-access.js?v=20261010-static-welcome-lock3',
+  './account-access.js?v=20261012-kbsafe1',
   './academic-catalog.js?v=acad-cat-v2',
   './profile-ui.js?v=profile-v18-avatar-cache',
   './profile-ui.css?v=profile-v15-uni-tap',
@@ -67,17 +76,17 @@ const APP_SHELL = [
 // A truncated/corrupt download is NEVER written to the shell cache.
 const ASSET_DIGESTS = {
 /* sw-manifest:start */
-  "./index.html": "b2af5ce8c488aa4de4ebee0899a7ee77300ac0d9102ce49cadf935c8100773a4",
+  "./index.html": "5dc71249793c8fd817ab6b7ebf2a38f113bde4b933e00a795d404b61e0458804",
   "./manifest.json": "6dcf0e0c6f7671750549e53558ba8b9f0c2c83b0c6759072a6b5e2276331f491",
   "./manifest.webmanifest": "abcd26174710f6df3e183889a5a9da182f73ee8cdcc543b43db8fb4070cad54f",
   "./dashboard-v2.css?v=dash2f13-theme": "4541bc1e65fd158c593443562975400d128b8f1d3b636595df3c235b99e8cced",
   "./3d-loader.css?v=3d-v2": "43ca21b0a41be5d223c317fd63582f19ff6ffab5d010639ef26349464550da63",
   "./session-persist.js?v=session-v2": "99f3d1f49f6d5714fd25f1c12b2aa978ca97a009d6caba9a690a0442d082593c",
   "./analytics-service.js?v=analytics-p2-v2-insights": "a6d2ad8c3b7e118f1dae40c26302a6e378c5e3c02c1a56162e3ea740b9b2d54b",
-  "./account-access.css?v=20261010-static-welcome-lock3": "ad7c63a49e618532475853138424b01e0471389e0825c0564d0ea2717761b49b",
+  "./account-access.css?v=20261012-kbsafe1": "ad7c63a49e618532475853138424b01e0471389e0825c0564d0ea2717761b49b",
   "./institutions-bd.js?v=bd-institutions-v2": "602c5549515e8207ad152b948ca9b8fe3ad0fbe429afb56380e4e21b662f779d",
   "./language-engine.js?v=lang-v5-single-email-button": "41e161139e15b262375d10d05579cc29852973045e47de974bba5a3deee93e7d",
-  "./account-access.js?v=20261010-static-welcome-lock3": "8fcb84e0e23ad3d22683651bc76716ed47abeec8ad1f51753a4e4ab51753522d",
+  "./account-access.js?v=20261012-kbsafe1": "8fcb84e0e23ad3d22683651bc76716ed47abeec8ad1f51753a4e4ab51753522d",
   "./academic-catalog.js?v=acad-cat-v2": "75e7b80663d41330658c948ad1d4829d49f5c9abed581350582cfeace06d5b32",
   "./profile-ui.js?v=profile-v18-avatar-cache": "aaa1bf37e54b4dd44bad0a9ea6c904645f0457cea98d10aaa02bf39664d6b1b8",
   "./profile-ui.css?v=profile-v15-uni-tap": "6408a4b7ac8acf6845cd0148c58377a4953c8ff879d30b2c520eafae0314b98a",
@@ -319,17 +328,32 @@ self.addEventListener('fetch', event => {
     // from being trapped forever on an old Auth UI while retaining a fast offline
     // shell fallback well inside the five-second startup budget.
     if (isDocumentRequest(request)) {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), DOCUMENT_NETWORK_TIMEOUT_MS);
+      // Serve the current-build shell instantly when we have it (a returning
+      // visitor, and every in-app navigation), then revalidate in the
+      // background. A current-build shell is the SAME build, so this can never
+      // show an old UI — it only removes the per-navigation network wait.
+      const shell = await caches.match('./index.html');
+      if (shell && isCurrentBuild(shell)) {
+        event.waitUntil((async () => {
+          try {
+            const fresh = await fetch(request, { cache: 'no-store' });
+            const ct = fresh.headers.get('content-type') || '';
+            if (fresh.ok && ct.includes('text/html')) await cacheNetworkResponse(request, fresh);
+          } catch (_) { /* keep serving the shell */ }
+        })());
+        return shell;
+      }
+      // No cache yet (a first visit): wait for the real document. It is NOT
+      // aborted on a fixed timer — aborting a slow-but-working navigation and
+      // handing back the splash is exactly what made the app look "stuck
+      // loading" on a slow link.
       try {
-        const response = await fetch(request, { cache: 'no-store', signal: controller.signal });
+        const response = await fetch(request, { cache: 'no-store' });
         const contentType = response.headers.get('content-type') || '';
         if (!response.ok || !contentType.includes('text/html')) throw new Error('DOCUMENT_UNAVAILABLE');
         return await cacheNetworkResponse(request, response);
       } catch (_) {
         return offlineFallback(request);
-      } finally {
-        clearTimeout(timeout);
       }
     }
 
