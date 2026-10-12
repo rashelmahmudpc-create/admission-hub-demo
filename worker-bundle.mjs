@@ -1859,7 +1859,20 @@ var COMPAT_PROVIDERS = [
   { key: "OPENROUTER_API_KEYS", url: "https://openrouter.ai/api/v1/chat/completions", models: ["openai/gpt-4o-mini"] },
   { key: "GITHUB_MODELS_TOKEN", url: "https://models.github.ai/inference/chat/completions", models: ["openai/gpt-4o-mini"] },
   { key: "MISTRAL_API_KEYS", url: "https://api.mistral.ai/v1/chat/completions", models: ["mistral-small-latest"] },
-  { key: "CEREBRAS_API_KEYS", url: "https://api.cerebras.ai/v1/chat/completions", models: ["llama-3.3-70b"] }
+  { key: "CEREBRAS_API_KEYS", url: "https://api.cerebras.ai/v1/chat/completions", models: ["llama-3.3-70b"] },
+  { key: "SAMBANOVA_API_KEYS", url: "https://api.sambanova.ai/v1/chat/completions", models: ["Meta-Llama-3.3-70B-Instruct"] },
+  { key: "COHERE_API_KEYS", url: "https://api.cohere.ai/compatibility/v1/chat/completions", models: ["command-r7b-12-2024"] },
+  { key: "HUGGINGFACE_API_KEYS", url: "https://router.huggingface.co/v1/chat/completions", models: ["meta-llama/Llama-3.3-70B-Instruct"] },
+  { key: "DEEPINFRA_API_KEYS", url: "https://api.deepinfra.com/v1/openai/chat/completions", models: ["meta-llama/Meta-Llama-3.1-70B-Instruct"] },
+  { key: "TOGETHER_API_KEYS", url: "https://api.together.xyz/v1/chat/completions", models: ["meta-llama/Llama-3.3-70B-Instruct-Turbo"] },
+  { key: "KIMI_API_KEYS", url: "https://api.moonshot.ai/v1/chat/completions", models: ["moonshot-v1-8k"] },
+  { key: "AIML_API_KEYS", url: "https://api.aimlapi.com/v1/chat/completions", models: ["gpt-4o-mini"] },
+  { key: "LLM7_API_KEYS", url: "https://api.llm7.io/v1/chat/completions", models: ["gpt-4o-mini"] },
+  { key: "SILICONFLOW_API_KEYS", url: "https://api.siliconflow.cn/v1/chat/completions", models: ["Qwen/Qwen2.5-7B-Instruct"] },
+  { key: "STEPFUN_API_KEYS", url: "https://api.stepfun.ai/v1/chat/completions", models: ["step-1-8k"] },
+  /* MiniMax does not expose /chat/completions; its OpenAI-shaped path is
+     /text/chatcompletion_v2, which this adapter can drive unchanged. */
+  { key: "MINIMAX_API_KEYS", url: "https://api.minimax.chat/v1/text/chatcompletion_v2", models: ["abab6.5s-chat"] }
 ];
 var AI_KV_JSON_KEY = "secret:AI_KEYS";
 var AI_KV_NAME_DEFAULTS = ["GROQ_API_KEY"];
