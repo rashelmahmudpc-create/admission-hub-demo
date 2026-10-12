@@ -65,14 +65,18 @@ jobs:
               const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key='+encodeURIComponent(key),
                 { method:'POST', headers:{'Content-Type':'application/json'},
                   body: JSON.stringify({ contents:[{ parts:[{ text:'hi' }] }] }), signal: AbortSignal.timeout(20000) });
-              return r.status;
-            } catch (e) { return 'ERR:'+(e.name||e.message).slice(0,20); }
+              let reason='';
+              if (r.status !== 200) {
+                try { const j=await r.json(); const e=j.error||{}; reason=(e.status||'')+' / '+(e.message||'').replace(/\s+/g,' ').slice(0,120); } catch (_) {}
+              }
+              return { s:r.status, r:reason };
+            } catch (e) { return { s:'ERR:'+(e.name||e.message).slice(0,20), r:'' }; }
           }
           let ok=0, total=0;
           console.log('== Gemini key pool (model gemini-3.1-flash-lite) ==');
           console.log('keys found:', gem.length, '(source:', (kv.GEMINI_KEYS?'GEMINI_KEYS':(kv.GEMINI_API_KEYS?'GEMINI_API_KEYS':'env')), ')');
           const gemStatuses = await Promise.all(gem.map(gemStatus));
-          gemStatuses.forEach((s,i)=>{total++; if(s===200)ok++; console.log('  key'+(i+1)+':', s);});
+          gemStatuses.forEach((g,i)=>{total++; if(g.s===200)ok++; console.log('  key'+(i+1)+':', g.s, g.r?('| '+g.r):'');});
           console.log('== OpenAI-compatible providers (1 key each) ==');
           for (const [name,k,url,model] of compat) {
             const key = String(k||'').split(',')[0].trim();
