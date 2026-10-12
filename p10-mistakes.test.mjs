@@ -48,8 +48,8 @@ t('note-icon: openQuestionNoteEditor ইন্টিগ্রেশন', MN.incl
 
 /* ৬ — ভার্সন v194 */
 
-t('sw BUILD_ID current shell', SW.includes("const BUILD_ID = 'v313-sw-selfheal-20261012'"));
-t('index sw-marker current shell', H.includes('sw.js?v=v313-sw-selfheal-20261012'));
+t('sw BUILD_ID current shell', SW.includes("const BUILD_ID = 'v312-vm-scope-20261011'"));
+t('index sw-marker current shell', H.includes('sw.js?v=v312-vm-scope-20261011'));
 
 console.log(`\nP10-MISTAKES: ${pass} pass / ${fail} fail`);
 if (fail) process.exit(1);

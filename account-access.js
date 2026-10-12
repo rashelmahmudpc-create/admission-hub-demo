@@ -122,8 +122,6 @@
         </form>
 
         <form class="ah-account-view ah-signup-view" data-view="signup" data-personal-visual-contract="interactive-native-personal-v1" data-media-contract="zero-raster-entry-v1" data-signup-current-step="personal" hidden novalidate>
-          <div class="sky-root" id="ah-signup-sky"><main class="app" id="sksApp"><button class="back hide" id="sksBack" type="button" aria-label="back"><svg viewBox="0 0 24 24"><path d="m15 5-7 7 7 7"/></svg></button><section class="petwrap"><div class="bird" id="sksBird" data-m="" data-p=""><svg class="bsvg" viewBox="0 0 240 240"><defs><linearGradient id="sksBgd" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7FD4FF"/><stop offset="1" stop-color="#2F6BFF"/></linearGradient><linearGradient id="sksWgd" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4C8DFF"/><stop offset="1" stop-color="#2450D8"/></linearGradient><linearGradient id="sksBkd" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFC233"/><stop offset="1" stop-color="#FF8A00"/></linearGradient></defs><ellipse class="shd" cx="120" cy="226" rx="56" ry="8" fill="rgba(11,27,58,.18)"/><g class="body"><g class="tail"><path d="M104 188q-20 20-34 26 20 4 34-6z" fill="#2450D8"/><path d="M120 192q-6 24-16 34 22-6 28-30z" fill="#3A74F5"/><path d="M136 188q16 20 32 26-22 2-34-8z" fill="#2450D8"/></g><g class="feet"><path d="M98 196v20M86 216h24M142 196v20M130 216h24" stroke="#FF9A00" stroke-width="6" stroke-linecap="round" fill="none"/></g><ellipse cx="120" cy="136" rx="74" ry="68" fill="url(#sksBgd)"/><ellipse cx="96" cy="100" rx="30" ry="18" fill="#fff" opacity=".22" transform="rotate(-24 96 100)"/><ellipse cx="120" cy="158" rx="46" ry="40" fill="#F4FAFF"/><g class="tuft"><path d="M110 70q-8-22 6-30 0 14 6 24z" fill="#4C8DFF"/><path d="M122 68q4-24 20-26-6 12-8 26z" fill="#3A74F5"/></g><g class="head"><circle class="chk" cx="70" cy="136" r="12" fill="#FF8FB1"/><circle class="chk" cx="170" cy="136" r="12" fill="#FF8FB1"/><g class="eyesN"><g class="eyel"><ellipse cx="88" cy="116" rx="17" ry="19" fill="#fff"/><g class="pup"><circle cx="88" cy="118" r="11" fill="#14224A"/><circle cx="84" cy="112" r="4.2" fill="#fff"/><circle cx="93" cy="123" r="2" fill="#fff" opacity=".8"/></g></g><g class="eyer"><ellipse cx="152" cy="116" rx="17" ry="19" fill="#fff"/><g class="pup"><circle cx="152" cy="118" r="11" fill="#14224A"/><circle cx="148" cy="112" r="4.2" fill="#fff"/><circle cx="157" cy="123" r="2" fill="#fff" opacity=".8"/></g></g><path class="brow brw1" d="M74 92q14-9 28-2" fill="none" stroke="#1E3A8A" stroke-width="4.5" stroke-linecap="round"/><path class="brow brw2" d="M138 90q14-7 28 2" fill="none" stroke="#1E3A8A" stroke-width="4.5" stroke-linecap="round"/></g><g class="eyesH" fill="none" stroke="#14224A" stroke-width="5.5" stroke-linecap="round"><path d="M72 122q16-24 32 0"/><path d="M136 122q16-24 32 0"/></g><g class="beak"><path d="M107 132q13-6 26 0 0 6-13 14-13-8-13-14z" fill="url(#sksBkd)"/><g class="jawg"><path class="jaw" d="M111 143q9 14 18 0z" fill="#E8780A"/></g><ellipse class="tng" cx="120" cy="150" rx="6" ry="4" fill="#FF8FB1"/></g><g class="cap" transform="rotate(-6 120 52)"><path d="M120 34l62 22-62 22-62-22z" fill="#1B2A5E"/><path d="M82 64v14c0 11 76 11 76 0V64" fill="#27397F"/><g class="tas"><path d="M182 56v34" stroke="#FFB020" stroke-width="3.5" stroke-linecap="round"/><circle cx="182" cy="94" r="6" fill="#FFB020"/></g><path d="M120 46l3 7 8 1-6 5 2 8-7-4-7 4 2-8-6-5 8-1z" fill="#FFB020"/></g></g><g class="wl"><path d="M58 128q-34 8-30 46 26 2 44-22z" fill="url(#sksWgd)"/></g><g class="wr"><path d="M182 128q34 8 30 46-26 2-44-22z" fill="url(#sksWgd)"/></g><g class="pr cal"><rect x="176" y="150" width="46" height="44" rx="8" fill="#fff"/><rect x="176" y="150" width="46" height="14" rx="8" fill="#FF4DA6"/><g fill="#8B3DFF"><circle cx="188" cy="174" r="3"/><circle cx="199" cy="174" r="3"/><circle cx="210" cy="174" r="3"/><circle cx="188" cy="185" r="3"/><circle cx="199" cy="185" r="3"/></g></g><g class="pr bok"><rect x="172" y="164" width="52" height="34" rx="6" fill="#FF9F1C"/><rect x="177" y="169" width="42" height="24" rx="4" fill="#fff"/><path d="M198 169v24" stroke="#FFD08A" stroke-width="2.5"/></g><g class="pr mal"><rect x="172" y="160" width="54" height="38" rx="7" fill="#fff"/><path d="m175 165 24 18 24-18" fill="none" stroke="#FF6B3D" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/></g><g class="pr lck"><rect x="176" y="168" width="44" height="32" rx="8" fill="#E02D7B"/><path d="M184 168v-10a14 14 0 0 1 28 0v10" fill="none" stroke="#E02D7B" stroke-width="6" stroke-linecap="round"/><circle cx="198" cy="183" r="5" fill="#fff"/></g><g class="pr lns"><circle cx="198" cy="170" r="16" fill="rgba(255,255,255,.6)" stroke="#5B3DF5" stroke-width="6"/><path d="m210 182 14 14" stroke="#5B3DF5" stroke-width="7" stroke-linecap="round"/></g><g class="pr ear" fill="none" stroke="#0A8CFF" stroke-width="5" stroke-linecap="round"><path d="M196 96q14 16 0 32"/><path d="M210 84q26 28 0 56"/></g></g></svg></div><div class="bubble" id="bubble"><span id="sksSay"></span></div></section><section class="stage" id="sksStage"><div class="scr" id="sksS0"><label class="fl" id="sksFName"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/></svg><input id="sksInName" type="text" placeholder=" " autocomplete="name" enterkeyhint="done" maxlength="60"><span class="lb">তোমার পুরো নাম</span><button class="cl" type="button" data-c="in-name" aria-label="clear"><svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></button></label><div class="hint">যে নামে সনদ ও পরিচয় থাকবে সেটাই লেখো</div></div><div class="scr" id="sksS1"><div class="wheel"><i class="hl"></i><div class="col" id="sksCD"></div><div class="col" id="sksCM"></div><div class="col" id="sksCY"></div></div><div class="age" id="sksAge"></div></div><div class="scr" id="sksS2"><div class="lbl">তুমি এখন কোন স্তরে?</div><div class="chips" id="sksLv"><button class="chip" data-v="SSC" type="button">SSC</button><button class="chip" data-v="HSC" type="button">HSC</button><button class="chip" data-v="ডিপ্লোমা" type="button">ডিপ্লোমা</button><button class="chip" data-v="আলিম" type="button">আলিম</button><button class="chip" data-v="অন্যান্য" type="button">অন্যান্য</button></div><div id="sksSf" style="display:none"><div class="sp"></div><label class="fl" id="sksFSch"><svg class="ic" viewBox="0 0 24 24"><path d="M3 10 12 5l9 5-9 5-9-5Z"/><path d="M7 12.5V17c3 2 7 2 10 0v-4.5"/></svg><input id="sksInSch" type="text" placeholder=" " autocomplete="off" enterkeyhint="done"><span class="lb">স্কুলের নাম খোঁজো</span></label><div class="sug" id="sksSgSch"></div><div id="sksCwrap"><div class="sp"></div><label class="fl" id="sksFCol"><svg class="ic" viewBox="0 0 24 24"><path d="M4 20V9l8-5 8 5v11"/><path d="M9 20v-6h6v6"/></svg><input id="sksInCol" type="text" placeholder=" " autocomplete="off" enterkeyhint="done"><span class="lb">কলেজের নাম খোঁজো</span></label><div class="sug" id="sksSgCol"></div><button class="skip" id="sksSkipc" type="button">এখনো কলেজে ভর্তি হইনি</button></div></div></div><div class="scr" id="sksS3"><label class="fl" id="sksFEm"><svg class="ic" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="m4 8 8 6 8-6"/></svg><input id="sksInEm" type="email" inputmode="email" placeholder=" " autocomplete="email" autocapitalize="off" spellcheck="false" enterkeyhint="done"><span class="lb">তোমার ইমেইল</span><button class="cl" type="button" data-c="in-em" aria-label="clear"><svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></button></label><div class="chips"><button class="chip" data-d="gmail.com" type="button">@gmail.com</button><button class="chip" data-d="yahoo.com" type="button">@yahoo.com</button></div><div class="hint" id="sksEmH"></div></div><div class="scr" id="sksS4"><label class="fl pwf" id="sksFPw"><svg class="ic" viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg><input id="sksInPw" type="password" placeholder=" " autocomplete="new-password" enterkeyhint="done"><span class="lb">পাসওয়ার্ড (কমপক্ষে ৮ অক্ষর)</span><button class="eye" data-t="in-pw" type="button" aria-label="show"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg></button></label><div class="meter" id="sksMt"><i></i><i></i><i></i><i></i></div><div class="sp"></div><label class="fl pwf" id="sksFPw2"><svg class="ic" viewBox="0 0 24 24"><path d="M12 3 5 6v5c0 4.5 3 8 7 10 4-2 7-5.5 7-10V6Z"/><path d="m9 12 2 2 4-4"/></svg><input id="sksInPw2" type="password" placeholder=" " autocomplete="new-password" enterkeyhint="done"><span class="lb">পাসওয়ার্ড আবার লেখো</span></label><div class="hint" id="sksPwH"></div></div><div class="scr" id="sksS5"><button class="mc sel" data-m="email" type="button"><span class="ic"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="m4 8 8 6 8-6"/></svg></span><span><b>ইমেইল</b><small id="sksMm">কোড যাবে তোমার ইমেইলে</small></span><i class="rd"></i></button><button class="mc" data-m="telegram" type="button"><span class="ic"><svg viewBox="0 0 24 24"><path d="m21 4-3 15-6-4-3 3v-5L20 6 7 12 3 10Z"/></svg></span><span><b>টেলিগ্রাম</b><small>অফিসিয়াল বটে কোড আসবে</small></span><i class="rd"></i></button></div><div class="scr" id="sksS6"><div class="otp hint1" id="sksOtp"><div class="od"><input inputmode="numeric" maxlength="6" autocomplete="one-time-code" enterkeyhint="done" aria-label="1"></div><div class="od"><input inputmode="numeric" maxlength="6" enterkeyhint="done" aria-label="2"></div><div class="od"><input inputmode="numeric" maxlength="6" enterkeyhint="done" aria-label="3"></div><div class="od"><input inputmode="numeric" maxlength="6" enterkeyhint="done" aria-label="4"></div><div class="od"><input inputmode="numeric" maxlength="6" enterkeyhint="done" aria-label="5"></div><div class="od"><input inputmode="numeric" maxlength="6" enterkeyhint="done" aria-label="6"></div></div><div class="hint" id="sksOtH"></div><div class="tmr"><u id="sksTmu"></u></div><div class="rs"><span id="sksRsT"></span><button id="sksRsB" type="button" disabled>আবার পাঠাও</button></div></div><div class="scr" id="sksS7"><div class="dn" id="sksDn"><h2 id="sksDnH"></h2><p>তোমার অ্যাকাউন্ট প্রস্তুত</p><div class="ld"><u></u></div></div><div class="dash" id="sksDash"><div class="dc"><b>ড্যাশবোর্ড (প্রিভিউ)</b><small>এখানে আসল ড্যাশবোর্ড খুলবে</small></div><button class="replay" id="sksReplay" type="button">আবার দেখুন</button></div></div></section><footer class="foot"><button class="cta" id="sksCta" type="button" disabled><span id="sksCtaT">পরের ধাপ</span><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></button></footer><div class="cf" id="sksCf"></div></main></div>
-          
           <header class="ah-signup-topbar">
             <div class="ah-signup-brand" aria-label="Admission Hub">
               <span class="ah-signup-brand-mark" aria-hidden="true"><svg viewBox="0 0 44 34" fill="none"><path d="m3 12 19-9 19 9-19 9L3 12Z"/><path d="M10 16v8c7 5 17 5 24 0v-8l-12 6-12-6Z"/><path d="M38 14v9"/><circle cx="38" cy="25" r="2"/></svg></span>
@@ -1478,9 +1476,6 @@
     setSessionState('AUTHENTICATED');
     scheduleNextRefresh();
     broadcastAuthEvent('login');
-    // The Sky signup wizard listens for this to finish its own celebration and
-    // then hand off to the engine's verified/success screen.
-    document.dispatchEvent(new CustomEvent('admissionhub:session-ready', { detail: { created: brandNewAccount } }));
     rememberEntry('account');
     updateLauncher();
     // The account's own credential list decides the prompt — the global
@@ -2491,11 +2486,6 @@
 
     $('[data-view="signup"]').addEventListener('submit', async event => {
       event.preventDefault();
-      // The Admission Sky wizard owns the visible signup UI; the legacy panels
-      // inside this form are only a field store, so an Enter key must never
-      // trigger the old flow. Only skip once Sky has actually mounted — if its
-      // script fails to load, the legacy flow still works.
-      if ($('#ah-signup-sky')?.dataset.skyMounted === '1') return;
       if (state.busy || !ensureAvailable()) return;
       if (!validatePersonal()) { setSignupStep('personal'); validatePersonal(); return; }
       if (!validateSchool()) { setSignupStep('school'); validateSchool(); return; }
@@ -2949,132 +2939,8 @@
     });
   };
 
-  // 🔌 SkyFlow — the bridge the "Admission Sky" signup design drives.
-  //
-  // The owner's signup-flow-preview-v2 is a self-contained 8-screen wizard. It
-  // must not rewrite the auth engine: the engine already owns the real Firebase
-  // identity, profile sync and verification (email link / Telegram START-OTP).
-  // So the design calls these four operations and the engine does the real work
-  // — the same calls the legacy signup view made. The hidden mirrors exist only
-  // so the existing validators/collectors, which read fixed element ids, keep
-  // working without touching the engine's internals.
-  // The engine's validators/collectors read the legacy signup field ids
-  // (#ah-signup-name / #ah-dob-* / #ah-signup-*). The Sky design is the visible
-  // UI, so those legacy fields are kept in the DOM as a hidden field store and
-  // filled from the Sky wizard's collected profile just before createAccount.
-  const skyField = id => document.getElementById(id);
-  const skySetFields = profile => {
-    populateDob();
-    const put = (id, value) => {
-      const el = skyField(id);
-      if (!el) return;
-      const next = value == null ? '' : String(value);
-      // A <select> ignores a value with no matching option; add it so the field
-      // store always reflects exactly what Sky collected.
-      if (el.tagName === 'SELECT' && next && ![...el.options].some(o => o.value === next)) el.add(new Option(next, next));
-      el.value = next;
-    };
-    put('ah-signup-name', profile.fullName);
-    put('ah-signup-mobile', '');
-    const dob = String(profile.dob || '');
-    const [y, m, d] = dob.split('-');
-    put('ah-dob-day', d); put('ah-dob-month', m); put('ah-dob-year', y);
-    state.institutionSelection.school = profile.school ? Object.freeze({ ...profile.school }) : null;
-    state.institutionSelection.college = profile.higherInstitution ? Object.freeze({ ...profile.higherInstitution }) : null;
-  };
-  const SkyFlow = {
-    async createAccount(profile) {
-      if (state.busy || !ensureAvailable()) return { ok: false, code: 'UNAVAILABLE' };
-      skySetFields(profile);
-      const email = String(profile.email || '').trim();
-      const password = String(profile.password || '');
-      state.pendingProfile = collectProfile();
-      state.profileBound = false;
-      state.profileSynced = false;
-      state.profilePendingAttempted = false;
-      state.signupJourney = true;
-      setBusy(true);
-      try {
-        const result = await api('/signup', { method: 'POST', body: { email, password } });
-        const selectionRequired = result.verification?.selectionRequired === true;
-        const emailSent = result.verification?.sent === true;
-        if (!selectionRequired && !emailSent) return { ok: false, code: 'VERIFICATION_UNAVAILABLE' };
-        state.profileBound = true;
-        rememberPendingSignup(true, selectionRequired ? 'select' : 'email');
-        state.verification = {
-          email,
-          emailMasked: result.verification?.emailMasked || email,
-          emailSent,
-          mode: selectionRequired ? 'select' : 'email',
-          resendUntil: 0
-        };
-        clearTelegramTimer();
-        state.telegram = null;
-        await syncPendingProfile({ pending: true });
-        if (emailSent) startResendCooldown(result.verification?.resendAfter || state.resendCooldownSeconds);
-        return { ok: true, selectionRequired, emailSent, emailMasked: state.verification.emailMasked };
-      } catch (error) {
-        if (error.code === 'EMAIL_ALREADY_IN_USE') {
-          clearResendCooldown(); state.verification = null; state.pendingProfile = null;
-          state.profileBound = false; state.signupJourney = false; rememberPendingSignup(false);
-          prefillLogin(email);
-          return { ok: false, code: 'EMAIL_ALREADY_IN_USE' };
-        }
-        return { ok: false, code: error.code || 'ERROR', message: friendlyError(error) };
-      } finally { setBusy(false); }
-    },
-    async sendCode(method) {
-      if (state.busy || !state.verification) return { ok: false, code: 'NO_ACCOUNT' };
-      setBusy(true);
-      try {
-        if (state.pendingProfile && state.profileBound && !state.profileSynced) await syncPendingProfile({ pending: true });
-        if (method === 'telegram') {
-          const result = await api('/telegram/verification/start', { method: 'POST', body: {} });
-          if (!setTelegramChallenge(result)) return { ok: false, code: 'TELEGRAM_UNAVAILABLE' };
-          rememberPendingSignup(true, 'telegram');
-          return { ok: true, codeSent: state.telegram.codeSent, url: state.telegram.interaction?.url || '' };
-        }
-        const result = await api('/account-verification/email/start', { method: 'POST', body: {} });
-        if (result.alreadyVerified) return { ok: true, alreadyVerified: true };
-        if (result.verification?.sent !== true) return { ok: false, code: 'VERIFICATION_UNAVAILABLE' };
-        state.verification.emailSent = true;
-        state.verification.mode = 'email';
-        state.verification.emailMasked = result.verification?.emailMasked || state.verification.emailMasked;
-        startResendCooldown(result.verification?.resendAfter || state.resendCooldownSeconds);
-        return { ok: true, codeSent: true, emailMasked: state.verification.emailMasked };
-      } catch (error) {
-        if (error.retryAfter > 0 && state.telegram) state.telegram.resendUntil = Date.now() + error.retryAfter * 1000;
-        return { ok: false, code: error.code || 'ERROR', retryAfter: Number(error.retryAfter || 0), message: friendlyError(error) };
-      } finally { setBusy(false); }
-    },
-    async verifyCode(method, code) {
-      if (state.busy) return { ok: false, code: 'BUSY' };
-      setBusy(true);
-      try {
-        if (method === 'telegram') {
-          if (!state.telegram) return { ok: false, code: 'NO_CHALLENGE' };
-          const result = await api('/telegram/verification/verify', { method: 'POST', body: { attemptId: state.telegram.attemptId, code } });
-          await establishSession(result, 'Telegram account verification সফল। তোমার Admission Hub account সক্রিয় হয়েছে।');
-          return { ok: true };
-        }
-        const result = await api('/account-verification/email/status', { method: 'POST', body: {} });
-        if (result?.authenticated === true && result?.emailVerified === true) {
-          state.signupJourney = state.signupJourney || pendingSignup();
-          await establishSession(result, 'Email verification নিশ্চিত হয়েছে।', { offerPasskey: true });
-          return { ok: true };
-        }
-        return { ok: false, code: 'EMAIL_PENDING' };
-      } catch (error) {
-        return { ok: false, code: error.code || 'ERROR', message: friendlyError(error) };
-      } finally { setBusy(false); }
-    },
-    enterApp() { close(); navigateDashboard(); },
-    prefillLogin(email) { prefillLogin(email); }
-  };
-
   window.AdmissionAccount = Object.freeze({
     open,
-    SkyFlow,
     refresh: refreshSession,
     getSession: () => state.session,
     getSessionState: () => getSessionState(),

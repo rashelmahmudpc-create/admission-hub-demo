@@ -65,21 +65,6 @@ test('p15-05: the worker refuses a corrupt download and can be told to take over
   assert.match(sw, /DOCUMENT_NETWORK_TIMEOUT_MS/, 'a stalled navigation must not hang offline');
 });
 
-test('p15-05b: a document with no current-build shell self-heals instead of blanking', () => {
-  // The owner's "এপস blank" report: when the network blip fell back to a shell
-  // from the previous build, the old code returned Response.error() for the
-  // document and the phone showed a blank page with no way back. The fallback
-  // must now hand back the inline rescue page, which clears the stale cache and
-  // reloads once.
-  assert.match(sw, /function rescueResponse\(\)/, 'the document fallback must provide a rescue page');
-  assert.match(sw, /return rescueResponse\(\)/, 'offlineFallback must return the rescue page, not Response.error');
-  assert.match(sw, /ah-sw-rescue/, 'the rescue page needs a one-shot loop guard');
-  assert.match(sw, /unregister\(\)/, 'the rescue page must unregister the stale worker');
-  assert.match(sw, /caches\.delete/, 'the rescue page must clear the stale cache');
-  const docBranch = sw.slice(sw.indexOf('async function offlineFallback'), sw.indexOf('return rescueResponse();') + 24);
-  assert.doesNotMatch(docBranch, /return Response\.error\(\)/, 'a document must never be answered with an opaque error');
-});
-
 test('p15-06: the install-guide pop-up ships and is precached', () => {
   assert.ok(sw.includes('install-guide.js'), 'the install guide must be in the app shell');
   assert.ok(sw.includes('install-guide.css'), 'the install guide styles must be in the app shell');
