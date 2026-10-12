@@ -3,7 +3,7 @@ const CACHE_PREFIX = 'admission-hub-shell-';
 // hold user data; this one holds exactly one image and is trimmed on write.
 const AVATAR_CACHE = 'admission-hub-avatar-v1';
 
-const BUILD_ID = 'v312-vm-scope-20261011';
+const BUILD_ID = 'v313-sw-selfheal-20261012';
 const CACHE_NAME = `${CACHE_PREFIX}${BUILD_ID}`;
 const VERSION_HEADER = 'X-Admission-Hub-Build';
 const DOCUMENT_NETWORK_TIMEOUT_MS = 2500;
@@ -67,17 +67,17 @@ const APP_SHELL = [
 // A truncated/corrupt download is NEVER written to the shell cache.
 const ASSET_DIGESTS = {
 /* sw-manifest:start */
-  "./index.html": "d5ff2b85bc9714bd4a862bb5f04c6029c39539fdab9f28a0e9287fced950e1c0",
+  "./index.html": "087757e979d97aa53d70e9fc1b6de276078e2c4a350dbdf282f7eaa83fc59051",
   "./manifest.json": "6dcf0e0c6f7671750549e53558ba8b9f0c2c83b0c6759072a6b5e2276331f491",
   "./manifest.webmanifest": "abcd26174710f6df3e183889a5a9da182f73ee8cdcc543b43db8fb4070cad54f",
   "./dashboard-v2.css?v=dash2f13-theme": "4541bc1e65fd158c593443562975400d128b8f1d3b636595df3c235b99e8cced",
   "./3d-loader.css?v=3d-v2": "43ca21b0a41be5d223c317fd63582f19ff6ffab5d010639ef26349464550da63",
   "./session-persist.js?v=session-v2": "99f3d1f49f6d5714fd25f1c12b2aa978ca97a009d6caba9a690a0442d082593c",
-  "./analytics-service.js?v=analytics-p2-v2-insights": "a6d2ad8c3b7e118f1dae40c26302a6e378c5e3c02c1a56162e3ea740b9b2d54b",
-  "./account-access.css?v=20261010-static-welcome-lock3": "56e418849f297f240d558116d13bcc259104be68df3e4eba5f7976434bb350d8",
+  "./analytics-service.js?v=analytics-p2-v2-insights": "6f72286966bb7e006f24e85c184436ab0683c9953ac66bd1c441038618616867",
+  "./account-access.css?v=20261010-static-welcome-lock3": "892bc6dccb70ebbac4b705499b26c13a11054115914739946882e6ab3feaee0d",
   "./institutions-bd.js?v=bd-institutions-v2": "602c5549515e8207ad152b948ca9b8fe3ad0fbe429afb56380e4e21b662f779d",
   "./language-engine.js?v=lang-v5-single-email-button": "41e161139e15b262375d10d05579cc29852973045e47de974bba5a3deee93e7d",
-  "./account-access.js?v=20261010-static-welcome-lock3": "8fcb84e0e23ad3d22683651bc76716ed47abeec8ad1f51753a4e4ab51753522d",
+  "./account-access.js?v=20261010-static-welcome-lock3": "aba3304a193105e6ef86623fac7f77ff315a5f494de04050aefcec90d7f447ef",
   "./academic-catalog.js?v=acad-cat-v2": "75e7b80663d41330658c948ad1d4829d49f5c9abed581350582cfeace06d5b32",
   "./profile-ui.js?v=profile-v18-avatar-cache": "aaa1bf37e54b4dd44bad0a9ea6c904645f0457cea98d10aaa02bf39664d6b1b8",
   "./profile-ui.css?v=profile-v15-uni-tap": "6408a4b7ac8acf6845cd0148c58377a4953c8ff879d30b2c520eafae0314b98a",
@@ -137,10 +137,52 @@ async function offlineFallback(request) {
     if (shell && isCurrentBuild(shell)) return shell;
     const shellUrl = new URL('./index.html', self.location.href).href;
     const fallback = await caches.match(shellUrl);
-    return fallback && isCurrentBuild(fallback) ? fallback : Response.error();
+    if (fallback && isCurrentBuild(fallback)) return fallback;
+    // No current-build shell is available (first run, or the cached shell is
+    // from a previous build after a network blip). The owner hit exactly this:
+    // a blank page with no way back — the old code returned Response.error(),
+    // which is an opaque failure the phone cannot recover from on its own.
+    // Hand back a rescue page instead; it clears the stale cache and reloads
+    // once, so the phone heals without anyone having to clear site data.
+    return rescueResponse();
   }
 
   return Response.error();
+}
+
+// A self-healing stand-in for a document we cannot serve. It is deliberately a
+// data-less inline page (no external asset, so it can never depend on the very
+// cache that is broken) and it unregisters the worker + clears every cache
+// before one reload. A sessionStorage guard makes the loop impossible: if the
+// rescue page is somehow served twice, it stops and asks the user to reopen.
+function rescueResponse() {
+  const html = `<!doctype html><html lang="bn"><meta charset="utf-8">`
+    + `<meta name="viewport" content="width=device-width,initial-scale=1">`
+    + `<title>Admission Hub — আবার চেষ্টা করছি</title>`
+    + `<style>body{margin:0;min-height:100dvh;display:flex;align-items:center;justify-content:center;`
+    + `font-family:system-ui,-apple-system,"Hind Siliguri",sans-serif;background:#f5f8ff;color:#0b1b3a;text-align:center}`
+    + `main{padding:24px;max-width:340px}b{display:block;font-size:19px;margin-bottom:8px}`
+    + `p{margin:0;font-size:15px;line-height:1.6;color:#43507a}`
+    + `.sp{margin:18px auto 0;width:28px;height:28px;border:3px solid #cfe0ff;border-top-color:#2f6bff;border-radius:50%;animation:r .8s linear infinite}`
+    + `@keyframes r{to{transform:rotate(360deg)}}</style>`
+    + `<body><main><b>এক সেকেন্ড…</b><p id="m">অ্যাপটা নতুন করে সাজানো হচ্ছে।</p><div class="sp"></div></main>`
+    + `<script>(function(){var k='ah-sw-rescue';var n=0;try{n=+(sessionStorage.getItem(k)||0)}catch(e){}`
+    + `if(n>=1){document.getElementById('m').textContent='ব্রাউজার বন্ধ করে আবার খুলুন।';return}`
+    + `try{sessionStorage.setItem(k,'1')}catch(e){}`
+    + `var go=function(){location.reload()};`
+    + `Promise.resolve().then(function(){`
+    + `return navigator.serviceWorker&&navigator.serviceWorker.getRegistrations?navigator.serviceWorker.getRegistrations():[];`
+    + `}).then(function(rs){return Promise.all((rs||[]).map(function(r){return r.unregister().catch(function(){})}))})`
+    + `.then(function(){return caches.keys().then(function(ks){return Promise.all(ks.map(function(x){return caches.delete(x).catch(function(){})}))})})`
+    + `.then(go,go);})();<\/script></body></html>`;
+  return new Response(html, {
+    status: 200,
+    headers: {
+      'Content-Type': 'text/html; charset=utf-8',
+      'Cache-Control': 'no-store',
+      VERSION_HEADER: BUILD_ID
+    }
+  });
 }
 
 self.addEventListener('install', event => {

@@ -9,6 +9,9 @@ let html=readFileSync(indexPath,'utf8');
 const matches=html.match(/app-seed\.js\?v=[^"']+/g)||[];
 if(matches.length!==1)throw Error('Expected exactly one existing app-seed loader');
 html=html.replace(matches[0],`app-seed.js?v=${version}`);
+/* The Sky signup surface is loaded the same way and must carry the same
+   version, or the offline shell and the runtime fetch disagree. */
+html=html.replace(/sky\.(css|js)\?v=[^"']+/g,(m,ext)=>`sky.${ext}?v=${version}`);
 /* The P19 preload hints point at the same versioned welcome assets app-seed
    injects. If they drift, the browser downloads one URL and app-seed requests
    another — the preload is wasted and the fetch is paid twice. */
@@ -19,7 +22,7 @@ const swPath=join(root,'sw.js');
 let sw=readFileSync(swPath,'utf8');
 const release=(process.env.GITHUB_SHA||'local-preview').slice(0,12);
 sw=sw.replace(/const BUILD_ID = '[^']*';/,`const BUILD_ID = 'welcome-${release}';`);
-const additions=['app-seed.js','welcome-onboarding.css','welcome-onboarding.js','welcome-onboarding.html'];
+const additions=['app-seed.js','welcome-onboarding.css','welcome-onboarding.js','welcome-onboarding.html','sky.css','sky.js'];
 sw=sw.replace('const APP_SHELL = [','const APP_SHELL = [\n'+additions.map(path=>`  './${path}?v=${version}',`).join('\n'));
 writeFileSync(swPath,sw);
 const result=spawnSync(process.execPath,[join(root,'scripts/sw-manifest.mjs')],{stdio:'inherit'});

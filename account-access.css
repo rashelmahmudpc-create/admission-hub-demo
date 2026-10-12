@@ -1273,3 +1273,20 @@ html[data-theme="green"] .ah-account-shell[data-visual-contract="code-native-pag
 html[data-theme="green"] .ah-account-page{background:#eef7f1}
 html[data-theme="green"] .ah-account-shell[data-visual-contract="code-native-page-system-v1"]{background:#ffffff}
 .ah-email-ownership-view{text-align:center}.ah-email-ownership-view .ah-six-code{margin:0 auto}.ah-email-ownership-view[data-state="success"] .ah-account-field{opacity:.6}
+
+
+/* ---- Admission Sky signup surface (owner signup-flow-preview-v2) ----
+   Full-screen wizard: the signup view is made full-bleed (app head/body padding
+   removed for this view only) and safe-area aware on every device. The legacy
+   signup panels stay as the engine field store but are never shown. */
+.ah-account-page[data-current-view="signup"]{padding:0}
+.ah-account-page[data-current-view="signup"] .ah-account-head{display:none!important}
+.ah-account-page[data-current-view="signup"] .ah-account-body{padding:0;display:block}
+.ah-account-shell[data-current-view="signup"]{width:min(100%,520px);min-height:100dvh}
+.ah-signup-view.ah-signup-legacy>.ah-signup-topbar,
+.ah-signup-view.ah-signup-legacy>.ah-signup-progress,
+.ah-signup-view.ah-signup-legacy>.ah-signup-panel,
+.ah-signup-view.ah-signup-legacy>.ah-account-note{display:none!important}
+.ah-signup-view.ah-signup-legacy{padding:0;margin:0;max-width:none;gap:0}
+#ah-signup-sky{display:block;width:100%;min-height:100dvh}
+#ah-signup-sky .app{height:100dvh}

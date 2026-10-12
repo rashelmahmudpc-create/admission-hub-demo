@@ -27,8 +27,9 @@ jobs:
       - name: Validate isolated welcome UI
         run: |
           node --check welcome-onboarding.js
+          node --check sky.js
           node --check app-seed.js
-          node --test welcome-onboarding.test.mjs welcome-scroll-lock.test.mjs welcome-sky-bind.test.mjs
+          node --test welcome-onboarding.test.mjs welcome-scroll-lock.test.mjs welcome-sky-bind.test.mjs sky-signup.test.mjs
           npm run check:sw-manifest
       - name: Build sanitized frontend bundle
         run: |
