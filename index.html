@@ -875,19 +875,21 @@ textarea{min-height:96px}
   o.style.cssText='position:fixed;inset:0;z-index:2147483000;display:grid;place-content:center;justify-items:center;gap:9px;background:#f1faf6;color:#17221d;text-align:center';
   o.innerHTML='<span class="ah-boot-mark">✦</span><b style="font-size:19px;font-weight:800">Admission Hub</b><i style="font-style:normal;font-size:12px;color:#5e7168">লোড হচ্ছে…</i>';
   function vis(el){return !!el && !el.hidden && el.getClientRects().length>0 && (el.innerText||'').trim().length>0;}
-  function appPage(){return vis(document.querySelector('#app .page'));}
-  function accountPage(){return vis(document.querySelector('.ah-account-page'));}
-  function usable(){return vis(document.querySelector('[data-admission-usable="true"]'));}
-  function real(){return appPage()||accountPage()||usable();}
+  function appPageEl(){return document.querySelector('#app .page');}
+  // textContent, not innerText: #app is display:none under the gate, so innerText is
+  // empty even when the page is fully built.
+  function appReady(){return !!appPageEl()&&(appPageEl().textContent||'').trim().length>20;}
+  function accountReady(){return vis(document.querySelector('.ah-account-page'));}
+  function real(){return vis(appPageEl())||accountReady()||vis(document.querySelector('[data-admission-usable="true"]'));}
   var stuck=0;
   var iv=setInterval(function(){
     var gate=document.body.classList.contains('ah-account-page-active');
-    if(gate&&!accountPage()){
+    if(gate&&!accountReady()&&appReady()){
       stuck++;
-      // #app is hidden by the gate but nothing account-side is on screen. If the
-      // app page is ready, release the hidden state after a short sustain (so the
-      // account view's own opening transition is not raced).
-      if(stuck>=3&&appPage())document.body.classList.remove('ah-account-page-active');
+      // The gate hid #app but its own page never showed content (slow link) — the
+      // device sat on a blank screen. After a short sustain, release the hidden
+      // state so the already-built app page shows, and stand down.
+      if(stuck>=3){document.body.classList.remove('ah-account-page-active');if(o.parentNode)o.remove();clearInterval(iv);return;}
     }else stuck=0;
     if(real()){if(o.parentNode)o.remove();clearInterval(iv);}
   },150);
@@ -5379,16 +5381,16 @@ window.__admissionBootPromise.catch(error => console.error('[Admission Hub] boot
     // The updated worker takes control now; the current document remains usable and the next launch uses the new shell.
     try{
 
-      const expectedSwVersion = 'v317-noblank-slow-20261012';
+      const expectedSwVersion = 'v318-noblank-slow-20261012';
       // register() on the same scope performs an in-place update. Never unregister
       // the active iOS worker first: that discards the instant offline shell.
-      const registration=await navigator.serviceWorker.register('./sw.js?v=v317-noblank-slow-20261012',{scope:'./',updateViaCache:'none'});
+      const registration=await navigator.serviceWorker.register('./sw.js?v=v318-noblank-slow-20261012',{scope:'./',updateViaCache:'none'});
       await registration.update().catch(()=>{});
       // Purge every old app-shell cache (any build id ≠ current). This guarantees
       // stale pre-retirement application shells can never be served from cache again.
       try {
 
-        const cur = 'admission-hub-shell-v317-noblank-slow-20261012';
+        const cur = 'admission-hub-shell-v318-noblank-slow-20261012';
         const names = await caches.keys();
         for (const name of names) {
           if (name.startsWith('admission-hub-shell-') && name !== cur) await caches.delete(name).catch(()=>{});
