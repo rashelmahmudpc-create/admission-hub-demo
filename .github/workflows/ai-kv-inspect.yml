@@ -67,6 +67,16 @@ jobs:
                 const C34=34;
                 console.log('char code at error:',raw.charCodeAt(p),'| char before code:',raw.charCodeAt(p-1));
                 console.log('total length:',raw.length,'| error is',raw.length-p,'chars from the end');
+                // Print the whole document with letters/digits masked -> structure visible,
+                // names are config names, values are hidden. Curly quotes shown as <CQ>.
+                const shown=raw.split('').map(c=>{
+                  const cc=c.charCodeAt(0);
+                  if(cc>=48&&cc<=57||cc>=65&&cc<=90||cc>=97&&cc<=122||cc===95||cc===45) return '.';
+                  if(cc===8220||cc===8221) return '<CQ>';
+                  return c;
+                }).join('');
+                console.log('---- masked structure (., values hidden; <CQ> = curly quote) ----');
+                console.log(shown);
                 // Property NAMES are configuration names, not secret values -> safe to print.
                 const nameRe=/[\u201C\u201D\x22]([A-Za-z0-9_]+)[\u201C\u201D\x22]\s*:/g;
                 let mm, idx=0;
