@@ -310,6 +310,9 @@ html:has(#ah-account-page.ah-welcome-upgraded:not([hidden]) [data-view="welcome"
 [data-sky-slot="google"]{position:relative;overflow:hidden}
 .ah-sky-google-overlay{position:absolute!important;inset:0;opacity:.001;overflow:hidden;border-radius:inherit;display:block}
 .ah-sky-google-overlay>*{width:100%!important;height:100%!important}
+.ah-sky-facebook-overlay{position:absolute!important;inset:0;opacity:.001;overflow:hidden;border-radius:inherit;display:block}
+[data-sky-slot="facebook"]{position:relative;overflow:hidden}
+.ah-sky-facebook-overlay>*{width:100%!important;height:100%!important}
 [data-sky-slot="facebook"][aria-disabled="true"]{opacity:.62}
 /* Owner: nothing on the welcome may shift. Covering the band pushes the drawn
    desk tiles past the viewport, and a focus scroll (the Google control gaining

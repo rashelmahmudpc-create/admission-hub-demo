@@ -45,6 +45,7 @@
     institutionSelection: { school: null, college: null },
     capabilities: {
       google: { available: false, clientId: '' },
+      facebook: { available: false, appId: '' },
       passkey: { available: false, enrollmentAvailable: false },
       telegram: { available: false },
       emailOwnership: { available: false },
@@ -54,7 +55,9 @@
     ownershipTimer: null,
     googleClientId: '',
     googleReady: false,
-    googlePromise: null
+    googlePromise: null,
+    facebookAppId: '',
+    facebookPromise: null
   };
 
   const launcher = document.createElement('button');
@@ -91,6 +94,7 @@
             <div class="ah-account-google ah-welcome-google" data-role="welcome-google-button"><button class="ah-account-secondary" type="button" disabled aria-label="Google দিয়ে প্রবেশ এখন প্রস্তুত হচ্ছে"><span class="ah-google-g" aria-hidden="true">G</span><span>Continue with Google</span><b aria-hidden="true">→</b></button></div>
             <button class="ah-account-link ah-entry-guest" type="button" data-role="continue-guest"><span data-bn="Continue as Guest" data-en="Continue as Guest">Continue as Guest</span><b aria-hidden="true">→</b></button>
           </div>
+          <div class="ah-account-facebook ah-welcome-facebook" data-role="welcome-facebook-button" hidden><button class="ah-account-secondary" type="button" aria-label="Facebook দিয়ে প্রবেশ"><span class="ah-facebook-f" aria-hidden="true">f</span><span>Continue with Facebook</span><b aria-hidden="true">→</b></button></div>
         </div>
 
         <form class="ah-account-view ah-login-view" data-view="login" data-login-contract="reference-login-v1" novalidate>
@@ -1643,6 +1647,59 @@
     return state.googlePromise;
   };
 
+  const handleFacebookCredential = response => {
+    const accessToken = String(response?.authResponse?.accessToken || '');
+    const status = String(response?.status || '');
+    if (state.busy || status !== 'connected' || accessToken.length < 20) {
+      return state.busy ? undefined : message('Facebook সাইন-ইন সম্পন্ন হয়নি—ইমেইল দিয়ে চেষ্টা করুন।', 'error');
+    }
+    return (async () => {
+      setBusy(true);
+      try {
+        const result = await api('/facebook', { method: 'POST', body: { accessToken } });
+        await establishSession(result, 'Facebook দিয়ে তোমার একই account-এ প্রবেশ হয়েছে।');
+      } catch (error) {
+        if (error.code === 'ACCOUNT_LINK_REQUIRED') showView('google-link');
+        message(friendlyError(error), 'error');
+      } finally { setBusy(false); }
+    })();
+  };
+
+  const loadFacebook = appId => {
+    if (!appId) return Promise.resolve(false);
+    if (appId === state.facebookAppId && state.facebookPromise) return state.facebookPromise;
+    state.facebookAppId = appId;
+    state.facebookPromise = new Promise(resolve => {
+      const initialize = () => {
+        try {
+          if (!window.FB) throw new Error('Facebook SDK unavailable');
+          window.FB.init({ appId, cookie: true, xfbml: false, version: 'v18.0' });
+          window.FB.getLoginStatus(() => {});
+          resolve(true);
+        } catch (_) { resolve(false); }
+      };
+      if (window.FB) return initialize();
+      window.fbAsyncInit = initialize;
+      const script = document.createElement('script');
+      script.src = 'https://connect.facebook.net/en_US/sdk.js';
+      script.async = true;
+      script.defer = true;
+      script.crossOrigin = 'anonymous';
+      const timer = setTimeout(() => resolve(false), 10000);
+      script.onload = () => { clearTimeout(timer); initialize(); };
+      script.onerror = () => { clearTimeout(timer); resolve(false); };
+      document.head.append(script);
+    });
+    return state.facebookPromise;
+  };
+
+  const signInWithFacebook = () => {
+    if (!window.FB || !state.facebookAppId) {
+      return message('Facebook লগইন এখন পাওয়া যাচ্ছে না—ইমেইল ব্যবহার করো।', 'error');
+    }
+    window.FB.login(handleFacebookCredential, { scope: 'public_profile,email' });
+  };
+
   const linkGoogle = async (email, password) => {
     if (!window.google?.accounts?.oauth2 || !state.googleClientId) throw new Error('Google popup এখন পাওয়া যাচ্ছে না—ইমেইল লগইন ব্যবহার করুন।');
     const accessToken = await new Promise((resolve, reject) => {
@@ -1676,6 +1733,10 @@
     state.capabilities.google = {
       available: methods.google?.available === true && typeof methods.google?.clientId === 'string',
       clientId: methods.google?.clientId || ''
+    };
+    state.capabilities.facebook = {
+      available: methods.facebook?.available === true && typeof methods.facebook?.clientId === 'string',
+      appId: methods.facebook?.clientId || ''
     };
     state.capabilities.passkey = {
       available: methods.passkey?.available === true && passkeyBrowserReady(),
@@ -1715,6 +1776,11 @@
         button.setAttribute('aria-label', 'Google দিয়ে প্রবেশ এখন পাওয়া যাচ্ছে না');
         host.append(button);
       }
+    }
+    const facebookHost = $('[data-role="welcome-facebook-button"]');
+    if (facebookHost) {
+      facebookHost.hidden = !state.capabilities.facebook.available;
+      if (state.capabilities.facebook.available) loadFacebook(state.capabilities.facebook.appId);
     }
   };
 
@@ -2397,6 +2463,7 @@
       navigateDashboard();
       notify();
     });
+    $('[data-role="welcome-facebook-button"] button')?.addEventListener('click', () => signInWithFacebook());
     $('[data-role="signup-next-education"]').addEventListener('click', () => setSignupStep('school', { validate: true }));
     $('[data-role="signup-back-personal"]')?.addEventListener('click', () => setSignupStep('personal'));
     $('[data-role="signup-next-college"]').addEventListener('click', () => setSignupStep('college', { validate: true }));

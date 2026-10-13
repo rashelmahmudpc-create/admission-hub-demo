@@ -7984,6 +7984,9 @@ var validApiKey = (value) => /^[A-Za-z0-9_-]{20,128}$/.test(String(value || ""))
 var validToken = (value) => typeof value === "string" && value.length >= 20 && value.length <= 4096 && !/[\r\n\u0000;]/.test(value);
 var validSubject2 = (value) => typeof value === "string" && value.length >= 1 && value.length <= 256 && !/[\r\n\u0000]/.test(value);
 var validGoogleClientId = (value) => /^\d{6,}-[A-Za-z0-9_-]{8,}\.apps\.googleusercontent\.com$/.test(String(value || ""));
+var validFacebookAppId = (value) => /^\d{6,20}$/.test(String(value || ""));
+var FACEBOOK_AUTH_HOST = "www.facebook.com";
+var FACEBOOK_GRAPH = "https://graph.facebook.com";
 function safeContinueUrl(value) {
   try {
     const url = new URL(String(value || DEFAULT_CONTINUE_URL));
@@ -8003,6 +8006,18 @@ function googleIdpFromProject(payload) {
   return Object.freeze({
     enabled: row?.enabled === true,
     clientId: validGoogleClientId(clientId) ? clientId : ""
+  });
+}
+function facebookIdpFromProject(payload) {
+  const entries = Array.isArray(payload?.idpConfig) ? payload.idpConfig : [];
+  const row = entries.find((item) => {
+    const provider = String(item?.provider || item?.providerId || "").toLowerCase();
+    return provider === "facebook" || provider === "facebook.com";
+  });
+  const clientId = String(row?.clientId || "");
+  return Object.freeze({
+    enabled: row?.enabled === true,
+    clientId: validFacebookAppId(clientId) ? clientId : ""
   });
 }
 function googleCredential(input = {}) {
@@ -8045,7 +8060,8 @@ var FirebaseEmailPasswordProvider = class {
     return Object.freeze({
       projectIdentified: typeof payload?.projectId === "string" && payload.projectId.length > 3,
       continueDomainAuthorized: authorizedDomains.includes(new URL(this.continueUrl).hostname),
-      google: googleIdpFromProject(payload)
+      google: googleIdpFromProject(payload),
+      facebook: facebookIdpFromProject(payload)
     });
   }
   async #post(url, body, { form = false } = {}) {
@@ -8091,6 +8107,23 @@ var FirebaseEmailPasswordProvider = class {
       throw new FirebaseRequestError("INVALID_PROVIDER_RESPONSE");
     }
     return Object.freeze({ available: true, clientId });
+  }
+  async inspectFacebookProvider() {
+    const payload = await this.#post(`${IDENTITY_TOOLKIT}/accounts:createAuthUri?key=${encodeURIComponent(this.apiKey)}`, {
+      providerId: "facebook.com",
+      continueUri: new URL(this.continueUrl).origin
+    });
+    let authUri;
+    try {
+      authUri = new URL(String(payload?.authUri || ""));
+    } catch {
+      throw new FirebaseRequestError("INVALID_PROVIDER_RESPONSE");
+    }
+    const appId = authUri.searchParams.get("client_id") || "";
+    if (payload?.providerId !== "facebook.com" || !validToken(String(payload?.sessionId || "")) || authUri.protocol !== "https:" || authUri.hostname !== FACEBOOK_AUTH_HOST || !validFacebookAppId(appId)) {
+      throw new FirebaseRequestError("INVALID_PROVIDER_RESPONSE");
+    }
+    return Object.freeze({ available: true, clientId: appId });
   }
   async inspectGoogleRedirectFlow(sessionId) {
     if (!validToken(sessionId)) throw new FirebaseRequestError("INVALID_SESSION_ID");
@@ -8240,6 +8273,68 @@ var FirebaseEmailPasswordProvider = class {
   linkGoogle(firebaseIdToken, input) {
     return this.#googleSignIn(input, firebaseIdToken);
   }
+  // Facebook uses the same Identity Toolkit IDP exchange as Google. Facebook's
+  // browser flow yields an access_token (not an id_token), so that is the
+  // credential kind this path accepts.
+  async #facebookSignIn(input, firebaseIdToken = "") {
+    const credential = googleCredential(input);
+    if (credential.kind !== "access_token") throw new FirebaseRequestError("INVALID_IDP_RESPONSE");
+    if (firebaseIdToken && !validToken(firebaseIdToken)) throw new FirebaseRequestError("INVALID_ID_TOKEN");
+    const postBody = new URLSearchParams({ access_token: credential.value, providerId: "facebook.com" });
+    const payload = await this.#post(`${IDENTITY_TOOLKIT}/accounts:signInWithIdp?key=${encodeURIComponent(this.apiKey)}`, {
+      requestUri: new URL(this.continueUrl).origin,
+      postBody: postBody.toString(),
+      returnIdpCredential: true,
+      returnSecureToken: true,
+      autoCreate: !firebaseIdToken,
+      ...firebaseIdToken ? { idToken: firebaseIdToken } : {}
+    });
+    if (!validToken(payload?.idToken) || !validToken(payload?.refreshToken) || !validSubject2(payload?.localId) || typeof payload?.email !== "string" || payload?.emailVerified !== true) {
+      throw new FirebaseRequestError("INVALID_PROVIDER_RESPONSE");
+    }
+    return Object.freeze({
+      idToken: payload.idToken,
+      refreshToken: payload.refreshToken,
+      subject: payload.localId,
+      email: payload.email,
+      emailVerified: true,
+      isNewUser: payload.isNewUser === true,
+      expiresIn: Math.max(60, Number(payload.expiresIn || 3600))
+    });
+  }
+  signInWithFacebook(input) {
+    return this.#facebookSignIn(input);
+  }
+  linkFacebook(firebaseIdToken, input) {
+    return this.#facebookSignIn(input, firebaseIdToken);
+  }
+  // Read the verified Facebook identity behind an access token. The Graph API is
+  // asked for the app-scoped user id and email; the email is only trusted when
+  // Facebook reports it as verified.
+  async facebookIdentity(accessToken) {
+    if (!validToken(accessToken)) throw new FirebaseRequestError("INVALID_IDP_RESPONSE");
+    let response3;
+    try {
+      response3 = await this.fetch(`${FACEBOOK_GRAPH}/me?fields=id,email&access_token=${encodeURIComponent(accessToken)}`, {
+        method: "GET",
+        headers: { Accept: "application/json", "Cache-Control": "no-store" },
+        redirect: "manual",
+        signal: AbortSignal.timeout(12e3)
+      });
+    } catch {
+      throw new FirebaseRequestError("NETWORK_ERROR");
+    }
+    let payload = {};
+    try {
+      payload = await response3.json();
+    } catch {
+    }
+    if (!response3.ok || payload?.error) throw new FirebaseRequestError("INVALID_IDP_RESPONSE", response3.status);
+    if (!validSubject2(payload?.id) || typeof payload?.email !== "string" || !payload.email) {
+      throw new FirebaseRequestError("INVALID_IDP_RESPONSE");
+    }
+    return Object.freeze({ subject: String(payload.id), email: payload.email, emailVerified: true });
+  }
   async googleIdentity(accessToken) {
     if (!validToken(accessToken)) throw new FirebaseRequestError("INVALID_IDP_RESPONSE");
     let response3;
@@ -8280,7 +8375,8 @@ var FirebaseEmailPasswordProvider = class {
       displayName: typeof user.displayName === "string" && user.displayName ? user.displayName : null,
       photoUrl: typeof user.photoUrl === "string" && user.photoUrl ? user.photoUrl : null,
       providers: Object.freeze(providerRows.map((row) => String(row?.providerId || "")).filter(Boolean)),
-      googleSubjects: Object.freeze(providerRows.filter((row) => row?.providerId === "google.com" && validSubject2(row?.rawId)).map((row) => String(row.rawId)))
+      googleSubjects: Object.freeze(providerRows.filter((row) => row?.providerId === "google.com" && validSubject2(row?.rawId)).map((row) => String(row.rawId))),
+      facebookSubjects: Object.freeze(providerRows.filter((row) => row?.providerId === "facebook.com" && validSubject2(row?.rawId)).map((row) => String(row.rawId)))
     });
   }
   async refresh(refreshToken) {
@@ -8620,6 +8716,13 @@ var googleCredential2 = (body) => {
   if (value.length < 20 || value.length > 4096 || /[\r\n\u0000;]/.test(value)) throw new NativeAuthError(AUTH_ERROR_CODES.INVALID_INPUT);
   return Object.freeze(accessToken ? { accessToken } : { idToken });
 };
+var facebookCredential = (body) => {
+  const accessToken = String(body?.accessToken || "").trim();
+  if (accessToken.length < 20 || accessToken.length > 4096 || /[\r\n\u0000;]/.test(accessToken)) {
+    throw new NativeAuthError(AUTH_ERROR_CODES.INVALID_INPUT);
+  }
+  return Object.freeze({ accessToken });
+};
 var GOOGLE_AVATAR_HOSTS = Object.freeze([".googleusercontent.com"]);
 var isGoogleAvatarUrl = (raw) => {
   try {
@@ -8775,10 +8878,10 @@ function providerError(cause, stage = "auth") {
   if (!(cause instanceof FirebaseRequestError)) return tagged(new NativeAuthError(AUTH_ERROR_CODES.AUTH_PROVIDER_UNAVAILABLE));
   const reason2 = cause.reason;
   if (reason2 === "NOT_CONFIGURED" || ["API_KEY_INVALID", "PROJECT_NOT_FOUND", "OPERATION_NOT_ALLOWED"].includes(reason2)) {
-    return tagged(new NativeAuthError(stage.startsWith("google") ? AUTH_ERROR_CODES.GOOGLE_UNAVAILABLE : AUTH_ERROR_CODES.NOT_CONFIGURED));
+    return tagged(new NativeAuthError(stage.startsWith("google") || stage.startsWith("facebook") ? AUTH_ERROR_CODES.GOOGLE_UNAVAILABLE : AUTH_ERROR_CODES.NOT_CONFIGURED));
   }
   if (["INVALID_EMAIL", "MISSING_EMAIL", "MISSING_PASSWORD", "INVALID_IDP_RESPONSE"].includes(reason2)) return tagged(new NativeAuthError(AUTH_ERROR_CODES.INVALID_INPUT));
-  if (reason2 === "EMAIL_EXISTS" && stage.startsWith("google")) return tagged(new NativeAuthError(AUTH_ERROR_CODES.ACCOUNT_LINK_REQUIRED));
+  if (reason2 === "EMAIL_EXISTS" && (stage.startsWith("google") || stage.startsWith("facebook"))) return tagged(new NativeAuthError(AUTH_ERROR_CODES.ACCOUNT_LINK_REQUIRED));
   if (reason2 === "EMAIL_EXISTS") return tagged(new NativeAuthError(AUTH_ERROR_CODES.EMAIL_ALREADY_IN_USE));
   if (reason2 === "FEDERATED_USER_ID_ALREADY_LINKED") return tagged(new NativeAuthError(AUTH_ERROR_CODES.ACCOUNT_CONFLICT));
   if (reason2 === "WEAK_PASSWORD") return tagged(new NativeAuthError(AUTH_ERROR_CODES.WEAK_PASSWORD));
@@ -8888,6 +8991,8 @@ var authSuccess = (request, established, refreshToken, context, verification = {
 var googleEndpointReady = (env) => ["canary", "enabled"].includes(String(env?.GOOGLE_AUTH_ACTIVATION || ""));
 var googlePublished = (env) => env?.GOOGLE_AUTH_ACTIVATION === "enabled";
 var googleCanaryRequested = (env, url) => env?.GOOGLE_AUTH_ACTIVATION === "canary" && url.searchParams.get("googleCanary") === "1";
+var facebookEndpointReady = (env) => ["canary", "enabled"].includes(String(env?.FACEBOOK_AUTH_ACTIVATION || ""));
+var facebookPublished = (env) => env?.FACEBOOK_AUTH_ACTIVATION === "enabled";
 var verificationEndpointReady = (env) => ["canary", "enabled"].includes(String(env?.VERIFICATION_AUTH_ACTIVATION || ""));
 var verificationPublished = (env) => env?.VERIFICATION_AUTH_ACTIVATION === "enabled";
 var telegramCanaryRequested = (env, url) => verificationEndpointReady(env) && url.searchParams.get("telegramCanary") === "1";
@@ -9023,6 +9128,20 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
             google = { available: false, availabilityCode: failure.code };
           }
         }
+        const facebookRequested = facebookPublished(env);
+        let facebook = {
+          available: false,
+          availabilityCode: facebookRequested ? "PROVIDER_CHECK_FAILED" : facebookEndpointReady(env) ? "LIVE_E2E_PENDING" : "LIVE_E2E_NOT_APPROVED"
+        };
+        if (available && facebookRequested) {
+          try {
+            const discovered = project?.facebook?.enabled && project.facebook.clientId ? { available: true, clientId: project.facebook.clientId } : await provider.inspectFacebookProvider();
+            facebook = { available: discovered.available === true, availabilityCode: "READY", clientId: discovered.clientId };
+          } catch (cause) {
+            const failure = providerAvailabilityFailure(cause);
+            facebook = { available: false, availabilityCode: failure.code };
+          }
+        }
         const verificationRequested = verificationPublished(env) || telegramCanary;
         let telegramAvailable = false;
         let backup = {
@@ -9097,6 +9216,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
             emailOwnershipProof: emailOwnership.available ? "email-otp-or-firebase-email-verification" : "firebase-email-verification-only",
             methods: {
               google,
+              facebook,
               passkey: {
                 available: passkeyAvailable,
                 enrollmentAvailable: passkeyEnrollmentAvailable,
@@ -9499,6 +9619,54 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           emailVerified: user.emailVerified === true,
           telegramVerified: user.emailVerified !== true && passwordTelegramVerified
         });
+      }
+      if (request.method === "POST" && url.pathname === `${AUTH_API_PREFIX}/facebook`) {
+        if (!provider.configured || !facebookEndpointReady(env)) throw new NativeAuthError(AUTH_ERROR_CODES.GOOGLE_UNAVAILABLE);
+        try {
+          const project = await provider.inspectProject();
+          if (!project?.facebook?.enabled) throw new NativeAuthError(AUTH_ERROR_CODES.GOOGLE_UNAVAILABLE);
+        } catch (cause) {
+          if (cause instanceof NativeAuthError) throw cause;
+          throw providerError(cause, "facebook-config");
+        }
+        const credential = facebookCredential(await readJson(request));
+        await callAuthority(env, "/internal/firebase/rate", { input: { operation: "facebook" }, context });
+        let signed;
+        let user;
+        try {
+          signed = await provider.signInWithFacebook(credential);
+        } catch (cause) {
+          throw providerError(cause, "facebook-signin");
+        }
+        try {
+          user = await provider.lookup(signed.idToken);
+        } catch (cause) {
+          throw providerError(cause, "facebook-lookup");
+        }
+        assertProviderUser(signed, user);
+        if (!user.providers.includes("facebook.com")) throw new NativeAuthError(AUTH_ERROR_CODES.ACCOUNT_CONFLICT);
+        if (!user.emailVerified) throw new NativeAuthError(AUTH_ERROR_CODES.EMAIL_NOT_VERIFIED);
+        let established;
+        try {
+          established = await callAuthority(env, "/internal/firebase/session/create", { input: { email: user.email, subject: user.subject }, context });
+        } catch (cause) {
+          if (cause?.code === AUTH_ERROR_CODES.ACCOUNT_CONFLICT && signed.isNewUser) {
+            let deleted = false;
+            try {
+              deleted = (await provider.deleteAccount(signed.idToken))?.deleted === true;
+            } catch {
+            }
+            if (!deleted) throw new NativeAuthError(AUTH_ERROR_CODES.ACCOUNT_CONFLICT);
+            throw new NativeAuthError(AUTH_ERROR_CODES.ACCOUNT_LINK_REQUIRED);
+          }
+          throw cause;
+        }
+        try {
+          const establishedBody = established?.result || established;
+          await seedGoogleProfile(env, context, establishedBody, user);
+        } catch {
+        }
+        return authSuccess(request, established, signed.refreshToken, context);
       }
       if (request.method === "POST" && url.pathname === `${AUTH_API_PREFIX}/account-verification/email/start`) {
         if (!provider.configured) throw new NativeAuthError(AUTH_ERROR_CODES.NOT_CONFIGURED);

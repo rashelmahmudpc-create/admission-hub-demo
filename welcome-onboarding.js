@@ -86,6 +86,7 @@ const controls=()=>{
   signup:view.querySelector('[data-role="welcome-signup"]'),
   login:view.querySelector('[data-role="welcome-login"]'),
   google:view.querySelector('[data-role="welcome-google-button"]'),
+  facebook:view.querySelector('[data-role="welcome-facebook-button"]'),
   guest:view.querySelector('[data-role="continue-guest"]'),
   language:view.querySelector('[data-role="welcome-language"]')
  };
@@ -109,7 +110,7 @@ function bind(root,ctl){
     button stays, and the click lands on the genuine Google control. */
  if(gslot&&ctl.google){gslot.append(ctl.google);ctl.google.classList.add('ah-sky-google-overlay')}
  const fb=root.querySelector('[data-sky-slot="facebook"]');
- if(fb){fb.setAttribute('aria-disabled','true');fb.title='Facebook লগইন শীঘ্রই আসছে';fb.addEventListener('click',()=>toast('Facebook লগইন শীঘ্রই আসছে'))}
+ if(fb&&ctl.facebook){ctl.facebook.hidden=false;fb.append(ctl.facebook);ctl.facebook.classList.add('ah-sky-facebook-overlay')}
  /* Owner: no language picker on the welcome. The scaffold's selector stays in
     the DOM (the account flow owns it) but is never shown or moved into the
     design. */

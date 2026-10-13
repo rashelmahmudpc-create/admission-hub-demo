@@ -148,6 +148,16 @@ const googleCredential = body => {
   return Object.freeze(accessToken ? { accessToken } : { idToken });
 };
 
+// Facebook's browser flow returns an OAuth access token, so that is the only
+// credential kind this path accepts.
+const facebookCredential = body => {
+  const accessToken = String(body?.accessToken || '').trim();
+  if (accessToken.length < 20 || accessToken.length > 4096 || /[\r\n\u0000;]/.test(accessToken)) {
+    throw new NativeAuthError(AUTH_ERROR_CODES.INVALID_INPUT);
+  }
+  return Object.freeze({ accessToken });
+};
+
 // Google Login → Automatic Profile Sync (owner blueprint):
 // Google data populates ONLY the empty fields of a NEW profile.
 // User-modified data always wins — no silent overwrite, ever.
@@ -283,10 +293,10 @@ function providerError(cause, stage = 'auth') {
   if (!(cause instanceof FirebaseRequestError)) return tagged(new NativeAuthError(AUTH_ERROR_CODES.AUTH_PROVIDER_UNAVAILABLE));
   const reason = cause.reason;
   if (reason === 'NOT_CONFIGURED' || ['API_KEY_INVALID', 'PROJECT_NOT_FOUND', 'OPERATION_NOT_ALLOWED'].includes(reason)) {
-    return tagged(new NativeAuthError(stage.startsWith('google') ? AUTH_ERROR_CODES.GOOGLE_UNAVAILABLE : AUTH_ERROR_CODES.NOT_CONFIGURED));
+    return tagged(new NativeAuthError(stage.startsWith('google') || stage.startsWith('facebook') ? AUTH_ERROR_CODES.GOOGLE_UNAVAILABLE : AUTH_ERROR_CODES.NOT_CONFIGURED));
   }
   if (['INVALID_EMAIL', 'MISSING_EMAIL', 'MISSING_PASSWORD', 'INVALID_IDP_RESPONSE'].includes(reason)) return tagged(new NativeAuthError(AUTH_ERROR_CODES.INVALID_INPUT));
-  if (reason === 'EMAIL_EXISTS' && stage.startsWith('google')) return tagged(new NativeAuthError(AUTH_ERROR_CODES.ACCOUNT_LINK_REQUIRED));
+  if (reason === 'EMAIL_EXISTS' && (stage.startsWith('google') || stage.startsWith('facebook'))) return tagged(new NativeAuthError(AUTH_ERROR_CODES.ACCOUNT_LINK_REQUIRED));
   if (reason === 'EMAIL_EXISTS') return tagged(new NativeAuthError(AUTH_ERROR_CODES.EMAIL_ALREADY_IN_USE));
   if (reason === 'FEDERATED_USER_ID_ALREADY_LINKED') return tagged(new NativeAuthError(AUTH_ERROR_CODES.ACCOUNT_CONFLICT));
   if (reason === 'WEAK_PASSWORD') return tagged(new NativeAuthError(AUTH_ERROR_CODES.WEAK_PASSWORD));
@@ -395,6 +405,8 @@ const googleEndpointReady = env => ['canary', 'enabled'].includes(String(env?.GO
 const googlePublished = env => env?.GOOGLE_AUTH_ACTIVATION === 'enabled';
 const googleCanaryRequested = (env, url) =>
   env?.GOOGLE_AUTH_ACTIVATION === 'canary' && url.searchParams.get('googleCanary') === '1';
+const facebookEndpointReady = env => ['canary', 'enabled'].includes(String(env?.FACEBOOK_AUTH_ACTIVATION || ''));
+const facebookPublished = env => env?.FACEBOOK_AUTH_ACTIVATION === 'enabled';
 const verificationEndpointReady = env => ['canary', 'enabled'].includes(String(env?.VERIFICATION_AUTH_ACTIVATION || ''));
 const verificationPublished = env => env?.VERIFICATION_AUTH_ACTIVATION === 'enabled';
 const telegramCanaryRequested = (env, url) =>
@@ -544,6 +556,22 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
             google = { available: false, availabilityCode: failure.code };
           }
         }
+        const facebookRequested = facebookPublished(env);
+        let facebook = {
+          available: false,
+          availabilityCode: facebookRequested ? 'PROVIDER_CHECK_FAILED' : facebookEndpointReady(env) ? 'LIVE_E2E_PENDING' : 'LIVE_E2E_NOT_APPROVED'
+        };
+        if (available && facebookRequested) {
+          try {
+            const discovered = project?.facebook?.enabled && project.facebook.clientId
+              ? { available: true, clientId: project.facebook.clientId }
+              : await provider.inspectFacebookProvider();
+            facebook = { available: discovered.available === true, availabilityCode: 'READY', clientId: discovered.clientId };
+          } catch (cause) {
+            const failure = providerAvailabilityFailure(cause);
+            facebook = { available: false, availabilityCode: failure.code };
+          }
+        }
         const verificationRequested = verificationPublished(env) || telegramCanary;
         let telegramAvailable = false;
         let backup = {
@@ -622,6 +650,7 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
               : 'firebase-email-verification-only',
             methods: {
               google,
+              facebook,
               passkey: {
                 available: passkeyAvailable,
                 enrollmentAvailable: passkeyEnrollmentAvailable,
@@ -992,6 +1021,46 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           emailVerified: user.emailVerified === true,
           telegramVerified: user.emailVerified !== true && passwordTelegramVerified
         });
+      }
+
+      if (request.method === 'POST' && url.pathname === `${AUTH_API_PREFIX}/facebook`) {
+        if (!provider.configured || !facebookEndpointReady(env)) throw new NativeAuthError(AUTH_ERROR_CODES.GOOGLE_UNAVAILABLE);
+        try {
+          const project = await provider.inspectProject();
+          if (!project?.facebook?.enabled) throw new NativeAuthError(AUTH_ERROR_CODES.GOOGLE_UNAVAILABLE);
+        } catch (cause) {
+          if (cause instanceof NativeAuthError) throw cause;
+          throw providerError(cause, 'facebook-config');
+        }
+        const credential = facebookCredential(await readJson(request));
+        await callAuthority(env, '/internal/firebase/rate', { input: { operation: 'facebook' }, context });
+        let signed;
+        let user;
+        try { signed = await provider.signInWithFacebook(credential); } catch (cause) { throw providerError(cause, 'facebook-signin'); }
+        try { user = await provider.lookup(signed.idToken); } catch (cause) { throw providerError(cause, 'facebook-lookup'); }
+        assertProviderUser(signed, user);
+        if (!user.providers.includes('facebook.com')) throw new NativeAuthError(AUTH_ERROR_CODES.ACCOUNT_CONFLICT);
+        if (!user.emailVerified) throw new NativeAuthError(AUTH_ERROR_CODES.EMAIL_NOT_VERIFIED);
+        let established;
+        try {
+          established = await callAuthority(env, '/internal/firebase/session/create', { input: { email: user.email, subject: user.subject }, context });
+        } catch (cause) {
+          if (cause?.code === AUTH_ERROR_CODES.ACCOUNT_CONFLICT && signed.isNewUser) {
+            let deleted = false;
+            try { deleted = (await provider.deleteAccount(signed.idToken))?.deleted === true; } catch {}
+            if (!deleted) throw new NativeAuthError(AUTH_ERROR_CODES.ACCOUNT_CONFLICT);
+            throw new NativeAuthError(AUTH_ERROR_CODES.ACCOUNT_LINK_REQUIRED);
+          }
+          throw cause;
+        }
+        // Facebook → auto profile: seed the empty name from the VERIFIED Firebase
+        // user. Facebook avatars are not fetched (their CDN is not pinned the way
+        // Google's is); a seeding failure must never break the login.
+        try {
+          const establishedBody = established?.result || established;
+          await seedGoogleProfile(env, context, establishedBody, user);
+        } catch { /* best-effort by design */ }
+        return authSuccess(request, established, signed.refreshToken, context);
       }
 
       if (request.method === 'POST' && url.pathname === `${AUTH_API_PREFIX}/account-verification/email/start`) {
