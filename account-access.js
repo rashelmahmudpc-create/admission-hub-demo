@@ -3223,12 +3223,23 @@
       passkey: Boolean(state.capabilities.passkey.available && passkeyBrowserReady())
     }),
     institutions: async kind => {
+      const wanted = kind === 'college' ? 'college' : 'school';
+      const shape = rows => rows.map(item => ({ id: String(item.id || item.name), name: String(item.name || ''), district: String(item.district || '') }));
+      // The curated offline index ships with the app and is the only source
+      // that always answers. The institutions API is optional, so a 404 or an
+      // empty list must fall back to it instead of leaving the school/college
+      // search with no suggestions and the signup step stuck.
+      const offline = () => shape(
+        (Array.isArray(window.AdmissionHubInstitutionsV1) ? window.AdmissionHubInstitutionsV1 : [])
+          .filter(item => item.type === wanted)
+      );
       try {
-        const response = await fetch(`/api/institutions/v1/${kind === 'college' ? 'college' : 'school'}`, { headers: { Accept: 'application/json' } });
+        const response = await fetch(`/api/institutions/v1/${wanted}`, { headers: { Accept: 'application/json' } });
         const payload = await response.json();
         const rows = Array.isArray(payload?.items) ? payload.items : [];
-        return rows.map(item => ({ id: String(item.id || item.name), name: String(item.name || ''), district: String(item.district || '') }));
-      } catch (_) { return []; }
+        const mapped = shape(rows);
+        return mapped.length ? mapped : offline();
+      } catch (_) { return offline(); }
     },
     signup: async (email, password, profile) => {
       const result = await skyApi('/signup', {

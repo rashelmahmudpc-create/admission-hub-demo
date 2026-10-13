@@ -108,9 +108,9 @@ await test('content hydration is public and account-independent',
   !/AHAuth|ahPubToken|authHeaders|Authorization/.test(CLOUD));
 
 await test('service-worker build and HTML registration are synchronized',
-  SW.includes("const BUILD_ID = 'v328-skyfix-20261013'") &&
-  H.includes("const expectedSwVersion = 'v328-skyfix-20261013'") &&
-  H.includes('admission-hub-shell-v328-skyfix-20261013'));
+  SW.includes("const BUILD_ID = 'v329-skyfix-20261013'") &&
+  H.includes("const expectedSwVersion = 'v329-skyfix-20261013'") &&
+  H.includes('admission-hub-shell-v329-skyfix-20261013'));
 await test('service-worker shell cannot cache retired assets', !retiredAssetRe.test(SW));
 await test('premium account and institution assets use synchronized cache-busting versions',
   ['account-access.css?v=20261013-skyfix4', 'account-access.js?v=20261013-skyfix4', 'institutions-bd.js?v=bd-institutions-v2']
