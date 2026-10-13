@@ -283,7 +283,7 @@ test('Worker bundle and Wrangler expose Firebase Auth with the distinct SQLite a
   assert.match(bundle, /requestType: "VERIFY_EMAIL"/);
   assert.match(wrangler, /name = "AUTH_AUTHORITY"/);
   assert.match(wrangler, /new_sqlite_classes = \["AdmissionAuthAuthority"\]/);
-  assert.match(wrangler, /FIREBASE_CONTINUE_URL = "https:\/\/admissionhub\.pages\.dev\//);
+  assert.match(wrangler, /FIREBASE_CONTINUE_URL = "https:\/\/admissionsky\.pages\.dev\//);
 });
 
 test('Google readiness audit is no-mutation and never prints Firebase key, client ID, or user credential', () => {
