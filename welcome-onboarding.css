@@ -265,9 +265,15 @@
 #ah-account-page.ah-welcome-upgraded .ah-account-shell[data-current-view="welcome"]>.ah-account-body{padding:0!important}
 html:has(.ah-welcome-upgraded),body:has(.ah-welcome-upgraded),body:has(.ah-welcome-upgraded) #app{background:var(--bg,#f7f6fb)!important}
 /* LOCK SCOPED TO THE VISIBLE WELCOME VIEW (must match ws-01). */
-html:has(#ah-account-page.ah-welcome-upgraded:not([hidden]) [data-view="welcome"]:not([hidden])),body:has(#ah-account-page.ah-welcome-upgraded:not([hidden]) [data-view="welcome"]:not([hidden])){position:fixed!important;inset:0!important;width:100%!important;height:100%!important;overflow:hidden!important;overscroll-behavior:none!important;touch-action:none}
-.ah-account-page.ah-welcome-upgraded:not([hidden]):has([data-view="welcome"]:not([hidden])),.ah-account-page.ah-welcome-upgraded:not([hidden]):has([data-view="welcome"]:not([hidden])) .ah-account-shell,.ah-account-page.ah-welcome-upgraded:not([hidden]):has([data-view="welcome"]:not([hidden])) .ah-account-body{position:fixed!important;inset:0!important;width:100%!important;height:100%!important;min-height:0!important;margin:0!important;max-width:none!important;overflow:hidden!important;overscroll-behavior:none!important}
-.ahw-sky-board{width:100%;max-width:none;margin:0;height:100svh!important;min-height:0!important;overflow:hidden!important}
+/* Owner: the welcome must not drag up/down when the browser bar shows/hides, and
+   nothing may sit under that bar. iOS overlays the bottom toolbar on the layout
+   viewport, so 100svh/lvh are taller than the visible strip and the fixed
+   container + 100svh board mismatch left the social row under the bar. Bind the
+   whole welcome to the live --visual-viewport-height (already maintained from
+   visualViewport in index.html), the same way the signup view does. */
+html:has(#ah-account-page.ah-welcome-upgraded:not([hidden]) [data-view="welcome"]:not([hidden])),body:has(#ah-account-page.ah-welcome-upgraded:not([hidden]) [data-view="welcome"]:not([hidden])){position:fixed!important;inset:0!important;width:100%!important;height:var(--visual-viewport-height,100%)!important;overflow:hidden!important;overscroll-behavior:none!important;touch-action:none}
+.ah-account-page.ah-welcome-upgraded:not([hidden]):has([data-view="welcome"]:not([hidden])),.ah-account-page.ah-welcome-upgraded:not([hidden]):has([data-view="welcome"]:not([hidden])) .ah-account-shell,.ah-account-page.ah-welcome-upgraded:not([hidden]):has([data-view="welcome"]:not([hidden])) .ah-account-body{position:fixed!important;inset:0!important;width:100%!important;height:var(--visual-viewport-height,100%)!important;min-height:0!important;margin:0!important;max-width:none!important;overflow:hidden!important;overscroll-behavior:none!important}
+.ahw-sky-board{width:100%;max-width:none;margin:0;height:100%!important;min-height:0!important;overflow:hidden!important}
 /* Bind slots: the account controls are moved into the design, so hide the
    scaffold copies the account flow keeps in the server view. */
 .ah-welcome-sky > .ah-welcome-header,
