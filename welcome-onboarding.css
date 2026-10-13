@@ -264,6 +264,15 @@
 #ah-account-page.ah-welcome-upgraded .ah-account-shell[data-current-view="welcome"]>.ah-account-head{display:none!important}
 #ah-account-page.ah-welcome-upgraded .ah-account-shell[data-current-view="welcome"]>.ah-account-body{padding:0!important}
 html:has(.ah-welcome-upgraded),body:has(.ah-welcome-upgraded),body:has(.ah-welcome-upgraded) #app{background:var(--bg,#f7f6fb)!important}
+/* Owner (2026-10-13): the strip behind the phone's status bar must match the top
+   of the welcome. iOS tints that strip from the page background, and the
+   welcome's blue lived only in inner gradient layers (transparent
+   background-color), so the bar kept the shell's --bg green while the welcome
+   showed blue. Paint the page background the welcome's top colour, and give the
+   welcome's top layers a real background-color so the status-bar blend and iOS
+   both read the blue. */
+html:has(#ah-account-page.ah-welcome-upgraded:not([hidden]) [data-view="welcome"]:not([hidden])),body:has(#ah-account-page.ah-welcome-upgraded:not([hidden]) [data-view="welcome"]:not([hidden])),body:has(#ah-account-page.ah-welcome-upgraded:not([hidden]) [data-view="welcome"]:not([hidden])) #app,#ah-account-page.ah-welcome-upgraded:not([hidden]):has([data-view="welcome"]:not([hidden])),#ah-account-page.ah-welcome-upgraded:not([hidden]):has([data-view="welcome"]:not([hidden])) .ah-account-shell,#ah-account-page.ah-welcome-upgraded:not([hidden]):has([data-view="welcome"]:not([hidden])) .ah-account-body{background-color:#E8F1FF!important}
+.ahw-sky.ahw-sky-board,.ahw-sky .auth{background-color:var(--skyt,#E8F1FF)}
 /* LOCK SCOPED TO THE VISIBLE WELCOME VIEW (must match ws-01). */
 /* Owner: the welcome must not drag up/down when the browser bar shows/hides, and
    nothing may sit under that bar. iOS overlays the bottom toolbar on the layout
