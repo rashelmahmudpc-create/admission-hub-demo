@@ -2166,15 +2166,52 @@
   // handful of bindings still reference its hooks. If the flow's script has not
   // loaded (an old cached bundle) this falls back to the previous view rather
   // than showing an empty page.
-  const openSky = mode => {
-    if (window.AdmissionSkyFlow && window.AdmissionSkyBridge) {
-      window.AdmissionSkyFlow.open(mode);
-      return true;
-    }
-    // No flow script (old cached bundle): fall back to the previous entry
-    // surface — the welcome view for a fresh visitor, the login form otherwise.
+  // Fallback entry surface when the Sky flow cannot open. The welcome view's
+  // header/actions are hidden by CSS until `.ah-welcome-live` is present (that
+  // class used to come from the retired welcome-onboarding.js), so mark it live
+  // here or the fallback is an empty page with only the Facebook pill.
+  const showLegacyEntry = mode => {
+    const welcome = pageHost.querySelector('.ah-welcome-view');
+    if (welcome) welcome.classList.add('ah-welcome-live');
     showView(mode === 'signup' ? 'welcome' : 'login');
-    return false;
+  };
+  const skyReady = () => Boolean(window.AdmissionSkyFlow && window.AdmissionSkyBridge);
+  const launchSky = mode => {
+    try {
+      Promise.resolve(window.AdmissionSkyFlow.open(mode))
+        .then(opened => { if (opened === false) showLegacyEntry(mode); })
+        .catch(error => { console.error('[Admission Sky] open failed:', error); showLegacyEntry(mode); });
+    } catch (error) {
+      console.error('[Admission Sky] open failed:', error);
+      showLegacyEntry(mode);
+    }
+  };
+  let skyWaitToken = 0;
+  // The page links the flow's script (index.html preloads it) whenever the flow
+  // is part of this build. Match the .js asset specifically: this module injects
+  // the flow's .css link itself, which would otherwise always match.
+  const skyScriptLinked = () => Boolean(document.querySelector('link[href*="sky-onboarding.js"], script[src*="sky-onboarding.js"]'));
+  const openSky = mode => {
+    const token = ++skyWaitToken;
+    if (skyReady()) { launchSky(mode); return true; }
+    // sky-onboarding.js is injected by app-seed.js, which runs AFTER this file,
+    // so on a cold load the flow is not defined yet. Falling back right away
+    // left first-time visitors on a blank page. Wait for the flow instead, and
+    // only fall back if it never arrives (old cached bundle / network failure).
+    // A page that does not reference the flow at all will never load it (the
+    // bare test harness), so fall back at once there rather than idling.
+    if (!skyScriptLinked()) { showLegacyEntry(mode); return false; }
+    const started = Date.now();
+    const poll = () => {
+      if (token !== skyWaitToken) return;
+      if (['signed', 'telegram', 'verify', 'created'].includes(state.currentView)) return;
+      if (!document.body.classList.contains('ah-account-page-active')) return;
+      if (skyReady()) { launchSky(mode); return; }
+      if (Date.now() - started > 8000) { showLegacyEntry(mode); return; }
+      setTimeout(poll, 50);
+    };
+    setTimeout(poll, 0);
+    return true;
   };
   const open = options => {
     const forceWelcome = options?.forceWelcome === true;

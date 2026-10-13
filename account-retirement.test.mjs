@@ -108,14 +108,14 @@ await test('content hydration is public and account-independent',
   !/AHAuth|ahPubToken|authHeaders|Authorization/.test(CLOUD));
 
 await test('service-worker build and HTML registration are synchronized',
-  SW.includes("const BUILD_ID = 'v323-swupdate-20261013'") &&
-  H.includes("const expectedSwVersion = 'v323-swupdate-20261013'") &&
-  H.includes('admission-hub-shell-v323-swupdate-20261013'));
+  SW.includes("const BUILD_ID = 'v324-skyfix-20261013'") &&
+  H.includes("const expectedSwVersion = 'v324-skyfix-20261013'") &&
+  H.includes('admission-hub-shell-v324-skyfix-20261013'));
 await test('service-worker shell cannot cache retired assets', !retiredAssetRe.test(SW));
 await test('premium account and institution assets use synchronized cache-busting versions',
-  ['account-access.css?v=20261012-kbsafe1', 'account-access.js?v=20261012-kbsafe1', 'institutions-bd.js?v=bd-institutions-v2']
+  ['account-access.css?v=20261013-skyfix1', 'account-access.js?v=20261013-skyfix1', 'institutions-bd.js?v=bd-institutions-v2']
     .every(asset => H.includes(asset) && SW.includes(asset)) &&
-  H.indexOf('institutions-bd.js?v=bd-institutions-v2') < H.indexOf('account-access.js?v=20261012-kbsafe1'));
+  H.indexOf('institutions-bd.js?v=bd-institutions-v2') < H.indexOf('account-access.js?v=20261013-skyfix1'));
 await test('premium Auth UI/server contract and curated-manual institution policy are locked',
   ACCOUNT_UI.includes("'X-AH-Auth-UI': 'auth-premium-v6'") &&
   AUTH_HANDLER.includes("const AUTH_UI_VERSION = 'auth-premium-v6'") &&

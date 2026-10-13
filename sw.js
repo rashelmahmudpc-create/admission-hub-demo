@@ -3,7 +3,7 @@ const CACHE_PREFIX = 'admission-hub-shell-';
 // hold user data; this one holds exactly one image and is trimmed on write.
 const AVATAR_CACHE = 'admission-hub-avatar-v1';
 
-const BUILD_ID = 'v323-swupdate-20261013';
+const BUILD_ID = 'v324-skyfix-20261013';
 const CACHE_NAME = `${CACHE_PREFIX}${BUILD_ID}`;
 const VERSION_HEADER = 'X-Admission-Hub-Build';
 const DOCUMENT_NETWORK_TIMEOUT_MS = 2500;
@@ -33,11 +33,11 @@ const APP_SHELL = [
   './3d-loader.css?v=3d-v2',
   './session-persist.js?v=session-v2',
   './analytics-service.js?v=analytics-p2-v2-insights',
-  './account-access.css?v=20261012-kbsafe1',
+  './account-access.css?v=20261013-skyfix1',
   './sky-onboarding.css?v=sky-flow-20261013-v1',
   './institutions-bd.js?v=bd-institutions-v2',
   './language-engine.js?v=lang-v5-single-email-button',
-  './account-access.js?v=20261012-kbsafe1',
+  './account-access.js?v=20261013-skyfix1',
   './sky-onboarding.js?v=sky-flow-20261013-v1',
   './academic-catalog.js?v=acad-cat-v2',
   './profile-ui.js?v=profile-v18-avatar-cache',
@@ -78,18 +78,18 @@ const APP_SHELL = [
 // A truncated/corrupt download is NEVER written to the shell cache.
 const ASSET_DIGESTS = {
 /* sw-manifest:start */
-  "./index.html": "e3e63b276f4f7db5887d08663fc67278b8fc5b499139f7a45404543cccfaa591",
+  "./index.html": "f2d125eb37d534495405af25fec346df1dd0d56489012bb982b6c70604f42276",
   "./manifest.json": "6dcf0e0c6f7671750549e53558ba8b9f0c2c83b0c6759072a6b5e2276331f491",
   "./manifest.webmanifest": "abcd26174710f6df3e183889a5a9da182f73ee8cdcc543b43db8fb4070cad54f",
   "./dashboard-v2.css?v=dash2f13-theme": "4541bc1e65fd158c593443562975400d128b8f1d3b636595df3c235b99e8cced",
   "./3d-loader.css?v=3d-v2": "43ca21b0a41be5d223c317fd63582f19ff6ffab5d010639ef26349464550da63",
   "./session-persist.js?v=session-v2": "99f3d1f49f6d5714fd25f1c12b2aa978ca97a009d6caba9a690a0442d082593c",
   "./analytics-service.js?v=analytics-p2-v2-insights": "6c1f711ed0d99baade68bccd2754f78029c7a7d62d65934239f60a710317d0b0",
-  "./account-access.css?v=20261012-kbsafe1": "301a82496d9b2450324104e1cfa5e57f67317073789580702d1c4a3ee67c23d5",
+  "./account-access.css?v=20261013-skyfix1": "301a82496d9b2450324104e1cfa5e57f67317073789580702d1c4a3ee67c23d5",
   "./sky-onboarding.css?v=sky-flow-20261013-v1": "d0419ff53bbc0e0eab9f08d5318648fd52ea046eb29a4c2a492499c6ced4ff70",
   "./institutions-bd.js?v=bd-institutions-v2": "602c5549515e8207ad152b948ca9b8fe3ad0fbe429afb56380e4e21b662f779d",
   "./language-engine.js?v=lang-v5-single-email-button": "c4d751c966c1a2d65832b8d55138cc1d3a36090b424a38be3f7a76a36774a63c",
-  "./account-access.js?v=20261012-kbsafe1": "7e9f1eba3e54d00df9a3c40f1f69c066fbe319987ea7eca75d286d2c4a801502",
+  "./account-access.js?v=20261013-skyfix1": "2498de8b55cb8e5e63d42dee23507847dfa060f2b271fe6c0e06147733c625e4",
   "./sky-onboarding.js?v=sky-flow-20261013-v1": "543342dbe1dce289b59bb103247c7ca37d8891b69368e3962073cc28a2ae7b7c",
   "./academic-catalog.js?v=acad-cat-v2": "75e7b80663d41330658c948ad1d4829d49f5c9abed581350582cfeace06d5b32",
   "./profile-ui.js?v=profile-v18-avatar-cache": "aaa1bf37e54b4dd44bad0a9ea6c904645f0457cea98d10aaa02bf39664d6b1b8",
