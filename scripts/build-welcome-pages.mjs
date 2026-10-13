@@ -3,7 +3,7 @@ import {readFileSync,writeFileSync} from 'node:fs';
 import {join,resolve} from 'node:path';
 import {spawnSync} from 'node:child_process';
 const root=resolve(process.argv[2]||'dist');
-const version='sky-flow-20261013-v3';
+const version='sky-flow-20261013-v4';
 const indexPath=join(root,'index.html');
 let html=readFileSync(indexPath,'utf8');
 const matches=html.match(/app-seed\.js\?v=[^"']+/g)||[];
