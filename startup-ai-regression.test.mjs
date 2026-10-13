@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 const H = readFileSync('index.html', 'utf8');
 const DP = readFileSync('data-protection.js', 'utf8');
 const SW = readFileSync('sw.js', 'utf8');
+const NW = readFileSync('notification-worker.js', 'utf8');
 const DASH = readFileSync('dashboard-v2.js', 'utf8');
 const AI = readFileSync('ai-agent-chat.js', 'utf8');
 let pass = 0;
@@ -80,6 +81,13 @@ test('১৪খ. a route whose tool script lands late recovers itself — no dea
   H.includes("const LAZY_RENDERER = { ai: 'renderAiAgentPage'") &&
   H.includes("waitForRenderer('my-profile', () => typeof window.renderProfilePage === 'function')") &&
   H.includes('if (Router.path === path) render();'));
+test('১৪গ. a notification tap can never open a retired host',
+  /* the deleted GitHub mirror fails DNS on every device — the SW must keep the
+     tap on this origin, and the worker must default to the live address */
+  SW.includes('new URL(raw, self.location.origin).origin === self.location.origin ? raw : ') &&
+  !/nd\.url\s*\|\|\s*'\.\/';\s*\n\s*\}/.test(SW) &&
+  !NW.includes("'https://sheikhrashel47-stack.github.io/admission-hub/'") &&
+  NW.includes("'https://admissionhub.pages.dev/'"));
 test('১৫. precache stays lean because code-native entry pages add no raster assets',
   /* Bound tracks the hand-curated APP_SHELL list. It grew from 33 → 37 when the
      P16 accessibility core landed, then 37 → 39 with the P15 offline status

@@ -26483,7 +26483,7 @@ var gk_agent_worker_default = {
       return json7(request, { ok: true, keys: keys(env).length, askKey: !!env.ASK_API_KEY, kv: !!env.GK_KV, tg: !!env.TG_BOT_TOKEN, agent: "agent-f1", gemini: !!env.GEMINI_KEYS, groq: !!env.GROQ_API_KEY, lastDay: env.GK_KV ? await env.GK_KV.get("gkDay") : null });
     }
     const isApp = request.headers.get("X-AH-App") === APP_HEADER;
-    const beaconOk = !isApp && request.method === "POST" && url.pathname === "/api/bank" && request.headers.get("Origin") === "https://sheikhrashel47-stack.github.io";
+    const beaconOk = !isApp && request.method === "POST" && url.pathname === "/api/bank" && (request.headers.get("Origin") === "https://admissionhub.pages.dev" || request.headers.get("Origin") === "https://sheikhrashel47-stack.github.io");
     if (!isApp && !beaconOk) return json7(request, { error: "forbidden" }, 403);
     if (request.method === "POST" && url.pathname === "/api/ask") return await createAsk(request, env, ctx);
     if (request.method === "POST" && url.pathname === "/api/bank") return await bankUpload(request, env);

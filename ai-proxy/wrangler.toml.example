@@ -3,7 +3,7 @@ main = "worker.js"
 compatibility_date = "2026-08-27"
 
 [vars]
-ALLOWED_ORIGIN = "https://sheikhrashel47-stack.github.io"
+ALLOWED_ORIGIN = "https://admissionhub.pages.dev"
 BROWSER_USE_MODEL = "gpt-5.6-luna"
 
 # Create a KV namespace and replace the IDs before deploying.
