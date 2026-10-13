@@ -144,12 +144,12 @@ test('preview surfaces are reachable but marked noindex', async () => {
   }
 });
 
-test('the welcome UI template is reachable, not swallowed by the SPA 404 guard', async () => {
-  /* welcome-onboarding.js fetches this template at runtime; if it 404s the app
-     silently keeps the old welcome, so the route must never be retired. */
+test('the legacy welcome template route is retired; the sky flow needs no template fetch', async () => {
+  /* welcome-onboarding.js fetched a standalone template at runtime. The sky
+     flow builds its own DOM in sky-onboarding.js, so the partial is gone and
+     the SPA 404 guard must treat both pathnames as unknown. */
   for (const path of ['/welcome-onboarding', '/welcome-onboarding.html']) {
     const res = await get(path);
-    assert.equal(res.status, 200, `${path} must stay reachable`);
-    assert.match(res.headers.get('content-type'), /text\/html/, `${path} must be HTML`);
+    assert.equal(res.status, 404, `${path} must stay retired`);
   }
 });

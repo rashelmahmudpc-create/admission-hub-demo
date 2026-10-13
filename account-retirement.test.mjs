@@ -65,11 +65,11 @@ const retiredStaticUrls = [
   'auth-screens/login.jpg', 'auth-screens/otp.jpg', 'auth-screens/signup.jpg',
   'auth-screens/success.jpg', 'auth-screens/welcome.jpg'
 ];
-const retiredMarkers = [
-  'premium-auth', 'auth-svg', 'user-account', 'ahAuthGate', 'ahOnboardGate',
-  'AHAuth', 'ahPubToken', 'accounts.google.com/gsi', 'curriculum-config.js',
-  'onboarding.js', 'onboarding.css', 'auth-art', 'auth-screens', 'email-preview-otp', 'otp-gmail.gs'
-];
+/* The retired assets are matched on a path boundary: the live Admission Sky
+   assets (sky-onboarding.js / .css) legitimately contain the substrings
+   'onboarding.js' and 'onboarding.css', so a bare substring check would flag
+   the live flow as retired. */
+const retiredAssetRe = new RegExp(`premium-auth|auth-svg|user-account|ahAuthGate|ahOnboardGate|AHAuth|ahPubToken|accounts\\.google\\.com/gsi|curriculum-config\\.js|(?<![\\w-])onboarding\\.(?:js|css)|auth-art|auth-screens|email-preview-otp|otp-gmail\\.gs`);
 const retiredRoutes = [
   '/api/auth/config', '/api/auth/login', '/api/auth/register', '/api/auth/register-email',
   '/api/auth/google', '/api/auth/me', '/api/auth/logout', '/api/auth/otp/send',
@@ -81,7 +81,7 @@ const retiredRoutes = [
 ];
 
 await test('retired frontend source/assets are deleted', retiredFiles.every(file => !existsSync(file)));
-await test('production HTML does not load or mount retired account/onboarding UI', retiredMarkers.every(marker => !H.includes(marker)));
+await test('production HTML does not load or mount retired account/onboarding UI', !retiredAssetRe.test(H));
 await test('Google identity client is not unconditionally loaded in HTML', !H.includes('accounts.google.com') && !H.includes('openid email profile'));
 
 const navBlock = (H.match(/const NAV_TABS=\[[\s\S]*?\];/) || [''])[0];
@@ -108,16 +108,14 @@ await test('content hydration is public and account-independent',
   !/AHAuth|ahPubToken|authHeaders|Authorization/.test(CLOUD));
 
 await test('service-worker build and HTML registration are synchronized',
-
-  SW.includes("const BUILD_ID = 'v312-vm-scope-20261011'") &&
-  H.includes("const expectedSwVersion = 'v312-vm-scope-20261011'") &&
-  H.includes('sw.js?v=v312-vm-scope-20261011') &&
-  H.includes('admission-hub-shell-v312-vm-scope-20261011'));
-await test('service-worker shell cannot cache retired assets', retiredMarkers.every(marker => !SW.includes(marker)));
+  SW.includes("const BUILD_ID = 'v323-swupdate-20261013'") &&
+  H.includes("const expectedSwVersion = 'v323-swupdate-20261013'") &&
+  H.includes('admission-hub-shell-v323-swupdate-20261013'));
+await test('service-worker shell cannot cache retired assets', !retiredAssetRe.test(SW));
 await test('premium account and institution assets use synchronized cache-busting versions',
-  ['account-access.css?v=20261010-static-welcome-lock3', 'account-access.js?v=20261010-static-welcome-lock3', 'institutions-bd.js?v=bd-institutions-v2']
+  ['account-access.css?v=20261012-kbsafe1', 'account-access.js?v=20261012-kbsafe1', 'institutions-bd.js?v=bd-institutions-v2']
     .every(asset => H.includes(asset) && SW.includes(asset)) &&
-  H.indexOf('institutions-bd.js?v=bd-institutions-v2') < H.indexOf('account-access.js?v=20261010-static-welcome-lock3'));
+  H.indexOf('institutions-bd.js?v=bd-institutions-v2') < H.indexOf('account-access.js?v=20261012-kbsafe1'));
 await test('premium Auth UI/server contract and curated-manual institution policy are locked',
   ACCOUNT_UI.includes("'X-AH-Auth-UI': 'auth-premium-v6'") &&
   AUTH_HANDLER.includes("const AUTH_UI_VERSION = 'auth-premium-v6'") &&

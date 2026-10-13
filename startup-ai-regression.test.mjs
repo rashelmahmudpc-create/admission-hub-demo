@@ -105,10 +105,12 @@ test('১৫. precache stays lean because code-native entry pages add no raster 
   /* Bound tracks the hand-curated APP_SHELL list. It grew from 33 → 37 when the
      P16 accessibility core landed, then 37 → 39 with the P15 offline status
      pill, then 39 → 41 with the two P17 study-plan assets, then 41 → 43 with the two P18 admission-intelligence assets, then 43 → 44
-     with the P18 official question-pattern dataset. The
+     with the P18 official question-pattern dataset, then 44 → 46 when the
+     Admission Sky flow replaced welcome-onboarding as the entry screen (its
+     CSS and JS are precached, like the flow they replace). The
      point of the ceiling is to catch an accidental bulk import, not to pin an
      exact size. */
-  shellAssets > 0 && shellAssets <= 44 && !appShellBlock.includes('result-analysis-500.js') && !appShellBlock.includes("  '',"));
+  shellAssets > 0 && shellAssets <= 46 && !appShellBlock.includes('result-analysis-500.js') && !appShellBlock.includes("  '',"));
 test('১৬. PWA updates are in-place; active worker is never unregistered first', !H.includes('registration.unregister()'));
 
 /* AI composer and response */

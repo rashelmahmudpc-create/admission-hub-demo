@@ -26,7 +26,10 @@ test('heavy app seed and result analysis remain deferred', /app-seed\.js[^>]*def
 test('retired identity/onboarding scripts are no longer boot-critical or loaded', !/premium-auth|(?<![\w-])onboarding\.js|curriculum-config|accounts\.google\.com/.test(H));
 
 
-test('service-worker build marker is synchronized', SW.includes("const BUILD_ID = 'v312-vm-scope-20261011'") && H.includes('sw.js?v=v312-vm-scope-20261011'));
+test('service-worker build marker is synchronized',
+  SW.includes("const BUILD_ID = 'v323-swupdate-20261013'") &&
+  H.includes("const expectedSwVersion = 'v323-swupdate-20261013'") &&
+  H.includes('admission-hub-shell-v323-swupdate-20261013'));
 test('data protection summarizes stores with count rather than full reads', DP.includes('tx.objectStore(name).count()'));
 test('unprotected automatic Pages deploy stays retired', WF.includes('Cloudflare Pages Bundle Guard (No Deploy)') && !WF.includes('wrangler-action') && !WF.includes('pages deploy dist --project-name admissionhub'));
 

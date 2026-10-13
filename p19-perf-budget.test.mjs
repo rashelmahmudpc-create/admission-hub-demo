@@ -31,16 +31,16 @@ function seedVersion() {
 }
 
 test('p19p-১: the welcome stylesheet and script are preloaded from the document head', () => {
-  assert.ok(/<link rel="preload" as="style" href="\.\/welcome-onboarding\.css\?v=/.test(INDEX),
+  assert.ok(/<link rel="preload" as="style" href="\.\/sky-onboarding\.css\?v=/.test(INDEX),
     'the welcome stylesheet must be preloaded: app-seed injects it at runtime, so without the hint it is discovered late');
-  assert.ok(/<link rel="preload" as="script" href="\.\/welcome-onboarding\.js\?v=/.test(INDEX),
+  assert.ok(/<link rel="preload" as="script" href="\.\/sky-onboarding\.js\?v=/.test(INDEX),
     'the welcome script must be preloaded for the same reason');
 });
 
 test('p19p-২: the preload version matches the version app-seed actually requests', () => {
   const version = seedVersion();
   for (const ext of ['css', 'js']) {
-    const hint = INDEX.match(new RegExp(`welcome-onboarding\\.${ext}\\?v=([^"']+)`));
+    const hint = INDEX.match(new RegExp(`sky-onboarding\\.${ext}\\?v=([^"']+)`));
     assert.ok(hint, `the ${ext} preload hint must exist`);
     assert.equal(hint[1], version,
       `the ${ext} preload version must equal app-seed's version, or the preload downloads a URL nothing requests`);
@@ -48,7 +48,7 @@ test('p19p-২: the preload version matches the version app-seed actually reques
 });
 
 test('p19p-৩: the build script keeps the preload hints in step with the version', () => {
-  assert.ok(/welcome-onboarding\\\.\(css\|js\)\\\?v=/.test(BUILD) || BUILD.includes('welcome-onboarding\\.(css|js)?v='),
+  assert.ok(/sky-onboarding\\\.\(css\|js\)\\\?v=/.test(BUILD),
     'the build script must rewrite the preload hint versions alongside the loader');
   assert.ok(BUILD.includes("Expected the welcome preload hints in index.html"),
     'the build script must fail loudly if the hints are missing, not silently skip them');
@@ -60,22 +60,25 @@ test('p19p-৪: the build script puts the welcome assets in the service-worker a
      build script does that, and that it targets the shell it ships. */
   const additions = BUILD.match(/const additions=\[([^\]]+)\]/);
   assert.ok(additions, 'the build script must declare the welcome shell additions');
-  for (const asset of ['app-seed.js', 'welcome-onboarding.css', 'welcome-onboarding.js', 'welcome-onboarding.html']) {
+  for (const asset of ['app-seed.js', 'sky-onboarding.css', 'sky-onboarding.js']) {
     assert.ok(additions[1].includes(asset), `${asset} must be added to the app shell at build time`);
   }
   assert.ok(BUILD.includes("const APP_SHELL = ["), 'the additions must be spliced into APP_SHELL, not some other array');
   assert.ok(SW.includes('const APP_SHELL = ['), 'sw.js must still carry the shell the build script edits');
 });
 
-test('p19p-৫: the hero button lights without waiting on the story to finish', () => {
-  const JS = readFileSync('welcome-onboarding.js', 'utf8');
-  assert.ok(/at\(2600,\(\)=>\$\('sky-go'\)\?\.classList\.add\('lit'\)\)/.test(JS),
-    'the Get Started light-up must be timed from the first frame at 2.6s, not from the end of the story');
+test('p19p-৫: the primary CTA is bound at build, never gated behind an intro animation', () => {
+  const JS = readFileSync('sky-onboarding.js', 'utf8');
+  /* The legacy welcome opened on a "Get Started" story screen that lit up at
+     2.6s. The sky flow drops the story and mounts step 0 directly, so the CTA
+     must be wired in build() rather than unlocked by a timer. */
+  assert.ok(/cta\(\)\.addEventListener\('click', next\)/.test(JS),
+    'the CTA must be bound when the flow builds, not after a timed reveal');
 });
 
 test('p19p-৬: the preload hints sit in the head, before the stylesheets that follow', () => {
   const headEnd = INDEX.indexOf('</head>');
-  const preloadAt = INDEX.indexOf('welcome-onboarding.css?v=');
+  const preloadAt = INDEX.indexOf('sky-onboarding.css?v=');
   const bodyAt = INDEX.indexOf('<body');
   assert.ok(preloadAt > 0 && headEnd > 0 && bodyAt > 0);
   assert.ok(preloadAt < headEnd, 'a preload in the body is discovered as late as the asset it is meant to speed up');

@@ -1,0 +1,843 @@
+/* Admission Sky — the owner's bird-led signup and log-in flows, wired to the
+ * real account backend.
+ *
+ * The two screens are the owner's own previews (signup-flow-preview-v2 and the
+ * log-in flow). This file is the live version of them: same bird, same colour
+ * fields, same step order — but every step that needs the server now calls the
+ * real account API through window.AdmissionSkyBridge, which account-access.js
+ * publishes. Nothing here talks to the network directly, and nothing here makes
+ * a decision about whether an account is verified: the bridge owns all of that.
+ *
+ * Mapping (design screen -> real work):
+ *   Signup  name -> DOB -> level/school/college -> email -> password -> verify
+ *           POST /signup, then /profile/pending, then /email-ownership/start
+ *           or /telegram/verification/start, then the matching /verify.
+ *   Log in  email (+Google / Facebook / passkey) -> password -> verify -> done
+ *           POST /login (or the provider path), then the verification choice
+ *           when the account still needs it.
+ *
+ * If the bridge is missing (an older cached bundle) the flow refuses to open
+ * rather than pretend a step succeeded.
+ */
+(() => {
+'use strict';
+
+const $ = id => document.getElementById(id);
+const bn = n => String(n).replace(/\d/g, d => '০১২৩৪৫৬৭৮৯'[d]);
+const norm = s => String(s)
+  .replace(/[০-৯]/g, c => '০১২৩৪৫৬৭৮৯'.indexOf(c))
+  .replace(/[۰-۹]/g, c => '۰۱۲۳۴۵۶۷۸۹'.indexOf(c))
+  .replace(/\D/g, '');
+
+/* The preview's palettes, unchanged. Each step recolours the whole screen. */
+const SIGNUP_PAL = [
+  ['#E6F0FF', '#2F6BFF', '#FF9F1C'], ['#F3E8FF', '#8B3DFF', '#FF4DA6'],
+  ['#DDF8EE', '#00B386', '#FFC233'], ['#FFEDE3', '#FF5A36', '#FFB020'],
+  ['#FFE8F1', '#E02D7B', '#7A3CFF'], ['#E8E6FF', '#5B3DF5', '#00C2FF'],
+  ['#DFF6FF', '#0A8CFF', '#00D68F'], ['#FFF3D6', '#FF9F1C', '#2F6BFF']
+];
+const LOGIN_PAL = [
+  ['#E6F0FF', '#2F6BFF', '#FF9F1C'], ['#FFE8F1', '#E02D7B', '#7A3CFF'],
+  ['#E8E6FF', '#5B3DF5', '#00C2FF'], ['#DFF6FF', '#0A8CFF', '#00D68F'],
+  ['#FFF3D6', '#FF9F1C', '#2F6BFF']
+];
+const SIGNUP_PROP = ['', 'cal', 'bok', 'mal', 'lck', 'lns', 'ear', ''];
+const LOGIN_PROP = ['mal', 'lck', 'lns', 'ear', ''];
+const MONTHS = ['জানুয়ারি', 'ফেব্রুয়ারি', 'মার্চ', 'এপ্রিল', 'মে', 'জুন', 'জুলাই', 'আগস্ট', 'সেপ্টেম্বর', 'অক্টোবর', 'নভেম্বর', 'ডিসেম্বর'];
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
+const SIGNUP_CTA = ['পরের ধাপ', 'পরের ধাপ', 'পরের ধাপ', 'পরের ধাপ', 'অ্যাকাউন্ট তৈরি করো', 'কোড পাঠাও', 'যাচাই করো', ''];
+const LOGIN_CTA = ['পরের ধাপ', 'ঢুকে পড়ো', 'কোড পাঠাও', 'যাচাই করো', ''];
+const SIGNUP_SAY = [
+  () => 'আমি স্কাই। তোমার পুরো নামটা বলো?',
+  () => 'জন্ম তারিখটা ঠিক করে নাও, তারপর এগোই।',
+  () => 'এখন কোন স্তরে পড়ছ? স্কুলটা খুঁজে নাও।',
+  () => 'তোমার ইমেইলটা দাও—এখানেই সব আসবে।',
+  () => 'এবার পাসওয়ার্ড। আমি দেখব না!',
+  () => 'কোডটা কোথায় পাঠাব? বেছে নাও।',
+  () => state.method === 'telegram'
+    ? 'টেলিগ্রামে কোড এসেছে। ঘরে ট্যাপ করে লিখে ফেলো!'
+    : 'কোডটা তোমার ইমেইলে গেছে। ঘরে ট্যাপ করে লিখে ফেলো!',
+  () => 'তোমার অ্যাকাউন্ট প্রস্তুত!'
+];
+const LOGIN_SAY = [
+  () => 'ফিরে এসেছ! আমি স্কাই। তোমার ইমেইল কী?',
+  () => 'এবার পাসওয়ার্ড বলো। আমি দেখব না!',
+  () => 'অ্যাকাউন্টটা এখনো নিশ্চিত হয়নি। কীভাবে নিশ্চিত করবে?',
+  () => state.method === 'telegram'
+    ? 'টেলিগ্রামে কোড এসেছে। ঘরে ট্যাপ করে লিখে ফেলো!'
+    : 'কোডটা তোমার ইমেইলে গেছে। ঘরে ট্যাপ করে লিখে ফেলো!',
+  () => 'স্বাগতম ফিরে!'
+];
+
+const SIGNUP_BIRD = `<svg class="bsvg" viewBox="0 0 240 240"><defs>
+<linearGradient id="sky-bgd" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7FD4FF"/><stop offset="1" stop-color="#2F6BFF"/></linearGradient>
+<linearGradient id="sky-wgd" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4C8DFF"/><stop offset="1" stop-color="#2450D8"/></linearGradient>
+<linearGradient id="sky-bkd" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFC233"/><stop offset="1" stop-color="#FF8A00"/></linearGradient></defs>
+<ellipse class="shd" cx="120" cy="226" rx="56" ry="8" fill="rgba(11,27,58,.18)"/>
+<g class="body">
+<g class="tail"><path d="M104 188q-20 20-34 26 20 4 34-6z" fill="#2450D8"/><path d="M120 192q-6 24-16 34 22-6 28-30z" fill="#3A74F5"/><path d="M136 188q16 20 32 26-22 2-34-8z" fill="#2450D8"/></g>
+<g class="feet"><path d="M98 196v20M86 216h24M142 196v20M130 216h24" stroke="#FF9A00" stroke-width="6" stroke-linecap="round" fill="none"/></g>
+<ellipse cx="120" cy="136" rx="74" ry="68" fill="url(#sky-bgd)"/>
+<ellipse cx="96" cy="100" rx="30" ry="18" fill="#fff" opacity=".22" transform="rotate(-24 96 100)"/>
+<ellipse cx="120" cy="158" rx="46" ry="40" fill="#F4FAFF"/>
+<g class="tuft"><path d="M110 70q-8-22 6-30 0 14 6 24z" fill="#4C8DFF"/><path d="M122 68q4-24 20-26-6 12-8 26z" fill="#3A74F5"/></g>
+<g class="head">
+<circle class="chk" cx="70" cy="136" r="12" fill="#FF8FB1"/><circle class="chk" cx="170" cy="136" r="12" fill="#FF8FB1"/>
+<g class="eyesN">
+<g class="eyel"><ellipse cx="88" cy="116" rx="17" ry="19" fill="#fff"/><g class="pup"><circle cx="88" cy="118" r="11" fill="#14224A"/><circle cx="84" cy="112" r="4.2" fill="#fff"/><circle cx="93" cy="123" r="2" fill="#fff" opacity=".8"/></g></g>
+<g class="eyer"><ellipse cx="152" cy="116" rx="17" ry="19" fill="#fff"/><g class="pup"><circle cx="152" cy="118" r="11" fill="#14224A"/><circle cx="148" cy="112" r="4.2" fill="#fff"/><circle cx="157" cy="123" r="2" fill="#fff" opacity=".8"/></g></g>
+<path class="brow brw1" d="M74 92q14-9 28-2" fill="none" stroke="#1E3A8A" stroke-width="4.5" stroke-linecap="round"/><path class="brow brw2" d="M138 90q14-7 28 2" fill="none" stroke="#1E3A8A" stroke-width="4.5" stroke-linecap="round"/></g>
+<g class="eyesH" fill="none" stroke="#14224A" stroke-width="5.5" stroke-linecap="round"><path d="M72 122q16-24 32 0"/><path d="M136 122q16-24 32 0"/></g>
+<g class="beak"><path d="M107 132q13-6 26 0 0 6-13 14-13-8-13-14z" fill="url(#sky-bkd)"/><g class="jawg"><path class="jaw" d="M111 143q9 14 18 0z" fill="#E8780A"/></g><ellipse class="tng" cx="120" cy="150" rx="6" ry="4" fill="#FF8FB1"/></g>
+<g class="cap" transform="rotate(-6 120 52)"><path d="M120 34l62 22-62 22-62-22z" fill="#1B2A5E"/><path d="M82 64v14c0 11 76 11 76 0V64" fill="#27397F"/><g class="tas"><path d="M182 56v34" stroke="#FFB020" stroke-width="3.5" stroke-linecap="round"/><circle cx="182" cy="94" r="6" fill="#FFB020"/></g><path d="M120 46l3 7 8 1-6 5 2 8-7-4-7 4 2-8-6-5 8-1z" fill="#FFB020"/></g></g>
+<g class="wl"><path d="M58 128q-34 8-30 46 26 2 44-22z" fill="url(#sky-wgd)"/></g><g class="wr"><path d="M182 128q34 8 30 46-26 2-44-22z" fill="url(#sky-wgd)"/></g>
+<g class="pr cal"><rect x="176" y="150" width="46" height="44" rx="8" fill="#fff"/><rect x="176" y="150" width="46" height="14" rx="8" fill="#FF4DA6"/><g fill="#8B3DFF"><circle cx="188" cy="174" r="3"/><circle cx="199" cy="174" r="3"/><circle cx="210" cy="174" r="3"/><circle cx="188" cy="185" r="3"/><circle cx="199" cy="185" r="3"/></g></g>
+<g class="pr bok"><rect x="172" y="164" width="52" height="34" rx="6" fill="#FF9F1C"/><rect x="177" y="169" width="42" height="24" rx="4" fill="#fff"/><path d="M198 169v24" stroke="#FFD08A" stroke-width="2.5"/></g>
+<g class="pr mal"><rect x="172" y="160" width="54" height="38" rx="7" fill="#fff"/><path d="m175 165 24 18 24-18" fill="none" stroke="#FF6B3D" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/></g>
+<g class="pr lck"><rect x="176" y="168" width="44" height="32" rx="8" fill="#E02D7B"/><path d="M184 168v-10a14 14 0 0 1 28 0v10" fill="none" stroke="#E02D7B" stroke-width="6" stroke-linecap="round"/><circle cx="198" cy="183" r="5" fill="#fff"/></g>
+<g class="pr lns"><circle cx="198" cy="170" r="16" fill="rgba(255,255,255,.6)" stroke="#5B3DF5" stroke-width="6"/><path d="m210 182 14 14" stroke="#5B3DF5" stroke-width="7" stroke-linecap="round"/></g>
+<g class="pr ear" fill="none" stroke="#0A8CFF" stroke-width="5" stroke-linecap="round"><path d="M196 96q14 16 0 32"/><path d="M210 84q26 28 0 56"/></g>
+</g></svg>`;
+
+const BACK = `<button class="back hide" id="sky-back" type="button" aria-label="পেছনে"><svg viewBox="0 0 24 24"><path d="m15 5-7 7 7 7"/></svg></button>`;
+
+const OTP_BOXES = `<div class="otp hint1" id="sky-otp">${
+  Array.from({ length: 6 }, (_, k) => `<div class="od"><input inputmode="numeric" maxlength="6" enterkeyhint="done" aria-label="${k + 1}"${k === 0 ? ' autocomplete="one-time-code"' : ''}></div>`).join('')
+}</div><div class="hint" id="sky-ot-h"></div><div class="tmr"><u id="sky-tmu"></u></div><div class="rs"><span id="sky-rs-t"></span><button id="sky-rs-b" type="button" disabled>আবার পাঠাও</button></div>`;
+
+const METHOD_CARDS = `<button class="mc sel" data-m="email" type="button"><span class="ic"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="m4 8 8 6 8-6"/></svg></span><span><b>ইমেইল</b><small id="sky-mm">কোড যাবে তোমার ইমেইলে</small></span><i class="rd"></i></button><button class="mc" data-m="telegram" type="button"><span class="ic"><svg viewBox="0 0 24 24"><path d="m21 4-3 15-6-4-3 3v-5L20 6 7 12 3 10Z"/></svg></span><span><b>টেলিগ্রাম</b><small>অফিসিয়াল বটে কোড আসবে</small></span><i class="rd"></i></button>`;
+
+const DONE_PANEL = `<div class="dn" id="sky-dn"><h2 id="sky-dn-h"></h2><p>তোমার অ্যাকাউন্ট প্রস্তুত</p><div class="ld"><u></u></div></div>`;
+const SIGNUP_SCREENS = [
+  `<div class="scr" id="sky-s0"><label class="fl" id="sky-f-name"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/></svg><input id="sky-in-name" type="text" placeholder=" " autocomplete="name" enterkeyhint="done" maxlength="60"><span class="lb">তোমার পুরো নাম</span><button class="cl" type="button" data-c="sky-in-name" aria-label="মুছুন"><svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></button></label><div class="hint">যে নামে সনদ ও পরিচয় থাকবে সেটাই লেখো</div></div>`,
+  `<div class="scr" id="sky-s1"><div class="wheel"><i class="hl"></i><div class="col" id="sky-c-d"></div><div class="col" id="sky-c-m"></div><div class="col" id="sky-c-y"></div></div><div class="age" id="sky-age"></div></div>`,
+  `<div class="scr" id="sky-s2"><div class="lbl">তুমি এখন কোন স্তরে?</div><div class="chips" id="sky-lv"><button class="chip" data-v="SSC" type="button">SSC</button><button class="chip" data-v="HSC" type="button">HSC</button><button class="chip" data-v="ডিপ্লোমা" type="button">ডিপ্লোমা</button><button class="chip" data-v="আলিম" type="button">আলিম</button><button class="chip" data-v="অন্যান্য" type="button">অন্যান্য</button></div>
+<div id="sky-sf" style="display:none"><div class="sp"></div><label class="fl" id="sky-f-sch"><svg class="ic" viewBox="0 0 24 24"><path d="M3 10 12 5l9 5-9 5-9-5Z"/><path d="M7 12.5V17c3 2 7 2 10 0v-4.5"/></svg><input id="sky-in-sch" type="text" placeholder=" " autocomplete="off" enterkeyhint="done"><span class="lb">স্কুলের নাম খোঁজো</span></label><div class="sug" id="sky-sg-sch"></div>
+<div id="sky-cwrap"><div class="sp"></div><label class="fl" id="sky-f-col"><svg class="ic" viewBox="0 0 24 24"><path d="M4 20V9l8-5 8 5v11"/><path d="M9 20v-6h6v6"/></svg><input id="sky-in-col" type="text" placeholder=" " autocomplete="off" enterkeyhint="done"><span class="lb">কলেজের নাম খোঁজো</span></label><div class="sug" id="sky-sg-col"></div><button class="skip" id="sky-skipc" type="button">এখনো কলেজে ভর্তি হইনি</button></div></div></div>`,
+  `<div class="scr" id="sky-s3"><label class="fl" id="sky-f-em"><svg class="ic" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="m4 8 8 6 8-6"/></svg><input id="sky-in-em" type="email" inputmode="email" placeholder=" " autocomplete="email" autocapitalize="off" spellcheck="false" enterkeyhint="done"><span class="lb">তোমার ইমেইল</span><button class="cl" type="button" data-c="sky-in-em" aria-label="মুছুন"><svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></button></label><div class="chips"><button class="chip" data-d="gmail.com" type="button">@gmail.com</button><button class="chip" data-d="yahoo.com" type="button">@yahoo.com</button></div><div class="hint" id="sky-em-h"></div></div>`,
+  `<div class="scr" id="sky-s4"><label class="fl pwf" id="sky-f-pw"><svg class="ic" viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg><input id="sky-in-pw" type="password" placeholder=" " autocomplete="new-password" enterkeyhint="done"><span class="lb">পাসওয়ার্ড (কমপক্ষে ৮ অক্ষর)</span><button class="eye" data-t="sky-in-pw" type="button" aria-label="দেখাও"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg></button></label><div class="meter" id="sky-mt"><i></i><i></i><i></i><i></i></div>
+<div class="sp"></div><label class="fl pwf" id="sky-f-pw2"><svg class="ic" viewBox="0 0 24 24"><path d="M12 3 5 6v5c0 4.5 3 8 7 10 4-2 7-5.5 7-10V6Z"/><path d="m9 12 2 2 4-4"/></svg><input id="sky-in-pw2" type="password" placeholder=" " autocomplete="new-password" enterkeyhint="done"><span class="lb">পাসওয়ার্ড আবার লেখো</span></label><div class="hint" id="sky-pw-h"></div></div>`,
+  `<div class="scr" id="sky-s5">${METHOD_CARDS}</div>`,
+  `<div class="scr" id="sky-s6">${OTP_BOXES}</div>`,
+  `<div class="scr" id="sky-s7">${DONE_PANEL}</div>`
+];
+
+const LOGIN_SCREENS = [
+  `<div class="scr" id="sky-l0"><label class="fl" id="sky-lf-em"><svg class="ic" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="m4 8 8 6 8-6"/></svg><input id="sky-lin-em" type="email" inputmode="email" placeholder=" " autocomplete="email" autocapitalize="off" spellcheck="false" enterkeyhint="done"><span class="lb">তোমার ইমেইল</span><button class="cl" type="button" data-c="sky-lin-em" aria-label="মুছুন"><svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></button></label><div class="chips"><button class="chip" data-d="gmail.com" type="button">@gmail.com</button><button class="chip" data-d="yahoo.com" type="button">@yahoo.com</button></div><div class="hint" id="sky-lem-h"></div>
+<div class="or"><span>অথবা</span></div>
+<div class="tiles"><button class="tile" id="sky-b-google" type="button"><svg viewBox="0 0 24 24"><path fill="#4285F4" d="M23 12.3c0-.8-.1-1.5-.2-2.2H12v4.2h6.2a5.3 5.3 0 0 1-2.3 3.5v2.9h3.7c2.2-2 3.4-5 3.4-8.4Z"/><path fill="#34A853" d="M12 23.5c3.1 0 5.7-1 7.6-2.8l-3.7-2.9c-1 .7-2.3 1.1-3.9 1.1-3 0-5.5-2-6.4-4.7H1.8v3A11.5 11.5 0 0 0 12 23.5Z"/><path fill="#FBBC05" d="M5.6 14.2a6.9 6.9 0 0 1 0-4.4v-3H1.8a11.5 11.5 0 0 0 0 10.4l3.8-3Z"/><path fill="#EA4335" d="M12 5.4c1.7 0 3.2.6 4.4 1.7l3.3-3.3A11.5 11.5 0 0 0 1.8 6.8l3.8 3C6.5 7.4 9 5.4 12 5.4Z"/></svg><span>Google</span></button><button class="tile" id="sky-b-fb" type="button"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="#1877F2"/><path fill="#fff" d="M13.4 22v-8h2.7l.4-3.2h-3.1V8.8c0-.9.3-1.5 1.6-1.5h1.7V4.4c-.3 0-1.3-.1-2.4-.1-2.4 0-4 1.4-4 4.1v2.4H7.6V14h2.7v8h3.1Z"/></svg><span>Facebook</span></button><button class="tile pk" id="sky-b-pass" type="button"><svg viewBox="0 0 24 24"><path d="M12 11v2.5c0 2.4-.9 4.6-2.6 6.3M16 12.5c0 3-.9 5.6-2.6 7.7M8 12.5V11a4 4 0 0 1 8 0M5 12.5V11a7 7 0 0 1 14 0v1.5c0 1.2-.1 2.4-.4 3.5M5 16c.5-1 .8-2.2.8-3.5"/></svg><span>ফিঙ্গারপ্রিন্ট</span></button></div>
+<button class="lnk" id="sky-b-signup" type="button">নতুন? সাইন আপ করো</button></div>`,
+  `<div class="scr" id="sky-l1"><label class="fl pwf" id="sky-lf-pw"><svg class="ic" viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg><input id="sky-lin-pw" type="password" placeholder=" " autocomplete="current-password" enterkeyhint="done"><span class="lb">পাসওয়ার্ড</span><button class="eye" data-t="sky-lin-pw" type="button" aria-label="দেখাও"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg></button></label><div class="hint" id="sky-lpw-h"></div><button class="lnk" id="sky-b-forgot" type="button">পাসওয়ার্ড ভুলে গেছ?</button></div>`,
+  `<div class="scr" id="sky-l2">${METHOD_CARDS}</div>`,
+  `<div class="scr" id="sky-l3">${OTP_BOXES}</div>`,
+  `<div class="scr" id="sky-l4">${DONE_PANEL}</div>`
+];
+
+const CARD = `<main class="app" id="sky-app">${BACK}
+<section class="petwrap"><div class="bird" id="sky-bird" data-m="" data-p="">${SIGNUP_BIRD}</div>
+<div class="bubble" id="sky-bubble"><span id="sky-say"></span></div></section>
+<section class="stage" id="sky-stage"></section>
+<footer class="foot"><button class="cta" id="sky-cta" type="button" disabled><span id="sky-cta-t">পরের ধাপ</span><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></button></footer>
+<div class="cf" id="sky-cf"></div></main>`;
+
+/* ---------------------------------------------------------------- helpers */
+const bridge = () => window.AdmissionSkyBridge || null;
+const host = () => document.getElementById('ah-sky-flow');
+const accountPage = () => document.getElementById('ah-account-page');
+
+const state = {
+  mode: '', i: 0, busy: false, last: 0,
+  name: '', d: 15, m: 5, y: 2006, level: '', school: '', college: '', skipC: false,
+  email: '', pw: '', pw2: '', method: 'email',
+  schools: [], colleges: [], inst: { school: null, college: null },
+  caps: null, resend: 45, resendTimer: null
+};
+
+let tT = 0, mT = 0, hovT = 0, idleT = 0, nameDone = false;
+
+const pal = n => {
+  const table = state.mode === 'login' ? LOGIN_PAL : SIGNUP_PAL;
+  const c = table[Math.min(n, table.length - 1)] || table[0];
+  const root = host();
+  if (!root) return;
+  root.style.setProperty('--t', c[0]);
+  root.style.setProperty('--p', c[1]);
+  root.style.setProperty('--q', c[2]);
+  // Keep the page behind the design the same blended colour, so the strips above
+  // and below the phone surface never show an unrelated white.
+  if (accountPage()) accountPage().style.setProperty('--ah-sky-blend', c[0]);
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute('content', c[0]);
+};
+
+/* ---- bird ---- */
+const mood = m => { const b = $('sky-bird'); if (b) b.dataset.m = m || ''; };
+const look = (x, y) => { const b = $('sky-bird'); if (b) { b.style.setProperty('--lx', x + 'px'); b.style.setProperty('--ly', y + 'px'); } };
+const kick = (c, ms) => { const b = $('sky-bird'); if (!b) return; b.classList.remove(c); void b.offsetWidth; b.classList.add(c); setTimeout(() => b.classList.remove(c), ms || 700); };
+const talk = t => {
+  const b = $('sky-bird'), say = $('sky-say');
+  if (!b || !say) return;
+  clearInterval(tT); say.textContent = '';
+  let k = 0; b.classList.add('talk');
+  tT = setInterval(() => { k++; say.textContent = t.slice(0, k); if (k >= t.length) { clearInterval(tT); b.classList.remove('talk'); } }, 28);
+};
+const mimic = () => { const b = $('sky-bird'); if (!b) return; b.classList.add('talk'); clearTimeout(mT); mT = setTimeout(() => b.classList.remove('talk'), 240); };
+const fly = r => { const b = $('sky-bird'); if (!b) return; b.classList.remove('flyin', 'flyinr'); void b.offsetWidth; b.classList.add(r ? 'flyinr' : 'flyin', 'flying'); setTimeout(() => b.classList.remove('flyin', 'flyinr', 'flying'), 1250); };
+const hover = () => { const b = $('sky-bird'); if (!b) return; b.classList.remove('hov'); void b.offsetWidth; b.classList.add('hov', 'flying'); setTimeout(() => b.classList.remove('hov', 'flying'), 2250); };
+const wake = () => { clearInterval(hovT); hovT = setInterval(() => { const a = document.activeElement; if (state.i < state.last && !state.busy && !(a && a.tagName === 'INPUT')) hover(); }, 9500); };
+const eyes = n => { const b = $('sky-bird'); if (b) b.style.setProperty('--eye', (1 + Math.min(n, 12) * .014).toFixed(3)); };
+
+const first = () => (state.name.trim().split(/\s+/)[0] || 'বন্ধু');
+
+/* ---- screen control ---- */
+const screens = () => [...host().querySelectorAll('.scr')];
+const cta = () => $('sky-cta');
+const ctaTable = () => (state.mode === 'login' ? LOGIN_CTA : SIGNUP_CTA);
+const propTable = () => (state.mode === 'login' ? LOGIN_PROP : SIGNUP_PROP);
+const sayTable = () => (state.mode === 'login' ? LOGIN_SAY : SIGNUP_SAY);
+const lastScreen = () => (state.mode === 'login' ? 4 : 7);
+
+const refresh = () => {
+  const i = state.i;
+  let ok = false;
+  if (state.mode === 'login') {
+    if (i === 0) ok = EMAIL_RE.test(state.email);
+    else if (i === 1) ok = state.pw.length > 0;
+    else if (i === 2) ok = true;
+    else if (i === 3) ok = otpBoxes().every(x => x.value);
+  } else {
+    if (i === 0) ok = state.name.trim().length >= 2;
+    else if (i === 1) ok = true;
+    else if (i === 2) ok = !!state.level && !!state.school && (state.level === 'SSC' || state.skipC || !!state.college);
+    else if (i === 3) ok = EMAIL_RE.test(state.email);
+    else if (i === 4) ok = state.pw.length >= 8 && state.pw === state.pw2;
+    else if (i === 5) ok = true;
+    else if (i === 6) ok = otpBoxes().every(x => x.value);
+  }
+  const button = cta();
+  if (!button) return;
+  button.disabled = !ok || state.busy;
+  button.classList.toggle('ready', ok && !state.busy);
+};
+
+const otpBoxes = () => [...($('sky-otp') ? $('sky-otp').querySelectorAll('input') : [])];
+
+const go = n => {
+  const prev = state.i;
+  state.i = n;
+  hideKb();
+  pal(n);
+  screens().forEach((el, k) => { el.classList.toggle('on', k === n); el.classList.toggle('l', k < n); });
+  const label = $('sky-cta-t');
+  if (label) label.textContent = ctaTable()[n] || '';
+  const button = cta();
+  if (button) button.classList.toggle('hide', n === lastScreen());
+  const back = $('sky-back');
+  if (back) {
+    const allowed = state.mode === 'login' ? (n === 1 || n === 3) : (n >= 1 && n <= 4 || n === 6);
+    back.classList.toggle('hide', !allowed);
+  }
+  const b = $('sky-bird');
+  if (b) b.dataset.p = propTable()[Math.min(n, propTable().length - 1)];
+  mood(''); look(0, 0); eyes(0); fly(n < prev);
+  const say = sayTable()[Math.min(n, sayTable().length - 1)];
+  if (say) talk(say());
+  refresh();
+  if (state.mode === 'login') {
+    if (n === 2) setMethodCopy();
+    if (n === 3) startOtp();
+  } else {
+    if (n === 5) setMethodCopy();
+    if (n === 6) startOtp();
+    if (n === 7) celebrate();
+  }
+};
+
+const setMethodCopy = () => {
+  const node = $('sky-mm');
+  if (node) node.textContent = state.email ? `কোড যাবে ${state.email}` : 'কোড যাবে তোমার ইমেইলে';
+};
+
+const hideKb = () => { const a = document.activeElement; if (a && a.tagName === 'INPUT') a.blur(); };
+
+/* ---- verification challenge (real backend) ---- */
+const startOtp = () => {
+  fill([]);
+  const otp = $('sky-otp');
+  if (otp) otp.className = 'otp hint1';
+  const hint = $('sky-ot-h');
+  if (hint) { hint.className = 'hint'; hint.textContent = ''; }
+  beginChallenge();
+  startResendCountdown(state.resend);
+};
+
+const beginChallenge = async () => {
+  const api = bridge();
+  if (!api) return fail('Account সেবা পাওয়া যাচ্ছে না—পেজটি একবার refresh করো।');
+  setBusy(true);
+  try {
+    const result = state.method === 'telegram' ? await api.startTelegram() : await api.startEmail();
+    if (!result) throw new Error('start-failed');
+    state.resend = Number(result.resendAfter || 45);
+    const hint = $('sky-ot-h');
+    if (hint) {
+      hint.className = 'hint ok';
+      hint.textContent = state.method === 'telegram'
+        ? 'টেলিগ্রামের অফিসিয়াল বটে ৬ সংখ্যার কোড এসেছে'
+        : (result.emailMasked ? `কোড পাঠানো হয়েছে ${result.emailMasked}` : 'কোড তোমার ইমেইলে পাঠানো হয়েছে');
+    }
+    startResendCountdown(state.resend);
+  } catch (error) {
+    fail(api.friendly ? api.friendly(error) : 'কোড পাঠানো যায়নি—আবার চেষ্টা করো।');
+  } finally { setBusy(false); }
+};
+
+const startResendCountdown = seconds => {
+  const rb = $('sky-rs-b'), rt = $('sky-rs-t'), u = $('sky-tmu');
+  if (!rb || !rt) return;
+  let t = Math.max(1, Math.ceil(seconds || 45));
+  clearInterval(state.resendTimer);
+  rb.disabled = true;
+  rt.textContent = `আবার পাঠানো যাবে ${bn(t)} সেকেন্ড পর `;
+  if (u) { u.style.transition = 'none'; u.style.transform = 'scaleX(1)'; requestAnimationFrame(() => requestAnimationFrame(() => { u.style.transition = `transform ${t}s linear`; u.style.transform = 'scaleX(0)'; })); }
+  state.resendTimer = setInterval(() => {
+    t--;
+    if (t <= 0) { clearInterval(state.resendTimer); rt.textContent = 'কোড পাওনি? '; rb.disabled = false; }
+    else rt.textContent = `আবার পাঠানো যাবে ${bn(t)} সেকেন্ড পর `;
+  }, 1000);
+};
+
+const fill = arr => {
+  const boxes = otpBoxes();
+  const cells = [...($('sky-otp') ? $('sky-otp').querySelectorAll('.od') : [])];
+  boxes.forEach((o, j) => { o.value = arr[j] || ''; if (cells[j]) cells[j].classList.toggle('f', !!o.value); });
+};
+
+const verifyCode = async () => {
+  const code = otpBoxes().map(o => o.value).join('');
+  if (code.length < 6 || state.busy) return;
+  const api = bridge();
+  if (!api) return fail('Account সেবা পাওয়া যাচ্ছে না—পেজটি একবার refresh করো।');
+  setBusy(true);
+  const otp = $('sky-otp');
+  try {
+    if (state.method === 'telegram') await api.verifyTelegram(code);
+    else await api.verifyEmail(code);
+    if (otp) { otp.classList.add('ok'); [...otp.querySelectorAll('.od')].forEach((e, k) => e.style.setProperty('--k', k)); }
+    mood('happy'); kick('hop');
+    const hint = $('sky-ot-h');
+    if (hint) { hint.className = 'hint ok'; hint.textContent = 'যাচাই সফল হয়েছে!'; }
+    setTimeout(() => { api.finish(); go(lastScreen()); }, 900);
+  } catch (error) {
+    if (otp) { otp.classList.remove('bad'); void otp.offsetWidth; otp.classList.add('bad'); }
+    mood('sad'); kick('shake');
+    const hint = $('sky-ot-h');
+    if (hint) { hint.className = 'hint err'; hint.textContent = api.friendly ? api.friendly(error) : 'কোডটা মেলেনি, আবার চেষ্টা করো'; }
+    setTimeout(() => { if (otp) otp.classList.remove('bad'); mood(''); fill([]); refresh(); }, 900);
+  } finally { setBusy(false); }
+};
+
+const fail = text => {
+  const hint = $('sky-ot-h');
+  if (hint) { hint.className = 'hint err'; hint.textContent = text; }
+  mood('sad'); kick('shake');
+  setTimeout(() => mood(''), 1200);
+};
+
+const setBusy = busy => {
+  state.busy = Boolean(busy);
+  const button = cta();
+  if (button) button.setAttribute('aria-busy', state.busy ? 'true' : 'false');
+  host().querySelectorAll('button').forEach(el => {
+    if (el.id === 'sky-cta') return;
+    if (state.busy) { if (!el.disabled) { el.dataset.skyBusy = '1'; el.disabled = true; } }
+    else if (el.dataset.skyBusy === '1') { el.disabled = false; delete el.dataset.skyBusy; }
+  });
+};
+
+/* ---- next / back ---- */
+const next = async () => {
+  const button = cta();
+  if (!button || button.disabled || state.busy) return;
+  hideKb();
+  if (state.mode === 'login') {
+    if (state.i === 0) return go(1);
+    if (state.i === 1) return doLogin();
+    if (state.i === 2) return go(3);
+    if (state.i === 3) return verifyCode();
+    return;
+  }
+  if (state.i === 4) return submitSignup();
+  if (state.i === 5) return go(6);
+  if (state.i === 6) return verifyCode();
+  go(state.i + 1);
+};
+
+const back = () => {
+  if (state.mode === 'login') { if (state.i === 1) go(0); else if (state.i === 3) go(2); return; }
+  if (state.i === 6) go(5);
+  else if (state.i > 0 && state.i <= 4) go(state.i - 1);
+};
+
+const submitSignup = async () => {
+  const api = bridge();
+  if (!api) return fail('Account সেবা পাওয়া যাচ্ছে না—পেজটি একবার refresh করো।');
+  setBusy(true);
+  const button = cta();
+  if (button) button.classList.add('busy');
+  try {
+    const result = await api.signup(state.email, state.pw, {
+      fullName: state.name.trim().replace(/\s+/g, ' '),
+      dob: dobValue(),
+      school: state.inst.school,
+      higherInstitution: state.inst.college
+    });
+    // The server decides which verification routes are live for this account.
+    const options = result && result.verification && result.verification.options;
+    if (options && options.telegram && options.telegram.available === false && state.method === 'telegram') {
+      state.method = 'email';
+      markMethod();
+    }
+    if (button) button.classList.remove('busy');
+    setBusy(false);
+    go(5);
+  } catch (error) {
+    if (button) button.classList.remove('busy');
+    setBusy(false);
+    fail(api.friendly ? api.friendly(error) : 'অ্যাকাউন্ট তৈরি করা যায়নি—আবার চেষ্টা করো।');
+  }
+};
+
+const doLogin = async () => {
+  const api = bridge();
+  if (!api) return fail('Account সেবা পাওয়া যাচ্ছে না—পেজটি একবার refresh করো।');
+  setBusy(true);
+  const button = cta();
+  if (button) button.classList.add('busy');
+  try {
+    const result = await api.login(state.email, state.pw);
+    if (button) button.classList.remove('busy');
+    setBusy(false);
+    if (result && result.authenticated === true) {
+      api.finish();
+      return go(4);
+    }
+    // The account is real but still needs one verification step.
+    const options = result && result.verification && result.verification.options;
+    if (options && options.telegram && options.telegram.available === false) {
+      state.method = 'email';
+      markMethod();
+    }
+    go(2);
+  } catch (error) {
+    if (button) button.classList.remove('busy');
+    setBusy(false);
+    const hint = $('sky-lpw-h');
+    if (hint) { hint.className = 'hint err'; hint.textContent = api.friendly ? api.friendly(error) : 'ঢোকা যায়নি—আবার চেষ্টা করো।'; }
+    mood('sad'); kick('shake');
+    const field = $('sky-lf-pw');
+    if (field) field.classList.add('bad');
+    setTimeout(() => { mood(''); if (field) field.classList.remove('bad'); }, 1200);
+  }
+};
+
+/* ---- password helpers ---- */
+const strength = p => { let s = 0; if (p.length >= 8) s++; if (/\d/.test(p)) s++; if (/[a-z]/.test(p) && /[A-Z]/.test(p)) s++; if (/[^\w]/.test(p) || p.length >= 12) s++; return p ? Math.max(1, s) : 0; };
+
+const passwordCheck = () => {
+  const pw = $('sky-in-pw'), pw2 = $('sky-in-pw2');
+  state.pw = pw.value; state.pw2 = pw2.value;
+  const s = strength(state.pw);
+  const meter = $('sky-mt');
+  if (meter) meter.className = 'meter' + (s ? ' s' + s : '');
+  const match = state.pw2 && state.pw === state.pw2;
+  const f2 = $('sky-f-pw2');
+  if (f2) { f2.classList.toggle('good', !!match && state.pw.length >= 8); f2.classList.toggle('bad', !!state.pw2 && !match); }
+  const hint = $('sky-pw-h');
+  if (hint) hint.textContent = state.pw.length && state.pw.length < 8 ? `আরও ${bn(8 - state.pw.length)} অক্ষর লাগবে`
+    : (state.pw2 && !match ? 'দুটো পাসওয়ার্ড মিলছে না' : (match ? 'দারুণ, মিলে গেছে!' : ''));
+  if (match && state.pw.length >= 8) { mood('happy'); setTimeout(() => { if (document.activeElement === pw2) mood('cover'); }, 900); }
+  kick('peck', 250);
+  refresh();
+};
+
+/* ---- date of birth wheel ---- */
+const YEARS = [];
+for (let y = 2012; y >= 1990; y--) YEARS.push(y);
+const dim = () => new Date(state.y, state.m + 1, 0).getDate();
+
+const ageLabel = () => {
+  const node = $('sky-age');
+  if (!node) return;
+  const n = new Date(), b = new Date(state.y, state.m, state.d);
+  let a = n.getFullYear() - b.getFullYear();
+  if (n < new Date(n.getFullYear(), state.m, state.d)) a--;
+  node.textContent = `${bn(state.d)} ${MONTHS[state.m]} ${bn(state.y)} · বয়স ${bn(a)} বছর`;
+};
+
+const buildWheel = (el, items, sel, onPick) => {
+  el.innerHTML = '<div class="pad"></div>' + items.map(t => `<div class="it">${t}</div>`).join('') + '<div class="pad"></div>';
+  const its = [...el.querySelectorAll('.it')];
+  let tm, last = -1;
+  const mark = k => its.forEach((e, j) => e.classList.toggle('sel', j === k));
+  el.scrollTop = sel * 44; mark(sel);
+  el.addEventListener('scroll', () => {
+    const k = Math.max(0, Math.min(items.length - 1, Math.round(el.scrollTop / 44)));
+    if (k !== last) { last = k; mark(k); kick('peck', 250); mood('wow'); look(0, -4); }
+    clearTimeout(tm);
+    tm = setTimeout(() => { onPick(k); mood(''); look(0, 0); }, 140);
+  });
+  return { set: k => el.scrollTo({ top: k * 44, behavior: 'smooth' }) };
+};
+
+const dobValue = () => `${state.y}-${String(state.m + 1).padStart(2, '0')}-${String(state.d).padStart(2, '0')}`;
+
+const setupDob = () => {
+  const cd = $('sky-c-d'), cm = $('sky-c-m'), cy = $('sky-c-y');
+  if (!cd || !cm || !cy) return;
+  const wd = buildWheel(cd, Array.from({ length: 31 }, (_, k) => bn(k + 1)), state.d - 1, k => { state.d = Math.min(k + 1, dim()); if (k + 1 > dim()) wd.set(state.d - 1); ageLabel(); refresh(); });
+  buildWheel(cm, MONTHS, state.m, k => { state.m = k; if (state.d > dim()) { state.d = dim(); wd.set(state.d - 1); } ageLabel(); refresh(); });
+  buildWheel(cy, YEARS.map(bn), YEARS.indexOf(state.y), k => { state.y = YEARS[k]; if (state.d > dim()) { state.d = dim(); wd.set(state.d - 1); } ageLabel(); refresh(); });
+  ageLabel();
+};
+
+/* ---- institution search (real catalog) ---- */
+const normalText = v => String(v || '').normalize('NFKC').toLocaleLowerCase('bn-BD').replace(/[’‘`´]/g, "'").replace(/[^\p{L}\p{M}\p{N}]+/gu, ' ').trim();
+
+const matchInstitutions = (query, kind) => {
+  const list = kind === 'school' ? state.schools : state.colleges;
+  const q = normalText(query);
+  if (!q) return [];
+  return list.filter(item => normalText(item.name).includes(q)).slice(0, 5);
+};
+
+const wireInstitution = (kind, inputId, boxId) => {
+  const input = $(inputId), box = $(boxId);
+  if (!input || !box) return;
+  const render = () => {
+    const q = input.value.trim();
+    state.inst[kind] = null;
+    refresh();
+    if (q.length < 2) { box.classList.remove('show'); box.innerHTML = ''; return; }
+    const matches = matchInstitutions(q, kind);
+    box.innerHTML = matches.map(item => `<button type="button" data-n="${item.name}">${item.name}</button>`).join('')
+      + `<button type="button" data-n="${q}">‘${q}’ যোগ করো</button>`;
+    box.classList.add('show');
+    kick('peck', 250); mimic(); look(0, 6);
+  };
+  input.addEventListener('input', render);
+  input.addEventListener('focus', () => { mood('listen'); look(0, 6); });
+  input.addEventListener('blur', () => { mood(''); look(0, 0); });
+  box.addEventListener('pointerdown', e => e.preventDefault());
+  box.addEventListener('click', e => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    input.value = b.dataset.n;
+    const match = matchInstitutions(b.dataset.n, kind).find(item => item.name === b.dataset.n);
+    state.inst[kind] = match ? { id: match.id, name: match.name, district: match.district || '' } : { id: 'manual', name: b.dataset.n, district: '' };
+    if (kind === 'school') state.school = state.inst.school.name;
+    else state.college = state.inst.college.name;
+    box.classList.remove('show');
+    input.closest('.fl').classList.add('good');
+    kick('hop'); hideKb(); refresh();
+  });
+  input.addEventListener('input', () => input.closest('.fl').classList.remove('good'));
+};
+
+/* ---- method cards ---- */
+const markMethod = () => {
+  host().querySelectorAll('.mc').forEach(card => card.classList.toggle('sel', card.dataset.m === state.method));
+};
+
+/* ---- celebrate ---- */
+const confetti = () => {
+  const cf = $('sky-cf');
+  if (!cf) return;
+  const colors = ['#2F6BFF', '#FF9F1C', '#00B386', '#E02D7B', '#8B3DFF'];
+  for (let k = 0; k < 40; k++) {
+    const e = document.createElement('i');
+    e.style.left = Math.random() * 100 + '%';
+    e.style.background = colors[k % 5];
+    e.style.setProperty('--d', (1.6 + Math.random() * 1.4) + 's');
+    e.style.setProperty('--x', (Math.random() * 120 - 60) + 'px');
+    e.style.setProperty('--r', (Math.random() * 720 - 360) + 'deg');
+    cf.appendChild(e);
+    setTimeout(() => e.remove(), 3400);
+  }
+};
+
+const celebrate = () => {
+  mood('cheer'); kick('loop', 1800);
+  const h = $('sky-dn-h');
+  if (h) h.textContent = `স্বাগতম, ${first()}!`;
+  confetti(); setTimeout(confetti, 1000);
+};
+
+/* ---- build + bind ---- */
+/* `built` guards the per-screen DOM rebuild; `globals` guards the document- and
+   viewport-level listeners, which must attach exactly once no matter how many
+   times the flow is reopened. */
+let built = false, globals = false;
+const build = () => {
+  if (built) return;
+  built = true;
+  const root = host();
+  if (!root) return;
+  // The bird, bubble and footer are shared; only the screens change per mode.
+  if (!$('sky-app')) root.innerHTML = CARD;
+  const stage = $('sky-stage');
+  stage.innerHTML = (state.mode === 'login' ? LOGIN_SCREENS : SIGNUP_SCREENS).join('');
+
+  cta().addEventListener('click', next);
+  $('sky-back').addEventListener('click', back);
+  host().querySelectorAll('.cl').forEach(b => b.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    const t = $(b.dataset.c);
+    t.value = ''; t.dispatchEvent(new Event('input')); t.focus();
+  }));
+
+  if (state.mode === 'login') bindLogin();
+  else bindSignup();
+
+  host().querySelectorAll('.eye').forEach(b => {
+    b.addEventListener('pointerdown', e => e.preventDefault());
+    b.addEventListener('click', () => {
+      const t = $(b.dataset.t);
+      t.type = t.type === 'password' ? 'text' : 'password';
+      mood(t.type === 'text' ? 'wow' : 'cover');
+      setTimeout(() => { if (document.activeElement === t && t.type === 'password') mood('cover'); }, 500);
+    });
+  });
+
+  host().querySelectorAll('.mc').forEach(c => c.addEventListener('click', () => {
+    if (state.busy) return;
+    state.method = c.dataset.m;
+    markMethod(); kick('hop');
+    talk(state.method === 'email' ? 'ইমেইলেই কোড পাঠাব!' : 'টেলিগ্রামে কোড পাঠাব!');
+    setMethodCopy();
+  }));
+
+  bindOtp();
+  if (globals) { wake(); return; }
+  globals = true;
+  document.addEventListener('pointerdown', e => { if (!e.target.closest('input,.fl,.chip,button,.sbtn')) hideKb(); });
+  $('sky-stage').addEventListener('touchmove', hideKb, { passive: true });
+  document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.tagName === 'INPUT') { e.preventDefault(); hideKb(); } });
+  if (window.visualViewport) {
+    const fit = () => { host().style.setProperty('--vh', window.visualViewport.height + 'px'); window.scrollTo(0, 0); };
+    window.visualViewport.addEventListener('resize', fit); fit();
+  }
+  wake();
+};
+
+const bindLogin = () => {
+  const em = $('sky-lin-em');
+  em.addEventListener('focus', () => { mood('listen'); look(0, 6); });
+  em.addEventListener('blur', () => { mood(''); look(0, 0); });
+  em.addEventListener('input', () => {
+    state.email = em.value.trim();
+    const ok = EMAIL_RE.test(state.email);
+    $('sky-lf-em').classList.toggle('good', ok);
+    $('sky-lem-h').textContent = ok ? 'চমৎকার, ঠিকানাটা ঠিক আছে' : '';
+    kick('peck', 250); mimic(); look(Math.max(-6, Math.min(6, state.email.length * .4 - 6)), 6);
+    if (ok) { mood('happy'); setTimeout(() => { if (document.activeElement === em) mood('listen'); }, 800); } else mood('listen');
+    refresh();
+  });
+  host().querySelectorAll('#sky-l0 .chip').forEach(c => c.addEventListener('click', () => {
+    em.value = em.value.split('@')[0] + '@' + c.dataset.d;
+    em.dispatchEvent(new Event('input')); kick('hop'); hideKb();
+  }));
+  const pw = $('sky-lin-pw');
+  pw.addEventListener('focus', () => mood('cover'));
+  pw.addEventListener('blur', () => mood(''));
+  pw.addEventListener('input', () => { state.pw = pw.value; $('sky-lf-pw').classList.remove('bad'); $('sky-lpw-h').textContent = ''; kick('peck', 250); refresh(); });
+
+  const provider = async (name, label, call) => {
+    if (state.busy) return;
+    const api = bridge();
+    if (!api) return fail('Account সেবা পাওয়া যাচ্ছে না—পেজটি একবার refresh করো।');
+    setBusy(true); mood('listen'); talk(label);
+    try {
+      const done = await call(api);
+      if (!done) { mood(''); $('sky-lem-h').className = 'hint err'; $('sky-lem-h').textContent = `${name} সাইন-ইন সম্পন্ন হয়নি—ইমেইল দিয়ে চেষ্টা করো।`; return; }
+      api.finish(); go(4);
+    } catch (error) {
+      $('sky-lem-h').className = 'hint err';
+      $('sky-lem-h').textContent = api.friendly ? api.friendly(error) : `${name} সাইন-ইন সম্পন্ন হয়নি—ইমেইল দিয়ে চেষ্টা করো।`;
+    } finally { setBusy(false); }
+  };
+  $('sky-b-google').addEventListener('click', () => provider('Google', 'গুগলের সাথে যুক্ত হচ্ছি…', api => api.google()));
+  $('sky-b-fb').addEventListener('click', () => provider('Facebook', 'ফেসবুকের সাথে যুক্ত হচ্ছি…', api => api.facebook()));
+  $('sky-b-pass').addEventListener('click', () => provider('Passkey', 'আঙুল বা মুখ দিয়ে নিশ্চিত করো…', api => api.passkey()));
+
+  $('sky-b-forgot').addEventListener('click', async () => {
+    if (state.busy) return;
+    const api = bridge();
+    if (!api) return fail('Account সেবা পাওয়া যাচ্ছে না—পেজটি একবার refresh করো।');
+    const email = em.value.trim();
+    if (!EMAIL_RE.test(email)) { $('sky-lem-h').className = 'hint err'; $('sky-lem-h').textContent = 'আগে তোমার ইমেইলটা লিখো।'; em.focus(); return; }
+    setBusy(true);
+    try {
+      await api.forgot(email);
+      $('sky-lpw-h').className = 'hint ok';
+      $('sky-lpw-h').textContent = 'রিসেট লিংক পাঠানোর চেষ্টা করা হয়েছে—ইনবক্স দেখো।';
+    } catch (error) {
+      $('sky-lpw-h').className = 'hint err';
+      $('sky-lpw-h').textContent = api.friendly ? api.friendly(error) : 'এখন পাঠানো যাচ্ছে না—একটু পরে চেষ্টা করো।';
+    } finally { setBusy(false); }
+  });
+  $('sky-b-signup').addEventListener('click', () => { const api = bridge(); if (api) api.showSignup(); });
+};
+
+const bindSignup = () => {
+  const name = $('sky-in-name');
+  name.addEventListener('focus', () => { mood('listen'); look(0, 6); nameDone = false; });
+  name.addEventListener('input', () => {
+    state.name = name.value; nameDone = false;
+    $('sky-f-name').classList.toggle('good', state.name.trim().length >= 2);
+    kick('peck', 250); mimic(); mood('listen'); eyes(state.name.length);
+    look(Math.max(-6, Math.min(6, state.name.length * .8 - 6)), 6);
+    clearTimeout(idleT);
+    idleT = setTimeout(() => { if (state.i === 0 && state.name && document.activeElement === name) { mood('think'); look(6, -5); } }, 1700);
+    refresh();
+  });
+  name.addEventListener('blur', () => {
+    clearTimeout(idleT);
+    if (state.i !== 0) return;
+    eyes(0); look(0, 0);
+    if (state.name.trim().length >= 2 && !nameDone) {
+      nameDone = true; mood('happy'); kick('clap', 1500);
+      talk(`বুঝেছি! তুমি ${first()}। কী সুন্দর নাম!`);
+      setTimeout(() => { if (state.i === 0) mood(''); }, 2200);
+    } else mood('');
+  });
+
+  setupDob();
+
+  host().querySelectorAll('#sky-lv .chip').forEach(c => c.addEventListener('click', () => {
+    host().querySelectorAll('#sky-lv .chip').forEach(x => x.classList.remove('sel'));
+    c.classList.add('sel');
+    state.level = c.dataset.v;
+    $('sky-sf').style.display = 'block';
+    $('sky-cwrap').style.display = state.level === 'SSC' ? 'none' : 'block';
+    kick('hop'); mood('happy'); setTimeout(() => mood(''), 900);
+    talk(state.level === 'SSC' ? 'ঠিক আছে! তোমার স্কুলটা খুঁজে নাও।' : 'দারুণ! স্কুল আর কলেজ দুটোই বলো।');
+    refresh();
+  }));
+  wireInstitution('school', 'sky-in-sch', 'sky-sg-sch');
+  wireInstitution('college', 'sky-in-col', 'sky-sg-col');
+  $('sky-skipc').addEventListener('click', () => {
+    state.skipC = !state.skipC;
+    $('sky-skipc').textContent = state.skipC ? 'ঠিক আছে, কলেজ পরে দেব ✓' : 'এখনো কলেজে ভর্তি হইনি';
+    $('sky-f-col').style.opacity = state.skipC ? .4 : 1;
+    hideKb(); refresh();
+  });
+
+  const em = $('sky-in-em');
+  em.addEventListener('focus', () => { mood('listen'); look(0, 6); });
+  em.addEventListener('blur', () => { mood(''); look(0, 0); });
+  em.addEventListener('input', () => {
+    state.email = em.value.trim();
+    const ok = EMAIL_RE.test(state.email);
+    $('sky-f-em').classList.toggle('good', ok);
+    $('sky-em-h').textContent = ok ? 'চমৎকার, ঠিকানাটা ঠিক আছে' : '';
+    kick('peck', 250); mimic(); look(Math.max(-6, Math.min(6, state.email.length * .4 - 6)), 6);
+    if (ok) { mood('happy'); setTimeout(() => { if (document.activeElement === em) mood('listen'); }, 800); } else mood('listen');
+    refresh();
+  });
+  host().querySelectorAll('#sky-s3 .chip').forEach(c => c.addEventListener('click', () => {
+    em.value = em.value.split('@')[0] + '@' + c.dataset.d;
+    em.dispatchEvent(new Event('input')); kick('hop'); hideKb();
+  }));
+
+  const pw = $('sky-in-pw'), pw2 = $('sky-in-pw2');
+  pw.addEventListener('input', passwordCheck);
+  pw2.addEventListener('input', passwordCheck);
+  [pw, pw2].forEach(x => { x.addEventListener('focus', () => mood('cover')); x.addEventListener('blur', () => mood('')); });
+};
+
+const bindOtp = () => {
+  const otp = $('sky-otp');
+  if (!otp) return;
+  const ods = otpBoxes(), cells = [...otp.querySelectorAll('.od')];
+  ods.forEach((x, k) => {
+    x.addEventListener('focus', () => { mood('listen'); look(0, 5); otp.classList.remove('hint1'); });
+    x.addEventListener('blur', () => { mood(''); });
+    x.addEventListener('input', () => {
+      const d = norm(x.value);
+      if (d.length > 1) {
+        const arr = ods.map(o => o.value);
+        for (let j = 0; j < d.length && k + j < 6; j++) arr[k + j] = d[j];
+        fill(arr); ods[Math.min(k + d.length, 5)].focus();
+      } else {
+        x.value = d; cells[k].classList.toggle('f', !!d);
+        if (d && k < 5) ods[k + 1].focus();
+      }
+      kick('peck', 250); mimic(); look((k - 2.5) * 2, 5); refresh();
+      if (ods.every(o => o.value)) verifyCode();
+    });
+    x.addEventListener('keydown', e => {
+      if (e.key === 'Backspace' && !x.value && k > 0) { ods[k - 1].focus(); ods[k - 1].value = ''; cells[k - 1].classList.remove('f'); refresh(); }
+      if (e.key === 'ArrowLeft' && k > 0) ods[k - 1].focus();
+      if (e.key === 'ArrowRight' && k < 5) ods[k + 1].focus();
+    });
+    x.addEventListener('paste', e => {
+      const d = norm(e.clipboardData.getData('text') || '').slice(0, 6);
+      if (!d) return;
+      e.preventDefault(); fill(d.split('')); ods[Math.min(d.length, 5)].focus(); refresh();
+      if (d.length === 6) verifyCode();
+    });
+  });
+  $('sky-rs-b').addEventListener('click', async () => {
+    const api = bridge();
+    if (!api || state.busy) return;
+    kick('hop'); talk('নতুন কোড পাঠিয়ে দিলাম!');
+    setBusy(true);
+    try {
+      const result = state.method === 'telegram' ? await api.startTelegram() : await api.startEmail();
+      state.resend = Number(result && result.resendAfter || 45);
+      startResendCountdown(state.resend);
+    } catch (error) {
+      fail(api.friendly ? api.friendly(error) : 'নতুন কোড পাঠানো যায়নি—একটু পরে চেষ্টা করো।');
+    } finally { setBusy(false); }
+  });
+};
+
+/* ---------------------------------------------------------------- public */
+const open = async mode => {
+  const api = bridge();
+  if (!api) return false;
+  // The bridge owns the host element: it lives inside the account page, which
+  // this script must not reach into directly.
+  const root = api.mount ? api.mount() : host();
+  if (!root) return false;
+  state.mode = mode === 'login' ? 'login' : 'signup';
+  state.i = 0;
+  state.busy = false;
+  state.last = lastScreen();
+  state.caps = await api.capabilities();
+  state.schools = await api.institutions('school');
+  state.colleges = await api.institutions('college');
+  state.inst = { school: null, college: null };
+  if (state.mode === 'signup') {
+    state.name = ''; state.level = ''; state.school = ''; state.college = ''; state.skipC = false;
+    state.email = ''; state.pw = ''; state.pw2 = '';
+    state.d = 15; state.m = 5; state.y = 2006;
+  } else {
+    state.email = ''; state.pw = '';
+  }
+  // Rebuild the screens for this mode; the shell is reused when it already exists.
+  built = false;
+  state.method = 'email';
+  api.reveal(root);
+  build();
+  markMethod();
+  go(0);
+  return true;
+};
+
+const close = () => { const api = bridge(); if (api) api.conceal(); };
+
+window.AdmissionSkyFlow = Object.freeze({ open, close, get mode() { return state.mode; }, get i() { return state.i; }, get busy() { return state.busy; } });
+})();

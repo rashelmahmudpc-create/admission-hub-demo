@@ -12,9 +12,9 @@ const HTML = read('index.html');
 const SW = read('sw.js');
 const PAGES_GUARD = read('.github/workflows/cf-pages.yml');
 const RELEASE_WORKFLOW = read('.github/workflows/telegram-auth-canary-activate.yml');
-const UI_VERSION = '20261010-static-welcome-lock3';
+const UI_VERSION = '20261012-kbsafe1';
 
-const SHELL_VERSION = 'v312-vm-scope-20261011';
+const SHELL_VERSION = 'v323-swupdate-20261013';
 
 const between = (source, start, end) => {
   const from = source.indexOf(start);
@@ -148,7 +148,6 @@ test('code-native assets and service-worker release markers are synchronized', (
   }
   assert.match(SW, new RegExp(`const BUILD_ID = '${SHELL_VERSION}'`));
   assert.match(HTML, new RegExp(`expectedSwVersion = '${SHELL_VERSION}'`));
-  assert.match(HTML, new RegExp(`sw\\.js\\?v=${SHELL_VERSION}`));
   assert.ok(HTML.indexOf('institutions-bd.js?v=bd-institutions-v2') < HTML.indexOf(`account-access.js?v=${UI_VERSION}`));
   assert.ok(HTML.indexOf(`account-access.js?v=${UI_VERSION}`) < HTML.indexOf('dashboard-v2.js?v=dash2f16-avatar-cache'));
 });

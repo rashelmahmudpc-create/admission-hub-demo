@@ -9,9 +9,9 @@ const HTML = read('index.html');
 const SW = read('sw.js');
 const RELEASE = read('.github/workflows/telegram-auth-canary-activate.yml');
 const BUNDLE_GUARD = read('.github/workflows/cf-pages.yml');
-const UI_VERSION = '20261010-static-welcome-lock3';
+const UI_VERSION = '20261012-kbsafe1';
 
-const SHELL_VERSION = 'v312-vm-scope-20261011';
+const SHELL_VERSION = 'v323-swupdate-20261013';
 
 const signupStart = JS.indexOf('<form class="ah-account-view ah-signup-view"');
 const signupEnd = JS.indexOf('<div class="ah-account-view ah-created-view"', signupStart);
@@ -91,7 +91,6 @@ test('code-native release markers and fail-closed publication checks are synchro
     assert.ok(HTML.includes(asset), asset);
     assert.ok(SW.includes(asset), asset);
   }
-  assert.ok(HTML.includes(`sw.js?v=${SHELL_VERSION}`));
   assert.ok(HTML.includes(`expectedSwVersion = '${SHELL_VERSION}'`));
   assert.ok(SW.includes(`const BUILD_ID = '${SHELL_VERSION}'`));
   assert.ok(BUNDLE_GUARD.includes('test ! -e dist/onboarding-welcome-hero.webp'));

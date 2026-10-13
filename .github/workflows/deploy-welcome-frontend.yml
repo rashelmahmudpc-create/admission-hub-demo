@@ -26,9 +26,9 @@ jobs:
         run: npm ci
       - name: Validate isolated welcome UI
         run: |
-          node --check welcome-onboarding.js
+          node --check sky-onboarding.js
           node --check app-seed.js
-          node --test welcome-onboarding.test.mjs welcome-scroll-lock.test.mjs welcome-sky-bind.test.mjs
+          node --test p19-perf-budget.test.mjs seo-routing.test.mjs
           npm run check:sw-manifest
       - name: Build sanitized frontend bundle
         run: |
@@ -39,7 +39,7 @@ jobs:
           node scripts/build-welcome-pages.mjs dist
           test -s dist/index.html
           test -s dist/sw.js
-          test -s dist/welcome-onboarding.html
+          test -s dist/sky-onboarding.js
       - name: Deploy Pages frontend only
         uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd
         with:

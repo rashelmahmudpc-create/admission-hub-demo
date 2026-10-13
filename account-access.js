@@ -49,6 +49,7 @@
       passkey: { available: false, enrollmentAvailable: false },
       telegram: { available: false },
       emailOwnership: { available: false },
+      emailPassword: { available: false },
       backup: { available: false, contactInput: 'none' }
     },
     ownership: null,
@@ -70,6 +71,16 @@
 
   const pageHost = document.createElement('div');
   pageHost.id = 'ah-account-page';
+  // Admission Sky (owner's bird-led signup / log-in) owns its own stylesheet.
+  // Injecting it here keeps the two designs independent: removing the flow's
+  // script removes its look with it, with nothing left over in this sheet.
+  if (!document.getElementById('ah-sky-flow-style')) {
+    const skyStyle = document.createElement('link');
+    skyStyle.id = 'ah-sky-flow-style';
+    skyStyle.rel = 'stylesheet';
+    skyStyle.href = 'sky-onboarding.css?v=sky-flow-20261013-v1';
+    document.head.append(skyStyle);
+  }
   pageHost.className = 'ah-account-page';
   pageHost.hidden = true;
   pageHost.innerHTML = `
@@ -1744,6 +1755,9 @@
     };
     state.capabilities.telegram = { available: methods.telegramVerification?.available === true };
     state.capabilities.emailOwnership = { available: methods.emailOwnership?.available === true };
+    // Email + password is the base method: the server only reports it as
+    // unavailable when it is deliberately switched off, so absent means on.
+    state.capabilities.emailPassword = { available: methods.emailPassword?.available !== false };
     state.capabilities.backup = {
       available: methods.backup?.available === true,
       contactInput: ['none', 'optional', 'required'].includes(methods.backup?.contactInput) ? methods.backup.contactInput : 'none'
@@ -2134,6 +2148,34 @@
     });
     if (visible) requestAnimationFrame(() => window.scrollTo({ top: 0, left: 0, behavior: 'auto' }));
   };
+  // Mount point for the Admission Sky flow (sky-onboarding.js). The design is a
+  // real page of its own, so this page hosts it and steps aside; the flow asks
+  // for it through window.AdmissionSkyBridge below.
+  const skyMount = () => {
+    let node = document.getElementById('ah-sky-flow');
+    if (!node) {
+      node = document.createElement('div');
+      node.id = 'ah-sky-flow';
+      node.hidden = true;
+      pageHost.append(node);
+    }
+    return node;
+  };
+  // The account page now opens the Admission Sky flow. The old welcome view is
+  // no longer shown: it survives in the DOM only because the wiring tests and a
+  // handful of bindings still reference its hooks. If the flow's script has not
+  // loaded (an old cached bundle) this falls back to the previous view rather
+  // than showing an empty page.
+  const openSky = mode => {
+    if (window.AdmissionSkyFlow && window.AdmissionSkyBridge) {
+      window.AdmissionSkyFlow.open(mode);
+      return true;
+    }
+    // No flow script (old cached bundle): fall back to the previous entry
+    // surface — the welcome view for a fresh visitor, the login form otherwise.
+    showView(mode === 'signup' ? 'welcome' : 'login');
+    return false;
+  };
   const open = options => {
     const forceWelcome = options?.forceWelcome === true;
     if (!accountVerified(state.session)) captureReturnDestination();
@@ -2141,8 +2183,8 @@
     if (accountVerified(state.session)) showView('signed');
     else if (state.telegram) showView('telegram');
     else if (state.verification) showView('verify');
-    else if (forceWelcome || !entryMode()) showView('welcome');
-    else showView('login');
+    else if (forceWelcome || !entryMode()) openSky('signup');
+    else openSky('login');
     if (state.available === false && state.currentView !== 'welcome') message('Account service এখন প্রস্তুত নয়—Guest হিসেবে Dashboard ব্যবহার করতে পারো।' + unavailableHint(), 'info');
   };
   const close = () => {
@@ -2446,11 +2488,13 @@
     }));
 
     $('[data-role="welcome-signup"]').addEventListener('click', () => {
+      if (openSky('signup')) return;
       state.signupJourney = true;
       state.signupStep = 'personal';
       showView('signup');
     });
     $('[data-role="welcome-login"]').addEventListener('click', () => {
+      if (openSky('login')) return;
       state.signupJourney = false;
       state.pendingProfile = null;
       state.profileBound = false;
@@ -3005,6 +3049,189 @@
       }
     });
   };
+
+  // Everything the Admission Sky flow needs, and nothing it does not. The flow
+  // never touches cookies or fetch: it asks here, and this module decides. That
+  // keeps one owner of the session and one owner of the verification ticket.
+  const skyApi = async (path, options) => api(path, options);
+  const rememberTicket = result => {
+    // /signup and the login path hand back the pre-verification ticket. The
+    // start endpoints read it from the cookie jar, so the flow's steps must run
+    // inside this page — which they do.
+    const selection = result && result.verification;
+    if (!selection || selection.selectionRequired !== true) return false;
+    state.signupJourney = state.signupJourney || pendingSignup() || true;
+    state.verification = {
+      email: state.verification?.email || '',
+      emailMasked: selection.emailMasked || 'তোমার Email-এ',
+      emailSent: false,
+      mode: 'select',
+      resendUntil: 0
+    };
+    return true;
+  };
+  const startEmailChallenge = async () => {
+    const result = await skyApi('/email-ownership/start', { method: 'POST', body: {} });
+    if (result.alreadyVerified) { await checkEmailVerification(); return { resendAfter: 0, alreadyVerified: true }; }
+    if (result.delivery?.method === 'firebase-link') {
+      state.verification.emailSent = true;
+      state.verification.mode = 'email';
+      startResendCooldown(Number(result.delivery?.resendAfter || state.resendCooldownSeconds));
+      return { resendAfter: Number(result.delivery?.resendAfter || state.resendCooldownSeconds), emailMasked: result.delivery.emailMasked };
+    }
+    if (!setOwnershipChallenge(result.ownership)) throw new Error('Email যাচাই এখন পাওয়া যাচ্ছে না।');
+    return { resendAfter: Number(result.ownership?.resendAfter || state.resendCooldownSeconds), emailMasked: result.ownership?.emailMasked };
+  };
+  const verifyEmailChallenge = async code => {
+    if (!state.ownership) throw new Error('CHALLENGE_INVALID');
+    const result = await skyApi('/email-ownership/verify', {
+      method: 'POST', body: { attemptId: state.ownership.attemptId, code }
+    });
+    state.verificationLabel = 'Email';
+    clearOwnershipTimer();
+    state.ownership = null;
+    await establishSession(result, 'তোমার Email মালিকানা যাচাই হয়েছে।');
+    return result;
+  };
+  const startTelegramChallenge = async () => {
+    const result = await skyApi('/telegram/verification/start', { method: 'POST', body: {} });
+    if (!setTelegramChallenge(result)) throw new Error('Telegram যাচাই এখন পাওয়া যাচ্ছে না।');
+    if (state.signupJourney || pendingSignup()) rememberPendingSignup(true, 'telegram');
+    return { resendAfter: telegramResendRemaining() || state.telegram?.resendAfter || 45 };
+  };
+  const verifyTelegramChallenge = async code => {
+    if (!state.telegram) throw new Error('TELEGRAM_VERIFICATION_INVALID');
+    const result = await skyApi('/telegram/verification/verify', {
+      method: 'POST', body: { attemptId: state.telegram.attemptId, code }
+    });
+    await establishSession(result, 'Telegram account verification সফল। তোমার Admission Hub account সক্রিয় হয়েছে।');
+    return result;
+  };
+  const skyBridge = Object.freeze({
+    friendly: friendlyError,
+    mount: skyMount,
+    reveal(node) {
+      const mount = skyMount();
+      if (node && node !== mount) mount.append(node);
+      mount.hidden = false;
+      pageHost.dataset.skyFlow = 'on';
+      pageHost.dataset.currentView = 'sky';
+      setAccountPageActive(true);
+    },
+    conceal() {
+      const mount = document.getElementById('ah-sky-flow');
+      if (mount) mount.hidden = true;
+      delete pageHost.dataset.skyFlow;
+      close();
+    },
+    showSignup() { if (window.AdmissionSkyFlow) window.AdmissionSkyFlow.open('signup'); },
+    showLogin() { if (window.AdmissionSkyFlow) window.AdmissionSkyFlow.open('login'); },
+    capabilities: async () => ({
+      email: Boolean(state.capabilities.emailPassword.available),
+      telegram: Boolean(state.capabilities.telegram.available),
+      emailOwnership: Boolean(state.capabilities.emailOwnership.available),
+      google: Boolean(state.capabilities.google.available),
+      facebook: Boolean(state.capabilities.facebook?.available),
+      passkey: Boolean(state.capabilities.passkey.available && passkeyBrowserReady())
+    }),
+    institutions: async kind => {
+      try {
+        const response = await fetch(`/api/institutions/v1/${kind === 'college' ? 'college' : 'school'}`, { headers: { Accept: 'application/json' } });
+        const payload = await response.json();
+        const rows = Array.isArray(payload?.items) ? payload.items : [];
+        return rows.map(item => ({ id: String(item.id || item.name), name: String(item.name || ''), district: String(item.district || '') }));
+      } catch (_) { return []; }
+    },
+    signup: async (email, password, profile) => {
+      const result = await skyApi('/signup', {
+        method: 'POST',
+        body: {
+          email, password, remember: true,
+          profile: {
+            fullName: profile.fullName,
+            dateOfBirth: profile.dob,
+            school: profile.school ? { id: profile.school.id, name: profile.school.name, district: profile.school.district || '' } : null,
+            higherInstitution: profile.higherInstitution ? { id: profile.higherInstitution.id, name: profile.higherInstitution.name, district: profile.higherInstitution.district || '' } : null
+          }
+        }
+      });
+      state.verification = state.verification || {};
+      state.verification.email = email;
+      rememberTicket(result);
+      return result;
+    },
+    login: async (email, password) => {
+      const result = await skyApi('/login', { method: 'POST', body: { email, password, remember: true } });
+      if (result.authenticated === true) {
+        await establishSession(result, 'তোমার account-এ প্রবেশ হয়েছে।');
+        return result;
+      }
+      state.verification = state.verification || {};
+      state.verification.email = email;
+      rememberTicket(result);
+      return result;
+    },
+    google: async () => {
+      if (!window.google?.accounts?.oauth2) {
+        try { await loadGoogle(state.googleClientId || state.capabilities.google.clientId); } catch (_) {}
+      }
+      if (!window.google?.accounts?.oauth2) return false;
+      const accessToken = await new Promise((resolve, reject) => {
+        const client = window.google.accounts.oauth2.initTokenClient({
+          client_id: state.googleClientId,
+          scope: 'openid email profile',
+          callback: r => (r?.error || !r?.access_token ? reject(new Error('Google অনুমতি পাওয়া যায়নি।')) : resolve(r.access_token))
+        });
+        client.requestAccessToken({ prompt: '' });
+      });
+      const result = await skyApi('/google', { method: 'POST', body: { accessToken } });
+      await establishSession(result, 'Google দিয়ে তোমার account-এ প্রবেশ হয়েছে।');
+      return true;
+    },
+    facebook: async () => {
+      if (!state.facebookAppId) return false;
+      if (!window.FB) { try { await loadFacebook(state.facebookAppId); } catch (_) {} }
+      if (!window.FB) return false;
+      return new Promise(resolve => {
+        window.FB.login(async response => {
+          const accessToken = String(response?.authResponse?.accessToken || '');
+          if (String(response?.status || '') !== 'connected' || accessToken.length < 20) return resolve(false);
+          try {
+            const result = await skyApi('/facebook', { method: 'POST', body: { accessToken } });
+            await establishSession(result, 'Facebook দিয়ে তোমার account-এ প্রবেশ হয়েছে।');
+            resolve(true);
+          } catch (_) { resolve(false); }
+        }, { scope: 'public_profile,email' });
+      });
+    },
+    passkey: async () => {
+      if (!passkeyBrowserReady()) return false;
+      try {
+        const begin = await skyApi('/passkey/authentication/begin', { method: 'POST', body: {} });
+        const credential = await navigator.credentials.get({ publicKey: publicKeyOptions(begin.options, false) });
+        if (!credential) return false;
+        const result = await skyApi('/passkey/authentication/finish', {
+          method: 'POST', body: { challengeId: begin.challengeId, response: assertionPayload(credential) }
+        });
+        await establishSession(result, 'Passkey দিয়ে প্রবেশ হয়েছে।', { offerPasskey: false });
+        return true;
+      } catch (_) { return false; }
+    },
+    forgot: email => skyApi('/password-reset', { method: 'POST', body: { email } }),
+    startEmail: startEmailChallenge,
+    verifyEmail: verifyEmailChallenge,
+    startTelegram: startTelegramChallenge,
+    verifyTelegram: verifyTelegramChallenge,
+    finish: () => {
+      const mount = document.getElementById('ah-sky-flow');
+      if (mount) mount.hidden = true;
+      delete pageHost.dataset.skyFlow;
+      message();
+      close();
+      notify();
+    }
+  });
+  window.AdmissionSkyBridge = skyBridge;
 
   window.AdmissionAccount = Object.freeze({
     open,

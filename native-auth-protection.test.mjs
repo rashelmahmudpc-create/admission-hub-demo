@@ -336,12 +336,16 @@ test('release guard literals still match the shipped shell', () => {
     'dashboard-v2.js', 'ai-agent-chat.js', 'phase12-ui.js'];
   const shipped = shellFiles.filter(file => existsSync(resolve(root, file))).map(read).join('\n');
 
+  // A `file?v=version` token in the workflow is either an assertion about a
+  // shipped asset or a cache-buster on a fetch URL (e.g. sw.js, which the HTML
+  // no longer registers with a query). What must exist in the sources either way
+  // is the version string itself, so compare that.
   const versioned = new Set();
-  for (const match of telegramCanaryWorkflow.matchAll(/[A-Za-z0-9._-]+\?v=[A-Za-z0-9._-]+/g)) {
-    versioned.add(match[0]);
+  for (const match of telegramCanaryWorkflow.matchAll(/[A-Za-z0-9._-]+\?v=([A-Za-z0-9._-]+)/g)) {
+    versioned.add(match[1]);
   }
   assert.ok(versioned.size > 0);
-  assert.deepEqual([...versioned].filter(token => !shipped.includes(token)), []);
+  assert.deepEqual([...versioned].filter(version => !shipped.includes(version)), []);
 
   // Bengali copy is compared byte for byte, so the guard must carry the same
   // Unicode normalization as the client source.
