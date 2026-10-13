@@ -134,7 +134,7 @@ const active=()=>{
  const page=document.getElementById('ah-account-page'),view=page?.querySelector('[data-view="welcome"]');
  return !!(page&&!page.hidden&&view&&!view.hidden&&page.dataset.currentView==='welcome');
 };
-const sync=()=>{mount();if(!mounted)return;if(active()){if(!timers.length)start()}else clr()};
+const sync=()=>{mount();assertLock();if(!mounted)return;if(active()){if(!timers.length)start()}else clr()};
 
 /* The owner's story timeline, exactly as in the preview. */
 const P={sp:['#EAF1FF','#2F6BFF','#FFB020'],a:['#FFF0E4','#4F46E5','#FF7A59'],td:['#EDE5DA','#4F46E5','#FF7A59'],hm:['#E9F1FF','#2F6BFF','#FFB020'],b:['#F0EAFF','#7C3AED','#10B981'],d:['#E3F5F3','#0E9F9E','#F59E0B'],rt:['#FFEFF2','#2563EB','#F43F5E'],fin:['#E3F0FF','#2F6BFF','#FFB020']};
@@ -229,8 +229,17 @@ const releaseLock=()=>{
  if(!page)return;
  if(page.hidden||page.dataset.currentView!=='welcome')page.classList.remove('ah-welcome-upgraded');
 };
-new MutationObserver(releaseLock).observe(document.documentElement,{childList:true,subtree:true,attributes:true,attributeFilter:['hidden','data-current-view']});
-releaseLock();
+/* Re-assert the lock when the welcome comes back. Entering signup strips the
+   class (releaseLock) and mount() early-returns on the already-built template,
+   so without this the welcome returns unstyled — shorter, pushed down, with the
+   theme colour back to the shell green. */
+const assertLock=()=>{
+ if(typeof document==='undefined'||!document)return;
+ const page=document.getElementById('ah-account-page');
+ if(page&&!page.hidden&&page.dataset.currentView==='welcome')page.classList.add('ah-welcome-upgraded');
+};
+new MutationObserver(()=>{releaseLock();assertLock()}).observe(document.documentElement,{childList:true,subtree:true,attributes:true,attributeFilter:['hidden','data-current-view']});
+releaseLock();assertLock();
 const discover=new MutationObserver(()=>sync());discover.observe(document.documentElement,{childList:true,subtree:true,attributes:true,attributeFilter:['hidden','data-current-view']});
 window.addEventListener('resize',size,{passive:true});
 window.addEventListener('pagehide',()=>{clr();discover.disconnect()},{once:true});
