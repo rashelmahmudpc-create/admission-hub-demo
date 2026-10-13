@@ -856,8 +856,8 @@ textarea{min-height:96px}
      the download during head parse instead. The versioned URLs must match
      app-seed.js's `version` constant; scripts/build-welcome-pages.mjs rewrites
      both and fails loudly if they drift. -->
-<link rel="preload" as="style" href="./sky-onboarding.css?v=sky-flow-20261013-v3">
-<link rel="preload" as="script" href="./sky-onboarding.js?v=sky-flow-20261013-v3">
+<link rel="preload" as="style" href="./sky-onboarding.css?v=sky-flow-20261013-v4">
+<link rel="preload" as="script" href="./sky-onboarding.js?v=sky-flow-20261013-v4">
 </head>
 <body class="app-booting">
 <div id="app"><main class="app-loading" id="ahSplash" role="status"><div class="ah-boot"><span class="ah-boot-mark">✦</span><b>Admission Hub</b><i>লোড হচ্ছে…</i></div></main></div>
@@ -5406,7 +5406,7 @@ window.__admissionBootPromise.catch(error => console.error('[Admission Hub] boot
     // The updated worker takes control now; the current document remains usable and the next launch uses the new shell.
     try{
 
-      const expectedSwVersion = 'v326-skyfix-20261013';
+      const expectedSwVersion = 'v327-skyfix-20261013';
       // register() on the same scope performs an in-place update. Never unregister
       // the active iOS worker first: that discards the instant offline shell.
       const registration=await navigator.serviceWorker.register('./sw.js',{scope:'./',updateViaCache:'none'});
@@ -5415,7 +5415,7 @@ window.__admissionBootPromise.catch(error => console.error('[Admission Hub] boot
       // stale pre-retirement application shells can never be served from cache again.
       try {
 
-        const cur = 'admission-hub-shell-v326-skyfix-20261013';
+        const cur = 'admission-hub-shell-v327-skyfix-20261013';
         const names = await caches.keys();
         for (const name of names) {
           if (name.startsWith('admission-hub-shell-') && name !== cur) await caches.delete(name).catch(()=>{});

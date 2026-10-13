@@ -147,3 +147,28 @@ test('sky-07: the account shell collapses so the flow cannot land below the fold
     'without !important the later @media(max-width:620px) rule re-asserts min-height:100dvh');
 });
 
+test('sky-08: the flow does not double-count the safe-area insets', () => {
+  // Live bug (2026-10-13, owner: "next বাটন কোথাও নিচে হারিয়ে গেছে, উপরে
+  // আলাদা হয়ে যাচ্ছে"). #ah-sky-flow already carries
+  // padding-top/bottom:env(safe-area-inset-*), so its content box is the
+  // viewport MINUS the insets. A descendant that adds env(safe-area-inset-*)
+  // again, or sizes itself to the raw viewport (var(--vh)), overflows the
+  // padded host and is clipped by its overflow:hidden -- on a real iPhone the
+  // CTA ended up below the visible area. Chromium headless reports
+  // env()=0, so this is invisible to a plain headless check: assert the source.
+  const appRule = (CSS.match(/#ah-sky-flow \.app\{[^}]*\}/g) || []).find(r => /height/.test(r));
+  assert.ok(appRule, 'the .app rule must declare a height');
+  assert.match(appRule, /height\s*:\s*100%/,
+    '.app must fill its padded parent (height:100%), not the raw viewport');
+  assert.doesNotMatch(appRule, /var\(--vh/,
+    'var(--vh) is the raw viewport height; inside the padded host it overflows and clips the CTA');
+
+  // The host is the only element that may read the insets. Its own
+  // absolutely-positioned :before/:after overlays are exempt: they sit out of
+  // the layout flow, so they cannot push the CTA off screen.
+  const insetRules = (CSS.match(/#ah-sky-flow[^{]*\{[^}]*safe-area-inset[^}]*\}/g) || []);
+  const offenders = insetRules.filter(r => !/^#ah-sky-flow(::?(before|after))?\s*\{/.test(r.trim()));
+  assert.deepEqual(offenders, [],
+    `only #ah-sky-flow may consume env(safe-area-inset-*); found: ${offenders.map(r => r.split('{')[0].trim()).join(', ')}`);
+});
+
