@@ -78,7 +78,7 @@
     const skyStyle = document.createElement('link');
     skyStyle.id = 'ah-sky-flow-style';
     skyStyle.rel = 'stylesheet';
-    skyStyle.href = 'sky-onboarding.css?v=sky-flow-20261013-v1';
+    skyStyle.href = 'sky-onboarding.css?v=sky-flow-20261013-v2';
     document.head.append(skyStyle);
   }
   pageHost.className = 'ah-account-page';

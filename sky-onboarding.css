@@ -300,9 +300,14 @@
 /* The page's own chrome (head/body) steps aside while the flow is on screen. */
 .ah-account-page[data-sky-flow="on"] .ah-account-head,
 .ah-account-page[data-sky-flow="on"] .ah-account-body{display:none}
+/* The shell must not reserve a viewport of its own: the flow is mounted as a
+   sibling of it, so min-height:100dvh here pushed #ah-sky-flow to top:100dvh
+   -- a full screen below the fold, which is why the live page looked blank.
+   !important is required: the responsive rule at account-access.css:440
+   re-asserts min-height:100dvh at equal specificity and loads later. */
 .ah-account-page[data-sky-flow="on"] .ah-account-shell,
 .ah-account-page[data-sky-flow="on"] .ah-account-shell[data-visual-contract="code-native-page-system-v1"]{
-  width:100%;max-width:none;min-height:100dvh;height:auto;max-height:none;
+  width:100%;max-width:none;min-height:0!important;height:auto;max-height:none;
   border:0;border-radius:0;background:var(--t,transparent);box-shadow:none;
 }
 .ah-account-page[data-sky-flow="on"]{background:var(--ah-sky-blend,#E6F0FF)}

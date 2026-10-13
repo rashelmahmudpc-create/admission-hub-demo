@@ -27,9 +27,9 @@ test('retired identity/onboarding scripts are no longer boot-critical or loaded'
 
 
 test('service-worker build marker is synchronized',
-  SW.includes("const BUILD_ID = 'v324-skyfix-20261013'") &&
-  H.includes("const expectedSwVersion = 'v324-skyfix-20261013'") &&
-  H.includes('admission-hub-shell-v324-skyfix-20261013'));
+  SW.includes("const BUILD_ID = 'v325-skyfix-20261013'") &&
+  H.includes("const expectedSwVersion = 'v325-skyfix-20261013'") &&
+  H.includes('admission-hub-shell-v325-skyfix-20261013'));
 test('data protection summarizes stores with count rather than full reads', DP.includes('tx.objectStore(name).count()'));
 test('unprotected automatic Pages deploy stays retired', WF.includes('Cloudflare Pages Bundle Guard (No Deploy)') && !WF.includes('wrangler-action') && !WF.includes('pages deploy dist --project-name admissionhub'));
 
