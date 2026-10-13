@@ -95,6 +95,11 @@
         <div class="ah-account-message" data-role="message" hidden aria-live="polite"></div>
 
         <div class="ah-account-view ah-welcome-view" data-view="welcome" hidden data-page-contract="code-native-welcome-v1" data-media-contract="zero-raster-entry-v1">
+          <!-- The owner's Welcome Story (welcome-story.js) paints this view. These
+               native anchors stay in the DOM as the fallback wiring: the story's
+               buttons call the bridge, and when the flow or the story is not
+               loaded (an old bundle, or jsdom) they open the real signup/login
+               form directly. CSS keeps them out of the story's way. -->
           <header class="ah-welcome-header">
             <span class="ah-welcome-mount" data-native-welcome-mount="welcome-onboarding-v1" hidden></span>
             <label class="ah-language-picker"><span class="sr-only">ভাষা বেছে নাও</span><select data-role="welcome-language" aria-label="ভাষা বেছে নাও"><option value="bn">বাংলা</option><option value="en">English</option></select></label>
@@ -2161,18 +2166,17 @@
     }
     return node;
   };
-  // The welcome screen is the entry point: it is shown first, and its own
-  // Sign Up / Log In buttons open the Admission Sky flow in the matching mode.
-  // The flow's script loads after this module, so only those buttons wait for
-  // it -- the entry itself never depends on the flow being present.
-  // The welcome view's header/actions are hidden by CSS until
-  // `.ah-welcome-live` is present (that class used to come from the retired
-  // welcome-onboarding.js), so mark it live here or the entry is an empty page
-  // with only the Facebook pill.
+  // The welcome screen is the entry point: it is shown first, and the owner's
+  // Welcome Story artboard (welcome-story.js) fills it. Its Sign Up / Sign In /
+  // Google / Facebook / Guest buttons open the Sky flow in the matching mode.
+  // The story's script loads after this module, so it mounts itself when ready;
+  // until then the view is simply empty rather than a half-painted design.
   const showWelcome = () => {
     const welcome = pageHost.querySelector('.ah-welcome-view');
     if (welcome) welcome.classList.add('ah-welcome-live');
     showView('welcome');
+    const story = window.AdmissionWelcomeStory;
+    if (story) { try { story.resize(); } catch (_) {} }
   };
   // The native (pre-flow) entry for a mode, used when the Sky flow cannot open
   // -- an old cached bundle or a network failure. It is the real signup form or
@@ -2515,6 +2519,30 @@
       welcomeLanguage.value = current;
       welcomeLanguage.addEventListener('change', () => setWelcomeLanguage(welcomeLanguage.value));
       setWelcomeLanguage(current, { persist: false });
+    }
+    // The owner's Welcome Story (welcome-story.js) paints the welcome view. Its
+    // stylesheet and script are loaded here rather than linked in index.html so
+    // the entry's look travels with the story, exactly like the Sky flow's.
+    // The story injects its own markup into #ah-welcome-story and finds the
+    // language picker by [data-role="welcome-language"].
+    if (!document.getElementById('ah-welcome-story-style')) {
+      const storyStyle = document.createElement('link');
+      storyStyle.id = 'ah-welcome-story-style';
+      storyStyle.rel = 'stylesheet';
+      storyStyle.href = 'welcome-story.css?v=welcome-story-20261013-v1';
+      document.head.append(storyStyle);
+    }
+    if (!document.getElementById('ah-welcome-story')) {
+      const storyHost = document.createElement('div');
+      storyHost.id = 'ah-welcome-story';
+      const welcomeView = pageHost.querySelector('.ah-welcome-view');
+      if (welcomeView) welcomeView.append(storyHost);
+    }
+    if (!document.querySelector('script[src*="welcome-story.js"]')) {
+      const storyScript = document.createElement('script');
+      storyScript.src = 'welcome-story.js?v=welcome-story-20261013-v1';
+      storyScript.defer = true;
+      document.head.append(storyScript);
     }
     setupDobDropdowns();
     setupInstitutionSearch('school');
@@ -3179,6 +3207,13 @@
     },
     showSignup() { if (window.AdmissionSkyFlow) window.AdmissionSkyFlow.open('signup'); },
     showLogin() { if (window.AdmissionSkyFlow) window.AdmissionSkyFlow.open('login'); },
+    continueGuest() {
+      rememberEntry('guest');
+      state.signupJourney = false;
+      close();
+      navigateDashboard();
+      notify();
+    },
     capabilities: async () => ({
       email: Boolean(state.capabilities.emailPassword.available),
       telegram: Boolean(state.capabilities.telegram.available),

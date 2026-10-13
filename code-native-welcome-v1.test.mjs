@@ -12,9 +12,9 @@ const HTML = read('index.html');
 const SW = read('sw.js');
 const PAGES_GUARD = read('.github/workflows/cf-pages.yml');
 const RELEASE_WORKFLOW = read('.github/workflows/telegram-auth-canary-activate.yml');
-const UI_VERSION = '20261013-skyfix3';
+const UI_VERSION = '20261013-skyfix4';
 
-const SHELL_VERSION = 'v327-skyfix-20261013';
+const SHELL_VERSION = 'v328-skyfix-20261013';
 
 const between = (source, start, end) => {
   const from = source.indexOf(start);
