@@ -1,5 +1,12 @@
 # P19 (v203) — পুরোনো বান্ডেল-ক্যাশ-স্টিকিনেস চিরকাল-নিষেধ
 # আপডেট-প্রবাহ নিশ্চিত: sw.js ও index.html কখনো HTTP-ক্যাশে আটকাবে না।
+# NOTE (v323, owner bug 2026-10-13): the register() call previously used
+#   './sw.js?v=<build>'. A versioned JS URL matches the `/*.js?v=*` rule at the
+#   bottom of this file (immutable, max-age=31536000), which contradicted this
+#   block and pinned an old, broken worker on every device forever — the exact
+#   cause of the recurring "This site can't be reached / ERR_FAILED". The
+#   registration now uses the bare './sw.js' so ONLY the no-store rule below
+#   applies, and every device picks up each new worker on the next load.
 /sw.js
   Cache-Control: no-cache, no-store, must-revalidate
 

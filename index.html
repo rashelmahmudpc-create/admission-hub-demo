@@ -5402,16 +5402,16 @@ window.__admissionBootPromise.catch(error => console.error('[Admission Hub] boot
     // The updated worker takes control now; the current document remains usable and the next launch uses the new shell.
     try{
 
-      const expectedSwVersion = 'v322-pwarescue-20261013';
+      const expectedSwVersion = 'v323-swupdate-20261013';
       // register() on the same scope performs an in-place update. Never unregister
       // the active iOS worker first: that discards the instant offline shell.
-      const registration=await navigator.serviceWorker.register('./sw.js?v=v322-pwarescue-20261013',{scope:'./',updateViaCache:'none'});
+      const registration=await navigator.serviceWorker.register('./sw.js',{scope:'./',updateViaCache:'none'});
       await registration.update().catch(()=>{});
       // Purge every old app-shell cache (any build id ≠ current). This guarantees
       // stale pre-retirement application shells can never be served from cache again.
       try {
 
-        const cur = 'admission-hub-shell-v322-pwarescue-20261013';
+        const cur = 'admission-hub-shell-v323-swupdate-20261013';
         const names = await caches.keys();
         for (const name of names) {
           if (name.startsWith('admission-hub-shell-') && name !== cur) await caches.delete(name).catch(()=>{});
@@ -5429,6 +5429,24 @@ window.__admissionBootPromise.catch(error => console.error('[Admission Hub] boot
       // Foreground resume (iOS standalone) never navigates, so the SW update
       // check would not run: ping it whenever the app becomes visible again.
       document.addEventListener('visibilitychange',()=>{ if(!document.hidden){ registration.update().catch(()=>{}); } });
+      // Last-resort self-heal. If the document never becomes usable AND even the
+      // 3.8s fast usable shell never produced a screen, the shell we were served
+      // is broken (the phone is on an old worker). Drop the worker + every cache
+      // once and reload, so a device heals itself without "clear website data".
+      // A sessionStorage guard makes the loop impossible.
+      setTimeout(async()=>{
+        try{
+          if(window.__admissionBootStatus==='ready') return;
+          const app=document.getElementById('app');
+          if(app&&app.querySelector('.page,.ai-agent-root,[data-admission-usable="true"]')) return;
+          if(sessionStorage.getItem('ah-sw-heal')==='1') return;
+          sessionStorage.setItem('ah-sw-heal','1');
+          const regs=await navigator.serviceWorker.getRegistrations();
+          await Promise.all(regs.map(r=>r.unregister().catch(()=>{})));
+          for(const n of await caches.keys()) await caches.delete(n).catch(()=>{});
+          location.reload();
+        }catch(_){}
+      },15000);
       // 💤 NO auto-reload on controllerchange: পরিবর্তিত worker পরের launch-এ apply হবে,
       // বর্তমান সেশন ও স্ক্রোল-অবস্থা কখনো হারাবে না (ব্যাকগ্রাউন্ড state ধরে থাকে)।
     }catch(error){console.warn('PWA registration failed',error)}

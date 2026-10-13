@@ -55,7 +55,13 @@ test('১২. build/cache/static-Welcome and main-app AI versions are synchroniz
   (() => {
     const m = H.match(/const expectedSwVersion = '([^']+)'/);
     const build = m && m[1];
-    return Boolean(build) && SW.includes(`const BUILD_ID = '${build}'`) && H.includes(`sw.js?v=${build}`);
+    /* sw.js must be registered WITHOUT a ?v= query: a versioned JS URL matches
+       the `/*.js?v=*` immutable rule in _headers and pins an old worker on every
+       device forever (owner bug 2026-10-13 — recurring ERR_FAILED). Only the
+       bare path gets the no-store rule. */
+    return Boolean(build) && SW.includes(`const BUILD_ID = '${build}'`) &&
+      H.includes("register('./sw.js',{scope:'./',updateViaCache:'none'})") &&
+      !/register\('\.\/sw\.js\?v=/.test(H);
   })() &&
   /* The shell must precache the exact account-access build the page loads; a
      drift here silently leaves the offline shell on an older UI (found during
