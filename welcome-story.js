@@ -60,7 +60,11 @@ $('msg').innerHTML=`<div class="mh"><div class="av">${friend}</div><div><b>র�
 const ic={ai:'<svg viewBox="0 0 24 24"><path d="M12 3l2.2 5.8L20 11l-5.8 2.2L12 19l-2.2-5.8L4 11l5.8-2.2Z"/></svg>',ex:'<svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="m9 12 2 2 4-4"/></svg>',rt:'<svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/></svg>'};
 $('hm').innerHTML=`<div class="hmg" style="--i:0">শুভ সকাল</div><div class="hmn" style="--i:0">রাহিম</div><div class="hmp" style="--i:1"><small>আজকের লক্ষ্য</small><b>৩ / ৫ সম্পন্ন</b><u></u></div><div class="hmt t1" id="t1" style="--i:2"><div class="orb"></div><div>AI এজেন্ট<small>প্রশ্ন করো, AI বুঝিয়ে দেবে</small></div></div><div class="hmt t2" style="--i:3"><div class="ito">${ic.ex}</div>মডেল টেস্ট<small>পরীক্ষা দাও</small></div><div class="hmt t3" style="--i:4"><div class="ito">${ic.rt}</div>রুটিন<small>প্ল্যান বানাও</small></div>`;
 $('pip').innerHTML=face(0).replace('<svg','<svg class="n"')+face(1).replace('<svg','<svg class="h"');
-const P={sp:['#EAF1FF','#2F6BFF','#FFB020'],a:['#FFF0E4','#4F46E5','#FF7A59'],td:['#EDE5DA','#4F46E5','#FF7A59'],hm:['#E9F1FF','#2F6BFF','#FFB020'],b:['#F0EAFF','#7C3AED','#10B981'],d:['#E3F5F3','#0E9F9E','#F59E0B'],rt:['#FFEFF2','#2563EB','#F43F5E'],fin:['#E3F0FF','#2F6BFF','#FFB020']};
+// Same palette as the sky flow's SIGNUP_PAL, stage for stage. The story runs
+// eight scenes and the wizard runs eight steps, so mapping them one to one
+// makes the colour that lands on the app also the colour onboarding starts
+// with -- without that the seam between the two screens is visible.
+const P={sp:['#E6F0FF','#2F6BFF','#FF9F1C'],a:['#F3E8FF','#8B3DFF','#FF4DA6'],td:['#DDF8EE','#00B386','#FFC233'],hm:['#FFEDE3','#FF5A36','#FFB020'],b:['#FFE8F1','#E02D7B','#7A3CFF'],d:['#E8E6FF','#5B3DF5','#00C2FF'],rt:['#DFF6FF','#0A8CFF','#00D68F'],fin:['#FFF3D6','#FF9F1C','#2F6BFF']};
 const T=[
 {p:'sp',ms:2000,sc:'sp'},
 {p:'a',ms:3700,sc:'a'},
@@ -90,7 +94,7 @@ function play(i){if(open)return;clr();const s=T[i];
 function size(){const r=band.getBoundingClientRect();fit.style.setProperty('--s',Math.min(r.width/390,r.height/640).toFixed(3))}
 size();addEventListener('resize',size);play(0);setTimeout(()=>go.classList.add('lit'),7000);
 go.addEventListener('click',()=>{const r=go.getBoundingClientRect(),x=(r.left+r.width/2)+'px',y=(r.top+r.height/2)+'px';[app,auth].forEach(e=>{e.style.setProperty('--ox',x);e.style.setProperty('--oy',y)});
- open=true;clr();app.classList.remove('desk');root.style.setProperty('--t','#E3EEFF');root.style.setProperty('--p','#2F6BFF');root.style.setProperty('--q','#FFB020');meta.setAttribute('content','#E3EEFF');app.classList.add('open')});
+ open=true;clr();app.classList.remove('desk');root.style.setProperty('--t','#E6F0FF');root.style.setProperty('--p','#2F6BFF');root.style.setProperty('--q','#FF9F1C');meta.setAttribute('content','#E6F0FF');app.classList.add('open')});
 $('bk').addEventListener('click',()=>{app.classList.remove('open');open=false;setTimeout(()=>play(1),800)});
 const bridge=()=>window.AdmissionSkyBridge||null;
 function flash(msg){const t=$('toast');t.textContent=msg;t.classList.add('s');setTimeout(()=>t.classList.remove('s'),1600)}

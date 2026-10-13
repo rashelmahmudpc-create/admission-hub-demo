@@ -3,7 +3,7 @@ const CACHE_PREFIX = 'admission-hub-shell-';
 // hold user data; this one holds exactly one image and is trimmed on write.
 const AVATAR_CACHE = 'admission-hub-avatar-v1';
 
-const BUILD_ID = 'v328-skyfix-20261013';
+const BUILD_ID = 'v329-skyfix-20261013';
 const CACHE_NAME = `${CACHE_PREFIX}${BUILD_ID}`;
 const VERSION_HEADER = 'X-Admission-Hub-Build';
 const DOCUMENT_NETWORK_TIMEOUT_MS = 2500;
@@ -80,7 +80,7 @@ const APP_SHELL = [
 // A truncated/corrupt download is NEVER written to the shell cache.
 const ASSET_DIGESTS = {
 /* sw-manifest:start */
-  "./index.html": "916deb508fbe0529ebdc86a8698141dbb219d5020c9d3d5df04ee63219021f35",
+  "./index.html": "a06fb1ab68e7927adb6b2adfef7ed8b282a0d9e86a7542487d68b5d4fc363e72",
   "./manifest.json": "6dcf0e0c6f7671750549e53558ba8b9f0c2c83b0c6759072a6b5e2276331f491",
   "./manifest.webmanifest": "abcd26174710f6df3e183889a5a9da182f73ee8cdcc543b43db8fb4070cad54f",
   "./dashboard-v2.css?v=dash2f13-theme": "4541bc1e65fd158c593443562975400d128b8f1d3b636595df3c235b99e8cced",
@@ -91,10 +91,10 @@ const ASSET_DIGESTS = {
   "./sky-onboarding.css?v=sky-flow-20261013-v4": "e3077900b3da7b9a0003e6db9c9655040a2a5525bcae3a65d3b0bd2dce41c15e",
   "./institutions-bd.js?v=bd-institutions-v2": "602c5549515e8207ad152b948ca9b8fe3ad0fbe429afb56380e4e21b662f779d",
   "./language-engine.js?v=lang-v5-single-email-button": "c4d751c966c1a2d65832b8d55138cc1d3a36090b424a38be3f7a76a36774a63c",
-  "./account-access.js?v=20261013-skyfix4": "6fa410ef89f8bff40b5b28237522d6032ab4e0940f1b796bccc93edde17495a6",
+  "./account-access.js?v=20261013-skyfix4": "18fdbece793f8b6b31ba8acbd48a81ba19851eb8985d925f35dc28a60d761b33",
   "./sky-onboarding.js?v=sky-flow-20261013-v4": "543342dbe1dce289b59bb103247c7ca37d8891b69368e3962073cc28a2ae7b7c",
-  "./welcome-story.css?v=welcome-story-20261013-v1": "1b9539778434f040f71ec1bc0b6ef70d96d7d28ab7f4b81e5bd7bdc7932fbe71",
-  "./welcome-story.js?v=welcome-story-20261013-v1": "c89f3881ad1d534faa9a5ae5e006ec9afe9cd302d13fa596bb8dc39547b8f428",
+  "./welcome-story.css?v=welcome-story-20261013-v1": "9ee26d532fa45a6ba6000f2c56c1f8039130f2619e6024610a12d3b96b86fd81",
+  "./welcome-story.js?v=welcome-story-20261013-v1": "a22656cfb4f3710ea35d06cb803454bd1e7b19f224075433cf9d41a4f9e1eae0",
   "./academic-catalog.js?v=acad-cat-v2": "75e7b80663d41330658c948ad1d4829d49f5c9abed581350582cfeace06d5b32",
   "./profile-ui.js?v=profile-v18-avatar-cache": "aaa1bf37e54b4dd44bad0a9ea6c904645f0457cea98d10aaa02bf39664d6b1b8",
   "./profile-ui.css?v=profile-v15-uni-tap": "6408a4b7ac8acf6845cd0148c58377a4953c8ff879d30b2c520eafae0314b98a",

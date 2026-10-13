@@ -14,7 +14,7 @@ const PAGES_GUARD = read('.github/workflows/cf-pages.yml');
 const RELEASE_WORKFLOW = read('.github/workflows/telegram-auth-canary-activate.yml');
 const UI_VERSION = '20261013-skyfix4';
 
-const SHELL_VERSION = 'v328-skyfix-20261013';
+const SHELL_VERSION = 'v329-skyfix-20261013';
 
 const between = (source, start, end) => {
   const from = source.indexOf(start);
