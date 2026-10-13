@@ -26,6 +26,15 @@ import {
 } from './auth-native/core/webauthn.mjs';
 
 export const PASSKEY_RP_ID = 'admissionhub.pages.dev';
+/* Both addresses serve the same admin console; a passkey is bound to the exact
+ * domain it was created on, so the RP ID must follow the requesting Origin. */
+export const PASSKEY_RP_IDS = Object.freeze(['admissionhub.pages.dev', 'admissionsky.pages.dev']);
+const rpIdForRequest = request => {
+  try {
+    const host = new URL(String(request.headers.get('Origin') || '')).hostname.toLowerCase();
+    return PASSKEY_RP_IDS.includes(host) ? host : PASSKEY_RP_ID;
+  } catch { return PASSKEY_RP_ID; }
+};
 export const PASSKEY_RP_NAME = 'AdmissionHub Admin';
 /* The single managed admin identity. It is echoed back by authenticators as
  * `userHandle` on assertion, so it must be both offered at registration and
@@ -34,6 +43,7 @@ export const PASSKEY_RP_NAME = 'AdmissionHub Admin';
 export const PASSKEY_USER_ID = 'admissionhub-admin';
 export const PASSKEY_ORIGINS = Object.freeze([
   'https://admissionhub.pages.dev',
+  'https://admissionsky.pages.dev',
   'https://admission-gk.admissionhub.workers.dev'
 ]);
 export const CHALLENGE_TTL_MS = 120_000;
@@ -187,7 +197,7 @@ async function handleRegister(request, env) {
     verified = await verifyPasskeyRegistration({
       response: body.response,
       expectedChallenge: challenge.challenge,
-      rpId: PASSKEY_RP_ID,
+      rpId: challenge.rpId || PASSKEY_RP_ID,
       allowedOrigins: PASSKEY_ORIGINS
     });
   } catch {
@@ -224,7 +234,7 @@ async function handleAssert(request, env) {
     verified = await verifyPasskeyAuthentication({
       response: body.response,
       expectedChallenge: challenge.challenge,
-      rpId: PASSKEY_RP_ID,
+      rpId: challenge.rpId || PASSKEY_RP_ID,
       allowedOrigins: PASSKEY_ORIGINS,
       credential: record
     });
@@ -260,9 +270,11 @@ export async function handleAdminPasskeyRequest(request, env) {
     }
     const challengeId = randomToken(24);
     const challenge = randomToken(32);
+    const rpId = rpIdForRequest(request);
     await putChallenge(env, challengeId, {
       purpose,
       challenge,
+      rpId,
       mac: await hmacHex(env, 'admin-passkey-challenge', `${challengeId}:${challenge}`),
       createdAt: Date.now()
     });
@@ -270,7 +282,7 @@ export async function handleAdminPasskeyRequest(request, env) {
     /* Registration needs `rp: {id, name}`; only assertions take a bare `rpId`.
      * Sending the flat form for register made navigator.credentials.create()
      * throw before the authenticator was ever reached. */
-    const rp = { id: PASSKEY_RP_ID, name: PASSKEY_RP_NAME };
+    const rp = { id: rpId, name: PASSKEY_RP_NAME };
     return json({
       challengeId,
       options: {
@@ -286,7 +298,7 @@ export async function handleAdminPasskeyRequest(request, env) {
             attestation: 'none',
             excludeCredentials: credentials.map(c => ({ type: 'public-key', id: c.credentialId }))
           }
-          : { rpId: PASSKEY_RP_ID, allowCredentials: credentials.map(c => ({ type: 'public-key', id: c.credentialId, transports: c.transports || [] })) })
+          : { rpId, allowCredentials: credentials.map(c => ({ type: 'public-key', id: c.credentialId, transports: c.transports || [] })) })
       }
     });
   }

@@ -674,8 +674,8 @@
       STORAGE_UNAVAILABLE: 'Account সেবাটি সাময়িকভাবে ব্যস্ত—একটু পরে আবার চেষ্টা করো।',
       TELEGRAM_VERIFICATION_INVALID: 'Verification session-এর সময় শেষ—আবার Sign Up বা Log In করো।',
       PROFILE_VERSION_CONFLICT: 'Profile একই সময়ে অন্য জায়গা থেকে বদলেছে—আবার দেখে সংরক্ষণ করো।',
-      ENDPOINT_UNAVAILABLE: 'এই লিংকে account সেবা নেই—অ্যাপের মূল ঠিকানা admissionhub.pages.dev খুলে আবার চেষ্টা করো।',
-      ORIGIN_FORBIDDEN: 'এই ঠিকানা থেকে account কাজ করছে না—অ্যাপের মূল লিংক (admissionhub.pages.dev) থেকে আবার চেষ্টা করো।',
+      ENDPOINT_UNAVAILABLE: 'এই লিংকে account সেবা নেই—অ্যাপের মূল ঠিকানা খুলে আবার চেষ্টা করো।',
+      ORIGIN_FORBIDDEN: 'এই ঠিকানা থেকে account কাজ করছে না—অ্যাপের মূল লিংক থেকে আবার চেষ্টা করো।',
       NOT_CONFIGURED: 'Account সেবাটি এখনো প্রস্তুত নয়—একটু পরে আবার চেষ্টা করো।',
     };
     if (known[error?.code]) return known[error.code];
@@ -2105,7 +2105,7 @@
   const unavailableHint = () => {
     try {
       if (typeof location !== 'undefined' && !/(^|\.)admissionhub\.pages\.dev$/i.test(location.hostname || '')) {
-        return ' Real account শুধু admissionhub.pages.dev সাইটে খোলা যায়।';
+        return ' Real account শুধু admissionhub.pages.dev বা admissionsky.pages.dev সাইটে খোলা যায়।';
       }
     } catch (_) {}
     return '';

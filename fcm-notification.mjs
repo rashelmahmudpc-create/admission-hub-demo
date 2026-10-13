@@ -632,7 +632,7 @@ const publicOrigin = request => {
   try {
     const h = new URL(request?.url || '');
     /* A non-proxied call on our own public host keeps that host. */
-    if (h.hostname === 'admissionhub.pages.dev' || /\.pages\.dev$/.test(h.hostname)) return h.origin;
+    if (h.hostname === 'admissionhub.pages.dev' || h.hostname === 'admissionsky.pages.dev' || /\.pages\.dev$/.test(h.hostname)) return h.origin;
   } catch (_) {}
   return 'https://admissionhub.pages.dev';
 };

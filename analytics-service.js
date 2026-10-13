@@ -32,7 +32,7 @@
   const SDK_BASE = 'https://www.gstatic.com/firebasejs/10.12.2';
   const SDK_LOCAL = './sdk';
   const QUEUE_KEY = 'ahAnalyticsQueueV1';
-  const PROD_HOSTS = ['admissionhub.pages.dev'];
+  const PROD_HOSTS = ['admissionhub.pages.dev', 'admissionsky.pages.dev'];
   const MAX_QUEUE = 400;
   const SDK_TIMEOUT_MS = 20000;
 

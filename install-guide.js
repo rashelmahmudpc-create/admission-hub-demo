@@ -72,7 +72,7 @@
   function demoMarkup(p) {
     if (p === 'ios') {
       return `<div class="ahig-stage" data-demo="ios" aria-hidden="true">
-          <div class="ahig-bar"><span class="ahig-bar-title">admissionhub.pages.dev</span>
+          <div class="ahig-bar"><span class="ahig-bar-title">admissionsky.pages.dev</span>
             <span class="ahig-share" data-anim="tap">↑</span></div>
           <div class="ahig-menu" data-anim="menu">
             <div class="ahig-menu-row">অনুলিপি করুন</div>
@@ -83,7 +83,7 @@
     }
     if (p === 'android') {
       return `<div class="ahig-stage" data-demo="android" aria-hidden="true">
-          <div class="ahig-bar"><span class="ahig-bar-title">admissionhub.pages.dev</span>
+          <div class="ahig-bar"><span class="ahig-bar-title">admissionsky.pages.dev</span>
             <span class="ahig-dots" data-anim="tap">⋮</span></div>
           <div class="ahig-menu" data-anim="menu">
             <div class="ahig-menu-row">Share</div>
@@ -93,7 +93,7 @@
             <span class="ahig-result-label">Admission Hub</span></div></div>`;
     }
     return `<div class="ahig-stage" data-demo="desktop" aria-hidden="true">
-        <div class="ahig-bar"><span class="ahig-bar-title">admissionhub.pages.dev</span>
+        <div class="ahig-bar"><span class="ahig-bar-title">admissionsky.pages.dev</span>
           <span class="ahig-dots" data-anim="tap">⤓</span></div>
         <div class="ahig-result" data-anim="land"><span class="ahig-appicon">🎓</span>
           <span class="ahig-result-label">Admission Hub</span></div></div>`;

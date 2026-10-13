@@ -27,7 +27,7 @@ const validGoogleClientId = value => /^\d{6,}-[A-Za-z0-9_-]{8,}\.apps\.googleuse
 function safeContinueUrl(value) {
   try {
     const url = new URL(String(value || DEFAULT_CONTINUE_URL));
-    if (url.protocol !== 'https:' || url.hostname !== 'admissionhub.pages.dev') return DEFAULT_CONTINUE_URL;
+    if (url.protocol !== 'https:' || !['admissionhub.pages.dev', 'admissionsky.pages.dev'].includes(url.hostname)) return DEFAULT_CONTINUE_URL;
     return url.href;
   } catch { return DEFAULT_CONTINUE_URL; }
 }

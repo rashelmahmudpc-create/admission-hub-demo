@@ -27,7 +27,7 @@ function telegramWebhookEndpoint(value) {
   try {
     const url = new URL(String(value || ''));
     if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash || url.pathname !== '/api/auth/v1/telegram/webhook') return '';
-    if (!['admissionhub.pages.dev', 'admission-gk.admissionhub.workers.dev'].includes(url.hostname)) return '';
+    if (!['admissionhub.pages.dev', 'admissionsky.pages.dev', 'admission-gk.admissionhub.workers.dev'].includes(url.hostname)) return '';
     return url.href;
   } catch { return ''; }
 }

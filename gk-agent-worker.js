@@ -553,7 +553,7 @@ export default {
 
     const isApp = request.headers.get('X-AH-App') === APP_HEADER;
     // sendBeacon-ফলব্যাক: হেডার ছাড়া এলে শুধু অ্যাপের নিজের Origin হলে /api/bank POST গ্রহণযোগ্য
-    const beaconOk = !isApp && request.method === 'POST' && url.pathname === '/api/bank' && (request.headers.get('Origin') === 'https://admissionhub.pages.dev' || request.headers.get('Origin') === 'https://sheikhrashel47-stack.github.io');
+    const beaconOk = !isApp && request.method === 'POST' && url.pathname === '/api/bank' && (request.headers.get('Origin') === 'https://admissionhub.pages.dev' || request.headers.get('Origin') === 'https://admissionsky.pages.dev' || request.headers.get('Origin') === 'https://sheikhrashel47-stack.github.io');
     if (!isApp && !beaconOk) return json(request, { error: 'forbidden' }, 403);
     if (request.method === 'POST' && url.pathname === '/api/ask') return await createAsk(request, env, ctx);
     if (request.method === 'POST' && url.pathname === '/api/bank') return await bankUpload(request, env);

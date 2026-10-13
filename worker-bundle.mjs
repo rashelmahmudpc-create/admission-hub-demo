@@ -6409,6 +6409,15 @@ var PASSKEY_CHALLENGE_TTL_MS = 5 * 60 * 1e3;
 var PASSKEY_TICKET_TTL_MS = 60 * 1e3;
 var ACCOUNT_VERIFICATION_TICKET_TTL_MS = 15 * 60 * 1e3;
 var PASSKEY_RP_ID = "admissionhub.pages.dev";
+var PASSKEY_RP_IDS = Object.freeze(["admissionhub.pages.dev", "admissionsky.pages.dev"]);
+var passkeyRpIdForOrigin = (origin) => {
+  try {
+    const host = new URL(String(origin || "")).hostname.toLowerCase();
+    return PASSKEY_RP_IDS.includes(host) ? host : PASSKEY_RP_ID;
+  } catch {
+    return PASSKEY_RP_ID;
+  }
+};
 var SECURITY_RISK_SCOPES = Object.freeze({
   loginFailure: Object.freeze({ scope: "security-login-fail-email-15m", windowMs: 15 * 60 * 1e3 }),
   rapidAuthIp: Object.freeze({ scope: "security-auth-ip-60s", windowMs: 60 * 1e3 })
@@ -6545,7 +6554,7 @@ var trustedContextOrigin = (value) => {
     const url = new URL(String(value || ""));
     if (url.protocol === "http:" && ["localhost", "127.0.0.1"].includes(url.hostname)) return url.origin;
     if (url.protocol !== "https:") return "";
-    if (url.hostname === PASSKEY_RP_ID || /^[a-z0-9-]+\.admissionhub\.pages\.dev$/i.test(url.hostname) || url.hostname === "admission-gk.admissionhub.workers.dev") return url.origin;
+    if (url.hostname === PASSKEY_RP_ID || url.hostname === "admissionsky.pages.dev" || /^[a-z0-9-]+\.admissionhub\.pages\.dev$/i.test(url.hostname) || url.hostname === "admission-gk.admissionhub.workers.dev") return url.origin;
   } catch {
   }
   return "";
@@ -6733,7 +6742,7 @@ function normalizeProfilePatch(value = {}, now = Date.now()) {
   return Object.freeze(fields);
 }
 var CloudflareNativeAuthEngine = class {
-  constructor({ repository, hmacSecret, now = () => Date.now(), cryptoImpl = globalThis.crypto, passkeyRpId = PASSKEY_RP_ID, passkeyOrigins = [`https://${PASSKEY_RP_ID}`], securityConfigRaw = "", avatarStore = null } = {}) {
+  constructor({ repository, hmacSecret, now = () => Date.now(), cryptoImpl = globalThis.crypto, passkeyRpId = PASSKEY_RP_ID, passkeyOrigins = PASSKEY_RP_IDS.map((id) => `https://${id}`), securityConfigRaw = "", avatarStore = null } = {}) {
     this.repository = assertRepository(repository);
     this.avatarStore = avatarStore || null;
     this.hmac = new AuthHmac(hmacSecret, cryptoImpl);
@@ -6778,6 +6787,14 @@ var CloudflareNativeAuthEngine = class {
   }
   #passkeyOrigins() {
     return this.passkeyOrigins;
+  }
+  /* The RP ID for the current request. A passkey is bound to one exact domain,
+   * so a device that created its passkey on admissionsky.pages.dev must be
+   * verified against admissionsky.pages.dev — not the legacy host. Derive it
+   * from the (already validated) context origin, never from raw client input. */
+  #passkeyRpId(context) {
+    const origin = String(context?.origin || "");
+    return origin ? passkeyRpIdForOrigin(origin) : this.passkeyRpId;
   }
   async consumeFirebaseOperation(input = {}, requestContext = {}) {
     const operation = String(input.operation || "");
@@ -7391,7 +7408,7 @@ var CloudflareNativeAuthEngine = class {
       challengeId,
       options: Object.freeze({
         challenge,
-        rp: Object.freeze({ id: this.passkeyRpId, name: "Admission Hub" }),
+        rp: Object.freeze({ id: this.#passkeyRpId(identity.context), name: "Admission Hub" }),
         user: Object.freeze({ id: prepared.userHandle, name: prepared.user.emailMask, displayName: "Admission Hub শিক্ষার্থী" }),
         pubKeyCredParams: Object.freeze([{ type: "public-key", alg: PASSKEY_ALGORITHM }]),
         timeout: 12e4,
@@ -7427,7 +7444,7 @@ var CloudflareNativeAuthEngine = class {
     const verified = await verifyPasskeyRegistration({
       response: input.response,
       expectedChallenge: suppliedChallenge,
-      rpId: this.passkeyRpId,
+      rpId: this.#passkeyRpId(identity.context),
       allowedOrigins: this.#passkeyOrigins(identity.context),
       cryptoImpl: this.crypto
     });
@@ -7466,7 +7483,7 @@ var CloudflareNativeAuthEngine = class {
       challengeId,
       options: Object.freeze({
         challenge,
-        rpId: this.passkeyRpId,
+        rpId: this.#passkeyRpId(context),
         timeout: 12e4,
         userVerification: "required"
       })
@@ -7490,7 +7507,7 @@ var CloudflareNativeAuthEngine = class {
     const verified = await verifyPasskeyAuthentication({
       response: input.response,
       expectedChallenge: suppliedChallenge,
-      rpId: this.passkeyRpId,
+      rpId: this.#passkeyRpId(context),
       allowedOrigins: this.#passkeyOrigins(context),
       credential: material.credential,
       cryptoImpl: this.crypto
@@ -7970,7 +7987,7 @@ var validGoogleClientId = (value) => /^\d{6,}-[A-Za-z0-9_-]{8,}\.apps\.googleuse
 function safeContinueUrl(value) {
   try {
     const url = new URL(String(value || DEFAULT_CONTINUE_URL));
-    if (url.protocol !== "https:" || url.hostname !== "admissionhub.pages.dev") return DEFAULT_CONTINUE_URL;
+    if (url.protocol !== "https:" || !["admissionhub.pages.dev", "admissionsky.pages.dev"].includes(url.hostname)) return DEFAULT_CONTINUE_URL;
     return url.href;
   } catch {
     return DEFAULT_CONTINUE_URL;
@@ -8499,7 +8516,7 @@ var allowedOrigin = (origin) => {
     const url = new URL(origin);
     if (url.protocol === "http:" && ["localhost", "127.0.0.1"].includes(url.hostname)) return true;
     if (url.protocol !== "https:") return false;
-    return url.hostname === "admissionhub.pages.dev" || /^[a-z0-9-]+\.admissionhub\.pages\.dev$/i.test(url.hostname) || url.hostname === "admission-gk.admissionhub.workers.dev";
+    return url.hostname === "admissionhub.pages.dev" || url.hostname === "admissionsky.pages.dev" || /^[a-z0-9-]+\.admissionhub\.pages\.dev$/i.test(url.hostname) || url.hostname === "admission-gk.admissionhub.workers.dev";
   } catch {
     return false;
   }
@@ -10718,10 +10735,20 @@ var __plannerTest = Object.freeze({
 
 // admin-passkey.mjs
 var PASSKEY_RP_ID2 = "admissionhub.pages.dev";
+var PASSKEY_RP_IDS2 = Object.freeze(["admissionhub.pages.dev", "admissionsky.pages.dev"]);
+var rpIdForRequest = (request) => {
+  try {
+    const host = new URL(String(request.headers.get("Origin") || "")).hostname.toLowerCase();
+    return PASSKEY_RP_IDS2.includes(host) ? host : PASSKEY_RP_ID2;
+  } catch {
+    return PASSKEY_RP_ID2;
+  }
+};
 var PASSKEY_RP_NAME = "AdmissionHub Admin";
 var PASSKEY_USER_ID = "admissionhub-admin";
 var PASSKEY_ORIGINS = Object.freeze([
   "https://admissionhub.pages.dev",
+  "https://admissionsky.pages.dev",
   "https://admission-gk.admissionhub.workers.dev"
 ]);
 var CHALLENGE_TTL_MS = 12e4;
@@ -10849,7 +10876,7 @@ async function handleRegister(request, env) {
     verified = await verifyPasskeyRegistration({
       response: body.response,
       expectedChallenge: challenge.challenge,
-      rpId: PASSKEY_RP_ID2,
+      rpId: challenge.rpId || PASSKEY_RP_ID2,
       allowedOrigins: PASSKEY_ORIGINS
     });
   } catch {
@@ -10883,7 +10910,7 @@ async function handleAssert(request, env) {
     verified = await verifyPasskeyAuthentication({
       response: body.response,
       expectedChallenge: challenge.challenge,
-      rpId: PASSKEY_RP_ID2,
+      rpId: challenge.rpId || PASSKEY_RP_ID2,
       allowedOrigins: PASSKEY_ORIGINS,
       credential: record
     });
@@ -10913,14 +10940,16 @@ async function handleAdminPasskeyRequest(request, env) {
     }
     const challengeId = randomToken2(24);
     const challenge = randomToken2(32);
+    const rpId = rpIdForRequest(request);
     await putChallenge(env, challengeId, {
       purpose,
       challenge,
+      rpId,
       mac: await hmacHex(env, "admin-passkey-challenge", `${challengeId}:${challenge}`),
       createdAt: Date.now()
     });
     const credentials2 = await listCredentials(env);
-    const rp = { id: PASSKEY_RP_ID2, name: PASSKEY_RP_NAME };
+    const rp = { id: rpId, name: PASSKEY_RP_NAME };
     return json5({
       challengeId,
       options: {
@@ -10934,7 +10963,7 @@ async function handleAdminPasskeyRequest(request, env) {
           authenticatorSelection: { residentKey: "preferred", userVerification: "required" },
           attestation: "none",
           excludeCredentials: credentials2.map((c) => ({ type: "public-key", id: c.credentialId }))
-        } : { rpId: PASSKEY_RP_ID2, allowCredentials: credentials2.map((c) => ({ type: "public-key", id: c.credentialId, transports: c.transports || [] })) }
+        } : { rpId, allowCredentials: credentials2.map((c) => ({ type: "public-key", id: c.credentialId, transports: c.transports || [] })) }
       }
     });
   }
@@ -11518,7 +11547,7 @@ var APP_ICON_PATH = "/icons/icon-192.png";
 var publicOrigin = (request) => {
   try {
     const h = new URL(request?.url || "");
-    if (h.hostname === "admissionhub.pages.dev" || /\.pages\.dev$/.test(h.hostname)) return h.origin;
+    if (h.hostname === "admissionhub.pages.dev" || h.hostname === "admissionsky.pages.dev" || /\.pages\.dev$/.test(h.hostname)) return h.origin;
   } catch (_) {
   }
   return "https://admissionhub.pages.dev";
@@ -22272,7 +22301,7 @@ function telegramWebhookEndpoint(value) {
   try {
     const url = new URL(String(value || ""));
     if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash || url.pathname !== "/api/auth/v1/telegram/webhook") return "";
-    if (!["admissionhub.pages.dev", "admission-gk.admissionhub.workers.dev"].includes(url.hostname)) return "";
+    if (!["admissionhub.pages.dev", "admissionsky.pages.dev", "admission-gk.admissionhub.workers.dev"].includes(url.hostname)) return "";
     return url.href;
   } catch {
     return "";
@@ -26483,7 +26512,7 @@ var gk_agent_worker_default = {
       return json7(request, { ok: true, keys: keys(env).length, askKey: !!env.ASK_API_KEY, kv: !!env.GK_KV, tg: !!env.TG_BOT_TOKEN, agent: "agent-f1", gemini: !!env.GEMINI_KEYS, groq: !!env.GROQ_API_KEY, lastDay: env.GK_KV ? await env.GK_KV.get("gkDay") : null });
     }
     const isApp = request.headers.get("X-AH-App") === APP_HEADER;
-    const beaconOk = !isApp && request.method === "POST" && url.pathname === "/api/bank" && (request.headers.get("Origin") === "https://admissionhub.pages.dev" || request.headers.get("Origin") === "https://sheikhrashel47-stack.github.io");
+    const beaconOk = !isApp && request.method === "POST" && url.pathname === "/api/bank" && (request.headers.get("Origin") === "https://admissionhub.pages.dev" || request.headers.get("Origin") === "https://admissionsky.pages.dev" || request.headers.get("Origin") === "https://sheikhrashel47-stack.github.io");
     if (!isApp && !beaconOk) return json7(request, { error: "forbidden" }, 403);
     if (request.method === "POST" && url.pathname === "/api/ask") return await createAsk(request, env, ctx);
     if (request.method === "POST" && url.pathname === "/api/bank") return await bankUpload(request, env);

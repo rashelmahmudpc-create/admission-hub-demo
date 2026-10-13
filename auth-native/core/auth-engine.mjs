@@ -30,6 +30,21 @@ export const PASSKEY_CHALLENGE_TTL_MS = 5 * 60 * 1000;
 export const PASSKEY_TICKET_TTL_MS = 60 * 1000;
 export const ACCOUNT_VERIFICATION_TICKET_TTL_MS = 15 * 60 * 1000;
 export const PASSKEY_RP_ID = 'admissionhub.pages.dev';
+/* The owner's chosen short address (2026-10-13). Both hosts serve the same app,
+ * so each must be a valid WebAuthn RP ID in its own right: a passkey is bound to
+ * the exact domain it was created on, and browsers reject an RP ID that is not a
+ * registrable suffix of the current origin. */
+export const PASSKEY_RP_IDS = Object.freeze(['admissionhub.pages.dev', 'admissionsky.pages.dev']);
+
+/* The RP ID to use for a request that arrived on `origin`. Falls back to the
+ * legacy host so a missing/blank Origin (Worker-to-Worker, no-Origin clients)
+ * keeps the previous behaviour. */
+export const passkeyRpIdForOrigin = origin => {
+  try {
+    const host = new URL(String(origin || '')).hostname.toLowerCase();
+    return PASSKEY_RP_IDS.includes(host) ? host : PASSKEY_RP_ID;
+  } catch { return PASSKEY_RP_ID; }
+};
 
 // Phase 6 — risk-signal scopes stored in the existing auth_rate_limits table
 // (no new table). Both are count-only: the huge limits mean they measure,
@@ -156,7 +171,7 @@ const trustedContextOrigin = value => {
     const url = new URL(String(value || ''));
     if (url.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(url.hostname)) return url.origin;
     if (url.protocol !== 'https:') return '';
-    if (url.hostname === PASSKEY_RP_ID || /^[a-z0-9-]+\.admissionhub\.pages\.dev$/i.test(url.hostname) || url.hostname === 'admission-gk.admissionhub.workers.dev') return url.origin;
+    if (url.hostname === PASSKEY_RP_ID || url.hostname === 'admissionsky.pages.dev' || /^[a-z0-9-]+\.admissionhub\.pages\.dev$/i.test(url.hostname) || url.hostname === 'admission-gk.admissionhub.workers.dev') return url.origin;
   } catch {}
   return '';
 };
@@ -354,7 +369,7 @@ export function normalizeProfilePatch(value = {}, now = Date.now()) {
 }
 
 export class CloudflareNativeAuthEngine {
-  constructor({ repository, hmacSecret, now = () => Date.now(), cryptoImpl = globalThis.crypto, passkeyRpId = PASSKEY_RP_ID, passkeyOrigins = [`https://${PASSKEY_RP_ID}`], securityConfigRaw = '', avatarStore = null } = {}) {
+  constructor({ repository, hmacSecret, now = () => Date.now(), cryptoImpl = globalThis.crypto, passkeyRpId = PASSKEY_RP_ID, passkeyOrigins = PASSKEY_RP_IDS.map(id => `https://${id}`), securityConfigRaw = '', avatarStore = null } = {}) {
     this.repository = assertRepository(repository);
     // Phase 7 — provider-agnostic avatar store (D1ProfileStore); avatar
     // objects are keyed by the canonical firebase subject ref (the provider
@@ -407,6 +422,15 @@ export class CloudflareNativeAuthEngine {
 
   #passkeyOrigins() {
     return this.passkeyOrigins;
+  }
+
+  /* The RP ID for the current request. A passkey is bound to one exact domain,
+   * so a device that created its passkey on admissionsky.pages.dev must be
+   * verified against admissionsky.pages.dev — not the legacy host. Derive it
+   * from the (already validated) context origin, never from raw client input. */
+  #passkeyRpId(context) {
+    const origin = String(context?.origin || '');
+    return origin ? passkeyRpIdForOrigin(origin) : this.passkeyRpId;
   }
 
   async consumeFirebaseOperation(input = {}, requestContext = {}) {
@@ -1055,7 +1079,7 @@ export class CloudflareNativeAuthEngine {
       challengeId,
       options: Object.freeze({
         challenge,
-        rp: Object.freeze({ id: this.passkeyRpId, name: 'Admission Hub' }),
+        rp: Object.freeze({ id: this.#passkeyRpId(identity.context), name: 'Admission Hub' }),
         user: Object.freeze({ id: prepared.userHandle, name: prepared.user.emailMask, displayName: 'Admission Hub শিক্ষার্থী' }),
         pubKeyCredParams: Object.freeze([{ type: 'public-key', alg: PASSKEY_ALGORITHM }]),
         timeout: 120_000,
@@ -1091,7 +1115,7 @@ export class CloudflareNativeAuthEngine {
     const verified = await verifyPasskeyRegistration({
       response: input.response,
       expectedChallenge: suppliedChallenge,
-      rpId: this.passkeyRpId,
+      rpId: this.#passkeyRpId(identity.context),
       allowedOrigins: this.#passkeyOrigins(identity.context),
       cryptoImpl: this.crypto
     });
@@ -1131,7 +1155,7 @@ export class CloudflareNativeAuthEngine {
       challengeId,
       options: Object.freeze({
         challenge,
-        rpId: this.passkeyRpId,
+        rpId: this.#passkeyRpId(context),
         timeout: 120_000,
         userVerification: 'required'
       })
@@ -1156,7 +1180,7 @@ export class CloudflareNativeAuthEngine {
     const verified = await verifyPasskeyAuthentication({
       response: input.response,
       expectedChallenge: suppliedChallenge,
-      rpId: this.passkeyRpId,
+      rpId: this.#passkeyRpId(context),
       allowedOrigins: this.#passkeyOrigins(context),
       credential: material.credential,
       cryptoImpl: this.crypto

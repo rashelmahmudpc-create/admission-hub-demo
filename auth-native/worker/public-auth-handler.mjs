@@ -40,6 +40,7 @@ const allowedOrigin = origin => {
     if (url.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(url.hostname)) return true;
     if (url.protocol !== 'https:') return false;
     return url.hostname === 'admissionhub.pages.dev'
+      || url.hostname === 'admissionsky.pages.dev'
       || /^[a-z0-9-]+\.admissionhub\.pages\.dev$/i.test(url.hostname)
       || url.hostname === 'admission-gk.admissionhub.workers.dev';
   } catch { return false; }
