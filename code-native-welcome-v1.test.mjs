@@ -12,9 +12,9 @@ const HTML = read('index.html');
 const SW = read('sw.js');
 const PAGES_GUARD = read('.github/workflows/cf-pages.yml');
 const RELEASE_WORKFLOW = read('.github/workflows/telegram-auth-canary-activate.yml');
-const UI_VERSION = '20261013-skyfix2';
+const UI_VERSION = '20261013-skyfix3';
 
-const SHELL_VERSION = 'v325-skyfix-20261013';
+const SHELL_VERSION = 'v326-skyfix-20261013';
 
 const between = (source, start, end) => {
   const from = source.indexOf(start);
@@ -150,6 +150,20 @@ test('code-native assets and service-worker release markers are synchronized', (
   assert.match(HTML, new RegExp(`expectedSwVersion = '${SHELL_VERSION}'`));
   assert.ok(HTML.indexOf('institutions-bd.js?v=bd-institutions-v2') < HTML.indexOf(`account-access.js?v=${UI_VERSION}`));
   assert.ok(HTML.indexOf(`account-access.js?v=${UI_VERSION}`) < HTML.indexOf('dashboard-v2.js?v=dash2f16-avatar-cache'));
+});
+
+test('the welcome screen is the entry point, not the Sky flow directly', () => {
+  // Live regression (2026-10-13, owner: "প্রথমে তো welcome আসার কথা"). The
+  // rename to Admission Sky rewrote open() to call openSky('signup'|'login')
+  // straight away, so the welcome screen -- and the choice between signup and
+  // signin -- was skipped entirely. open() must show the welcome view; only the
+  // view's own Sign Up / Log In buttons launch the flow.
+  const openBody = between(JS, 'const open = options => {', 'const close = () => {');
+  assert.match(openBody, /showWelcome\(\)/, 'open() must show the welcome screen on entry');
+  assert.doesNotMatch(openBody, /openSky\(/, 'open() must not jump straight into the Sky flow');
+  assert.match(JS, /const showWelcome = \(\) => \{[\s\S]{0,220}showView\('welcome'\)/);
+  assert.match(JS, /const showLegacyEntry = mode => \{[\s\S]{0,600}showView\('signup'\)[\s\S]{0,200}showView\('login'\)/,
+    'the fallback must land on the real signup/login form, not back on welcome');
 });
 
 test('protected publication remains the only release path for code-native entry v1', () => {

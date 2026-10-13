@@ -78,7 +78,7 @@
     const skyStyle = document.createElement('link');
     skyStyle.id = 'ah-sky-flow-style';
     skyStyle.rel = 'stylesheet';
-    skyStyle.href = 'sky-onboarding.css?v=sky-flow-20261013-v2';
+    skyStyle.href = 'sky-onboarding.css?v=sky-flow-20261013-v3';
     document.head.append(skyStyle);
   }
   pageHost.className = 'ah-account-page';
@@ -2161,19 +2161,35 @@
     }
     return node;
   };
-  // The account page now opens the Admission Sky flow. The old welcome view is
-  // no longer shown: it survives in the DOM only because the wiring tests and a
-  // handful of bindings still reference its hooks. If the flow's script has not
-  // loaded (an old cached bundle) this falls back to the previous view rather
-  // than showing an empty page.
-  // Fallback entry surface when the Sky flow cannot open. The welcome view's
-  // header/actions are hidden by CSS until `.ah-welcome-live` is present (that
-  // class used to come from the retired welcome-onboarding.js), so mark it live
-  // here or the fallback is an empty page with only the Facebook pill.
+  // The welcome screen is the entry point: it is shown first, and its own
+  // Sign Up / Log In buttons open the Admission Sky flow in the matching mode.
+  // The flow's script loads after this module, so only those buttons wait for
+  // it -- the entry itself never depends on the flow being present.
+  // The welcome view's header/actions are hidden by CSS until
+  // `.ah-welcome-live` is present (that class used to come from the retired
+  // welcome-onboarding.js), so mark it live here or the entry is an empty page
+  // with only the Facebook pill.
+  const showWelcome = () => {
+    const welcome = pageHost.querySelector('.ah-welcome-view');
+    if (welcome) welcome.classList.add('ah-welcome-live');
+    showView('welcome');
+  };
+  // The native (pre-flow) entry for a mode, used when the Sky flow cannot open
+  // -- an old cached bundle or a network failure. It is the real signup form or
+  // the real login form, never an empty page.
   const showLegacyEntry = mode => {
     const welcome = pageHost.querySelector('.ah-welcome-view');
     if (welcome) welcome.classList.add('ah-welcome-live');
-    showView(mode === 'signup' ? 'welcome' : 'login');
+    if (mode === 'signup') {
+      state.signupJourney = true;
+      state.signupStep = 'personal';
+      showView('signup');
+    } else {
+      state.signupJourney = false;
+      state.pendingProfile = null;
+      state.profileBound = false;
+      showView('login');
+    }
   };
   const skyReady = () => Boolean(window.AdmissionSkyFlow && window.AdmissionSkyBridge);
   const launchSky = mode => {
@@ -2220,8 +2236,8 @@
     if (accountVerified(state.session)) showView('signed');
     else if (state.telegram) showView('telegram');
     else if (state.verification) showView('verify');
-    else if (forceWelcome || !entryMode()) openSky('signup');
-    else openSky('login');
+    else if (forceWelcome || !entryMode()) showWelcome();
+    else showView('login');
     if (state.available === false && state.currentView !== 'welcome') message('Account service এখন প্রস্তুত নয়—Guest হিসেবে Dashboard ব্যবহার করতে পারো।' + unavailableHint(), 'info');
   };
   const close = () => {
