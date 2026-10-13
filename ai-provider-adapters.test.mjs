@@ -230,7 +230,13 @@ t('M2.7-৪. a KV-backed compat key works too (64-cap workaround holds for new A
 
 t('M2.7-৫. compat entries honour the bad-set like every other provider', (() => {
   const key = 'or-badkey-1234567890';
-  const bad = new Set([key.slice(0, 12) + ':openai/gpt-4o-mini']);
+  /* Read the model the provider actually ships instead of pinning a literal —
+     the catalogue rotates (e.g. mistral-small-latest -> ministral-14b-latest)
+     and a hardcoded model turns a rotation into a false failure. */
+  const shipped = routerChain({ OPENROUTER_API_KEYS: key }, 'FAST', new Set())
+    .find(x => x.provider === 'openai-compat' && x.key === key);
+  if (!shipped) return false;
+  const bad = new Set([key.slice(0, 12) + ':' + shipped.model]);
   const c = routerChain({ OPENROUTER_API_KEYS: key }, 'FAST', bad).filter(x => x.provider === 'openai-compat');
   return c.length === 0;
 })());
@@ -243,7 +249,10 @@ t('M2.7-৬. a comma-separated compat value yields one entry per key', (() => {
 
 t('M2.7-৭. a bad-set hit on one compat key leaves the other in the chain', (() => {
   const dead = 'm-dead-key-0000';
-  const bad = new Set([dead.slice(0, 12) + ':mistral-small-latest']);
+  const shipped = routerChain({ MISTRAL_API_KEYS: dead }, 'FAST', new Set())
+    .find(x => x.provider === 'openai-compat' && x.key === dead);
+  if (!shipped) return false;
+  const bad = new Set([dead.slice(0, 12) + ':' + shipped.model]);
   const c = routerChain({ MISTRAL_API_KEYS: 'm-live-key,m-dead-key-0000' }, 'FAST', bad)
     .filter(x => x.provider === 'openai-compat');
   return c.length === 1 && c[0].key === 'm-live-key';
