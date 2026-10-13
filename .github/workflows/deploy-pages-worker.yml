@@ -81,3 +81,22 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           wranglerVersion: '4.35.0'
           command: pages deploy dist --project-name admissionhub --branch main
+
+      # Same sanitized bundle, second address: the owner's shorter
+      # admissionsky.pages.dev. A Pages project named `admissionsky` owns that
+      # hostname automatically, so both addresses serve identical bytes.
+      - name: Ensure the admissionsky Pages project exists
+        uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd # v3
+        continue-on-error: true
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: '4.35.0'
+          command: pages project create admissionsky --production-branch main
+      - name: Deploy Pages UI to the short address
+        uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd # v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: '4.35.0'
+          command: pages deploy dist --project-name admissionsky --branch main
