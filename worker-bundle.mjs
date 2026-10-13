@@ -9623,10 +9623,8 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
       if (request.method === "POST" && url.pathname === `${AUTH_API_PREFIX}/facebook`) {
         if (!provider.configured || !facebookEndpointReady(env)) throw new NativeAuthError(AUTH_ERROR_CODES.GOOGLE_UNAVAILABLE);
         try {
-          const project = await provider.inspectProject();
-          if (!project?.facebook?.enabled) throw new NativeAuthError(AUTH_ERROR_CODES.GOOGLE_UNAVAILABLE);
+          await provider.inspectFacebookProvider();
         } catch (cause) {
-          if (cause instanceof NativeAuthError) throw cause;
           throw providerError(cause, "facebook-config");
         }
         const credential = facebookCredential(await readJson(request));

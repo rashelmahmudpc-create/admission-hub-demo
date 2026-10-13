@@ -1030,13 +1030,10 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
 
       if (request.method === 'POST' && url.pathname === `${AUTH_API_PREFIX}/facebook`) {
         if (!provider.configured || !facebookEndpointReady(env)) throw new NativeAuthError(AUTH_ERROR_CODES.GOOGLE_UNAVAILABLE);
-        try {
-          const project = await provider.inspectProject();
-          if (!project?.facebook?.enabled) throw new NativeAuthError(AUTH_ERROR_CODES.GOOGLE_UNAVAILABLE);
-        } catch (cause) {
-          if (cause instanceof NativeAuthError) throw cause;
-          throw providerError(cause, 'facebook-config');
-        }
+        // Validate the provider the same way Google does. The project-level
+        // idpConfig is not returned by this Firebase project's /v1/projects
+        // endpoint, so only the createAuthUri probe proves facebook.com is live.
+        try { await provider.inspectFacebookProvider(); } catch (cause) { throw providerError(cause, 'facebook-config'); }
         const credential = facebookCredential(await readJson(request));
         await callAuthority(env, '/internal/firebase/rate', { input: { operation: 'facebook' }, context });
         let signed;
