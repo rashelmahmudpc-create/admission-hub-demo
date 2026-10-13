@@ -47,3 +47,21 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           wranglerVersion: '4.35.0'
           command: pages deploy dist --project-name admissionhub --branch main --commit-hash ${{ github.sha }}
+
+      # The owner's shorter admission sky address must serve the same bytes, so a
+      # frontend-only fix reaches both hosts without touching the backend Worker.
+      - name: Ensure the admissionsky Pages project exists
+        uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd
+        continue-on-error: true
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: '4.35.0'
+          command: pages project create admissionsky --production-branch main
+      - name: Deploy Pages frontend only to the short address
+        uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: '4.35.0'
+          command: pages deploy dist --project-name admissionsky --branch main --commit-hash ${{ github.sha }}
