@@ -255,11 +255,17 @@ body.ah-account-page-active>.ah-account-launcher{display:none!important}
   color:var(--ah-ink);
 }
 /* The legacy welcome scaffold is retained only as a hidden wiring anchor (the
-   new artboard reuses its controls); it must never paint, so the old design
-   cannot flash before the new one mounts. The server view keeps the controls
-   for the account flow to bind, then welcome-onboarding.js replaces them. */
+   owner's Welcome Story reuses its controls); it must never paint, so the old
+   design cannot flash before the story mounts. The anchors stay in the DOM so
+   the account flow can bind them, and so the signup/login forms still open when
+   the story or the Sky flow is not loaded. */
 .ah-welcome-view:not(.ah-welcome-live) > .ah-welcome-header,
 .ah-welcome-view:not(.ah-welcome-live) > .ah-entry-actions{display:none!important}
+/* The story is the welcome now: hide the anchors whenever it has mounted. */
+.ah-welcome-view > .ah-welcome-header,
+.ah-welcome-view > .ah-entry-actions,
+.ah-welcome-view > .ah-account-facebook{display:none!important}
+#ah-welcome-story{position:absolute;inset:0}
 .ah-code-ambient{position:absolute;z-index:-1;inset:0;overflow:hidden;pointer-events:none}
 .ah-code-ambient i{position:absolute;display:block;border-radius:50%;filter:blur(2px);opacity:.65;animation:ahAmbientDrift 12s ease-in-out infinite}
 .ah-code-ambient i:nth-child(1){width:230px;height:230px;left:-130px;top:100px;background:radial-gradient(circle,rgba(39,184,145,.18),transparent 69%)}
