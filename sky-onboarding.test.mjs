@@ -131,3 +131,19 @@ test('sky-06: the flow never installs an app-wide scroll lock', () => {
   assert.doesNotMatch(JS, /body\.(classList|style)/, 'the flow must not restyle the body');
   assert.doesNotMatch(JS, /position\s*[:=]\s*['"]?fixed/, 'the flow must not pin the page');
 });
+
+test('sky-07: the account shell collapses so the flow cannot land below the fold', () => {
+  // Live bug (2026-10-13): the flow is a SIBLING of .ah-account-shell, and the
+  // shell kept min-height:100dvh while its own content was hidden. The shell
+  // therefore occupied the first viewport and pushed #ah-sky-flow to
+  // top:100dvh -- a full screen below the fold. Every element had a non-zero
+  // box, so a visibility check passed while the phone showed a blank page.
+  const rule = CSS.match(
+    /\.ah-account-page\[data-sky-flow="on"\][^{]*\.ah-account-shell[^{]*\{[^}]*\}/g
+  ) || [];
+  const collapse = rule.find(r => /min-height\s*:\s*0/.test(r));
+  assert.ok(collapse, 'a [data-sky-flow="on"] rule must collapse the shell min-height to 0');
+  assert.match(collapse, /min-height\s*:\s*0\s*!important/,
+    'without !important the later @media(max-width:620px) rule re-asserts min-height:100dvh');
+});
+
