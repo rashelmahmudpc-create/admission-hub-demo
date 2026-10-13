@@ -1,7 +1,7 @@
 const IDENTITY_TOOLKIT = 'https://identitytoolkit.googleapis.com/v1';
 const SECURE_TOKEN = 'https://securetoken.googleapis.com/v1/token';
 const GOOGLE_USERINFO = 'https://www.googleapis.com/oauth2/v3/userinfo';
-const DEFAULT_CONTINUE_URL = 'https://admissionhub.pages.dev/?firebaseVerified=1';
+const DEFAULT_CONTINUE_URL = 'https://admissionsky.pages.dev/?firebaseVerified=1';
 
 export class FirebaseRequestError extends Error {
   constructor(reason = 'FIREBASE_UNAVAILABLE', status = 0) {
@@ -126,7 +126,7 @@ export class FirebaseEmailPasswordProvider {
 
   async inspectGoogleRedirectFlow(sessionId) {
     if (!validToken(sessionId)) throw new FirebaseRequestError('INVALID_SESSION_ID');
-    const continueUri = 'https://admissionhub.pages.dev/?googleAuthCallback=1';
+    const continueUri = 'https://admissionsky.pages.dev/?googleAuthCallback=1';
     const payload = await this.#post(`${IDENTITY_TOOLKIT}/accounts:createAuthUri?key=${encodeURIComponent(this.apiKey)}`, {
       providerId: 'google.com',
       continueUri,

@@ -67,7 +67,7 @@ function googleFetch({ isNewUser = false, deleted = [], deleteFails = false, inc
       });
     }
     if (path.endsWith('/accounts:signInWithIdp')) {
-      assert.equal(body.requestUri, 'https://admissionhub.pages.dev');
+      assert.equal(body.requestUri, 'https://admissionsky.pages.dev');
       assert.equal(body.autoCreate, true);
       assert.equal(body.returnIdpCredential, true);
       assert.equal(body.returnSecureToken, true);
