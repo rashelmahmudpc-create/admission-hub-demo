@@ -879,16 +879,22 @@ textarea{min-height:96px}
   // textContent, not innerText: #app is display:none under the gate, so innerText is
   // empty even when the page is fully built.
   function appReady(){return !!appPageEl()&&(appPageEl().textContent||'').trim().length>20;}
-  function accountReady(){return vis(document.querySelector('.ah-account-page'));}
+  function accountShell(){return document.querySelector('.ah-account-page');}
+  function accountReady(){var el=accountShell();return !!el&&!el.hidden&&el.getClientRects().length>0;}
   function real(){return vis(appPageEl())||accountReady()||vis(document.querySelector('[data-admission-usable="true"]'));}
   var stuck=0;
   var iv=setInterval(function(){
+    var el=accountShell();
     var gate=document.body.classList.contains('ah-account-page-active');
-    if(gate&&!accountReady()&&appReady()){
+    // The welcome/account shell owns the first screen. While its element exists we
+    // must NEVER release the gate: doing that un-hid the already-built dashboard
+    // *and its bottom nav bar* underneath the welcome (owner: "সবার ফোনে সেইম").
+    // Keep the overlay until the welcome itself is visible, then just drop it.
+    if(el){ if(accountReady()){if(o.parentNode)o.remove();clearInterval(iv);} return; }
+    if(gate&&appReady()){
       stuck++;
-      // The gate hid #app but its own page never showed content (slow link) — the
-      // device sat on a blank screen. After a short sustain, release the hidden
-      // state so the already-built app page shows, and stand down.
+      // No account shell at all and the gate hid #app: the device sat on a blank
+      // screen. After a short sustain, release the hidden state so the app shows.
       if(stuck>=3){document.body.classList.remove('ah-account-page-active');if(o.parentNode)o.remove();clearInterval(iv);return;}
     }else stuck=0;
     if(real()){if(o.parentNode)o.remove();clearInterval(iv);}
