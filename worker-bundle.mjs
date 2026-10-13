@@ -7970,7 +7970,7 @@ var CloudflareNativeAuthEngine = class {
 var IDENTITY_TOOLKIT = "https://identitytoolkit.googleapis.com/v1";
 var SECURE_TOKEN = "https://securetoken.googleapis.com/v1/token";
 var GOOGLE_USERINFO = "https://www.googleapis.com/oauth2/v3/userinfo";
-var DEFAULT_CONTINUE_URL = "https://admissionhub.pages.dev/?firebaseVerified=1";
+var DEFAULT_CONTINUE_URL = "https://admissionsky.pages.dev/?firebaseVerified=1";
 var FirebaseRequestError = class extends Error {
   constructor(reason2 = "FIREBASE_UNAVAILABLE", status = 0) {
     super(reason2);
@@ -8094,7 +8094,7 @@ var FirebaseEmailPasswordProvider = class {
   }
   async inspectGoogleRedirectFlow(sessionId) {
     if (!validToken(sessionId)) throw new FirebaseRequestError("INVALID_SESSION_ID");
-    const continueUri = "https://admissionhub.pages.dev/?googleAuthCallback=1";
+    const continueUri = "https://admissionsky.pages.dev/?googleAuthCallback=1";
     const payload = await this.#post(`${IDENTITY_TOOLKIT}/accounts:createAuthUri?key=${encodeURIComponent(this.apiKey)}`, {
       providerId: "google.com",
       continueUri,
