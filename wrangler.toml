@@ -6,7 +6,6 @@ workers_dev = true
 [vars]
 FIREBASE_CONTINUE_URL = "https://admissionsky.pages.dev/?firebaseVerified=1"
 GOOGLE_AUTH_ACTIVATION = "enabled"
-FACEBOOK_AUTH_ACTIVATION = "enabled"
 PASSKEY_AUTH_ACTIVATION = "enabled"
 VERIFICATION_AUTH_ACTIVATION = "enabled"
 # Internal admission caps, not provider-reported quotas. otp-a is Brevo (free 300/day)

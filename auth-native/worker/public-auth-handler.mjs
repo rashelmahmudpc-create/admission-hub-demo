@@ -405,8 +405,13 @@ const googleEndpointReady = env => ['canary', 'enabled'].includes(String(env?.GO
 const googlePublished = env => env?.GOOGLE_AUTH_ACTIVATION === 'enabled';
 const googleCanaryRequested = (env, url) =>
   env?.GOOGLE_AUTH_ACTIVATION === 'canary' && url.searchParams.get('googleCanary') === '1';
-const facebookEndpointReady = env => ['canary', 'enabled'].includes(String(env?.FACEBOOK_AUTH_ACTIVATION || ''));
-const facebookPublished = env => env?.FACEBOOK_AUTH_ACTIVATION === 'enabled';
+// Facebook has no switch of its own: this Worker sits exactly on the Workers
+// Free ceiling of 64 variables (secrets + text), so a 65th is rejected on
+// deploy. The native social sign-in is activated as one unit by
+// GOOGLE_AUTH_ACTIVATION; the Firebase project itself decides whether the
+// facebook.com provider is actually configured.
+const facebookEndpointReady = env => ['canary', 'enabled'].includes(String(env?.GOOGLE_AUTH_ACTIVATION || ''));
+const facebookPublished = env => env?.GOOGLE_AUTH_ACTIVATION === 'enabled';
 const verificationEndpointReady = env => ['canary', 'enabled'].includes(String(env?.VERIFICATION_AUTH_ACTIVATION || ''));
 const verificationPublished = env => env?.VERIFICATION_AUTH_ACTIVATION === 'enabled';
 const telegramCanaryRequested = (env, url) =>

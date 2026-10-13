@@ -8991,8 +8991,8 @@ var authSuccess = (request, established, refreshToken, context, verification = {
 var googleEndpointReady = (env) => ["canary", "enabled"].includes(String(env?.GOOGLE_AUTH_ACTIVATION || ""));
 var googlePublished = (env) => env?.GOOGLE_AUTH_ACTIVATION === "enabled";
 var googleCanaryRequested = (env, url) => env?.GOOGLE_AUTH_ACTIVATION === "canary" && url.searchParams.get("googleCanary") === "1";
-var facebookEndpointReady = (env) => ["canary", "enabled"].includes(String(env?.FACEBOOK_AUTH_ACTIVATION || ""));
-var facebookPublished = (env) => env?.FACEBOOK_AUTH_ACTIVATION === "enabled";
+var facebookEndpointReady = (env) => ["canary", "enabled"].includes(String(env?.GOOGLE_AUTH_ACTIVATION || ""));
+var facebookPublished = (env) => env?.GOOGLE_AUTH_ACTIVATION === "enabled";
 var verificationEndpointReady = (env) => ["canary", "enabled"].includes(String(env?.VERIFICATION_AUTH_ACTIVATION || ""));
 var verificationPublished = (env) => env?.VERIFICATION_AUTH_ACTIVATION === "enabled";
 var telegramCanaryRequested = (env, url) => verificationEndpointReady(env) && url.searchParams.get("telegramCanary") === "1";
