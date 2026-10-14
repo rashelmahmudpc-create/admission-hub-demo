@@ -108,6 +108,12 @@ const OTP_BOXES = `<div class="otp hint1" id="sky-otp">${
 
 const METHOD_CARDS = `<button class="mc sel" data-m="email" type="button"><span class="ic"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="m4 8 8 6 8-6"/></svg></span><span><b>ইমেইল</b><small id="sky-mm">কোড যাবে তোমার ইমেইলে</small></span><i class="rd"></i></button><button class="mc" data-m="telegram" type="button"><span class="ic"><svg viewBox="0 0 24 24"><path d="m21 4-3 15-6-4-3 3v-5L20 6 7 12 3 10Z"/></svg></span><span><b>টেলিগ্রাম</b><small>অফিসিয়াল বটে কোড আসবে</small></span><i class="rd"></i></button>`;
 
+// Shown only when every OTP provider is out of quota and the Worker has sent a
+// Firebase link instead. The link sets Firebase's own verified flag, so there is
+// no code to type: offering the OTP box here would strand the student on a form
+// that can never be filled.
+const LINK_PANEL = `<div class="lk" id="sky-lk"><div class="lki" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="m4 8 8 6 8-6"/></svg><i><svg viewBox="0 0 24 24"><path d="m6 12 4 4 8-9"/></svg></i></div><b>ইমেইলে লিংক পাঠানো হয়েছে</b><p id="sky-lk-p">লিংকে ট্যাপ করে এখানে ফিরে এসো।</p><button class="lnk" id="sky-lk-c" type="button">লিংক খুলেছি — যাচাই করো</button></div>`;
+
 const DONE_PANEL = `<div class="dn" id="sky-dn"><h2 id="sky-dn-h"></h2><p>তোমার অ্যাকাউন্ট প্রস্তুত</p><div class="ld"><u></u></div></div>`;
 const SIGNUP_SCREENS = [
   `<div class="scr" id="sky-s0"><label class="fl" id="sky-f-name"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/></svg><input id="sky-in-name" type="text" placeholder=" " autocomplete="name" enterkeyhint="done" maxlength="60"><span class="lb">তোমার পুরো নাম</span><button class="cl" type="button" data-c="sky-in-name" aria-label="মুছুন"><svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></button></label><div class="hint">যে নামে সনদ ও পরিচয় থাকবে সেটাই লেখো</div></div>`,
@@ -119,7 +125,7 @@ const SIGNUP_SCREENS = [
   `<div class="scr" id="sky-s4"><label class="fl pwf" id="sky-f-pw"><svg class="ic" viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg><input id="sky-in-pw" type="password" placeholder=" " autocomplete="new-password" enterkeyhint="done"><span class="lb">পাসওয়ার্ড (কমপক্ষে ৮ অক্ষর)</span><button class="eye" data-t="sky-in-pw" type="button" aria-label="দেখাও"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg></button></label><div class="meter" id="sky-mt"><i></i><i></i><i></i><i></i></div>
 <div class="sp"></div><label class="fl pwf" id="sky-f-pw2"><svg class="ic" viewBox="0 0 24 24"><path d="M12 3 5 6v5c0 4.5 3 8 7 10 4-2 7-5.5 7-10V6Z"/><path d="m9 12 2 2 4-4"/></svg><input id="sky-in-pw2" type="password" placeholder=" " autocomplete="new-password" enterkeyhint="done"><span class="lb">পাসওয়ার্ড আবার লেখো</span></label><div class="hint" id="sky-pw-h"></div></div>`,
   `<div class="scr" id="sky-s5">${METHOD_CARDS}</div>`,
-  `<div class="scr" id="sky-s6">${OTP_BOXES}</div>`,
+  `<div class="scr" id="sky-s6">${OTP_BOXES}${LINK_PANEL}</div>`,
   `<div class="scr" id="sky-s7">${DONE_PANEL}</div>`
 ];
 
@@ -130,7 +136,7 @@ const LOGIN_SCREENS = [
 <button class="lnk" id="sky-b-signup" type="button">নতুন? সাইন আপ করো</button></div>`,
   `<div class="scr" id="sky-l1"><label class="fl pwf" id="sky-lf-pw"><svg class="ic" viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg><input id="sky-lin-pw" type="password" placeholder=" " autocomplete="current-password" enterkeyhint="done"><span class="lb">পাসওয়ার্ড</span><button class="eye" data-t="sky-lin-pw" type="button" aria-label="দেখাও"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg></button></label><div class="hint" id="sky-lpw-h"></div><button class="lnk" id="sky-b-forgot" type="button">পাসওয়ার্ড ভুলে গেছ?</button></div>`,
   `<div class="scr" id="sky-l2">${METHOD_CARDS}</div>`,
-  `<div class="scr" id="sky-l3">${OTP_BOXES}</div>`,
+  `<div class="scr" id="sky-l3">${OTP_BOXES}${LINK_PANEL}</div>`,
   `<div class="scr" id="sky-l4">${DONE_PANEL}</div>`
 ];
 
@@ -151,7 +157,7 @@ const state = {
   name: '', d: 15, m: 5, y: 2006, level: '', school: '', college: '', skipC: false,
   email: '', pw: '', pw2: '', method: 'email',
   schools: [], colleges: [], inst: { school: null, college: null },
-  caps: null, resend: 45, resendTimer: null
+  caps: null, resend: 45, resendTimer: null, link: false
 };
 
 let tT = 0, mT = 0, hovT = 0, idleT = 0, nameDone = false;
@@ -205,7 +211,7 @@ const refresh = () => {
     if (i === 0) ok = EMAIL_RE.test(state.email);
     else if (i === 1) ok = state.pw.length > 0;
     else if (i === 2) ok = true;
-    else if (i === 3) ok = otpBoxes().every(x => x.value);
+    else if (i === 3) ok = state.link ? true : otpBoxes().every(x => x.value);
   } else {
     if (i === 0) ok = state.name.trim().length >= 2;
     else if (i === 1) ok = true;
@@ -213,7 +219,7 @@ const refresh = () => {
     else if (i === 3) ok = EMAIL_RE.test(state.email);
     else if (i === 4) ok = state.pw.length >= 8 && state.pw === state.pw2;
     else if (i === 5) ok = true;
-    else if (i === 6) ok = otpBoxes().every(x => x.value);
+    else if (i === 6) ok = state.link ? true : otpBoxes().every(x => x.value);
   }
   const button = cta();
   if (!button) return;
@@ -230,7 +236,7 @@ const go = n => {
   pal(n);
   screens().forEach((el, k) => { el.classList.toggle('on', k === n); el.classList.toggle('l', k < n); });
   const label = $('sky-cta-t');
-  if (label) label.textContent = ctaTable()[n] || '';
+  if (label) label.textContent = (n === 6 && state.link) || (n === 3 && state.mode === 'login' && state.link) ? 'যাচাই করো' : (ctaTable()[n] || '');
   const button = cta();
   if (button) button.classList.toggle('hide', n === lastScreen());
   const back = $('sky-back');
@@ -264,10 +270,12 @@ const hideKb = () => { const a = document.activeElement; if (a && a.tagName === 
 /* ---- verification challenge (real backend) ---- */
 const startOtp = () => {
   fill([]);
+  state.link = false;
   const otp = $('sky-otp');
   if (otp) otp.className = 'otp hint1';
   const hint = $('sky-ot-h');
   if (hint) { hint.className = 'hint'; hint.textContent = ''; }
+  showLink();
   beginChallenge();
   startResendCountdown(state.resend);
 };
@@ -279,11 +287,19 @@ const beginChallenge = async () => {
   try {
     const result = state.method === 'telegram' ? await api.startTelegram() : await api.startEmail();
     if (!result) throw new Error('start-failed');
+    // The email method can come back with a link instead of a code when every
+    // OTP provider is spent. Switch the panel rather than leaving a code box.
+    state.link = state.method === 'email' && result.link === true;
+    showLink();
     state.resend = Number(result.resendAfter || 45);
+    refresh();
+    const label = $('sky-cta-t');
+    if (label && state.link) label.textContent = 'যাচাই করো';
     const hint = $('sky-ot-h');
     if (hint) {
       hint.className = 'hint ok';
-      hint.textContent = state.method === 'telegram'
+      hint.textContent = state.link ? ''
+        : state.method === 'telegram'
         ? 'টেলিগ্রামের অফিসিয়াল বটে ৬ সংখ্যার কোড এসেছে'
         : (result.emailMasked ? `কোড পাঠানো হয়েছে ${result.emailMasked}` : 'কোড তোমার ইমেইলে পাঠানো হয়েছে');
     }
@@ -306,6 +322,39 @@ const startResendCountdown = seconds => {
     if (t <= 0) { clearInterval(state.resendTimer); rt.textContent = 'কোড পাওনি? '; rb.disabled = false; }
     else rt.textContent = `আবার পাঠানো যাবে ${bn(t)} সেকেন্ড পর `;
   }, 1000);
+};
+
+// The Worker sends a Firebase link only after every OTP provider is spent. Swap
+// the code box out and never leave a form the student cannot fill.
+const showLink = () => {
+  const lk = $('sky-lk'), otp = $('sky-otp'), tmr = document.querySelector('#ah-sky-flow .tmr'), rs = document.querySelector('#ah-sky-flow .rs');
+  const link = Boolean(state.link);
+  if (lk) lk.classList.toggle('on', link);
+  if (otp) otp.style.display = link ? 'none' : '';
+  if (tmr) tmr.style.display = link ? 'none' : '';
+  if (rs) rs.style.display = link ? 'none' : '';
+  const p = $('sky-lk-p');
+  if (p && state.email) p.textContent = `লিংক পাঠানো হয়েছে ${state.email}-এ। Inbox বা Spam-এ দেখে ট্যাপ করো, তারপর নিচের বোতাম চাপো।`;
+};
+
+const checkLink = async () => {
+  const api = bridge();
+  if (!api || state.busy) return;
+  setBusy(true);
+  try {
+    const ok = api.checkEmail ? await api.checkEmail() : false;
+    if (ok) {
+      mood('happy'); kick('hop');
+      const lk = $('sky-lk');
+      if (lk) lk.classList.add('ok');
+      api.finish();
+      go(lastScreen());
+      return;
+    }
+    fail('এখনো যাচাই হয়নি—ইমেইলের লিংকে ট্যাপ করে আবার চেষ্টা করো।');
+  } catch (error) {
+    fail(api.friendly ? api.friendly(error) : 'যাচাই করা যায়নি—আবার চেষ্টা করো।');
+  } finally { setBusy(false); }
 };
 
 const fill = arr => {
@@ -354,6 +403,9 @@ const setBusy = busy => {
     if (state.busy) { if (!el.disabled) { el.dataset.skyBusy = '1'; el.disabled = true; } }
     else if (el.dataset.skyBusy === '1') { el.disabled = false; delete el.dataset.skyBusy; }
   });
+  // setBusy(false) must re-gate the CTA: refresh() may have run while busy was
+  // still true, which disables it and leaves it stuck after the request ends.
+  refresh();
 };
 
 /* ---- next / back ---- */
@@ -365,12 +417,12 @@ const next = async () => {
     if (state.i === 0) return go(1);
     if (state.i === 1) return doLogin();
     if (state.i === 2) return go(3);
-    if (state.i === 3) return verifyCode();
+    if (state.i === 3) return state.link ? checkLink() : verifyCode();
     return;
   }
   if (state.i === 4) return submitSignup();
   if (state.i === 5) return go(6);
-  if (state.i === 6) return verifyCode();
+  if (state.i === 6) return state.link ? checkLink() : verifyCode();
   go(state.i + 1);
 };
 
@@ -789,6 +841,8 @@ const bindOtp = () => {
       if (d.length === 6) verifyCode();
     });
   });
+  const lk = $('sky-lk-c');
+  if (lk) lk.addEventListener('click', checkLink);
   $('sky-rs-b').addEventListener('click', async () => {
     const api = bridge();
     if (!api || state.busy) return;
@@ -796,6 +850,8 @@ const bindOtp = () => {
     setBusy(true);
     try {
       const result = state.method === 'telegram' ? await api.startTelegram() : await api.startEmail();
+      state.link = state.method === 'email' && result && result.link === true;
+      showLink();
       state.resend = Number(result && result.resendAfter || 45);
       startResendCountdown(state.resend);
     } catch (error) {
