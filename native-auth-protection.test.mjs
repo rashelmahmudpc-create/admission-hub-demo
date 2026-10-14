@@ -122,6 +122,13 @@ test('Google, Passkey, and the explicit Email-or-Telegram selector are public wi
   assert.match(wrangler, /\{"id":"otp-f","enabled":true,"priority":38,"dailyQuota":100/);
   assert.match(wrangler, /\{"id":"otp-g","enabled":true,"priority":39,"dailyQuota":150/);
   assert.match(wrangler, /\{"id":"telegram","enabled":true,"priority":50/);
+  // LOCKED LAST-RESORT PAIR (owner order 2026-10-14): Dead Simple (otp-g) and
+  // Mailjet (otp-c) are the two last-resort slots and must stay enabled with
+  // nothing reliable behind them. Their relative order is free, so this asserts
+  // the shape, not a fixed sequence.
+  assert.match(wrangler, /LOCKED LAST-RESORT PAIR \(owner order 2026-10-14\)/);
+  assert.match(wrangler, /\{"id":"otp-c","enabled":true,"priority":45,"dailyQuota":200[^]*?\{"id":"telegram","enabled":true,"priority":50/);
+  assert.doesNotMatch(wrangler, /\{"id":"otp-(?:a|b|d|e|f)","enabled":true,"priority":(?:4[6-9]|[5-9][0-9])/);
   assert.match(wrangler, /OTP_A_DAILY_QUOTA = "300"/);
   assert.match(wrangler, /OTP_B_DAILY_QUOTA = "100"/);
   assert.match(wrangler, /OTP_C_DAILY_QUOTA = "200"/);

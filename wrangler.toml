@@ -28,6 +28,15 @@ VERIFICATION_AUTH_ACTIVATION = "enabled"
 # inbox it sends from.
 # otp-g is Dead Simple Email. Like AgentMail it sends from a provider-signed
 # inbox with no owner domain, and its free plan has no daily cap (5,000/month).
+#
+# LOCKED LAST-RESORT PAIR (owner order 2026-10-14): otp-g (Dead Simple) and
+# otp-c (Mailjet) are the two last-resort slots and MUST stay enabled. The owner
+# confirmed both are last resort and that their relative order does not matter
+# ("যেকোনো একটা আগে পিছে হলে সমস্যা নেই"), so both sit after every reliable
+# mailer and only Telegram (priority 50) follows. Do NOT disable either, and do
+# NOT move another mailer behind them; `native-auth-protection.test.mjs` fails
+# if this pairing breaks. Dead Simple delivery lands in Gmail spam by design
+# (shared inbox domain) — it is kept only as a final channel, never a primary.
 VERIFICATION_ORCHESTRATOR_CONFIG = '{"enabled":true,"providers":[{"id":"otp-a","enabled":true,"priority":10,"dailyQuota":300,"timeoutMs":15000,"label":"secure backup"},{"id":"otp-b","enabled":true,"priority":20,"dailyQuota":100,"timeoutMs":20000,"label":"secure backup"},{"id":"otp-d","enabled":true,"priority":35,"dailyQuota":100,"timeoutMs":15000,"label":"secure backup"},{"id":"otp-e","enabled":true,"priority":37,"dailyQuota":100,"timeoutMs":15000,"label":"secure backup"},{"id":"otp-f","enabled":true,"priority":38,"dailyQuota":100,"timeoutMs":15000,"label":"secure backup"},{"id":"otp-g","enabled":true,"priority":39,"dailyQuota":150,"timeoutMs":15000,"label":"secure backup"},{"id":"otp-c","enabled":true,"priority":45,"dailyQuota":200,"timeoutMs":15000,"label":"secure backup"},{"id":"telegram","enabled":true,"priority":50,"dailyQuota":172800,"timeoutMs":20000,"label":"secure backup"}]}'
 OTP_A_DAILY_QUOTA = "300"
 OTP_B_DAILY_QUOTA = "100"
