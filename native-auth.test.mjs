@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { CloudflareNativeAuthEngine, SESSION_TTL_MS } from './auth-native/core/auth-engine.mjs';
 import { AUTH_ERROR_CODES, asNativeAuthError } from './auth-native/core/errors.mjs';
 import { MemoryAuthRepository } from './auth-native/testing/memory-auth-repository.mjs';
@@ -67,6 +68,27 @@ test('Firebase operation limits are consumed atomically', async () => {
     () => state.engine.consumeFirebaseOperation({ operation: 'pending-profile-write' }, state.context),
     AUTH_ERROR_CODES.RATE_LIMITED
   );
+});
+
+// Regression guard (owner bug 2026-10-14): the /facebook route asked the
+// authority for an 'facebook' rate slot, but the operation was missing from
+// FIREBASE_OPERATION_LIMITS, so consumeFirebaseOperation threw INVALID_INPUT and
+// every Facebook sign-in failed with a generic 400 before Firebase was reached.
+// Every operation the public handler passes to /internal/firebase/rate must have
+// a definition, or the route is dead on arrival.
+test('every rate operation the public handler sends has a definition', async () => {
+  const handlerSource = readFileSync(new URL('./auth-native/worker/public-auth-handler.mjs', import.meta.url), 'utf8');
+  const sent = new Set(
+    [...handlerSource.matchAll(/internal\/firebase\/rate[\s\S]{0,120}?operation:\s*'([a-z-]+)'/g)].map(match => match[1])
+  );
+  assert.ok(sent.has('facebook'), 'the handler is expected to send a facebook operation');
+  const state = setup();
+  for (const operation of sent) {
+    await assert.doesNotReject(
+      state.engine.consumeFirebaseOperation({ operation, email: `${operation}@example.com` }, state.context),
+      `rate operation '${operation}' has no definition in FIREBASE_OPERATION_LIMITS`
+    );
+  }
 });
 
 test('guided profile is validated, verification-ticket scoped, and readable only through the canonical account session', async () => {

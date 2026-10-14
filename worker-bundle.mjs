@@ -6465,6 +6465,14 @@ var FIREBASE_OPERATION_LIMITS = Object.freeze({
     Object.freeze({ scope: "firebase-google-device-15m", source: "device", limit: 30, windowMs: 15 * 60 * 1e3 }),
     Object.freeze({ scope: "firebase-google-global-minute", source: "global", limit: 180, windowMs: 60 * 1e3 })
   ]),
+  // The /facebook handler asks for a 'facebook' slot before it calls Firebase.
+  // Without an entry here consumeFirebaseOperation throws INVALID_INPUT and the
+  // whole sign-in fails before Facebook is ever reached (owner bug 2026-10-14).
+  facebook: Object.freeze([
+    Object.freeze({ scope: "firebase-facebook-ip-15m", source: "ip", limit: 60, windowMs: 15 * 60 * 1e3 }),
+    Object.freeze({ scope: "firebase-facebook-device-15m", source: "device", limit: 30, windowMs: 15 * 60 * 1e3 }),
+    Object.freeze({ scope: "firebase-facebook-global-minute", source: "global", limit: 180, windowMs: 60 * 1e3 })
+  ]),
   "password-reset": Object.freeze([
     Object.freeze({ scope: "firebase-reset-email-hour", source: "email", limit: 3, windowMs: 60 * 60 * 1e3 }),
     Object.freeze({ scope: "firebase-reset-email-day", source: "email", limit: 8, windowMs: 24 * 60 * 60 * 1e3 }),
