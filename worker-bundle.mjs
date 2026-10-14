@@ -21969,9 +21969,14 @@ var VerificationOrchestrator = class {
         const lowestRatio = Math.min(ratio3(remoteQuota), ratio3(localQuota));
         const lowPenalty = lowestRatio <= this.config.policy.lowQuotaRatio ? 1e4 : (1 - lowestRatio) * 100;
         const failureTotal = Number(state.successCount || 0) + Number(state.failureCount || 0);
-        const failurePenalty = failureTotal ? Number(state.failureCount || 0) / failureTotal * 500 : 0;
-        const circuitPenalty = state.circuit === "half-open" ? 5e3 : 0;
-        return { entry, provider, score: entry.priority + lowPenalty + failurePenalty + circuitPenalty + Number(state.latencyEwmaMs || 0) / 50 };
+        const failurePenalty = failureTotal ? Number(state.failureCount || 0) / failureTotal * 5 : 0;
+        const latencyPenalty = Math.min(Number(state.latencyEwmaMs || 0) / 50, 5);
+        return {
+          entry,
+          provider,
+          probe: state.circuit === "half-open",
+          score: entry.priority + lowPenalty + failurePenalty + latencyPenalty
+        };
       } catch (cause) {
         const failure = providerFailure(cause);
         await this.#record(entry, {
@@ -21988,7 +21993,7 @@ var VerificationOrchestrator = class {
         return null;
       }
     }));
-    return rows.filter(Boolean).sort((left, right) => left.score - right.score || left.entry.priority - right.entry.priority);
+    return rows.filter(Boolean).sort((left, right) => Number(right.probe) - Number(left.probe) || left.score - right.score || left.entry.priority - right.entry.priority);
   }
   async requestVerification(input = {}, requestContext = {}) {
     const identity = await this.#identity(input, requestContext);

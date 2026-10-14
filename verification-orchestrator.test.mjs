@@ -284,6 +284,28 @@ test('hard and temporary provider failures retry intelligently then fail over', 
   });
 });
 
+test('a repaired provider is probed again instead of staying circuit-open forever', async () => {
+  const first = new MockProvider({ id: 'otp-a', sendPlan: ['hard'] });
+  const second = new MockProvider({ id: 'otp-b' });
+  const app = setup({ providers: [first, second] });
+
+  await app.orchestrator.requestVerification(identity, context);
+  assert.equal(first.sends.length, 1);
+  assert.equal(second.sends.length, 1, 'the healthy fallback carries the send');
+  assert.equal((await app.repository.providerSnapshot({ providerId: 'otp-a', now: app.now() })).circuit, 'open');
+
+  app.advance(301_000);
+  await app.orchestrator.requestVerification(identity, context);
+  assert.equal(first.sends.length, 2, 'the expired cooldown is probed rather than skipped');
+
+  // The credential is repaired and the probe succeeds, so the slot closes and
+  // takes the next send instead of staying penalised behind the healthy fallback.
+  app.advance(61_000);
+  await app.orchestrator.requestVerification(identity, context);
+  assert.equal(first.sends.length, 3);
+  assert.equal((await app.repository.providerSnapshot({ providerId: 'otp-a', now: app.now() })).circuit, 'closed');
+});
+
 test('backup sends enforce independent Firebase-user, IP, and device limits', async t => {
   const scopedIdentity = index => ({
     ...identity,

@@ -212,10 +212,27 @@ export class VerificationOrchestrator {
         if (availability?.available !== true || state.circuit === 'open' || Number(remoteQuota?.remaining || 0) <= 0 || localQuota.remaining <= 0) return null;
         const lowestRatio = Math.min(ratio(remoteQuota), ratio(localQuota));
         const lowPenalty = lowestRatio <= this.config.policy.lowQuotaRatio ? 10_000 : (1 - lowestRatio) * 100;
+        // Priority is the operator's explicit ordering and the gap between
+        // neighbouring slots is 10, so a soft health signal must stay under it.
+        // Left unbounded, one hard failure (500) or a slow reading (latency/50)
+        // demotes a slot permanently: it is never retried, so its counters never
+        // recover and a repaired credential is never used again. Demotion is the
+        // circuit breaker's job — it opens after `circuitFailureThreshold`
+        // consecutive failures and probes again after the cooldown — so these two
+        // only break ties between equally ranked slots. `lowPenalty` stays large
+        // on purpose: exhausted capacity is a hard constraint, not a preference.
         const failureTotal = Number(state.successCount || 0) + Number(state.failureCount || 0);
-        const failurePenalty = failureTotal ? (Number(state.failureCount || 0) / failureTotal) * 500 : 0;
-        const circuitPenalty = state.circuit === 'half-open' ? 5_000 : 0;
-        return { entry, provider, score: entry.priority + lowPenalty + failurePenalty + circuitPenalty + (Number(state.latencyEwmaMs || 0) / 50) };
+        const failurePenalty = failureTotal ? (Number(state.failureCount || 0) / failureTotal) * 5 : 0;
+        const latencyPenalty = Math.min(Number(state.latencyEwmaMs || 0) / 50, 5);
+        // A half-open circuit is the probe that closes it, so it is the one slot
+        // that must actually be tried. Probe it first; if it fails the circuit
+        // reopens and the next provider carries the send as before.
+        return {
+          entry,
+          provider,
+          probe: state.circuit === 'half-open',
+          score: entry.priority + lowPenalty + failurePenalty + latencyPenalty
+        };
       } catch (cause) {
         const failure = providerFailure(cause);
         await this.#record(entry, {
@@ -232,7 +249,7 @@ export class VerificationOrchestrator {
         return null;
       }
     }));
-    return rows.filter(Boolean).sort((left, right) => left.score - right.score || left.entry.priority - right.entry.priority);
+    return rows.filter(Boolean).sort((left, right) => (Number(right.probe) - Number(left.probe)) || left.score - right.score || left.entry.priority - right.entry.priority);
   }
 
   async requestVerification(input = {}, requestContext = {}) {
