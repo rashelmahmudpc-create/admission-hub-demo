@@ -298,7 +298,9 @@ test('Backup OTP email carries the AdmissionSky brand, one big code box, and dar
   assert.match(markup, /font-size:48px/);
   assert.match(markup, /letter-spacing:10px/);
   assert.match(markup, /class="ah-otp-box"/);
-  assert.match(markup, /-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif/);
+  assert.match(markup, /'Hind Siliguri','Noto Sans Bengali','Nirmala UI',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif/);
+  // Bengali clusters collide under tightened tracking, so the heading keeps the default.
+  assert.equal(/ah-heading[^>]*letter-spacing/.test(markup), false);
   assert.equal(/#fff2d9|#e4a620|#856221/i.test(html), false);
   assert.equal(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(html), false);
   assert.equal(/❓|🔒|✅|⚠/.test(html), false);

@@ -102,7 +102,12 @@ function appsScriptWebAppUrl(value) {
 
 const validEmailAddress = value => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(value || '')) && String(value).length <= 254;
 
-const OTP_EMAIL_FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
+// Bengali first: the system UI stacks carry no Bengali coverage on Android or
+// Windows, so a body of Bengali text falls back to whatever the client picks and
+// renders with the wrong metrics (and, on a bare Linux/thin client, as tofu). The
+// Latin-only families stay behind them so the digits and the brand still get a
+// deliberate face on the clients that lack the Bengali ones.
+const OTP_EMAIL_FONT = "'Hind Siliguri','Noto Sans Bengali','Nirmala UI',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
 const OTP_EMAIL_MONO = "'SF Mono','Roboto Mono','DejaVu Sans Mono',Menlo,Consolas,'Courier New',monospace";
 const OTP_EMAIL_INK = '#101c19';
 const OTP_EMAIL_MUTED = '#6b7b77';
@@ -200,7 +205,10 @@ const otpEmailBody = (code, minutes, recipientName = '') => {
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="ah-card" bgcolor="#ffffff" style="width:100%;max-width:560px;background-color:#ffffff;border-radius:16px;">
 
 <tr><td class="ah-pad" style="padding:34px 28px 0;">
-<p class="ah-heading" style="margin:0;font-family:${OTP_EMAIL_FONT};font-size:20px;line-height:1.45;font-weight:600;letter-spacing:-0.2px;color:${OTP_EMAIL_INK};">${greeting}</p>
+<!-- Bengali clusters carry their matras and reph above and below the baseline, so
+     tightening the tracking makes them collide. The greeting is Bengali whenever a
+     name is present, so it keeps the default tracking. -->
+<p class="ah-heading" style="margin:0;font-family:${OTP_EMAIL_FONT};font-size:20px;line-height:1.5;font-weight:600;color:${OTP_EMAIL_INK};">${greeting}</p>
 <p class="ah-body-text" style="margin:10px 0 0;font-family:${OTP_EMAIL_FONT};font-size:15px;line-height:1.7;font-weight:400;color:#48534f;">আপনার ${OTP_EMAIL_APP} অ্যাকাউন্ট যাচাই করতে নিচের কোডটি ব্যবহার করুন।</p>
 </td></tr>
 
