@@ -243,13 +243,17 @@ test('Brevo OTP provider sends through the Brevo API and derives quota from acco
     declaredDailyQuota: 300,
     fetchImpl: async (url, init) => {
       calls.push({ url: String(url), init });
-      if (String(url).endsWith('/v3/senders')) return json({ senders: [{ email: 'sender@example.com', active: true }] });
+      if (String(url).endsWith('/v3/senders')) return json({ senders: [{ id: 1, name: 'Admission hub', email: 'sender@example.com', active: true }] });
       if (String(url).endsWith('/v3/account')) return json({ plan: [{ type: 'free', credits: 299, creditsType: 'sendLimit' }] });
       return json({ messageId: '<202609171120.63980787322@smtp-relay.mailin.fr>' }, 201);
     }
   });
 
   assert.equal((await provider.checkAvailability()).available, true);
+  const rename = calls.find(call => /\/v3\/senders\/1$/.test(call.url));
+  assert.ok(rename, 'expected the drifted sender name to be corrected on the probe');
+  assert.equal(rename.init.method, 'PUT');
+  assert.equal(JSON.parse(rename.init.body).name, 'AdmissionSky');
   const quota = await provider.getRemainingQuota();
   assert.equal(quota.remaining, 299);
   assert.equal(quota.limit, 300);
@@ -267,6 +271,23 @@ test('Brevo OTP provider sends through the Brevo API and derives quota from acco
   assert.match(body.subject, /AdmissionSky — আপনার যাচাইকরণ কোড/);
   assert.match(body.htmlContent, /AdmissionSky/);
   assert.equal(calls.every(call => call.init.redirect === 'manual'), true);
+});
+
+test('Brevo OTP provider leaves an already-correct sender name untouched', async () => {
+  const calls = [];
+  const provider = new BrevoOtpVerificationProvider({
+    id: 'otp-a',
+    apiKey: KEY,
+    fromAddress: 'sender@example.com',
+    declaredDailyQuota: 300,
+    fetchImpl: async (url, init) => {
+      calls.push({ url: String(url), init });
+      return json({ senders: [{ id: 1, name: 'AdmissionSky', email: 'sender@example.com', active: true }] });
+    }
+  });
+
+  assert.equal((await provider.checkAvailability()).available, true);
+  assert.equal(calls.some(call => call.init.method === 'PUT'), false);
 });
 
 test('Backup OTP email carries the AdmissionSky brand, one big code box, and dark-mode styles', () => {

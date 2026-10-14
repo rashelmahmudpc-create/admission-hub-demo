@@ -280,6 +280,27 @@ export class BrevoOtpVerificationProvider {
     };
   }
 
+  // Brevo stores a name against the sender record, and the account had drifted to
+  // a vendor-adjacent one, so a name that is not the brand leaks into every OTP.
+  // Sync it on the probe that precedes every send, the way the AgentMail provider
+  // syncs its inbox display_name, so the account cannot drift back on its own. The
+  // write only happens while the value differs, and a failure never blocks a send.
+  async #syncSenderName(sender) {
+    if (!sender || String(sender.name || '').trim() === OTP_EMAIL_APP) return true;
+    try {
+      const response = await this.fetch(`https://api.brevo.com/v3/senders/${encodeURIComponent(sender.id)}`, {
+        method: 'PUT',
+        redirect: 'manual',
+        headers: this.#headers(true),
+        body: JSON.stringify({ name: OTP_EMAIL_APP, email: this.fromAddress }),
+        signal: AbortSignal.timeout(15_000)
+      });
+      return response.ok;
+    } catch {
+      return false;
+    }
+  }
+
   async checkAvailability() {
     if (!this.configured) return { available: false, code: 'NOT_CONFIGURED' };
     const payload = await fetchJson(this.fetch, 'https://api.brevo.com/v3/senders', { method: 'GET', headers: this.#headers() });
@@ -287,6 +308,7 @@ export class BrevoOtpVerificationProvider {
       ? payload.senders.find(item => String(item?.email || '').toLowerCase() === this.fromAddress.toLowerCase())
       : null;
     const ready = sender?.active === true;
+    if (ready) await this.#syncSenderName(sender);
     return { available: ready, code: ready ? 'READY' : 'SENDER_NOT_VERIFIED' };
   }
 
