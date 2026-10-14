@@ -286,13 +286,17 @@ test('Backup OTP email carries the AdmissionSky brand, one big code box, and dar
   assert.match(text, /মাহমুদ রাসেল/);
   assert.match(text, /123456/);
 
-  // The owner asked for no logo for now: the old banner <img> and lock glyph are gone.
+  // The owner asked for the onboarding brand mark in the header. The old
+  // "Admission Hub" banner asset must stay out, and inline SVG stays out because
+  // Gmail and Outlook strip it, so the mark ships as a hosted PNG.
+  assert.match(html, /icons\/email-mark\.png/);
   assert.equal(/email-logo\.png/.test(html), false);
   assert.equal(/data:image\/svg\+xml;base64,/.test(html), false);
 
   // Design contract, checked against markup only so the style block cannot
   // satisfy an assertion that the inline layout should.
   const markup = html.replace(/<style>[\s\S]*?<\/style>/, '');
+  assert.match(markup, /Admission<span style="color:#2F6BFF;">Sky<\/span>/);
   assert.equal(/border[^;"]*(dashed|dotted)/.test(html), false);
   assert.match(markup, /'SF Mono','Roboto Mono'/);
   assert.match(markup, /font-size:48px/);

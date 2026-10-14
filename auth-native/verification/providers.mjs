@@ -111,6 +111,10 @@ const OTP_EMAIL_FONT = "'Hind Siliguri','Noto Sans Bengali','Nirmala UI',-apple-
 const OTP_EMAIL_MONO = "'SF Mono','Roboto Mono','DejaVu Sans Mono',Menlo,Consolas,'Courier New',monospace";
 const OTP_EMAIL_INK = '#101c19';
 const OTP_EMAIL_MUTED = '#6b7b77';
+// The onboarding brand mark, rendered from the same inline SVG the welcome flow
+// uses. Served as a PNG because Gmail and Outlook strip inline SVG.
+const OTP_EMAIL_MARK_URL = 'https://admissionsky.pages.dev/icons/email-mark.png';
+const OTP_EMAIL_WORDMARK_ACCENT = '#2F6BFF';
 
 // The product the student actually sees is AdmissionSky. Every sender name,
 // subject, and body string uses this one constant so the brand cannot drift
@@ -204,7 +208,14 @@ const otpEmailBody = (code, minutes, recipientName = '') => {
 
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="ah-card" bgcolor="#ffffff" style="width:100%;max-width:560px;background-color:#ffffff;border-radius:16px;">
 
-<tr><td class="ah-pad" style="padding:34px 28px 0;">
+<tr><td class="ah-pad" style="padding:30px 28px 0;">
+<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+<td width="52" valign="middle" style="width:52px;"><img src="${OTP_EMAIL_MARK_URL}" width="52" height="52" alt="${OTP_EMAIL_APP}" style="display:block;width:52px;height:52px;border:0;border-radius:16px;" /></td>
+<td valign="middle" style="padding-left:13px;font-family:${OTP_EMAIL_FONT};font-size:22px;line-height:1.2;font-weight:700;color:${OTP_EMAIL_INK};letter-spacing:-0.2px;">Admission<span style="color:${OTP_EMAIL_WORDMARK_ACCENT};">Sky</span></td>
+</tr></table>
+</td></tr>
+
+<tr><td class="ah-pad" style="padding:22px 28px 0;">
 <!-- Bengali clusters carry their matras and reph above and below the baseline, so
      tightening the tracking makes them collide. The greeting is Bengali whenever a
      name is present, so it keeps the default tracking. -->
