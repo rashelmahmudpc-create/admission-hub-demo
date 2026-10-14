@@ -5,6 +5,8 @@ on:
   pull_request:
     paths:
       - 'auth-native/**'
+      - 'apps-script/**'
+      - 'otp-b-lock.test.mjs'
       - 'native-auth*.test.mjs'
       - 'firebase-auth-ui.test.mjs'
       - 'multimethod-auth-ui.test.mjs'
@@ -63,3 +65,5 @@ jobs:
         run: npm run test:identity
       - name: Verify legacy account implementation remains retired
         run: node account-retirement.test.mjs
+      - name: Verify the locked Gmail otp-b backup mailer stays wired
+        run: node --test otp-b-lock.test.mjs
