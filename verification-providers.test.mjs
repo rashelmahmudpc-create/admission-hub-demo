@@ -614,6 +614,41 @@ test('AgentMail owns otp-e and sends from an inbox instead of a verified domain'
   assert.equal(halfBound[4].configured, false);
 });
 
+test('AgentMail syncs the inbox display name to the brand before reporting ready', async () => {
+  const calls = [];
+  const inbox = { inbox_id: 'admission-hub@agentmail.to', display_name: 'AgentMail' };
+  const make = (getPayload, patchPayload) => new AgentMailOtpVerificationProvider({
+    id: 'otp-e',
+    apiKey: KEY,
+    inboxId: 'admission-hub@agentmail.to',
+    declaredDailyQuota: 100,
+    fetchImpl: async (url, init = {}) => {
+      calls.push({ url: String(url), method: init.method || 'GET', body: init.body });
+      return json(init.method === 'PATCH' ? patchPayload : getPayload);
+    }
+  });
+
+  // A vendor default name is overwritten once, and only once: the PATCH carries the
+  // brand and the probe still reports ready so the send is never blocked.
+  const drifted = await make(inbox, { inbox_id: inbox.inbox_id, display_name: 'AdmissionSky' }).checkAvailability();
+  assert.deepEqual(drifted, { available: true, code: 'READY' });
+  const patch = calls.filter(call => call.method === 'PATCH');
+  assert.equal(patch.length, 1);
+  assert.equal(JSON.parse(patch[0].body).display_name, 'AdmissionSky');
+
+  // An already-branded inbox costs no write at all.
+  calls.length = 0;
+  const settled = await make({ ...inbox, display_name: 'AdmissionSky' }, inbox).checkAvailability();
+  assert.deepEqual(settled, { available: true, code: 'READY' });
+  assert.equal(calls.filter(call => call.method === 'PATCH').length, 0);
+
+  // A refused write is reported but never turns a usable inbox into an outage.
+  calls.length = 0;
+  const refused = await make(inbox, { inbox_id: inbox.inbox_id, display_name: 'AgentMail' }).checkAvailability();
+  assert.deepEqual(refused, { available: true, code: 'DISPLAY_NAME_UNSET' });
+  assert.equal(calls.filter(call => call.method === 'PATCH').length, 1);
+});
+
 test('MailerSend owns otp-f and sends from a MailerSend-verified trial domain', async () => {
   const bound = createConfiguredVerificationProviders({
     MAILERSEND_API_KEY: KEY,

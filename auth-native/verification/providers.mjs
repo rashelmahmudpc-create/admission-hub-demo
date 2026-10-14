@@ -410,6 +410,36 @@ export class AgentMailOtpVerificationProvider {
   // AgentMail signs the sender with the inbox the message is sent from, so there is
   // no separate from-address to verify. A read of the inbox is the cheapest proof
   // that the key is live and scoped to an inbox this worker may send from.
+  //
+  // The recipient-visible name is the inbox display_name, which AgentMail defaults
+  // to "AgentMail" -- a vendor name leaking into every OTP. There is no per-message
+  // from field to override it, so sync it here, on the probe that precedes every
+  // send, instead of depending on an operator to PATCH it by hand. The write only
+  // happens while the value differs, and a failure never blocks the send.
+  async #syncDisplayName(inbox) {
+    const current = String(inbox?.display_name ?? inbox?.displayName ?? '').trim();
+    if (current === OTP_EMAIL_APP) return true;
+    try {
+      const response = await this.fetch(`https://api.agentmail.to/inboxes/${encodeURIComponent(this.inboxId)}`, {
+        method: 'PATCH',
+        headers: {
+          Accept: 'application/json',
+          'Cache-Control': 'no-store',
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.apiKey}`
+        },
+        body: JSON.stringify({ display_name: OTP_EMAIL_APP }),
+        signal: AbortSignal.timeout(15_000)
+      });
+      if (!response.ok) return false;
+      let payload = {};
+      try { payload = await response.json(); } catch {}
+      return String(payload?.display_name ?? payload?.displayName ?? '').trim() === OTP_EMAIL_APP;
+    } catch {
+      return false;
+    }
+  }
+
   async checkAvailability() {
     if (!this.configured) return { available: false, code: 'NOT_CONFIGURED' };
     const payload = await fetchJson(this.fetch, `https://api.agentmail.to/inboxes/${encodeURIComponent(this.inboxId)}`, {
@@ -417,7 +447,9 @@ export class AgentMailOtpVerificationProvider {
       headers: { Accept: 'application/json', 'Cache-Control': 'no-store', Authorization: `Bearer ${this.apiKey}` }
     });
     const ready = String(payload?.inbox_id || payload?.inboxId || '') === this.inboxId;
-    return { available: ready, code: ready ? 'READY' : 'INBOX_NOT_AVAILABLE' };
+    if (!ready) return { available: false, code: 'INBOX_NOT_AVAILABLE' };
+    const named = await this.#syncDisplayName(payload);
+    return { available: true, code: named ? 'READY' : 'DISPLAY_NAME_UNSET' };
   }
 
   async getRemainingQuota() {
