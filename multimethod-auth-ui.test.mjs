@@ -36,24 +36,30 @@ function setup({ methods = {}, signed = false, passkeyCredentials = null, backup
     : [];
   let googleCallback = null;
   let tokenCallback = null;
-  dom.window.google = {
-    accounts: {
-      id: {
-        initialize(options) { googleCallback = options.callback; },
-        renderButton(host) {
-          const button = dom.window.document.createElement('button');
-          button.type = 'button';
-          button.textContent = 'Continue with Google';
-          host.append(button);
+  /* Google sign-in now runs through Firebase's authDomain, not GSI on our own
+   * origin, so the mock provides firebase.auth().signInWithPopup and returns a
+   * Google access token, which is what POST /google accepts. */
+  dom.window.firebase = {
+    apps: [],
+    initializeApp(options, name) {
+      const app = { name: name || '[DEFAULT]', options };
+      this.apps.push(app);
+      return app;
+    },
+    auth(app) {
+      return {
+        async signInWithPopup(provider) {
+          if (typeof dom.window.__googlePopupFailure === 'function') {
+            return dom.window.__googlePopupFailure(provider);
+          }
+          const token = dom.window.__googleAccessToken || `google-access-${'a'.repeat(32)}`;
+          return { credential: { accessToken: token } };
         }
-      },
-      oauth2: {
-        initTokenClient(options) {
-          tokenCallback = options.callback;
-          return { requestAccessToken() { tokenCallback({ access_token: `google-access-${'a'.repeat(32)}` }); } };
-        }
-      }
+      };
     }
+  };
+  dom.window.firebase.auth.GoogleAuthProvider = function GoogleAuthProvider() {
+    this.addScope = () => this;
   };
   if (passkeyCredentials) {
     Object.defineProperty(dom.window, 'isSecureContext', { value: true, configurable: true });
@@ -119,7 +125,15 @@ function setup({ methods = {}, signed = false, passkeyCredentials = null, backup
     return reply(404, { error: { message: 'not found' } });
   };
   dom.window.eval(script);
-  return { dom, window: dom.window, document: dom.window.document, calls, googleCredential: token => googleCallback?.({ credential: token }) };
+  /* Drives the real user path: the mocked popup returns this access token and
+   * the Google button is clicked, which is what a student does. */
+  const googleCredential = token => {
+    dom.window.__googleAccessToken = token;
+    const button = dom.window.document.querySelector('[data-role="google-button"] button')
+      || dom.window.document.querySelector('[data-role="welcome-google-button"] button');
+    button?.click();
+  };
+  return { dom, window: dom.window, document: dom.window.document, calls, googleCredential };
 }
 
 test('Google is capability-gated, uses Firebase endpoint, and keeps tokens out of browser storage', async () => {
@@ -127,12 +141,12 @@ test('Google is capability-gated, uses Firebase endpoint, and keeps tokens out o
   const app = setup({ methods: { google: { available: true, clientId } } });
   await waitFor(() => app.document.querySelector('[data-role="google-button"] button'));
   app.window.AdmissionAccount.open();
-  const idToken = `google-id-${'x'.repeat(32)}`;
-  app.googleCredential(idToken);
+  const accessToken = `google-access-${'x'.repeat(32)}`;
+  app.googleCredential(accessToken);
   await waitFor(() => app.calls.some(call => call.path.endsWith('/google')));
   await waitFor(() => app.document.querySelector('[data-view="signed"]').hidden === false);
   const call = app.calls.find(item => item.path.endsWith('/google'));
-  assert.deepEqual(call.body, { idToken });
+  assert.deepEqual(call.body, { accessToken });
   assert.equal(app.window.AdmissionAccount.isVerified(), true);
   assert.equal('localStorage' in call, false);
   assert.equal(app.window.localStorage.length, 0);
@@ -140,18 +154,13 @@ test('Google is capability-gated, uses Firebase endpoint, and keeps tokens out o
   app.dom.window.close();
 });
 
-test('a Google failure reported only through error_callback surfaces instead of hanging forever', async () => {
+test('a Google popup failure surfaces a friendly message instead of hanging forever', async () => {
   const clientId = '123456789012-exampleclientidentifier.apps.googleusercontent.com';
   const app = setup({ methods: { google: { available: true, clientId } } });
   await waitFor(() => app.document.querySelector('[data-role="google-button"] button'));
-  // GSI reports an origin_mismatch (or a blocked popup) ONLY through
-  // error_callback; the token callback never fires. So the mock stays silent
-  // when no error_callback is registered, and the promise would never settle.
-  app.window.google.accounts.oauth2.initTokenClient = options => ({
-    requestAccessToken() {
-      if (typeof options.error_callback === 'function') options.error_callback({ type: 'origin_mismatch' });
-    }
-  });
+  // A blocked or dismissed popup rejects signInWithPopup. Without handling, the
+  // button would spin with no message, which reads as a frozen app.
+  app.window.__googlePopupFailure = () => Promise.reject(Object.assign(new Error('popup blocked'), { code: 'auth/popup-blocked' }));
   const settled = await Promise.race([
     app.window.AdmissionSkyBridge.google().then(() => 'resolved', error => `rejected:${error.message}`),
     sleep(1500).then(() => 'hung')

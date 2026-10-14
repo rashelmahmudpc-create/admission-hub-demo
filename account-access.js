@@ -57,6 +57,7 @@
     googleClientId: '',
     googleReady: false,
     googlePromise: null,
+    firebaseAuthPromise: null,
     facebookAppId: '',
     facebookPromise: null
   };
@@ -1589,76 +1590,130 @@
     finally { setBusy(false); }
   }
 
-  const handleGoogleCredential = async response => {
-    const credential = String(response?.credential || '');
-    if (state.busy || credential.length < 20) return message('Google সাইন-ইন সম্পন্ন হয়নি—ইমেইল দিয়ে চেষ্টা করুন।', 'error');
+  /* Google sign-in runs through Firebase's own authDomain rather than through
+   * GSI on our own origin. Google only accepts the OAuth handshake on an origin
+   * the OAuth client authorises. This project's client authorises
+   * `admissionsky-997d2.firebaseapp.com` (Firebase provisions it) but NOT
+   * `admissionsky.pages.dev`, so GSI here is refused with "The given origin is
+   * not allowed for the given client ID" — measured live 2026-10-14, on both
+   * the existing client and a newly created one. The Firebase SDK instead opens
+   * its handler on the authDomain, which IS authorised, and hands the result
+   * back to this page. Firebase returns a Google access token, which is exactly
+   * what POST /google accepts, so no backend change is needed. */
+  const GOOGLE_AUTH_DOMAIN = 'admissionsky-997d2.firebaseapp.com';
+  const GOOGLE_AUTH_PROJECT = 'admissionsky-997d2';
+  /* Public Firebase Web API key of the auth project. Not a confidential secret:
+   * the same value is inlined in .github/workflows/deploy-pages-worker.yml. */
+  const GOOGLE_AUTH_API_KEY = 'AIzaSyCMYPy-qANPN1pPPI1B957wwKezmotK_NI';
+  const FIREBASE_SDK_VERSION = '10.12.2';
+
+  const loadScriptOnce = src => new Promise((resolve, reject) => {
+    const existing = document.querySelector(`script[data-ah-src="${src}"]`);
+    if (existing) {
+      if (existing.dataset.ahLoaded === '1') return resolve(true);
+      existing.addEventListener('load', () => resolve(true), { once: true });
+      existing.addEventListener('error', () => reject(new Error(`load failed: ${src}`)), { once: true });
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = src;
+    script.async = true;
+    script.dataset.ahSrc = src;
+    script.onload = () => { script.dataset.ahLoaded = '1'; resolve(true); };
+    script.onerror = () => reject(new Error(`load failed: ${src}`));
+    document.head.append(script);
+  });
+
+  const loadFirebaseAuth = () => {
+    if (state.firebaseAuthPromise) return state.firebaseAuthPromise;
+    state.firebaseAuthPromise = (async () => {
+      /* app-compat is usually already on the page (the app preloads it for
+       * analytics), so only fetch what is actually missing. A host or test that
+       * injects firebase.auth is used as-is. */
+      if (!window.firebase) {
+        /* Self-hosted copy first (works offline and needs no third-party origin);
+         * gstatic is the fallback. */
+        let base = './sdk';
+        try { await loadScriptOnce(`${base}/firebase-app-compat.js`); }
+        catch (_) {
+          base = `https://www.gstatic.com/firebasejs/${FIREBASE_SDK_VERSION}`;
+          await loadScriptOnce(`${base}/firebase-app-compat.js`);
+        }
+      }
+      if (!(window.firebase && typeof window.firebase.auth === 'function')) {
+        await loadScriptOnce('./sdk/firebase-auth-compat.js');
+      }
+      if (!window.firebase || typeof window.firebase.auth !== 'function') throw new Error('Firebase Auth unavailable');
+      const cfg = { apiKey: GOOGLE_AUTH_API_KEY, authDomain: GOOGLE_AUTH_DOMAIN, projectId: GOOGLE_AUTH_PROJECT };
+      const named = (window.firebase.apps || []).find(app => app.name === 'ah-google');
+      const app = named || window.firebase.initializeApp(cfg, 'ah-google');
+      return window.firebase.auth(app);
+    })();
+    return state.firebaseAuthPromise;
+  };
+
+  const googleMessage = error => {
+    const code = String(error?.code || '');
+    if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
+      return 'Google জানালাটি বন্ধ হয়ে গেছে—আবার চেষ্টা করো বা ইমেইল দিয়ে ঢুকো।';
+    }
+    if (code === 'auth/popup-blocked') {
+      return 'Google জানালা খোলা যায়নি—browser-এ popup অনুমতি দাও বা ইমেইল দিয়ে ঢুকো।';
+    }
+    return 'Google লগইন এই মুহূর্তে খুলছে না—আবার চেষ্টা করো বা ইমেইল দিয়ে ঢুকো।';
+  };
+
+  const googleAccessToken = async () => {
+    const auth = await loadFirebaseAuth();
+    const provider = new window.firebase.auth.GoogleAuthProvider();
+    provider.addScope('email');
+    provider.addScope('profile');
+    let credential;
+    try {
+      credential = await auth.signInWithPopup(provider);
+    } catch (error) {
+      throw new Error(googleMessage(error));
+    }
+    const token = String(credential?.credential?.accessToken || '');
+    if (token.length < 20) throw new Error('Google অনুমতি পাওয়া যায়নি—আবার চেষ্টা করো বা ইমেইল দিয়ে ঢুকো।');
+    return token;
+  };
+
+  const signInWithGoogle = async () => {
+    if (state.busy) return;
     setBusy(true);
     try {
-      const result = await api('/google', { method: 'POST', body: { idToken: credential } });
-      await establishSession(result, 'Google দিয়ে তোমার একই account-এ প্রবেশ হয়েছে।');
+      const accessToken = await googleAccessToken();
+      const result = await api('/google', { method: 'POST', body: { accessToken } });
+      await establishSession(result, 'Google দিয়ে তোমার account-এ প্রবেশ হয়েছে।');
     } catch (error) {
-      if (error.code === 'ACCOUNT_LINK_REQUIRED') showView('google-link');
-      message(friendlyError(error), 'error');
+      if (error?.code === 'ACCOUNT_LINK_REQUIRED') showView('google-link');
+      message(error?.code ? friendlyError(error) : googleMessage(error), 'error');
     } finally { setBusy(false); }
   };
 
   const loadGoogle = clientId => {
-    if (!clientId || state.googlePromise) return state.googlePromise || Promise.resolve(false);
-    state.googleClientId = clientId;
-    state.googlePromise = new Promise(resolve => {
-      const initialize = () => {
-        try {
-          if (!window.google?.accounts?.id) throw new Error('Google Identity unavailable');
-          window.google.accounts.id.initialize({
-            client_id: clientId,
-            callback: handleGoogleCredential,
-            ux_mode: 'popup',
-            cancel_on_tap_outside: false,
-            context: 'signin'
-          });
-          const hosts = [
-            $('[data-role="google-button"]'),
-            $('[data-role="welcome-google-button"]')
-          ].filter(Boolean);
-          hosts.forEach(host => {
-            host.textContent = '';
-            const measuredWidth = Math.round(host.getBoundingClientRect().width || 280);
-            const buttonWidth = Math.max(220, Math.min(300, measuredWidth));
-            window.google.accounts.id.renderButton(host, {
-              type: 'standard', theme: 'outline', size: 'large', shape: 'pill', text: 'continue_with', width: buttonWidth
-            });
-            host.hidden = false;
-          });
-          state.googleReady = true;
-          resolve(true);
-        } catch (_) { resolve(false); }
-      };
-      if (window.google?.accounts?.id) return initialize();
-      const script = document.createElement('script');
-      script.src = 'https://accounts.google.com/gsi/client';
-      script.async = true;
-      script.defer = true;
-      script.referrerPolicy = 'no-referrer';
-      const timer = setTimeout(() => resolve(false), 10000);
-      script.onload = () => { clearTimeout(timer); initialize(); };
-      script.onerror = () => { clearTimeout(timer); resolve(false); };
-      document.head.append(script);
-    }).then(ready => {
-      if (!ready) {
-        const help = $('[data-role="method-help"]');
-        help.textContent = 'Google popup এই browser-এ খোলা যায়নি—Passkey বা Email ব্যবহার করো।';
-        help.hidden = false;
-        const welcome = $('[data-role="welcome-google-button"]');
-        if (welcome && !welcome.querySelector('button')) {
-          const fallback = document.createElement('button');
-          fallback.type = 'button';
-          fallback.className = 'ah-account-secondary';
-          fallback.disabled = true;
-          fallback.textContent = 'Continue with Google';
-          welcome.append(fallback);
-        }
-      }
-      return ready;
+    if (state.googlePromise) return state.googlePromise;
+    if (clientId) state.googleClientId = clientId;
+    state.googlePromise = Promise.resolve(true).then(() => {
+      const hosts = [
+        $('[data-role="google-button"]'),
+        $('[data-role="welcome-google-button"]')
+      ].filter(Boolean);
+      hosts.forEach(host => {
+        if (host.querySelector('button[data-ah-google]')) return;
+        host.textContent = '';
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'ah-account-secondary';
+        button.dataset.ahGoogle = '1';
+        button.textContent = 'Continue with Google';
+        button.addEventListener('click', () => { signInWithGoogle(); });
+        host.append(button);
+        host.hidden = false;
+      });
+      state.googleReady = true;
+      return true;
     });
     return state.googlePromise;
   };
@@ -1717,28 +1772,8 @@
   };
 
   const linkGoogle = async (email, password) => {
-    if (!window.google?.accounts?.oauth2 || !state.googleClientId) throw new Error('Google popup এখন পাওয়া যাচ্ছে না—ইমেইল লগইন ব্যবহার করুন।');
-    const accessToken = await new Promise((resolve, reject) => {
-      let settled = false;
-      let timer;
-      const finish = (action, value) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        action(value);
-      };
-      const client = window.google.accounts.oauth2.initTokenClient({
-        client_id: state.googleClientId,
-        scope: 'openid email profile',
-        callback: result => {
-          if (result?.error || !result?.access_token) finish(reject, new Error('Google অনুমতি পাওয়া যায়নি।'));
-          else finish(resolve, result.access_token);
-        },
-        error_callback: () => finish(reject, new Error('Google popup বন্ধ বা block হয়েছে—আবার চেষ্টা করুন।'))
-      });
-      timer = setTimeout(() => finish(reject, new Error('Google অনুমতির সময় শেষ হয়েছে—আবার চেষ্টা করুন।')), 60000);
-      try { client.requestAccessToken({ prompt: 'select_account' }); }
-      catch (_) { finish(reject, new Error('Google popup খোলা যায়নি—browser popup অনুমতি দিন।')); }
+    const accessToken = await googleAccessToken().catch(error => {
+      throw new Error(error?.code ? googleMessage(error) : 'Google popup এখন পাওয়া যাচ্ছে না—ইমেইল লগইন ব্যবহার করুন।');
     });
     return api('/google/link', { method: 'POST', body: { email, password, accessToken } });
   };
@@ -3288,41 +3323,7 @@
       return result;
     },
     google: async () => {
-      if (!window.google?.accounts?.oauth2) {
-        try { await loadGoogle(state.googleClientId || state.capabilities.google.clientId); } catch (_) {}
-      }
-      if (!window.google?.accounts?.oauth2) return false;
-      const clientId = state.googleClientId || state.capabilities.google.clientId;
-      if (!clientId) throw new Error('Google লগইন এখন তৈরি হয়নি—পেজটি একবার refresh করো।');
-      const accessToken = await new Promise((resolve, reject) => {
-        let settled = false;
-        let timer;
-        const finish = (action, value) => {
-          if (settled) return;
-          settled = true;
-          clearTimeout(timer);
-          action(value);
-        };
-        // A GSI misconfiguration (an origin the OAuth client does not allow, a
-        // blocked popup, or a Google-side rate limit) is reported ONLY through
-        // error_callback. Without it the promise never settles and the button
-        // spins forever with no message, which reads as a frozen app.
-        const client = window.google.accounts.oauth2.initTokenClient({
-          client_id: clientId,
-          scope: 'openid email profile',
-          callback: r => (r?.error || !r?.access_token
-            ? finish(reject, new Error('Google অনুমতি পাওয়া যায়নি—আবার চেষ্টা করো বা ইমেইল দিয়ে ঢুকো।'))
-            : finish(resolve, r.access_token)),
-          error_callback: e => finish(reject, new Error(
-            String(e?.type || '') === 'popup_closed'
-              ? 'Google জানালাটি বন্ধ হয়ে গেছে—আবার চেষ্টা করো বা ইমেইল দিয়ে ঢুকো।'
-              : 'Google লগইন এই মুহূর্তে খুলছে না—আবার চেষ্টা করো বা ইমেইল দিয়ে ঢুকো।'
-          ))
-        });
-        timer = setTimeout(() => finish(reject, new Error('Google অনুমতির সময় শেষ হয়েছে—আবার চেষ্টা করো বা ইমেইল দিয়ে ঢুকো।')), 60000);
-        try { client.requestAccessToken({ prompt: '' }); }
-        catch (_) { finish(reject, new Error('Google জানালা খোলা যায়নি—browser-এ popup অনুমতি দাও বা ইমেইল দিয়ে ঢুকো।')); }
-      });
+      const accessToken = await googleAccessToken();
       const result = await skyApi('/google', { method: 'POST', body: { accessToken } });
       await establishSession(result, 'Google দিয়ে তোমার account-এ প্রবেশ হয়েছে।');
       return true;
