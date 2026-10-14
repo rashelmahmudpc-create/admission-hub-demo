@@ -32,7 +32,16 @@ function makeBridge(doc, log) {
   };
 }
 
-async function boot({ withBridge = true } = {}) {
+// Same bridge, but the email start reports the Firebase-link fallback: every OTP
+// provider is spent, so the Worker sent a link and there is no code to type.
+function makeLinkBridge(doc, log) {
+  const b = makeBridge(doc, log);
+  b.startEmail = async () => ({ link: true, resendAfter: 45, emailMasked: 'a•••@e•••.com' });
+  b.checkEmail = async () => { log.push('checkEmail'); return true; };
+  return b;
+}
+
+async function boot({ withBridge = true, bridge = null } = {}) {
   const log = [];
   const dom = new JSDOM(`<!DOCTYPE html><html><head></head><body>
     <div id="ah-account-page" class="ah-account-page">
@@ -48,7 +57,7 @@ async function boot({ withBridge = true } = {}) {
   // The flow must not touch these; trip a hard failure if it does.
   w.fetch = () => { throw new Error('sky flow must not fetch directly'); };
   w.XMLHttpRequest = function () { throw new Error('sky flow must not XHR directly'); };
-  if (withBridge) w.AdmissionSkyBridge = makeBridge(w.document, log);
+  if (withBridge) w.AdmissionSkyBridge = bridge ? bridge(w.document, log) : makeBridge(w.document, log);
   w.eval(JS);
   for (let i = 0; i < 12; i++) await new Promise(r => setTimeout(r, 5));
   return { w, dom, log, stop };
@@ -170,5 +179,54 @@ test('sky-08: the flow does not double-count the safe-area insets', () => {
   const offenders = insetRules.filter(r => !/^#ah-sky-flow(::?(before|after))?\s*\{/.test(r.trim()));
   assert.deepEqual(offenders, [],
     `only #ah-sky-flow may consume env(safe-area-inset-*); found: ${offenders.map(r => r.split('{')[0].trim()).join(', ')}`);
+});
+
+
+test('sky-09: the Firebase-link fallback hides the code box and checks the link', async () => {
+  // Live bug (2026-10-13, owner): when every OTP provider is spent the Worker
+  // sends a Firebase link, but the flow still showed the 6-digit code box -- a
+  // form the student can never fill. The link panel must replace it.
+  const { w, log, stop } = await boot({ bridge: makeLinkBridge });
+  await w.AdmissionSkyFlow.open('login');
+  await settle();
+  const set = (id, v) => { const el = w.document.getElementById(id); el.value = v; el.dispatchEvent(new w.Event('input')); };
+  const cta = () => w.document.getElementById('sky-cta');
+  set('sky-lin-em', 'student@example.com');
+  await settle(2);
+  cta().click(); await settle(4);              // email -> password
+  set('sky-lin-pw', 'Str0ngPass!2');
+  await settle(2);
+  cta().click(); await settle(6);              // password -> doLogin -> method
+  cta().click(); await settle(8);              // method -> startOtp (link fallback)
+  assert.equal(w.AdmissionSkyFlow.i, 3, 'the flow must be on the verification screen');
+  const otp = w.document.getElementById('sky-otp');
+  const lk = w.document.getElementById('sky-lk');
+  assert.equal(otp.style.display, 'none', 'the code box must be hidden when the link was sent');
+  assert.ok(lk.classList.contains('on'), 'the link panel must be revealed');
+  cta().click(); await settle(8);              // CTA -> checkLink
+  assert.ok(log.includes('checkEmail'), 'the CTA must ask the bridge to check the link');
+  assert.ok(log.includes('finish'), 'a verified link must finish the flow');
+  stop();
+});
+
+test('sky-10: the OTP path still shows the code box when a code was sent', async () => {
+  const { w, stop } = await boot();
+  await w.AdmissionSkyFlow.open('login');
+  await settle();
+  const set = (id, v) => { const el = w.document.getElementById(id); el.value = v; el.dispatchEvent(new w.Event('input')); };
+  const cta = () => w.document.getElementById('sky-cta');
+  set('sky-lin-em', 'student@example.com');
+  await settle(2);
+  cta().click(); await settle(4);              // email -> password
+  set('sky-lin-pw', 'Str0ngPass!2');
+  await settle(2);
+  cta().click(); await settle(6);              // password -> doLogin -> method
+  cta().click(); await settle(8);              // method -> startOtp (real code)
+  assert.equal(w.AdmissionSkyFlow.i, 3, 'the flow must be on the verification screen');
+  const otp = w.document.getElementById('sky-otp');
+  const lk = w.document.getElementById('sky-lk');
+  assert.notEqual(otp.style.display, 'none', 'a real code keeps the code box visible');
+  assert.ok(!lk.classList.contains('on'), 'the link panel stays hidden on the code path');
+  stop();
 });
 

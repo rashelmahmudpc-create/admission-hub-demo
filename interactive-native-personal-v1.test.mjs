@@ -9,9 +9,9 @@ const HTML = read('index.html');
 const SW = read('sw.js');
 const RELEASE = read('.github/workflows/telegram-auth-canary-activate.yml');
 const BUNDLE_GUARD = read('.github/workflows/cf-pages.yml');
-const UI_VERSION = '20261013-skyfix4';
+const UI_VERSION = '20261013-skyfix5';
 
-const SHELL_VERSION = 'v329-skyfix-20261013';
+const SHELL_VERSION = 'v330-skyfix-20261013';
 
 const signupStart = JS.indexOf('<form class="ah-account-view ah-signup-view"');
 const signupEnd = JS.indexOf('<div class="ah-account-view ah-created-view"', signupStart);

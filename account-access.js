@@ -78,7 +78,7 @@
     const skyStyle = document.createElement('link');
     skyStyle.id = 'ah-sky-flow-style';
     skyStyle.rel = 'stylesheet';
-    skyStyle.href = 'sky-onboarding.css?v=sky-flow-20261013-v4';
+    skyStyle.href = 'sky-onboarding.css?v=sky-flow-20261013-v5';
     document.head.append(skyStyle);
   }
   pageHost.className = 'ah-account-page';
@@ -3155,13 +3155,16 @@
     const result = await skyApi('/email-ownership/start', { method: 'POST', body: {} });
     if (result.alreadyVerified) { await checkEmailVerification(); return { resendAfter: 0, alreadyVerified: true }; }
     if (result.delivery?.method === 'firebase-link') {
+      // Every OTP provider is out of quota: the Worker sent a Firebase link
+      // instead of a 6-digit code. Report that to the flow so it shows the link
+      // panel and never a code box the student cannot fill.
       state.verification.emailSent = true;
       state.verification.mode = 'email';
       startResendCooldown(Number(result.delivery?.resendAfter || state.resendCooldownSeconds));
-      return { resendAfter: Number(result.delivery?.resendAfter || state.resendCooldownSeconds), emailMasked: result.delivery.emailMasked };
+      return { link: true, resendAfter: Number(result.delivery?.resendAfter || state.resendCooldownSeconds), emailMasked: result.delivery.emailMasked };
     }
     if (!setOwnershipChallenge(result.ownership)) throw new Error('Email যাচাই এখন পাওয়া যাচ্ছে না।');
-    return { resendAfter: Number(result.ownership?.resendAfter || state.resendCooldownSeconds), emailMasked: result.ownership?.emailMasked };
+    return { link: false, resendAfter: Number(result.ownership?.resendAfter || state.resendCooldownSeconds), emailMasked: result.ownership?.emailMasked };
   };
   const verifyEmailChallenge = async code => {
     if (!state.ownership) throw new Error('CHALLENGE_INVALID');
@@ -3318,6 +3321,7 @@
     },
     forgot: email => skyApi('/password-reset', { method: 'POST', body: { email } }),
     startEmail: startEmailChallenge,
+    checkEmail: () => checkEmailVerification({ silent: true }),
     verifyEmail: verifyEmailChallenge,
     startTelegram: startTelegramChallenge,
     verifyTelegram: verifyTelegramChallenge,
