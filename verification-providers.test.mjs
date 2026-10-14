@@ -290,6 +290,61 @@ test('Brevo OTP provider leaves an already-correct sender name untouched', async
   assert.equal(calls.some(call => call.init.method === 'PUT'), false);
 });
 
+test('every email provider brands the sender name and the body without an env override', async () => {
+  // With no *_FROM_NAME binding the providers must fall back to the brand rather
+  // than a vendor name, so a missing or drifted secret cannot leak "Admission hub"
+  // or a provider default into a login email.
+  const cases = [
+    {
+      name: 'brevo',
+      build: fetchImpl => new BrevoOtpVerificationProvider({ id: 'otp-a', apiKey: KEY, fromAddress: 'sender@example.com', declaredDailyQuota: 300, fetchImpl }),
+      ready: () => json({ senders: [{ id: 1, name: 'AdmissionSky', email: 'sender@example.com', active: true }] }),
+      sendUrl: '/v3/smtp/email',
+      nameOf: body => body.sender.name
+    },
+    {
+      name: 'resend',
+      build: fetchImpl => new ResendOtpVerificationProvider({ id: 'otp-d', apiKey: KEY, fromAddress: 'sender@example.com', declaredDailyQuota: 100, fetchImpl }),
+      ready: () => json({ data: [{ name: 'example.com', status: 'verified', capabilities: { sending: 'enabled' } }] }),
+      sendUrl: '/emails',
+      nameOf: body => body.from.replace(/\s*<.*$/, '')
+    },
+    {
+      name: 'mailersend',
+      build: fetchImpl => new MailerSendOtpVerificationProvider({ id: 'otp-f', apiKey: KEY, fromAddress: 'sender@example.com', declaredDailyQuota: 100, fetchImpl }),
+      ready: () => json({ data: [{ name: 'example.com', is_verified: true, domain_settings: { send_paused: false } }] }),
+      sendUrl: '/v1/email',
+      nameOf: body => body.from.name
+    },
+    {
+      name: 'mailjet',
+      build: fetchImpl => new MailjetOtpVerificationProvider({ id: 'otp-c', apiKey: KEY, secretKey: KEY, fromAddress: 'sender@example.com', declaredDailyQuota: 200, fetchImpl }),
+      ready: () => json({ Data: [{ Email: 'sender@example.com', Status: 'Active' }] }),
+      sendUrl: '/v3.1/send',
+      nameOf: body => body.Messages[0].From.Name
+    }
+  ];
+
+  for (const testCase of cases) {
+    const calls = [];
+    const provider = testCase.build(async (url, init) => {
+      calls.push({ url: String(url), init });
+      if (init && init.method === 'POST' && String(url).includes(testCase.sendUrl)) {
+        return json({ messageId: 'ref-1', id: 'ref-1', Messages: [{ To: [{ MessageUUID: 'ref-1' }] }] }, 201);
+      }
+      return testCase.ready();
+    });
+
+    await provider.checkAvailability();
+    await provider.sendVerification({ destination: 'user@example.com', code: '123456', expiresAt: Date.now() + 300_000 });
+    const send = calls.find(call => call.url.includes(testCase.sendUrl));
+    const body = JSON.parse(send.init.body);
+    assert.equal(testCase.nameOf(body), 'AdmissionSky', `${testCase.name}: sender name must be the brand`);
+    const subject = body.subject || body.Messages[0].Subject;
+    assert.match(subject, /AdmissionSky — আপনার যাচাইকরণ কোড/, `${testCase.name}: subject must carry the brand`);
+  }
+});
+
 test('Backup OTP email carries the AdmissionSky brand, one big code box, and dark-mode styles', () => {
   const { text, html } = otpEmailBody('123456', 10, 'মাহমুদ রাসেল');
 
