@@ -277,7 +277,7 @@ test('Backup OTP email carries the AdmissionSky brand, one big code box, and dar
   assert.match(html, /prefers-color-scheme: dark/);
   assert.match(html, /AdmissionSky/);
   assert.equal(html.includes('Admission Hub'), false);
-  assert.match(html, /আপনার প্রস্তুতি, আরও গুছিয়ে।/);
+  assert.match(html, /Your Admission Companion/);
   assert.match(html, /AdmissionSky অ্যাকাউন্ট যাচাই করতে/);
   assert.match(html, /প্রিয় মাহমুদ রাসেল,/);
   assert.match(html, /10 মিনিট/);

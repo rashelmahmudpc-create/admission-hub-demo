@@ -133,7 +133,7 @@ const cleanDisplayName = value => String(value ?? '')
   .trim()
   .slice(0, 60);
 
-const OTP_EMAIL_TAGLINE = 'আপনার প্রস্তুতি, আরও গুছিয়ে।';
+const OTP_EMAIL_TAGLINE = 'Your Admission Companion';
 
 const otpEmailBody = (code, minutes, recipientName = '') => {
   const safeCode = escapeHtml(code);

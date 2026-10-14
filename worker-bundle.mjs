@@ -22548,7 +22548,7 @@ var OTP_EMAIL_WORDMARK_ACCENT = "#2F6BFF";
 var OTP_EMAIL_APP = "AdmissionSky";
 var escapeHtml2 = (value) => String(value ?? "").replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]);
 var cleanDisplayName = (value) => String(value ?? "").replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 60);
-var OTP_EMAIL_TAGLINE = "আপনার প্রস্তুতি, আরও গুছিয়ে।";
+var OTP_EMAIL_TAGLINE = "Your Admission Companion";
 var otpEmailBody = (code, minutes, recipientName = "") => {
   const safeCode = escapeHtml2(code);
   const safeMinutes = escapeHtml2(minutes);
