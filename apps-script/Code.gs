@@ -1,7 +1,7 @@
 /**
- * Admission Hub — verification mailer (Google Apps Script web app).
+ * AdmissionSky — verification mailer (Google Apps Script web app).
  *
- * Delivers Admission Hub account-verification codes by email, free of charge,
+ * Delivers AdmissionSky account-verification codes by email, free of charge,
  * inside the consumer quota of 100 recipients/day (1,500 on Google Workspace).
  *
  * The Worker holds the shared secret and signs every call; this script is the
@@ -56,8 +56,8 @@ function doPost(event) {
   try {
     MailApp.sendEmail({
       to: destination,
-      subject: 'Admission Hub — verification code',
-      name: 'Admission Hub',
+      subject: 'AdmissionSky — যাচাইকরণ কোড',
+      name: 'AdmissionSky',
       htmlBody: otpEmailHtml_(code, minutes),
       body: otpEmailText_(code, minutes)
     });
@@ -161,82 +161,88 @@ function jsonResponse(payload) {
 /** Plain-text alternative, so clients that refuse HTML still read the code. */
 function otpEmailText_(code, minutes) {
   return [
-    'Admission Hub',
+    'AdmissionSky',
     '',
-    'তোমার verification code: ' + code,
+    'আপনার AdmissionSky অ্যাকাউন্ট যাচাই করতে নিচের কোডটি ব্যবহার করুন।',
     '',
-    'কোডটি ' + minutes + ' মিনিটের মধ্যে ব্যবহার করতে হবে।',
-    'এই কোডটি কারো সাথে শেয়ার করবেন না। Admission Hub-এর কেউ কখনো এই কোড চাইবে না।',
+    '    ' + code,
     '',
-    'তুমি যদি এই verification-এর অনুরোধ না করে থাকো, এই email-টি উপেক্ষা করুন।'
+    'কোডটি ' + minutes + ' মিনিট পর্যন্ত কার্যকর থাকবে। কাউকে শেয়ার করবেন না।',
+    '',
+    'শুভেচ্ছান্তে,',
+    'AdmissionSky Team',
+    '',
+    '--',
+    'AdmissionSky',
+    'Your Admission Companion',
+    'এটি একটি স্বয়ংক্রিয় বার্তা। এই ইমেইলে উত্তর দেওয়ার প্রয়োজন নেই।'
   ].join('\n');
 }
 
 /** Branded, table-based layout that survives Gmail, Outlook and mobile clients. */
 function otpEmailHtml_(code, minutes) {
-  var ink = '#123d35';
-  var inkSoft = '#5d7a72';
+  var ink = '#101c19';
+  var inkSoft = '#48534f';
+  var muted = '#8b9491';
   var brandInk = '#0f8a63';
   var brandFill = '#12a876';
-  var line = '#c8e8dc';
+  var line = '#cdeede';
   var surface = '#ffffff';
-  var canvas = '#f4fbf8';
-  var mono = 'Consolas,Menlo,\'Courier New\',monospace';
-  var sans = '-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,\'Noto Sans Bengali\',sans-serif';
-
-  var digits = String(code).split('').map(function (digit) {
-    return '<td style="padding:0 5px;">' +
-      '<span style="display:inline-block;width:44px;height:54px;line-height:54px;background:' + surface + ';' +
-      'border:1px solid ' + line + ';border-radius:12px;text-align:center;font-family:' + mono + ';' +
-      'font-size:28px;font-weight:700;color:' + brandInk + ';">' + digit + '</span></td>';
-  }).join('');
+  var canvas = '#f2fbf7';
+  var accent = '#2F6BFF';
+  var mono = '\'SF Mono\',\'Roboto Mono\',\'DejaVu Sans Mono\',Menlo,Consolas,\'Courier New\',monospace';
+  var sans = '\'Hind Siliguri\',\'Noto Sans Bengali\',\'Nirmala UI\',-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif';
+  var mark = 'https://admissionsky.pages.dev/icons/email-mark.png';
 
   return '<!DOCTYPE html><html lang="bn"><head><meta charset="utf-8">' +
     '<meta name="viewport" content="width=device-width,initial-scale=1">' +
-    '<meta name="color-scheme" content="light only">' +
-    '<title>Admission Hub — verification code</title></head>' +
-    '<body style="margin:0;padding:0;background:' + canvas + ';font-family:' + sans + ';color:' + ink + ';">' +
-    '<div style="display:none;max-height:0;overflow:hidden;opacity:0;">তোমার Admission Hub verification code: ' + code + '</div>' +
-    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:' + canvas + ';">' +
-    '<tr><td align="center" style="padding:28px 14px;">' +
-    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background:' + surface + ';' +
-    'border:1px solid ' + line + ';border-radius:18px;overflow:hidden;">' +
+    '<meta name="x-apple-disable-message-reformatting">' +
+    '<meta name="format-detection" content="telephone=no,address=no,email=no,date=no">' +
+    '<meta name="color-scheme" content="light dark">' +
+    '<meta name="supported-color-schemes" content="light dark">' +
+    '<title>AdmissionSky — ইমেইল যাচাইকরণ</title></head>' +
+    '<body style="margin:0;padding:0;width:100%;background-color:' + surface + ';font-family:' + sans + ';color:' + ink + ';">' +
+    '<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:#ffffff;font-size:1px;line-height:1px;">' +
+    'আপনার AdmissionSky যাচাইকরণ কোড: ' + code + ' — ' + minutes + ' মিনিটের জন্য কার্যকর।</div>' +
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#ffffff" style="width:100%;background-color:' + surface + ';">' +
+    '<tr><td align="center" style="padding:28px 12px;">' +
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#ffffff" style="width:100%;max-width:560px;background-color:' + surface + ';border-radius:16px;">' +
 
-    '<tr><td style="background-color:' + brandFill + ';background-image:linear-gradient(135deg,' + brandInk + ' 0%,' + brandFill + ' 100%);padding:22px 26px;">' +
-    '<p style="margin:0;font-size:19px;font-weight:700;letter-spacing:.2px;color:#ffffff;">Admission Hub</p>' +
-    '<p style="margin:5px 0 0;font-size:13px;color:#e6f7f0;">তোমার অ্যাকাউন্ট যাচাই</p>' +
+    '<tr><td style="padding:30px 28px 0;">' +
+    '<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>' +
+    '<td width="52" valign="middle" style="width:52px;">' +
+    '<img src="' + mark + '" width="52" height="52" alt="AdmissionSky" style="display:block;width:52px;height:52px;border:0;border-radius:16px;" /></td>' +
+    '<td valign="middle" style="padding-left:13px;font-family:' + sans + ';font-size:22px;line-height:1.2;font-weight:700;color:' + ink + ';letter-spacing:-0.2px;">' +
+    'Admission<span style="color:' + accent + ';">Sky</span></td>' +
+    '</tr></table></td></tr>' +
+
+    '<tr><td style="padding:22px 28px 0;">' +
+    '<p style="margin:0;font-family:' + sans + ';font-size:20px;line-height:1.5;font-weight:600;color:' + ink + ';">প্রিয় ব্যবহারকারী,</p>' +
+    '<p style="margin:10px 0 0;font-family:' + sans + ';font-size:15px;line-height:1.7;font-weight:400;color:' + inkSoft + ';">' +
+    'আপনার AdmissionSky অ্যাকাউন্ট যাচাই করতে নিচের কোডটি ব্যবহার করুন।</p></td></tr>' +
+
+    '<tr><td style="padding:26px 28px 0;">' +
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="' + canvas + '" style="width:100%;background-color:' + canvas + ';border:1px solid ' + line + ';border-radius:16px;">' +
+    '<tr><td align="center" style="padding:30px 16px;">' +
+    '<p style="margin:0;font-family:' + mono + ';font-size:48px;line-height:1.1;font-weight:700;letter-spacing:10px;text-indent:10px;color:' + ink + ';">' + code + '</p>' +
+    '</td></tr></table></td></tr>' +
+
+    '<tr><td align="center" style="padding:16px 28px 0;">' +
+    '<p style="margin:0;font-family:' + sans + ';font-size:13px;line-height:1.6;font-weight:400;color:' + muted + ';">' +
+    'এই কোডটি ' + minutes + ' মিনিট পর্যন্ত কার্যকর থাকবে।</p></td></tr>' +
+
+    '<tr><td align="center" style="padding:10px 28px 30px;">' +
+    '<p style="margin:0;font-family:' + sans + ';font-size:12.5px;line-height:1.65;font-weight:400;color:' + muted + ';">' +
+    'কোডটি কারও সঙ্গে শেয়ার করবেন না। AdmissionSky-এর কেউ কখনও আপনার কোড চাইবে না।</p></td></tr>' +
+
+    '<tr><td style="padding:18px 28px 26px;border-top:1px solid #eff2f1;">' +
+    '<p style="margin:0;font-family:' + sans + ';font-size:12px;line-height:1.5;font-weight:600;color:#3f4a47;">AdmissionSky</p>' +
+    '<p style="margin:3px 0 0;font-family:' + sans + ';font-size:11px;line-height:1.5;font-weight:400;color:' + muted + ';">Your Admission Companion</p>' +
+    '<p style="margin:12px 0 0;font-family:' + sans + ';font-size:11px;line-height:1.6;font-weight:400;color:#9aa3a0;">' +
+    'এটি একটি স্বয়ংক্রিয় বার্তা। এই ইমেইলে উত্তর দেওয়ার প্রয়োজন নেই।</p>' +
+    '<p style="margin:10px 0 0;font-family:' + sans + ';font-size:11px;line-height:1.6;font-weight:400;color:' + muted + ';">' +
+    '<a href="https://admissionsky.pages.dev" style="color:' + brandInk + ';text-decoration:none;">admissionsky.pages.dev</a></p>' +
     '</td></tr>' +
-
-    '<tr><td style="padding:28px 26px 8px;">' +
-    '<h1 style="margin:0 0 10px;font-size:21px;line-height:1.45;color:' + ink + ';">ভেরিফিকেশন কোড</h1>' +
-    '<p style="margin:0;font-size:15px;line-height:1.75;color:' + inkSoft + ';">' +
-    'Admission Hub অ্যাকাউন্ট যাচাই করতে নিচের ৬ সংখ্যার কোডটি লিখুন।' +
-    '</p></td></tr>' +
-
-    '<tr><td align="center" style="padding:20px 26px 6px;">' +
-    '<table role="presentation" cellpadding="0" cellspacing="0"><tr>' + digits + '</tr></table>' +
-    '</td></tr>' +
-
-    '<tr><td align="center" style="padding:6px 26px 22px;">' +
-    '<p style="margin:0;font-size:13px;color:' + inkSoft + ';">কোডটি <strong style="color:' + ink + ';">' + minutes +
-    ' মিনিট</strong>-এর মধ্যে ব্যবহার করতে হবে।</p></td></tr>' +
-
-    '<tr><td style="padding:0 26px;"><div style="height:1px;background:' + line + ';"></div></td></tr>' +
-
-    '<tr><td style="padding:20px 26px 26px;">' +
-    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:' + canvas + ';border-radius:12px;">' +
-    '<tr><td style="padding:14px 16px;">' +
-    '<p style="margin:0;font-size:13px;line-height:1.7;color:' + brandInk + ';">' +
-    '<strong>নিরাপত্তা:</strong> এই কোডটি কারো সাথে শেয়ার করবেন না। Admission Hub-এর পক্ষ থেকে কেউ কখনো এই কোড বা তোমার পাসওয়ার্ড চাইবে না।' +
-    '</p></td></tr></table>' +
-    '<p style="margin:16px 0 0;font-size:12.5px;line-height:1.7;color:' + inkSoft + ';">' +
-    'তুমি যদি এই verification-এর অনুরোধ না করে থাকো, এই email-টি উপেক্ষা করুন — তোমার অ্যাকাউন্ট নিরাপদ আছে।' +
-    '</p></td></tr>' +
-
-    '<tr><td style="padding:16px 26px;background:' + canvas + ';border-top:1px solid ' + line + ';">' +
-    '<p style="margin:0;font-size:12px;color:' + inkSoft + ';">Admission Hub · ' +
-    '<a href="https://admissionhub.pages.dev" style="color:' + brandInk + ';text-decoration:none;">admissionhub.pages.dev</a>' +
-    '</p></td></tr>' +
 
     '</table></td></tr></table></body></html>';
 }
