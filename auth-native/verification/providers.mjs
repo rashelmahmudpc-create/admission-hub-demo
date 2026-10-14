@@ -647,7 +647,35 @@ export class DeadSimpleEmailOtpVerificationProvider {
     const payload = await fetchJson(this.fetch, `https://api.deadsimple.email/v1/inboxes/${encodeURIComponent(this.inboxId)}`, { method: 'GET', headers: this.#headers() });
     const inbox = payload?.data || payload;
     const ready = String(inbox?.inbox_id || '') === this.inboxId && inbox?.status === 'active';
-    return { available: ready, code: ready ? 'READY' : 'INBOX_NOT_AVAILABLE' };
+    if (!ready) return { available: false, code: 'INBOX_NOT_AVAILABLE' };
+    const named = await this.#syncDisplayName(inbox);
+    return { available: true, code: named ? 'READY' : 'DISPLAY_NAME_UNSET' };
+  }
+
+  // The inbox it sends from is the sender, and Dead Simple leaves display_name
+  // empty until someone sets it, so the recipient sees a bare address. There is
+  // no per-message from field to override it, so sync it here, on the probe that
+  // precedes every send, instead of depending on an operator to PATCH it by hand.
+  // The write only happens while the value differs, and a failure never blocks
+  // the send.
+  async #syncDisplayName(inbox) {
+    const current = String(inbox?.display_name ?? inbox?.displayName ?? '').trim();
+    if (current === OTP_EMAIL_APP) return true;
+    try {
+      const response = await this.fetch(`https://api.deadsimple.email/v1/inboxes/${encodeURIComponent(this.inboxId)}`, {
+        method: 'PATCH',
+        headers: this.#headers(true),
+        body: JSON.stringify({ display_name: OTP_EMAIL_APP }),
+        signal: AbortSignal.timeout(15_000)
+      });
+      if (!response.ok) return false;
+      let payload = {};
+      try { payload = await response.json(); } catch {}
+      const updated = payload?.data || payload;
+      return String(updated?.display_name ?? updated?.displayName ?? '').trim() === OTP_EMAIL_APP;
+    } catch {
+      return false;
+    }
   }
 
   async getRemainingQuota() {

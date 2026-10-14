@@ -808,21 +808,39 @@ test('Dead Simple Email owns otp-g and sends from a provider-signed inbox', asyn
   assert.equal(halfBound[6].configured, false);
 });
 
-test('Dead Simple Email reports READY only while its inbox is active', async () => {
+test('Dead Simple Email syncs the inbox display name to the brand before reporting ready', async () => {
   const inboxId = '15ba6686-acd5-46e5-9923-8556720fb0fb';
-  const make = payload => new DeadSimpleEmailOtpVerificationProvider({
-    id: 'otp-g',
-    apiKey: KEY,
-    inboxId,
-    declaredDailyQuota: 150,
-    fetchImpl: async () => new Response(JSON.stringify(payload), { status: 200, headers: { 'Content-Type': 'application/json' } })
-  });
+  const make = (inbox, patchBody = { data: { inbox_id: inboxId, display_name: 'AdmissionSky', status: 'active' } }) => {
+    const calls = [];
+    const provider = new DeadSimpleEmailOtpVerificationProvider({
+      id: 'otp-g',
+      apiKey: KEY,
+      inboxId,
+      declaredDailyQuota: 150,
+      fetchImpl: async (url, init) => {
+        calls.push({ url, init });
+        if (init && init.method === 'PATCH') return new Response(JSON.stringify(patchBody), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        return new Response(JSON.stringify(inbox), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }
+    });
+    return { provider, calls };
+  };
 
-  const active = await make({ data: { inbox_id: inboxId, status: 'active' } }).checkAvailability();
-  assert.deepEqual(active, { available: true, code: 'READY' });
+  // An empty display_name is Dead Simple's default; the probe must set the brand.
+  const drifted = make({ data: { inbox_id: inboxId, display_name: '', status: 'active' } });
+  assert.deepEqual(await drifted.provider.checkAvailability(), { available: true, code: 'READY' });
+  const patch = drifted.calls.find(call => call.init.method === 'PATCH');
+  assert.ok(patch, 'expected the empty display name to be corrected on the probe');
+  assert.equal(JSON.parse(patch.init.body).display_name, 'AdmissionSky');
 
-  const paused = await make({ data: { inbox_id: inboxId, status: 'paused' } }).checkAvailability();
-  assert.deepEqual(paused, { available: false, code: 'INBOX_NOT_AVAILABLE' });
+  // An already-correct name is left untouched.
+  const settled = make({ data: { inbox_id: inboxId, display_name: 'AdmissionSky', status: 'active' } });
+  assert.deepEqual(await settled.provider.checkAvailability(), { available: true, code: 'READY' });
+  assert.equal(settled.calls.some(call => call.init.method === 'PATCH'), false);
+
+  // A paused inbox is not available even though the name could be synced.
+  const paused = make({ data: { inbox_id: inboxId, display_name: 'AdmissionSky', status: 'paused' } });
+  assert.deepEqual(await paused.provider.checkAvailability(), { available: false, code: 'INBOX_NOT_AVAILABLE' });
 });
 
 test('Dead Simple Email sends to /messages and requires a message id back', async () => {
