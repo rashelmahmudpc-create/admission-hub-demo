@@ -78,6 +78,9 @@ function setup({ pendingFailures = 0 } = {}) {
       verification: { sent: true, emailMasked: 's***@example.com', resendAfter: 0 }
     });
     if (path.includes('/account-verification/email/status')) return jsonReply(200, { authenticated: false, emailVerified: false });
+    if (path.includes('/email-ownership/start')) return jsonReply(202, {
+      ownership: { attemptId: 'a'.repeat(24), resendAfter: 0, emailMasked: 's***@example.com' }
+    });
     if (path.endsWith('/profile')) return jsonReply(200, { profile: null });
     return jsonReply(404, { error: { code: 'NOT_FOUND' } });
   };
@@ -165,4 +168,39 @@ test('T5: the signup payload carries every field the student typed', async () =>
   assert.equal(payload.dob, '2007-05-05');
   assert.equal(payload.school?.name, 'Dhaka Collegiate School');
   assert.ok('higherInstitution' in payload, 'college field must be present even when skipped');
+});
+
+/* Sky flow (Admission Sky) — the signup profile must reach the server through
+   the bridge. Owner report: the sky signup asked for name / DOB / school /
+   college but the dashboard profile was always empty, because the bridge sent
+   the profile inside the /signup body (which the handler discards) and never
+   carried it to /profile/pending. */
+test('T5: the sky bridge persists the signup profile through /profile/pending', async () => {
+  const app = setup({ pendingFailures: 0 });
+  const { window } = app;
+  await waitFor(() => app.calls.some(c => c.path.includes('/config')), 'config');
+  const bridge = window.AdmissionSkyBridge;
+  assert.ok(bridge, 'account-access must publish the sky bridge');
+  assert.equal(typeof bridge.signup, 'function', 'the bridge must expose signup');
+  assert.equal(typeof bridge.startEmail, 'function', 'the bridge must expose startEmail');
+
+  await bridge.signup('sky@example.com', 'StrongPassword!9', {
+    fullName: 'Sky Student',
+    dob: '2007-05-05',
+    school: { id: 's1', name: 'Dhaka Collegiate School', district: 'Dhaka' },
+    higherInstitution: { id: 'c1', name: 'Notre Dame College', district: 'Dhaka' }
+  });
+  // The profile must not ride inside the /signup body the handler discards.
+  const signupCall = app.calls.find(c => c.path.includes('/signup'));
+  assert.ok(signupCall, 'signup must hit the network');
+  assert.equal(signupCall.body.profile, undefined, 'the signup body must not carry a profile the handler drops');
+
+  // Selecting the email method must flush the collected profile to the server.
+  await bridge.startEmail();
+  await waitFor(() => pendingCalls(app).length >= 1, 'sky pending write');
+  const payload = pendingCalls(app).at(-1).body;
+  assert.equal(payload.fullName, 'Sky Student');
+  assert.equal(payload.dob, '2007-05-05');
+  assert.equal(payload.school?.name, 'Dhaka Collegiate School');
+  assert.equal(payload.higherInstitution?.name, 'Notre Dame College');
 });

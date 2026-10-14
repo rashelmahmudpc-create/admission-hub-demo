@@ -3151,7 +3151,14 @@
     };
     return true;
   };
+  const bindPendingProfile = async () => {
+    // The ticket-scoped write is the only one available before the account is
+    // verified, so it backs whichever verification method the student picks
+    // first. A failed write leaves the in-memory details intact for a retry.
+    if (state.pendingProfile && state.profileBound && !state.profileSynced) await syncPendingProfile({ pending: true });
+  };
   const startEmailChallenge = async () => {
+    await bindPendingProfile();
     const result = await skyApi('/email-ownership/start', { method: 'POST', body: {} });
     if (result.alreadyVerified) { await checkEmailVerification(); return { resendAfter: 0, alreadyVerified: true }; }
     if (result.delivery?.method === 'firebase-link') {
@@ -3178,6 +3185,7 @@
     return result;
   };
   const startTelegramChallenge = async () => {
+    await bindPendingProfile();
     const result = await skyApi('/telegram/verification/start', { method: 'POST', body: {} });
     if (!setTelegramChallenge(result)) throw new Error('Telegram যাচাই এখন পাওয়া যাচ্ছে না।');
     if (state.signupJourney || pendingSignup()) rememberPendingSignup(true, 'telegram');
@@ -3247,18 +3255,24 @@
     signup: async (email, password, profile) => {
       const result = await skyApi('/signup', {
         method: 'POST',
-        body: {
-          email, password, remember: true,
-          profile: {
-            fullName: profile.fullName,
-            dateOfBirth: profile.dob,
-            school: profile.school ? { id: profile.school.id, name: profile.school.name, district: profile.school.district || '' } : null,
-            higherInstitution: profile.higherInstitution ? { id: profile.higherInstitution.id, name: profile.higherInstitution.name, district: profile.higherInstitution.district || '' } : null
-          }
-        }
+        body: { email, password, remember: true }
       });
       state.verification = state.verification || {};
       state.verification.email = email;
+      // The signup handler discards any profile in the body, so the flow's own
+      // details (name, DOB, school, college) must be carried to the
+      // ticket-scoped /profile/pending write on the next step. Without this the
+      // dashboard profile is always empty.
+      state.pendingProfile = {
+        fullName: profile.fullName,
+        mobile: profile.mobile || '',
+        dob: profile.dob,
+        school: profile.school ? { id: profile.school.id, name: profile.school.name, district: profile.school.district || '' } : null,
+        higherInstitution: profile.higherInstitution ? { id: profile.higherInstitution.id, name: profile.higherInstitution.name, district: profile.higherInstitution.district || '' } : null
+      };
+      state.profileBound = true;
+      state.profileSynced = false;
+      state.profilePendingAttempted = false;
       rememberTicket(result);
       return result;
     },
