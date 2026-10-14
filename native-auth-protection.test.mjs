@@ -116,7 +116,7 @@ test('Google, Passkey, and the explicit Email-or-Telegram selector are public wi
   // Telegram, but their provider identities stay server-side.
   assert.match(wrangler, /VERIFICATION_ORCHESTRATOR_CONFIG = '\{"enabled":true,"providers":\[\{"id":"otp-a","enabled":true,"priority":10,"dailyQuota":300/);
   assert.match(wrangler, /\{"id":"otp-b","enabled":true,"priority":20,"dailyQuota":100/);
-  assert.match(wrangler, /\{"id":"otp-c","enabled":true,"priority":30,"dailyQuota":200/);
+  assert.match(wrangler, /\{"id":"otp-c","enabled":false,"priority":30,"dailyQuota":200/);
   assert.match(wrangler, /\{"id":"otp-d","enabled":true,"priority":35,"dailyQuota":100/);
   assert.match(wrangler, /\{"id":"otp-e","enabled":true,"priority":37,"dailyQuota":100/);
   assert.match(wrangler, /\{"id":"otp-f","enabled":true,"priority":38,"dailyQuota":100/);
