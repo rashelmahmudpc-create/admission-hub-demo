@@ -148,7 +148,7 @@ test('Telegram adapter creates a one-time bot link and sends a protected OTP onl
   assert.equal(telegramMessage.chat_id, '123456789');
   assert.equal(telegramMessage.protect_content, true);
   assert.equal(telegramMessage.disable_web_page_preview, true);
-  assert.match(telegramMessage.text, /Admission Hub Verification/);
+  assert.match(telegramMessage.text, /AdmissionSky Verification/);
   assert.match(telegramMessage.text, /654321/);
   assert.match(telegramMessage.text, /5 মিনিট/);
   assert.doesNotMatch(telegramMessage.text, /API key|secret|Gmail password/i);
@@ -264,71 +264,71 @@ test('Brevo OTP provider sends through the Brevo API and derives quota from acco
   assert.deepEqual(body.to, [{ email: 'user@example.com' }]);
   assert.match(body.textContent, /123456/);
   assert.match(body.htmlContent, /123456/);
-  assert.match(body.subject, /যাচাইকরণ কোড/);
-  assert.match(body.htmlContent, /email-logo\.png/);
+  assert.match(body.subject, /AdmissionSky — আপনার যাচাইকরণ কোড/);
+  assert.match(body.htmlContent, /AdmissionSky/);
   assert.equal(calls.every(call => call.init.redirect === 'manual'), true);
 });
 
-test('Backup OTP email carries the branded layout, a prominent code, and dark-mode styles', () => {
+test('Backup OTP email carries the AdmissionSky brand, one big code box, and dark-mode styles', () => {
   const { text, html } = otpEmailBody('123456', 10, 'মাহমুদ রাসেল');
 
   assert.equal(html.includes('<script'), false);
   assert.match(html, /color-scheme" content="light dark"/);
   assert.match(html, /prefers-color-scheme: dark/);
-  assert.match(html, /email-logo\.png/);
-  assert.match(html, /Admission Hub/);
+  assert.match(html, /AdmissionSky/);
+  assert.equal(html.includes('Admission Hub'), false);
   assert.match(html, /আপনার প্রস্তুতি, আরও গুছিয়ে।/);
-  assert.match(html, /ইমেইল যাচাইকরণ/);
+  assert.match(html, /AdmissionSky অ্যাকাউন্ট যাচাই করতে/);
   assert.match(html, /প্রিয় মাহমুদ রাসেল,/);
   assert.match(html, /10 মিনিট/);
-  assert.match(html, /Admission Hub-এর কোনো কর্মী আপনার OTP চাইবে না।/);
-  assert.match(html, /উপেক্ষা করতে পারেন/);
-  assert.match(html, /Admission Hub Team/);
+  assert.match(html, /AdmissionSky-এর কেউ কখনও আপনার কোড চাইবে না।/);
+  assert.match(text, /AdmissionSky Team/);
   assert.match(text, /মাহমুদ রাসেল/);
   assert.match(text, /123456/);
+
+  // The owner asked for no logo for now: the old banner <img> and lock glyph are gone.
+  assert.equal(/email-logo\.png/.test(html), false);
+  assert.equal(/data:image\/svg\+xml;base64,/.test(html), false);
 
   // Design contract, checked against markup only so the style block cannot
   // satisfy an assertion that the inline layout should.
   const markup = html.replace(/<style>[\s\S]*?<\/style>/, '');
   assert.equal(/border[^;"]*(dashed|dotted)/.test(html), false);
-  assert.match(markup, /linear-gradient\(135deg,#12a876/);
-  assert.match(markup, /background-color:#0f8f68/);
   assert.match(markup, /'SF Mono','Roboto Mono'/);
-  assert.match(markup, /letter-spacing:6px/);
-  assert.match(markup, /data:image\/svg\+xml;base64,/);
+  assert.match(markup, /font-size:48px/);
+  assert.match(markup, /letter-spacing:10px/);
+  assert.match(markup, /class="ah-otp-box"/);
   assert.match(markup, /-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif/);
   assert.equal(/#fff2d9|#e4a620|#856221/i.test(html), false);
   assert.equal(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(html), false);
   assert.equal(/❓|🔒|✅|⚠/.test(html), false);
 
-  // Nothing may outline the message: no border on the card, no shadow.
-  assert.equal(/box-shadow/.test(markup), false);
+  // Nothing may outline the message: no shadow on the card.
+  assert.equal(/box-shadow:\s*(?!none)/.test(markup), false);
 
   // Exactly one container opts into max-width, and it requests the responsive
-  // pair rather than a fixed pixel width. Images and icon columns may still be
-  // fixed; layout containers may not.
-  assert.deepEqual(markup.match(/max-width:\d+px/g), ['max-width:600px']);
+  // pair rather than a fixed pixel width.
+  assert.deepEqual(markup.match(/max-width:\d+px/g), ['max-width:560px']);
   const cardTag = (markup.match(/<table[^>]*class="ah-card"[^>]*>/) || [''])[0];
   assert.match(cardTag, /width="100%"/);
-  assert.match(cardTag, /max-width:600px/);
+  assert.match(cardTag, /max-width:560px/);
   assert.equal(/(?<!max-)\bwidth:\d+px/.test(cardTag), false);
   assert.equal(/\bwidth="\d+"/.test(cardTag), false);
   assert.match(html, /\.ah-shell \{ width: 100% !important; \}/);
-  assert.match(html, /\.ah-card \{ width: 100% !important; max-width: 600px !important; margin: 0 auto !important; \}/);
+  assert.match(html, /\.ah-card \{ width: 100% !important; max-width: 560px !important; margin: 0 auto !important; \}/);
 
   // Dark mode must move body, shell, and card to one surface, otherwise the card
-  // floats as a box against the client's own dark chrome.
+  // floats as a box against the client's own dark chrome. The code box gets its
+  // own darker tint so it still reads as a box.
   const dark = html.slice(html.indexOf('@media (prefers-color-scheme: dark)'));
   assert.match(dark, /\.ah-body \{ background-color: #1f1f1f !important; \}/);
   assert.match(dark, /\.ah-shell \{ background-color: #1f1f1f !important; \}/);
   assert.match(dark, /\.ah-card \{ background-color: #1f1f1f !important;/);
+  assert.match(dark, /\.ah-otp-box \{ background-color: #14342a !important; border-color: #1f5c45 !important; \}/);
 
-  // Only these set a background in the markup: the banner, the card surface the
-  // shell already matches, and the hairlines. Anything else is an inner box.
+  // Only these set a background in the markup: the card surfaces and the code box.
   const bgColors = [...new Set(markup.match(/background-color:#[0-9a-f]{6}/gi) || [])].sort();
-  assert.deepEqual(bgColors, ['background-color:#0f8f68', 'background-color:#eaecec', 'background-color:#ffffff']);
-  // Every divider is a hairline, not a tinted block.
-  assert.equal((markup.match(/background-color:#eaecec/g) || []).length, (markup.match(/height:1px;background-color:#eaecec/g) || []).length);
+  assert.deepEqual(bgColors, ['background-color:#f2fbf7', 'background-color:#ffffff']);
 
   const layoutTables = markup.match(/<table/g) || [];
   const presentational = markup.match(/<table role="presentation"/g) || [];

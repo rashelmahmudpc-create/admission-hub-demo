@@ -3,9 +3,9 @@ import { PROVIDER_CAPABILITIES } from '../core/constants.mjs';
 
 export class MailgunProvider extends ProviderAdapter {
   #apiKey; #domain; #fromAddress; #fromName; #apiBase;
-  constructor({ apiKey, domain, fromAddress, fromName = 'Admission Hub', apiBase = 'https://api.mailgun.net', fetchImpl }) {
+  constructor({ apiKey, domain, fromAddress, fromName = 'AdmissionSky', apiBase = 'https://api.mailgun.net', fetchImpl }) {
     super({ id: 'mailgun', name: 'Mailgun', fetchImpl, capabilities: [PROVIDER_CAPABILITIES.API, PROVIDER_CAPABILITIES.TRANSACTIONAL, PROVIDER_CAPABILITIES.HTML, PROVIDER_CAPABILITIES.TEXT, PROVIDER_CAPABILITIES.CUSTOM_DOMAIN, PROVIDER_CAPABILITIES.WEBHOOKS, PROVIDER_CAPABILITIES.DELIVERY_EVENTS] });
-    this.#apiKey = String(apiKey || ''); this.#domain = String(domain || ''); this.#fromAddress = String(fromAddress || ''); this.#fromName = String(fromName || 'Admission Hub'); this.#apiBase = String(apiBase || 'https://api.mailgun.net').replace(/\/$/, '');
+    this.#apiKey = String(apiKey || ''); this.#domain = String(domain || ''); this.#fromAddress = String(fromAddress || ''); this.#fromName = String(fromName || 'AdmissionSky'); this.#apiBase = String(apiBase || 'https://api.mailgun.net').replace(/\/$/, '');
   }
   async verifyConfiguration() {
     const apiBaseValid = ['https://api.mailgun.net', 'https://api.eu.mailgun.net'].includes(this.#apiBase);

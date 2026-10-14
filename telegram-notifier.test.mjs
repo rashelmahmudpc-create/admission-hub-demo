@@ -17,7 +17,7 @@ test('Telegram completion schema is bounded, plain-text and status controlled', 
     details: ['84/84 email tests', 'No fake deployment'],
     timestamp: '2026-09-09T12:00:00.000Z'
   });
-  assert.match(message, /^🔥 Admission Hub\nStatus: VERIFIED/);
+  assert.match(message, /^🔥 AdmissionSky\nStatus: VERIFIED/);
   assert.match(message, /84\/84 email tests/);
   assert.ok(message.length <= 4096);
   assert.throws(() => createTelegramCompletionMessage({ status: 'UNKNOWN', summary: 'nope' }), error => error.code === 'INVALID_NOTIFICATION');

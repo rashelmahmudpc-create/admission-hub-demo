@@ -4,7 +4,7 @@ import { EmailGatewayError } from '../core/errors.mjs';
 
 export class MailerSendProvider extends ProviderAdapter {
   #apiKey; #fromAddress; #fromName;
-  constructor({ apiKey, fromAddress, fromName = 'Admission Hub', fetchImpl }) {
+  constructor({ apiKey, fromAddress, fromName = 'AdmissionSky', fetchImpl }) {
     super({ id: 'mailersend', name: 'MailerSend', fetchImpl, capabilities: [
       PROVIDER_CAPABILITIES.API, PROVIDER_CAPABILITIES.TRANSACTIONAL,
       PROVIDER_CAPABILITIES.HTML, PROVIDER_CAPABILITIES.TEXT,
@@ -13,7 +13,7 @@ export class MailerSendProvider extends ProviderAdapter {
     ] });
     this.#apiKey = String(apiKey || '');
     this.#fromAddress = String(fromAddress || '');
-    this.#fromName = String(fromName || 'Admission Hub');
+    this.#fromName = String(fromName || 'AdmissionSky');
   }
 
   async verifyConfiguration() {

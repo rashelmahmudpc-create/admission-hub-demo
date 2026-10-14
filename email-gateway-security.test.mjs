@@ -39,7 +39,7 @@ const infisicalStageEnvironment = () => Object.fromEntries(REQUIRED_EMAIL_GATEWA
   if (name === 'EMAIL_RECIPIENT_HASH_PEPPER') return [name, 'test-stage-independent-recipient-hash-pepper'];
   if (name === 'EMAIL_PROVIDER_ACTIVATION') return [name, 'disabled'];
   if (name.endsWith('_FROM_ADDRESS')) return [name, `${name.split('_')[0].toLowerCase()}@example.com`];
-  if (name.endsWith('_FROM_NAME')) return [name, `Admission Hub ${name.split('_')[0]}`];
+  if (name.endsWith('_FROM_NAME')) return [name, `AdmissionSky ${name.split("_")[0]}`];
   if (name.endsWith('_SENDER_VERIFIED')) return [name, 'false'];
   return [name, `test-credential-for-${name.toLowerCase()}`];
 }));

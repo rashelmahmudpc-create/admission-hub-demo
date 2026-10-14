@@ -19,7 +19,7 @@ export function createTelegramCompletionMessage({ status, summary, details = [],
   const safeSummary = clean(summary, 1500);
   if (!safeSummary) throw new TelegramNotificationError('INVALID_NOTIFICATION', 'Notification summary is required.');
   if (!Array.isArray(details) || details.length > 12) throw new TelegramNotificationError('INVALID_NOTIFICATION', 'Notification details are invalid.');
-  const lines = ['🔥 Admission Hub', `Status: ${normalizedStatus}`, safeSummary];
+  const lines = ['🔥 AdmissionSky', `Status: ${normalizedStatus}`, safeSummary];
   for (const item of details) {
     const value = clean(item, 240);
     if (value) lines.push(`• ${value}`);

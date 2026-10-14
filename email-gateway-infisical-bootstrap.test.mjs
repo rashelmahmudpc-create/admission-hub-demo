@@ -74,7 +74,7 @@ test('safe bootstrap creates only credential-independent disabled controls and g
   assert.ok(values.EMAIL_RECIPIENT_HASH_PEPPER.length >= 32);
   assert.equal(Object.keys(values).some(name => name.endsWith('_API_KEY') || name.endsWith('_SECRET_KEY')), false);
   for (const prefix of ['RESEND', 'BREVO', 'MAILJET', 'MAILTRAP', 'MAILERSEND', 'SENDPULSE', 'COURIER']) {
-    assert.equal(values[`${prefix}_FROM_NAME`], 'Admission Hub');
+    assert.equal(values[`${prefix}_FROM_NAME`], 'AdmissionSky');
     assert.equal(values[`${prefix}_SENDER_VERIFIED`], 'false');
   }
   const config = JSON.parse(values.EMAIL_GATEWAY_CONFIG);

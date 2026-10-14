@@ -187,8 +187,8 @@ export async function auditVerificationMessage({ message = {}, source = '', fetc
     senderDomain: fromDomain || 'unknown',
     returnPathDomain: returnPathDomain || 'unknown',
     dkimDomain: dkimDomain || 'unknown',
-    senderNameAdmissionHub: /^admission hub$/i.test(senderName),
-    subjectAdmissionHub: /admission hub/i.test(subject),
+    senderNameAdmissionHub: /^(?:admission ?hub|admissionsky)$/i.test(senderName),
+    subjectAdmissionHub: /admission ?hub|admissionsky/i.test(subject),
     spfResult: authResult(headers, 'spf'),
     dkimResult: authResult(headers, 'dkim'),
     dmarcResult: authResult(headers, 'dmarc'),
@@ -206,7 +206,7 @@ export async function auditVerificationMessage({ message = {}, source = '', fetc
     styledCta,
     rawUrlVisible,
     fallbackPresent,
-    brandInBody: /admission hub/i.test(visible),
+    brandInBody: /admission ?hub|admissionsky/i.test(visible),
     securityNotice: /account.*(?:না|not)|ignore|উপেক্ষা|নিরাপদ|secure/i.test(visible)
   });
 }

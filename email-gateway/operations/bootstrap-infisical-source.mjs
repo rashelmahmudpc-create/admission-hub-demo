@@ -29,7 +29,7 @@ const FIXED_SAFE_VALUES = Object.freeze({
   EMAIL_PROVIDER_ACTIVATION: 'disabled',
   EMAIL_GATEWAY_CONFIG: SAFE_GATEWAY_CONFIG,
   ...Object.fromEntries(PROVIDER_PREFIXES.flatMap(prefix => [
-    [`${prefix}_FROM_NAME`, 'Admission Hub'],
+    [`${prefix}_FROM_NAME`, 'AdmissionSky'],
     [`${prefix}_SENDER_VERIFIED`, 'false']
   ]))
 });

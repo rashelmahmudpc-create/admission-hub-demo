@@ -3,9 +3,9 @@ import { PROVIDER_CAPABILITIES } from '../core/constants.mjs';
 
 export class MailjetProvider extends ProviderAdapter {
   #apiKey; #secretKey; #fromAddress; #fromName; #apiBase;
-  constructor({ apiKey, secretKey, fromAddress, fromName = 'Admission Hub', apiBase = 'https://api.mailjet.com', fetchImpl }) {
+  constructor({ apiKey, secretKey, fromAddress, fromName = 'AdmissionSky', apiBase = 'https://api.mailjet.com', fetchImpl }) {
     super({ id: 'mailjet', name: 'Mailjet', fetchImpl, capabilities: [PROVIDER_CAPABILITIES.API, PROVIDER_CAPABILITIES.SMTP, PROVIDER_CAPABILITIES.TRANSACTIONAL, PROVIDER_CAPABILITIES.HTML, PROVIDER_CAPABILITIES.TEXT, PROVIDER_CAPABILITIES.CUSTOM_DOMAIN, PROVIDER_CAPABILITIES.WEBHOOKS, PROVIDER_CAPABILITIES.DELIVERY_EVENTS] });
-    this.#apiKey = String(apiKey || ''); this.#secretKey = String(secretKey || ''); this.#fromAddress = String(fromAddress || ''); this.#fromName = String(fromName || 'Admission Hub'); this.#apiBase = String(apiBase || 'https://api.mailjet.com').replace(/\/$/, '');
+    this.#apiKey = String(apiKey || ''); this.#secretKey = String(secretKey || ''); this.#fromAddress = String(fromAddress || ''); this.#fromName = String(fromName || 'AdmissionSky'); this.#apiBase = String(apiBase || 'https://api.mailjet.com').replace(/\/$/, '');
   }
   async verifyConfiguration() {
     const apiBaseValid = ['https://api.mailjet.com', 'https://api.us.mailjet.com'].includes(this.#apiBase);

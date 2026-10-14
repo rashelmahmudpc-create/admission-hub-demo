@@ -3,9 +3,9 @@ import { PROVIDER_CAPABILITIES } from '../core/constants.mjs';
 
 export class ZeptoMailProvider extends ProviderAdapter {
   #apiKey; #fromAddress; #fromName;
-  constructor({ apiKey, fromAddress, fromName = 'Admission Hub', fetchImpl }) {
+  constructor({ apiKey, fromAddress, fromName = 'AdmissionSky', fetchImpl }) {
     super({ id: 'zeptomail', name: 'ZeptoMail', fetchImpl, capabilities: [PROVIDER_CAPABILITIES.API, PROVIDER_CAPABILITIES.TRANSACTIONAL, PROVIDER_CAPABILITIES.HTML, PROVIDER_CAPABILITIES.TEXT, PROVIDER_CAPABILITIES.CUSTOM_DOMAIN] });
-    this.#apiKey = String(apiKey || '').replace(/^Zoho-enczapikey\s+/i, ''); this.#fromAddress = String(fromAddress || ''); this.#fromName = String(fromName || 'Admission Hub');
+    this.#apiKey = String(apiKey || '').replace(/^Zoho-enczapikey\s+/i, ''); this.#fromAddress = String(fromAddress || ''); this.#fromName = String(fromName || 'AdmissionSky');
   }
   async verifyConfiguration() { return Object.freeze({ configured: Boolean(this.#apiKey && this.#fromAddress), missing: [!this.#apiKey && 'apiKey', !this.#fromAddress && 'fromAddress'].filter(Boolean) }); }
   sendEmail(message, context = {}) {

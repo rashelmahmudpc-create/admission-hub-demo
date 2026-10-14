@@ -3,7 +3,7 @@ import { notifyTelegramFromEnvironment } from './telegram-notifier.mjs';
 
 export async function runTelegramNotificationCli({ env = process.env, argv = process.argv.slice(2), fetchImpl = globalThis.fetch, stdout = process.stdout, stderr = process.stderr } = {}) {
   const status = String(env.ADMISSION_HUB_NOTIFICATION_STATUS || argv[0] || 'COMPLETED').toUpperCase();
-  const summary = env.ADMISSION_HUB_NOTIFICATION_SUMMARY || argv.slice(1).join(' ') || 'Admission Hub task completed.';
+  const summary = env.ADMISSION_HUB_NOTIFICATION_SUMMARY || argv.slice(1).join(' ') || 'AdmissionSky task completed.';
   const details = String(env.ADMISSION_HUB_NOTIFICATION_DETAILS || '').split('|').map(value => value.trim()).filter(Boolean);
   try {
     const result = await notifyTelegramFromEnvironment({ env, fetchImpl, notification: { status, summary, details } });

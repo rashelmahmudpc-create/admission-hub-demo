@@ -33,7 +33,7 @@ const createAdapter = (catalog, env, runtime) => {
   const id = catalog.id;
   const common = {
     fromAddress: env[catalog.senderAddressBinding] || runtime.providerFromAddresses?.[id] || env.EMAIL_FROM_ADDRESS || runtime.fromAddress,
-    fromName: env[catalog.senderNameBinding] || runtime.providerFromNames?.[id] || env.EMAIL_FROM_NAME || runtime.fromName || 'Admission Hub',
+    fromName: env[catalog.senderNameBinding] || runtime.providerFromNames?.[id] || env.EMAIL_FROM_NAME || runtime.fromName || 'AdmissionSky',
     fetchImpl: runtime.fetchImpl
   };
   if (id === 'resend') return new ResendProvider({ ...common, apiKey: env.RESEND_API_KEY });
@@ -54,7 +54,7 @@ export async function createProviderEntries({ env = {}, config, runtime = {} }) 
   for (const catalog of PROVIDER_CATALOG) {
     const policy = config.providerPolicies[catalog.id] || {};
     const senderAddress = String(env[catalog.senderAddressBinding] || runtime.providerFromAddresses?.[catalog.id] || env.EMAIL_FROM_ADDRESS || runtime.fromAddress || '');
-    const senderName = String(env[catalog.senderNameBinding] || runtime.providerFromNames?.[catalog.id] || env.EMAIL_FROM_NAME || runtime.fromName || 'Admission Hub');
+    const senderName = String(env[catalog.senderNameBinding] || runtime.providerFromNames?.[catalog.id] || env.EMAIL_FROM_NAME || runtime.fromName || 'AdmissionSky');
     const senderAddressValid = senderAddress.length <= 254 && /^[^\s@<>]+@[^\s@<>]+\.[A-Za-z]{2,63}$/.test(senderAddress);
     const senderNameValid = senderName.length > 0 && senderName.length <= 100 && !/[\r\n\u0000<>]/.test(senderName);
     const adapter = createAdapter(catalog, env, runtime);
