@@ -51,6 +51,18 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: deploy --config wrangler.toml
+      - name: Apply the AgentMail sender display name
+        env:
+          AGENTMAIL_API_KEY: ${{ secrets.AGENTMAIL_API_KEY }}
+          AGENTMAIL_INBOX_ID: ${{ secrets.AGENTMAIL_INBOX_ID }}
+          AGENTMAIL_INBOX_DISPLAY_NAME: AdmissionSky
+        run: |
+          set -eu
+          if [ -z "${AGENTMAIL_API_KEY:-}" ] || [ -z "${AGENTMAIL_INBOX_ID:-}" ]; then
+            echo "::notice title=AgentMail display name skipped::AgentMail is not configured; the otp-e sender keeps its inbox default."
+            exit 0
+          fi
+          node auth-native/operations/set-agentmail-display-name.mjs
       - name: Verify public health and hidden internal route
         run: |
           set -u

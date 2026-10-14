@@ -14,6 +14,7 @@ import { auditVerificationMessage, liveAuthMethodsReady, verificationAction } fr
 import { summarizePlacementReport } from './auth-native/operations/live-placement-audit.mjs';
 import { FirebaseEmailPasswordProvider } from './auth-native/providers/firebase-auth.mjs';
 import { verifyFirebaseWorkerBinding } from './auth-native/operations/verify-worker-binding.mjs';
+import { setAgentMailDisplayName } from './auth-native/operations/set-agentmail-display-name.mjs';
 
 const ENV = Object.freeze({
   MAILJET_API_KEY: 'mailjet-test-key',
@@ -556,4 +557,33 @@ test('protected deployments require the Firebase Worker binding by name without 
     accountId: 'account-test', apiToken: 'token-test',
     fetchImpl: async () => response({ success: true, result: [] })
   }), /not installed/i);
+});
+
+test('AgentMail display name is set on the inbox and requires the echoed value', async () => {
+  const calls = [];
+  const fetchImpl = async (url, options) => {
+    calls.push({ url, method: options.method, body: JSON.parse(options.body), auth: options.headers.Authorization });
+    return response({ inbox_id: 'otp-inbox@agentmail.to', display_name: 'AdmissionSky' });
+  };
+  assert.deepEqual(await setAgentMailDisplayName({
+    apiKey: 'agentmail-test-key', inboxId: 'otp-inbox@agentmail.to', displayName: 'AdmissionSky', fetchImpl
+  }), { applied: true });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].method, 'PATCH');
+  assert.match(calls[0].url, /\/v0\/inboxes\/otp-inbox%40agentmail\.to$/);
+  assert.deepEqual(calls[0].body, { display_name: 'AdmissionSky' });
+  assert.equal(calls[0].auth, 'Bearer agentmail-test-key');
+
+  // A response that does not echo the requested name means the write did not take.
+  await assert.rejects(() => setAgentMailDisplayName({
+    apiKey: 'agentmail-test-key', inboxId: 'otp-inbox@agentmail.to', displayName: 'AdmissionSky',
+    fetchImpl: async () => response({ inbox_id: 'otp-inbox@agentmail.to', display_name: 'AgentMail' })
+  }), /NOT_APPLIED/);
+  await assert.rejects(() => setAgentMailDisplayName({
+    apiKey: 'agentmail-test-key', inboxId: 'otp-inbox@agentmail.to', displayName: 'AdmissionSky',
+    fetchImpl: async () => new Response('nope', { status: 403 })
+  }), /UPDATE_FAILED_403/);
+  await assert.rejects(() => setAgentMailDisplayName({
+    apiKey: 'short', inboxId: 'otp-inbox@agentmail.to', displayName: 'AdmissionSky', fetchImpl
+  }), /API_KEY_MISSING/);
 });
