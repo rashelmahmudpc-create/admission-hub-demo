@@ -117,10 +117,18 @@ test('Google, Passkey, and the explicit Email-or-Telegram selector are public wi
   assert.match(wrangler, /VERIFICATION_ORCHESTRATOR_CONFIG = '\{"enabled":true,"providers":\[\{"id":"otp-a","enabled":true,"priority":10,"dailyQuota":300/);
   assert.match(wrangler, /\{"id":"otp-b","enabled":true,"priority":20,"dailyQuota":100/);
   assert.match(wrangler, /\{"id":"otp-c","enabled":false,"priority":30,"dailyQuota":200/);
+  assert.match(wrangler, /\{"id":"otp-d","enabled":true,"priority":35,"dailyQuota":100/);
+  assert.match(wrangler, /\{"id":"otp-e","enabled":true,"priority":37,"dailyQuota":100/);
+  assert.match(wrangler, /\{"id":"otp-f","enabled":true,"priority":38,"dailyQuota":100/);
+  assert.match(wrangler, /\{"id":"otp-g","enabled":true,"priority":39,"dailyQuota":150/);
   assert.match(wrangler, /\{"id":"telegram","enabled":true,"priority":50/);
   assert.match(wrangler, /OTP_A_DAILY_QUOTA = "300"/);
   assert.match(wrangler, /OTP_B_DAILY_QUOTA = "100"/);
   assert.match(wrangler, /OTP_C_DAILY_QUOTA = "200"/);
+  assert.match(wrangler, /OTP_D_DAILY_QUOTA = "100"/);
+  assert.match(wrangler, /OTP_E_DAILY_QUOTA = "100"/);
+  assert.match(wrangler, /OTP_F_DAILY_QUOTA = "100"/);
+  assert.match(wrangler, /OTP_G_DAILY_QUOTA = "150"/);
   assert.doesNotMatch(wrangler, /BREVO_API_KEY|BREVO_FROM_ADDRESS|OTP_B_PROVIDER_SHARED_SECRET\s*=|MAILJET_API_KEY|MAILJET_SECRET_KEY/);
   assert.doesNotMatch(wrangler, /"id":"whatsapp","enabled":true/);
   assert.match(handler, /googlePublished\(env\)/);
