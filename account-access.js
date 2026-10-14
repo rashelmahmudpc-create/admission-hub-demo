@@ -3309,15 +3309,23 @@
       if (!window.FB) { try { await loadFacebook(state.facebookAppId); } catch (_) {} }
       if (!window.FB) return false;
       return new Promise(resolve => {
-        window.FB.login(async response => {
+        // FB.login rejects an async callback ("Expression is of type
+        // asyncfunction, not function"), so the exchange runs in an inner async
+        // function and the SDK only ever sees a plain function.
+        const handle = response => {
           const accessToken = String(response?.authResponse?.accessToken || '');
           if (String(response?.status || '') !== 'connected' || accessToken.length < 20) return resolve(false);
-          try {
-            const result = await skyApi('/facebook', { method: 'POST', body: { accessToken } });
-            await establishSession(result, 'Facebook দিয়ে তোমার account-এ প্রবেশ হয়েছে।');
-            resolve(true);
-          } catch (_) { resolve(false); }
-        }, { scope: 'public_profile,email' });
+          (async () => {
+            try {
+              const result = await skyApi('/facebook', { method: 'POST', body: { accessToken } });
+              await establishSession(result, 'Facebook দিয়ে তোমার account-এ প্রবেশ হয়েছে।');
+              resolve(true);
+            } catch (_) { resolve(false); }
+          })();
+        };
+        try {
+          window.FB.login(handle, { scope: 'public_profile,email' });
+        } catch (_) { resolve(false); }
       });
     },
     passkey: async () => {
