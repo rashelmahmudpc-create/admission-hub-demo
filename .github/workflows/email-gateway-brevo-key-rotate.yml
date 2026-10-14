@@ -1,0 +1,78 @@
+name: Rotate the Brevo API key (manual, owner-authorised)
+
+# `otp-a` (Brevo) is skipped by the verification orchestrator whenever
+# `GET /v3/senders` rejects the credential: the availability probe cannot
+# confirm the from-address and the slot reports SENDER_NOT_VERIFIED. A revoked
+# key fails exactly that way, and it is invisible from the Worker side, because
+# the provider is simply never selected.
+#
+# Brevo issues two credential types and only one of them can read the account:
+# an `xkeysib-` API key authenticates the REST API, while an `xsmtpsib-` SMTP
+# key authenticates SMTP only and returns 401 "Key not found" on every REST
+# call. The Worker's probe is REST, so the bound value must be an API key.
+#
+# The key itself lives in a GitHub secret and is never written to this file, the
+# repository, or a run log. Dispatch with confirmation ROTATE_BREVO_KEY.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type ROTATE_BREVO_KEY to overwrite the Worker's BREVO_API_KEY
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: admission-hub-brevo-key-rotation
+  cancel-in-progress: false
+
+jobs:
+  rotate:
+    if: ${{ inputs.confirmation == 'ROTATE_BREVO_KEY' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+
+      - name: Overwrite BREVO_API_KEY on the admission-gk Worker
+        env:
+          BREVO_API_KEY: ${{ secrets.BREVO_API_KEY }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -eu
+          if [ -z "${BREVO_API_KEY:-}" ]; then
+            echo "::error title=Brevo key missing::No BREVO_API_KEY repository secret is set."
+            exit 1
+          fi
+          # Brevo's REST API keys carry the xkeysib- prefix; an xsmtpsib- value is
+          # an SMTP key and would be rejected by the availability probe.
+          case "$BREVO_API_KEY" in
+            xkeysib-*) ;;
+            xsmtpsib-*) echo "::error title=Wrong Brevo credential type::This is an SMTP key; the Worker needs an xkeysib- API key."; exit 1 ;;
+            *) echo "::error title=Unrecognised Brevo credential::Expected the xkeysib- prefix."; exit 1 ;;
+          esac
+          printf '%s' "$BREVO_API_KEY" | npx --yes wrangler@4.35.0 secret put BREVO_API_KEY --name admission-gk
+
+      # A wrong or dead key is the whole failure mode, so prove the account is
+      # readable rather than trusting the upload's exit code. Only the HTTP
+      # status is printed; the sender list and the key are not.
+      - name: Verify the account is readable with the new key
+        env:
+          BREVO_API_KEY: ${{ secrets.BREVO_API_KEY }}
+        run: |
+          set -eu
+          status=$(curl -s -o /dev/null -w '%{http_code}' \
+            -H "api-key: ${BREVO_API_KEY}" -H 'accept: application/json' \
+            https://api.brevo.com/v3/senders)
+          echo "Brevo senders probe: HTTP ${status}"
+          if [ "$status" != "200" ]; then
+            echo "::error title=Brevo key rejected::GET /v3/senders answered ${status}; otp-a will stay skipped."
+            exit 1
+          fi
