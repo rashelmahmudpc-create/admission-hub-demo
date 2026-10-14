@@ -140,6 +140,28 @@ test('Google is capability-gated, uses Firebase endpoint, and keeps tokens out o
   app.dom.window.close();
 });
 
+test('a Google failure reported only through error_callback surfaces instead of hanging forever', async () => {
+  const clientId = '123456789012-exampleclientidentifier.apps.googleusercontent.com';
+  const app = setup({ methods: { google: { available: true, clientId } } });
+  await waitFor(() => app.document.querySelector('[data-role="google-button"] button'));
+  // GSI reports an origin_mismatch (or a blocked popup) ONLY through
+  // error_callback; the token callback never fires. So the mock stays silent
+  // when no error_callback is registered, and the promise would never settle.
+  app.window.google.accounts.oauth2.initTokenClient = options => ({
+    requestAccessToken() {
+      if (typeof options.error_callback === 'function') options.error_callback({ type: 'origin_mismatch' });
+    }
+  });
+  const settled = await Promise.race([
+    app.window.AdmissionSkyBridge.google().then(() => 'resolved', error => `rejected:${error.message}`),
+    sleep(1500).then(() => 'hung')
+  ]);
+  assert.notEqual(settled, 'hung');
+  assert.match(settled, /Google/);
+  assert.equal(app.calls.some(call => call.path.endsWith('/google')), false);
+  app.dom.window.close();
+});
+
 test('Google canary requests the explicit server-authorized config only from the opt-in URL', async () => {
   const clientId = '123456789012-exampleclientidentifier.apps.googleusercontent.com';
   const app = setup({

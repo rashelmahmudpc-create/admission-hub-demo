@@ -3292,13 +3292,36 @@
         try { await loadGoogle(state.googleClientId || state.capabilities.google.clientId); } catch (_) {}
       }
       if (!window.google?.accounts?.oauth2) return false;
+      const clientId = state.googleClientId || state.capabilities.google.clientId;
+      if (!clientId) throw new Error('Google লগইন এখন তৈরি হয়নি—পেজটি একবার refresh করো।');
       const accessToken = await new Promise((resolve, reject) => {
+        let settled = false;
+        let timer;
+        const finish = (action, value) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          action(value);
+        };
+        // A GSI misconfiguration (an origin the OAuth client does not allow, a
+        // blocked popup, or a Google-side rate limit) is reported ONLY through
+        // error_callback. Without it the promise never settles and the button
+        // spins forever with no message, which reads as a frozen app.
         const client = window.google.accounts.oauth2.initTokenClient({
-          client_id: state.googleClientId,
+          client_id: clientId,
           scope: 'openid email profile',
-          callback: r => (r?.error || !r?.access_token ? reject(new Error('Google অনুমতি পাওয়া যায়নি।')) : resolve(r.access_token))
+          callback: r => (r?.error || !r?.access_token
+            ? finish(reject, new Error('Google অনুমতি পাওয়া যায়নি—আবার চেষ্টা করো বা ইমেইল দিয়ে ঢুকো।'))
+            : finish(resolve, r.access_token)),
+          error_callback: e => finish(reject, new Error(
+            String(e?.type || '') === 'popup_closed'
+              ? 'Google জানালাটি বন্ধ হয়ে গেছে—আবার চেষ্টা করো বা ইমেইল দিয়ে ঢুকো।'
+              : 'Google লগইন এই মুহূর্তে খুলছে না—আবার চেষ্টা করো বা ইমেইল দিয়ে ঢুকো।'
+          ))
         });
-        client.requestAccessToken({ prompt: '' });
+        timer = setTimeout(() => finish(reject, new Error('Google অনুমতির সময় শেষ হয়েছে—আবার চেষ্টা করো বা ইমেইল দিয়ে ঢুকো।')), 60000);
+        try { client.requestAccessToken({ prompt: '' }); }
+        catch (_) { finish(reject, new Error('Google জানালা খোলা যায়নি—browser-এ popup অনুমতি দাও বা ইমেইল দিয়ে ঢুকো।')); }
       });
       const result = await skyApi('/google', { method: 'POST', body: { accessToken } });
       await establishSession(result, 'Google দিয়ে তোমার account-এ প্রবেশ হয়েছে।');

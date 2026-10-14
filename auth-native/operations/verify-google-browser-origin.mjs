@@ -1,12 +1,17 @@
 import { existsSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
-const LIVE_URL = 'https://admissionhub.pages.dev/';
+const LIVE_URL = String(process.env.GOOGLE_BROWSER_ORIGIN_URL || '').trim() || 'https://admissionhub.pages.dev/';
 const GOOGLE_HOST = 'accounts.google.com';
+// The repo ships playwright-core and keeps its Chromium under .tools; plain
+// `channel: 'chrome'` is absent on most machines (and on this sandbox), which
+// made the check report BROWSER_LAUNCH_FAILED instead of the origin verdict.
 const BROWSER_PATHS = Object.freeze([
   '/usr/bin/google-chrome',
   '/usr/bin/google-chrome-stable',
-  '/opt/google/chrome/chrome'
+  '/opt/google/chrome/chrome',
+  '/usr/bin/chromium',
+  '/usr/bin/chromium-browser'
 ]);
 
 export class GoogleBrowserOriginError extends Error {
