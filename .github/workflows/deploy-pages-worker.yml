@@ -61,17 +61,40 @@ jobs:
 
       # The sender name is a provider-account value, not Worker code, so a secret
       # left over from the old brand keeps showing "Admission Hub" even after the
-      # templates changed. Pin the name for the enabled OTP slots that carry one;
-      # AgentMail has no from-name field and is branded through its inbox instead.
+      # templates changed. Overwrite the existing from-name secrets only: this
+      # Worker already sits on Cloudflare's 64-variable free-tier ceiling, so
+      # creating a name that is absent would fail the deploy.
       - name: Pin the OTP sender display names
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           set -eu
+          present=$(npx --yes wrangler@4.35.0 secret list --name admission-gk --format json | node -e '
+            let raw = ""; process.stdin.on("data", c => { raw += c; });
+            process.stdin.on("end", () => {
+              try { console.log(JSON.parse(raw).map(row => row.name).join("\n")); } catch { process.exit(0); }
+            });
+          ')
           for name in BREVO_FROM_NAME RESEND_FROM_NAME MAILERSEND_FROM_NAME; do
-            printf '%s' 'AdmissionSky' | npx --yes wrangler@4.35.0 secret put "$name" --name admission-gk
+            if printf '%s\n' "$present" | grep -qx "$name"; then
+              printf '%s' 'AdmissionSky' | npx --yes wrangler@4.35.0 secret put "$name" --name admission-gk
+            else
+              echo "::notice title=OTP sender name skipped::${name} is not bound; leaving the provider default in place."
+            fi
           done
+      - name: Apply the AgentMail sender display name
+        env:
+          AGENTMAIL_API_KEY: ${{ secrets.AGENTMAIL_API_KEY }}
+          AGENTMAIL_INBOX_ID: ${{ secrets.AGENTMAIL_INBOX_ID }}
+          AGENTMAIL_INBOX_DISPLAY_NAME: AdmissionSky
+        run: |
+          set -eu
+          if [ -z "${AGENTMAIL_API_KEY:-}" ] || [ -z "${AGENTMAIL_INBOX_ID:-}" ]; then
+            echo "::notice title=AgentMail display name skipped::AgentMail is not configured; the otp-e sender keeps its inbox default."
+            exit 0
+          fi
+          node auth-native/operations/set-agentmail-display-name.mjs
 
   pages:
     if: ${{ inputs.confirmation == 'DEPLOY' && github.ref == 'refs/heads/main' }}
