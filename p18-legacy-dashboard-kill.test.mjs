@@ -32,7 +32,7 @@ test('HTML and service worker are no-cache controlled', HEADERS.includes('/sw.js
 test('dashboard and app-shell build markers are current',
   H.includes('dashboard-v2.js?v=dash2f17-v3frame') && SW.includes('dashboard-v2.js?v=dash2f17-v3frame') &&
 
-  SW.includes("const BUILD_ID = 'v343-sky-dark-keyboard'") && H.includes("const expectedSwVersion = 'v343-sky-dark-keyboard'"));
+  SW.includes("const BUILD_ID = 'v344-sky-dark-keyboard'") && H.includes("const expectedSwVersion = 'v344-sky-dark-keyboard'"));
 
 test('dashboard-v2 renders without any account bootstrap', await (async () => {
   const dom = new JSDOM('<!doctype html><html><head></head><body><div id="app"></div><div id="navRoot"></div></body></html>', { runScripts: 'dangerously', pretendToBeVisual: true, url: 'https://admissionhub.pages.dev/' });

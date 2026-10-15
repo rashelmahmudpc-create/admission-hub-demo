@@ -108,9 +108,9 @@ await test('content hydration is public and account-independent',
   !/AHAuth|ahPubToken|authHeaders|Authorization/.test(CLOUD));
 
 await test('service-worker build and HTML registration are synchronized',
-  SW.includes("const BUILD_ID = 'v343-sky-dark-keyboard'") &&
-  H.includes("const expectedSwVersion = 'v343-sky-dark-keyboard'") &&
-  H.includes('admission-hub-shell-v343-sky-dark-keyboard'));
+  SW.includes("const BUILD_ID = 'v344-sky-dark-keyboard'") &&
+  H.includes("const expectedSwVersion = 'v344-sky-dark-keyboard'") &&
+  H.includes('admission-hub-shell-v344-sky-dark-keyboard'));
 await test('service-worker shell cannot cache retired assets', !retiredAssetRe.test(SW));
 await test('premium account and institution assets use synchronized cache-busting versions',
   ['account-access.css?v=20261017-iosshell1', 'account-access.js?v=20261017-iosshell1', 'institutions-bd.js?v=bd-institutions-v2']
@@ -122,8 +122,8 @@ await test('premium Auth UI/server contract and curated-manual institution polic
   AUTH_HANDLER.includes("version: 'premium-onboarding-v1'") &&
   INSTITUTIONS.includes("coverage: 'curated-starter-index'") && INSTITUTIONS.includes("mode: 'manual'"));
 await test('main-app AI client is versioned in the public shell while prior shells are still purged',
-  SW.includes('ai-agent-chat.js?v=agent-f1-ui-skyv4') &&
-  H.includes('ai-agent-chat.js?v=agent-f1-ui-skyv4') &&
+  SW.includes('ai-agent-chat.js?v=agent-f1-ui-skyv5') &&
+  H.includes('ai-agent-chat.js?v=agent-f1-ui-skyv5') &&
   H.includes("name.startsWith('admission-hub-shell-')") && SW.includes('.filter(key => key !== CACHE_NAME)'));
 
 const forbiddenWorkerRoutes = retiredRoutes.filter(route => !route.startsWith('/api/admin/'));

@@ -14,7 +14,7 @@ const PAGES_GUARD = read('.github/workflows/cf-pages.yml');
 const RELEASE_WORKFLOW = read('.github/workflows/telegram-auth-canary-activate.yml');
 const UI_VERSION = '20261017-iosshell1';
 
-const SHELL_VERSION = 'v343-sky-dark-keyboard';
+const SHELL_VERSION = 'v344-sky-dark-keyboard';
 
 const between = (source, start, end) => {
   const from = source.indexOf(start);

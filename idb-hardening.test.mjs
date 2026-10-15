@@ -27,9 +27,9 @@ test('retired identity/onboarding scripts are no longer boot-critical or loaded'
 
 
 test('service-worker build marker is synchronized',
-  SW.includes("const BUILD_ID = 'v343-sky-dark-keyboard'") &&
-  H.includes("const expectedSwVersion = 'v343-sky-dark-keyboard'") &&
-  H.includes('admission-hub-shell-v343-sky-dark-keyboard'));
+  SW.includes("const BUILD_ID = 'v344-sky-dark-keyboard'") &&
+  H.includes("const expectedSwVersion = 'v344-sky-dark-keyboard'") &&
+  H.includes('admission-hub-shell-v344-sky-dark-keyboard'));
 test('data protection summarizes stores with count rather than full reads', DP.includes('tx.objectStore(name).count()'));
 test('unprotected automatic Pages deploy stays retired', WF.includes('Cloudflare Pages Bundle Guard (No Deploy)') && !WF.includes('wrangler-action') && !WF.includes('pages deploy dist --project-name admissionhub'));
 
