@@ -1718,57 +1718,52 @@
     return state.googlePromise;
   };
 
-  const handleFacebookCredential = response => {
-    const accessToken = String(response?.authResponse?.accessToken || '');
-    const status = String(response?.status || '');
-    if (state.busy || status !== 'connected' || accessToken.length < 20) {
-      return state.busy ? undefined : message('Facebook সাইন-ইন সম্পন্ন হয়নি—ইমেইল দিয়ে চেষ্টা করুন।', 'error');
+  /* Facebook sign-in runs through Firebase's own authDomain, exactly like the
+   * Google fix above, and for the same reason. The raw FB JS SDK opens
+   * www.facebook.com/dialog/oauth directly, and Facebook shows its own
+   * "Sorry, something went wrong" page for this app -- the owner's screenshot
+   * of 2026-10-15. The Firebase SDK instead opens its handler on the authDomain
+   * (admissionsky-997d2.firebaseapp.com, which Firebase provisions and Facebook
+   * accepts) and returns a Facebook access token -- exactly what POST /facebook
+   * accepts, so no backend change is needed. */
+  const facebookMessage = error => {
+    const code = String(error?.code || '');
+    if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
+      return 'Facebook \u099c\u09be\u09a8\u09be\u09b2\u09be\u099f\u09bf \u09ac\u09a8\u09cd\u09a7 \u09b9\u09af\u09bc\u09c7 \u0997\u09c7\u099b\u09c7\u2014\u0986\u09ac\u09be\u09b0 \u099a\u09c7\u09b7\u09cd\u099f\u09be \u0995\u09b0\u09cb \u09ac\u09be \u0987\u09ae\u09c7\u0987\u09b2 \u09a6\u09bf\u09af\u09bc\u09c7 \u09a2\u09c1\u0995\u09cb\u0964';
     }
-    return (async () => {
-      setBusy(true);
-      try {
-        const result = await api('/facebook', { method: 'POST', body: { accessToken } });
-        await establishSession(result, 'Facebook দিয়ে তোমার একই account-এ প্রবেশ হয়েছে।');
-      } catch (error) {
-        if (error.code === 'ACCOUNT_LINK_REQUIRED') showView('google-link');
-        message(friendlyError(error), 'error');
-      } finally { setBusy(false); }
-    })();
+    if (code === 'auth/popup-blocked') {
+      return 'Facebook \u099c\u09be\u09a8\u09be\u09b2\u09be \u0996\u09cb\u09b2\u09be \u09af\u09be\u09af\u09bc\u09a8\u09bf\u2014browser-\u098f popup \u0985\u09a8\u09c1\u09ae\u09a4\u09bf \u09a6\u09be\u0993 \u09ac\u09be \u0987\u09ae\u09c7\u0987\u09b2 \u09a6\u09bf\u09af\u09bc\u09c7 \u09a2\u09c1\u0995\u09cb\u0964';
+    }
+    return 'Facebook \u09b2\u0997\u0987\u09a8 \u098f\u0987 \u09ae\u09c1\u09b9\u09c1\u09b0\u09cd\u09a4\u09c7 \u0996\u09c1\u09b2\u099b\u09c7 \u09a8\u09be\u2014\u0986\u09ac\u09be\u09b0 \u099a\u09c7\u09b7\u09cd\u099f\u09be \u0995\u09b0\u09cb \u09ac\u09be \u0987\u09ae\u09c7\u0987\u09b2 \u09a6\u09bf\u09af\u09bc\u09c7 \u09a2\u09c1\u0995\u09cb\u0964';
   };
 
-  const loadFacebook = appId => {
-    if (!appId) return Promise.resolve(false);
-    if (appId === state.facebookAppId && state.facebookPromise) return state.facebookPromise;
-    state.facebookAppId = appId;
-    state.facebookPromise = new Promise(resolve => {
-      const initialize = () => {
-        try {
-          if (!window.FB) throw new Error('Facebook SDK unavailable');
-          window.FB.init({ appId, cookie: true, xfbml: false, version: 'v18.0' });
-          window.FB.getLoginStatus(() => {});
-          resolve(true);
-        } catch (_) { resolve(false); }
-      };
-      if (window.FB) return initialize();
-      window.fbAsyncInit = initialize;
-      const script = document.createElement('script');
-      script.src = 'https://connect.facebook.net/en_US/sdk.js';
-      script.async = true;
-      script.defer = true;
-      script.crossOrigin = 'anonymous';
-      const timer = setTimeout(() => resolve(false), 10000);
-      script.onload = () => { clearTimeout(timer); initialize(); };
-      script.onerror = () => { clearTimeout(timer); resolve(false); };
-      document.head.append(script);
-    });
-    return state.facebookPromise;
+  const facebookAccessToken = async () => {
+    const auth = await loadFirebaseAuth();
+    const provider = new window.firebase.auth.FacebookAuthProvider();
+    provider.addScope('email');
+    provider.addScope('public_profile');
+    let credential;
+    try {
+      credential = await auth.signInWithPopup(provider);
+    } catch (error) {
+      throw new Error(facebookMessage(error));
+    }
+    const token = String(credential?.credential?.accessToken || '');
+    if (token.length < 20) throw new Error('Facebook \u0985\u09a8\u09c1\u09ae\u09a4\u09bf \u09aa\u09be\u0993\u09af\u09bc\u09be \u09af\u09be\u09af\u09bc\u09a8\u09bf\u2014\u0986\u09ac\u09be\u09b0 \u099a\u09c7\u09b7\u09cd\u099f\u09be \u0995\u09b0\u09cb \u09ac\u09be \u0987\u09ae\u09c7\u0987\u09b2 \u09a6\u09bf\u09af\u09bc\u09c7 \u09a2\u09c1\u0995\u09cb\u0964');
+    return token;
   };
 
-  const signInWithFacebook = () => {
-    if (!window.FB || !state.facebookAppId) {
-      return message('Facebook লগইন এখন পাওয়া যাচ্ছে না—ইমেইল ব্যবহার করো।', 'error');
-    }
-    window.FB.login(handleFacebookCredential, { scope: 'public_profile,email' });
+  const signInWithFacebook = async () => {
+    if (state.busy) return;
+    setBusy(true);
+    try {
+      const accessToken = await facebookAccessToken();
+      const result = await api('/facebook', { method: 'POST', body: { accessToken } });
+      await establishSession(result, 'Facebook \u09a6\u09bf\u09af\u09bc\u09c7 \u09a4\u09cb\u09ae\u09be\u09b0 \u098f\u0995\u0987 account-\u098f \u09aa\u09cd\u09b0\u09ac\u09c7\u09b6 \u09b9\u09af\u09bc\u09c7\u099b\u09c7\u0964');
+    } catch (error) {
+      if (error?.code === 'ACCOUNT_LINK_REQUIRED') showView('google-link');
+      message(error?.code ? friendlyError(error) : facebookMessage(error), 'error');
+    } finally { setBusy(false); }
   };
 
   const linkGoogle = async (email, password) => {
@@ -1834,7 +1829,6 @@
     const facebookHost = $('[data-role="welcome-facebook-button"]');
     if (facebookHost) {
       facebookHost.hidden = !state.capabilities.facebook.available;
-      if (state.capabilities.facebook.available) loadFacebook(state.capabilities.facebook.appId);
     }
   };
 
@@ -3329,28 +3323,16 @@
       return true;
     },
     facebook: async () => {
-      if (!state.facebookAppId) return false;
-      if (!window.FB) { try { await loadFacebook(state.facebookAppId); } catch (_) {} }
-      if (!window.FB) return false;
-      return new Promise(resolve => {
-        // FB.login rejects an async callback ("Expression is of type
-        // asyncfunction, not function"), so the exchange runs in an inner async
-        // function and the SDK only ever sees a plain function.
-        const handle = response => {
-          const accessToken = String(response?.authResponse?.accessToken || '');
-          if (String(response?.status || '') !== 'connected' || accessToken.length < 20) return resolve(false);
-          (async () => {
-            try {
-              const result = await skyApi('/facebook', { method: 'POST', body: { accessToken } });
-              await establishSession(result, 'Facebook দিয়ে তোমার account-এ প্রবেশ হয়েছে।');
-              resolve(true);
-            } catch (_) { resolve(false); }
-          })();
-        };
-        try {
-          window.FB.login(handle, { scope: 'public_profile,email' });
-        } catch (_) { resolve(false); }
-      });
+      let accessToken;
+      try {
+        accessToken = await facebookAccessToken();
+      } catch (error) {
+        message(facebookMessage(error), 'error');
+        return false;
+      }
+      const result = await skyApi('/facebook', { method: 'POST', body: { accessToken } });
+      await establishSession(result, 'Facebook \u09a6\u09bf\u09af\u09bc\u09c7 \u09a4\u09cb\u09ae\u09be\u09b0 \u098f\u0995\u0987 account-\u098f \u09aa\u09cd\u09b0\u09ac\u09c7\u09b6 \u09b9\u09af\u09bc\u09c7\u099b\u09c7\u0964');
+      return true;
     },
     passkey: async () => {
       if (!passkeyBrowserReady()) return false;

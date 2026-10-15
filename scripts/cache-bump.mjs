@@ -13,15 +13,15 @@ const relative = path => new URL(path, root);
 
 // The asset version string shared by account-access.{js,css} and the
 // language-engine table. Bump both when either file changes.
-const UI_VERSION_FROM = '20261010-static-welcome-lock3';
-const UI_VERSION_TO = '20261010-static-welcome-lock3';
+const UI_VERSION_FROM = '20261013-skyfix5';
+const UI_VERSION_TO = '20261015-fbauth1';
 const LANG_VERSION_FROM = 'lang-v5-single-email-button';
 const LANG_VERSION_TO = 'lang-v5-single-email-button';
 // NOTE: SW_BUILD_TO must always equal the BUILD_ID in sw.js. Without a bump the
 // deploy ships new files under old ?v= tokens; browsers then serve them
 // immutable for a year, so students keep the old app and every fix misses them.
-const SW_BUILD_FROM = 'v312-vm-scope-20261011';
-const SW_BUILD_TO = 'v312-vm-scope-20261011';
+const SW_BUILD_FROM = 'v330-skyfix-20261013';
+const SW_BUILD_TO = 'v331-fbauth-20261015';
 
 const targets = [
   'index.html',
