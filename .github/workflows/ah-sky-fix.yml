@@ -1,0 +1,66 @@
+name: AH Sky Fix (fetch-commit-deploy)
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type DEPLOY to fetch verified Sky fix, commit and deploy
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ah-sky-fix-deploy
+  cancel-in-progress: false
+
+jobs:
+  fix:
+    if: ${{ inputs.confirmation == 'DEPLOY' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Fetch verified patched files
+        run: |
+          set -eu
+          curl -fsSL "https://backend.composio.dev/api/v3/sl/Ei4k0qMrDn" -o ai-agent-chat.js
+          curl -fsSL "https://backend.composio.dev/api/v3/sl/rJzwAOtZRJ" -o index.html
+          curl -fsSL "https://backend.composio.dev/api/v3/sl/USx6OaGFR9" -o sw.js
+          echo "4476eebf588bfdaafbd9c91918c334ad691fa7b882745c04e9f143e912a7230d  ai-agent-chat.js" | sha256sum -c -
+          echo "1629405bb18ae7e105c3df58b70a451826d13feb7d5f0e7df0369f61b172ff45  index.html" | sha256sum -c -
+          echo "5b158d1c68735a0e6ecf30426771d4679e84755b4467166d9b534f6f2123dfc2  sw.js" | sha256sum -c -
+          node --check ai-agent-chat.js
+          node --check sw.js
+      - name: Guard p21 Sky contract
+        run: |
+          set -eu
+          node --test p21-ai-agent-ui.test.mjs
+      - name: Commit fix to main
+        run: |
+          set -eu
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add ai-agent-chat.js index.html sw.js
+          if git diff --cached --quiet; then echo "no changes"; else git commit -m "fix(sky): dark-mode inputs, ChatGPT-style composer, interactive markdown charts flow, live activity, chrome theme sync"; git push origin HEAD:main; fi
+      - name: Build sanitized Pages bundle
+        run: |
+          set -eu
+          mkdir -p dist
+          rsync -a --exclude='.git' --exclude='node_modules' --exclude='docs' --exclude='AGENT_RESUME' --exclude='ai-proxy' --exclude='auth' --exclude='auth-native' --exclude='email-gateway' --exclude='apps-script' --exclude='uploads' --exclude='.github' --exclude='gk-agent-worker.js' --exclude='public-worker.js' --exclude='ai-agent.js' --exclude='worker-bundle.mjs' --exclude='voice-worker.js' --exclude='notification-worker.js' --exclude='fcm-notification.mjs' --exclude='wrangler.toml' --exclude='wrangler.staging.toml' --exclude='package.json' --exclude='package-lock.json' --exclude='*.test.mjs' --exclude='*.md' --exclude='ah-sky-fix.yml' ./ dist/
+          test -s dist/index.html; test -s dist/ai-agent-chat.js; test -s dist/sw.js
+          grep -Fq 'agent-f1-ui-skyv2' dist/index.html
+          grep -Fq 'v338-skyv3-chrome' dist/sw.js
+      - name: Deploy to Cloudflare Pages (admissionsky)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -eu
+          npx --yes wrangler@4.35.0 pages deploy dist --project-name admissionsky --branch main
