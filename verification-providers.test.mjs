@@ -881,3 +881,28 @@ test('Dead Simple Email sends to /messages and requires a message id back', asyn
   );
 });
 
+
+test('otp-h Logto uses its public defaults only when the owner enabled the slot', async () => {
+  const off = createConfiguredVerificationProviders({}).find(row => row.id === 'otp-h');
+  assert.equal(off.configured, false);
+  const disabled = createConfiguredVerificationProviders({
+    VERIFICATION_ORCHESTRATOR_CONFIG: JSON.stringify({ enabled: true, providers: [{ id: 'otp-h', enabled: false, dailyQuota: 1000 }] })
+  }).find(row => row.id === 'otp-h');
+  assert.equal(disabled.configured, false);
+  const on = createConfiguredVerificationProviders({
+    VERIFICATION_ORCHESTRATOR_CONFIG: JSON.stringify({ enabled: true, providers: [{ id: 'otp-h', enabled: true, dailyQuota: 1000 }] })
+  }).find(row => row.id === 'otp-h');
+  assert.equal(on.configured, true);
+  assert.equal(on.endpoint, 'https://dl635v.logto.app');
+  assert.equal((await on.getRemainingQuota()).limit, 1000);
+  const broken = createConfiguredVerificationProviders({ VERIFICATION_ORCHESTRATOR_CONFIG: '{not json' }).find(row => row.id === 'otp-h');
+  assert.equal(broken.configured, false);
+});
+
+test('wrangler.toml stays off the Logto vars that broke the 64-variable free ceiling', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const toml = await readFile(new URL('./wrangler.toml', import.meta.url), 'utf8');
+  for (const name of ['LOGTO_ENDPOINT', 'LOGTO_APP_ID', 'LOGTO_REDIRECT_URI', 'OTP_H_DAILY_QUOTA']) {
+    assert.equal(new RegExp(`^${name}\\s*=`, 'm').test(toml), false, name);
+  }
+});

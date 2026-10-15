@@ -1057,6 +1057,26 @@ export class OfficialWhatsAppVerificationProvider {
 // Experience API with the public SPA app id, so no secret is needed. The
 // short-lived interaction cookies are kept per attempt in memory and KV (10 min).
 const LOGTO_STATE_TTL_SECONDS = 600;
+// Public, non-secret Logto values live in code, not in wrangler.toml [vars]:
+// Workers Free caps a Worker at 64 variables (secrets + text) and this Worker
+// already sits on that ceiling, so four extra vars failed the 2026-10-15 deploy
+// (code 10055, 68 > 64). The defaults only apply when the owner has enabled
+// `otp-h` in VERIFICATION_ORCHESTRATOR_CONFIG, so an empty env still fails
+// closed; an env binding of the same name still overrides each value.
+const LOGTO_PUBLIC_DEFAULTS = Object.freeze({
+  endpoint: 'https://dl635v.logto.app',
+  appId: 'dk00yf3jvdmyy4mduoizp',
+  redirectUri: 'https://admissionsky.pages.dev/logto-callback'
+});
+function logtoSlotFromConfig(raw) {
+  try {
+    const text = String(raw || '');
+    if (!text || text.length > 16_384) return null;
+    const rows = JSON.parse(text)?.providers;
+    const row = Array.isArray(rows) ? rows.find(item => item?.id === 'otp-h') : null;
+    return row && row.enabled === true ? row : null;
+  } catch { return null; }
+}
 const validLogtoAppId = value => /^[a-z0-9]{12,32}$/.test(String(value || ''));
 function logtoRedirect(value) {
   try {
@@ -1479,12 +1499,13 @@ export function createConfiguredVerificationProviders(env = {}, { fetchImpl = gl
     fetchImpl
   });
   const bridgeOtpG = new BridgeOtpVerificationProvider({ id: 'otp-g', origin: env.OTP_G_PROVIDER_ORIGIN, apiKey: env.OTP_G_PROVIDER_KEY, declaredDailyQuota: env.OTP_G_DAILY_QUOTA, fetchImpl });
+  const logtoSlot = logtoSlotFromConfig(env.VERIFICATION_ORCHESTRATOR_CONFIG);
   const logtoOtpH = new LogtoOtpVerificationProvider({
     id: 'otp-h',
-    endpoint: env.LOGTO_ENDPOINT,
-    appId: env.LOGTO_APP_ID,
-    redirectUri: env.LOGTO_REDIRECT_URI,
-    declaredDailyQuota: env.OTP_H_DAILY_QUOTA,
+    endpoint: env.LOGTO_ENDPOINT || (logtoSlot ? LOGTO_PUBLIC_DEFAULTS.endpoint : ''),
+    appId: env.LOGTO_APP_ID || (logtoSlot ? LOGTO_PUBLIC_DEFAULTS.appId : ''),
+    redirectUri: env.LOGTO_REDIRECT_URI || (logtoSlot ? LOGTO_PUBLIC_DEFAULTS.redirectUri : ''),
+    declaredDailyQuota: env.OTP_H_DAILY_QUOTA || (logtoSlot ? logtoSlot.dailyQuota : ''),
     kv: env.GK_KV || null,
     fetchImpl
   });

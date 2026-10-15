@@ -23558,6 +23558,22 @@ var OfficialWhatsAppVerificationProvider = class {
   }
 };
 var LOGTO_STATE_TTL_SECONDS = 600;
+var LOGTO_PUBLIC_DEFAULTS = Object.freeze({
+  endpoint: "https://dl635v.logto.app",
+  appId: "dk00yf3jvdmyy4mduoizp",
+  redirectUri: "https://admissionsky.pages.dev/logto-callback"
+});
+function logtoSlotFromConfig(raw) {
+  try {
+    const text = String(raw || "");
+    if (!text || text.length > 16384) return null;
+    const rows = JSON.parse(text)?.providers;
+    const row = Array.isArray(rows) ? rows.find((item) => item?.id === "otp-h") : null;
+    return row && row.enabled === true ? row : null;
+  } catch {
+    return null;
+  }
+}
 var validLogtoAppId = (value) => /^[a-z0-9]{12,32}$/.test(String(value || ""));
 function logtoRedirect(value) {
   try {
@@ -23960,12 +23976,13 @@ function createConfiguredVerificationProviders(env = {}, { fetchImpl = globalThi
     fetchImpl
   });
   const bridgeOtpG = new BridgeOtpVerificationProvider({ id: "otp-g", origin: env.OTP_G_PROVIDER_ORIGIN, apiKey: env.OTP_G_PROVIDER_KEY, declaredDailyQuota: env.OTP_G_DAILY_QUOTA, fetchImpl });
+  const logtoSlot = logtoSlotFromConfig(env.VERIFICATION_ORCHESTRATOR_CONFIG);
   const logtoOtpH = new LogtoOtpVerificationProvider({
     id: "otp-h",
-    endpoint: env.LOGTO_ENDPOINT,
-    appId: env.LOGTO_APP_ID,
-    redirectUri: env.LOGTO_REDIRECT_URI,
-    declaredDailyQuota: env.OTP_H_DAILY_QUOTA,
+    endpoint: env.LOGTO_ENDPOINT || (logtoSlot ? LOGTO_PUBLIC_DEFAULTS.endpoint : ""),
+    appId: env.LOGTO_APP_ID || (logtoSlot ? LOGTO_PUBLIC_DEFAULTS.appId : ""),
+    redirectUri: env.LOGTO_REDIRECT_URI || (logtoSlot ? LOGTO_PUBLIC_DEFAULTS.redirectUri : ""),
+    declaredDailyQuota: env.OTP_H_DAILY_QUOTA || (logtoSlot ? logtoSlot.dailyQuota : ""),
     kv: env.GK_KV || null,
     fetchImpl
   });
