@@ -58,5 +58,18 @@ t('৮. const-CACHE + settings.dailyTarget=50: dv3-ডেটায় ৫০-ট
 })());
 function run_test_script(w, code) { const s = w.document.createElement('script'); s.textContent = code; w.document.body.appendChild(s); }
 
+/* ── ৩. ডিজাইন-অখণ্ডতা: স্টাইল না থাকলে jsdom চুপ করে থাকে, ফোন নয় ──
+ * মালিক-স্ক্রিনশট (২০২৬-১০-১৫): টুলের নাম জোড়া লেগে যাওয়া ("Quickদ্রুত অনুশীলন"),
+ * ধূসর ফাঁকা বক্স। মূল-কারণ: dashboard-v3-apply.yml বাইরের বিল্ড নামিয়ে সোজা
+ * main-এ বসিয়েছিল, আর সেটার ডিজাইন-ব্লকটা ছিল ফাঁকা (<style></style>, ০ বাইট)।
+ * সব গার্ড পাস করেছিল, কারণ তারা JS-আচরণ দেখে — CSS-এর অস্তিত্ব কেউ দেখত না।
+ * তাই ডিজাইন-ব্লক খালি হলে এখানেই ফেল করা বাধ্যতামূলক। */
+const styleBlocks = [...V2.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g)].map((m) => m[1]);
+const css = styleBlocks.join('\n');
+t('৯. কোনো ফাঁকা স্টাইল-ব্লক নেই (অসম্পূর্ণ বিল্ডের লিটমাস)', !styleBlocks.some((b) => b.trim() === ''));
+t('১০. ড্যাশবোর্ডের ডিজাইন-ব্লক যথেষ্ট বড় (স্কেল-ফাঁদ ধরে)', css.length > 8000);
+t('১১. টুল-গ্রিডের স্টাইল আছে — ওভারল্যাপ-রিগ্রেশন ফিরলে ধরা পড়বে', /\.tools\s*\{/.test(css) && /\.tl\s*\{/.test(css) && css.includes('grid-template-columns'));
+t('১২. রেসপন্সিভ-সেফটি: টুল-গ্রিড এক-কলামে ভাঙার নিয়ম আছে', /@media/.test(css) && /\.tools\s*\{[^}]*grid-template-columns/.test(css));
+
 console.log(`\nP13-DV2-CACHE-GUARD: ${pass} pass / ${fail} fail`);
 if (fail) process.exit(1);
