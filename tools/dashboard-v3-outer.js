@@ -261,6 +261,48 @@
   };
   window.dv2Task = function () {};
 
+  /* ── Device chrome: status-bar area, iframe backdrop and page colour all follow
+     the dashboard's real background, so the phone's top bar and the app look like
+     one surface (no band). Restored when the user leaves the dashboard. ── */
+  let chromeOn = false;
+  window.__dv3Chrome = function (bg) {
+    try {
+      if (!bg) return;
+      chromeOn = true;
+      document.querySelectorAll('meta[name="theme-color"]').forEach((m) => m.setAttribute('content', bg));
+      const root = document.documentElement;
+      root.style.setProperty('--ah-chrome', bg);
+      root.style.backgroundColor = bg;
+      if (document.body) document.body.style.backgroundColor = bg;
+      const fr = document.querySelector('iframe.dv3-frame');
+      if (fr) fr.style.background = bg;
+    } catch (_) {}
+  };
+  function restoreChrome() {
+    if (!chromeOn) return;
+    chromeOn = false;
+    try {
+      document.documentElement.style.backgroundColor = '';
+      if (window.AhAppearance && window.AhAppearance.apply) window.AhAppearance.apply();
+    } catch (_) {}
+  }
+  window.__dv3SafeTop = function () {
+    try {
+      const d = document.createElement('div');
+      d.style.cssText = 'position:fixed;top:0;left:0;width:0;visibility:hidden;pointer-events:none;padding-top:env(safe-area-inset-top,0px)';
+      document.body.appendChild(d);
+      const h = d.offsetHeight;
+      d.remove();
+      return h;
+    } catch (_) { return 0; }
+  };
+  const onRoute = () => setTimeout(() => {
+    const path = (window.Router && Router.path) || ((location.hash || '').replace(/^#\/?/, '').split(/[?/]/)[0]) || 'dashboard';
+    if (path !== 'dashboard' && path !== '') restoreChrome();
+  }, 120);
+  window.addEventListener('hashchange', onRoute);
+  window.addEventListener('popstate', onRoute);
+
   /* ── renderDashboard override (সব আগের ইঞ্জিন অক্ষত) ── */
   const previous = window.renderDashboard;
   window.renderDashboard = function () {
@@ -291,7 +333,7 @@
   }
 
   function mountHtml() {
-    return '<iframe class="dv3-frame" title="Dashboard" style="position:fixed;inset:0;width:100%;height:100%;border:0;display:block;z-index:5;background:#F4F6FD"></iframe>';
+    return '<iframe class="dv3-frame" title="Dashboard" style="position:fixed;inset:0;width:100%;height:100%;border:0;display:block;z-index:5;background:var(--ah-chrome,#F4F6FD)"></iframe>';
   }
 
   /* ফ্রেমের srcdoc বসানো — renderShell প্রতিবার নতুন ফ্রেম বানায়, তাই সোর্স এখানেই দেওয়া হয় */

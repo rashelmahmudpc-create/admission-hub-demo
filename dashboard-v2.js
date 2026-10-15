@@ -19,6 +19,7 @@
   const FRAME_HTML = `<!doctype html><html lang="bn"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light}html,body{margin:0;padding:0;height:100%;background:var(--bg,#F4F6FD)}</style><style>
 /* Layout: calm fixed app shell. A lively 3D slide stack leads, then a colour-coded tool launcher (one hue per tool), then clean data cards. One standard type family (Inter + Hind Siliguri). */
 :root{
+  --sat:max(env(safe-area-inset-top,0px),var(--sat-p,0px));
   --bg:#F4F6FD; --glow:rgba(59,111,232,.12);
   --card:#FFFFFF; --line:rgba(30,42,94,.08);
   --fg:#111B4B; --fg2:#525E93; --fg3:#8B94BC;
@@ -88,9 +89,9 @@ svg{display:block}
 .pbar>i{display:block;height:100%;border-radius:inherit;width:0;transition:width 1.1s cubic-bezier(.2,.8,.2,1) .2s}
 
 /* ===== header ===== */
-.top{position:sticky;top:0;z-index:30;display:flex;align-items:center;gap:12px;padding-block:14px 12px;margin-inline:-20px;padding-inline:20px}
+.top{position:sticky;top:0;z-index:30;display:flex;align-items:center;gap:12px;padding-block:calc(14px + var(--sat)) 12px;margin-inline:-20px;padding-inline:20px}
 .top::before{content:"";position:absolute;inset:0 0 -12px;background:linear-gradient(var(--bg) 62%,transparent);z-index:-1;pointer-events:none}
-.top.stuck::before{background:var(--nav);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);inset:0;border-bottom:1px solid var(--line)}
+.top.stuck::before{background:var(--bg);background:color-mix(in srgb,var(--bg) 90%,transparent);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);inset:0;border-bottom:1px solid var(--line)}
 .avatar{width:48px;height:48px;border-radius:17px;background:linear-gradient(145deg,#D2E2FF,#9DBBFF);display:grid;place-items:end center;overflow:hidden;flex:none}
 .avatar .mascot{width:42px;margin-bottom:-4px}
 .hello{min-width:0;flex:1}
@@ -751,8 +752,14 @@ function syncTheme(){
   var mode='light';try{mode=parent.AhAppearance&&parent.AhAppearance.resolved?parent.AhAppearance.resolved():'light'}catch(_){}
   if(mode==='dark')document.documentElement.setAttribute('data-theme','dark');
   else document.documentElement.removeAttribute('data-theme');
-  paintThemeIcon();
+  paintThemeIcon();paintChrome();
 }
+function paintChrome(){
+  var bg='';try{bg=(getComputedStyle(document.documentElement).getPropertyValue('--bg')||'').trim()}catch(_){}
+  if(bg){try{parent.__dv3Chrome&&parent.__dv3Chrome(bg)}catch(_){}}
+}
+function syncSafe(){try{var v=parent.__dv3SafeTop&&parent.__dv3SafeTop();document.documentElement.style.setProperty('--sat-p',(v||0)+'px')}catch(_){}}
+syncSafe();addEventListener('resize',syncSafe);addEventListener('orientationchange',function(){setTimeout(syncSafe,200)});
 try{parent.document.addEventListener('ah:appearance',syncTheme)}catch(_){}
 $('#themeBtn').addEventListener('click',function(){
   var b=$('#themeBtn');b.classList.remove('flip');void b.offsetWidth;b.classList.add('flip');
@@ -1279,6 +1286,48 @@ requestAnimationFrame(function(){requestAnimationFrame(function(){onShow(0)})});
   };
   window.dv2Task = function () {};
 
+  /* ── Device chrome: status-bar area, iframe backdrop and page colour all follow
+     the dashboard's real background, so the phone's top bar and the app look like
+     one surface (no band). Restored when the user leaves the dashboard. ── */
+  let chromeOn = false;
+  window.__dv3Chrome = function (bg) {
+    try {
+      if (!bg) return;
+      chromeOn = true;
+      document.querySelectorAll('meta[name="theme-color"]').forEach((m) => m.setAttribute('content', bg));
+      const root = document.documentElement;
+      root.style.setProperty('--ah-chrome', bg);
+      root.style.backgroundColor = bg;
+      if (document.body) document.body.style.backgroundColor = bg;
+      const fr = document.querySelector('iframe.dv3-frame');
+      if (fr) fr.style.background = bg;
+    } catch (_) {}
+  };
+  function restoreChrome() {
+    if (!chromeOn) return;
+    chromeOn = false;
+    try {
+      document.documentElement.style.backgroundColor = '';
+      if (window.AhAppearance && window.AhAppearance.apply) window.AhAppearance.apply();
+    } catch (_) {}
+  }
+  window.__dv3SafeTop = function () {
+    try {
+      const d = document.createElement('div');
+      d.style.cssText = 'position:fixed;top:0;left:0;width:0;visibility:hidden;pointer-events:none;padding-top:env(safe-area-inset-top,0px)';
+      document.body.appendChild(d);
+      const h = d.offsetHeight;
+      d.remove();
+      return h;
+    } catch (_) { return 0; }
+  };
+  const onRoute = () => setTimeout(() => {
+    const path = (window.Router && Router.path) || ((location.hash || '').replace(/^#\/?/, '').split(/[?/]/)[0]) || 'dashboard';
+    if (path !== 'dashboard' && path !== '') restoreChrome();
+  }, 120);
+  window.addEventListener('hashchange', onRoute);
+  window.addEventListener('popstate', onRoute);
+
   /* ── renderDashboard override (সব আগের ইঞ্জিন অক্ষত) ── */
   const previous = window.renderDashboard;
   window.renderDashboard = function () {
@@ -1309,7 +1358,7 @@ requestAnimationFrame(function(){requestAnimationFrame(function(){onShow(0)})});
   }
 
   function mountHtml() {
-    return '<iframe class="dv3-frame" title="Dashboard" style="position:fixed;inset:0;width:100%;height:100%;border:0;display:block;z-index:5;background:#F4F6FD"></iframe>';
+    return '<iframe class="dv3-frame" title="Dashboard" style="position:fixed;inset:0;width:100%;height:100%;border:0;display:block;z-index:5;background:var(--ah-chrome,#F4F6FD)"></iframe>';
   }
 
   /* ফ্রেমের srcdoc বসানো — renderShell প্রতিবার নতুন ফ্রেম বানায়, তাই সোর্স এখানেই দেওয়া হয় */

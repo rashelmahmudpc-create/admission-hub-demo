@@ -93,8 +93,14 @@ JS = JS[:ti] + (
     "  var mode='light';try{mode=parent.AhAppearance&&parent.AhAppearance.resolved?parent.AhAppearance.resolved():'light'}catch(_){}\n"
     "  if(mode==='dark')document.documentElement.setAttribute('data-theme','dark');\n"
     "  else document.documentElement.removeAttribute('data-theme');\n"
-    "  paintThemeIcon();\n"
+    "  paintThemeIcon();paintChrome();\n"
     "}\n"
+    "function paintChrome(){\n"
+    "  var bg='';try{bg=(getComputedStyle(document.documentElement).getPropertyValue('--bg')||'').trim()}catch(_){}\n"
+    "  if(bg){try{parent.__dv3Chrome&&parent.__dv3Chrome(bg)}catch(_){}}\n"
+    "}\n"
+    "function syncSafe(){try{var v=parent.__dv3SafeTop&&parent.__dv3SafeTop();document.documentElement.style.setProperty('--sat-p',(v||0)+'px')}catch(_){}}\n"
+    "syncSafe();addEventListener('resize',syncSafe);addEventListener('orientationchange',function(){setTimeout(syncSafe,200)});\n"
     "try{parent.document.addEventListener('ah:appearance',syncTheme)}catch(_){}\n"
     "$('#themeBtn').addEventListener('click',function(){\n"
     "  var b=$('#themeBtn');b.classList.remove('flip');void b.offsetWidth;b.classList.add('flip');\n"
@@ -200,6 +206,23 @@ CSS = replace(CSS,
     "--f:'Inter','Hind Siliguri','Noto Sans Bengali',system-ui,-apple-system,'Segoe UI',sans-serif;",
     "--f:'Noto Sans Bengali','Hind Siliguri','Inter',system-ui,-apple-system,'Segoe UI',sans-serif;")
 assert 'https://' not in CSS, 'design CSS must not fetch anything'
+
+# ---- PATCH 9: header clears the phone's status bar and blends with it -----
+# The design was drawn inside a preview that added the safe-area padding itself.
+# Standalone, the sticky header sat at y=0 *under* the status bar, so the greeting
+# and buttons were cut off. --sat is the device's top inset (CSS env() or the value
+# the host measured, whichever is larger) and the header pads itself by it. The
+# stuck header uses the page colour (not the lighter nav tint) so the status-bar
+# area and the header look like one surface.
+CSS = replace(CSS,
+    ":root{\n  --bg:#F4F6FD;",
+    ":root{\n  --sat:max(env(safe-area-inset-top,0px),var(--sat-p,0px));\n  --bg:#F4F6FD;")
+CSS = replace(CSS,
+    "padding-block:14px 12px;margin-inline:-20px;padding-inline:20px}",
+    "padding-block:calc(14px + var(--sat)) 12px;margin-inline:-20px;padding-inline:20px}")
+CSS = replace(CSS,
+    ".top.stuck::before{background:var(--nav);",
+    ".top.stuck::before{background:var(--bg);background:color-mix(in srgb,var(--bg) 90%,transparent);")
 
 # ---- assemble the frame --------------------------------------------------
 HTML = ('<!doctype html><html lang="bn"><head><meta charset="utf-8">'

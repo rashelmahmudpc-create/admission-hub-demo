@@ -1,6 +1,7 @@
 <!doctype html><html lang="bn"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light}html,body{margin:0;padding:0;height:100%;background:var(--bg,#F4F6FD)}</style><style>
 /* Layout: calm fixed app shell. A lively 3D slide stack leads, then a colour-coded tool launcher (one hue per tool), then clean data cards. One standard type family (Inter + Hind Siliguri). */
 :root{
+  --sat:max(env(safe-area-inset-top,0px),var(--sat-p,0px));
   --bg:#F4F6FD; --glow:rgba(59,111,232,.12);
   --card:#FFFFFF; --line:rgba(30,42,94,.08);
   --fg:#111B4B; --fg2:#525E93; --fg3:#8B94BC;
@@ -70,9 +71,9 @@ svg{display:block}
 .pbar>i{display:block;height:100%;border-radius:inherit;width:0;transition:width 1.1s cubic-bezier(.2,.8,.2,1) .2s}
 
 /* ===== header ===== */
-.top{position:sticky;top:0;z-index:30;display:flex;align-items:center;gap:12px;padding-block:14px 12px;margin-inline:-20px;padding-inline:20px}
+.top{position:sticky;top:0;z-index:30;display:flex;align-items:center;gap:12px;padding-block:calc(14px + var(--sat)) 12px;margin-inline:-20px;padding-inline:20px}
 .top::before{content:"";position:absolute;inset:0 0 -12px;background:linear-gradient(var(--bg) 62%,transparent);z-index:-1;pointer-events:none}
-.top.stuck::before{background:var(--nav);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);inset:0;border-bottom:1px solid var(--line)}
+.top.stuck::before{background:var(--bg);background:color-mix(in srgb,var(--bg) 90%,transparent);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);inset:0;border-bottom:1px solid var(--line)}
 .avatar{width:48px;height:48px;border-radius:17px;background:linear-gradient(145deg,#D2E2FF,#9DBBFF);display:grid;place-items:end center;overflow:hidden;flex:none}
 .avatar .mascot{width:42px;margin-bottom:-4px}
 .hello{min-width:0;flex:1}
@@ -733,8 +734,14 @@ function syncTheme(){
   var mode='light';try{mode=parent.AhAppearance&&parent.AhAppearance.resolved?parent.AhAppearance.resolved():'light'}catch(_){}
   if(mode==='dark')document.documentElement.setAttribute('data-theme','dark');
   else document.documentElement.removeAttribute('data-theme');
-  paintThemeIcon();
+  paintThemeIcon();paintChrome();
 }
+function paintChrome(){
+  var bg='';try{bg=(getComputedStyle(document.documentElement).getPropertyValue('--bg')||'').trim()}catch(_){}
+  if(bg){try{parent.__dv3Chrome&&parent.__dv3Chrome(bg)}catch(_){}}
+}
+function syncSafe(){try{var v=parent.__dv3SafeTop&&parent.__dv3SafeTop();document.documentElement.style.setProperty('--sat-p',(v||0)+'px')}catch(_){}}
+syncSafe();addEventListener('resize',syncSafe);addEventListener('orientationchange',function(){setTimeout(syncSafe,200)});
 try{parent.document.addEventListener('ah:appearance',syncTheme)}catch(_){}
 $('#themeBtn').addEventListener('click',function(){
   var b=$('#themeBtn');b.classList.remove('flip');void b.offsetWidth;b.classList.add('flip');
