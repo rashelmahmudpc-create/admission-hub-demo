@@ -31,6 +31,7 @@ const isServerOnlyAsset = pathname => SERVER_ONLY_ASSETS.has(pathname) ||
    crawlers index unlimited duplicate pages. */
 const PUBLIC_ROUTES = new Set([
   '/', '/index.html',
+  '/privacy', '/privacy.html', '/data-deletion', '/data-deletion.html',
   /* The account page is a single full-screen document now; these preview pages
      stay reachable so the owner can open the designs on their own. */
   '/splash-preview', '/splash-preview.html',
@@ -159,7 +160,15 @@ export default {
     }
 
     try {
-      const response = await env.ASSETS.fetch(request);
+      // Serve only the two legal .html aliases through their Pages canonical paths.
+      // This avoids the .html redirect while retaining the strict SEO allowlist.
+      let assetRequest = request;
+      if (url.pathname === '/privacy.html' || url.pathname === '/data-deletion.html') {
+        const assetUrl = new URL(request.url);
+        assetUrl.pathname = url.pathname.slice(0, -5);
+        assetRequest = new Request(assetUrl, request);
+      }
+      const response = await env.ASSETS.fetch(assetRequest);
       // Pages answers 200 + index.html for any unknown path. A real asset never
       // comes back as HTML, so an HTML response to an asset-looking path means
       // the file is missing and must 404.
