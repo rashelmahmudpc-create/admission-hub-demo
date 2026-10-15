@@ -375,7 +375,8 @@ for path in ROOT.rglob('*'):
     t = s
     for a, b in VERS.items(): t = t.replace(a, b)
     if t != s: path.write_text(t, encoding='utf-8')
-# Resend intentionally rotates away from the recovered previous sender.
-rep('verification-orchestrator.test.mjs', '  assert.equal(first.sends.length, 3);', '  assert.equal(first.sends.length, 2); // authux-resend-rotation', 'authux-resend-rotation')
-rep('facebook-login-guard.test.mjs', "  const outcome = await app.window.AdmissionSkyBridge.facebook();\n  assert.equal(outcome, false, 'a failed popup must resolve false, not reject');", "  await assert.rejects(app.window.AdmissionSkyBridge.facebook(), error => typeof error.userMessage === 'string' && error.userMessage.length > 0); // authux-visible-facebook-error", 'authux-visible-facebook-error')
 print('auth-ux-fix-20261016 applied')
+
+# Expectations for intentionally changed bridge rejection and resend rotation.
+rep('facebook-login-guard.test.mjs', "  const outcome = await app.window.AdmissionSkyBridge.facebook();\n  assert.equal(outcome, false, 'a failed popup must resolve false, not reject');", "  await assert.rejects(app.window.AdmissionSkyBridge.facebook(), error => typeof error.userMessage === 'string' && error.userMessage.length > 0);", "await assert.rejects(app.window.AdmissionSkyBridge.facebook()")
+rep('verification-orchestrator.test.mjs', "  assert.equal(first.sends.length, 3);", "  assert.equal(first.sends.length, 2); // Resend rotates away from the previous provider.", '// Resend rotates away from the previous provider.')
