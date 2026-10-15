@@ -864,7 +864,7 @@ textarea{min-height:96px}
 <link rel="stylesheet" href="./account-access.css?v=20261015-login-complete-v1">
 <link rel="stylesheet" href="./profile-ui.css?v=profile-v15-uni-tap">
 <!-- Signup/Onboarding Assistant বন্ধ; মূল অ্যাপের account-aware AI Assistant চালু আছে। -->
-<style id="ah-boot-min">.ah-boot{width:100%;min-height:100dvh;display:grid;place-content:center;justify-items:center;gap:9px;color:#17221d;background:#f1faf6}.ah-boot-mark{display:grid;place-items:center;width:56px;height:56px;border-radius:17px;background:#0f6b4f;color:#fff;font-size:26px;box-shadow:0 12px 28px rgba(15,107,79,.30)}.ah-boot b{font-size:19px;font-weight:800;letter-spacing:.01em}.ah-boot i{font-style:normal;font-size:12px;color:#5e7168;animation:ahBootPulse 1.15s ease-in-out infinite}@keyframes ahBootPulse{0%,100%{opacity:.55}50%{opacity:1}}@media(prefers-reduced-motion:reduce){.ah-boot i{animation:none}}</style>
+<style id="ah-boot-min">.ah-boot{width:100%;min-height:100dvh;display:grid;place-content:center;justify-items:center;position:relative;background:var(--ah-chrome,#edf7f1)}.ah-boot-mark{position:relative;display:grid;place-items:center;width:92px;height:92px;border-radius:28px;background:linear-gradient(145deg,#5B93FF,#2F6BFF);box-shadow:0 18px 38px rgba(47,107,255,.34);animation:ahLgPop .7s cubic-bezier(.3,1.5,.5,1) both,ahLgFloat 2.4s ease-in-out .8s infinite}.ah-boot-mark::after{content:"";position:absolute;inset:0;border-radius:inherit;border:2px solid rgba(47,107,255,.5);opacity:0;animation:ahLgRing 1.8s ease-out 1.1s infinite}.ah-boot-mark svg{width:62px;height:62px;overflow:visible}.ah-boot-mark svg *{fill:none;stroke:#fff;stroke-linecap:round;stroke-linejoin:round}.ah-boot-mark svg .lg-ch{stroke-width:9;stroke-dasharray:1;stroke-dashoffset:1;animation:ahLgDraw .6s ease .35s forwards}.ah-boot-mark svg .lg-cap{transform-box:fill-box;transform-origin:center;animation:ahLgCap .55s cubic-bezier(.3,1.4,.5,1) .7s both}.ah-boot-mark svg .lg-cf{fill:#fff;stroke-width:4}.ah-boot-mark svg .lg-tas{stroke-width:4}.ah-boot-mark svg .lg-st{fill:#FFB020;stroke:none;transform-box:fill-box;transform-origin:center;animation:ahLgStar .5s cubic-bezier(.3,1.8,.5,1) 1.05s both,ahLgTwinkle 1.6s ease-in-out 1.6s infinite}.ah-boot i{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;font-style:normal}@keyframes ahLgPop{from{transform:scale(.6);opacity:0}to{transform:scale(1);opacity:1}}@keyframes ahLgFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}@keyframes ahLgDraw{to{stroke-dashoffset:0}}@keyframes ahLgCap{from{transform:translateY(-14px) scale(.7);opacity:0}to{transform:none;opacity:1}}@keyframes ahLgStar{from{transform:scale(0) rotate(-90deg);opacity:0}to{transform:scale(1) rotate(0);opacity:1}}@keyframes ahLgTwinkle{0%,100%{transform:scale(1)}50%{transform:scale(1.18) rotate(8deg)}}@keyframes ahLgRing{0%{transform:scale(1);opacity:.55}100%{transform:scale(1.55);opacity:0}}@keyframes ahBootPulse{0%,100%{opacity:.55}50%{opacity:1}}@media(prefers-reduced-motion:reduce){.ah-boot-mark,.ah-boot-mark::after,.ah-boot-mark svg *{animation:none!important}.ah-boot-mark svg .lg-ch{stroke-dashoffset:0}}</style>
 <style id="ah-nojs-min">.ah-nojs{max-width:640px;margin:0 auto;padding:28px 20px 48px;font-family:'Noto Sans Bengali',-apple-system,'Segoe UI',Roboto,sans-serif;line-height:1.75;color:#17221d;background:#f1faf6}.ah-nojs h1{font-size:24px;line-height:1.4;margin:0 0 10px}.ah-nojs h2{font-size:17px;margin:26px 0 8px}.ah-nojs p{margin:0 0 12px}.ah-nojs ul{margin:0;padding-left:20px}.ah-nojs li{margin:4px 0}.ah-nojs a{color:#0f6b4f;text-decoration:underline}</style>
 <!-- app-seed injects the Admission Sky flow's stylesheet and script at runtime,
      so the browser only discovers them after app-seed parses. These hints start
@@ -875,7 +875,7 @@ textarea{min-height:96px}
 <link rel="preload" as="script" href="./sky-onboarding.js?v=sky-flow-20261016-v6">
 </head>
 <body class="app-booting">
-<div id="app"><main class="app-loading" id="ahSplash" role="status"><div class="ah-boot"><span class="ah-boot-mark">✦</span><b>Admission Hub</b><i>লোড হচ্ছে…</i></div></main></div>
+<div id="app"><main class="app-loading" id="ahSplash" role="status"><div class="ah-boot"><span class="ah-boot-mark" aria-hidden="true"><svg viewBox="0 0 120 120" focusable="false"><path class="lg-ch" pathLength="1" d="M30 94 60 54 90 94"/><g class="lg-cap"><path class="lg-cf" d="M60 16 92 29 60 42 28 29Z"/><path class="lg-tas" d="M42 36v9c0 5 36 5 36 0v-9M92 29v16"/></g><path class="lg-st" d="M100 14l3 8 8 3-8 3-3 8-3-8-8-3 8-3Z"/></svg></span><i>লোড হচ্ছে…</i></div></main></div>
 <script>
 /* NO-BLANK GUARD: on a slow link the account gate hides #app (body.ah-account-page-active)
    before its own page has visible content, so the device showed a blank screen for many
@@ -885,8 +885,8 @@ textarea{min-height:96px}
    own page is actually active), so the app can never be hidden with nothing on screen. */
 (function(){
   var o=document.createElement('div');o.id='ahBootGuard';
-  o.style.cssText='position:fixed;inset:0;z-index:2147483000;display:grid;place-content:center;justify-items:center;gap:9px;background:#f1faf6;color:#17221d;text-align:center';
-  o.innerHTML='<span class="ah-boot-mark">✦</span><b style="font-size:19px;font-weight:800">Admission Hub</b><i style="font-style:normal;font-size:12px;color:#5e7168">লোড হচ্ছে…</i>';
+  o.style.cssText='position:fixed;inset:0;z-index:2147483000;display:grid;place-content:center;justify-items:center;background:var(--ah-chrome,#edf7f1);text-align:center';
+  o.className='ah-boot';o.innerHTML='<span class="ah-boot-mark" aria-hidden="true"><svg viewBox="0 0 120 120" focusable="false"><path class="lg-ch" pathLength="1" d="M30 94 60 54 90 94"/><g class="lg-cap"><path class="lg-cf" d="M60 16 92 29 60 42 28 29Z"/><path class="lg-tas" d="M42 36v9c0 5 36 5 36 0v-9M92 29v16"/></g><path class="lg-st" d="M100 14l3 8 8 3-8 3-3 8-3-8-8-3 8-3Z"/></svg></span><i>লোড হচ্ছে…</i>';
   function vis(el){return !!el && !el.hidden && el.getClientRects().length>0 && (el.innerText||'').trim().length>0;}
   function appPageEl(){return document.querySelector('#app .page');}
   // textContent, not innerText: #app is display:none under the gate, so innerText is
@@ -1556,7 +1556,7 @@ function renderStartupLoading(){
   app.classList.add('no-nav');
   let node=app.firstElementChild;
   if(!node || !node.classList.contains('app-loading')){
-    app.innerHTML='<main class="app-loading" id="ahSplash" role="status"><div class="ah-boot"><span class="ah-boot-mark">✦</span><b>Admission Hub</b><i>লোড হচ্ছে…</i></div></main>';
+    app.innerHTML='<main class="app-loading" id="ahSplash" role="status"><div class="ah-boot"><span class="ah-boot-mark" aria-hidden="true"><svg viewBox="0 0 120 120" focusable="false"><path class="lg-ch" pathLength="1" d="M30 94 60 54 90 94"/><g class="lg-cap"><path class="lg-cf" d="M60 16 92 29 60 42 28 29Z"/><path class="lg-tas" d="M42 36v9c0 5 36 5 36 0v-9M92 29v16"/></g><path class="lg-st" d="M100 14l3 8 8 3-8 3-3 8-3-8-8-3 8-3Z"/></svg></span><i>লোড হচ্ছে…</i></div></main>';
     node=app.firstElementChild;
   }
   const navRoot=document.getElementById('navRoot');
