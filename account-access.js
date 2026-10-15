@@ -3321,6 +3321,14 @@
     },
     showSignup() { if (window.AdmissionSkyFlow) window.AdmissionSkyFlow.open('signup'); },
     showLogin() { if (window.AdmissionSkyFlow) window.AdmissionSkyFlow.open('login'); },
+    welcome() {
+      // The flow's own back button on its first step returns here: hide the
+      // flow and re-show the welcome screen the student came from.
+      const mount = document.getElementById('ah-sky-flow');
+      if (mount) mount.hidden = true;
+      delete pageHost.dataset.skyFlow;
+      showWelcome();
+    },
     continueGuest() {
       rememberEntry('guest');
       state.signupJourney = false;

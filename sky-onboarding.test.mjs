@@ -20,6 +20,7 @@ function makeBridge(doc, log) {
     mount,
     reveal(node) { const m = mount(); if (node && node !== m) m.append(node); m.hidden = false; },
     conceal() { log.push('conceal'); mount().hidden = true; },
+    welcome() { log.push('welcome'); mount().hidden = true; },
     capabilities: async () => ({ email: true, telegram: true, emailOwnership: true, google: true, facebook: true, passkey: false }),
     institutions: async () => [],
     signup: async () => ({}),
@@ -230,3 +231,33 @@ test('sky-10: the OTP path still shows the code box when a code was sent', async
   stop();
 });
 
+test('sky-11: the back button is available on every step and leaves to the welcome from the first', async () => {
+  const { w, log, stop } = await boot();
+  await w.AdmissionSkyFlow.open('signup');
+  await settle();
+  const back = w.document.getElementById('sky-back');
+  // The owner (2026-10-15): "back দেওয়া যাচ্ছে না" -- it used to be hidden on
+  // the first step and on the method screens. It must be visible from step 0.
+  assert.equal(back.classList.contains('hide'), false, 'back is shown on the first step');
+  back.dispatchEvent(new w.Event('click'));
+  await settle(2);
+  assert.ok(log.includes('welcome'), 'back on the first step returns to the welcome');
+  stop();
+});
+
+test('sky-12: back steps one screen back in the middle of the flow', async () => {
+  const { w, stop } = await boot();
+  await w.AdmissionSkyFlow.open('signup');
+  await settle();
+  const name = w.document.getElementById('sky-in-name');
+  name.value = 'রাশেল';
+  name.dispatchEvent(new w.Event('input'));
+  await settle(2);
+  w.document.getElementById('sky-cta').dispatchEvent(new w.Event('click'));
+  await settle(3);
+  assert.equal(w.AdmissionSkyFlow.i, 1, 'the CTA advanced to the second step');
+  w.document.getElementById('sky-back').dispatchEvent(new w.Event('click'));
+  await settle(3);
+  assert.equal(w.AdmissionSkyFlow.i, 0, 'back returned to the previous step');
+  stop();
+});

@@ -27,9 +27,9 @@ test('retired identity/onboarding scripts are no longer boot-critical or loaded'
 
 
 test('service-worker build marker is synchronized',
-  SW.includes("const BUILD_ID = 'v332-fbredirect-20261015'") &&
-  H.includes("const expectedSwVersion = 'v332-fbredirect-20261015'") &&
-  H.includes('admission-hub-shell-v332-fbredirect-20261015'));
+  SW.includes("const BUILD_ID = 'v333-skyux-20261015'") &&
+  H.includes("const expectedSwVersion = 'v333-skyux-20261015'") &&
+  H.includes('admission-hub-shell-v333-skyux-20261015'));
 test('data protection summarizes stores with count rather than full reads', DP.includes('tx.objectStore(name).count()'));
 test('unprotected automatic Pages deploy stays retired', WF.includes('Cloudflare Pages Bundle Guard (No Deploy)') && !WF.includes('wrangler-action') && !WF.includes('pages deploy dist --project-name admissionhub'));
 

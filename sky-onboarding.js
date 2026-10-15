@@ -241,8 +241,10 @@ const go = n => {
   if (button) button.classList.toggle('hide', n === lastScreen());
   const back = $('sky-back');
   if (back) {
-    const allowed = state.mode === 'login' ? (n === 1 || n === 3) : (n >= 1 && n <= 4 || n === 6);
-    back.classList.toggle('hide', !allowed);
+    // Owner (2026-10-15): "many places have no back button, and back does not
+    // work". Show it on EVERY step except the final done screen, so a student
+    // can always step back -- the first step returns to the welcome.
+    back.classList.toggle('hide', n === lastScreen());
   }
   const b = $('sky-bird');
   if (b) b.dataset.p = propTable()[Math.min(n, propTable().length - 1)];
@@ -427,9 +429,15 @@ const next = async () => {
 };
 
 const back = () => {
-  if (state.mode === 'login') { if (state.i === 1) go(0); else if (state.i === 3) go(2); return; }
-  if (state.i === 6) go(5);
-  else if (state.i > 0 && state.i <= 4) go(state.i - 1);
+  // Owner (2026-10-15): back must work on every step. On the first step it
+  // leaves the flow for the welcome screen; elsewhere it steps one screen back.
+  if (state.i === 0) {
+    const api = bridge();
+    if (api && api.welcome) api.welcome();
+    else if (api) api.conceal();
+    return;
+  }
+  go(state.i - 1);
 };
 
 const submitSignup = async () => {

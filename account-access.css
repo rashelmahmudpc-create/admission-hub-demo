@@ -230,11 +230,25 @@ body.ah-account-page-active>.ah-account-launcher{display:none!important}
    the theme-color meta is synced to) and win over the later [data-theme] rules. */
 .ah-account-page[data-current-view="welcome"]{
   background:var(--bg,#f7f6fb)!important;
+  /* Owner (2026-10-15): pulling the page from the top made the Get Started
+     button slide. 100dvh tracks the phone's address bar: hiding it grew the
+     layout, so a bottom-anchored button moved. Pin the welcome to the SMALL
+     viewport (100svh), which never changes, and refuse the pull gesture that
+     drives the toggle in the first place. */
+  height:100svh!important;
+  min-height:100svh!important;
+  max-height:100svh!important;
+  overflow:hidden!important;
+  overscroll-behavior:none!important;
 }
 .ah-account-page[data-current-view="welcome"] .ah-account-shell[data-current-view="welcome"]{
   width:100%;
   max-width:none;
   margin:0;
+  height:100%!important;
+  min-height:0!important;
+  max-height:100%!important;
+  overflow:hidden!important;
   background:transparent;
 }
 .ah-account-page[data-current-view="welcome"] .ah-account-close{display:none!important}
