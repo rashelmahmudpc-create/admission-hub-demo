@@ -108,9 +108,9 @@ await test('content hydration is public and account-independent',
   !/AHAuth|ahPubToken|authHeaders|Authorization/.test(CLOUD));
 
 await test('service-worker build and HTML registration are synchronized',
-  SW.includes("const BUILD_ID = 'v349-sky-bottom-inset'") &&
-  H.includes("const expectedSwVersion = 'v349-sky-bottom-inset'") &&
-  H.includes('admission-hub-shell-v349-sky-bottom-inset'));
+  SW.includes("const BUILD_ID = 'v350-notes-screen-v2'") &&
+  H.includes("const expectedSwVersion = 'v350-notes-screen-v2'") &&
+  H.includes('admission-hub-shell-v350-notes-screen-v2'));
 await test('service-worker shell cannot cache retired assets', !retiredAssetRe.test(SW));
 await test('premium account and institution assets use synchronized cache-busting versions',
   ['account-access.css?v=20261015-login-complete-v1', 'account-access.js?v=20261015-login-complete-v1', 'institutions-bd.js?v=bd-institutions-v2']

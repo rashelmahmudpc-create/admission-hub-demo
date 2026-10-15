@@ -5427,7 +5427,7 @@ window.__admissionBootPromise.catch(error => console.error('[Admission Hub] boot
     // The updated worker takes control now; the current document remains usable and the next launch uses the new shell.
     try{
 
-      const expectedSwVersion = 'v349-sky-bottom-inset';
+      const expectedSwVersion = 'v350-notes-screen-v2';
       // register() on the same scope performs an in-place update. Never unregister
       // the active iOS worker first: that discards the instant offline shell.
       const registration=await navigator.serviceWorker.register('./sw.js',{scope:'./',updateViaCache:'none'});
@@ -5436,7 +5436,7 @@ window.__admissionBootPromise.catch(error => console.error('[Admission Hub] boot
       // stale pre-retirement application shells can never be served from cache again.
       try {
 
-        const cur = 'admission-hub-shell-v349-sky-bottom-inset';
+        const cur = 'admission-hub-shell-v350-notes-screen-v2';
         const names = await caches.keys();
         for (const name of names) {
           if (name.startsWith('admission-hub-shell-') && name !== cur) await caches.delete(name).catch(()=>{});
@@ -5701,7 +5701,8 @@ setTimeout(() => { if (location.hash.replace(/^#/, '').split('?')[0] === 'dictio
 <script defer src="global-app-fix.js?v=3"></script>
 <script defer src="exam-dropdowns.js?v=1"></script>
 <script defer src="mobile-ux-fix.js?v=1"></script>
-<script defer src="notes-tool.js?v=dashboard-notes-v9-compact-pages"></script>
+<script defer src="notes-tool.js?v=notes-editor-v10"></script>
+<script defer src="notes-screen.js?v=notes-screen-v2-1"></script>
 
 <script defer src="nav-resume-fix.js?v=1"></script>
 <script defer src="mistake-note-icon.js?v=16-aiex"></script>
