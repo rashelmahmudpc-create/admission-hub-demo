@@ -102,8 +102,7 @@ test('Facebook sign-in resolves false instead of rejecting when the popup fails'
   await waitFor(() => app.calls.some(call => call.path.endsWith('/config')));
   await sleep(20);
 
-  const outcome = await app.window.AdmissionSkyBridge.facebook();
-  assert.equal(outcome, false, 'a failed popup must resolve false, not reject');
+  await assert.rejects(app.window.AdmissionSkyBridge.facebook(), error => typeof error.userMessage === 'string' && error.userMessage.length > 0);
   app.dom.window.close();
 });
 

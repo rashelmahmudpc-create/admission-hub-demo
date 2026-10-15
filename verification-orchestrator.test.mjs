@@ -302,7 +302,7 @@ test('a repaired provider is probed again instead of staying circuit-open foreve
   // takes the next send instead of staying penalised behind the healthy fallback.
   app.advance(61_000);
   await app.orchestrator.requestVerification(identity, context);
-  assert.equal(first.sends.length, 3);
+  assert.equal(first.sends.length, 2); // Resend rotates away from the previous provider.
   assert.equal((await app.repository.providerSnapshot({ providerId: 'otp-a', now: app.now() })).circuit, 'closed');
 });
 

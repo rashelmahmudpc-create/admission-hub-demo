@@ -20,3 +20,7 @@
 #ah-welcome-story .band{top:calc(54px + env(safe-area-inset-top,0px));bottom:calc(86px + env(safe-area-inset-bottom,0px))}
 #ah-welcome-story .cta{bottom:calc(16px + env(safe-area-inset-bottom,0px))}
 #ah-welcome-story .auth{padding-top:calc(8px + env(safe-area-inset-top,0px));padding-bottom:calc(22px + env(safe-area-inset-bottom,0px))}
+
+/* owner-2026-10-16-clip: zoomed scenes, the tab bar and captions overflowed .fit
+   and slid under Get Started on small phones. Clip to the band, fade the edges. */
+#ah-welcome-story .band{overflow:hidden;-webkit-mask-image:linear-gradient(180deg,transparent 0,#000 10px,#000 calc(100% - 14px),transparent 100%);mask-image:linear-gradient(180deg,transparent 0,#000 10px,#000 calc(100% - 14px),transparent 100%)}

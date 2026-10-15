@@ -91,7 +91,7 @@ function play(i){if(open)return;clr();const s=T[i];
  if(s.rate)setTimeout(()=>{$(s.v).getAnimations({subtree:true}).forEach(a=>a.playbackRate=s.rate)},40);
  (s.ev||[]).forEach(([m,f])=>at(m,f));
  at(s.ms,()=>play(i+1<T.length?i+1:1))}
-function size(){const r=band.getBoundingClientRect();fit.style.setProperty('--s',Math.min(r.width/390,r.height/640).toFixed(3))}
+function size(){const r=band.getBoundingClientRect();fit.style.setProperty('--s',Math.min(r.width/390,r.height/668).toFixed(3))}
 size();addEventListener('resize',size);play(0);setTimeout(()=>go.classList.add('lit'),7000);
 go.addEventListener('click',()=>{const r=go.getBoundingClientRect(),x=(r.left+r.width/2)+'px',y=(r.top+r.height/2)+'px';[app,auth].forEach(e=>{e.style.setProperty('--ox',x);e.style.setProperty('--oy',y)});
  open=true;clr();app.classList.remove('desk');root.style.setProperty('--t','#E6F0FF');root.style.setProperty('--p','#2F6BFF');root.style.setProperty('--q','#FF9F1C');meta.setAttribute('content','#E6F0FF');app.classList.add('open')});

@@ -149,6 +149,11 @@ const CARD = `<main class="app" id="sky-app">${BACK}
 
 /* ---------------------------------------------------------------- helpers */
 const bridge = () => window.AdmissionSkyBridge || null;
+const within = (promise, ms) => Promise.race([promise, new Promise((_, reject) => setTimeout(() => {
+  const error = new Error('সংযোগ খুব ধীর—আবার চেষ্টা করো।');
+  error.userMessage = error.message;
+  reject(error);
+}, ms))]);
 const host = () => document.getElementById('ah-sky-flow');
 const accountPage = () => document.getElementById('ah-account-page');
 
@@ -287,7 +292,7 @@ const beginChallenge = async () => {
   if (!api) return fail('Account সেবা পাওয়া যাচ্ছে না—পেজটি একবার refresh করো।');
   setBusy(true);
   try {
-    const result = state.method === 'telegram' ? await api.startTelegram() : await api.startEmail();
+    const result = await within(state.method === 'telegram' ? api.startTelegram() : api.startEmail(), 60000);
     if (!result) throw new Error('start-failed');
     // The email method can come back with a link instead of a code when every
     // OTP provider is spent. Switch the panel rather than leaving a code box.
@@ -390,7 +395,7 @@ const verifyCode = async () => {
 };
 
 const fail = text => {
-  const hint = $('sky-ot-h');
+  const hint = (host() && host().querySelector('.scr.on .hint')) || $('sky-ot-h');
   if (hint) { hint.className = 'hint err'; hint.textContent = text; }
   mood('sad'); kick('shake');
   setTimeout(() => mood(''), 1200);
@@ -447,12 +452,12 @@ const submitSignup = async () => {
   const button = cta();
   if (button) button.classList.add('busy');
   try {
-    const result = await api.signup(state.email, state.pw, {
+    const result = await within(api.signup(state.email, state.pw, {
       fullName: state.name.trim().replace(/\s+/g, ' '),
       dob: dobValue(),
       school: state.inst.school,
       higherInstitution: state.inst.college
-    });
+    }), 30000);
     // The server decides which verification routes are live for this account.
     const options = result && result.verification && result.verification.options;
     if (options && options.telegram && options.telegram.available === false && state.method === 'telegram') {
@@ -465,6 +470,26 @@ const submitSignup = async () => {
   } catch (error) {
     if (button) button.classList.remove('busy');
     setBusy(false);
+    if (error && error.code === 'EMAIL_ALREADY_IN_USE') {
+      const existing = state.email;
+      go(3);
+      setTimeout(() => {
+        const hint = $('sky-em-h');
+        if (!hint) return;
+        hint.className = 'hint err';
+        hint.textContent = 'এই ইমেইলে আগে থেকেই অ্যাকাউন্ট আছে। ';
+        const link = document.createElement('button');
+        link.type = 'button';
+        link.textContent = 'সাইন ইন করো →';
+        link.style.cssText = 'border:0;background:none;color:var(--p);font-weight:700;padding:0;text-decoration:underline';
+        link.addEventListener('click', () => open('login', { email: existing }));
+        hint.append(link);
+      }, 60);
+      talk('এই ইমেইলে আগে থেকেই অ্যাকাউন্ট আছে!');
+      mood('sad'); kick('shake');
+      setTimeout(() => mood(''), 1200);
+      return;
+    }
     fail(api.friendly ? api.friendly(error) : 'অ্যাকাউন্ট তৈরি করা যায়নি—আবার চেষ্টা করো।');
   }
 };
@@ -476,7 +501,7 @@ const doLogin = async () => {
   const button = cta();
   if (button) button.classList.add('busy');
   try {
-    const result = await api.login(state.email, state.pw);
+    const result = await within(api.login(state.email, state.pw), 30000);
     if (button) button.classList.remove('busy');
     setBusy(false);
     if (result && result.authenticated === true) {
@@ -857,7 +882,7 @@ const bindOtp = () => {
     kick('hop'); talk('নতুন কোড পাঠিয়ে দিলাম!');
     setBusy(true);
     try {
-      const result = state.method === 'telegram' ? await api.startTelegram() : await api.startEmail();
+      const result = await within(state.method === 'telegram' ? api.startTelegram() : api.startEmail(), 60000);
       state.link = state.method === 'email' && result && result.link === true;
       showLink();
       state.resend = Number(result && result.resendAfter || 45);
@@ -869,7 +894,7 @@ const bindOtp = () => {
 };
 
 /* ---------------------------------------------------------------- public */
-const open = async mode => {
+const open = async (mode, opts = {}) => {
   const api = bridge();
   if (!api) return false;
   // The bridge owns the host element: it lives inside the account page, which
@@ -897,11 +922,26 @@ const open = async mode => {
   api.reveal(root);
   build();
   markMethod();
-  go(0);
+  const presetEmail = String((opts && opts.email) || '');
+  if (presetEmail) {
+    const field = $(state.mode === 'login' ? 'sky-lin-em' : 'sky-in-em');
+    if (field) { field.value = presetEmail; field.dispatchEvent(new Event('input')); }
+    state.email = presetEmail;
+  }
+  go(state.mode === 'login' && opts && opts.resume === 'verify' ? 2 : 0);
+  const pending = api.takeNotice ? api.takeNotice() : null;
+  if (pending && pending.text) notice(pending.text, pending.kind);
   return true;
+};
+
+const notice = (text, kind) => {
+  if (!text) return;
+  const hint = host() && host().querySelector('.scr.on .hint');
+  if (hint) { hint.className = kind === 'error' ? 'hint err' : 'hint ok'; hint.textContent = text; }
+  else talk(text);
 };
 
 const close = () => { const api = bridge(); if (api) api.conceal(); };
 
-window.AdmissionSkyFlow = Object.freeze({ open, close, get mode() { return state.mode; }, get i() { return state.i; }, get busy() { return state.busy; } });
+window.AdmissionSkyFlow = Object.freeze({ open, close, notice, get mode() { return state.mode; }, get i() { return state.i; }, get busy() { return state.busy; } });
 })();

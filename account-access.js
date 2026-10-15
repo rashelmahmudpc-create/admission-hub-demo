@@ -79,7 +79,7 @@
     const skyStyle = document.createElement('link');
     skyStyle.id = 'ah-sky-flow-style';
     skyStyle.rel = 'stylesheet';
-    skyStyle.href = 'sky-onboarding.css?v=sky-flow-20261013-v5';
+    skyStyle.href = 'sky-onboarding.css?v=sky-flow-20261016-v6';
     document.head.append(skyStyle);
   }
   pageHost.className = 'ah-account-page';
@@ -486,6 +486,10 @@
     document.documentElement.lang = selected;
   };
   const message = (text = '', kind = 'info') => {
+    if (text && (state.currentView === 'sky' || document.getElementById('ah-account-page')?.dataset.skyFlow === 'on')) {
+      state.skyPendingNotice = { text, kind };
+      try { window.AdmissionSkyFlow?.notice?.(text, kind); } catch (_) {}
+    }
     const node = $('[data-role="message"]');
     if (!node) return;
     node.textContent = text;
@@ -671,7 +675,10 @@
     .replace(/\bwebhook\b|\bSMTP\b|\bquota\b|\bdatabase\b/gi, 'service');
 
   const friendlyError = error => {
+    if (typeof error?.userMessage === 'string' && error.userMessage.trim()) return error.userMessage.trim();
+    if (!error?.code && typeof error?.message === 'string' && /[\u0980-\u09FF]/.test(error.message)) return error.message;
     const known = {
+      ACCOUNT_LINK_REQUIRED: 'এই ইমেইলে আগে ইমেইল-পাসওয়ার্ড দিয়ে অ্যাকাউন্ট খোলা হয়েছে—ইমেইল ও পাসওয়ার্ড দিয়ে সাইন ইন করো।',
       CLIENT_UPDATE_REQUIRED: 'Admission Hub-এর নতুন সংস্করণ এসেছে—পেজটি একবার refresh করে আবার চেষ্টা করো।',
       INVALID_CREDENTIALS: 'Email বা Password সঠিক নয়। আবার দেখে লিখো।',
       EMAIL_ALREADY_IN_USE: 'এই Email-এ account আছে—Log In করো।',
@@ -1205,7 +1212,16 @@
     set('created-email', state.verification?.emailMasked || state.verification?.email || '');
   };
 
+  let skyRouteHook = null;
+  const SKY_ROUTED_VIEWS = new Set(['login', 'signup', 'forgot', 'verify', 'telegram', 'email-ownership', 'email-intro', 'telegram-intro', 'created', 'google-link', 'whatsapp-info']);
+  /* Owner 2026-10-16: the old sign-in / sign-up screens are retired. Every entry
+   * view opens the Admission Sky flow; renderView only draws them in the bare
+   * test harness, where sky-onboarding.js is not on the page. */
   const showView = (name, keepMessage = false) => {
+    if (SKY_ROUTED_VIEWS.has(name) && skyRouteHook && skyRouteHook(name)) return;
+    return renderView(name, keepMessage);
+  };
+  const renderView = (name, keepMessage = false) => {
     state.currentView = name;
     const shell = $('.ah-account-shell');
     pageHost.dataset.currentView = name;
@@ -1758,6 +1774,63 @@
     return 'Google লগইন এই মুহূর্তে খুলছে না—আবার চেষ্টা করো বা ইমেইল দিয়ে ঢুকো।';
   };
 
+  /* Owner 2026-10-16: Google signs in DIRECTLY through Google Identity Services
+   * on our own origin (the owner's OAuth client), so the consent screen no longer
+   * shows the long Firebase authDomain. The Firebase path stays as the automatic
+   * fallback: GSI missing, in-app browser, or the backend refusing the external
+   * client's token until it is safelisted in Firebase. */
+  const DIRECT_GOOGLE_CLIENT_ID = '203304845427-lpfj17ponue2bjapvt8mnl7tioupar27.apps.googleusercontent.com';
+  const DIRECT_GOOGLE_OFF = 'ah-google-direct-off';
+  let gsiTokenClient = null;
+  let gsiPending = null;
+  const directGoogleOff = () => { try { return sessionStorage.getItem(DIRECT_GOOGLE_OFF) === '1'; } catch (_) { return false; } };
+  const prepareDirectGoogle = () => {
+    if (gsiTokenClient || directGoogleOff()) return;
+    loadScriptOnce('https://accounts.google.com/gsi/client').then(() => {
+      const oauth2 = window.google?.accounts?.oauth2;
+      if (!oauth2 || gsiTokenClient) return;
+      gsiTokenClient = oauth2.initTokenClient({
+        client_id: DIRECT_GOOGLE_CLIENT_ID,
+        scope: 'openid email profile',
+        callback: reply => {
+          const pending = gsiPending; gsiPending = null;
+          if (!pending) return;
+          if (reply?.access_token) pending.resolve(String(reply.access_token));
+          else pending.reject(Object.assign(new Error('gsi-denied'), { gsiType: String(reply?.error || 'access_denied') }));
+        },
+        error_callback: failure => {
+          const pending = gsiPending; gsiPending = null;
+          if (pending) pending.reject(Object.assign(new Error('gsi-failed'), { gsiType: String(failure?.type || 'failed') }));
+        }
+      });
+    }).catch(() => {});
+  };
+  const directGoogleToken = () => new Promise((resolve, reject) => {
+    if (!gsiTokenClient) { reject(new Error('gsi-not-ready')); return; }
+    gsiPending = { resolve, reject };
+    try { gsiTokenClient.requestAccessToken(); } catch (error) { gsiPending = null; reject(error); }
+  });
+  const googleSignInRequest = async () => {
+    if (gsiTokenClient && !directGoogleOff() && oauthPopupSupported()) {
+      let token = '';
+      try { token = await directGoogleToken(); } catch (error) {
+        if (error?.gsiType === 'popup_closed' || error?.gsiType === 'access_denied') {
+          const text = googleMessage({ code: 'auth/popup-closed-by-user' });
+          throw Object.assign(new Error(text), { userMessage: text });
+        }
+      }
+      if (token.length >= 20) {
+        try { return await api('/google', { method: 'POST', body: { accessToken: token } }); } catch (error) {
+          if (!['GOOGLE_UNAVAILABLE', 'INVALID_INPUT', 'AUTH_PROVIDER_UNAVAILABLE', 'INVALID_PROVIDER_RESPONSE'].includes(String(error?.code || ''))) throw error;
+          try { sessionStorage.setItem(DIRECT_GOOGLE_OFF, '1'); } catch (_) {}
+        }
+      }
+    }
+    const accessToken = await googleAccessToken();
+    if (accessToken === OAUTH_REDIRECT) return OAUTH_REDIRECT;
+    return api('/google', { method: 'POST', body: { accessToken } });
+  };
+
   const googleAccessToken = async () => {
     const auth = await loadFirebaseAuth();
     const provider = new window.firebase.auth.GoogleAuthProvider();
@@ -1780,9 +1853,8 @@
     if (state.busy) return;
     setBusy(true);
     try {
-      const accessToken = await googleAccessToken();
-      if (accessToken === OAUTH_REDIRECT) return;
-      const result = await api('/google', { method: 'POST', body: { accessToken } });
+      const result = await googleSignInRequest();
+      if (result === OAUTH_REDIRECT) return;
       await establishSession(result, 'Google দিয়ে তোমার account-এ প্রবেশ হয়েছে।');
     } catch (error) {
       if (error?.code === 'ACCOUNT_LINK_REQUIRED') showView('google-link');
@@ -1791,6 +1863,7 @@
   };
 
   const loadGoogle = clientId => {
+    prepareDirectGoogle();
     if (state.googlePromise) return state.googlePromise;
     if (clientId) state.googleClientId = clientId;
     state.googlePromise = Promise.resolve(true).then(() => {
@@ -2312,23 +2385,28 @@
   // -- an old cached bundle or a network failure. It is the real signup form or
   // the real login form, never an empty page.
   const showLegacyEntry = mode => {
+    if (skyScriptLinked()) {
+      showWelcome();
+      message('নতুন সাইন-ইন পেজটি লোড হয়নি—পেজটি একবার refresh করো।', 'error');
+      return;
+    }
     const welcome = pageHost.querySelector('.ah-welcome-view');
     if (welcome) welcome.classList.add('ah-welcome-live');
     if (mode === 'signup') {
       state.signupJourney = true;
       state.signupStep = 'personal';
-      showView('signup');
+      renderView('signup');
     } else {
       state.signupJourney = false;
       state.pendingProfile = null;
       state.profileBound = false;
-      showView('login');
+      renderView('login');
     }
   };
   const skyReady = () => Boolean(window.AdmissionSkyFlow && window.AdmissionSkyBridge);
   const launchSky = mode => {
     try {
-      Promise.resolve(window.AdmissionSkyFlow.open(mode))
+      Promise.resolve(window.AdmissionSkyFlow.open(mode, takeSkyEntry()))
         .then(opened => { if (opened === false) showLegacyEntry(mode); })
         .catch(error => { console.error('[Admission Sky] open failed:', error); showLegacyEntry(mode); });
     } catch (error) {
@@ -2361,6 +2439,18 @@
       setTimeout(poll, 50);
     };
     setTimeout(poll, 0);
+    return true;
+  };
+  const takeSkyEntry = () => { const entry = state.skyEntry || {}; state.skyEntry = null; return entry; };
+  skyRouteHook = name => {
+    if (!skyScriptLinked()) return false;
+    const mode = name === 'signup' ? 'signup' : 'login';
+    const resume = ['verify', 'telegram', 'email-ownership', 'email-intro', 'telegram-intro', 'created'].includes(name) ? 'verify' : '';
+    state.skyEntry = { resume, email: String(state.verification?.email || '') };
+    state.currentView = 'sky';
+    pageHost.dataset.currentView = 'sky';
+    setAccountPageActive(true);
+    openSky(mode);
     return true;
   };
   const open = options => {
@@ -2659,7 +2749,7 @@
       const storyStyle = document.createElement('link');
       storyStyle.id = 'ah-welcome-story-style';
       storyStyle.rel = 'stylesheet';
-      storyStyle.href = 'welcome-story.css?v=welcome-story-20261013-v1';
+      storyStyle.href = 'welcome-story.css?v=welcome-story-20261016-v2';
       document.head.append(storyStyle);
     }
     if (!document.getElementById('ah-welcome-story')) {
@@ -2670,7 +2760,7 @@
     }
     if (!document.querySelector('script[src*="welcome-story.js"]')) {
       const storyScript = document.createElement('script');
-      storyScript.src = 'welcome-story.js?v=welcome-story-20261013-v1';
+      storyScript.src = 'welcome-story.js?v=welcome-story-20261016-v2';
       storyScript.defer = true;
       document.head.append(storyScript);
     }
@@ -3333,6 +3423,7 @@
   };
   const skyBridge = Object.freeze({
     friendly: friendlyError,
+    takeNotice() { const pending = state.skyPendingNotice; state.skyPendingNotice = null; return pending || null; },
     mount: skyMount,
     reveal(node) {
       const mount = skyMount();
@@ -3428,9 +3519,8 @@
       return result;
     },
     google: async () => {
-      const accessToken = await googleAccessToken();
-      if (accessToken === OAUTH_REDIRECT) return true;
-      const result = await skyApi('/google', { method: 'POST', body: { accessToken } });
+      const result = await googleSignInRequest();
+      if (result === OAUTH_REDIRECT) return true;
       await establishSession(result, 'Google দিয়ে তোমার account-এ প্রবেশ হয়েছে।');
       return true;
     },
@@ -3439,11 +3529,18 @@
       try {
         accessToken = await facebookAccessToken();
       } catch (error) {
-        message(facebookMessage(error), 'error');
-        return false;
+        const failure = new Error(error?.message || facebookMessage(error));
+        failure.userMessage = error?.userMessage || error?.message || facebookMessage(error);
+        throw failure;
       }
       if (accessToken === OAUTH_REDIRECT) return true;
-      const result = await skyApi('/facebook', { method: 'POST', body: { accessToken } });
+      let result;
+      try {
+        result = await skyApi('/facebook', { method: 'POST', body: { accessToken } });
+      } catch (error) {
+        if (error?.code === 'EMAIL_NOT_VERIFIED') error.userMessage = 'তোমার Facebook অ্যাকাউন্টে নিশ্চিত করা কোনো ইমেইল নেই—ইমেইল দিয়ে সাইন আপ করো।';
+        throw error;
+      }
       await establishSession(result, 'Facebook \u09a6\u09bf\u09af\u09bc\u09c7 \u09a4\u09cb\u09ae\u09be\u09b0 \u098f\u0995\u0987 account-\u098f \u09aa\u09cd\u09b0\u09ac\u09c7\u09b6 \u09b9\u09af\u09bc\u09c7\u099b\u09c7\u0964');
       return true;
     },

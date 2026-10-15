@@ -62,6 +62,18 @@ function providerFailure(error) {
 
 const PROBE_TIMEOUT_MS = 5000;
 
+// Owner 2026-10-16: iCloud / Yahoo / Outlook mailboxes did not receive codes that
+// Brevo (top slot) accepted. For those recipients prefer otp-b (Apps Script,
+// sends from the real Gmail account) then otp-e (AgentMail, own signed domain).
+// Gmail recipients keep the operator order. A resend demotes the slot that
+// carried the previous code so each retry goes out through a different sender.
+const NON_GMAIL_FREEMAIL = new Set(['icloud.com', 'me.com', 'mac.com', 'yahoo.com', 'yahoo.co.uk', 'yahoo.co.in', 'ymail.com', 'rocketmail.com', 'outlook.com', 'hotmail.com', 'live.com', 'msn.com', 'aol.com']);
+const NON_GMAIL_PREFERENCE = Object.freeze({ 'otp-b': -15, 'otp-e': -30 });
+function recipientBias(providerId, email) {
+  const domain = String(email || '').trim().toLowerCase().split('@').pop();
+  return NON_GMAIL_FREEMAIL.has(domain) ? (NON_GMAIL_PREFERENCE[providerId] || 0) : 0;
+}
+
 async function bounded(action, milliseconds) {
   let timer;
   try {
@@ -236,7 +248,7 @@ export class VerificationOrchestrator {
           entry,
           provider,
           probe: state.circuit === 'half-open',
-          score: entry.priority + lowPenalty + failurePenalty + latencyPenalty
+          score: entry.priority + lowPenalty + failurePenalty + latencyPenalty + recipientBias(entry.id, destinations.otp) + (identity.previousProviderId && identity.previousProviderId === entry.id ? 25 : 0)
         };
       } catch (cause) {
         const failure = providerFailure(cause);
@@ -295,8 +307,16 @@ export class VerificationOrchestrator {
       limits: this.#limits(identity),
       now
     }));
+    let previousProviderId = '';
+    try {
+      const prior = await this.repository.getPendingChallenge({
+        userId: identity.userId, sessionRef: identity.sessionRef, subjectRef: identity.subjectRef,
+        emailRef: identity.emailRef, deviceRef: identity.deviceRef, purpose: identity.purpose, now
+      });
+      previousProviderId = String(prior?.challenge?.providerId || '');
+    } catch {}
     const destinations = identity.destinations;
-    const candidates = await this.#candidateRows({ ...identity, attemptId }, destinations, now);
+    const candidates = await this.#candidateRows({ ...identity, attemptId, previousProviderId }, destinations, now);
     for (const candidate of candidates) {
       const { entry, provider } = candidate;
       const maxTries = 1 + policy.maxProviderRetries;
