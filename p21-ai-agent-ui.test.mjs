@@ -42,6 +42,6 @@ t('১৯. থিম অ্যাপের নিজের ইঞ্জিন �
 t('২০. অ্যাপে ফেরার রাস্তা (nav ফিরে আসে + bottomnav আবার দেখায়)', UI.includes('function backHome()') && UI.includes("document.querySelector('.bottomnav')") && UI.includes("nb.style.display = ''"));
 t('২১. M9 অ্যাকশন-ইঞ্জিন অটুট (প্রস্তাব→নিশ্চিতকরণ)', UI.includes('const ACT_ACTIONS = {') && UI.includes("'/api/ai/actions/propose'") && UI.includes("'/api/ai/actions/confirm'") && UI.includes('function msgHtml(m, idx) {'));
 t('২২. p06 weak-topic কনট্র্যাক্ট অটুট', UI.includes('const learningProfile = ') && UI.includes('weakTopics: lp.weakTopics, subjects: lp.subjects'));
-t('২৩. duplicate-turn গার্ড অটুট (একই টার্ন দুইবার নয়)', /const history = sessions\[cur\]\.msgs\.slice\(0, -1\)[\s\S]{0,200}?map\(\(m\) => \(\{ role: m\.role, content: m\.text \}\)\);/.test(UI));
+t('২৩. duplicate-turn গার্ড অটুট (একই টার্ন দুইবার নয়)', /const history = sessions\[cur\]\.msgs\.slice\(0, -1\)[\s\S]{0,300}?map\(\(m\) => \(\{ role: m\.role === 'user' \? 'user' : 'assistant', content: /.test(UI));
 
 t('২৪. sw APP_SHELL-এ AI ফাইল', SW.includes('./ai-agent-chat.js?v=agent-f1-ui-skyv2') && SW.includes('dashboard-v2.js?v='));

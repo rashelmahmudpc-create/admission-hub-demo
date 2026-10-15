@@ -941,7 +941,14 @@ const ACT_ACTIONS = { 'prefs.write': { bn: 'তোমার AI পছন্দ �
     /* slice(0,-1) drops the pending AI placeholder, so the history ends with the
        turn the student just typed. It must stay: the model needs the question.
        Adding it a second time is the duplicate-turn bug (regression 2026-09). */
-    const history = sessions[cur].msgs.slice(0, -1).slice(-MAX_HISTORY).map((m) => ({ role: m.role, content: m.text }));
+    /* The UI stores model turns as role 'ai', but the gateway only accepts
+       'user' / 'assistant' and rejected the whole request (400 invalid_message)
+       from the 2nd question on. Map the role, drop pending/failed/action turns
+       that carry no text, and clip long answers so history stays in budget. */
+    const history = sessions[cur].msgs.slice(0, -1)
+      .filter((m) => m && !m.pending && !m.error && !m.actId && typeof m.text === 'string' && m.text.trim())
+      .slice(-MAX_HISTORY)
+      .map((m) => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.role === 'user' ? m.text.slice(0, 4000) : m.text.slice(0, 1500) }));
     procStage(node, holder, T.stageSend);
     const res = await ask(history, (full) => {
       holder.text = full;

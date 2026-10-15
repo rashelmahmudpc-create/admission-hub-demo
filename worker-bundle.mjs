@@ -1375,8 +1375,10 @@ function validateChatReq(body) {
   const msgs = [];
   let total = 0;
   for (const m of raw) {
-    const role = m && m.role === "assistant" ? "assistant" : m && m.role === "user" ? "user" : null;
-    const content = typeof (m && m.content) === "string" ? m.content : typeof (m && m.text) === "string" ? m.text : "";
+    const role = m && (m.role === "assistant" || m.role === "ai" || m.role === "model") ? "assistant" : m && m.role === "user" ? "user" : null;
+    let content = typeof (m && m.content) === "string" ? m.content : typeof (m && m.text) === "string" ? m.text : "";
+    if (role === "assistant" && !content.trim()) continue;
+    if (role === "assistant" && content.length > 4e3) content = content.slice(0, 4e3);
     if (!role || !content.trim()) return { ok: false, code: "invalid_message", message: "বার্তার গঠন সঠিক নয়।" };
     if (content.length > 4e3) return { ok: false, code: "message_too_long", message: "একটি বার্তা ৪০০০ অক্ষরের বেশি হতে পারবে না।" };
     const image = typeof (m && m.image) === "string" ? m.image : "";
@@ -1387,6 +1389,11 @@ function validateChatReq(body) {
     total += content.length;
     msgs.push({ role, content: content.trim(), image });
   }
+  while (total > 2e4 && msgs.length > 1) {
+    total -= msgs[0].content.length;
+    msgs.shift();
+  }
+  if (!msgs.some((x) => x.role === "user")) return { ok: false, code: "empty_messages", message: "কোনো বার্তা নেই।" };
   if (total > 2e4) return { ok: false, code: "context_too_long", message: "বার্তার মোট আকার খুব বড়।" };
   const merged = [];
   for (const mm of msgs) {
