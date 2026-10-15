@@ -1,0 +1,74 @@
+name: Startup performance preview and release
+run-name: Startup performance ${{ inputs.mode }}
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        type: choice
+        options: [preview, production]
+        default: preview
+        required: true
+      confirmation:
+        type: string
+        description: Type DEPLOY_STARTUP
+        required: true
+permissions:
+  contents: write
+concurrency:
+  group: admission-hub-pages-deploy
+  cancel-in-progress: false
+jobs:
+  startup:
+    if: ${{ inputs.confirmation == 'DEPLOY_STARTUP' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Apply guarded frontend-only optimization
+        run: |
+          node scripts/optimize-startup.mjs
+          node --check account-access.js
+          node scripts/sw-manifest.mjs
+      - name: Startup, routing and auth protection regression tests
+        run: node --test --test-concurrency=1 startup-fast.test.mjs p19-perf-budget.test.mjs seo-routing.test.mjs native-auth-protection.test.mjs session-recovery-api.test.mjs
+      - name: Persist tested source on production release only
+        if: ${{ inputs.mode == 'production' }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add index.html account-access.js sw.js
+          if ! git diff --cached --quiet; then
+            git commit -m 'perf: release verified-session fast startup and defer optional features'
+            git push origin HEAD:main
+          fi
+      - name: Build sanitized frontend only
+        run: |
+          node scripts/pages-dist.mjs
+          node scripts/build-welcome-pages.mjs dist
+          test -s dist/index.html
+          test -s dist/_worker.js
+          node --check dist/account-access.js
+      - name: Select preview or production branch
+        id: target
+        env:
+          MODE: ${{ inputs.mode }}
+        run: |
+          if [ "$MODE" = production ]; then echo 'branch=main' >> "$GITHUB_OUTPUT"; else echo 'branch=perf-startup' >> "$GITHUB_OUTPUT"; fi
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Deploy admissionsky frontend only
+        id: deploy
+        uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: '4.35.0'
+          command: pages deploy dist --project-name admissionsky --branch ${{ steps.target.outputs.branch }} --commit-hash ${{ steps.target.outputs.sha }}
+      - name: Release summary
+        run: |
+          echo '### Frontend startup optimization' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Only admissionsky Pages assets were published. Backend Worker, database and secrets unchanged.' >> "$GITHUB_STEP_SUMMARY"
