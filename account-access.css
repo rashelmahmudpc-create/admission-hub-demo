@@ -1347,3 +1347,15 @@ body.keyboard-open .ah-education-panel .ah-edu-assist{display:none}
    the area under the status bar, so the body must not reserve the notch again.
    --------------------------------------------------------------------------- */
 body.ah-account-page-active{padding-top:0!important;padding-bottom:0!important;overflow-x:hidden}
+
+/* ---------------------------------------------------------------------------
+   Locked app surface (2026-10-16) — Welcome / Sign Up / Sign In behave like a
+   native screen: the document cannot be pulled, dragged, bounced or zoomed.
+   The account page is its own scroller (only legacy long forms ever scroll);
+   the Welcome story and the Sky flow fit one screen and never scroll.
+   --------------------------------------------------------------------------- */
+html:has(body.ah-account-page-active){height:100%;overflow:hidden;overscroll-behavior:none}
+body.ah-account-page-active{position:fixed;inset:0;width:100%;height:100%;overflow:hidden;overscroll-behavior:none;touch-action:manipulation;-webkit-text-size-adjust:100%}
+body.ah-account-page-active .ah-account-page{position:absolute;inset:0;width:100%;height:100%;min-height:0;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+body.ah-account-page-active .ah-account-page[data-sky-flow="on"],body.ah-account-page-active .ah-account-page[data-current-view="welcome"]{overflow:hidden}
+body.ah-account-page-active input,body.ah-account-page-active select,body.ah-account-page-active textarea{font-size:max(16px,1em)}

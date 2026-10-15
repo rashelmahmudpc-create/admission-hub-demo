@@ -2347,6 +2347,7 @@
     const visible = Boolean(active);
     pageHost.hidden = !visible;
     document.body.classList.toggle('ah-account-page-active', visible);
+    document.documentElement.classList.remove('ah-pre');
     const app = document.getElementById('app');
     const navigation = document.getElementById('navRoot');
     [app, navigation].filter(Boolean).forEach(node => {
@@ -3596,4 +3597,40 @@
   });
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initialize, { once: true });
   else initialize();
+})();
+
+/* Locked app surface (2026-10-16): no pull-down, drag, bounce or pinch while the
+   account page (Welcome / Sign Up / Sign In) is on screen. Only a container that
+   really can scroll (a legacy long form) keeps its own scrolling. */
+;(function () {
+  if (window.__ahLockInit) return;
+  window.__ahLockInit = true;
+  var d = document, startY = 0;
+  function active() { return !!(d.body && d.body.classList.contains('ah-account-page-active')); }
+  function canScroll(el, dy) {
+    while (el && el !== d.body && el !== d.documentElement) {
+      if (el.nodeType === 1) {
+        var oy = getComputedStyle(el).overflowY;
+        if ((oy === 'auto' || oy === 'scroll') && el.scrollHeight > el.clientHeight + 1) {
+          if (dy > 0 && el.scrollTop > 0) return true;
+          if (dy < 0 && el.scrollTop + el.clientHeight < el.scrollHeight - 1) return true;
+        }
+      }
+      el = el.parentNode;
+    }
+    return false;
+  }
+  d.addEventListener('touchstart', function (e) { if (e.touches && e.touches[0]) startY = e.touches[0].clientY; }, { passive: true });
+  d.addEventListener('touchmove', function (e) {
+    if (!active()) return;
+    if (e.touches.length > 1) { e.preventDefault(); return; }
+    var dy = e.touches[0].clientY - startY;
+    if (!canScroll(e.target, dy)) e.preventDefault();
+  }, { passive: false });
+  ['gesturestart', 'gesturechange', 'gestureend'].forEach(function (t) {
+    d.addEventListener(t, function (e) { if (active()) e.preventDefault(); }, { passive: false });
+  });
+  function pin() { if (active() && (window.scrollX || window.scrollY)) window.scrollTo(0, 0); }
+  window.addEventListener('scroll', pin, { passive: true });
+  if (window.visualViewport) window.visualViewport.addEventListener('scroll', pin);
 })();

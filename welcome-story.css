@@ -24,3 +24,9 @@
 /* owner-2026-10-16-clip: zoomed scenes, the tab bar and captions overflowed .fit
    and slid under Get Started on small phones. Clip to the band, fade the edges. */
 #ah-welcome-story .band{overflow:hidden;-webkit-mask-image:linear-gradient(180deg,transparent 0,#000 10px,#000 calc(100% - 14px),transparent 100%);mask-image:linear-gradient(180deg,transparent 0,#000 10px,#000 calc(100% - 14px),transparent 100%)}
+
+/* 2026-10-16: the scene is a fixed 390x640 box scaled to the band. In a grid whose
+   row grows to fit it, the box starts at the band's top and the scale pivots on its own
+   centre, so on short phones the scene (and its caption) slid down under Get Started.
+   Pin the track to the band so the scene is centred in it and the caption stays above the button. */
+#ah-welcome-story .band{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr)}

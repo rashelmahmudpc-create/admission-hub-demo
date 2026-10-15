@@ -4,6 +4,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<style id="ah-pre-css">html.ah-pre #app,html.ah-pre #navRoot{visibility:hidden!important}</style>
+<script>/* hide the app shell until the account page has decided (no old-view flash); fail-open after 2.5s */document.documentElement.classList.add("ah-pre");setTimeout(function(){document.documentElement.classList.remove("ah-pre")},2500);</script>
 <title>Admission Hub — ভর্তি প্রস্তুতি, প্রশ্নব্যাংক ও বিজ্ঞপ্তি</title>
 <link rel="stylesheet" href="./dashboard-v2.css?v=dash2f13-theme">
 
@@ -846,7 +848,7 @@ textarea{min-height:96px}
   }catch(_){/* analytics must never break boot */}
 })();
 </script>
-<link rel="stylesheet" href="./account-access.css?v=20261016-authux1">
+<link rel="stylesheet" href="./account-access.css?v=20261016-lock1">
 <link rel="stylesheet" href="./profile-ui.css?v=profile-v15-uni-tap">
 <!-- Signup/Onboarding Assistant বন্ধ; মূল অ্যাপের account-aware AI Assistant চালু আছে। -->
 <style id="ah-boot-min">.ah-boot{width:100%;min-height:100dvh;display:grid;place-content:center;justify-items:center;gap:9px;color:#17221d;background:#f1faf6}.ah-boot-mark{display:grid;place-items:center;width:56px;height:56px;border-radius:17px;background:#0f6b4f;color:#fff;font-size:26px;box-shadow:0 12px 28px rgba(15,107,79,.30)}.ah-boot b{font-size:19px;font-weight:800;letter-spacing:.01em}.ah-boot i{font-style:normal;font-size:12px;color:#5e7168;animation:ahBootPulse 1.15s ease-in-out infinite}@keyframes ahBootPulse{0%,100%{opacity:.55}50%{opacity:1}}@media(prefers-reduced-motion:reduce){.ah-boot i{animation:none}}</style>
@@ -929,7 +931,7 @@ textarea{min-height:96px}
 </noscript>
 <script defer src="./institutions-bd.js?v=bd-institutions-v2"></script>
 <script defer src="./language-engine.js?v=lang-v5-single-email-button"></script>
-<script defer src="./account-access.js?v=20261016-authux1"></script>
+<script defer src="./account-access.js?v=20261016-lock1"></script>
 <script defer src="./ios-chrome.js?v=1"></script>
 <script>
 (function installAdmissionSafety(){
@@ -5407,7 +5409,7 @@ window.__admissionBootPromise.catch(error => console.error('[Admission Hub] boot
     // The updated worker takes control now; the current document remains usable and the next launch uses the new shell.
     try{
 
-      const expectedSwVersion = 'v334-safearea-20261015';
+      const expectedSwVersion = 'v335-lock-20261016';
       // register() on the same scope performs an in-place update. Never unregister
       // the active iOS worker first: that discards the instant offline shell.
       const registration=await navigator.serviceWorker.register('./sw.js',{scope:'./',updateViaCache:'none'});
@@ -5416,7 +5418,7 @@ window.__admissionBootPromise.catch(error => console.error('[Admission Hub] boot
       // stale pre-retirement application shells can never be served from cache again.
       try {
 
-        const cur = 'admission-hub-shell-v334-safearea-20261015';
+        const cur = 'admission-hub-shell-v335-lock-20261016';
         const names = await caches.keys();
         for (const name of names) {
           if (name.startsWith('admission-hub-shell-') && name !== cur) await caches.delete(name).catch(()=>{});
