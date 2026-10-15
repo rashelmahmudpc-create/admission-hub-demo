@@ -1050,6 +1050,158 @@ export class OfficialWhatsAppVerificationProvider {
   }
 }
 
+// Slot `otp-h` is Logto's free email service (no card, no domain; sender
+// no-reply@logto.email, SPF/DKIM/DMARC pass, measured Inbox 2026-10-15). Logto
+// creates and checks the code itself, so this slot is provider-evidence: the
+// student's 6-digit code is the evidence. It drives Logto's public sign-in
+// Experience API with the public SPA app id, so no secret is needed. The
+// short-lived interaction cookies are kept per attempt in memory and KV (10 min).
+const LOGTO_STATE_TTL_SECONDS = 600;
+const validLogtoAppId = value => /^[a-z0-9]{12,32}$/.test(String(value || ''));
+function logtoRedirect(value) {
+  try {
+    const url = new URL(String(value || ''));
+    return url.protocol === 'https:' && !url.username && !url.password && !url.hash ? url.href : '';
+  } catch { return ''; }
+}
+function cookiePairs(response, jar) {
+  const list = typeof response?.headers?.getSetCookie === 'function' ? response.headers.getSetCookie() : [];
+  for (const line of list) {
+    const pair = String(line || '').split(';', 1)[0];
+    const at = pair.indexOf('=');
+    if (at > 0) jar[pair.slice(0, at).trim()] = pair.slice(at + 1).trim();
+  }
+  return jar;
+}
+async function sha256Base64Url(text) {
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(text))));
+  let bin = ''; for (const b of digest) bin += String.fromCharCode(b);
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+const cookieHeader = jar => Object.entries(jar).map(([k, v]) => `${k}=${v}`).join('; ');
+
+export class LogtoOtpVerificationProvider {
+  constructor({ id = 'otp-h', endpoint, appId, redirectUri, declaredDailyQuota, kv = null, fetchImpl = globalThis.fetch, now = Date.now } = {}) {
+    this.id = String(id || '');
+    this.channel = VERIFICATION_CHANNELS.OTP;
+    this.verificationMode = VERIFICATION_MODES.PROVIDER_EVIDENCE;
+    this.endpoint = httpsOrigin(endpoint);
+    this.appId = validLogtoAppId(appId) ? String(appId) : '';
+    this.redirectUri = logtoRedirect(redirectUri);
+    this.declaredDailyQuota = safeInteger(declaredDailyQuota, 1, 10_000_000);
+    this.kv = kv && typeof kv.get === 'function' && typeof kv.put === 'function' ? kv : null;
+    this.fetch = typeof fetchImpl === 'function' ? fetchImpl.bind(globalThis) : null;
+    this.now = typeof now === 'function' ? now : Date.now;
+    this.memory = new Map();
+    this.configured = Boolean(this.endpoint && this.appId && this.redirectUri && this.declaredDailyQuota && this.fetch);
+  }
+
+  async #call(path, { method = 'POST', jar, body } = {}) {
+    let response;
+    try {
+      response = await this.fetch(`${this.endpoint}${path}`, {
+        method,
+        redirect: 'manual',
+        headers: {
+          Accept: 'application/json',
+          'Cache-Control': 'no-store',
+          ...(body ? { 'Content-Type': 'application/json' } : {}),
+          ...(jar && Object.keys(jar).length ? { Cookie: cookieHeader(jar) } : {})
+        },
+        ...(body ? { body: JSON.stringify(body) } : {}),
+        signal: AbortSignal.timeout(12_000)
+      });
+    } catch { throw new VerificationProviderError('NETWORK_ERROR', VERIFICATION_FAILURE_CLASS.TEMPORARY); }
+    if (jar) cookiePairs(response, jar);
+    const payload = response.status === 204 || response.status === 303 || response.status === 302 ? {} : await boundedJson(response);
+    return { response, payload };
+  }
+
+  async #saveState(attemptId, state) {
+    const expires = Number(this.now()) + LOGTO_STATE_TTL_SECONDS * 1000;
+    this.memory.set(attemptId, { ...state, expires });
+    for (const [key, row] of this.memory) if (row.expires < Number(this.now())) this.memory.delete(key);
+    if (this.kv) {
+      try { await this.kv.put(`logto-otp:${attemptId}`, JSON.stringify(state), { expirationTtl: LOGTO_STATE_TTL_SECONDS }); } catch {}
+    }
+  }
+
+  async #loadState(attemptId) {
+    const row = this.memory.get(attemptId);
+    if (row && row.expires >= Number(this.now())) return row;
+    if (!this.kv) return null;
+    try {
+      const raw = await this.kv.get(`logto-otp:${attemptId}`);
+      return raw ? JSON.parse(raw) : null;
+    } catch { return null; }
+  }
+
+  async #dropState(attemptId) {
+    this.memory.delete(attemptId);
+    if (this.kv && typeof this.kv.delete === 'function') { try { await this.kv.delete(`logto-otp:${attemptId}`); } catch {} }
+  }
+
+  async checkAvailability() {
+    if (!this.configured) return { available: false, code: 'NOT_CONFIGURED' };
+    return { available: true, code: 'READY' };
+  }
+
+  async getRemainingQuota() {
+    if (!this.configured) return { remaining: 0, limit: 0, resetAt: 0, source: 'not-configured' };
+    return { remaining: this.declaredDailyQuota, limit: this.declaredDailyQuota, resetAt: nextUtcMidnight(this.now()), source: 'declared' };
+  }
+
+  async sendVerification(input = {}) {
+    if (!this.configured) throw new VerificationProviderError('NOT_CONFIGURED', VERIFICATION_FAILURE_CLASS.HARD);
+    const destination = String(input.destination || '').trim().toLowerCase();
+    const attemptId = String(input.attemptId || '');
+    if (!validEmailAddress(destination) || !/^[A-Za-z0-9_-]{24,96}$/.test(attemptId)) {
+      throw new VerificationProviderError('INVALID_DESTINATION', VERIFICATION_FAILURE_CLASS.USER);
+    }
+    const jar = {};
+    const challenge = await sha256Base64Url(`${attemptId}:${crypto.randomUUID()}`);
+    const auth = new URLSearchParams({
+      client_id: this.appId, redirect_uri: this.redirectUri, response_type: 'code', scope: 'openid',
+      code_challenge: challenge, code_challenge_method: 'S256', state: attemptId.slice(0, 32), prompt: 'login'
+    });
+    const start = await this.#call(`/oidc/auth?${auth}`, { method: 'GET', jar });
+    if (start.response.status >= 400) throw httpFailure(start.response, start.payload, { userStatuses: [] });
+    const experience = await this.#call('/api/experience', { method: 'PUT', jar, body: { interactionEvent: 'SignIn' } });
+    if (!experience.response.ok) throw httpFailure(experience.response, experience.payload, { userStatuses: [] });
+    const sent = await this.#call('/api/experience/verification/verification-code', {
+      jar, body: { identifier: { type: 'email', value: destination }, interactionEvent: 'SignIn' }
+    });
+    if (!sent.response.ok) throw httpFailure(sent.response, sent.payload, { userStatuses: [] });
+    const verificationId = String(sent.payload?.verificationId || '');
+    if (!/^[A-Za-z0-9_-]{8,64}$/.test(verificationId)) throw new VerificationProviderError('INVALID_PROVIDER_RESPONSE', VERIFICATION_FAILURE_CLASS.HARD);
+    await this.#saveState(attemptId, { jar, verificationId, email: destination });
+    return { accepted: true };
+  }
+
+  async verifyCode(input = {}) {
+    if (!this.configured) throw new VerificationProviderError('NOT_CONFIGURED', VERIFICATION_FAILURE_CLASS.HARD);
+    const attemptId = String(input.attemptId || '');
+    const code = String(input.evidence || '').trim();
+    if (!/^\d{6}$/.test(code)) return { verified: false };
+    const state = await this.#loadState(attemptId);
+    if (!state?.verificationId) throw new VerificationProviderError('CHALLENGE_EXPIRED', VERIFICATION_FAILURE_CLASS.USER);
+    const jar = { ...(state.jar || {}) };
+    const result = await this.#call('/api/experience/verification/verification-code/verify', {
+      jar, body: { identifier: { type: 'email', value: state.email }, verificationId: state.verificationId, code }
+    });
+    if (result.response.ok && String(result.payload?.verificationId || '') === state.verificationId) {
+      await this.#dropState(attemptId);
+      return { verified: true };
+    }
+    if (result.response.status === 400) return { verified: false };
+    throw httpFailure(result.response, result.payload, { userStatuses: [] });
+  }
+
+  async getProviderStatus() {
+    return { status: this.configured ? 'configured' : 'disabled', configured: this.configured, officialApi: true, mailer: 'logto' };
+  }
+}
+
 export class TelegramLinkVerificationProvider {
   constructor({ botUsername, botToken, webhookSecret, webhookSecretSource, webhookUrl, declaredDailyQuota, fetchImpl = globalThis.fetch, cryptoImpl = globalThis.crypto } = {}) {
     this.id = 'telegram';
@@ -1327,6 +1479,15 @@ export function createConfiguredVerificationProviders(env = {}, { fetchImpl = gl
     fetchImpl
   });
   const bridgeOtpG = new BridgeOtpVerificationProvider({ id: 'otp-g', origin: env.OTP_G_PROVIDER_ORIGIN, apiKey: env.OTP_G_PROVIDER_KEY, declaredDailyQuota: env.OTP_G_DAILY_QUOTA, fetchImpl });
+  const logtoOtpH = new LogtoOtpVerificationProvider({
+    id: 'otp-h',
+    endpoint: env.LOGTO_ENDPOINT,
+    appId: env.LOGTO_APP_ID,
+    redirectUri: env.LOGTO_REDIRECT_URI,
+    declaredDailyQuota: env.OTP_H_DAILY_QUOTA,
+    kv: env.GK_KV || null,
+    fetchImpl
+  });
   return [
     brevoOtpA.configured ? brevoOtpA : bridgeOtpA,
     appsScriptOtpB.configured ? appsScriptOtpB : bridgeOtpB,
@@ -1335,6 +1496,7 @@ export function createConfiguredVerificationProviders(env = {}, { fetchImpl = gl
     agentMailOtpE.configured ? agentMailOtpE : bridgeOtpE,
     mailerSendOtpF.configured ? mailerSendOtpF : bridgeOtpF,
     deadSimpleOtpG.configured ? deadSimpleOtpG : bridgeOtpG,
+    logtoOtpH,
     new OfficialWhatsAppVerificationProvider({
       graphVersion: env.WHATSAPP_GRAPH_VERSION,
       phoneNumberId: env.WHATSAPP_PHONE_NUMBER_ID,

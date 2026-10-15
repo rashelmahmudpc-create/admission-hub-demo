@@ -418,8 +418,9 @@ export class VerificationOrchestrator {
         now
       }));
     } else {
-      const evidence = String(input.evidence || '').trim();
-      if (!validText(evidence, 8, 4096)) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+      // otp-h (Logto) checks the student's own 6-digit code at the provider.
+      const evidence = String(input.evidence || input.code || '').trim();
+      if (!validText(evidence, 8, 4096) && !/^\d{6}$/.test(evidence)) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
       const entry = this.config.providers.find(row => row.id === selected.providerId && row.enabled);
       const provider = entry ? this.providers.get(entry.id) : null;
       if (!entry || !provider) throw new NativeAuthError(AUTH_ERROR_CODES.BACKUP_UNAVAILABLE);
