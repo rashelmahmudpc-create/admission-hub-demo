@@ -121,9 +121,10 @@ test('১৭. composer ইনপুট iOS-এ আলাদা ফ্রেম �
      whole page on focus, which is the frame this guard exists to prevent. */
   !AI.includes('contenteditable') && AI.includes('id="inp"') && AI.includes('font-size:16px') && AI.includes('-webkit-appearance:none;appearance:none'));
 test('১৮. rich and plain AI messages render their complete bodies directly',
-  /* Escape-first, then markdown: every message body goes through md() whole,
-     with no fold step between the model text and the DOM. */
-  AI.includes('function md(src)') && AI.includes('inner = md(m.text)') && AI.includes('b.innerHTML = md(full)'));
+  /* Escape-first, then markdown: every message body goes through md() whole
+     (mdRich wraps it for charts/flows), with no fold step between the model
+     text and the DOM. */
+  AI.includes('function md(src)') && AI.includes('else inner = mdRich(m.text)') && AI.includes('b.innerHTML = md(full)'));
 test('১৯. AI response/code collapse implementation and label are completely absent',
   !AI.includes('ai-rb-fold') && !AI.includes('ai-code-fold') && !AI.includes('respFold(') && !AI.includes('সম্পূর্ণ দেখুন') && !AI.includes('Expand full response'));
 test('২০. long code stays fully visible (কোনো truncate নয়)',

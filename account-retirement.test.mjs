@@ -108,9 +108,9 @@ await test('content hydration is public and account-independent',
   !/AHAuth|ahPubToken|authHeaders|Authorization/.test(CLOUD));
 
 await test('service-worker build and HTML registration are synchronized',
-  SW.includes("const BUILD_ID = 'v337-skyv2-20261017'") &&
-  H.includes("const expectedSwVersion = 'v337-skyv2-20261017'") &&
-  H.includes('admission-hub-shell-v337-skyv2-20261017'));
+  SW.includes("const BUILD_ID = 'v339-sky-chat-history'") &&
+  H.includes("const expectedSwVersion = 'v339-sky-chat-history'") &&
+  H.includes('admission-hub-shell-v339-sky-chat-history'));
 await test('service-worker shell cannot cache retired assets', !retiredAssetRe.test(SW));
 await test('premium account and institution assets use synchronized cache-busting versions',
   ['account-access.css?v=20261017-iosshell1', 'account-access.js?v=20261017-iosshell1', 'institutions-bd.js?v=bd-institutions-v2']

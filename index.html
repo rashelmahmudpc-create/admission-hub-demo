@@ -5420,7 +5420,7 @@ window.__admissionBootPromise.catch(error => console.error('[Admission Hub] boot
     // The updated worker takes control now; the current document remains usable and the next launch uses the new shell.
     try{
 
-      const expectedSwVersion = 'v337-skyv2-20261017';
+      const expectedSwVersion = 'v339-sky-chat-history';
       // register() on the same scope performs an in-place update. Never unregister
       // the active iOS worker first: that discards the instant offline shell.
       const registration=await navigator.serviceWorker.register('./sw.js',{scope:'./',updateViaCache:'none'});
@@ -5429,7 +5429,7 @@ window.__admissionBootPromise.catch(error => console.error('[Admission Hub] boot
       // stale pre-retirement application shells can never be served from cache again.
       try {
 
-        const cur = 'admission-hub-shell-v337-skyv2-20261017';
+        const cur = 'admission-hub-shell-v339-sky-chat-history';
         const names = await caches.keys();
         for (const name of names) {
           if (name.startsWith('admission-hub-shell-') && name !== cur) await caches.delete(name).catch(()=>{});

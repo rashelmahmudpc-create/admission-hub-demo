@@ -18,7 +18,7 @@ t('২. কোনো আনগার্ডেড C().settings.X অ্যাক�
 t('৩. goal(): DB-লেখা সর্বদা window.dbPut-গার্ডেড (আনগার্ডেড-লেখা নেই)', V2.includes("if (window.dbPut) window.dbPut('settings', s)") && !/(?<!if \(window\.dbPut\) )window\.dbPut\('settings'/.test(V2.replace("if (window.dbPut) window.dbPut('settings', s)", '')));
 t('৪. renderV3 try/catch → বন্ধুত্বপূর্ণ-ব্যর্থতা (কখনো ক্র্যাশ নয়)', V2.includes("console.warn('[dv3] render failed") && V2.includes('ড্যাশবোর্ড লোড হয়নি'));
 
-t('৫. ভার্সন-অখণ্ডতা: dashboard-v2.js ?v=dash2f10-main-ai (index+sw) + current BUILD_ID', H.includes('<script defer src="./dashboard-v2.js?v=dash2f16-avatar-cache"></script>') && SW.includes("'./dashboard-v2.js?v=dash2f16-avatar-cache'") && SW.includes("const BUILD_ID = 'v337-skyv2-20261017'") && H.includes("const expectedSwVersion = 'v337-skyv2-20261017'") && H.includes("const expectedSwVersion = 'v337-skyv2-20261017'") && !H.includes('v196-gfix'));
+t('৫. ভার্সন-অখণ্ডতা: dashboard-v2.js ?v=dash2f10-main-ai (index+sw) + current BUILD_ID', H.includes('<script defer src="./dashboard-v2.js?v=dash2f16-avatar-cache"></script>') && SW.includes("'./dashboard-v2.js?v=dash2f16-avatar-cache'") && SW.includes("const BUILD_ID = 'v339-sky-chat-history'") && H.includes("const expectedSwVersion = 'v339-sky-chat-history'") && H.includes("const expectedSwVersion = 'v339-sky-chat-history'") && !H.includes('v196-gfix'));
 
 /* ── ২. রানটাইম (jsdom): আসল সিনারিওতে আর কোনো ক্র্যাশ নেই ── */
 function runtimeCase(name, setup) {
