@@ -3,7 +3,7 @@ const CACHE_PREFIX = 'admission-hub-shell-';
 // hold user data; this one holds exactly one image and is trimmed on write.
 const AVATAR_CACHE = 'admission-hub-avatar-v1';
 
-const BUILD_ID = 'v336-iosshell-20261017';
+const BUILD_ID = 'v337-skyv2-20261017';
 const CACHE_NAME = `${CACHE_PREFIX}${BUILD_ID}`;
 const VERSION_HEADER = 'X-Admission-Hub-Build';
 const DOCUMENT_NETWORK_TIMEOUT_MS = 2500;
@@ -46,7 +46,7 @@ const APP_SHELL = [
   './profile-ui.css?v=profile-v15-uni-tap',
   './data-protection.js?v=dp-v3-fastboot',
   './dashboard-v2.js?v=dash2f16-avatar-cache',
-  './ai-agent-chat.js?v=agent-f1-ui-skyv1',
+  './ai-agent-chat.js?v=agent-f1-ui-skyv2',
   './question-engine.js?v=qe1',
   './question-engine-panel.js?v=qe1',
   './notification-fcm.js?v=fcm-p3-v15',
@@ -80,7 +80,7 @@ const APP_SHELL = [
 // A truncated/corrupt download is NEVER written to the shell cache.
 const ASSET_DIGESTS = {
 /* sw-manifest:start */
-  "./index.html": "38c6b20e9818ee296b3f21994559623dd8a0243734500f37773cd1817eddab02",
+  "./index.html": "45232175e7ed9b1dccf0b7dcd775ef3e862b1e44411b57882b61be2a810e5807",
   "./manifest.json": "6dcf0e0c6f7671750549e53558ba8b9f0c2c83b0c6759072a6b5e2276331f491",
   "./manifest.webmanifest": "abcd26174710f6df3e183889a5a9da182f73ee8cdcc543b43db8fb4070cad54f",
   "./dashboard-v2.css?v=dash2f13-theme": "4541bc1e65fd158c593443562975400d128b8f1d3b636595df3c235b99e8cced",
@@ -100,7 +100,7 @@ const ASSET_DIGESTS = {
   "./profile-ui.css?v=profile-v15-uni-tap": "6408a4b7ac8acf6845cd0148c58377a4953c8ff879d30b2c520eafae0314b98a",
   "./data-protection.js?v=dp-v3-fastboot": "359dc907ade4bcb3a6a722385969ebb6af47f7e436e6cdf2cce0dd6b7343723d",
   "./dashboard-v2.js?v=dash2f16-avatar-cache": "e8fa8fbb682267930c99d463b914604cda20ef5229f099abad2784a487f8b885",
-  "./ai-agent-chat.js?v=agent-f1-ui-skyv1": "95b35e98b60109c3646e60b54db4a969292c9a13e4a29fc3bea018cb85e9cee6",
+  "./ai-agent-chat.js?v=agent-f1-ui-skyv2": "859e1b2596e6ec8a5b381d061f4bdf31f45c66981c8806d6c0fec82ede6f8271",
   "./question-engine.js?v=qe1": "db404fefd97bea27dad177748bafb0a9ba7d87bedca094e3da795c5b77946cd4",
   "./question-engine-panel.js?v=qe1": "33376e371654d575484194b5fcf8e486f4e3329c13e5330ff8619caab0399ec4",
   "./notification-fcm.js?v=fcm-p3-v15": "3b1880bc1ab5b9f91cf844b021369f2431eae099175873ab4d7eb018370318ee",

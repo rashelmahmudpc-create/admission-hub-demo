@@ -13,15 +13,15 @@ const relative = path => new URL(path, root);
 
 // The asset version string shared by account-access.{js,css} and the
 // language-engine table. Bump both when either file changes.
-const UI_VERSION_FROM = '20261016-lock1';
+const UI_VERSION_FROM = '20261017-iosshell1';
 const UI_VERSION_TO = '20261017-iosshell1';
 const LANG_VERSION_FROM = 'lang-v5-single-email-button';
 const LANG_VERSION_TO = 'lang-v5-single-email-button';
 // NOTE: SW_BUILD_TO must always equal the BUILD_ID in sw.js. Without a bump the
 // deploy ships new files under old ?v= tokens; browsers then serve them
 // immutable for a year, so students keep the old app and every fix misses them.
-const SW_BUILD_FROM = 'v335-lock-20261016';
-const SW_BUILD_TO = 'v336-iosshell-20261017';
+const SW_BUILD_FROM = 'v336-iosshell-20261017';
+const SW_BUILD_TO = 'v337-skyv2-20261017';
 
 const targets = [
   'index.html',
@@ -58,7 +58,7 @@ const replacements = [
   [SW_BUILD_FROM, SW_BUILD_TO],
   // The AI chat script's own cache-busting query moves with the shell build, so
   // it is bumped in the same pass to keep index.html and sw.js in lockstep.
-  ['ai-agent-chat.js?v=agent-f1-ui-p06card', 'ai-agent-chat.js?v=agent-f1-ui-p06chat']
+  ['ai-agent-chat.js?v=agent-f1-ui-skyv1', 'ai-agent-chat.js?v=agent-f1-ui-skyv2']
 ];
 
 let changed = 0;

@@ -1,6 +1,7 @@
 /* ✦ ADMISSION HUB AI — Sky (student study partner)
- * UI: owner-supplied Sky design (sky-chat 2.html) — orb avatar, hero, chips,
- *     drawer, bottom sheet, themes. Kept pixel-for-pixel.
+ * UI: owner-supplied Sky design v2 (sky-chat 2.html, 2026-10-15) — animated
+ *     Sky avatar with props (laptop, book, note, cup, magnifier, calculator,
+ *     headphones, cap), hero, live status panel, drawer, bottom sheet, themes.
  * Backend: LIVE. No demo/canned data anywhere in this file.
  *   POST /api/ai/chat              (SSE stream)  — the real tutor
  *   POST /api/ai/actions/propose   /api/ai/actions/confirm — personalization
@@ -279,6 +280,7 @@
 
   /* ───────── UI strings (no demo content) ───────── */
   const T = {
+    stageRead: 'তোমার প্রশ্ন বুঝে নিচ্ছি', stageWrite: 'উত্তর লিখছি',
     title: 'Sky', sub: 'স্টাডি পার্টনার', online: 'অনলাইন',
     heroTitle: 'আমি স্কাই — তোমার পড়ার সঙ্গী',
     heroBody: 'ভর্তি প্রস্তুতির প্রশ্ন, MCQ, ব্যাখ্যা আর পড়ার সব সাহায্য — সব এখানে।',
@@ -320,16 +322,14 @@
 
   /* ───────── styles (scoped to #app.sky) ───────── */
   const CSS = `
-#app.sky{--bg:#F6F9FF;--surf:#fff;--ink:#0F1B3D;--mute:#6B7799;--line:#E4EAF7;--pri:#3D6BFF;--pri2:#5AA9FF;--soft:#EDF2FF;--sun:#FFB63D;--ok:#12A36B;--bad:#E5484D;--grad:linear-gradient(135deg,#3D6BFF,#5AA9FF);--sh:0 8px 24px rgba(40,70,160,.08);--sh2:0 14px 34px rgba(61,107,255,.22);
-position:fixed;inset:0;max-width:520px;margin:0 auto;display:flex;flex-direction:column;overflow:hidden;
-background:radial-gradient(90% 38% at 50% -6%,var(--soft),transparent 72%),var(--bg);color:var(--ink);
-font-family:"Hind Siliguri",system-ui,-apple-system,"Noto Sans Bengali",sans-serif;font-size:16px;-webkit-font-smoothing:antialiased;
-padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);box-sizing:border-box}
+#app.sky{--bg:#F6F9FF;--surf:#fff;--ink:#0F1B3D;--mute:#6B7799;--line:#E4EAF7;--pri:#3D6BFF;--pri2:#5AA9FF;--soft:#EDF2FF;--sun:#FFB63D;--ok:#12A36B;--bad:#E5484D;--grad:linear-gradient(135deg,#3D6BFF,#5AA9FF);--sh:0 8px 24px rgba(40,70,160,.08);--sh2:0 14px 34px rgba(61,107,255,.22);box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
 #app.sky[data-sky-theme="dark"]{--bg:#0B1020;--surf:#131A33;--ink:#EAF0FF;--mute:#93A0C6;--line:#222C50;--soft:#1A2448;--sh:0 8px 24px rgba(0,0,0,.35);--sh2:0 14px 34px rgba(61,107,255,.3)}
 #app.sky *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+#app.sky,#app.sky{height:100%;margin:0;background:var(--bg);color:var(--ink);font-family:"Hind Siliguri",system-ui,sans-serif;font-size:16px;-webkit-font-smoothing:antialiased}
 #app.sky button,#app.sky input,#app.sky textarea{font:inherit;color:inherit}
 #app.sky button{background:none;border:0;cursor:pointer;padding:0}
 #app.sky svg.i{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+#app.sky{max-width:520px;height:100%;margin:0 auto;display:flex;flex-direction:column;position:relative;overflow:hidden;background:radial-gradient(90% 38% at 50% -6%,var(--soft),transparent 72%),var(--bg)}
 #app.sky header{display:flex;align-items:center;gap:8px;padding:10px 16px;position:relative;z-index:3}
 #app.sky .ib{width:42px;height:42px;border-radius:50%;display:grid;place-items:center;background:var(--surf);box-shadow:0 0 0 1px var(--line),0 2px 6px rgba(40,70,160,.05);transition:transform .15s}
 #app.sky .ib:active{transform:scale(.88)}
@@ -345,16 +345,235 @@ padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bott
 #app.sky .hero{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding-bottom:7vh}
 #app.sky .bub{height:46px;display:flex;align-items:flex-end}
 #app.sky .say{position:relative;max-width:300px;padding:9px 18px;border-radius:999px;background:var(--surf);box-shadow:0 0 0 1px var(--line),var(--sh);font-size:14.5px;font-weight:600;text-align:center;line-height:1.4;opacity:0;transform:translateY(6px) scale(.96);transition:opacity .25s,transform .3s cubic-bezier(.3,1.4,.5,1)}
+#app.sky .say:after{content:"";position:absolute;left:50%;bottom:-5px;width:11px;height:11px;margin-left:-5px;background:var(--surf);transform:rotate(45deg);box-shadow:2px 2px 0 0 var(--line)}
 #app.sky .say.on{opacity:1;transform:none}
-#app.sky .say2{position:fixed;left:50%;transform:translateX(-50%) translateY(-8px);top:calc(64px + env(safe-area-inset-top,0px));z-index:40;background:var(--ink);color:var(--bg);padding:8px 16px;border-radius:999px;font-size:13.5px;font-weight:600;opacity:0;pointer-events:none;transition:opacity .25s,transform .25s;max-width:88%}
-#app.sky .say2.on{opacity:.95;transform:translateX(-50%)}
-#app.sky .hbig{width:190px;height:190px;cursor:pointer}
-#app.sky .av{width:100%;height:100%;display:block;overflow:visible}
-#app.sky .av.xs{width:22px;height:22px}
-#app.sky .who{display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;color:var(--pri);margin-bottom:6px}
-#app.sky .u{display:flex;justify-content:flex-end;margin:14px 0}
-#app.sky .u span{max-width:82%;background:var(--grad);color:#fff;padding:11px 16px;border-radius:18px 18px 4px 18px;font-size:15px;line-height:1.55;box-shadow:var(--sh2);word-break:break-word}
-#app.sky .ai{margin:4px 0 18px}
+#app.sky .hbig{width:176px;height:176px;cursor:pointer;animation:drop .8s cubic-bezier(.3,1.5,.5,1) both}
+@keyframes drop{from{opacity:0;transform:translateY(-40px) scale(.8)}}
+#app.sky .av{display:block;overflow:visible}
+#app.sky .av .all{transform-origin:100px 190px;animation:fl 3.6s ease-in-out infinite}
+#app.sky .av .sh{transform-origin:100px 195px;animation:sd 3.6s ease-in-out infinite}
+#app.sky .av .wl{transform-origin:64px 120px;animation:wl 3.6s ease-in-out infinite}
+#app.sky .av .wr{transform-origin:136px 120px;animation:wr 3.6s ease-in-out infinite}
+#app.sky .av .eyes{transform-origin:100px 104px;animation:bl 5s infinite}
+#app.sky .av .pup{transition:transform .2s}
+#app.sky .av .br{transition:transform .25s}
+#app.sky .av .tas{transform-origin:150px 60px;animation:sw 2.6s ease-in-out infinite}
+#app.sky .av .cap{transform-origin:100px 70px}
+#app.sky .av .bulb{transform-origin:100px 20px}
+#app.sky .av .jaw{transform-origin:100px 134px}
+#app.sky .av .pgf{transform-origin:100px 160px}
+#app.sky .av .tk,#app.sky .av .sp,#app.sky .av .zz,#app.sky .av .bulb,#app.sky .av .hd{opacity:0}
+#app.sky .av .hd{transition:opacity .25s}
+#app.sky .av .pr{opacity:0;transform:translateY(12px) scale(.9);transform-origin:100px 170px;transition:opacity .3s,transform .4s cubic-bezier(.3,1.4,.5,1)}
+#app.sky .av[data-p=lap] .p-lap,#app.sky .av[data-p=book] .p-book,#app.sky .av[data-p=note] .p-note,#app.sky .av[data-p=cup] .p-cup,#app.sky .av[data-p=mag] .p-mag,#app.sky .av[data-p=calc] .p-calc,#app.sky .av[data-p=ph] .p-ph{opacity:1;transform:none}
+#app.sky .av[data-p] .hd{opacity:1}
+#app.sky .av[data-p=ph] .hd,#app.sky .av[data-p=zz] .hd,#app.sky .av[data-p=idea] .hd{opacity:0}
+#app.sky .av[data-p=cup] .hl2{opacity:0}
+#app.sky .av[data-p=zz] .zz{opacity:1;animation:zz 2.4s infinite}
+#app.sky .av .steam{animation:st 2s ease-in-out infinite}
+#app.sky .av .nt{animation:nt 1.8s ease-in-out infinite}
+@keyframes st{50%{transform:translateY(-4px);opacity:.4}}
+@keyframes nt{50%{transform:translateY(-10px)}}
+#app.sky .av .sp path,#app.sky .av .tk circle{transform-box:fill-box;transform-origin:center}
+@keyframes fl{50%{transform:translateY(-6px) rotate(-1.2deg)}}
+@keyframes sd{50%{transform:scale(.84);opacity:.08}}
+@keyframes wl{50%{transform:rotate(9deg)}}
+@keyframes wr{50%{transform:rotate(-9deg)}}
+@keyframes bl{0%,92%,100%{transform:scaleY(1)}95%{transform:scaleY(.08)}}
+@keyframes sw{50%{transform:rotate(16deg)}}
+#app.sky .av[data-s=type] .all{animation:ln 3s ease-in-out infinite}
+@keyframes ln{0%,100%{transform:rotate(4deg) translateY(3px)}50%{transform:rotate(2deg) translateY(1px)}}
+#app.sky .av[data-s=type] .br{transform:translateY(-5px)}
+#app.sky .av[data-s=think] .all{animation:tl 1.8s ease-in-out infinite}
+@keyframes tl{0%,100%{transform:rotate(-2deg)}50%{transform:rotate(-6deg)}}
+#app.sky .av[data-s=think] .tk{opacity:1}
+#app.sky .av[data-s=think] .tk circle{animation:dt 1.2s infinite}
+#app.sky .av .tk circle:nth-child(2){animation-delay:.2s!important}
+#app.sky .av .tk circle:nth-child(3){animation-delay:.4s!important}
+@keyframes dt{50%{transform:scale(1.5);opacity:.4}}
+#app.sky .av[data-s=think] .wl{animation:none;transform:rotate(-10deg)}
+#app.sky .av[data-s=wave] .wr{animation:wv .4s infinite alternate}
+@keyframes wv{from{transform:rotate(-105deg)}to{transform:rotate(-70deg)}}
+#app.sky .av[data-s=happy] .all{animation:jp .8s cubic-bezier(.3,1.6,.5,1)}
+@keyframes jp{40%{transform:translateY(-26px) scale(1.04,.97)}70%{transform:none}}
+#app.sky .av[data-s=happy] .wl{animation:hl .25s infinite alternate}
+#app.sky .av[data-s=happy] .wr{animation:hr .25s infinite alternate}
+@keyframes hl{from{transform:rotate(100deg)}to{transform:rotate(75deg)}}
+@keyframes hr{from{transform:rotate(-100deg)}to{transform:rotate(-75deg)}}
+#app.sky .av[data-s=happy] .sp{opacity:1}
+#app.sky .av[data-s=happy] .sp path{animation:tw .45s infinite alternate}
+@keyframes tw{from{transform:scale(.4)}to{transform:scale(1.3)}}
+#app.sky .av[data-s=happy] .br{transform:translateY(-6px)}
+#app.sky .av[data-s=sad] .wl,#app.sky .av[data-s=sad] .wr{animation:none}
+#app.sky .av[data-s=sad] .wl{transform:rotate(-8deg)}
+#app.sky .av[data-s=sad] .wr{transform:rotate(8deg)}
+#app.sky .av[data-s=sad] .all{animation:sd2 2s ease-in-out infinite}
+@keyframes sd2{50%{transform:translateY(3px) scaleY(.98)}}
+#app.sky .av[data-s=sad] .br{transform:translateY(4px)}
+#app.sky .av[data-s=sleep] .eyes{animation:none;transform:scaleY(.1)}
+#app.sky .av[data-s=sleep] .all{animation:fl 5.5s ease-in-out infinite}
+#app.sky .av[data-s=sleep] .zz{opacity:1;animation:zz 2.4s infinite}
+@keyframes zz{0%{transform:translate(0,8px);opacity:0}50%{opacity:1}100%{transform:translate(8px,-14px);opacity:0}}
+#app.sky .av.xs *{animation:none!important}
+#app.sky .u{display:flex;justify-content:flex-end;margin:20px 0 6px;animation:up .3s both}
+#app.sky .u span{max-width:84%;padding:10px 16px;border-radius:20px 20px 6px 20px;background:var(--grad);color:#fff;line-height:1.5;font-size:15.5px;box-shadow:0 6px 16px rgba(61,107,255,.25)}
+@keyframes up{from{opacity:0;transform:translateY(8px)}}
+#app.sky .ai{margin:12px 0 26px;font-size:16px;line-height:1.7}
+#app.sky .who{display:flex;align-items:center;gap:8px;font-weight:700;font-size:14px;margin-bottom:8px}
+#app.sky .who svg{width:30px;height:30px}
+#app.sky .blk{opacity:0;transform:translateY(8px);transition:opacity .3s,transform .35s}
+#app.sky .blk.in{opacity:1;transform:none}
+#app.sky .proc{border-radius:16px;background:var(--surf);box-shadow:0 0 0 1px var(--line);margin-bottom:14px;overflow:hidden}
+#app.sky .proc .ph{display:flex;align-items:center;gap:10px;width:100%;padding:11px 14px;text-align:left;font-size:14px;font-weight:600}
+#app.sky .proc .pt{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#app.sky .proc.run .pt{background:linear-gradient(90deg,var(--mute) 30%,var(--ink) 50%,var(--mute) 70%);background-size:200% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:shim 1.4s linear infinite}
+@keyframes shim{to{background-position:-200% 0}}
+#app.sky .spin{width:16px;height:16px;border-radius:50%;border:2.5px solid var(--soft);border-top-color:var(--pri);animation:rot .7s linear infinite;flex:none}
+#app.sky .proc:not(.run) .spin{animation:none;border:0;background:var(--ok) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4 8.5l2.5 2.5L12 5.5' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/100%}
+@keyframes rot{to{transform:rotate(360deg)}}
+#app.sky .chev{width:18px;height:18px;color:var(--mute);transition:transform .25s}
+#app.sky .proc.open .chev{transform:rotate(180deg)}
+#app.sky .ps{display:grid;grid-template-rows:0fr;transition:grid-template-rows .3s}
+#app.sky .proc.open .ps{grid-template-rows:1fr}
+#app.sky .ps>div{overflow:hidden;padding:0 14px}
+#app.sky .proc.open .ps>div{padding-bottom:10px}
+#app.sky .ps p{display:flex;align-items:center;gap:9px;margin:6px 0 0;font-size:13.5px;color:var(--mute);line-height:1.4;animation:up .25s both}
+#app.sky .ps p:before{content:"";width:6px;height:6px;border-radius:50%;background:var(--ok);flex:none}
+#app.sky .hd2{display:flex;align-items:center;gap:12px;margin:2px 0 12px}
+#app.sky .hd2>span{width:46px;height:46px;border-radius:16px;background:var(--grad);color:#fff;display:grid;place-items:center;box-shadow:var(--sh2);flex:none}
+#app.sky .hd2 small{display:block;color:var(--pri);font-weight:700;font-size:12.5px;letter-spacing:.02em}
+#app.sky .hd2 h2{margin:0;font-size:23px;line-height:1.3;font-weight:700}
+#app.sky .sum{padding:14px 16px;border-radius:20px;background:var(--soft);margin:10px 0}
+#app.sky .sum b{display:flex;align-items:center;gap:8px;font-size:15px;color:var(--pri)}
+#app.sky .sum b svg{width:18px;height:18px}
+#app.sky .sum ul{margin:8px 0 0;padding:0;list-style:none}
+#app.sky .sum li{display:flex;gap:10px;margin:7px 0;font-size:15.5px;line-height:1.55}
+#app.sky .sum li:before{content:"";width:8px;height:8px;border-radius:50%;background:var(--grad);margin-top:9px;flex:none}
+#app.sky .sec{display:flex;align-items:center;gap:10px;margin:20px 0 8px;font-size:13px;font-weight:700;color:var(--mute);letter-spacing:.03em}
+#app.sky .sec:after{content:"";flex:1;height:1px;background:var(--line)}
+#app.sky .flow{padding-left:2px}
+#app.sky .st{display:flex;gap:14px;position:relative;padding-bottom:16px}
+#app.sky .st:last-child{padding-bottom:0}
+#app.sky .st i{width:14px;height:14px;border-radius:50%;background:var(--pri);margin-top:7px;flex:none;box-shadow:0 0 0 4px var(--soft);z-index:1}
+#app.sky .st:not(:last-child):before{content:"";position:absolute;left:6px;top:22px;bottom:-4px;width:2px;background:var(--line)}
+#app.sky .st b{display:block;font-size:15.5px}
+#app.sky .st span{color:var(--mute);font-size:14px;line-height:1.5}
+#app.sky .tbl{overflow-x:auto;border-radius:18px;box-shadow:0 0 0 1px var(--line);background:var(--surf);margin:4px 0}
+#app.sky table{border-collapse:collapse;width:100%;min-width:300px;font-size:14.5px}
+#app.sky th{background:var(--soft);text-align:left;padding:10px 14px;font-weight:600;font-size:13px;color:var(--mute)}
+#app.sky td{padding:11px 14px;border-top:1px solid var(--line)}
+#app.sky td:first-child{font-weight:700;color:var(--pri);white-space:nowrap}
+#app.sky .trick{display:flex;gap:12px;padding:14px 16px;border-radius:20px;background:linear-gradient(135deg,rgba(255,182,61,.16),rgba(255,182,61,.06));box-shadow:0 0 0 1px rgba(255,182,61,.4);margin:14px 0;font-size:15px}
+#app.sky .trick svg{color:#E89A0C;margin-top:2px}
+#app.sky .trick b{display:block;margin-bottom:2px}
+#app.sky .qs{display:flex;flex-direction:column;gap:8px}
+#app.sky .qs button{display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:16px;background:var(--surf);box-shadow:0 0 0 1px var(--line);text-align:left;font-size:15px;transition:.15s}
+#app.sky .qs button:active{background:var(--soft);transform:scale(.98)}
+#app.sky .qs svg{width:18px;height:18px;color:var(--pri)}
+#app.sky .qs span{flex:1}
+#app.sky .fu{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+#app.sky .fu button{padding:9px 15px;border-radius:999px;background:var(--surf);box-shadow:0 0 0 1px var(--line);font-size:14px;font-weight:600;color:var(--pri);transition:.15s}
+#app.sky .fu button:active{background:var(--soft);transform:scale(.96)}
+#app.sky .mh{display:flex;align-items:center;gap:12px;margin:2px 0 12px}
+#app.sky .mh .hd2{margin:0;flex:1}
+#app.sky .pg{height:6px;border-radius:9px;background:var(--soft);overflow:hidden;margin:0 0 10px}
+#app.sky .pg i{display:block;height:100%;width:0;background:var(--grad);border-radius:9px;transition:width .4s}
+#app.sky .mcq{background:var(--surf);box-shadow:0 0 0 1px var(--line),var(--sh);border-radius:22px;padding:16px;margin:12px 0}
+#app.sky .mcq .meta{font-size:12px;color:var(--pri);margin-bottom:6px;font-weight:700;letter-spacing:.04em}
+#app.sky .mcq .q{font-weight:700;margin-bottom:6px;font-size:16.5px;line-height:1.5}
+#app.sky .opt{display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:11px 12px;border-radius:14px;box-shadow:0 0 0 1.5px var(--line);margin-top:8px;font-size:15px;transition:.2s}
+#app.sky .opt em{width:28px;height:28px;border-radius:50%;background:var(--soft);display:grid;place-items:center;font-style:normal;font-size:13px;font-weight:700;color:var(--pri);flex:none;transition:.2s}
+#app.sky .opt:active{background:var(--soft);transform:scale(.99)}
+#app.sky .opt.ok{background:rgba(18,163,107,.1);box-shadow:0 0 0 1.5px var(--ok)}
+#app.sky .opt.ok em{background:var(--ok);color:#fff}
+#app.sky .opt.no{background:rgba(229,72,77,.09);box-shadow:0 0 0 1.5px var(--bad);animation:shk .35s}
+#app.sky .opt.no em{background:var(--bad);color:#fff}
+@keyframes shk{25%{transform:translateX(-5px)}75%{transform:translateX(5px)}}
+#app.sky .exp{display:none;margin-top:12px;padding:11px 13px;border-radius:14px;background:var(--soft);font-size:14.5px;color:var(--mute);line-height:1.6}
+#app.sky .exp b{color:var(--ink)}
+#app.sky .mcq.done .exp{display:block;animation:up .3s both}
+#app.sky .mcq.done .opt{pointer-events:none}
+#app.sky .score{padding:16px;border-radius:22px;background:var(--grad);color:#fff;margin:12px 0;box-shadow:var(--sh2);animation:up .4s both}
+#app.sky .score b{font-size:20px}
+#app.sky .score p{margin:4px 0 0;opacity:.9;font-size:14.5px}
+#app.sky .bars{padding:14px 16px;border-radius:20px;background:var(--surf);box-shadow:0 0 0 1px var(--line);margin:4px 0}
+#app.sky .bar{margin:10px 0}
+#app.sky .bar div{display:flex;justify-content:space-between;font-size:14px;font-weight:600;margin-bottom:5px}
+#app.sky .bar i{display:block;height:8px;border-radius:9px;background:var(--soft);overflow:hidden}
+#app.sky .bar i b{display:block;height:100%;border-radius:9px;background:var(--grad);transition:width .8s .2s;width:0}
+#app.sky .bars small{color:var(--mute);font-size:12px}
+#app.sky .acts{display:flex;gap:2px;margin-top:10px}
+#app.sky .acts button{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;color:var(--mute);transition:.15s}
+#app.sky .acts button:active{background:var(--soft);color:var(--pri)}
+#app.sky .acts svg{width:19px;height:19px}
+#app.sky .say2{position:absolute;top:60px;left:60px;z-index:4;max-width:260px;padding:8px 15px;border-radius:14px 14px 14px 4px;background:var(--surf);box-shadow:0 0 0 1px var(--line),var(--sh);font-size:13.5px;font-weight:600;opacity:0;transform:translateY(-4px);transition:.25s;pointer-events:none}
+#app.sky .say2.on{opacity:1;transform:none}
+#app.sky .dock{padding:6px 16px calc(8px);position:relative;z-index:3;background:linear-gradient(transparent,var(--bg) 35%)}
+#app.sky .comp{display:flex;align-items:flex-end;gap:6px;padding:6px;border-radius:30px;background:var(--surf);box-shadow:0 0 0 1px var(--line),var(--sh);transition:box-shadow .2s}
+#app.sky .comp:focus-within{box-shadow:0 0 0 1.5px var(--pri),0 0 0 6px rgba(61,107,255,.12)}
+#app.sky .comp textarea{flex:1;border:0;outline:0;background:none;resize:none;font-size:16px;padding:10px 4px;max-height:120px;line-height:1.4}
+#app.sky .comp textarea::placeholder{color:var(--mute)}
+#app.sky .cb{width:42px;height:42px;border-radius:50%;display:grid;place-items:center;background:var(--soft);color:var(--pri);flex:none;transition:background .2s,color .2s,transform .15s,box-shadow .2s}
+#app.sky .cb.send{background:var(--grad);color:#fff;box-shadow:0 6px 16px rgba(61,107,255,.4)}
+#app.sky .cb:active{transform:scale(.88)}
+#app.sky .scrim{position:absolute;inset:0;background:rgba(10,16,38,.42);opacity:0;pointer-events:none;transition:opacity .25s;z-index:20}
+#app.sky .scrim.on{opacity:1;pointer-events:auto}
+#app.sky .drawer{position:absolute;top:0;bottom:0;left:0;width:86%;max-width:350px;background:var(--surf);z-index:30;transform:translateX(-102%);transition:transform .3s cubic-bezier(.2,.9,.25,1);display:flex;flex-direction:column;padding:16px 14px;border-radius:0 28px 28px 0;box-shadow:var(--sh);will-change:transform}
+#app.sky .drawer.on{transform:none}
+#app.sky .drawer.drag{transition:none}
+#app.sky .dp{display:flex;align-items:center;gap:12px;padding:12px;border-radius:20px;background:linear-gradient(135deg,var(--soft),transparent);box-shadow:0 0 0 1px var(--line);margin-bottom:12px}
+#app.sky .dp svg.av{width:48px;height:48px;flex:none}
+#app.sky .dp div{flex:1}
+#app.sky .dp b{display:block;font-size:17px}
+#app.sky .dp small{display:flex;align-items:center;gap:5px;color:var(--mute);font-size:12.5px}
+#app.sky .new{display:flex;align-items:center;justify-content:center;gap:8px;padding:13px 16px;border-radius:16px;background:var(--grad);color:#fff;font-weight:700;font-size:15.5px;box-shadow:var(--sh2);transition:transform .15s}
+#app.sky .new:active{transform:scale(.97)}
+#app.sky .sc{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:12px 0}
+#app.sky .sc button{display:flex;flex-direction:column;align-items:center;gap:6px;padding:11px 4px;border-radius:16px;background:var(--bg);font-size:12.5px;font-weight:600;transition:.15s}
+#app.sky .sc button:active{background:var(--soft);transform:scale(.96)}
+#app.sky .sc svg{color:var(--pri);width:22px;height:22px}
+#app.sky .srch{display:flex;align-items:center;gap:8px;padding:0 14px;border-radius:14px;background:var(--bg);color:var(--mute)}
+#app.sky .srch svg{width:18px;height:18px}
+#app.sky .srch input{flex:1;border:0;outline:0;background:none;padding:11px 0;font-size:14.5px}
+#app.sky .dl{flex:1;overflow-y:auto;margin:4px -4px 0;padding:0 4px}
+#app.sky .gl{font-size:12.5px;color:var(--mute);font-weight:600;margin:14px 6px 4px}
+#app.sky .hi{border-radius:14px;transition:background .15s}
+#app.sky .hi.act{background:var(--soft)}
+#app.sky .hr1{display:flex;align-items:center;gap:6px}
+#app.sky .it{flex:1;display:flex;align-items:center;gap:10px;text-align:left;padding:11px 10px;min-width:0;font-size:15px}
+#app.sky .it span{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#app.sky .hi.act .it{font-weight:600}
+#app.sky .it svg{width:18px;height:18px;color:var(--mute)}
+#app.sky .mo{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;color:var(--mute)}
+#app.sky .mo svg{width:18px;height:18px}
+#app.sky .ha{display:none;gap:6px;padding:0 8px 8px}
+#app.sky .hi.open .ha{display:flex;animation:up .2s both}
+#app.sky .ha button{flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:8px;border-radius:12px;background:var(--bg);font-size:13px;font-weight:600}
+#app.sky .ha button:last-child{color:var(--bad)}
+#app.sky .ha svg{width:15px;height:15px}
+#app.sky .df{padding-top:8px}
+#app.sky .th{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;padding:4px;border-radius:14px;background:var(--bg)}
+#app.sky .th button{display:flex;align-items:center;justify-content:center;gap:6px;padding:9px 0;border-radius:11px;font-size:13px;font-weight:600;color:var(--mute);transition:.2s}
+#app.sky .th button.on{background:var(--surf);color:var(--ink);box-shadow:0 0 0 1px var(--line),0 2px 6px rgba(40,70,160,.08)}
+#app.sky .th svg{width:16px;height:16px}
+#app.sky .exit{display:flex;align-items:center;gap:10px;width:100%;padding:13px 14px;border-radius:16px;box-shadow:0 0 0 1.5px var(--line);font-weight:600;margin-top:8px;transition:.15s}
+#app.sky .exit:active{background:var(--soft)}
+#app.sky .exit svg{color:var(--pri)}
+#app.sky .dnote{font-size:11.5px;color:var(--mute);text-align:center;margin:10px 4px 0;line-height:1.5}
+#app.sky .sheet{position:absolute;left:0;right:0;bottom:0;background:var(--surf);z-index:30;border-radius:28px 28px 0 0;padding:10px 18px 22px;transform:translateY(105%);transition:transform .32s cubic-bezier(.2,.9,.25,1);box-shadow:var(--sh)}
+#app.sky .sheet.on{transform:none}
+#app.sky .grab{width:42px;height:5px;border-radius:9px;background:var(--line);margin:0 auto 14px}
+#app.sky .sheet h4{margin:4px 2px 10px;font-size:13px;color:var(--mute);font-weight:600}
+#app.sky .g{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px}
+#app.sky .g button{display:flex;flex-direction:column;align-items:center;gap:7px;padding:8px 0;font-size:12.5px;font-weight:500}
+#app.sky .g button span{width:54px;height:54px;border-radius:18px;background:var(--soft);display:grid;place-items:center;color:var(--pri);transition:.15s}
+#app.sky .g button:active span{background:var(--pri);color:#fff;transform:scale(.94)}
+#app.sky .tools{display:flex;flex-wrap:wrap;gap:8px}
+#app.sky .tools button{display:flex;align-items:center;gap:7px;padding:9px 14px;border-radius:999px;box-shadow:0 0 0 1px var(--line);font-size:14px;transition:.15s}
+#app.sky .tools button:active{background:var(--soft)}
+#app.sky .tools svg{width:17px;height:17px;color:var(--pri)}
+@media (prefers-reduced-motion:reduce){#app.sky *{animation:none!important;transition:none!important}}
+/* live-only additions: markdown answers, callouts, streaming dots */
 #app.sky .ai .bw{font-size:15px;line-height:1.75;word-break:break-word}
 #app.sky .ai .bw p{margin:0 0 10px}
 #app.sky .ai .bw ul{margin:6px 0 12px;padding-left:22px}
@@ -364,99 +583,39 @@ padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bott
 #app.sky .ai .bw pre{background:#0F1B3D;color:#EAF0FF;padding:12px;border-radius:12px;overflow-x:auto;margin:10px 0}
 #app.sky .ai .bw pre code{background:none;color:inherit;padding:0}
 #app.sky .cal{border-radius:12px;padding:10px 12px;margin:8px 0;font-size:14.5px;line-height:1.6}
-#app.sky .cal.tip{background:#FFF6E5}#app.sky .cal.warn{background:#FFECEC}#app.sky .cal.ok{background:#E9F9F1}#app.sky .cal.con{background:var(--soft)}#app.sky .cal.rev{background:#F1ECFF}#app.sky .cal.key{background:#EAF1FF}
-#app.sky[data-sky-theme="dark"] .cal.tip{background:#3A2E12}#app.sky[data-sky-theme="dark"] .cal.warn{background:#3A1A1C}#app.sky[data-sky-theme="dark"] .cal.ok{background:#123326}#app.sky[data-sky-theme="dark"] .cal.rev{background:#241C3D}#app.sky[data-sky-theme="dark"] .cal.key{background:#16224A}
+#app.sky .cal.tip{background:#FFF6E5}
+#app.sky .cal.warn{background:#FFECEC}
+#app.sky .cal.ok{background:#E9F9F1}
+#app.sky .cal.con{background:var(--soft)}
+#app.sky .cal.rev{background:#F1ECFF}
+#app.sky .cal.key{background:#EAF1FF}
+#app.sky[data-sky-theme="dark"] .cal.tip{background:#3A2E12}
+#app.sky[data-sky-theme="dark"] .cal.warn{background:#3A1A1C}
+#app.sky[data-sky-theme="dark"] .cal.ok{background:#123326}
+#app.sky[data-sky-theme="dark"] .cal.rev{background:#241C3D}
+#app.sky[data-sky-theme="dark"] .cal.key{background:#16224A}
 #app.sky .tw{overflow-x:auto;margin:10px 0}
-#app.sky table{border-collapse:collapse;width:100%;font-size:14px}
-#app.sky th,#app.sky td{border:1px solid var(--line);padding:7px 10px;text-align:left}
-#app.sky th{background:var(--soft);font-weight:700}
-#app.sky .acts{display:flex;gap:6px;margin-top:10px}
-#app.sky .acts button{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:var(--surf);box-shadow:0 0 0 1px var(--line);color:var(--mute);transition:transform .15s,color .15s}
-#app.sky .acts button:active{transform:scale(.9)}
 #app.sky .acts button.on{color:var(--pri)}
-#app.sky .acts svg.i{width:16px;height:16px}
 #app.sky .typing{display:flex;gap:5px;padding:6px 2px}
 #app.sky .typing i{width:8px;height:8px;border-radius:50%;background:var(--mute);opacity:.35;animation:skyb 1.1s infinite}
-#app.sky .typing i:nth-child(2){animation-delay:.18s}#app.sky .typing i:nth-child(3){animation-delay:.36s}
+#app.sky .typing i:nth-child(2){animation-delay:.18s}
+#app.sky .typing i:nth-child(3){animation-delay:.36s}
 @keyframes skyb{0%,60%,100%{transform:translateY(0);opacity:.3}30%{transform:translateY(-5px);opacity:.85}}
-#app.sky .chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
-#app.sky .chips button{background:var(--surf);box-shadow:0 0 0 1px var(--line);border-radius:999px;padding:8px 14px;font-size:13.5px;font-weight:600;color:var(--pri);transition:transform .15s}
-#app.sky .chips button:active{transform:scale(.95)}
-#app.sky .dock{padding:10px 16px calc(12px + env(safe-area-inset-bottom,0px));position:relative;z-index:3}
-#app.sky .comp{display:flex;align-items:flex-end;gap:8px;background:var(--surf);border-radius:26px;padding:6px 8px;box-shadow:0 0 0 1px var(--line),var(--sh)}
-#app.sky .cb{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;background:var(--soft);color:var(--pri);flex:none;transition:transform .15s}
-#app.sky .cb:active{transform:scale(.9)}
-#app.sky .cb.send{background:var(--grad);color:#fff;box-shadow:var(--sh2)}
-#app.sky #inp{flex:1;border:0;outline:0;background:none;resize:none;max-height:120px;padding:10px 4px;font-size:16px;line-height:1.5;font-family:inherit;-webkit-appearance:none;appearance:none}
-#app.sky .scrim{position:fixed;inset:0;background:rgba(9,16,40,.42);opacity:0;pointer-events:none;transition:opacity .25s;z-index:50}
-#app.sky .scrim.on{opacity:1;pointer-events:auto}
-#app.sky .drawer{position:fixed;top:0;left:0;bottom:0;width:82%;max-width:330px;background:var(--surf);z-index:60;transform:translateX(-102%);transition:transform .3s cubic-bezier(.3,1,.4,1);display:flex;flex-direction:column;padding:calc(14px + env(safe-area-inset-top,0px)) 16px calc(16px + env(safe-area-inset-bottom,0px));gap:10px;overflow-y:auto}
-#app.sky .drawer.on{transform:none}
-#app.sky .drawer.drag{transition:none}
-#app.sky .dp{display:flex;align-items:center;gap:10px}
-#app.sky .dp span{width:44px;height:44px}
-#app.sky .dp b{display:block;font-size:16px}#app.sky .dp small{display:flex;align-items:center;gap:5px;color:var(--mute);font-size:12px}
-#app.sky .dp .ib{margin-left:auto}
-#app.sky .new{display:flex;align-items:center;gap:9px;background:var(--grad);color:#fff;border-radius:14px;padding:12px 14px;font-weight:700;font-size:15px;box-shadow:var(--sh2)}
-#app.sky .new svg.i{width:18px;height:18px}
-#app.sky .sc{display:flex;flex-direction:column;gap:2px}
-#app.sky .sc button{display:flex;align-items:center;gap:10px;padding:11px 8px;border-radius:12px;font-size:15px;font-weight:600;text-align:left}
-#app.sky .sc button:active{background:var(--soft)}
-#app.sky .sc svg.i{width:19px;height:19px;color:var(--pri)}
-#app.sky .srch{display:flex;align-items:center;gap:8px;background:var(--soft);border-radius:12px;padding:9px 12px}
-#app.sky .srch svg.i{width:17px;height:17px;color:var(--mute)}
-#app.sky .srch input{flex:1;border:0;outline:0;background:none;font-size:14.5px}
-#app.sky .dl{flex:1;min-height:40px}
-#app.sky .gl{font-size:12px;font-weight:700;color:var(--mute);margin:10px 0 4px}
-#app.sky .hi{border-radius:12px;margin-bottom:2px;overflow:hidden}
-#app.sky .hi.act{background:var(--soft)}
-#app.sky .hr1{display:flex;align-items:center;gap:6px}
-#app.sky .it{flex:1;display:flex;align-items:center;gap:9px;padding:9px 8px;font-size:14.5px;text-align:left;min-width:0}
-#app.sky .it span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-#app.sky .it svg.i{width:16px;height:16px;color:var(--mute)}
-#app.sky .mo{width:32px;height:32px;display:grid;place-items:center;color:var(--mute);flex:none}
-#app.sky .mo svg.i{width:16px;height:16px}
-#app.sky .ha{display:none;gap:4px;padding:0 8px 8px}
-#app.sky .hi.open .ha{display:flex}
-#app.sky .ha button{display:flex;align-items:center;gap:5px;font-size:12.5px;color:var(--mute);padding:5px 8px;border-radius:8px}
 #app.sky .ha button:active{background:var(--soft)}
-#app.sky .ha svg.i{width:14px;height:14px}
-#app.sky .df{display:flex;flex-direction:column;gap:10px;margin-top:auto}
-#app.sky .th{display:flex;gap:6px;background:var(--soft);border-radius:12px;padding:4px}
-#app.sky .th button{flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:8px;border-radius:9px;font-size:13px;font-weight:600;color:var(--mute)}
-#app.sky .th button.on{background:var(--surf);color:var(--pri);box-shadow:0 2px 6px rgba(40,70,160,.1)}
-#app.sky .th svg.i{width:15px;height:15px}
-#app.sky .exit{display:flex;align-items:center;gap:9px;padding:11px 8px;border-radius:12px;font-size:14.5px;font-weight:600;color:var(--mute)}
-#app.sky .exit svg.i{width:18px;height:18px}
-#app.sky .dnote{font-size:11.5px;color:var(--mute);line-height:1.6;margin:2px 0 0}
-#app.sky .sheet{position:fixed;left:0;right:0;bottom:0;max-width:520px;margin:0 auto;background:var(--surf);border-radius:22px 22px 0 0;z-index:60;transform:translateY(102%);transition:transform .3s cubic-bezier(.3,1,.4,1);padding:10px 18px calc(20px + env(safe-area-inset-bottom,0px))}
-#app.sky .sheet.on{transform:none}
-#app.sky .grab{width:40px;height:4px;border-radius:2px;background:var(--line);margin:0 auto 12px}
-#app.sky .sheet h4{font-size:13px;color:var(--mute);font-weight:700;margin:12px 0 8px}
-#app.sky .g{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
-#app.sky .g button{display:flex;flex-direction:column;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--mute)}
-#app.sky .g span{width:52px;height:52px;border-radius:16px;display:grid;place-items:center;background:var(--soft);color:var(--pri)}
-#app.sky .tools{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
-#app.sky .tools button{display:flex;align-items:center;gap:7px;background:var(--soft);border-radius:12px;padding:10px;font-size:13px;font-weight:600;color:var(--pri)}
-#app.sky .tools svg.i{width:16px;height:16px}
-#app.sky .notice{margin:8px 0 14px;background:var(--soft);border-radius:14px;padding:11px 14px;font-size:12.5px;color:var(--mute);line-height:1.6;display:flex;gap:8px;align-items:flex-start}
-#app.sky .notice b{color:var(--pri);font-weight:700}
-#app.sky .notice button{margin-left:auto;color:var(--mute);font-size:12px;font-weight:700;flex:none}
-#app.sky .tryq{margin-top:14px}
-#app.sky .tryq small{font-size:12px;font-weight:700;color:var(--mute)}
-#app.sky .pr{animation:skypr .28s ease}
-@keyframes skypr{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
+/* host shell: fixed full-screen inside the SPA */
+#app.sky .comp textarea{-webkit-appearance:none;appearance:none}
+#app.sky{position:fixed;inset:0;height:auto;max-width:520px;margin:0 auto;display:flex;flex-direction:column;overflow:hidden;color:var(--ink);font-family:"Hind Siliguri",system-ui,-apple-system,"Noto Sans Bengali",sans-serif;font-size:16px;-webkit-font-smoothing:antialiased;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);box-sizing:border-box}
 `;
 
   /* ───────── avatar (owner's Sky orb) ───────── */
-  const AV = '<g class="sh"><ellipse cx="100" cy="195" rx="46" ry="6" fill="#1B2A6B" opacity=".16"/></g><g class="all"><rect x="68" y="172" width="30" height="18" rx="8" fill="#FFA23A"/><rect x="102" y="172" width="30" height="18" rx="8" fill="#FFA23A"/><path d="M90 172q10 22 20 0z" fill="#3F5BE0"/><g class="wl"><path d="M46 106C22 116 18 144 30 158C50 156 64 142 66 122Z" fill="#3E5FE6"/></g><g class="wr"><path d="M154 106C178 116 182 144 170 158C150 156 136 142 134 122Z" fill="#3E5FE6"/></g><circle cx="100" cy="108" r="72" fill="url(#gB)"/><ellipse cx="100" cy="146" rx="46" ry="34" fill="#F6F9FF"/><ellipse cx="66" cy="68" rx="24" ry="13" fill="#fff" opacity=".22" transform="rotate(-25 66 68)"/><circle cx="56" cy="116" r="11" fill="#B79BEA" opacity=".5"/><circle cx="144" cy="116" r="11" fill="#B79BEA" opacity=".5"/><g class="eyes"><circle cx="74" cy="104" r="19" fill="#fff"/><circle cx="126" cy="104" r="19" fill="#fff"/><g class="pup"><circle cx="75" cy="106" r="11.5" fill="#17234F"/><circle cx="125" cy="106" r="11.5" fill="#17234F"/><circle cx="70" cy="101" r="4.4" fill="#fff"/><circle cx="120" cy="101" r="4.4" fill="#fff"/><circle cx="80" cy="111" r="2" fill="#fff"/><circle cx="130" cy="111" r="2" fill="#fff"/></g></g><g class="br" fill="none" stroke="#1B2A6B" stroke-width="4.5" stroke-linecap="round"><path d="M54 84q18-9 36-2"/><path d="M110 82q18-7 36 2"/></g><path d="M89 125q11-8 22 0q-3 11-11 12q-8-1-11-12z" fill="#FFA83B"/><g class="jaw"><path d="M93 134q7 5 14 0q-2 7-7 8q-5-1-7-8z" fill="#E9812B"/></g><g class="cap"><path d="M66 58v14q34 14 68 0V58z" fill="#25347A"/><path d="M42 56l60-20 60 20-60 22z" fill="#1B2765"/><path d="M102 46l2.8 5.6 6.2.9-4.5 4.3 1.1 6.1-5.6-2.9-5.6 2.9 1.1-6.1-4.5-4.3 6.2-.9z" fill="#FFB63D"/><g class="tas"><path d="M150 60q4 14 2 26" stroke="#FFB63D" stroke-width="3.5" fill="none" stroke-linecap="round"/><circle cx="152" cy="90" r="5.5" fill="#FFB63D"/></g></g></g>';
+  const AV = '<g class="sh"><ellipse cx="100" cy="195" rx="46" ry="6" fill="#1B2A6B" opacity=".16"/></g><g class="all"><rect x="68" y="172" width="30" height="18" rx="8" fill="#FFA23A"/><rect x="102" y="172" width="30" height="18" rx="8" fill="#FFA23A"/><path d="M90 172q10 22 20 0z" fill="#3F5BE0"/><g class="wl"><path d="M46 106C22 116 18 144 30 158C50 156 64 142 66 122Z" fill="#3E5FE6"/></g><g class="wr"><path d="M154 106C178 116 182 144 170 158C150 156 136 142 134 122Z" fill="#3E5FE6"/></g><circle cx="100" cy="108" r="72" fill="url(#gB)"/><ellipse cx="100" cy="146" rx="46" ry="34" fill="#F6F9FF"/><ellipse cx="66" cy="68" rx="24" ry="13" fill="#fff" opacity=".22" transform="rotate(-25 66 68)"/><circle cx="56" cy="116" r="11" fill="#B79BEA" opacity=".5"/><circle cx="144" cy="116" r="11" fill="#B79BEA" opacity=".5"/><g class="eyes"><circle cx="74" cy="104" r="19" fill="#fff"/><circle cx="126" cy="104" r="19" fill="#fff"/><g class="pup"><circle cx="75" cy="106" r="11.5" fill="#17234F"/><circle cx="125" cy="106" r="11.5" fill="#17234F"/><circle cx="70" cy="101" r="4.4" fill="#fff"/><circle cx="120" cy="101" r="4.4" fill="#fff"/><circle cx="80" cy="111" r="2" fill="#fff"/><circle cx="130" cy="111" r="2" fill="#fff"/></g></g><g class="br" fill="none" stroke="#1B2A6B" stroke-width="4.5" stroke-linecap="round"><path d="M54 84q18-9 36-2"/><path d="M110 82q18-7 36 2"/></g><path d="M89 125q11-8 22 0q-3 11-11 12q-8-1-11-12z" fill="#FFA83B"/><g class="jaw"><path d="M93 134q7 5 14 0q-2 7-7 8q-5-1-7-8z" fill="#E9812B"/></g><g class="pr p-lap"><rect x="68" y="140" width="64" height="28" rx="6" fill="#DCE3F5"/><path d="M96 152l4-5 4 5-4 5z" fill="#fff"/><rect x="58" y="166" width="84" height="8" rx="4" fill="#B3BFE2"/></g><g class="pr p-book"><path d="M100 150C86 144 72 146 64 150V176C74 172 88 172 100 178Z" fill="#fff" stroke="#C9D3EE" stroke-width="2"/><path d="M100 150C114 144 128 146 136 150V176C126 172 112 172 100 178Z" fill="#F4F7FF" stroke="#C9D3EE" stroke-width="2"/><path d="M72 158h20M72 165h18M108 158h20M108 165h18" stroke="#B4C0E0" stroke-width="2" stroke-linecap="round"/><path class="pgf" d="M100 150C114 144 128 146 136 150V176C126 172 112 172 100 178Z" fill="#fff" stroke="#C9D3EE" stroke-width="2"/></g><g class="pr p-note"><rect x="72" y="146" width="56" height="30" rx="4" fill="#fff" stroke="#C9D3EE" stroke-width="2"/><path d="M80 156h40M80 164h28" stroke="#C9D3EE" stroke-width="2.4" stroke-linecap="round"/><path class="pen" d="M120 148l9 11" stroke="#FFB63D" stroke-width="4.5" stroke-linecap="round"/></g><g class="pr p-cup"><g class="steam"><path d="M122 146q-4-6 0-11M130 146q-4-6 0-11" stroke="#9FB4E8" stroke-width="2" fill="none" stroke-linecap="round"/></g><g class="cup"><rect x="116" y="150" width="20" height="22" rx="5" fill="#fff" stroke="#C9D3EE" stroke-width="2"/><path d="M136 156q8 0 8 6t-8 6" fill="none" stroke="#C9D3EE" stroke-width="3"/><rect x="118" y="155" width="16" height="6" rx="2" fill="#FFB63D" opacity=".75"/></g></g><g class="pr p-mag"><g class="mag"><circle cx="124" cy="152" r="13" fill="#fff" fill-opacity=".4" stroke="#3E5FE6" stroke-width="4"/><path d="M133 162l12 12" stroke="#3E5FE6" stroke-width="5" stroke-linecap="round"/></g></g><g class="pr p-calc"><rect x="76" y="144" width="48" height="32" rx="6" fill="#25347A"/><rect x="81" y="149" width="38" height="8" rx="2" fill="#9FD6FF"/><g fill="#fff" opacity=".85"><circle cx="86" cy="164" r="2.4"/><circle cx="96" cy="164" r="2.4"/><circle cx="106" cy="164" r="2.4"/><circle cx="116" cy="164" r="2.4"/><circle cx="86" cy="171" r="2.4"/><circle cx="96" cy="171" r="2.4"/><circle cx="106" cy="171" r="2.4"/><circle cx="116" cy="171" r="2.4"/></g></g><g class="pr p-ph"><path d="M32 98C30 40 170 40 168 98" fill="none" stroke="#25347A" stroke-width="5"/><ellipse cx="30" cy="106" rx="9" ry="14" fill="#25347A"/><ellipse cx="170" cy="106" rx="9" ry="14" fill="#25347A"/><g class="nt" fill="#3D6BFF" font-size="18" font-weight="700"><text x="8" y="66">♪</text><text x="176" y="58" fill="#FFB63D" font-size="16">♫</text></g></g><g class="hd"><ellipse class="hl2" cx="82" cy="170" rx="10" ry="8" fill="#3E5FE6"/><ellipse class="hr2" cx="118" cy="170" rx="10" ry="8" fill="#3E5FE6"/></g><g class="cap"><path d="M66 58v14q34 14 68 0V58z" fill="#25347A"/><path d="M42 56l60-20 60 20-60 22z" fill="#1B2765"/><path d="M102 46l2.8 5.6 6.2.9-4.5 4.3 1.1 6.1-5.6-2.9-5.6 2.9 1.1-6.1-4.5-4.3 6.2-.9z" fill="#FFB63D"/><g class="tas"><path d="M150 60q4 14 2 26" stroke="#FFB63D" stroke-width="3.5" fill="none" stroke-linecap="round"/><circle cx="152" cy="90" r="5.5" fill="#FFB63D"/></g></g></g><g transform="translate(0 -14)"><g class="bulb"><path d="M100 4a12 12 0 0 0-6 22v6h12v-6a12 12 0 0 0-6-22z" fill="#FFD66B"/><rect x="95" y="33" width="10" height="4" rx="2" fill="#B3BFE2"/><path d="M80 14l-8-4M120 14l8-4M100-4v-7" stroke="#FFB63D" stroke-width="3" stroke-linecap="round"/></g></g><g class="tk" fill="#3D6BFF"><circle cx="152" cy="30" r="4"/><circle cx="165" cy="20" r="5"/><circle cx="180" cy="8" r="6.5"/></g><g class="sp" fill="#FFB63D"><g transform="translate(26 50)"><path d="M0-9Q0 0 9 0Q0 0 0 9Q0 0-9 0Q0 0 0-9z"/></g><g transform="translate(176 62)"><path d="M0-9Q0 0 9 0Q0 0 0 9Q0 0-9 0Q0 0 0-9z"/></g><g transform="translate(18 128)"><path d="M0-7Q0 0 7 0Q0 0 0 7Q0 0-7 0Q0 0 0-7z"/></g></g><g class="zz" fill="#6B7FD6" font-weight="800"><text x="150" y="40" font-size="22">z</text><text x="168" y="22" font-size="15">z</text></g>';
   const av = (c) => '<svg class="av ' + (c || '') + '" viewBox="0 0 200 200">' + AV + '</svg>';
 
   /* ───────── markup ───────── */
   function shell() {
     return '' +
       '<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>' +
-      '<radialGradient id="gB" cx="50%" cy="38%" r="62%"><stop offset="0" stop-color="#7FA8FF"/><stop offset="1" stop-color="#3D6BFF"/></radialGradient>' +
+      '<linearGradient id="gB" x1=".2" y1="0" x2=".8" y2="1"><stop offset="0" stop-color="#7DB4FF"/><stop offset="1" stop-color="#4A6CF2"/></linearGradient>' +
       '<symbol id="menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>' +
       '<symbol id="edit" viewBox="0 0 24 24"><path d="M4 20h4l10-10-4-4L4 16z"/><path d="M14 6l4 4"/></symbol>' +
       '<symbol id="home" viewBox="0 0 24 24"><path d="M4 10.5L12 4l8 6.5V20H4z"/><path d="M9 20v-6h6v6"/></symbol>' +
@@ -502,7 +661,6 @@ padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bott
       '<main id="chat"><section class="hero" id="hero">' +
       '<div class="bub"><div class="say" id="say"></div></div>' +
       '<div class="hbig" id="hbig"></div>' +
-      '<div class="tryq" id="tryq"></div>' +
       '</section><div id="msgs"></div></main>' +
       '<div class="dock"><div class="comp">' +
       '<button class="cb" id="plusB" aria-label="' + T.attach + '">' + ic('plus') + '</button>' +
@@ -651,18 +809,40 @@ const ACT_ACTIONS = { 'prefs.write': { bn: 'তোমার AI পছন্দ �
   /* ───────── render ───────── */
   let msgsEl, mainEl, inpEl, actEl, busy = 0;
 
+  /* Live status panel (owner's "proc" design). Every line is a REAL state of
+     the request — sent, first token received, finished — never a canned step. */
+  function procHtml(m) {
+    if (m.role === 'user' || m.error) return '';
+    const steps = (m.steps || []).map((x) => '<p>' + esc(x) + '</p>').join('');
+    if (m.pending) {
+      return '<div class="proc run open"><button class="ph"><span class="spin"></span><span class="pt">' + esc(m.stage || T.stageRead) + '…</span>' + ic('chev', 'chev') + '</button><div class="ps"><div>' + steps + '</div></div></div>';
+    }
+    if (m.secs) {
+      return '<div class="proc"><button class="ph"><span class="spin"></span><span class="pt">' + bn((m.steps || []).length) + 'টি ধাপে ' + bn(m.secs) + ' সেকেন্ডে তৈরি</span>' + ic('chev', 'chev') + '</button><div class="ps"><div>' + steps + '</div></div></div>';
+    }
+    return '';
+  }
   function bubble(m, idx) {
-    if (m.role === 'user') return '<div class="u pr"><span>' + esc(m.text) + '</span></div>';
+    if (m.role === 'user') return '<div class="u"><span>' + esc(m.text) + '</span></div>';
     let inner;
     if (m.error) inner = '<div class="cal warn"><b>⚠️</b> ' + esc(m.error) + '</div>';
-    else if (m.pending && !m.text) inner = '<div class="typing"><i></i><i></i><i></i></div>';
+    else if (m.pending && !m.text) inner = '';
     else inner = md(m.text);
     const acts = (!m.pending && !m.error && m.text) ? '<div class="acts">' +
       '<button data-c="' + idx + '" aria-label="' + T.copy + '">' + ic('copy') + '</button>' +
       '<button data-r="' + idx + '" aria-label="' + T.regen + '">' + ic('redo') + '</button>' +
       '<button data-g="' + idx + '" aria-label="' + T.good + '">' + ic('up') + '</button>' +
       '</div>' : '';
-    return '<div class="ai pr" data-i="' + idx + '"><div class="who">' + av('xs') + 'Sky</div><div class="bw">' + inner + '</div>' + acts + '</div>';
+    return '<div class="ai" data-i="' + idx + '"><div class="who">' + av('xs') + 'Sky</div>' + procHtml(m) + '<div class="bw">' + inner + '</div>' + acts + '</div>';
+  }
+  function procStage(node, holder, next) {
+    if (holder.stage) (holder.steps = holder.steps || []).push(holder.stage);
+    holder.stage = next;
+    const el = node && node.querySelector('.proc');
+    if (!el) return;
+    const pt = el.querySelector('.pt'), ls = el.querySelector('.ps>div');
+    if (ls) ls.innerHTML = (holder.steps || []).map((x) => '<p>' + esc(x) + '</p>').join('');
+    if (pt) pt.textContent = next + '…';
   }
 
   function renderMsgs() {
@@ -690,7 +870,9 @@ const ACT_ACTIONS = { 'prefs.write': { bn: 'তোমার AI পছন্দ �
 
     sessions[cur].msgs.push({ role: 'user', text: t, ts: Date.now() });
     if (!sessions[cur].name) sessions[cur].name = t.slice(0, 40);
-    const holder = { role: 'ai', text: '', ts: Date.now(), pending: true };
+    const holder = { role: 'ai', text: '', ts: Date.now(), pending: true, stage: T.stageRead, steps: [] };
+    const t0 = Date.now();
+    let gotFirst = false;
     sessions[cur].msgs.push(holder);
     save(); renderMsgs();
 
@@ -704,6 +886,7 @@ const ACT_ACTIONS = { 'prefs.write': { bn: 'তোমার AI পছন্দ �
     const history = sessions[cur].msgs.slice(0, -1).slice(-MAX_HISTORY).map((m) => ({ role: m.role, content: m.text }));
     const res = await ask(history, (full) => {
       holder.text = full;
+      if (!gotFirst) { gotFirst = true; procStage(node, holder, T.stageWrite); mood('type'); }
       /* stream straight into the live node so the student sees text as it
          arrives; only the inner body is touched, never the action bar. */
       if (node) { const b = node.querySelector('.bw'); if (b) b.innerHTML = md(full); }
@@ -711,6 +894,8 @@ const ACT_ACTIONS = { 'prefs.write': { bn: 'তোমার AI পছন্দ �
     }, (corrected) => { holder.text = corrected; replaceStream(corrected); });
 
     setBusy(false);
+    if (holder.stage) { holder.steps.push(holder.stage); holder.stage = ''; }
+    holder.secs = ((Date.now() - t0) / 1000).toFixed(1);
     if (res.ok && res.text) {
       holder.pending = false; holder.text = res.text;
       mood('happy', 1200);
@@ -753,24 +938,43 @@ const ACT_ACTIONS = { 'prefs.write': { bn: 'তোমার AI পছন্দ �
     el.textContent = t; el.classList.add('on'); clearTimeout(say.t);
     say.t = setTimeout(() => el.classList.remove('on'), ms || 3800); lastMsg = Date.now();
   }
-  function end() { clearTimeout(stopT); curA.forEach((a) => { try { a.cancel(); } catch (_) {} }); curA = []; clearInterval(lk); birds.forEach((b) => delete b.dataset.p); look(0, 0); }
+  function end() { clearTimeout(stopT); curA.forEach((a) => { try { a.cancel(); } catch (_) {} }); curA = []; clearInterval(lk); birds.forEach((b) => delete b.dataset.p); look(0, 0); if (!busy && birds[0] && birds[0].dataset.s === 'think') mood('idle'); }
   const tap = (d) => [k('', 'translateY(0)', 'translateY(-5px)', 'translateY(0)'), 260, { delay: d || 0 }];
   let stopT;
-  const ACT = [
-    ['typing', 'lap', 7000, () => { A('.hl2', ...tap()); A('.hr2', ...tap(130)); A('.all', k('', 'rotate(0)', 'rotate(1.5deg)', 'rotate(0)'), 2400); lookSeq([[0, 6], [-2, 6], [2, 6], [0, 6], [0, -2]], 700); }, 'aen', ['প্রশ্ন সাজাচ্ছি — চাইলে MCQ বানিয়ে দিই?']],
-    ['reading', 'book', 8000, () => { A('.all', k('', 'rotate(0)', 'rotate(-1.5deg)', 'rotate(0)'), 3000); lookSeq([[-6, 6], [-2, 6], [2, 6], [6, 6], [-6, 7]], 650); }, 'amen', ['তুমি আজ কোন টপিক পড়ছো?', 'পড়ার সময় মোবাইল দূরে রাখো']],
-    ['writing', 'note', 6500, () => { const f = k('', 'translate(0,0)', 'translate(-8px,2px)', 'translate(-2px,5px)', 'translate(-10px,7px)', 'translate(0,0)'); A('.hr2', f, 1600); lookSeq([[-3, 6], [0, 6], [3, 6]], 900); }, 'am', ['ছোট নোট লিখে রাখলে মনে থাকে বেশি']],
-    ['searching', 'mag', 5500, () => { const f = k('', 'translateX(-34px)', 'translateX(10px)', 'translateX(-10px)', 'translateX(-34px)'); A('.hr2', f, 3000); lookSeq([[-6, 5], [4, 5], [0, 5]], 900); }, 'a*', ['কিছু যাচাই করতে চাইলে বলো, খুঁজে দেখি']],
-    ['think', '', 3800, () => { mood('think'); lookSeq([[5, -5]], 1e9); }, '*', []],
-    ['idea', '', 2800, () => { A('.all', k('', 'translateY(0)', 'translateY(-14px)', 'translateY(0)'), 900, { iterations: 1, delay: 500 }); }, '*', ['একটা ভালো আইডিয়া — ছোট একটা কুইজ দিই?']],
-    ['stretch', '', 2400, () => { A('.all', k('', 'scaleY(1)', 'scaleY(1.14) translateY(-4px)', 'scaleY(1)'), 2200, { iterations: 1 }); A('.wl', k('', 'rotate(10deg)', 'rotate(120deg)', 'rotate(10deg)'), 2200, { iterations: 1 }); A('.wr', k('', 'rotate(-10deg)', 'rotate(-120deg)', 'rotate(-10deg)'), 2200, { iterations: 1 }); }, 'ma', ['৪৫ মিনিট পড়ে ৫ মিনিট বিরতি নাও']],
-    ['yawn', '', 2800, () => { A('.eyes', k('100px 104px', 'scaleY(1)', 'scaleY(.1)', 'scaleY(.1)', 'scaleY(1)'), 2600, { iterations: 1 }); A('.jaw', k('', 'translateY(0)', 'translateY(8px)', 'translateY(8px)', 'translateY(0)'), 2600, { iterations: 1 }); }, 'n', ['ঘুম কম হলে মনেও থাকে কম — আজ ঠিকমতো ঘুমিও']],
-    ['wave', '', 1800, () => { A('.wr', k('', 'rotate(-10deg)', 'rotate(-105deg)', 'rotate(-65deg)', 'rotate(-105deg)', 'rotate(-65deg)', 'rotate(-10deg)'), 1700, { iterations: 1 }); }, '*', []],
-    ['nod', '', 1300, () => { A('.all', k('', 'translateY(0) scaleY(1)', 'translateY(5px) scaleY(.94)', 'translateY(0)', 'translateY(5px) scaleY(.94)', 'translateY(0)'), 1000, { iterations: 1 }); }, '*', []],
-    ['blink', '', 1300, () => { A('.eyes', k('100px 104px', 'scaleY(1)', 'scaleY(.1)', 'scaleY(1)', 'scaleY(.1)', 'scaleY(1)'), 1100, { iterations: 1 }); }, '*', []],
-    ['breathe', '', 4200, () => { A('.all', k('', 'scale(1)', 'scale(1.045)', 'scale(1)'), 2600); }, '*', ['একটু গভীর শ্বাস নাও, তারপর আবার শুরু']],
-    ['hop', '', 1200, () => { A('.all', k('', 'translateY(0)', 'translateY(-24px)', 'translateY(0)', 'translateY(-14px)', 'translateY(0)'), 1000, { iterations: 1 }); }, '*', []]
-  ];
+  /* activities: [name, prop, ms, fn, time-tags(m a e n | *), messages] */
+  const ACT=[
+['typing','lap',7000,()=>{A('.hl2',...tap());A('.hr2',...tap(130));A('.all',k('','rotate(0)','rotate(1.5deg)','rotate(0)'),2400);lookSeq([[0,6],[-2,6],[2,6],[0,6],[0,-2]],700)},'aen',['প্রশ্ন সাজাচ্ছি — চাইলে MCQ বানিয়ে দিই?']],
+['reading','book',8000,()=>{A('.pgf',[{transform:'scaleX(1)'},{transform:'scaleX(1)',offset:.75},{transform:'scaleX(-1)'}],3600,{easing:'ease-in'});A('.all',k('','rotate(0)','rotate(-1.5deg)','rotate(0)'),3000);lookSeq([[-6,6],[-2,6],[2,6],[6,6],[-6,7]],650)},'amen',['তুমি আজ কোন টপিক পড়ছো?','পড়ার সময় মোবাইল দূরে রাখো']],
+['writing','note',6500,()=>{const f=k('','translate(0,0)','translate(-8px,2px)','translate(-2px,5px)','translate(-10px,7px)','translate(0,0)');A('.pen',f,1600);A('.hr2',f,1600);lookSeq([[-3,6],[0,6],[3,6]],900)},'am',['ছোট নোট লিখে রাখলে মনে থাকে বেশি']],
+['sipping','cup',4400,()=>{const f=[{transform:'translate(0,0) rotate(0)'},{transform:'translate(0,0) rotate(0)',offset:.25},{transform:'translate(-18px,-24px) rotate(-18deg)',offset:.45},{transform:'translate(-18px,-24px) rotate(-18deg)',offset:.65},{transform:'translate(0,0) rotate(0)'}];A('.cup',f,4200,{iterations:1});A('.hr2',f,4200,{iterations:1});A('.eyes',[{transform:'scaleY(1)'},{transform:'scaleY(1)',offset:.4},{transform:'scaleY(.15)',offset:.5},{transform:'scaleY(.15)',offset:.65},{transform:'scaleY(1)',offset:.75},{transform:'scaleY(1)'}],4200,{iterations:1})},'man',['পড়ার ফাঁকে পানি খেয়ে নাও','এক কাপ চা-কফির সময় কি হলো?']],
+['searching','mag',5500,()=>{const f=k('','translateX(-34px)','translateX(10px)','translateX(-10px)','translateX(-34px)');A('.mag',f,3000);A('.hr2',f,3000);lookSeq([[-6,5],[4,5],[0,5]],900)},'a*',['কিছু যাচাই করতে চাইলে বলো, খুঁজে দেখি']],
+['calc','calc',5500,()=>{A('.hl2',...tap());A('.hr2',...tap(150));A('.br',k('','translateY(0)','translateY(-4px)','translateY(0)'),2600);lookSeq([[0,6],[0,-3],[0,6]],1000)},'a',['অংক আটকে গেলে ধাপে ধাপে দেখিয়ে দেব']],
+['music','ph',7000,()=>{A('.all',k('','translateY(0) rotate(0)','translateY(-5px) rotate(-3deg)','translateY(0) rotate(0)','translateY(-5px) rotate(3deg)'),1400);A('.wl',k('','rotate(10deg)','rotate(32deg)','rotate(10deg)'),700);A('.wr',k('','rotate(-10deg)','rotate(-32deg)','rotate(-10deg)'),700,{delay:350})},'ea',['মনোযোগ দরকার? বিনা কথার মিউজিক শুনে দেখো']],
+['dance','ph',5000,()=>{A('.all',k('','translateX(0) rotate(0)','translateX(-9px) rotate(-6deg)','translateX(9px) rotate(6deg)','translateX(0) rotate(0)'),900);A('.wl',k('','rotate(10deg)','rotate(60deg)','rotate(10deg)'),450);A('.wr',k('','rotate(-10deg)','rotate(-60deg)','rotate(-10deg)'),450,{delay:225})},'e',[]],
+['think','',3800,()=>{mood('think');lookSeq([[5,-5]],1e9)},'*',[]],
+['idea','',2800,()=>{A('.bulb',[{transform:'scale(.2)',opacity:0},{transform:'scale(1.15)',opacity:1,offset:.25},{transform:'scale(1)',opacity:1,offset:.85},{transform:'scale(.2)',opacity:0}],2600,{iterations:1,transformOrigin:'100px 20px'});A('.all',k('','translateY(0)','translateY(-14px)','translateY(0)'),900,{iterations:1,delay:500})},'*',['একটা ভালো আইডিয়া — ছোট একটা কুইজ দিই?']],
+['stretch','',2400,()=>{A('.all',k('','scaleY(1)','scaleY(1.14) translateY(-4px)','scaleY(1)'),2200,{iterations:1});A('.wl',k('','rotate(10deg)','rotate(120deg)','rotate(10deg)'),2200,{iterations:1});A('.wr',k('','rotate(-10deg)','rotate(-120deg)','rotate(-10deg)'),2200,{iterations:1})},'ma',['৪৫ মিনিট পড়ে ৫ মিনিট বিরতি নাও']],
+['yawn','',2800,()=>{A('.eyes',k('100px 104px','scaleY(1)','scaleY(.1)','scaleY(.1)','scaleY(1)'),2600,{iterations:1});A('.jaw',k('','translateY(0)','translateY(8px)','translateY(8px)','translateY(0)'),2600,{iterations:1});A('.all',k('','scaleY(1)','scaleY(1.06)','scaleY(1)'),2600,{iterations:1})},'n',['ঘুম কম হলে মনেও থাকে কম — আজ ঠিকমতো ঘুমিও']],
+['look','',3200,()=>lookSeq([[-6,0],[6,0],[0,-5],[-4,3],[0,0]],620),'*',[]],
+['wave','',1800,()=>{A('.wr',k('','rotate(-10deg)','rotate(-105deg)','rotate(-65deg)','rotate(-105deg)','rotate(-65deg)','rotate(-10deg)'),1700,{iterations:1})},'*',[]],
+['doze','zz',6500,()=>{A('.all',k('','rotate(0)','rotate(5deg) translateY(4px)','rotate(0)'),2600);A('.eyes',k('100px 104px','scaleY(1)','scaleY(.15)','scaleY(1)'),2600)},'n',[]],
+['breathe','',4200,()=>{A('.all',k('','scale(1)','scale(1.045)','scale(1)'),2600);A('.eyes',k('100px 104px','scaleY(1)','scaleY(.2)','scaleY(1)'),3400)},'*',['একটু গভীর শ্বাস নাও, তারপর আবার শুরু']],
+['clap','',1700,()=>{A('.wl',k('','rotate(10deg)','rotate(55deg)','rotate(20deg)','rotate(55deg)','rotate(20deg)','rotate(55deg)','rotate(10deg)'),1500,{iterations:1});A('.wr',k('','rotate(-10deg)','rotate(-55deg)','rotate(-20deg)','rotate(-55deg)','rotate(-20deg)','rotate(-55deg)','rotate(-10deg)'),1500,{iterations:1})},'*',[]],
+['hop','',1200,()=>A('.all',k('','translateY(0)','translateY(-24px)','translateY(0)','translateY(-14px)','translateY(0)'),1000,{iterations:1}),'*',[]],
+['capTip','',1700,()=>{A('.cap',k('','translateY(0) rotate(0)','translateY(-10px) rotate(-14deg)','translateY(-10px) rotate(-14deg)','translateY(0) rotate(0)'),1500,{iterations:1});A('.br',k('','translateY(0)','translateY(-6px)','translateY(0)'),1500,{iterations:1})},'*',[]],
+['tassel','',1500,()=>A('.tas',k('150px 60px','rotate(0)','rotate(360deg)','rotate(720deg)'),1400,{iterations:1}),'*',[]],
+['bow','',1800,()=>A('.all',k('100px 190px','rotate(0)','rotate(22deg) translateY(4px)','rotate(22deg) translateY(4px)','rotate(0)'),1600,{iterations:1}),'m',[]],
+['peek','',2000,()=>A('.all',k('','translateY(0)','translateY(130px)','translateY(130px)','translateY(-18px)','translateY(0)'),1800,{iterations:1}),'*',[]],
+['fly','',2800,()=>{A('.all',k('','translate(0,0) rotate(0)','translate(-70px,-56px) rotate(-14deg)','translate(0,-96px) rotate(0)','translate(70px,-56px) rotate(14deg)','translate(0,0)'),2600,{iterations:1});A('.wl',[{transform:'rotate(15deg)'},{transform:'rotate(70deg)'}],170,{direction:'alternate'});A('.wr',[{transform:'rotate(-15deg)'},{transform:'rotate(-70deg)'}],170,{direction:'alternate'})},'*',[]],
+['sneeze','',1200,()=>{A('.all',k('','scale(1)','scale(1.1) translateY(2px)','scale(.94) translateY(-4px) rotate(4deg)','scale(1)'),1000,{iterations:1});A('.jaw',k('','translateY(0)','translateY(6px)','translateY(0)'),1000,{iterations:1})},'*',[]],
+['blink','',1300,()=>{A('.eyes',k('100px 104px','scaleY(1)','scaleY(.1)','scaleY(1)','scaleY(.1)','scaleY(1)'),1100,{iterations:1});A('.br',k('','translateY(0)','translateY(-6px)','translateY(0)'),1100,{iterations:1})},'*',[]],
+['nod','',1300,()=>A('.all',k('','translateY(0) scaleY(1)','translateY(5px) scaleY(.94)','translateY(0)','translateY(5px) scaleY(.94)','translateY(0)'),1000,{iterations:1}),'*',[]],
+['shake','',1200,()=>A('.all',k('','rotate(0)','rotate(-9deg)','rotate(9deg)','rotate(-9deg)','rotate(0)'),900,{iterations:1}),'*',[]],
+['flip','',1400,()=>A('.all',k('','scaleX(1)','scaleX(.05)','scaleX(-1)','scaleX(.05)','scaleX(1)'),1200,{iterations:1}),'*',[]],
+['backflip','',1500,()=>A('.all',k('100px 110px','translateY(0) rotate(0)','translateY(-56px) rotate(-180deg)','translateY(0) rotate(-360deg)'),1300,{iterations:1}),'*',[]],
+['sidestep','',1600,()=>A('.all',k('','translateX(0) rotate(0)','translateX(34px) rotate(8deg)','translateX(34px) rotate(-6deg)','translateX(0) rotate(0)'),1400,{iterations:1}),'*',[]],
+['squash','',1200,()=>A('.all',k('','scale(1,1)','scale(1.12,.88)','scale(.92,1.1)','scale(1.05,.96)','scale(1,1)'),1000,{iterations:1}),'*',[]]
+];
   const period = () => { const h = new Date().getHours(); return h < 5 || h >= 22 ? 'n' : h < 12 ? 'm' : h < 17 ? 'a' : 'e'; };
   function startAct(i) {
     end(); lastAct = i;
@@ -862,12 +1066,6 @@ const ACT_ACTIONS = { 'prefs.write': { bn: 'তোমার AI পছন্দ �
     document.getElementById('hbw').innerHTML = av();
     document.getElementById('dw').innerHTML = av('xs');
 
-    /* hero chips + notice — real actions, no demo answers */
-    document.getElementById('tryq').innerHTML =
-      '<div class="notice"><b>ⓘ</b><span>' + T.notice + '</span></div>' +
-      '<small>' + T.tryAsking + '</small>' +
-      '<div class="chips">' + T.chips.map((c) => '<button data-q="' + esc(c[2]) + '">' + c[0] + ' ' + c[1] + '</button>').join('') + '</div>';
-
     paintTheme();
     renderMsgs();
     if (sessions[cur].msgs.length) document.getElementById('hero').style.display = 'none';
@@ -878,6 +1076,13 @@ const ACT_ACTIONS = { 'prefs.write': { bn: 'তোমার AI পছন্দ �
     mood('wave', 2200);
     setTimeout(() => { if (!sessions[cur].msgs.length) say(greet, 4200); }, 900);
     loop(); wake();
+    const askMsg = ['বাংলা, ইংরেজি, GK — কোনটা দিয়ে শুরু?', 'শেষ কবে রিভিশন দিয়েছিলে?', 'Mistake Bank-এ নতুন ভুল জমেছে কি?', 'পরীক্ষার আগে একটা Mock Test দিয়েছো?', 'ছবি তুলে প্রশ্ন পাঠালেও আমি বুঝে নেব', 'Smart Revision করলে বেশি দিন মনে থাকে', 'আজকের পড়ার লক্ষ্য কত?'];
+    clearInterval(window.__skyNudge);
+    window.__skyNudge = setInterval(() => {
+      const a = document.getElementById('app');
+      if (!a || !a.classList.contains('sky')) { clearInterval(window.__skyNudge); return; }
+      if (!calm() && Date.now() - lastMsg > 40000 && !a.classList.contains('chatting')) say(pick(askMsg));
+    }, 9000);
 
     /* composer */
     inpEl.oninput = () => {
@@ -888,7 +1093,7 @@ const ACT_ACTIONS = { 'prefs.write': { bn: 'তোমার AI পছন্দ �
       look(Math.sin(inpEl.value.length / 2) * 3, 5);
     };
     inpEl.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); actEl.click(); } };
-    inpEl.onfocus = () => { end(); mood('type'); look(0, 5); };
+    inpEl.onfocus = () => { end(); mood('type'); look(0, 5); const a = document.getElementById('app'); if (Date.now() - lastMsg > 15000 && a && !a.classList.contains('chatting')) say('বলো, আমি শুনছি', 2600); };
     inpEl.onblur = () => { if (!busy) mood('idle'); look(0, 0); loop(); };
     /* Mic is the default composer action, so it must actually listen. Falls back
        to a plain hint where the browser has no speech engine rather than sitting
@@ -920,6 +1125,8 @@ const ACT_ACTIONS = { 'prefs.write': { bn: 'তোমার AI পছন্দ �
 
     /* message actions + question chips */
     msgsEl.addEventListener('click', (e) => {
+      const ph = e.target.closest('.proc .ph');
+      if (ph) { ph.parentNode.classList.toggle('open'); return; }
       const c = e.target.closest('[data-c]');
       if (c) { const m = sessions[cur].msgs[+c.getAttribute('data-c')]; try { navigator.clipboard.writeText(m.text); } catch (_) {} say(T.copied, 1600); return; }
       const r = e.target.closest('[data-r]');
@@ -931,7 +1138,7 @@ const ACT_ACTIONS = { 'prefs.write': { bn: 'তোমার AI পছন্দ �
     });
     document.addEventListener('click', (e) => {
       const q = e.target.closest('[data-q]');
-      if (q && q.closest('#sheet, #tryq')) { closeLayers(); send(q.getAttribute('data-q')); }
+      if (q && q.closest('#sheet')) { closeLayers(); send(q.getAttribute('data-q')); }
     });
 
     /* header */
@@ -1004,9 +1211,9 @@ const ACT_ACTIONS = { 'prefs.write': { bn: 'তোমার AI পছন্দ �
 
     /* pet the avatar */
     const pet = () => {
-      const i = pick([...ACT.keys()].filter((x) => ['wave', 'hop', 'nod', 'blink', 'idea'].indexOf(ACT[x][0]) >= 0));
+      const i = pick([...ACT.keys()].filter((x) => ['wave', 'hop', 'capTip', 'clap', 'backflip', 'bow', 'fly', 'tassel', 'nod'].indexOf(ACT[x][0]) >= 0));
       startAct(i);
-      say(pick(['বলো, কী জানতে চাও?', 'প্রশ্ন লিখে ফেলো, আমি আছি', 'কোনো টপিক বুঝতে সমস্যা হচ্ছে?']));
+      say(pick(['বলো, কী জানতে চাও?', 'প্রশ্ন লিখে ফেলো, আমি আছি', 'কোনো টপিক বুঝতে সমস্যা হচ্ছে?', '১০টা MCQ দিয়ে শুরু করবে?', 'গতকালের ভুলগুলো একবার দেখে নেবে?', 'কোন সাবজেক্টে সাহায্য লাগবে?']));
     };
     document.getElementById('hbig').onclick = pet;
     document.getElementById('hbw').onclick = pet;

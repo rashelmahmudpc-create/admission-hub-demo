@@ -17,18 +17,18 @@ const V2 = readFileSync('dashboard-v2.js', 'utf8');
 const t = (name, cond) => test(name, () => assert.ok(cond, name));
 
 t('১. index.html-এ ai-রুট dispatch (renderAiAgentPage)', H.includes("if(p==='ai'){ if(window.renderAiAgentPage)"));
-t('২. ai-agent-chat.js স্ক্রিপ্ট-ট্যাগ', H.includes('./ai-agent-chat.js?v=agent-f1-ui-skyv1'));
+t('২. ai-agent-chat.js স্ক্রিপ্ট-ট্যাগ', H.includes('./ai-agent-chat.js?v=agent-f1-ui-skyv2'));
 t('৩. ai-agent-chat.js ফাইল-বিদ্যমান + renderAiAgentPage-এক্সপোজ', existsSync('ai-agent-chat.js') && UI.includes('window.renderAiAgentPage = render'));
 t('৪. NAV_TABS থেকে AI ট্যাব বাদ — AI এখন dashboard Command Center + সরাসরি /ai রুট', (H.match(/const NAV_TABS=\[[\s\S]*?\];/) || [''])[0].length > 0 && !(H.match(/const NAV_TABS=\[[\s\S]*?\];/) || [''])[0].includes("key:'ai'") && !H.includes('juju-floating') && H.includes("if(p==='ai'){ if(window.renderAiAgentPage)"));
 
 /* ── Sky UI: the surfaces the owner asked for, by their real selectors ── */
-t('৫. Sky hero + orb avatar + ৫টা try-asking chip', UI.includes('class="hero"') && UI.includes('id="hbig"') && UI.includes('T.chips') && ['🧠', '📝', '🎯', '📊', '📚'].every((e) => UI.includes("'" + e + "'")));
+t('৫. Sky v2 hero: speech bubble + animated avatar with live props (owner design 2026-10-15)', UI.includes('class="hero"') && UI.includes('id="hbig"') && UI.includes('id="say"') && ['p-lap', 'p-book', 'p-note', 'p-cup', 'p-mag', 'p-calc', 'p-ph'].every((c) => UI.includes(c)) && UI.includes("'capTip'") && !UI.includes('id="tryq"'));
 t('৬. Composer: capsule + plus + mic/send/stop morph', UI.includes('class="comp"') && UI.includes('id="plusB"') && UI.includes('id="actB"') && UI.includes('ic(busy ? ') && UI.includes("'stop'") && UI.includes("'send'"));
 t('৭. Bottom-sheet: attachment + Sky tools', UI.includes('id="sheet"') && UI.includes('T.attach') && UI.includes('T.tools') && UI.includes('id="camB"'));
 t('৮. Drawer: new chat + search + session list + in-app nav', UI.includes('id="drawer"') && UI.includes('id="newD"') && UI.includes('id="hs"') && UI.includes('id="hl"') && UI.includes('data-go="question-bank"'));
 t('৯. Voice-in: Web-Speech (উপলব্ধ-চেক + fallback)', (UI.includes('webkitSpeechRecognition') || UI.includes('SpeechRecognition')) && UI.includes('ভয়েস শোনা যায় না'));
 t('১০. AI-msg: markdown body + copy/regen/👍 bar', UI.includes('function md(') && UI.includes('data-c="') && UI.includes('data-r="') && UI.includes('data-g="'));
-t('১১. Thinking-state + streaming into the live node', UI.includes('class="typing"') && UI.includes("node.querySelector('.bw')"));
+t('১১. Live status panel (real request stages only) + streaming into the live node', UI.includes('class="proc run open"') && UI.includes('procStage(node, holder, T.stageWrite)') && !UI.includes('const FLOW') && !UI.includes('const PO') && UI.includes("node.querySelector('.bw')"));
 t('১২. প্রতি-বার্তায় রেগেন (আগের প্রশ্ন আবার) + কপি', UI.includes('sessions[cur].msgs.splice(i, 1)') && UI.includes('navigator.clipboard.writeText'));
 t('১৩. Guest identity + account-scoped store + error retry', UI.includes("'X-AH-Guest': guestId()") && UI.includes('aiSkyChat:v1') && UI.includes('T.offline') && UI.includes('T.failed'));
 t('১৪. Mobile-first: safe-area ব্যবহার', UI.includes('safe-area-inset'));
@@ -44,4 +44,4 @@ t('২১. M9 অ্যাকশন-ইঞ্জিন অটুট (প্র�
 t('২২. p06 weak-topic কনট্র্যাক্ট অটুট', UI.includes('const learningProfile = ') && UI.includes('weakTopics: lp.weakTopics, subjects: lp.subjects'));
 t('২৩. duplicate-turn গার্ড অটুট (একই টার্ন দুইবার নয়)', /const history = sessions\[cur\]\.msgs\.slice\(0, -1\)[\s\S]{0,200}?map\(\(m\) => \(\{ role: m\.role, content: m\.text \}\)\);/.test(UI));
 
-t('২৪. sw APP_SHELL-এ AI ফাইল', SW.includes('./ai-agent-chat.js?v=agent-f1-ui-skyv1') && SW.includes('dashboard-v2.js?v='));
+t('২৪. sw APP_SHELL-এ AI ফাইল', SW.includes('./ai-agent-chat.js?v=agent-f1-ui-skyv2') && SW.includes('dashboard-v2.js?v='));
