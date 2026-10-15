@@ -49,6 +49,8 @@ jobs:
           set -eu
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          # Asset-version replacements must not modify unrelated workflow definitions.
+          git restore --worktree -- .github/workflows
           git add -A
           if git diff --cached --quiet; then echo 'Nothing to commit (already applied).'; exit 0; fi
           git commit -m 'fix(auth+ux): retire old onboarding, existing-email message, direct Google, Facebook errors + legal pages, OTP routing for iCloud/Yahoo, welcome clip, iOS colour + zoom lock' -m 'Owner-approved 2026-10-16. Applied by scripts/auth-ux-fix-20261016.py; worker-bundle.mjs and sw.js regenerated.'
