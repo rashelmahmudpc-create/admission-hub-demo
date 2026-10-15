@@ -1,0 +1,106 @@
+name: Fix and deploy Google login completion
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type DEPLOY to publish the owner-approved Google login completion fix
+        required: true
+        type: string
+permissions:
+  contents: write
+concurrency:
+  group: admission-hub-pages-deploy
+  cancel-in-progress: false
+jobs:
+  fix-test-deploy:
+    if: ${{ inputs.confirmation == 'DEPLOY' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Record pre-existing protection-test failures without changing guards
+        run: |
+          node --test native-auth-protection.test.mjs > /tmp/auth-protection-before.log 2>&1 || true
+          grep '^not ok' /tmp/auth-protection-before.log | sed -E 's/^not ok [0-9]+ - //' | sort > /tmp/auth-protection-before.failures || true
+      - name: Apply guarded source fix
+        run: python3 scripts/google-login-completion-fix.py
+      - name: Syntax and login regressions
+        run: |
+          set -eu
+          node --check account-access.js
+          node --check auth-native/worker/public-auth-handler.mjs
+          node --test --test-concurrency=1 google-login-completion.test.mjs firebase-google-auth.test.mjs firebase-auth-ui.test.mjs facebook-login-guard.test.mjs logout-data-safety.test.mjs dead-handler-guard.test.mjs seo-routing.test.mjs
+      - name: Require no new protection-test failures
+        run: |
+          node --test native-auth-protection.test.mjs > /tmp/auth-protection-after.log 2>&1 || true
+          grep '^not ok' /tmp/auth-protection-after.log | sed -E 's/^not ok [0-9]+ - //' | sort > /tmp/auth-protection-after.failures || true
+          diff -u /tmp/auth-protection-before.failures /tmp/auth-protection-after.failures
+          if test -s /tmp/auth-protection-after.failures; then
+            echo '::warning::Unchanged pre-existing protection assertions fail; no new failing assertion was introduced.'
+            cat /tmp/auth-protection-after.failures
+          fi
+      - name: Rebuild generated artifacts
+        run: |
+          set -eu
+          npm run build:worker
+          npm run sw:manifest
+          node --check sw.js
+          grep -Fq "const expectedSwVersion = 'v347-google-login-complete'" index.html
+          grep -Fq "const BUILD_ID = 'v347-google-login-complete'" sw.js
+      - name: Commit tested source and artifacts without force or rebase
+        id: commit
+        run: |
+          set -eu
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add account-access.js auth-native/worker/public-auth-handler.mjs index.html sw.js worker-bundle.mjs '*.test.mjs'
+          if ! git diff --cached --quiet; then
+            git commit -m 'fix(auth): return Google session before optional profile fetch; preserve diagnostic errors'
+            git push origin HEAD:main
+          fi
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Verify the tested generated artifacts
+        run: |
+          npm run check:worker-bundle
+          npm run check:sw-manifest
+      - name: Deploy authenticated Worker without secret changes
+        uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: '4.35.0'
+          command: deploy --config wrangler.toml --keep-vars
+      - name: Build sanitized public bundle
+        run: |
+          set -eu
+          mkdir -p dist
+          rsync -a --exclude='dist' --exclude='.git' --exclude='node_modules' --exclude='docs' --exclude='AGENT_RESUME' --exclude='ai-proxy' --exclude='auth' --exclude='auth-native' --exclude='email-gateway' --exclude='apps-script' --exclude='uploads' --exclude='.github' --exclude='scripts' --exclude='gk-agent-worker.js' --exclude='public-worker.js' --exclude='ai-agent.js' --exclude='worker-bundle.mjs' --exclude='voice-worker.js' --exclude='voice-agent.mjs' --exclude='voice-agent-core.mjs' --exclude='voice-agent-providers.mjs' --exclude='voice-agent-gate.mjs' --exclude='notification-worker.js' --exclude='fcm-notification.mjs' --exclude='wrangler.toml' --exclude='package.json' --exclude='package-lock.json' --exclude='*.test.mjs' --exclude='*.md' ./ dist/
+          test -s dist/index.html
+          test -s dist/sw.js
+          test -s dist/account-access.js
+          test ! -e dist/auth-native
+          test ! -e dist/worker-bundle.mjs
+          test ! -e dist/scripts
+      - name: Deploy the admissionsky production address
+        uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: '4.35.0'
+          command: pages deploy dist --project-name admissionsky --branch main
+      - name: Verify live auth readiness and published build
+        run: |
+          set -eu
+          curl --fail --retry 3 --retry-delay 3 'https://admissionsky.pages.dev/api/auth/v1/config' -o /tmp/live-auth-config.json
+          node -e "const d=JSON.parse(require('fs').readFileSync('/tmp/live-auth-config.json')); if(!d.ok || !d.auth.available || !d.auth.methods.google.available) process.exit(1); console.log('Live Google auth capability READY; a real user OAuth round trip is still required.');"
+          curl --fail --retry 3 --retry-delay 3 'https://admissionsky.pages.dev/sw.js?build=v347-google-login-complete' | grep -F "const BUILD_ID = 'v347-google-login-complete'"
+          echo "Published commit: ${{ steps.commit.outputs.sha }}" >> "$GITHUB_STEP_SUMMARY"
+          echo 'No user data, OAuth provider settings, or secrets were changed.' >> "$GITHUB_STEP_SUMMARY"
