@@ -1042,7 +1042,16 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         try { user = await provider.lookup(signed.idToken); } catch (cause) { throw providerError(cause, 'facebook-lookup'); }
         assertProviderUser(signed, user);
         if (!user.providers.includes('facebook.com')) throw new NativeAuthError(AUTH_ERROR_CODES.ACCOUNT_CONFLICT);
-        if (!user.emailVerified) throw new NativeAuthError(AUTH_ERROR_CODES.EMAIL_NOT_VERIFIED);
+        if (!user.emailVerified) {
+          // Firebase leaves facebook.com emails unverified by design. Accept the
+          // address only when Facebook itself returns the same confirmed email
+          // for this access token (Graph /me only exposes confirmed emails).
+          let facebookUser = null;
+          try { facebookUser = await provider.facebookIdentity(credential.accessToken); } catch {}
+          if (!facebookUser || normalizeAuthEmail(facebookUser.email) !== normalizeAuthEmail(user.email)) {
+            throw new NativeAuthError(AUTH_ERROR_CODES.EMAIL_NOT_VERIFIED);
+          }
+        }
         let established;
         try {
           established = await callAuthority(env, '/internal/firebase/session/create', { input: { email: user.email, subject: user.subject }, context });

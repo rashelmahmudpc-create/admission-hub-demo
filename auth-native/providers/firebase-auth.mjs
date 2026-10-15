@@ -324,7 +324,11 @@ export class FirebaseEmailPasswordProvider {
       autoCreate: !firebaseIdToken,
       ...(firebaseIdToken ? { idToken: firebaseIdToken } : {})
     });
-    if (!validToken(payload?.idToken) || !validToken(payload?.refreshToken) || !validSubject(payload?.localId) || typeof payload?.email !== 'string' || payload?.emailVerified !== true) {
+    // Firebase never marks a facebook.com email as verified (Facebook is not an
+    // email-trusted IdP), so requiring emailVerified here rejected EVERY
+    // Facebook login. The /facebook route proves the address through the Graph
+    // API instead, which only returns an email Facebook has confirmed.
+    if (!validToken(payload?.idToken) || !validToken(payload?.refreshToken) || !validSubject(payload?.localId) || typeof payload?.email !== 'string' || !payload.email) {
       throw new FirebaseRequestError('INVALID_PROVIDER_RESPONSE');
     }
     return Object.freeze({
@@ -332,7 +336,7 @@ export class FirebaseEmailPasswordProvider {
       refreshToken: payload.refreshToken,
       subject: payload.localId,
       email: payload.email,
-      emailVerified: true,
+      emailVerified: payload.emailVerified === true,
       isNewUser: payload.isNewUser === true,
       expiresIn: Math.max(60, Number(payload.expiresIn || 3600))
     });

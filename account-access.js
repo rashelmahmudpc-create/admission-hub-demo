@@ -117,7 +117,7 @@
         <form class="ah-account-view ah-login-view" data-view="login" data-login-contract="reference-login-v1" novalidate>
           <div class="ah-login-hero" aria-hidden="true"><span class="ah-login-orb"><svg viewBox="0 0 24 24" fill="none"><path d="m6.5 12.4 4 4L17.6 8.6"/></svg></span><i class="ah-login-spark one">✦</i><i class="ah-login-spark two">✦</i><i class="ah-login-spark three">✦</i></div>
           <h3 class="ah-login-title">আবার দেখা হলো <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 10.5a11 11 0 0 1 16 0"/><path d="M7 13.8a6.5 6.5 0 0 1 10 0"/><circle cx="12" cy="17.2" r="1.6"/></svg></h3>
-          <p class="ah-login-sub">তোমার preparation যেখানে থেমেছিল, সেখান থেকেই শুরু করো।</p>
+          <p class="ah-login-sub">তোমার preparation যেখানে থেমেছিল, সেখান থেকেই শুরু করো।</p><button class="ah-account-link ah-calm-back" type="button" data-role="login-back">← পেছনে</button>
           <div class="ah-account-field ah-login-field"><label class="ah-account-label" for="ah-login-email"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3.2" y="5.6" width="17.6" height="12.8" rx="3.2"/><path d="m4.6 8.2 7.4 5 7.4-5"/></svg><span>EMAIL</span></label><input class="ah-account-input" id="ah-login-email" name="email" type="email" inputmode="email" autocomplete="email" maxlength="254" placeholder="student@gmail.com" required></div>
           <div class="ah-account-field ah-login-field"><label class="ah-account-label" for="ah-login-password"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="5" y="10" width="14" height="10.5" rx="3.2"/><path d="M8.2 10V7.6a3.8 3.8 0 0 1 7.6 0V10"/></svg><span>PASSWORD</span></label><div class="ah-password-wrap"><input class="ah-account-input" id="ah-login-password" name="password" type="password" autocomplete="current-password" minlength="8" maxlength="128" placeholder="••••••••" required><button class="ah-password-toggle" type="button" data-password-target="ah-login-password" aria-label="Password দেখুন"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3.5 12S6 6.8 12 6.8 20.5 12 20.5 12 18 17.2 12 17.2 3.5 12 3.5 12Z"/><circle cx="12" cy="12" r="2.6"/></svg></button></div></div>
           <div class="ah-login-row"><label class="ah-login-remember"><input type="checkbox" id="ah-login-remember" checked><span aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="m6.5 12.4 4 4L17.6 8.6"/></svg></span><b>Remember me</b></label><button class="ah-account-link ah-forgot-link" type="button" data-role="show-forgot">Forgot password?</button></div>
@@ -1369,7 +1369,13 @@
     } catch (_) {}  
     let response;  
     const controller = new AbortController();  
-    const timeoutMs = Math.min(18000, Math.max(2000, Number(options.timeoutMs) || 18000));  
+    /* OTP / verification sends walk the provider chain on the server (a cold
+     * Apps Script mailer alone can take ~11s), so an 18s ceiling aborted sends
+     * that the server then completed: the "sometimes the OTP never comes" bug.
+     * Those paths get a 45s ceiling; everything else keeps 18s. */
+    const slowSend = /\/(email-ownership|telegram\/verification|account-verification\/email|backup)\/(start|resend)(\?|$)/.test(String(path || ''));
+    const ceiling = slowSend ? 45000 : 18000;
+    const timeoutMs = Math.min(ceiling, Math.max(2000, Number(options.timeoutMs) || ceiling));  
     const timeout = setTimeout(() => controller.abort(), timeoutMs);  
     try {  
       response = await fetch(`${API}${requestPath}`, {  
@@ -1514,6 +1520,13 @@
     else {
       showView('signed');
       updateTrustPrompt();
+      /* A finished login (Google, Facebook, Email, Passkey) must land on the
+       * Dashboard, not on the account card (owner report 2026-10-15: "after
+       * Continue with Google it stays on the same page"). A saved return
+       * destination is handled by restoreReturnDestination() below. */
+      if (!state.returnDestination) {
+        try { close(); } catch (_) {}
+      }
     }
     if (onboarding) message();
     else message(text, 'success');
@@ -1668,7 +1681,11 @@
     } catch (_) {}
     const ua = String((navigator && navigator.userAgent) || '');
     if (/FBAN|FBAV|FB_IAB|Instagram|Line\/|MicroMessenger|Twitter|TikTok|SnapChat|Pinterest/i.test(ua)) return false;
-    if (/Android|iPhone|iPad|iPod/i.test(ua)) return false;
+    /* Ordinary mobile Chrome/Safari keep the popup: with the authDomain on
+     * firebaseapp.com, a redirect's result is lost to third-party storage
+     * partitioning, while the popup returns through postMessage. Only in-app
+     * browsers and installed PWAs take the redirect, and a dead popup still
+     * falls back to it (popupDead). */
     return true;
   };
 
@@ -1700,9 +1717,20 @@
     const auth = await loadFirebaseAuth().catch(() => null);
     if (!auth || typeof auth.getRedirectResult !== 'function') return;
     let result = null;
-    try { result = await auth.getRedirectResult(); } catch (_) { return; }
+    let redirectError = null;
+    try { result = await auth.getRedirectResult(); } catch (error) { redirectError = error; }
     const accessToken = String(result?.credential?.accessToken || '');
-    if (!result?.user || accessToken.length < 20) return;
+    if (!result?.user || accessToken.length < 20) {
+      /* The redirect came back empty: the browser blocked the authDomain's
+       * storage (Safari / Chrome third-party storage partitioning) or the user
+       * backed out. Say so instead of silently leaving them on the same page. */
+      open();
+      showView('login');
+      message(redirectError?.code === 'auth/account-exists-with-different-credential'
+        ? 'এই Email অন্য পদ্ধতিতে খোলা আছে—আগের পদ্ধতি দিয়ে ঢুকো।'
+        : 'লগইন সম্পন্ন হয়নি—আবার চেষ্টা করো। বারবার হলে Chrome/Safari-এ সাইটটি খুলে চেষ্টা করো বা Email দিয়ে ঢুকো।', 'error');
+      return;
+    }
     const providerId = String(result.credential?.providerId || result.user.providerId || '');
     try {
       if (providerId === 'facebook.com') {
@@ -2713,6 +2741,7 @@
       focusWhenUnclaimed(() => $('#ah-forgot-email'), 30);
     });
     $('[data-role="forgot-back"]').addEventListener('click', () => { prefillLogin($('#ah-forgot-email').value); showView('login'); });
+    $('[data-role="login-back"]')?.addEventListener('click', () => { if (state.busy) return; message(); showWelcome(); });
     $('[data-view="forgot"]').addEventListener('submit', async event => {
       event.preventDefault();
       if (state.busy || !ensureAvailable()) return;

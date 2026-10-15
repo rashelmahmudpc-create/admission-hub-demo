@@ -8297,7 +8297,7 @@ var FirebaseEmailPasswordProvider = class {
       autoCreate: !firebaseIdToken,
       ...firebaseIdToken ? { idToken: firebaseIdToken } : {}
     });
-    if (!validToken(payload?.idToken) || !validToken(payload?.refreshToken) || !validSubject2(payload?.localId) || typeof payload?.email !== "string" || payload?.emailVerified !== true) {
+    if (!validToken(payload?.idToken) || !validToken(payload?.refreshToken) || !validSubject2(payload?.localId) || typeof payload?.email !== "string" || !payload.email) {
       throw new FirebaseRequestError("INVALID_PROVIDER_RESPONSE");
     }
     return Object.freeze({
@@ -8305,7 +8305,7 @@ var FirebaseEmailPasswordProvider = class {
       refreshToken: payload.refreshToken,
       subject: payload.localId,
       email: payload.email,
-      emailVerified: true,
+      emailVerified: payload.emailVerified === true,
       isNewUser: payload.isNewUser === true,
       expiresIn: Math.max(60, Number(payload.expiresIn || 3600))
     });
@@ -9651,7 +9651,16 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         }
         assertProviderUser(signed, user);
         if (!user.providers.includes("facebook.com")) throw new NativeAuthError(AUTH_ERROR_CODES.ACCOUNT_CONFLICT);
-        if (!user.emailVerified) throw new NativeAuthError(AUTH_ERROR_CODES.EMAIL_NOT_VERIFIED);
+        if (!user.emailVerified) {
+          let facebookUser = null;
+          try {
+            facebookUser = await provider.facebookIdentity(credential.accessToken);
+          } catch {
+          }
+          if (!facebookUser || normalizeAuthEmail(facebookUser.email) !== normalizeAuthEmail(user.email)) {
+            throw new NativeAuthError(AUTH_ERROR_CODES.EMAIL_NOT_VERIFIED);
+          }
+        }
         let established;
         try {
           established = await callAuthority(env, "/internal/firebase/session/create", { input: { email: user.email, subject: user.subject }, context });
@@ -21809,6 +21818,7 @@ function providerFailure(error) {
   if (error instanceof VerificationProviderError) return error;
   return new VerificationProviderError("UNEXPECTED_PROVIDER_FAILURE", VERIFICATION_FAILURE_CLASS.TEMPORARY);
 }
+var PROBE_TIMEOUT_MS = 5e3;
 async function bounded(action, milliseconds) {
   let timer;
   try {
@@ -21968,8 +21978,11 @@ var VerificationOrchestrator = class {
       const started = Date.now();
       try {
         const [availability, remoteQuota, localQuota, state] = await Promise.all([
-          bounded(() => provider.checkAvailability({ purpose: identity.purpose }), entry.timeoutMs),
-          bounded(() => provider.getRemainingQuota({ now }), entry.timeoutMs),
+          // Readiness probes run for every slot before a single send, so a slow
+          // probe delayed the whole OTP past the browser's patience. Probes get
+          // a short ceiling; the send itself keeps the slot's full timeoutMs.
+          bounded(() => provider.checkAvailability({ purpose: identity.purpose }), Math.min(entry.timeoutMs, PROBE_TIMEOUT_MS)),
+          bounded(() => provider.getRemainingQuota({ now }), Math.min(entry.timeoutMs, PROBE_TIMEOUT_MS)),
           this.repository.dailyQuotaSnapshot({ providerId: entry.id, dailyQuota: entry.dailyQuota, now }),
           this.repository.providerSnapshot({ providerId: entry.id, now })
         ]);

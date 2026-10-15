@@ -60,6 +60,8 @@ function providerFailure(error) {
   return new VerificationProviderError('UNEXPECTED_PROVIDER_FAILURE', VERIFICATION_FAILURE_CLASS.TEMPORARY);
 }
 
+const PROBE_TIMEOUT_MS = 5000;
+
 async function bounded(action, milliseconds) {
   let timer;
   try {
@@ -204,8 +206,11 @@ export class VerificationOrchestrator {
       const started = Date.now();
       try {
         const [availability, remoteQuota, localQuota, state] = await Promise.all([
-          bounded(() => provider.checkAvailability({ purpose: identity.purpose }), entry.timeoutMs),
-          bounded(() => provider.getRemainingQuota({ now }), entry.timeoutMs),
+          // Readiness probes run for every slot before a single send, so a slow
+          // probe delayed the whole OTP past the browser's patience. Probes get
+          // a short ceiling; the send itself keeps the slot's full timeoutMs.
+          bounded(() => provider.checkAvailability({ purpose: identity.purpose }), Math.min(entry.timeoutMs, PROBE_TIMEOUT_MS)),
+          bounded(() => provider.getRemainingQuota({ now }), Math.min(entry.timeoutMs, PROBE_TIMEOUT_MS)),
           this.repository.dailyQuotaSnapshot({ providerId: entry.id, dailyQuota: entry.dailyQuota, now }),
           this.repository.providerSnapshot({ providerId: entry.id, now })
         ]);
