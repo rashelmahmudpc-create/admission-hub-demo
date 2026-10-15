@@ -23567,7 +23567,9 @@ function logtoSlotFromConfig(raw) {
   try {
     const text = String(raw || "");
     if (!text || text.length > 16384) return null;
-    const rows = JSON.parse(text)?.providers;
+    const config = JSON.parse(text);
+    if (config?.enabled !== true) return null;
+    const rows = config.providers;
     const row = Array.isArray(rows) ? rows.find((item) => item?.id === "otp-h") : null;
     return row && row.enabled === true ? row : null;
   } catch {

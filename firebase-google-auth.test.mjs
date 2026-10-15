@@ -348,3 +348,37 @@ test('Profile seed failure never breaks the Google login (best-effort by design)
   assert.equal(result.status, 200);
   assert.equal((await result.json()).authenticated, true);
 });
+
+
+test('Google session cookies return before optional profile enrichment completes', async () => {
+  const authority = new AuthorityMock();
+  const originalFetch = authority.fetch.bind(authority);
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  authority.fetch = async (input, init) => {
+    const url = typeof input === 'string' ? input : input.url;
+    if (new URL(url).pathname === '/internal/profile/get-v2') await gate;
+    return originalFetch(input, init);
+  };
+  const pending = [];
+  const handler = createNativeAuthHandler({ fetchImpl: googleFetch() });
+  let timer;
+  try {
+    const result = await Promise.race([
+      handler(request(`${AUTH_API_PREFIX}/google`, { idToken: TOKEN('google-id') }), {
+        AUTH_AUTHORITY: authority, FIREBASE_WEB_API_KEY: API_KEY, GOOGLE_AUTH_ACTIVATION: 'enabled'
+      }, { waitUntil: promise => pending.push(promise) }),
+      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Login blocked by optional enrichment')), 1000); })
+    ]);
+    assert.equal(result.status, 200);
+    assert.equal(result.headers.get('X-AH-Auth-Stage'), 'SESSION_CREATED');
+    assert.match(result.headers.get('Set-Cookie') || '', /__Host-ah_session=/);
+    assert.match(result.headers.get('Set-Cookie') || '', /__Host-ah_firebase=/);
+    assert.equal((await result.json()).authenticated, true);
+    assert.equal(pending.length, 1);
+  } finally {
+    clearTimeout(timer);
+    release();
+    await Promise.all(pending);
+  }
+});
