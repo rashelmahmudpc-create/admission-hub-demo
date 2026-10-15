@@ -1329,6 +1329,511 @@ function aiStateStore(env) {
   };
 }
 
+// ai-analytics-store.mjs
+var AI_STORE_VERSION = "ai-p5-store-v1";
+var AI_CACHE_TTL_MS = Object.freeze({
+  insight: 6 * 3600 * 1e3,
+  copilot: 15 * 60 * 1e3,
+  summary: 6 * 3600 * 1e3,
+  wording: 24 * 3600 * 1e3
+});
+var isMissingSchemaError = (err) => /no such table/i.test(String(err?.message || err?.cause?.message || err || ""));
+var asInt = (v, fallback = 0) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.trunc(n) : fallback;
+};
+var nowIso = (ms) => new Date(asInt(ms, Date.now())).toISOString();
+var AiAnalyticsStore = class {
+  #d1;
+  #ready;
+  constructor(d1) {
+    this.#d1 = d1 || null;
+  }
+  available() {
+    return Boolean(this.#d1);
+  }
+  async init() {
+    if (!this.#d1) return false;
+    if (!this.#ready) {
+      this.#ready = this.#createSchema().catch((err) => {
+        this.#ready = null;
+        throw err;
+      });
+    }
+    await this.#ready;
+    return true;
+  }
+  async #createSchema() {
+    const statements = [
+      `CREATE TABLE IF NOT EXISTS ai_cache (
+         cache_key TEXT PRIMARY KEY,
+         kind TEXT NOT NULL,
+         payload_json TEXT NOT NULL,
+         model TEXT,
+         created_at INTEGER NOT NULL,
+         expires_at INTEGER NOT NULL
+       )`,
+      `CREATE INDEX IF NOT EXISTS idx_ai_cache_kind ON ai_cache(kind, expires_at)`,
+      `CREATE TABLE IF NOT EXISTS ai_decisions (
+         id TEXT PRIMARY KEY,
+         student_id TEXT,
+         signal TEXT NOT NULL,
+         recommendation TEXT NOT NULL,
+         reason TEXT,
+         model TEXT,
+         model_version TEXT,
+         confidence REAL,
+         action_taken TEXT,
+         outcome_json TEXT,
+         latency_ms INTEGER,
+         cost_usd REAL,
+         created_at INTEGER NOT NULL,
+         resolved_at INTEGER
+       )`,
+      `CREATE INDEX IF NOT EXISTS idx_ai_decisions_student ON ai_decisions(student_id, created_at)`,
+      `CREATE INDEX IF NOT EXISTS idx_ai_decisions_created ON ai_decisions(created_at)`,
+      `CREATE TABLE IF NOT EXISTS ai_approvals (
+         id TEXT PRIMARY KEY,
+         kind TEXT NOT NULL,
+         payload_json TEXT,
+         status TEXT NOT NULL,
+         actor TEXT,
+         note TEXT,
+         created_at INTEGER NOT NULL,
+         decided_at INTEGER
+       )`,
+      `CREATE INDEX IF NOT EXISTS idx_ai_approvals_status ON ai_approvals(status, created_at)`,
+      /* Experiment outcomes: which variant was shown and whether it converted, so
+       * A/B optimisation has data instead of a guess. */
+      `CREATE TABLE IF NOT EXISTS ai_experiments (
+         id TEXT PRIMARY KEY,
+         experiment TEXT NOT NULL,
+         variant TEXT NOT NULL,
+         student_id TEXT,
+         shown_at INTEGER NOT NULL,
+         opened_at INTEGER,
+         clicked_at INTEGER,
+         converted_at INTEGER
+       )`,
+      `CREATE INDEX IF NOT EXISTS idx_ai_experiments_exp ON ai_experiments(experiment, variant, shown_at)`
+    ];
+    for (const sql of statements) await this.#d1.prepare(sql).run();
+  }
+  /* ── cache ──────────────────────────────────────────────────────────────── */
+  async getCache(key, nowMs = Date.now()) {
+    if (!this.#d1) return null;
+    await this.init();
+    try {
+      const row = await this.#d1.prepare(
+        "SELECT payload_json, model, created_at, expires_at FROM ai_cache WHERE cache_key = ?"
+      ).bind(String(key)).first();
+      if (!row) return null;
+      if (asInt(row.expires_at) <= asInt(nowMs)) {
+        return null;
+      }
+      return {
+        payload: safeParse(row.payload_json),
+        model: row.model || null,
+        createdAt: asInt(row.created_at),
+        expiresAt: asInt(row.expires_at),
+        fresh: true
+      };
+    } catch (err) {
+      if (isMissingSchemaError(err)) return null;
+      throw err;
+    }
+  }
+  async putCache(key, kind, payload, options = {}) {
+    if (!this.#d1) return { stored: false };
+    await this.init();
+    const now = asInt(options.now, Date.now());
+    const ttl = asInt(options.ttlMs, AI_CACHE_TTL_MS[kind] ?? AI_CACHE_TTL_MS.insight);
+    await this.#d1.prepare(
+      `INSERT INTO ai_cache (cache_key, kind, payload_json, model, created_at, expires_at)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(cache_key) DO UPDATE SET
+         payload_json = excluded.payload_json,
+         kind = excluded.kind,
+         model = excluded.model,
+         created_at = excluded.created_at,
+         expires_at = excluded.expires_at`
+    ).bind(
+      String(key),
+      String(kind),
+      JSON.stringify(payload ?? null),
+      options.model ? String(options.model) : null,
+      now,
+      now + ttl
+    ).run();
+    return { stored: true, expiresAt: now + ttl, ttlMs: ttl };
+  }
+  async sweepCache(nowMs = Date.now(), limit = 500) {
+    if (!this.#d1) return { removed: 0 };
+    await this.init();
+    const res = await this.#d1.prepare(
+      "DELETE FROM ai_cache WHERE cache_key IN (SELECT cache_key FROM ai_cache WHERE expires_at <= ? LIMIT ?)"
+    ).bind(asInt(nowMs), asInt(limit, 500)).run();
+    return { removed: asInt(res?.meta?.changes) };
+  }
+  async cacheStats(nowMs = Date.now()) {
+    if (!this.#d1) return { total: 0, live: 0, expired: 0 };
+    await this.init();
+    const row = await this.#d1.prepare(
+      `SELECT COUNT(*) AS total,
+              SUM(CASE WHEN expires_at > ? THEN 1 ELSE 0 END) AS live
+       FROM ai_cache`
+    ).bind(asInt(nowMs)).first();
+    const total = asInt(row?.total);
+    const live = asInt(row?.live);
+    return { total, live, expired: Math.max(0, total - live) };
+  }
+  /* ── decision log ───────────────────────────────────────────────────────── */
+  async logDecision(entry = {}, nowMs = Date.now()) {
+    if (!this.#d1) return { stored: false };
+    await this.init();
+    const now = asInt(nowMs, Date.now());
+    const id = String(entry.id || makeId("dec", now, entry.studentId, entry.signal));
+    await this.#d1.prepare(
+      `INSERT INTO ai_decisions
+         (id, student_id, signal, recommendation, reason, model, model_version,
+          confidence, action_taken, outcome_json, latency_ms, cost_usd, created_at, resolved_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         action_taken = excluded.action_taken,
+         outcome_json = excluded.outcome_json,
+         resolved_at = excluded.resolved_at`
+    ).bind(
+      id,
+      entry.studentId ? String(entry.studentId) : null,
+      String(entry.signal || "unknown"),
+      String(entry.recommendation || "none"),
+      entry.reason ? String(entry.reason) : null,
+      entry.model ? String(entry.model) : null,
+      entry.modelVersion ? String(entry.modelVersion) : null,
+      Number.isFinite(Number(entry.confidence)) ? Number(entry.confidence) : null,
+      entry.actionTaken ? String(entry.actionTaken) : null,
+      entry.outcome !== void 0 ? JSON.stringify(entry.outcome) : null,
+      Number.isFinite(Number(entry.latencyMs)) ? Math.trunc(Number(entry.latencyMs)) : null,
+      Number.isFinite(Number(entry.costUsd)) ? Number(entry.costUsd) : null,
+      now,
+      entry.outcome !== void 0 ? now : null
+    ).run();
+    return { stored: true, id };
+  }
+  async listDecisions(options = {}) {
+    if (!this.#d1) return [];
+    await this.init();
+    const limit = Math.min(asInt(options.limit, 200), 1e3);
+    try {
+      const since = asInt(options.sinceMs);
+      const rows = since > 0 ? await this.#readAll("SELECT * FROM ai_decisions WHERE created_at >= ? ORDER BY created_at DESC LIMIT ?", since, limit) : await this.#readAll("SELECT * FROM ai_decisions ORDER BY created_at DESC LIMIT ?", limit);
+      return rows.map(mapDecision);
+    } catch (err) {
+      if (isMissingSchemaError(err)) return [];
+      throw err;
+    }
+  }
+  async getDecision(id) {
+    if (!this.#d1) return null;
+    await this.init();
+    try {
+      const row = await this.#d1.prepare("SELECT * FROM ai_decisions WHERE id = ?").bind(String(id)).first();
+      return row ? mapDecision(row) : null;
+    } catch (err) {
+      if (isMissingSchemaError(err)) return null;
+      throw err;
+    }
+  }
+  async decisionStats(nowMs = Date.now()) {
+    if (!this.#d1) return { total: 0, resolved: 0 };
+    const row = await this.#d1.prepare(
+      `SELECT COUNT(*) AS total, SUM(CASE WHEN outcome_json IS NOT NULL THEN 1 ELSE 0 END) AS resolved
+       FROM ai_decisions`
+    ).first();
+    return { total: asInt(row?.total), resolved: asInt(row?.resolved) };
+  }
+  /* ── approvals ──────────────────────────────────────────────────────────── */
+  async createApproval(entry = {}, nowMs = Date.now()) {
+    if (!this.#d1) return { stored: false };
+    await this.init();
+    const now = asInt(nowMs, Date.now());
+    const id = String(entry.id || makeId("apr", now, entry.kind, entry.actor));
+    await this.#d1.prepare(
+      `INSERT INTO ai_approvals (id, kind, payload_json, status, actor, note, created_at, decided_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    ).bind(
+      id,
+      String(entry.kind || "unknown"),
+      entry.payload !== void 0 ? JSON.stringify(entry.payload) : null,
+      String(entry.status || "pending"),
+      entry.actor ? String(entry.actor) : null,
+      entry.note ? String(entry.note) : null,
+      now,
+      entry.status && entry.status !== "pending" ? now : null
+    ).run();
+    return { stored: true, id };
+  }
+  async getApproval(id) {
+    if (!this.#d1) return null;
+    await this.init();
+    try {
+      const row = await this.#d1.prepare("SELECT * FROM ai_approvals WHERE id = ?").bind(String(id)).first();
+      return row ? mapApproval(row) : null;
+    } catch (err) {
+      if (isMissingSchemaError(err)) return null;
+      throw err;
+    }
+  }
+  async decideApproval(id, status, actor, options = {}, nowMs = Date.now()) {
+    if (!this.#d1) return { stored: false };
+    await this.init();
+    if (!["approved", "rejected", "modified"].includes(status)) return { stored: false, reason: "bad-status" };
+    if (!actor) return { stored: false, reason: "actor-required" };
+    const now = asInt(nowMs, Date.now());
+    const res = await this.#d1.prepare(
+      `UPDATE ai_approvals
+       SET status = ?, actor = ?, note = COALESCE(?, note), payload_json = COALESCE(?, payload_json), decided_at = ?
+       WHERE id = ?`
+    ).bind(
+      status,
+      String(actor),
+      options.note ? String(options.note) : null,
+      options.payload !== void 0 ? JSON.stringify(options.payload) : null,
+      now,
+      String(id)
+    ).run();
+    return { stored: asInt(res?.meta?.changes) > 0, id };
+  }
+  async listApprovals(options = {}) {
+    if (!this.#d1) return [];
+    await this.init();
+    const limit = Math.min(asInt(options.limit, 100), 500);
+    try {
+      const rows = options.status ? await this.#readAll("SELECT * FROM ai_approvals WHERE status = ? ORDER BY created_at DESC LIMIT ?", String(options.status), limit) : await this.#readAll("SELECT * FROM ai_approvals ORDER BY created_at DESC LIMIT ?", limit);
+      return rows.map(mapApproval);
+    } catch (err) {
+      if (isMissingSchemaError(err)) return [];
+      throw err;
+    }
+  }
+  /* ── experiments ────────────────────────────────────────────────────────── */
+  async recordExperiment(entry = {}, nowMs = Date.now()) {
+    if (!this.#d1) return { stored: false };
+    await this.init();
+    const now = asInt(nowMs, Date.now());
+    const id = String(entry.id || makeId("exp", now, entry.experiment, entry.variant, entry.studentId));
+    await this.#d1.prepare(
+      `INSERT INTO ai_experiments (id, experiment, variant, student_id, shown_at, opened_at, clicked_at, converted_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         opened_at = COALESCE(excluded.opened_at, opened_at),
+         clicked_at = COALESCE(excluded.clicked_at, clicked_at),
+         converted_at = COALESCE(excluded.converted_at, converted_at)`
+    ).bind(
+      id,
+      String(entry.experiment || "unknown"),
+      String(entry.variant || "A"),
+      entry.studentId ? String(entry.studentId) : null,
+      now,
+      entry.opened ? now : null,
+      entry.clicked ? now : null,
+      entry.converted ? now : null
+    ).run();
+    return { stored: true, id };
+  }
+  async experimentResults(experiment) {
+    if (!this.#d1) return [];
+    await this.init();
+    try {
+      const rows = await this.#readAll(
+        `SELECT variant,
+                COUNT(*) AS shown,
+                SUM(CASE WHEN opened_at IS NOT NULL THEN 1 ELSE 0 END) AS opened,
+                SUM(CASE WHEN clicked_at IS NOT NULL THEN 1 ELSE 0 END) AS clicked,
+                SUM(CASE WHEN converted_at IS NOT NULL THEN 1 ELSE 0 END) AS converted
+         FROM ai_experiments WHERE experiment = ? GROUP BY variant`,
+        String(experiment)
+      );
+      return rows.map((r) => ({
+        variant: r.variant,
+        shown: asInt(r.shown),
+        opened: asInt(r.opened),
+        clicked: asInt(r.clicked),
+        converted: asInt(r.converted),
+        openRate: asInt(r.shown) ? Number((asInt(r.opened) / asInt(r.shown)).toFixed(4)) : 0,
+        clickRate: asInt(r.shown) ? Number((asInt(r.clicked) / asInt(r.shown)).toFixed(4)) : 0,
+        conversionRate: asInt(r.shown) ? Number((asInt(r.converted) / asInt(r.shown)).toFixed(4)) : 0
+      }));
+    } catch (err) {
+      if (isMissingSchemaError(err)) return [];
+      throw err;
+    }
+  }
+  /* ── student activity hours ─────────────────────────────────────────────── */
+  /* Only the timestamp column is read. The AI best-time layer needs *when* a
+   * student studied, not *what* they did, so it never pulls event names or
+   * params into the intelligence path. Reads `analytics_events`, which Phase 4
+   * owns; a database that has not been through a Phase 4 ingest yet returns
+   * empty rather than throwing. */
+  async analyticsEventsFor(userId, sinceMs, limit = 2e3) {
+    if (!this.#d1) return [];
+    try {
+      const rows = await this.#d1.prepare(
+        "SELECT at FROM analytics_events WHERE user_id = ? AND at >= ? ORDER BY at ASC LIMIT ?"
+      ).bind(String(userId), asInt(sinceMs), Math.min(asInt(limit, 2e3), 5e3)).all();
+      return (rows?.results || []).map((r) => ({ at: asInt(r.at) }));
+    } catch (err) {
+      if (isMissingSchemaError(err)) return [];
+      throw err;
+    }
+  }
+  /* ── monitoring ─────────────────────────────────────────────────────────── */
+  /* One call the health route uses. Fail-soft per section so a single missing
+   * table cannot make the whole health check look down. */
+  async health(nowMs = Date.now()) {
+    if (!this.#d1) return { available: false };
+    try {
+      await this.init();
+    } catch (err) {
+      return { available: false, schemaError: String(err?.message || err) };
+    }
+    const [cache, decisions, approvals] = await Promise.all([
+      this.cacheStats(nowMs).catch(() => ({ total: 0, live: 0, expired: 0 })),
+      this.decisionStats(nowMs).catch(() => ({ total: 0, resolved: 0 })),
+      this.listApprovals({ status: "pending", limit: 1 }).catch(() => [])
+    ]);
+    return {
+      available: true,
+      version: AI_STORE_VERSION,
+      cache,
+      decisions,
+      pendingApprovals: Array.isArray(approvals) ? approvals.length : 0
+    };
+  }
+  /* ── internals ──────────────────────────────────────────────────────────── */
+  async #readAll(sql, ...bindings) {
+    try {
+      const res = await this.#d1.prepare(sql).bind(...bindings).all();
+      return res?.results || [];
+    } catch (err) {
+      if (isMissingSchemaError(err)) return [];
+      throw err;
+    }
+  }
+};
+function mapDecision(row) {
+  return {
+    id: row.id,
+    studentId: row.student_id || null,
+    signal: row.signal,
+    recommendation: row.recommendation,
+    reason: row.reason || null,
+    model: row.model || null,
+    modelVersion: row.model_version || null,
+    confidence: row.confidence === null || row.confidence === void 0 ? null : Number(row.confidence),
+    actionTaken: row.action_taken || null,
+    outcome: row.outcome_json ? safeParse(row.outcome_json) : null,
+    latencyMs: row.latency_ms === null || row.latency_ms === void 0 ? null : Number(row.latency_ms),
+    costUsd: row.cost_usd === null || row.cost_usd === void 0 ? null : Number(row.cost_usd),
+    createdAt: asInt(row.created_at),
+    resolvedAt: row.resolved_at === null || row.resolved_at === void 0 ? null : asInt(row.resolved_at)
+  };
+}
+function mapApproval(row) {
+  return {
+    id: row.id,
+    kind: row.kind,
+    payload: row.payload_json ? safeParse(row.payload_json) : null,
+    status: row.status,
+    actor: row.actor || null,
+    note: row.note || null,
+    createdAt: asInt(row.created_at),
+    decidedAt: row.decided_at === null || row.decided_at === void 0 ? null : asInt(row.decided_at)
+  };
+}
+function makeId(prefix, ts, ...parts) {
+  const seed = `${prefix}|${ts}|${parts.filter(Boolean).join("|")}`;
+  let h = 2166136261;
+  for (let i = 0; i < seed.length; i++) {
+    h ^= seed.charCodeAt(i);
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  return `${prefix}_${ts.toString(36)}_${h.toString(36)}`;
+}
+function safeParse(text) {
+  try {
+    return JSON.parse(text);
+  } catch (_) {
+    return null;
+  }
+}
+var __aiStoreTest = Object.freeze({ makeId, mapDecision, mapApproval, isMissingSchemaError, nowIso });
+
+// ai-chat-cache.mjs
+var BN_DIGITS = { "০": "0", "১": "1", "২": "2", "৩": "3", "৪": "4", "৫": "5", "৬": "6", "৭": "7", "৮": "8", "৯": "9" };
+var CACHEABLE_INTENTS = Object.freeze(["ACADEMIC_EXPLAIN", "GENERAL_CHAT", "SEARCH_REQUEST"]);
+var CHAT_CACHE_VERSION = "chat-cache-v1";
+var CHAT_CACHE_TTL_MS = Object.freeze({
+  ACADEMIC_EXPLAIN: 24 * 3600 * 1e3,
+  GENERAL_CHAT: 24 * 3600 * 1e3,
+  SEARCH_REQUEST: 6 * 3600 * 1e3
+});
+function chatCacheEnabled(env) {
+  const v = String(env && env.AI_CHAT_CACHE || "").trim().toLowerCase();
+  return v !== "off" && v !== "disabled" && v !== "false" && v !== "0";
+}
+function normaliseQuestion(text) {
+  return String(text == null ? "" : text).replace(/[০-৯]/g, (d) => BN_DIGITS[d] || d).replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().toLowerCase();
+}
+function isCacheableRequest(input = {}) {
+  const {
+    messages,
+    hasImage,
+    quizMode,
+    onboarding,
+    memoryText,
+    summaryText,
+    ctxText,
+    stats,
+    intent
+  } = input;
+  if (hasImage) return false;
+  if (quizMode) return false;
+  if (onboarding) return false;
+  if (!Array.isArray(messages) || messages.length !== 1) return false;
+  if (messages[0] && messages[0].role !== "user") return false;
+  if (!normaliseQuestion(messages[0] && messages[0].content)) return false;
+  if (memoryText || summaryText || ctxText || stats) return false;
+  return CACHEABLE_INTENTS.includes(String(intent || ""));
+}
+async function chatCacheKey({ question, intent, promptVersion, agentVersion }) {
+  const material = [
+    CHAT_CACHE_VERSION,
+    normaliseQuestion(question),
+    String(intent || ""),
+    String(promptVersion || ""),
+    String(agentVersion || "")
+  ].join("");
+  return "chat:" + await digest(material);
+}
+async function digest(text) {
+  const data = new TextEncoder().encode(text);
+  if (globalThis.crypto?.subtle) {
+    const hash = await globalThis.crypto.subtle.digest("SHA-256", data);
+    return [...new Uint8Array(hash)].slice(0, 16).map((b) => b.toString(16).padStart(2, "0")).join("");
+  }
+  let h = 2166136261;
+  for (const b of data) {
+    h ^= b;
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  return h.toString(36);
+}
+function chatCacheTtl(intent) {
+  return CHAT_CACHE_TTL_MS[String(intent || "")] ?? CHAT_CACHE_TTL_MS.GENERAL_CHAT;
+}
+var __chatCacheTest = Object.freeze({ digest, BN_DIGITS });
+
 // ai-agent.js
 var AGENT_VERSION = "agent-f1";
 var SYSTEM_PROMPT_V = "sys-f1-3-ai-personalization";
@@ -2225,6 +2730,42 @@ async function agentChat(request, env, uid, opts = {}) {
   const formatRules = !quizMode && !onboarding ? RESPONSE_FORMAT_RULES : "";
   const sys = [systemPrompt, formatRules, ctxText, memoryText, summaryText].filter(Boolean).join("\n\n");
   const hasImage = msgs.some((m) => m.image);
+  const chatCacheOn = chatCacheEnabled(env) && env && env.PROFILE_DB;
+  const cacheQuestion = (v.messages[v.messages.length - 1] || {}).content;
+  const cacheable = chatCacheOn && isCacheableRequest({
+    messages: v.messages,
+    hasImage,
+    quizMode,
+    onboarding,
+    memoryText,
+    summaryText,
+    ctxText,
+    stats,
+    intent
+  });
+  let chatStore = null;
+  let cacheKey = "";
+  if (cacheable) {
+    try {
+      chatStore = new AiAnalyticsStore(env.PROFILE_DB);
+      cacheKey = await chatCacheKey({
+        question: cacheQuestion,
+        intent,
+        promptVersion: SYSTEM_PROMPT_V,
+        agentVersion: AGENT_VERSION
+      });
+      const hit = await chatStore.getCache(cacheKey);
+      if (hit && hit.payload && typeof hit.payload.text === "string") {
+        const cachedText = hit.payload.text;
+        const cachedModel = hit.payload.model || hit.model || "";
+        if (!stream) {
+          return jsonResp({ text: cachedText, structured: hit.payload.structured ?? null, model: cachedModel || null, intent, cached: true, pv: SYSTEM_PROMPT_V, latencyMs: Date.now() - startedAt, agent: AGENT_VERSION });
+        }
+        return sseCached(cachedText, intent, startedAt, cachedModel);
+      }
+    } catch (_) {
+    }
+  }
   const partsOf = (m) => {
     const p = [{ text: m.content }];
     if (m.image) {
@@ -2325,6 +2866,11 @@ async function agentChat(request, env, uid, opts = {}) {
         if (raw) {
           const check = validateResponse(raw, validationCtx);
           await finalize(c.model, c.provider, raw);
+          if (cacheable && chatStore) {
+            const toStore = check.text || raw;
+            Promise.resolve().then(() => chatStore.putCache(cacheKey, "summary", { text: toStore, structured: check.structured ?? null, model: c.model, intent }, { ttlMs: chatCacheTtl(intent), model: c.model })).catch(() => {
+            });
+          }
           emitTrace({ provider: c.provider, model: c.model, text: raw, responseType: check.structured?.type, validated: !check.enforced });
           return jsonResp({ text: check.text, structured: check.structured, model: c.model, intent, pv: SYSTEM_PROMPT_V, latencyMs: Date.now() - startedAt, agent: AGENT_VERSION });
         }
@@ -2389,6 +2935,11 @@ data: ${JSON.stringify({ stage: id, label })}
 data: ${JSON.stringify({ text: check.text })}
 
 `);
+              if (cacheable && chatStore) {
+                const toStore = check.text || full;
+                Promise.resolve().then(() => chatStore.putCache(cacheKey, "summary", { text: toStore, structured: check.structured ?? null, model: c.model, intent }, { ttlMs: chatCacheTtl(intent), model: c.model })).catch(() => {
+                });
+              }
               emitTrace({ provider: c.provider, model: c.model, text: full, responseType: check.structured?.type, validated: !check.enforced });
               push(`event: done
 data: ${JSON.stringify({ model: c.model, provider: c.provider, intent, quiz: quizMode, pv: SYSTEM_PROMPT_V, agent: AGENT_VERSION, latencyMs: Date.now() - startedAt, structured: check.structured })}
@@ -2485,6 +3036,30 @@ data: ${JSON.stringify(msg)}
       controller.close();
     }
   }), { status, headers: { "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-cache", "Access-Control-Allow-Origin": "*" } });
+}
+function sseCached(text, intent, startedAt, model) {
+  const enc = new TextEncoder();
+  return new Response(new ReadableStream({
+    start(controller) {
+      const push = (s) => {
+        try {
+          controller.enqueue(enc.encode(s));
+        } catch (_) {
+        }
+      };
+      push(`data: ${JSON.stringify({ text })}
+
+`);
+      push(`event: done
+data: ${JSON.stringify({ model: model || null, provider: "cache", intent, cached: true, pv: SYSTEM_PROMPT_V, agent: AGENT_VERSION, latencyMs: Date.now() - startedAt })}
+
+`);
+      try {
+        controller.close();
+      } catch (_) {
+      }
+    }
+  }), { status: 200, headers: { "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-cache", "Access-Control-Allow-Origin": "*" } });
 }
 
 // p14-abuse-guard.mjs
@@ -10743,7 +11318,7 @@ var __publicAuthTest = Object.freeze({
 });
 
 // analytics-notifications.mjs
-var asInt = (v, fallback = 0) => {
+var asInt2 = (v, fallback = 0) => {
   const n = Number(v);
   return Number.isFinite(n) ? n : fallback;
 };
@@ -10759,9 +11334,9 @@ function computeAnalytics(rows = [], readCounts = {}, inactiveDevices = 0) {
     const status = String(row?.status || "");
     const wasSent = status === "sent";
     const didFail = status === "failed";
-    const reach = Math.max(0, asInt(row?.delivered, 0));
-    const clicks = Math.max(0, asInt(row?.clicks, 0));
-    const reads = Math.max(0, asInt(readCounts[String(row?.id)], 0));
+    const reach = Math.max(0, asInt2(row?.delivered, 0));
+    const clicks = Math.max(0, asInt2(row?.clicks, 0));
+    const reads = Math.max(0, asInt2(readCounts[String(row?.id)], 0));
     if (wasSent) sent += 1;
     if (didFail) failed += 1;
     delivered += reach;
@@ -10773,8 +11348,8 @@ function computeAnalytics(rows = [], readCounts = {}, inactiveDevices = 0) {
       type: String(row?.type || ""),
       status,
       audience: String(row?.audience || ""),
-      sentAt: row?.sentAt ? asInt(row.sentAt) : null,
-      reachEstimate: row?.reachEstimate == null ? null : asInt(row.reachEstimate, null),
+      sentAt: row?.sentAt ? asInt2(row.sentAt) : null,
+      reachEstimate: row?.reachEstimate == null ? null : asInt2(row.reachEstimate, null),
       delivered: reach,
       opened: reads,
       clicked: clicks,
@@ -10793,7 +11368,7 @@ function computeAnalytics(rows = [], readCounts = {}, inactiveDevices = 0) {
       clicked,
       /* Dead tokens are a health signal, not a send failure: they are the
        * registrations FCM rejected and the worker already deactivated. */
-      invalidTokens: Math.max(0, asInt(inactiveDevices, 0)),
+      invalidTokens: Math.max(0, asInt2(inactiveDevices, 0)),
       ctr: pct(clicked, delivered),
       engagement: pct(opened, delivered)
     },
@@ -10851,31 +11426,31 @@ var AnalyticsStore = class {
        GROUP BY notification_id`
     ).bind(...ids).all();
     const out = {};
-    for (const row of res?.results || []) out[String(row.notification_id)] = asInt(row.n, 0);
+    for (const row of res?.results || []) out[String(row.notification_id)] = asInt2(row.n, 0);
     return out;
   }
   /* Registrations FCM has told us are dead and the worker deactivated. */
   async inactiveDeviceCount() {
     await this.init();
     const row = await this.#d1.prepare("SELECT COUNT(*) AS n FROM fcm_devices WHERE is_active=0").first();
-    return asInt(row?.n, 0);
+    return asInt2(row?.n, 0);
   }
 };
 var __analyticsTest = Object.freeze({ computeAnalytics, summarizeHistory, pct });
 
 // send-planner.mjs
 var clamp3 = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
-var asInt2 = (v, fallback = 0) => {
+var asInt3 = (v, fallback = 0) => {
   const n = Number(v);
   return Number.isFinite(n) ? Math.trunc(n) : fallback;
 };
 var DEFAULT_WINDOW_BUDGET = 400;
 var DEFAULT_CONCURRENCY = 10;
 function planFanout(total, { budget = DEFAULT_WINDOW_BUDGET, cursor = 0 } = {}) {
-  const size = Math.max(0, asInt2(total));
-  const budgetRaw = asInt2(budget, DEFAULT_WINDOW_BUDGET);
+  const size = Math.max(0, asInt3(total));
+  const budgetRaw = asInt3(budget, DEFAULT_WINDOW_BUDGET);
   const limit = budgetRaw > 0 ? budgetRaw : DEFAULT_WINDOW_BUDGET;
-  const start = clamp3(asInt2(cursor), 0, size);
+  const start = clamp3(asInt3(cursor), 0, size);
   const take = Math.min(limit, size - start);
   return {
     start,
@@ -10887,9 +11462,9 @@ function planFanout(total, { budget = DEFAULT_WINDOW_BUDGET, cursor = 0 } = {}) 
   };
 }
 function backoffMs(attempt, { base = 250, cap = 3e4, jitter = 0 } = {}) {
-  const n = Math.max(1, asInt2(attempt, 1));
-  const raw = Math.min(Math.max(1, asInt2(cap, 3e4)), Math.max(1, asInt2(base, 250)) * 2 ** (n - 1));
-  const j = jitter > 0 ? Math.floor(Math.random() * Math.max(1, asInt2(jitter))) : 0;
+  const n = Math.max(1, asInt3(attempt, 1));
+  const raw = Math.min(Math.max(1, asInt3(cap, 3e4)), Math.max(1, asInt3(base, 250)) * 2 ** (n - 1));
+  const j = jitter > 0 ? Math.floor(Math.random() * Math.max(1, asInt3(jitter))) : 0;
   return raw + j;
 }
 function isRetryable(reason2) {
@@ -10898,12 +11473,12 @@ function isRetryable(reason2) {
 }
 function retryDecision({ reason: reason2, attempt, maxAttempts = 4 }) {
   if (!isRetryable(reason2)) return { retry: false, waitMs: 0 };
-  if (asInt2(attempt, 1) >= Math.max(1, asInt2(maxAttempts, 4))) return { retry: false, waitMs: 0 };
-  return { retry: true, waitMs: backoffMs(asInt2(attempt, 1)) };
+  if (asInt3(attempt, 1) >= Math.max(1, asInt3(maxAttempts, 4))) return { retry: false, waitMs: 0 };
+  return { retry: true, waitMs: backoffMs(asInt3(attempt, 1)) };
 }
 function classifyFcmError(status, code) {
-  const s = asInt2(status, 0);
-  const c = code == null ? s : asInt2(code, 0);
+  const s = asInt3(status, 0);
+  const c = code == null ? s : asInt3(code, 0);
   const n = c || s;
   if (n === 429) return "rate-limited";
   if (n === 503 || n === 500 || n === 502 || n === 504) return "unavailable";
@@ -10919,7 +11494,7 @@ var TIMING_DEFAULTS = Object.freeze({
 function hourHistogram(events = []) {
   const hist = Array.from({ length: 24 }, () => ({ sent: 0, opened: 0 }));
   for (const e of events) {
-    const h = asInt2(e?.hour, -1);
+    const h = asInt3(e?.hour, -1);
     if (h < 0 || h > 23) continue;
     hist[h].sent += 1;
     if (e?.opened) hist[h].opened += 1;
@@ -10936,9 +11511,9 @@ function scoreHours(events = []) {
   return weights.map((w) => Math.round((floor + (1 - floor) * (peak > 0 ? w / peak : 0)) * 1e3) / 1e3);
 }
 function bestSendHour(events = [], opts = {}) {
-  const minSamples = Math.max(1, asInt2(opts.min_samples, TIMING_DEFAULTS.min_samples));
-  const defaultHour = clamp3(asInt2(opts.default_hour, TIMING_DEFAULTS.default_hour), 0, 23);
-  const usable = events.filter((e) => asInt2(e?.hour, -1) >= 0 && asInt2(e?.hour, -1) <= 23);
+  const minSamples = Math.max(1, asInt3(opts.min_samples, TIMING_DEFAULTS.min_samples));
+  const defaultHour = clamp3(asInt3(opts.default_hour, TIMING_DEFAULTS.default_hour), 0, 23);
+  const usable = events.filter((e) => asInt3(e?.hour, -1) >= 0 && asInt3(e?.hour, -1) <= 23);
   if (usable.length < minSamples) {
     return { hour: defaultHour, score: TIMING_DEFAULTS.floor, confident: false, samples: usable.length };
   }
@@ -10977,7 +11552,7 @@ var FanoutStore = class {
   async getState(id) {
     await this.init();
     const row = await this.#d1.prepare("SELECT * FROM notification_fanout WHERE id=?").bind(id).first();
-    return row ? { id: row.id, cursor: asInt2(row.cursor), total: asInt2(row.total), status: String(row.status) } : null;
+    return row ? { id: row.id, cursor: asInt3(row.cursor), total: asInt3(row.total), status: String(row.status) } : null;
   }
   async saveState(id, { cursor, total, status }, now = Date.now()) {
     await this.init();
@@ -10985,7 +11560,7 @@ var FanoutStore = class {
       `INSERT INTO notification_fanout(id, cursor, total, status, updated_at) VALUES (?,?,?,?,?)
        ON CONFLICT(id) DO UPDATE SET cursor=excluded.cursor, total=excluded.total,
          status=excluded.status, updated_at=excluded.updated_at`
-    ).bind(id, asInt2(cursor), asInt2(total), String(status), now).run();
+    ).bind(id, asInt3(cursor), asInt3(total), String(status), now).run();
   }
 };
 async function advanceFanout(store, id, total, opts = {}) {
@@ -11051,8 +11626,8 @@ var randomToken2 = (bytes = 32) => {
   return bytesToBase64Url3(value);
 };
 var sha256Hex2 = async (value) => {
-  const digest2 = await crypto.subtle.digest("SHA-256", encoder5.encode(String(value)));
-  return [...new Uint8Array(digest2)].map((b) => b.toString(16).padStart(2, "0")).join("");
+  const digest3 = await crypto.subtle.digest("SHA-256", encoder5.encode(String(value)));
+  return [...new Uint8Array(digest3)].map((b) => b.toString(16).padStart(2, "0")).join("");
 };
 var sessionKey = async (env) => {
   const secret = String(env?.ADMIN_TOKEN || "");
@@ -11299,8 +11874,8 @@ var b64u = (bytes) => {
   return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 };
 var sha256Hex3 = async (value) => {
-  const digest2 = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(String(value)));
-  return [...new Uint8Array(digest2)].map((b) => b.toString(16).padStart(2, "0")).join("");
+  const digest3 = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(String(value)));
+  return [...new Uint8Array(digest3)].map((b) => b.toString(16).padStart(2, "0")).join("");
 };
 var readSessionToken = (request) => {
   const cookie = String(request.headers.get("Cookie") || "");
@@ -12793,7 +13368,7 @@ var UserDataStore = class {
       const id = String(r.id);
       let doc = null;
       if (r.deleted_at == null) {
-        doc = safeParse(r.payload_json);
+        doc = safeParse2(r.payload_json);
         doc = await this.#rehydrate(userId, store, id, doc, r);
       }
       items.push({
@@ -12895,7 +13470,7 @@ var UserDataStore = class {
     }
   }
 };
-function safeParse(value) {
+function safeParse2(value) {
   try {
     const parsed = JSON.parse(String(value));
     return parsed && typeof parsed === "object" ? parsed : null;
@@ -13459,16 +14034,16 @@ function inSendWindow2(hour, prefs = {}) {
   return hour >= after && hour < before;
 }
 var dayDiff2 = (a, b) => Math.round((Date.parse(a + "T00:00:00Z") - Date.parse(b + "T00:00:00Z")) / DAY_MS2);
-var asInt3 = (v, fallback = 0) => Number.isFinite(Number(v)) ? Number(v) : fallback;
+var asInt4 = (v, fallback = 0) => Number.isFinite(Number(v)) ? Number(v) : fallback;
 var rate = (part, whole) => whole > 0 ? part / whole : 0;
 function computeSignals(state = {}, nowMs = Date.now(), tzOffsetMin = DEFAULT_TZ_OFFSET_MIN) {
   const { date: today } = localParts(nowMs, tzOffsetMin);
-  const stats = (Array.isArray(state.dailyStats) ? state.dailyStats : []).map((s) => ({ day: String(s?.day || ""), questions: asInt3(s?.questions), correct: asInt3(s?.correct), lessons: asInt3(s?.lessons) })).filter((s) => s.day);
+  const stats = (Array.isArray(state.dailyStats) ? state.dailyStats : []).map((s) => ({ day: String(s?.day || ""), questions: asInt4(s?.questions), correct: asInt4(s?.correct), lessons: asInt4(s?.lessons) })).filter((s) => s.day);
   const byDay = new Map(stats.map((s) => [s.day, s]));
-  const questionsToday = asInt3(byDay.get(today)?.questions);
-  const lessonsToday = asInt3(byDay.get(today)?.lessons);
+  const questionsToday = asInt4(byDay.get(today)?.questions);
+  const lessonsToday = asInt4(byDay.get(today)?.lessons);
   const dayAt = (offset) => new Date(Date.parse(today + "T00:00:00Z") - offset * DAY_MS2).toISOString().slice(0, 10);
-  const active = (d) => asInt3(byDay.get(d)?.questions) > 0 || asInt3(byDay.get(d)?.lessons) > 0;
+  const active = (d) => asInt4(byDay.get(d)?.questions) > 0 || asInt4(byDay.get(d)?.lessons) > 0;
   let streak = 0;
   let cursor = active(today) ? 0 : 1;
   if (active(dayAt(cursor))) while (active(dayAt(cursor))) {
@@ -13476,7 +14051,7 @@ function computeSignals(state = {}, nowMs = Date.now(), tzOffsetMin = DEFAULT_TZ
     cursor += 1;
   }
   const lastActiveDay = [...byDay.keys()].filter(active).sort().pop() || "";
-  const lastActiveAt = asInt3(state.activityAt) || (lastActiveDay ? Date.parse(lastActiveDay + "T12:00:00Z") : 0);
+  const lastActiveAt = asInt4(state.activityAt) || (lastActiveDay ? Date.parse(lastActiveDay + "T12:00:00Z") : 0);
   const daysSinceActive = lastActiveDay ? Math.max(0, dayDiff2(today, lastActiveDay)) : null;
   const window7 = stats.filter((s) => {
     const d = dayDiff2(today, s.day);
@@ -13485,23 +14060,23 @@ function computeSignals(state = {}, nowMs = Date.now(), tzOffsetMin = DEFAULT_TZ
   const questions7 = window7.reduce((n, s) => n + s.questions, 0);
   const correct7 = window7.reduce((n, s) => n + s.correct, 0);
   const activeDays7 = window7.filter((s) => s.questions > 0 || s.lessons > 0).length;
-  const exams = (Array.isArray(state.examScores) ? state.examScores : []).map((e) => ({ id: String(e?.id || ""), score: asInt3(e?.score, NaN), at: asInt3(e?.at) })).filter((e) => Number.isFinite(e.score));
+  const exams = (Array.isArray(state.examScores) ? state.examScores : []).map((e) => ({ id: String(e?.id || ""), score: asInt4(e?.score, NaN), at: asInt4(e?.at) })).filter((e) => Number.isFinite(e.score));
   const recentExam = exams.slice().sort((a, b) => b.at - a.at)[0] || null;
   const mistakes = state.mistakes || {};
-  const pending = asInt3(mistakes.pending);
-  const mastered = asInt3(mistakes.mastered);
-  const topics = (Array.isArray(mistakes.topics) ? mistakes.topics : []).map((t) => ({ topic: String(t?.topic || ""), misses: asInt3(t?.misses) })).filter((t) => t.topic && t.misses > 0).sort((a, b) => b.misses - a.misses);
+  const pending = asInt4(mistakes.pending);
+  const mastered = asInt4(mistakes.mastered);
+  const topics = (Array.isArray(mistakes.topics) ? mistakes.topics : []).map((t) => ({ topic: String(t?.topic || ""), misses: asInt4(t?.misses) })).filter((t) => t.topic && t.misses > 0).sort((a, b) => b.misses - a.misses);
   const courses = (Array.isArray(state.courses) ? state.courses : []).map((c) => {
-    const total = asInt3(c?.lessonsTotal);
-    const done = Math.min(asInt3(c?.lessonsDone), total || asInt3(c?.lessonsDone));
+    const total = asInt4(c?.lessonsTotal);
+    const done = Math.min(asInt4(c?.lessonsDone), total || asInt4(c?.lessonsDone));
     return { id: String(c?.id || ""), lessonsTotal: total, lessonsDone: done, percent: total > 0 ? Math.round(done / total * 100) : 0 };
   }).filter((c) => c.id && c.lessonsTotal > 0);
   const history = (Array.isArray(state.history) ? state.history : []).map((h) => ({
     key: String(h?.key || ""),
     kind: String(h?.kind || ""),
-    sentAt: asInt3(h?.sentAt),
-    openedAt: asInt3(h?.openedAt),
-    clickedAt: asInt3(h?.clickedAt)
+    sentAt: asInt4(h?.sentAt),
+    openedAt: asInt4(h?.openedAt),
+    clickedAt: asInt4(h?.clickedAt)
   })).filter((h) => h.sentAt);
   const recentNotifs = history.filter((h) => nowMs - h.sentAt <= DEFAULTS4.fatigue_window_days * DAY_MS2);
   const openedNotifs = recentNotifs.filter((h) => h.openedAt).length;
@@ -13593,7 +14168,7 @@ function buildCandidates(signals = {}, ctx = {}) {
   const s = signals;
   const out = [];
   const today = s.today;
-  const hour = asInt3(ctx.hour, 0);
+  const hour = asInt4(ctx.hour, 0);
   if (s.streakRisk && s.streak >= 2 && hour >= DEFAULTS4.streak_risk_hour) {
     out.push({ kind: "streak-risk", key: `streak-risk:${today}:${s.streak}`, value: s.streak, link: "dashboard", reason: `streak ${s.streak}, nothing today` });
   }
@@ -13638,16 +14213,16 @@ function rankCandidates(candidates = []) {
     const pa = KIND_META[a.kind]?.priority ?? 0;
     const pb = KIND_META[b.kind]?.priority ?? 0;
     if (pb !== pa) return pb - pa;
-    const va = asInt3(a.value), vb = asInt3(b.value);
+    const va = asInt4(a.value), vb = asInt4(b.value);
     if (typeof a.value === "number" && typeof b.value === "number" && vb !== va) return vb - va;
     return (order.get(a.kind) ?? 99) - (order.get(b.kind) ?? 99);
   });
 }
 function detectFatigue(history = [], nowMs = Date.now(), opts = {}) {
-  const windowDays = asInt3(opts.windowDays, DEFAULTS4.fatigue_window_days);
-  const minSent = asInt3(opts.minSent, DEFAULTS4.fatigue_min_sent);
+  const windowDays = asInt4(opts.windowDays, DEFAULTS4.fatigue_window_days);
+  const minSent = asInt4(opts.minSent, DEFAULTS4.fatigue_min_sent);
   const threshold = Number.isFinite(Number(opts.openRate)) ? Number(opts.openRate) : DEFAULTS4.fatigue_open_rate;
-  const recent = (Array.isArray(history) ? history : []).map((h) => ({ sentAt: asInt3(h?.sentAt), openedAt: asInt3(h?.openedAt), clickedAt: asInt3(h?.clickedAt) })).filter((h) => h.sentAt && nowMs - h.sentAt <= windowDays * DAY_MS2);
+  const recent = (Array.isArray(history) ? history : []).map((h) => ({ sentAt: asInt4(h?.sentAt), openedAt: asInt4(h?.openedAt), clickedAt: asInt4(h?.clickedAt) })).filter((h) => h.sentAt && nowMs - h.sentAt <= windowDays * DAY_MS2);
   const sent = recent.length;
   const opened = recent.filter((h) => h.openedAt).length;
   const clicked = recent.filter((h) => h.clickedAt).length;
@@ -13665,21 +14240,21 @@ function detectFatigue(history = [], nowMs = Date.now(), opts = {}) {
   };
 }
 function effectiveCap(prefs = {}, fatigue = {}) {
-  const base = asInt3(prefs.max_per_day, DEFAULTS4.max_per_day);
+  const base = asInt4(prefs.max_per_day, DEFAULTS4.max_per_day);
   if (!fatigue?.fatigued) return base;
-  return Math.max(0, base - 1 + asInt3(prefs.fatigue_max_extra_cap, DEFAULTS4.fatigue_max_extra_cap));
+  return Math.max(0, base - 1 + asInt4(prefs.fatigue_max_extra_cap, DEFAULTS4.fatigue_max_extra_cap));
 }
 function checkFrequency({ prefs = {}, fatigue = {}, sendsToday = 0, categorySends = 0, lastSentAt = 0, nowMs = Date.now(), isCelebration = false }) {
   const cap = effectiveCap(prefs, fatigue);
-  const cooldownMs = asInt3(prefs.cooldown_hours, DEFAULTS4.cooldown_hours) * 3600 * 1e3;
+  const cooldownMs = asInt4(prefs.cooldown_hours, DEFAULTS4.cooldown_hours) * 3600 * 1e3;
   if (fatigue?.fatigued && !isCelebration) return { allowed: false, stage: "fatigue", reason: "fatigued" };
   if (sendsToday >= cap) {
     if (isCelebration && fatigue?.fatigued) return { allowed: true, stage: "fatigue", reason: "celebration-exempt" };
     return { allowed: false, stage: "daily-limit", reason: `cap ${cap}` };
   }
-  const categoryCap = asInt3(prefs.max_per_category_per_day, DEFAULTS4.max_per_category_per_day);
+  const categoryCap = asInt4(prefs.max_per_category_per_day, DEFAULTS4.max_per_category_per_day);
   if (categorySends >= categoryCap) return { allowed: false, stage: "category-limit", reason: `category cap ${categoryCap}` };
-  if (lastSentAt && nowMs - lastSentAt < cooldownMs) return { allowed: false, stage: "cooldown", reason: `cooldown ${asInt3(prefs.cooldown_hours, DEFAULTS4.cooldown_hours)}h` };
+  if (lastSentAt && nowMs - lastSentAt < cooldownMs) return { allowed: false, stage: "cooldown", reason: `cooldown ${asInt4(prefs.cooldown_hours, DEFAULTS4.cooldown_hours)}h` };
   return { allowed: true, stage: "ok", reason: "within-limits", cap };
 }
 function dayPart(hour) {
@@ -13691,8 +14266,8 @@ function dayPart(hour) {
 }
 var DAY_PART_WEIGHT = Object.freeze({ night: 4, morning: 1, afternoon: 2, evening: 3 });
 function preferredHour(history = [], opts = {}) {
-  const min = asInt3(opts.min, 3);
-  const hours = (Array.isArray(history) ? history : []).map((h) => asInt3(h?.hour, NaN)).filter((h) => Number.isFinite(h));
+  const min = asInt4(opts.min, 3);
+  const hours = (Array.isArray(history) ? history : []).map((h) => asInt4(h?.hour, NaN)).filter((h) => Number.isFinite(h));
   if (hours.length < min) return null;
   const folded = hours.map((h) => h < 6 ? h + 24 : h);
   const mean2 = folded.reduce((a, b) => a + b, 0) / folded.length;
@@ -13701,8 +14276,8 @@ function preferredHour(history = [], opts = {}) {
 function bestSendWindow(signals = {}, prefs = {}) {
   const learned = preferredHour(signals.history || [], { min: 3 });
   if (learned != null) return { hour: learned, source: "learned" };
-  const after = asInt3(prefs.send_after_hour, DEFAULTS4.send_after_hour);
-  const before = asInt3(prefs.send_before_hour, DEFAULTS4.send_before_hour);
+  const after = asInt4(prefs.send_after_hour, DEFAULTS4.send_after_hour);
+  const before = asInt4(prefs.send_before_hour, DEFAULTS4.send_before_hour);
   const mid = Math.round((after + before) / 2);
   return { hour: mid, source: "baseline" };
 }
@@ -13732,10 +14307,10 @@ function buildMessage2(kind, params = {}, lang = "bn", variant = "A") {
 }
 var LEARNING_KINDS = Object.freeze(["lesson_start", "lesson_complete", "quiz_complete", "question_attempt", "course_complete"]);
 function attributeConversion(send = {}, learningEvents = [], windowMs = 6 * 3600 * 1e3) {
-  const sentAt = asInt3(send.sentAt);
+  const sentAt = asInt4(send.sentAt);
   if (!sentAt) return { converted: false, kind: null, lagMs: null };
-  const floor = Math.max(sentAt, asInt3(send.openedAt) || 0, asInt3(send.clickedAt) || 0);
-  const candidates = (Array.isArray(learningEvents) ? learningEvents : []).map((e) => ({ kind: String(e?.kind || e?.name || ""), at: asInt3(e?.at) })).filter((e) => LEARNING_KINDS.includes(e.kind) && e.at >= floor && e.at - sentAt <= windowMs).sort((a, b) => a.at - b.at);
+  const floor = Math.max(sentAt, asInt4(send.openedAt) || 0, asInt4(send.clickedAt) || 0);
+  const candidates = (Array.isArray(learningEvents) ? learningEvents : []).map((e) => ({ kind: String(e?.kind || e?.name || ""), at: asInt4(e?.at) })).filter((e) => LEARNING_KINDS.includes(e.kind) && e.at >= floor && e.at - sentAt <= windowMs).sort((a, b) => a.at - b.at);
   if (!candidates.length) return { converted: false, kind: null, lagMs: null };
   return { converted: true, kind: candidates[0].kind, lagMs: candidates[0].at - sentAt };
 }
@@ -13784,7 +14359,7 @@ function computePerformance(rows = []) {
 }
 function computeFeedback(rows = [], opts = {}) {
   const perf = computePerformance(rows);
-  const minSample = asInt3(opts.minSample, 20);
+  const minSample = asInt4(opts.minSample, 20);
   const variants = Object.entries(perf.byVariant).filter(([, b]) => b.sent >= minSample);
   let winner = null;
   if (variants.length >= 2) {
@@ -13854,8 +14429,8 @@ function computeDecisionStats(decisions = [], outcomes = []) {
 }
 function decide({ signals = {}, prefs = {}, fatigue = {}, ctx = {}, deps = {} } = {}) {
   const trace = [];
-  const nowMs = asInt3(deps.nowMs, Date.now());
-  const tzOffsetMin = asInt3(prefs.tz_offset_min, DEFAULT_TZ_OFFSET_MIN);
+  const nowMs = asInt4(deps.nowMs, Date.now());
+  const tzOffsetMin = asInt4(prefs.tz_offset_min, DEFAULT_TZ_OFFSET_MIN);
   const { hour, minute } = localParts(nowMs, tzOffsetMin);
   const p = { ...DEFAULTS4, ...prefs };
   const skip = (stage, reason2) => {
@@ -13886,9 +14461,9 @@ function decide({ signals = {}, prefs = {}, fatigue = {}, ctx = {}, deps = {} } 
     const freq = checkFrequency({
       prefs: p,
       fatigue,
-      sendsToday: asInt3(deps.sendsToday),
-      categorySends: asInt3((deps.categorySends || {})[KIND_META[candidate.kind]?.category], 0),
-      lastSentAt: asInt3(deps.lastSentAt),
+      sendsToday: asInt4(deps.sendsToday),
+      categorySends: asInt4((deps.categorySends || {})[KIND_META[candidate.kind]?.category], 0),
+      lastSentAt: asInt4(deps.lastSentAt),
       nowMs,
       isCelebration
     });
@@ -13997,7 +14572,7 @@ var IntelligenceStore = class {
       prefs = {};
     }
     return {
-      tz_offset_min: asInt3(row.tz_offset_min, DEFAULT_TZ_OFFSET_MIN),
+      tz_offset_min: asInt4(row.tz_offset_min, DEFAULT_TZ_OFFSET_MIN),
       prefs: { ...DEFAULT_PREFS2, ...prefs, categories: { ...DEFAULT_PREFS2.categories, ...prefs.categories || {} } },
       stored: true
     };
@@ -14022,7 +14597,7 @@ var IntelligenceStore = class {
   async sendsToday(userId, dayKey4) {
     await this.init();
     const row = await this.#d1.prepare("SELECT COUNT(*) AS n FROM notification_sends WHERE user_id=? AND day_key=?").bind(userId, dayKey4).first();
-    return asInt3(row?.n, 0);
+    return asInt4(row?.n, 0);
   }
   async categorySendsToday(userId, dayKey4, category) {
     await this.init();
@@ -14030,12 +14605,12 @@ var IntelligenceStore = class {
       `SELECT COUNT(*) AS n FROM notification_outcomes
        WHERE user_id=? AND day_key=? AND category=? AND status<>'failed'`
     ).bind(userId, dayKey4, category).first();
-    return asInt3(row?.n, 0);
+    return asInt4(row?.n, 0);
   }
   async lastSentAt(userId) {
     await this.init();
     const row = await this.#d1.prepare("SELECT MAX(sent_at) AS t FROM notification_outcomes WHERE user_id=?").bind(userId).first();
-    return asInt3(row?.t, 0);
+    return asInt4(row?.t, 0);
   }
   async seenKeys(userId) {
     await this.init();
@@ -14050,9 +14625,9 @@ var IntelligenceStore = class {
     return (rows?.results || []).map((r) => ({
       key: String(r.notification_key),
       kind: String(r.kind),
-      sentAt: asInt3(r.sent_at),
-      openedAt: asInt3(r.opened_at),
-      clickedAt: asInt3(r.clicked_at)
+      sentAt: asInt4(r.sent_at),
+      openedAt: asInt4(r.opened_at),
+      clickedAt: asInt4(r.clicked_at)
     }));
   }
   /* Claim the day slot in the shared table AND write the outcome row. The claim
@@ -14063,7 +14638,7 @@ var IntelligenceStore = class {
       `INSERT INTO notification_sends(user_id, kind, day_key, sent_at) VALUES (?,?,?,?)
        ON CONFLICT(user_id, kind, day_key) DO NOTHING`
     ).bind(userId, `intel:${kind}`, dayKey4, at).run();
-    if (!(asInt3(claimed?.meta?.changes, 0) > 0)) return false;
+    if (!(asInt4(claimed?.meta?.changes, 0) > 0)) return false;
     await this.#d1.prepare(
       `INSERT INTO notification_outcomes(user_id, notification_key, kind, category, variant, day_key, sent_at, status)
        VALUES (?,?,?,?,?,?,?,?)
@@ -14089,7 +14664,7 @@ var IntelligenceStore = class {
       userId,
       String(rule),
       kind ? String(kind) : null,
-      asInt3(score, 0),
+      asInt4(score, 0),
       String(decision),
       stage ? String(stage) : null,
       reason2 ? String(reason2) : null,
@@ -14107,12 +14682,12 @@ var IntelligenceStore = class {
       userId: String(r.user_id),
       rule: String(r.rule),
       kind: r.kind ? String(r.kind) : null,
-      score: asInt3(r.score, 0),
+      score: asInt4(r.score, 0),
       decision: String(r.decision),
       stage: r.stage ? String(r.stage) : null,
       reason: r.reason ? String(r.reason) : null,
       dayKey: String(r.day_key),
-      createdAt: asInt3(r.created_at, 0)
+      createdAt: asInt4(r.created_at, 0)
     }));
   }
   /* One day's outcomes, for the admin dashboard's CTR. Failed sends are kept so
@@ -14127,9 +14702,9 @@ var IntelligenceStore = class {
       kind: String(r.kind),
       category: String(r.category),
       variant: String(r.variant),
-      sentAt: asInt3(r.sent_at, 0),
-      openedAt: asInt3(r.opened_at, 0),
-      clickedAt: asInt3(r.clicked_at, 0),
+      sentAt: asInt4(r.sent_at, 0),
+      openedAt: asInt4(r.opened_at, 0),
+      clickedAt: asInt4(r.clicked_at, 0),
       status: String(r.status)
     }));
   }
@@ -14139,7 +14714,7 @@ var IntelligenceStore = class {
     const res = await this.#d1.prepare(
       `UPDATE notification_outcomes SET ${field}=COALESCE(${field}, ?) WHERE user_id=? AND notification_key=?`
     ).bind(at, userId, key).run();
-    return asInt3(res?.meta?.changes, 0) > 0;
+    return asInt4(res?.meta?.changes, 0) > 0;
   }
   async markLearning({ userId, key, kind, at }) {
     await this.init();
@@ -14147,7 +14722,7 @@ var IntelligenceStore = class {
       `UPDATE notification_outcomes SET learning_at=COALESCE(learning_at, ?), learning_kind=COALESCE(learning_kind, ?)
        WHERE user_id=? AND notification_key=?`
     ).bind(at, kind, userId, key).run();
-    return asInt3(res?.meta?.changes, 0) > 0;
+    return asInt4(res?.meta?.changes, 0) > 0;
   }
   /* The most recent sends still inside the attribution window — what a learning
    * event can be credited to. */
@@ -14160,9 +14735,9 @@ var IntelligenceStore = class {
     return (rows?.results || []).map((r) => ({
       key: String(r.notification_key),
       kind: String(r.kind),
-      sentAt: asInt3(r.sent_at),
-      openedAt: asInt3(r.opened_at),
-      clickedAt: asInt3(r.clicked_at)
+      sentAt: asInt4(r.sent_at),
+      openedAt: asInt4(r.opened_at),
+      clickedAt: asInt4(r.clicked_at)
     }));
   }
   async saveFatigue(userId, fatigue, now) {
@@ -14178,9 +14753,9 @@ var IntelligenceStore = class {
     const row = await this.#d1.prepare("SELECT * FROM notification_fatigue WHERE user_id=?").bind(userId).first();
     if (!row) return { sent: 0, opened: 0, clicked: 0, openRate: 0, clickRate: 0, fatigued: false, level: "normal" };
     return {
-      sent: asInt3(row.sent),
-      opened: asInt3(row.opened),
-      clicked: asInt3(row.clicked),
+      sent: asInt4(row.sent),
+      opened: asInt4(row.opened),
+      clicked: asInt4(row.clicked),
       openRate: Number(row.open_rate) || 0,
       clickRate: 0,
       fatigued: String(row.level) === "high",
@@ -14198,12 +14773,12 @@ var IntelligenceStore = class {
       category: String(r.category),
       variant: String(r.variant),
       status: String(r.status),
-      sentAt: asInt3(r.sent_at),
-      openedAt: asInt3(r.opened_at),
-      clickedAt: asInt3(r.clicked_at),
-      learningAt: asInt3(r.learning_at),
+      sentAt: asInt4(r.sent_at),
+      openedAt: asInt4(r.opened_at),
+      clickedAt: asInt4(r.clicked_at),
+      learningAt: asInt4(r.learning_at),
       learningKind: r.learning_kind ? String(r.learning_kind) : null,
-      hour: localParts(asInt3(r.sent_at)).hour
+      hour: localParts(asInt4(r.sent_at)).hour
     }));
   }
   /* ── behaviour reads (Phase 1–2 tables, read-only) ───────────────────────
@@ -14224,9 +14799,9 @@ var IntelligenceStore = class {
       }
       return {
         day: String(r.day),
-        questions: asInt3(doc?.questions),
-        correct: asInt3(doc?.correct),
-        lessons: asInt3(doc?.lessons)
+        questions: asInt4(doc?.questions),
+        correct: asInt4(doc?.correct),
+        lessons: asInt4(doc?.lessons)
       };
     });
   }
@@ -14243,7 +14818,7 @@ var IntelligenceStore = class {
       } catch {
         doc = null;
       }
-      return { id: String(r.id), score: asInt3(doc?.score ?? doc?.percentage, NaN), at: asInt3(r.updated_at) };
+      return { id: String(r.id), score: asInt4(doc?.score ?? doc?.percentage, NaN), at: asInt4(r.updated_at) };
     }).filter((e) => Number.isFinite(e.score));
   }
   /* Pending revisions plus the topics those misses cluster in — the two numbers
@@ -14256,20 +14831,20 @@ var IntelligenceStore = class {
          AND (revision_status IS NULL OR revision_status<>'mastered')
        GROUP BY topic_id ORDER BY misses DESC LIMIT 10`
     ).bind(userId).all();
-    const topics = (rows?.results || []).map((r) => ({ topic: String(r.topic_id || "general"), misses: asInt3(r.misses) }));
+    const topics = (rows?.results || []).map((r) => ({ topic: String(r.topic_id || "general"), misses: asInt4(r.misses) }));
     const pending = topics.reduce((n, t) => n + t.misses, 0);
     const masteredRow = await this.#d1.prepare(
       `SELECT COUNT(*) AS n FROM user_mistakes
        WHERE user_id=? AND deleted_at IS NULL AND (COALESCE(mastered,0)=1 OR revision_status='mastered')`
     ).bind(userId).first();
-    return { pending, mastered: asInt3(masteredRow?.n), topics };
+    return { pending, mastered: asInt4(masteredRow?.n), topics };
   }
   async lastActiveAt(userId) {
     await this.init();
     const row = await this.#d1.prepare(
       "SELECT MAX(updated_at) AS t FROM user_activity WHERE user_id=? AND deleted_at IS NULL"
     ).bind(userId).first();
-    return asInt3(row?.t, 0);
+    return asInt4(row?.t, 0);
   }
   /* Course progress lives in the student's own settings blob (the client writes
    * it there). Missing or malformed means "no course data" — never a guess. */
@@ -14289,8 +14864,8 @@ var IntelligenceStore = class {
     if (!Array.isArray(raw)) return [];
     return raw.map((c) => ({
       id: String(c?.id || c?.courseId || ""),
-      lessonsTotal: asInt3(c?.lessonsTotal ?? c?.total),
-      lessonsDone: asInt3(c?.lessonsDone ?? c?.done)
+      lessonsTotal: asInt4(c?.lessonsTotal ?? c?.total),
+      lessonsDone: asInt4(c?.lessonsDone ?? c?.done)
     })).filter((c) => c.id && c.lessonsTotal > 0);
   }
 };
@@ -15243,7 +15818,7 @@ var __digestTest = Object.freeze({
 
 // analytics-engine.mjs
 var DAY_MS5 = 864e5;
-var asInt4 = (v, fallback = 0) => {
+var asInt5 = (v, fallback = 0) => {
   const n = Number(v);
   return Number.isFinite(n) ? Math.trunc(n) : fallback;
 };
@@ -15262,12 +15837,12 @@ var parseDay = (day) => {
 var formatDay = (ms) => new Date(ms).toISOString().slice(0, 10);
 function dayKey3(ts, tzOffsetMin = DEFAULT_TZ_OFFSET_MIN) {
   const tz = Number.isFinite(Number(tzOffsetMin)) ? Number(tzOffsetMin) : DEFAULT_TZ_OFFSET_MIN;
-  return formatDay(asInt4(ts, Date.now()) + tz * 6e4);
+  return formatDay(asInt5(ts, Date.now()) + tz * 6e4);
 }
 function shiftDay(day, delta) {
   const base = parseDay(day);
   if (!Number.isFinite(base)) return "";
-  return formatDay(base + asInt4(delta) * DAY_MS5);
+  return formatDay(base + asInt5(delta) * DAY_MS5);
 }
 function daysBetween(from, to) {
   const a = parseDay(from);
@@ -15308,23 +15883,23 @@ function liveStreak(days = [], today = dayKey3(Date.now())) {
 function normalizeLearning(input = {}) {
   const dailyStats = (Array.isArray(input.dailyStats) ? input.dailyStats : []).map((r) => ({
     day: String(r.day || r.date || "").slice(0, 10),
-    questions: asInt4(r.questions),
-    correct: asInt4(r.correct),
-    wrong: asInt4(r.wrong),
-    lessons: asInt4(r.lessons),
-    timeMs: asInt4(r.timeMs ?? r.time),
-    exams: asInt4(r.exams)
+    questions: asInt5(r.questions),
+    correct: asInt5(r.correct),
+    wrong: asInt5(r.wrong),
+    lessons: asInt5(r.lessons),
+    timeMs: asInt5(r.timeMs ?? r.time),
+    exams: asInt5(r.exams)
   })).filter((r) => /^\d{4}-\d{2}-\d{2}$/.test(r.day));
   const exams = (Array.isArray(input.examResults) ? input.examResults : []).map((r) => ({
     id: String(r.id || ""),
     score: asNum(r.score ?? r.percentage, NaN),
-    at: asInt4(r.at ?? r.updated_at ?? r.completedAt)
+    at: asInt5(r.at ?? r.updated_at ?? r.completedAt)
   })).filter((r) => r.id);
-  const mistakes = (Array.isArray(input.mistakes) ? input.mistakes : []).map((r) => ({ topic: String(r.topic || r.topicId || "general"), misses: asInt4(r.misses) }));
+  const mistakes = (Array.isArray(input.mistakes) ? input.mistakes : []).map((r) => ({ topic: String(r.topic || r.topicId || "general"), misses: asInt5(r.misses) }));
   const courses = (Array.isArray(input.courses) ? input.courses : []).map((c) => ({
     id: String(c.id || ""),
-    lessonsTotal: asInt4(c.lessonsTotal),
-    lessonsDone: asInt4(c.lessonsDone)
+    lessonsTotal: asInt5(c.lessonsTotal),
+    lessonsDone: asInt5(c.lessonsDone)
   })).filter((c) => c.id && c.lessonsTotal > 0);
   return { dailyStats, exams, mistakes, courses };
 }
@@ -15430,7 +16005,7 @@ function comparePeriods(series = [], days = 7) {
 }
 function linearTrend(values = [], options = {}) {
   const points = (Array.isArray(values) ? values : []).map((v) => asNum(v));
-  const window = Math.max(3, asInt4(options.window, 7));
+  const window = Math.max(3, asInt5(options.window, 7));
   const slice = points.slice(-window);
   if (slice.length < 3) return { slope: 0, direction: "flat", strength: 0, mean: 0 };
   const n = slice.length;
@@ -15450,7 +16025,7 @@ function linearTrend(values = [], options = {}) {
 var clamp01 = (n) => Math.min(1, Math.max(0, n));
 function detectTrends(series = [], options = {}) {
   const rows = Array.isArray(series) ? series : [];
-  const window = asInt4(options.window, 7);
+  const window = asInt5(options.window, 7);
   return {
     practiceActivity: linearTrend(rows.map((r) => r.questions), { window }),
     lessonsCompleted: linearTrend(rows.map((r) => r.lessons), { window }),
@@ -15466,9 +16041,9 @@ var SEGMENTS = Object.freeze(["new", "active", "highly_active", "returning", "at
 function classifyBehaviourSegment(metrics = {}, options = {}) {
   const today = options.today || dayKey3(options.nowMs ?? Date.now(), options.tzOffsetMin);
   const since = metrics.daysSinceActive;
-  const activeDays = asInt4(metrics.activeDays);
-  const streak = asInt4(metrics.streak);
-  const windowDays = asInt4(options.windowDays, 14);
+  const activeDays = asInt5(metrics.activeDays);
+  const streak = asInt5(metrics.streak);
+  const windowDays = asInt5(options.windowDays, 14);
   const trend = options.trend || null;
   if (activeDays === 0) return { segment: since === null ? "new" : "inactive", reason: "no-activity" };
   if (since !== null && since >= 14) return { segment: "inactive", reason: `inactive-${since}d` };
@@ -15482,9 +16057,9 @@ function classifyBehaviourSegment(metrics = {}, options = {}) {
   return { segment: "active", reason: `active-${activeDays}d` };
 }
 function classifyLearningStage(metrics = {}) {
-  const lessons = asInt4(metrics.lessonsCompleted);
-  const questions = asInt4(metrics.practiceActivity);
-  const completed = asInt4(metrics.courseProgress?.completed);
+  const lessons = asInt5(metrics.lessonsCompleted);
+  const questions = asInt5(metrics.practiceActivity);
+  const completed = asInt5(metrics.courseProgress?.completed);
   if (completed >= 3 || lessons >= 40 || questions >= 500) return { stage: "pro", lessons, questions };
   if (lessons >= 10 || questions >= 100) return { stage: "intermediate", lessons, questions };
   return { stage: "beginner", lessons, questions };
@@ -15509,8 +16084,8 @@ function countByEvent(events = []) {
 }
 function buildFunnel(counts = {}) {
   return FUNNEL_STEPS.map((step, index) => {
-    const count = asInt4(counts[step.event]);
-    const previous = index === 0 ? count : asInt4(counts[FUNNEL_STEPS[index - 1].event]);
+    const count = asInt5(counts[step.event]);
+    const previous = index === 0 ? count : asInt5(counts[FUNNEL_STEPS[index - 1].event]);
     return {
       key: step.key,
       event: step.event,
@@ -15570,11 +16145,11 @@ function buildCourseAnalytics(rows = [], events = []) {
     if (!id) continue;
     const c = ensure(id);
     c.learners += 1;
-    c.lessonsTotal += asInt4(row.lessonsTotal);
-    c.lessonsDone += asInt4(row.lessonsDone);
-    if (asInt4(row.lessonsDone) > 0) c.started += 1;
-    if (asInt4(row.lessonsTotal) > 0 && asInt4(row.lessonsDone) >= asInt4(row.lessonsTotal)) c.completed += 1;
-    if (asInt4(row.questions) > 0 || asInt4(row.lessonsDone) > 0) c.activeLearners += 1;
+    c.lessonsTotal += asInt5(row.lessonsTotal);
+    c.lessonsDone += asInt5(row.lessonsDone);
+    if (asInt5(row.lessonsDone) > 0) c.started += 1;
+    if (asInt5(row.lessonsTotal) > 0 && asInt5(row.lessonsDone) >= asInt5(row.lessonsTotal)) c.completed += 1;
+    if (asInt5(row.questions) > 0 || asInt5(row.lessonsDone) > 0) c.activeLearners += 1;
   }
   for (const e of events) {
     const p = e?.params || {};
@@ -15623,7 +16198,7 @@ function buildLessonAnalytics(events = []) {
     const lessonId = String(p.lesson_id || p.lessonId || "");
     if (!courseId || !lessonId) continue;
     const l = ensure(courseId, lessonId);
-    const at = asInt4(e.at);
+    const at = asInt5(e.at);
     if (e.name === "lesson_view") l.views += 1;
     else if (e.name === "lesson_start") {
       l.starts += 1;
@@ -15633,7 +16208,7 @@ function buildLessonAnalytics(events = []) {
     } else if (e.name === "lesson_complete") {
       l.completes += 1;
       const seen = startedAt.get(`${courseId}::${lessonId}`);
-      const dur = asInt4(p.duration);
+      const dur = asInt5(p.duration);
       if (dur > 0) {
         l.timeMs += dur;
         l.timeSamples += 1;
@@ -15643,7 +16218,7 @@ function buildLessonAnalytics(events = []) {
       }
     } else if (e.name === "question_attempt") {
       l.quizAttempts += 1;
-      if (p.correct === true || p.correct === "true" || asInt4(p.correct) === 1) l.quizCorrect += 1;
+      if (p.correct === true || p.correct === "true" || asInt5(p.correct) === 1) l.quizCorrect += 1;
     } else if (e.name === "quiz_complete") l.exits += 1;
   }
   return [...byLesson.values()].map((l) => ({
@@ -15673,12 +16248,12 @@ function buildQuizAnalytics(events = []) {
     else if (e.name === "quiz_complete") q.completed += 1;
     else if (e.name === "question_attempt") {
       q.attempts += 1;
-      const isCorrect = p.correct === true || p.correct === "true" || asInt4(p.correct) === 1;
+      const isCorrect = p.correct === true || p.correct === "true" || asInt5(p.correct) === 1;
       const isSkipped = p.skipped === true || p.skipped === "true";
       if (isSkipped) q.skipped += 1;
       else if (isCorrect) q.correct += 1;
       else q.wrong += 1;
-      const dur = asInt4(p.duration);
+      const dur = asInt5(p.duration);
       if (dur > 0) {
         q.timeMs += dur;
         q.timeSamples += 1;
@@ -15734,7 +16309,7 @@ function computeEngagement(students = [], options = {}) {
     returningUsers: returning,
     newUsers: rows.length - returning,
     returningRate: pct3(returning, rows.length, 1),
-    learningActiveStudents: rows.filter((s) => asInt4(s.learningActions) > 0).length
+    learningActiveStudents: rows.filter((s) => asInt5(s.learningActions) > 0).length
   };
 }
 var RETENTION_WINDOWS = Object.freeze([1, 7, 14, 30]);
@@ -15786,9 +16361,9 @@ function computeNotificationAnalytics(outcomes = [], options = {}) {
   const rows = (Array.isArray(outcomes) ? outcomes : []).filter((o) => o && o.notification_key);
   const bucket = (list) => {
     const sent = list.length;
-    const opened = list.filter((o) => asInt4(o.opened_at) > 0).length;
-    const clicked = list.filter((o) => asInt4(o.clicked_at) > 0).length;
-    const learning = list.filter((o) => asInt4(o.learning_at) > 0 && LEARNING_KINDS.includes(String(o.learning_kind || ""))).length;
+    const opened = list.filter((o) => asInt5(o.opened_at) > 0).length;
+    const clicked = list.filter((o) => asInt5(o.clicked_at) > 0).length;
+    const learning = list.filter((o) => asInt5(o.learning_at) > 0 && LEARNING_KINDS.includes(String(o.learning_kind || ""))).length;
     return {
       sent,
       opened,
@@ -15833,7 +16408,7 @@ function computeNotificationAnalytics(outcomes = [], options = {}) {
     byHour: (() => {
       const map = /* @__PURE__ */ new Map();
       for (const o of rows) {
-        const at = asInt4(o.learning_at) || asInt4(o.clicked_at);
+        const at = asInt5(o.learning_at) || asInt5(o.clicked_at);
         if (!at) continue;
         const hour = new Date(at).getUTCHours();
         map.set(hour, (map.get(hour) || 0) + 1);
@@ -15845,8 +16420,8 @@ function computeNotificationAnalytics(outcomes = [], options = {}) {
 function computeCampaignAnalytics(globals = [], readCounts = {}) {
   return (Array.isArray(globals) ? globals : []).map((g) => {
     const id = String(g.id || "");
-    const delivered = asInt4(g.delivered);
-    const readers = asInt4(readCounts?.[id]);
+    const delivered = asInt5(g.delivered);
+    const readers = asInt5(readCounts?.[id]);
     const status = String(g.status || "");
     return {
       campaignId: id,
@@ -15854,8 +16429,8 @@ function computeCampaignAnalytics(globals = [], readCounts = {}) {
       audience: String(g.audience || "all_students"),
       topic: String(g.topic || ""),
       status,
-      sentAt: asInt4(g.sent_at),
-      scheduledAt: asInt4(g.scheduled_at),
+      sentAt: asInt5(g.sent_at),
+      scheduledAt: asInt5(g.scheduled_at),
       delivered,
       opened: readers,
       failed: status === "failed",
@@ -15874,10 +16449,10 @@ var MILESTONES = Object.freeze([10, 25, 50, 75, 90, 100]);
 function computeMilestones(metrics = {}, options = {}) {
   const progress = metrics.courseProgress || {};
   const percent = asNum(progress.percent);
-  const lessonsDone = asInt4(progress.lessonsDone);
-  const lessonsTotal = asInt4(progress.lessonsTotal);
-  const questions = asInt4(metrics.practiceActivity);
-  const streak = asInt4(metrics.streak);
+  const lessonsDone = asInt5(progress.lessonsDone);
+  const lessonsTotal = asInt5(progress.lessonsTotal);
+  const questions = asInt5(metrics.practiceActivity);
+  const streak = asInt5(metrics.streak);
   const out = [];
   const nextPercent = MILESTONES.find((m) => m > percent);
   if (nextPercent !== void 0) {
@@ -15924,9 +16499,9 @@ function buildStudentInsights(metrics = {}, context = {}) {
   const trend = context.trend || null;
   const comparison = context.comparison || null;
   const accuracy = asNum(metrics.accuracy);
-  const practice = asInt4(metrics.practiceActivity);
-  const lessons = asInt4(metrics.lessonsCompleted);
-  const streak = asInt4(metrics.streak);
+  const practice = asInt5(metrics.practiceActivity);
+  const lessons = asInt5(metrics.lessonsCompleted);
+  const streak = asInt5(metrics.streak);
   if (comparison?.metrics?.practiceActivity) {
     const c = comparison.metrics.practiceActivity;
     if (c.direction === "up" && c.previous > 0) {
@@ -15994,7 +16569,7 @@ function buildStudentInsights(metrics = {}, context = {}) {
       { accuracy }
     ));
   }
-  const pending = asInt4(metrics.mistakes?.pending);
+  const pending = asInt5(metrics.mistakes?.pending);
   if (pending >= 5) {
     out.push(insight(
       "attention",
@@ -16152,7 +16727,7 @@ function summarizeTrends(trends = {}) {
   return { text: `${parts.join(", কিন্তু ")}।`, up, down };
 }
 var MAX_EVENT_ROWS = 5e3;
-function isMissingSchemaError(err) {
+function isMissingSchemaError2(err) {
   const message = String(err?.message || err?.cause?.message || err || "");
   return /no such table/i.test(message);
 }
@@ -16176,7 +16751,7 @@ var AnalyticsStore2 = class {
       const rows = await query.all();
       return rows?.results || [];
     } catch (err) {
-      if (isMissingSchemaError(err)) return [];
+      if (isMissingSchemaError2(err)) return [];
       throw err;
     }
   }
@@ -16184,7 +16759,7 @@ var AnalyticsStore2 = class {
     try {
       return await query.first();
     } catch (err) {
-      if (isMissingSchemaError(err)) return null;
+      if (isMissingSchemaError2(err)) return null;
       throw err;
     }
   }
@@ -16224,13 +16799,13 @@ var AnalyticsStore2 = class {
       const id = String(e?.id || "").slice(0, 120);
       const name = String(e?.name || "").slice(0, 60);
       if (!id || !name) continue;
-      const at = asInt4(e.at, now);
+      const at = asInt5(e.at, now);
       const params = e.params && typeof e.params === "object" ? e.params : {};
       const res = await this.#d1.prepare(
         `INSERT INTO analytics_events(user_id, id, name, params_json, at, day_key, created_at)
          VALUES (?,?,?,?,?,?,?) ON CONFLICT(user_id, id) DO NOTHING`
       ).bind(userId, id, name, JSON.stringify(params).slice(0, 4e3), at, dayKey3(at), now).run();
-      if (asInt4(res?.meta?.changes, 0) > 0) stored += 1;
+      if (asInt5(res?.meta?.changes, 0) > 0) stored += 1;
     }
     return { received: rows.length, stored };
   }
@@ -16242,7 +16817,7 @@ var AnalyticsStore2 = class {
       } catch {
         params = {};
       }
-      return { id: String(r.id), name: String(r.name), params, at: asInt4(r.at) };
+      return { id: String(r.id), name: String(r.name), params, at: asInt5(r.at) };
     });
   }
   /* Platform-wide events inside a window. This is the admin read; it is never
@@ -16280,10 +16855,10 @@ var AnalyticsStore2 = class {
     return rows.map((r) => ({
       userId: String(r.user_id),
       activeDays: String(r.days || "").split(",").filter(Boolean).sort(),
-      questions: asInt4(r.questions),
-      lessons: asInt4(r.lessons),
-      timeMs: asInt4(r.time_ms),
-      learningActions: asInt4(r.questions) + asInt4(r.lessons)
+      questions: asInt5(r.questions),
+      lessons: asInt5(r.lessons),
+      timeMs: asInt5(r.time_ms),
+      learningActions: asInt5(r.questions) + asInt5(r.lessons)
     }));
   }
   /* Per-student daily series for one student — the student dashboard's read. */
@@ -16302,12 +16877,12 @@ var AnalyticsStore2 = class {
       }
       return {
         day: String(r.day),
-        questions: asInt4(doc.questions),
-        correct: asInt4(doc.correct),
-        wrong: asInt4(doc.wrong),
-        lessons: asInt4(doc.lessons),
-        timeMs: asInt4(doc.timeMs ?? doc.time),
-        exams: asInt4(doc.exams)
+        questions: asInt5(doc.questions),
+        correct: asInt5(doc.correct),
+        wrong: asInt5(doc.wrong),
+        lessons: asInt5(doc.lessons),
+        timeMs: asInt5(doc.timeMs ?? doc.time),
+        exams: asInt5(doc.exams)
       };
     });
   }
@@ -16324,7 +16899,7 @@ var AnalyticsStore2 = class {
       } catch {
         doc = {};
       }
-      return { id: String(r.id), score: asNum(doc.score ?? doc.percentage, NaN), at: asInt4(r.updated_at) };
+      return { id: String(r.id), score: asNum(doc.score ?? doc.percentage, NaN), at: asInt5(r.updated_at) };
     }).filter((e) => Number.isFinite(e.score));
   }
   async mistakes(userId) {
@@ -16336,7 +16911,7 @@ var AnalyticsStore2 = class {
        GROUP BY topic ORDER BY misses DESC LIMIT 10`
     ).bind(userId);
     const rows = await this.#readAll(query);
-    return rows.map((r) => ({ topic: String(r.topic), misses: asInt4(r.misses) }));
+    return rows.map((r) => ({ topic: String(r.topic), misses: asInt5(r.misses) }));
   }
   /* Course progress lives in the student's own settings blob (same read Phase 3
    * uses). A malformed or absent blob means "no course data" — never a guess. */
@@ -16357,8 +16932,8 @@ var AnalyticsStore2 = class {
     if (!Array.isArray(raw)) return [];
     return raw.map((c) => ({
       id: String(c?.id || c?.courseId || ""),
-      lessonsTotal: asInt4(c?.lessonsTotal ?? c?.total),
-      lessonsDone: asInt4(c?.lessonsDone ?? c?.done)
+      lessonsTotal: asInt5(c?.lessonsTotal ?? c?.total),
+      lessonsDone: asInt5(c?.lessonsDone ?? c?.done)
     })).filter((c) => c.id && c.lessonsTotal > 0);
   }
   /* The student's course blob as an analytics row, so the admin course rollup
@@ -16380,9 +16955,9 @@ var AnalyticsStore2 = class {
       const raw = Array.isArray(doc.courses || doc.courseProgress) ? doc.courses || doc.courseProgress : [];
       for (const c of raw) {
         const id = String(c?.id || c?.courseId || "");
-        const lessonsTotal = asInt4(c?.lessonsTotal ?? c?.total);
+        const lessonsTotal = asInt5(c?.lessonsTotal ?? c?.total);
         if (!id || lessonsTotal <= 0) continue;
-        out.push({ userId: String(r.user_id), courseId: id, lessonsTotal, lessonsDone: asInt4(c?.lessonsDone ?? c?.done) });
+        out.push({ userId: String(r.user_id), courseId: id, lessonsTotal, lessonsDone: asInt5(c?.lessonsDone ?? c?.done) });
       }
     }
     return out;
@@ -16400,10 +16975,10 @@ var AnalyticsStore2 = class {
       category: String(r.category || ""),
       variant: String(r.variant || ""),
       day_key: String(r.day_key || ""),
-      sent_at: asInt4(r.sent_at),
-      opened_at: asInt4(r.opened_at),
-      clicked_at: asInt4(r.clicked_at),
-      learning_at: asInt4(r.learning_at),
+      sent_at: asInt5(r.sent_at),
+      opened_at: asInt5(r.opened_at),
+      clicked_at: asInt5(r.clicked_at),
+      learning_at: asInt5(r.learning_at),
       learning_kind: String(r.learning_kind || "")
     }));
   }
@@ -16420,10 +16995,10 @@ var AnalyticsStore2 = class {
       category: String(r.category || ""),
       variant: String(r.variant || ""),
       day_key: String(r.day_key || ""),
-      sent_at: asInt4(r.sent_at),
-      opened_at: asInt4(r.opened_at),
-      clicked_at: asInt4(r.clicked_at),
-      learning_at: asInt4(r.learning_at),
+      sent_at: asInt5(r.sent_at),
+      opened_at: asInt5(r.opened_at),
+      clicked_at: asInt5(r.clicked_at),
+      learning_at: asInt5(r.learning_at),
       learning_kind: String(r.learning_kind || "")
     }));
   }
@@ -16440,9 +17015,9 @@ var AnalyticsStore2 = class {
       audience: String(r.audience || ""),
       topic: String(r.topic || ""),
       status: String(r.status || ""),
-      sent_at: asInt4(r.sent_at),
-      scheduled_at: asInt4(r.scheduled_at),
-      delivered: asInt4(r.delivered)
+      sent_at: asInt5(r.sent_at),
+      scheduled_at: asInt5(r.scheduled_at),
+      delivered: asInt5(r.delivered)
     }));
   }
   async readCounts() {
@@ -16452,7 +17027,7 @@ var AnalyticsStore2 = class {
     );
     const rows = await this.#readAll(query);
     const out = {};
-    for (const r of rows) out[String(r.notification_id)] = asInt4(r.n);
+    for (const r of rows) out[String(r.notification_id)] = asInt5(r.n);
     return out;
   }
   /* How many students have a device registered — the honest denominator for a
@@ -16460,7 +17035,7 @@ var AnalyticsStore2 = class {
   async deviceCount() {
     await this.init();
     const row = await this.#readFirst(this.#d1.prepare("SELECT COUNT(DISTINCT user_id) AS n FROM fcm_devices"));
-    return asInt4(row?.n);
+    return asInt5(row?.n);
   }
   /* Segments for the Phase 3 engine and for the admin filter list. Computed here
    * once so the notification engine and the dashboard cannot disagree about who
@@ -16508,9 +17083,9 @@ var readBody2 = async (request) => {
   }
 };
 function parseFilters(url, now = Date.now()) {
-  const days = Math.min(365, Math.max(1, asInt4(url.searchParams.get("days"), 30)));
-  const from = asInt4(url.searchParams.get("from"), 0);
-  const to = asInt4(url.searchParams.get("to"), 0);
+  const days = Math.min(365, Math.max(1, asInt5(url.searchParams.get("days"), 30)));
+  const from = asInt5(url.searchParams.get("from"), 0);
+  const to = asInt5(url.searchParams.get("to"), 0);
   const sinceMs = from > 0 ? from : now - days * DAY_MS5;
   const untilMs = to > 0 ? to : now;
   const pick = (key) => {
@@ -16527,10 +17102,10 @@ function parseFilters(url, now = Date.now()) {
     segment: pick("segment"),
     notificationType: pick("type"),
     platform: pick("platform"),
-    tzOffsetMin: asInt4(url.searchParams.get("tz"), DEFAULT_TZ_OFFSET_MIN)
+    tzOffsetMin: asInt5(url.searchParams.get("tz"), DEFAULT_TZ_OFFSET_MIN)
   };
 }
-var inWindow = (at, f) => asInt4(at) >= f.sinceMs && asInt4(at) <= f.untilMs;
+var inWindow = (at, f) => asInt5(at) >= f.sinceMs && asInt5(at) <= f.untilMs;
 function applyFilters({ events = [], courses = [], lessons = [], quizzes = [], campaigns = [], outcomes = [], segments = [] }, f) {
   let ev = events.filter((e) => inWindow(e.at, f));
   let co = courses;
@@ -16792,7 +17367,7 @@ async function handleAnalyticsRequest(request, env, ctx, deps = {}) {
 
 // ai-analytics-intelligence.mjs
 var AI_INTELLIGENCE_VERSION = "ai-p5-v1";
-var asInt5 = (v, fallback = 0) => {
+var asInt6 = (v, fallback = 0) => {
   const n = Number(v);
   return Number.isFinite(n) ? Math.trunc(n) : fallback;
 };
@@ -16841,7 +17416,7 @@ function confidenceBand(value) {
 }
 var evidence = (samples, target) => {
   const confidence = confidenceFromSample(samples, target);
-  return { samples: asInt5(samples), confidence, band: confidenceBand(confidence) };
+  return { samples: asInt6(samples), confidence, band: confidenceBand(confidence) };
 };
 var RISK_LEVELS = Object.freeze(["low", "medium", "high"]);
 var RISK_KINDS = Object.freeze([
@@ -16887,7 +17462,7 @@ var PROFILE_DIMENSIONS = Object.freeze([
   "notificationResponse"
 ]);
 function dayPartOf(hour) {
-  const h = (asInt5(hour) % 24 + 24) % 24;
+  const h = (asInt6(hour) % 24 + 24) % 24;
   if (h < 5) return "night";
   if (h < 12) return "morning";
   if (h < 17) return "afternoon";
@@ -16932,14 +17507,14 @@ function buildStudentProfile(input = {}, options = {}) {
   const outcomes = input.notificationOutcomes || {};
   const retention = input.retention || {};
   const now = asNum2(options.now, Date.now());
-  const activeDays = asInt5(m.activeDays);
-  const daysSinceActive = asInt5(m.daysSinceActive);
+  const activeDays = asInt6(m.activeDays);
+  const daysSinceActive = asInt6(m.daysSinceActive);
   const accuracy = asNum2(m.accuracy);
-  const practice = asInt5(m.practiceActivity);
-  const lessons = asInt5(m.lessonsCompleted);
+  const practice = asInt6(m.practiceActivity);
+  const lessons = asInt6(m.lessonsCompleted);
   const cp = m.courseProgress || {};
   const progressPercent = asNum2(cp.percent);
-  const windowDays = Math.max(asInt5(options.windowDays, series.length || 30), 1);
+  const windowDays = Math.max(asInt6(options.windowDays, series.length || 30), 1);
   const density = clamp012(activeDays / windowDays);
   const gapPenalty = m.hadGap ? 0.15 : 0;
   const consistencyScore = clamp012(density - gapPenalty);
@@ -16948,7 +17523,7 @@ function buildStudentProfile(input = {}, options = {}) {
   const cadence = practiceValues.length >= 2 ? round2(1 - clamp012(stddev(practiceValues) / (mean(practiceValues) || 1)), 2) : 0;
   const hoursTotal = sumOf(activityHours);
   const peakHour = activityHours.length ? activityHours.indexOf(Math.max(...activityHours.map(asNum2))) : -1;
-  const timeSamples = asInt5(input.activitySamples, hoursTotal);
+  const timeSamples = asInt6(input.activitySamples, hoursTotal);
   const timeConfidence = confidenceFromSample(timeSamples, CONFIDENCE_TARGETS.bestTime);
   const preferredTime = hoursTotal > 0 && peakHour >= 0 ? {
     value: dayPartOf(peakHour),
@@ -16978,8 +17553,8 @@ function buildStudentProfile(input = {}, options = {}) {
       score: round2(engagementScore, 3),
       segment: input.segment?.segment || null,
       segmentLabelBn: SEGMENT_LABEL_BN[input.segment?.segment] || null,
-      streak: asInt5(m.streak),
-      longestStreak: asInt5(m.longestStreak),
+      streak: asInt6(m.streak),
+      longestStreak: asInt6(m.longestStreak),
       daysSinceActive,
       ...evidence(activeDays, CONFIDENCE_TARGETS.profile)
     },
@@ -16993,18 +17568,18 @@ function buildStudentProfile(input = {}, options = {}) {
     },
     courseProgress: {
       value: round2(progressPercent, 1),
-      courses: asInt5(cp.courses),
-      started: asInt5(cp.started),
-      completed: asInt5(cp.completed),
-      lessonsDone: asInt5(cp.lessonsDone),
-      lessonsTotal: asInt5(cp.lessonsTotal),
+      courses: asInt6(cp.courses),
+      started: asInt6(cp.started),
+      completed: asInt6(cp.completed),
+      lessonsDone: asInt6(cp.lessonsDone),
+      lessonsTotal: asInt6(cp.lessonsTotal),
       ...evidence(activeDays, CONFIDENCE_TARGETS.profile)
     },
     accuracy: {
       value: round2(accuracy, 1),
       band: accuracyBand(accuracy),
-      correct: asInt5(m.questionsCorrect),
-      wrong: asInt5(m.questionsWrong),
+      correct: asInt6(m.questionsCorrect),
+      wrong: asInt6(m.questionsWrong),
       ...evidence(practice, CONFIDENCE_TARGETS.profile)
     },
     practicePattern: {
@@ -17014,11 +17589,11 @@ function buildStudentProfile(input = {}, options = {}) {
       ...evidence(practice, CONFIDENCE_TARGETS.profile)
     },
     quizPattern: {
-      attempts: asInt5(input.quizAttempts),
+      attempts: asInt6(input.quizAttempts),
       accuracy: round2(asNum2(input.quizAccuracy), 1),
-      avgTimeMs: asInt5(input.quizAvgTimeMs),
+      avgTimeMs: asInt6(input.quizAvgTimeMs),
       retryRate: round2(asNum2(input.quizRetryRate), 3),
-      ...evidence(asInt5(input.quizAttempts), CONFIDENCE_TARGETS.profile)
+      ...evidence(asInt6(input.quizAttempts), CONFIDENCE_TARGETS.profile)
     },
     preferredTime,
     retentionPattern: {
@@ -17031,11 +17606,11 @@ function buildStudentProfile(input = {}, options = {}) {
       openRate: asNum2(outcomes.openRate),
       clickRate: asNum2(outcomes.clickRate),
       learningConversion: asNum2(outcomes.learningConversion),
-      sent: asInt5(outcomes.sent),
-      ...evidence(asInt5(outcomes.sent), CONFIDENCE_TARGETS.profile)
+      sent: asInt6(outcomes.sent),
+      ...evidence(asInt6(outcomes.sent), CONFIDENCE_TARGETS.profile)
     }
   };
-  const weakAreas = (m.mistakes?.topics || []).slice(0, 5).map((t) => ({ topic: t.topic, misses: asInt5(t.misses) }));
+  const weakAreas = (m.mistakes?.topics || []).slice(0, 5).map((t) => ({ topic: t.topic, misses: asInt6(t.misses) }));
   const strongAreas = Array.isArray(input.strongAreas) ? input.strongAreas.slice(0, 5) : [];
   return {
     version: AI_INTELLIGENCE_VERSION,
@@ -17072,7 +17647,7 @@ function weakestDimension(dimensions = {}) {
   return worst;
 }
 function trendSlope(values = [], options = {}) {
-  const tail = asInt5(options.tail, 14);
+  const tail = asInt6(options.tail, 14);
   const v = values.slice(-tail).map(asNum2);
   if (v.length < 3) return { slope: 0, mean: mean(v), samples: v.length, confidence: 0 };
   const n = v.length;
@@ -17098,14 +17673,14 @@ var directionOf = (slope, mean2, tolerance = 0.05) => {
 var DIRECTION_BN = Object.freeze({ rising: "বাড়ছে", declining: "কমছে", steady: "স্থির" });
 function predictBehaviour(profile = {}, input = {}, options = {}) {
   const series = Array.isArray(input.series) ? input.series : [];
-  const horizon = Math.max(asInt5(options.horizonDays, 7), 1);
-  const windowDays = Math.max(asInt5(options.windowDays, 14), 1);
+  const horizon = Math.max(asInt6(options.horizonDays, 7), 1);
+  const windowDays = Math.max(asInt6(options.windowDays, 14), 1);
   const recent = series.slice(-windowDays);
   const activeRate = recent.length ? recent.filter((d) => asNum2(d.questions) > 0 || asNum2(d.lessons) > 0).length / recent.length : 0;
   const questionSlope = trendSlope(series.map((d) => asNum2(d.questions)), { tail: windowDays });
   const lessonSlope = trendSlope(series.map((d) => asNum2(d.lessons)), { tail: windowDays });
-  const daysSinceActive = asInt5(profile.engagement?.daysSinceActive);
-  const streak = asInt5(profile.engagement?.streak);
+  const daysSinceActive = asInt6(profile.engagement?.daysSinceActive);
+  const streak = asInt6(profile.engagement?.streak);
   const engagementDirection = directionOf(questionSlope.slope, questionSlope.mean);
   const expectedActiveDays = round2(clamp012(activeRate) * horizon, 1);
   const inactivityProbability = round2(clamp012(
@@ -17223,10 +17798,10 @@ function predictRisk(input = {}, options = {}) {
   const profile = input.profile || {};
   const series = Array.isArray(input.series) ? input.series : [];
   const metrics = input.metrics || {};
-  const windowDays = Math.max(asInt5(options.windowDays, 14), 1);
-  const activeDays = asInt5(metrics.activeDays);
-  const daysSinceActive = asInt5(profile.engagement?.daysSinceActive ?? metrics.daysSinceActive);
-  const streak = asInt5(profile.engagement?.streak ?? metrics.streak);
+  const windowDays = Math.max(asInt6(options.windowDays, 14), 1);
+  const activeDays = asInt6(metrics.activeDays);
+  const daysSinceActive = asInt6(profile.engagement?.daysSinceActive ?? metrics.daysSinceActive);
+  const streak = asInt6(profile.engagement?.streak ?? metrics.streak);
   const accuracy = asNum2(metrics.accuracy);
   const qSlope = trendSlope(series.map((d) => asNum2(d.questions)), { tail: windowDays });
   const lSlope = trendSlope(series.map((d) => asNum2(d.lessons)), { tail: windowDays });
@@ -17251,8 +17826,8 @@ function predictRisk(input = {}, options = {}) {
     `Active on ${recent.filter((d) => asNum2(d.questions) > 0 || asNum2(d.lessons) > 0).length} of the last ${windowDays} days.`
   ));
   const cp = metrics.courseProgress || {};
-  const started = asInt5(cp.started);
-  const completed = asInt5(cp.completed);
+  const started = asInt6(cp.started);
+  const completed = asInt6(cp.completed);
   const abandonment = started > 0 ? clamp012((started - completed) / started) : 0;
   items.push(riskItem(
     "course_abandonment",
@@ -17356,17 +17931,17 @@ function rankNextBestActions(input = {}, options = {}) {
   const milestones = input.milestones || {};
   const goal = input.goal || {};
   const minScore = asNum2(options.minScore, 0.2);
-  const daysSinceActive = asInt5(profile.engagement?.daysSinceActive ?? metrics.daysSinceActive);
-  const activeDays = asInt5(metrics.activeDays);
+  const daysSinceActive = asInt6(profile.engagement?.daysSinceActive ?? metrics.daysSinceActive);
+  const activeDays = asInt6(metrics.activeDays);
   const cp = metrics.courseProgress || {};
-  const lessonsDone = asInt5(cp.lessonsDone);
-  const lessonsTotal = asInt5(cp.lessonsTotal);
+  const lessonsDone = asInt6(cp.lessonsDone);
+  const lessonsTotal = asInt6(cp.lessonsTotal);
   const progressPercent = asNum2(cp.percent);
   const weak = profile.weakAreas || [];
-  const practice = asInt5(metrics.practiceActivity);
-  const quizAttempts = asInt5(profile.quizPattern?.attempts);
+  const practice = asInt6(metrics.practiceActivity);
+  const quizAttempts = asInt6(profile.quizPattern?.attempts);
   const accuracy = asNum2(metrics.accuracy);
-  const streak = asInt5(profile.engagement?.streak);
+  const streak = asInt6(profile.engagement?.streak);
   const riskScore = (kind) => asNum2(risk.risks?.find((r) => r.kind === kind)?.score);
   if (activeDays < CONFIDENCE_TARGETS.risk) {
     return {
@@ -17415,9 +17990,9 @@ function rankNextBestActions(input = {}, options = {}) {
     const top = weak[0];
     candidates.push({
       kind: "revise_weak_topic",
-      score: clamp012(0.5 + clamp012(asInt5(top.misses) / 10) * 0.3 + (accuracy < 60 ? 0.15 : 0)),
-      reasonBn: `"${top.topic}" topic-এ ${asInt5(top.misses)} বার ভুল হয়েছে — এটাই এখন সবচেয়ে বড় ফাঁক।`,
-      reasonEn: `"${top.topic}" has ${asInt5(top.misses)} misses — the biggest current gap.`,
+      score: clamp012(0.5 + clamp012(asInt6(top.misses) / 10) * 0.3 + (accuracy < 60 ? 0.15 : 0)),
+      reasonBn: `"${top.topic}" topic-এ ${asInt6(top.misses)} বার ভুল হয়েছে — এটাই এখন সবচেয়ে বড় ফাঁক।`,
+      reasonEn: `"${top.topic}" has ${asInt6(top.misses)} misses — the biggest current gap.`,
       params: { topic: top.topic },
       confidence: confidenceFromSample(practice, CONFIDENCE_TARGETS.profile)
     });
@@ -17445,9 +18020,9 @@ function rankNextBestActions(input = {}, options = {}) {
     candidates.push({
       kind: "complete_milestone",
       score: clamp012(0.5 + (1 - asNum2(next.remaining) / asNum2(next.target)) * 0.3),
-      reasonBn: `পরের milestone (${asInt5(next.target)}) থেকে মাত্র ${asInt5(next.remaining)} বাকি — অল্প পরিশ্রমেই পূরণ হবে।`,
-      reasonEn: `Only ${asInt5(next.remaining)} short of the next milestone (${asInt5(next.target)}).`,
-      params: { target: asInt5(next.target), remaining: asInt5(next.remaining) },
+      reasonBn: `পরের milestone (${asInt6(next.target)}) থেকে মাত্র ${asInt6(next.remaining)} বাকি — অল্প পরিশ্রমেই পূরণ হবে।`,
+      reasonEn: `Only ${asInt6(next.remaining)} short of the next milestone (${asInt6(next.target)}).`,
+      params: { target: asInt6(next.target), remaining: asInt6(next.remaining) },
       confidence: confidenceFromSample(activeDays, CONFIDENCE_TARGETS.profile)
     });
   }
@@ -17474,7 +18049,7 @@ function rankNextBestActions(input = {}, options = {}) {
 function predictBestTime(input = {}, options = {}) {
   const hours = Array.isArray(input.hours) ? input.hours.map(asNum2) : new Array(24).fill(0);
   const total = sumOf(hours);
-  const samples = asInt5(input.samples, total);
+  const samples = asInt6(input.samples, total);
   if (total <= 0 || samples < CONFIDENCE_TARGETS.bestTime) {
     return {
       version: AI_INTELLIGENCE_VERSION,
@@ -17518,10 +18093,10 @@ function dayPartTotals(hours = []) {
 function detectMetricAnomaly(recent, baseline, options = {}) {
   const r = asNum2(recent);
   const b = asNum2(baseline);
-  const rSample = asInt5(options.recentSample);
-  const bSample = asInt5(options.baselineSample);
+  const rSample = asInt6(options.recentSample);
+  const bSample = asInt6(options.baselineSample);
   const higherIsBetter = options.higherIsBetter !== false;
-  const minSample = asInt5(options.minSample, CONFIDENCE_TARGETS.anomaly);
+  const minSample = asInt6(options.minSample, CONFIDENCE_TARGETS.anomaly);
   const threshold = asNum2(options.threshold, 0.3);
   const samples = Math.min(rSample, bSample);
   const confidence = confidenceFromSample(samples, minSample);
@@ -17557,8 +18132,8 @@ var ANOMALY_METRICS = Object.freeze([
 function detectAnomalies(input = {}, options = {}) {
   const recent = input.recent || {};
   const baseline = input.baseline || {};
-  const recentSample = asInt5(input.recentSample);
-  const baselineSample = asInt5(input.baselineSample);
+  const recentSample = asInt6(input.recentSample);
+  const baselineSample = asInt6(input.baselineSample);
   const found = ANOMALY_METRICS.map((spec) => {
     const result = detectMetricAnomaly(recent[spec.key], baseline[spec.key], {
       recentSample,
@@ -17586,9 +18161,9 @@ function detectAnomalies(input = {}, options = {}) {
   };
 }
 function forecastTrend(values = [], options = {}) {
-  const horizon = Math.max(asInt5(options.horizonDays, 7), 1);
+  const horizon = Math.max(asInt6(options.horizonDays, 7), 1);
   const v = values.map(asNum2);
-  const slope = trendSlope(v, { tail: asInt5(options.tail, 21) });
+  const slope = trendSlope(v, { tail: asInt6(options.tail, 21) });
   if (v.length < 5) {
     return {
       version: AI_INTELLIGENCE_VERSION,
@@ -17628,14 +18203,14 @@ function forecastTrend(values = [], options = {}) {
 function buildContentIntelligence(input = {}, options = {}) {
   const lessons = Array.isArray(input.lessons) ? input.lessons : [];
   const quizzes = Array.isArray(input.quizzes) ? input.quizzes : [];
-  const minSample = asInt5(options.minSample, CONFIDENCE_TARGETS.content);
+  const minSample = asInt6(options.minSample, CONFIDENCE_TARGETS.content);
   const findings = [];
   for (const l of lessons) {
-    const learners = asInt5(l.learners ?? l.views);
+    const learners = asInt6(l.learners ?? l.views);
     if (learners < minSample) continue;
     const completion = asNum2(l.completionRate);
     const quizAccuracy = asNum2(l.quizAccuracy);
-    const exitRate = asNum2(l.exits) / Math.max(asInt5(l.starts), 1);
+    const exitRate = asNum2(l.exits) / Math.max(asInt6(l.starts), 1);
     const confidence = confidenceFromSample(learners, minSample);
     if (completion > 0 && completion < 50) {
       findings.push({
@@ -17669,7 +18244,7 @@ function buildContentIntelligence(input = {}, options = {}) {
         suggestionEn: "Revisit the content and examples (no change without admin approval)."
       });
     }
-    if (exitRate >= 0.4 && asInt5(l.starts) >= minSample) {
+    if (exitRate >= 0.4 && asInt6(l.starts) >= minSample) {
       findings.push({
         id: `lesson-exit:${l.courseId || ""}/${l.lessonId}`,
         kind: "high_exit_rate",
@@ -17678,7 +18253,7 @@ function buildContentIntelligence(input = {}, options = {}) {
         severity: exitRate >= 0.6 ? "high" : "medium",
         confidence,
         band: confidenceBand(confidence),
-        evidence: { learners, starts: asInt5(l.starts), exits: asInt5(l.exits), exitRate: round2(exitRate, 3) },
+        evidence: { learners, starts: asInt6(l.starts), exits: asInt6(l.exits), exitRate: round2(exitRate, 3) },
         reasonBn: `শুরু করার পর ${Math.round(exitRate * 100)}% ক্ষেত্রে student বেরিয়ে গেছে — মাঝপথে আটকে যাচ্ছে।`,
         reasonEn: `${Math.round(exitRate * 100)}% of starts end in an exit — students stall partway.`,
         suggestionBn: "লেসনের মাঝের ধাপগুলো যাচাই করুন — সম্ভবত কোনো bug বা অস্পষ্ট ধাপ আছে।",
@@ -17687,7 +18262,7 @@ function buildContentIntelligence(input = {}, options = {}) {
     }
   }
   for (const q of quizzes) {
-    const attempts = asInt5(q.attempts);
+    const attempts = asInt6(q.attempts);
     if (attempts < minSample) continue;
     const accuracy = asNum2(q.accuracy);
     const confidence = confidenceFromSample(attempts, minSample);
@@ -17735,10 +18310,10 @@ function buildContentIntelligence(input = {}, options = {}) {
 }
 function buildCourseIntelligence(input = {}, options = {}) {
   const courses = Array.isArray(input.courses) ? input.courses : [];
-  const minSample = asInt5(options.minSample, CONFIDENCE_TARGETS.course);
+  const minSample = asInt6(options.minSample, CONFIDENCE_TARGETS.course);
   const suggestions = [];
   for (const c of courses) {
-    const learners = asInt5(c.learners);
+    const learners = asInt6(c.learners);
     if (learners < minSample) continue;
     const completion = asNum2(c.completionRate);
     const lessonCompletion = asNum2(c.lessonCompletionRate);
@@ -17769,7 +18344,7 @@ function buildCourseIntelligence(input = {}, options = {}) {
         suggestionEn: "Shorter lessons with interleaved practice tend to lift completion."
       });
     }
-    if (asInt5(c.starts) > 0 && completion === 0 && asInt5(c.completed) === 0) {
+    if (asInt6(c.starts) > 0 && completion === 0 && asInt6(c.completed) === 0) {
       suggestions.push({
         id: `course-abandoned:${c.courseId}`,
         courseId: c.courseId,
@@ -17777,7 +18352,7 @@ function buildCourseIntelligence(input = {}, options = {}) {
         severity: "high",
         confidence,
         band: confidenceBand(confidence),
-        evidence: { learners, starts: asInt5(c.starts), completed: asInt5(c.completed) },
+        evidence: { learners, starts: asInt6(c.starts), completed: asInt6(c.completed) },
         suggestionBn: "এখনো কেউ কোর্সটি শেষ করেনি — প্রথম lesson-এর দৈর্ঘ্য ও কঠিনতা যাচাই করুন।",
         suggestionEn: "Nobody has finished this course yet — check the first lesson for length and difficulty."
       });
@@ -17824,7 +18399,7 @@ function evaluateAiPerformance(decisions = [], options = {}) {
     },
     /* Honest about the ceiling: with no outcomes recorded, quality is unknown,
      * not perfect. */
-    quality: withOutcome.length < asInt5(options.minScored, 5) ? "insufficient-outcomes" : (falsePositive + falseNegative) / withOutcome.length <= 0.2 ? "good" : "needs-review"
+    quality: withOutcome.length < asInt6(options.minScored, 5) ? "insufficient-outcomes" : (falsePositive + falseNegative) / withOutcome.length <= 0.2 ? "good" : "needs-review"
   };
 }
 function buildAdminAiSignals(input = {}, options = {}) {
@@ -17848,7 +18423,7 @@ function buildAdminAiSignals(input = {}, options = {}) {
 
 // ai-analytics-policy.mjs
 var AI_POLICY_VERSION = "ai-p5-policy-v1";
-var asInt6 = (v, fallback = 0) => {
+var asInt7 = (v, fallback = 0) => {
   const n = Number(v);
   return Number.isFinite(n) ? Math.trunc(n) : fallback;
 };
@@ -17977,17 +18552,17 @@ function collectNumbers(value, out = []) {
   }
   return out;
 }
-var BN_DIGITS = "০১২৩৪৫৬৭৮৯";
+var BN_DIGITS2 = "০১২৩৪৫৬৭৮৯";
 function normaliseBengaliDigits(text) {
-  return String(text || "").replace(/[০-৯]/g, (d) => String(BN_DIGITS.indexOf(d)));
+  return String(text || "").replace(/[০-৯]/g, (d) => String(BN_DIGITS2.indexOf(d)));
 }
 var AI_CALL_TRIGGERS = Object.freeze(["copilot-question", "notification-wording", "admin-summary"]);
 function shouldCallModel(trigger, context = {}) {
   if (!AI_CALL_TRIGGERS.includes(trigger)) return { call: false, reason: "not-a-model-surface" };
   if (context.cachedFresh === true) return { call: false, reason: "cache-hit" };
-  const budget = asInt6(context.remainingBudget, -1);
+  const budget = asInt7(context.remainingBudget, -1);
   if (budget === 0) return { call: false, reason: "budget-exhausted" };
-  if (asInt6(context.signalSamples) < asInt6(context.minSamples, 1)) return { call: false, reason: "no-signal" };
+  if (asInt7(context.signalSamples) < asInt7(context.minSamples, 1)) return { call: false, reason: "no-signal" };
   return { call: true, reason: "allowed" };
 }
 var CAPABILITIES = Object.freeze({
@@ -18013,8 +18588,8 @@ var AI_RATE_LIMITS = Object.freeze({
 function checkAiRate(trigger, counters = {}) {
   const limit = AI_RATE_LIMITS[trigger];
   if (!limit) return { ok: false, reason: "unknown-trigger" };
-  const hour = asInt6(counters.hour);
-  const day = asInt6(counters.day);
+  const hour = asInt7(counters.hour);
+  const day = asInt7(counters.day);
   if (day >= limit.perDay) return { ok: false, reason: "daily-limit", limit: limit.perDay, remaining: 0 };
   if (hour >= limit.perHour) return { ok: false, reason: "hourly-limit", limit: limit.perHour, remaining: 0 };
   return { ok: true, remaining: { hour: limit.perHour - hour, day: limit.perDay - day } };
@@ -18036,446 +18611,6 @@ function policyEnvelope(input = {}) {
   };
 }
 
-// ai-analytics-store.mjs
-var AI_STORE_VERSION = "ai-p5-store-v1";
-var AI_CACHE_TTL_MS = Object.freeze({
-  insight: 6 * 3600 * 1e3,
-  copilot: 15 * 60 * 1e3,
-  summary: 6 * 3600 * 1e3,
-  wording: 24 * 3600 * 1e3
-});
-var isMissingSchemaError2 = (err) => /no such table/i.test(String(err?.message || err?.cause?.message || err || ""));
-var asInt7 = (v, fallback = 0) => {
-  const n = Number(v);
-  return Number.isFinite(n) ? Math.trunc(n) : fallback;
-};
-var nowIso = (ms) => new Date(asInt7(ms, Date.now())).toISOString();
-var AiAnalyticsStore = class {
-  #d1;
-  #ready;
-  constructor(d1) {
-    this.#d1 = d1 || null;
-  }
-  available() {
-    return Boolean(this.#d1);
-  }
-  async init() {
-    if (!this.#d1) return false;
-    if (!this.#ready) {
-      this.#ready = this.#createSchema().catch((err) => {
-        this.#ready = null;
-        throw err;
-      });
-    }
-    await this.#ready;
-    return true;
-  }
-  async #createSchema() {
-    const statements = [
-      `CREATE TABLE IF NOT EXISTS ai_cache (
-         cache_key TEXT PRIMARY KEY,
-         kind TEXT NOT NULL,
-         payload_json TEXT NOT NULL,
-         model TEXT,
-         created_at INTEGER NOT NULL,
-         expires_at INTEGER NOT NULL
-       )`,
-      `CREATE INDEX IF NOT EXISTS idx_ai_cache_kind ON ai_cache(kind, expires_at)`,
-      `CREATE TABLE IF NOT EXISTS ai_decisions (
-         id TEXT PRIMARY KEY,
-         student_id TEXT,
-         signal TEXT NOT NULL,
-         recommendation TEXT NOT NULL,
-         reason TEXT,
-         model TEXT,
-         model_version TEXT,
-         confidence REAL,
-         action_taken TEXT,
-         outcome_json TEXT,
-         latency_ms INTEGER,
-         cost_usd REAL,
-         created_at INTEGER NOT NULL,
-         resolved_at INTEGER
-       )`,
-      `CREATE INDEX IF NOT EXISTS idx_ai_decisions_student ON ai_decisions(student_id, created_at)`,
-      `CREATE INDEX IF NOT EXISTS idx_ai_decisions_created ON ai_decisions(created_at)`,
-      `CREATE TABLE IF NOT EXISTS ai_approvals (
-         id TEXT PRIMARY KEY,
-         kind TEXT NOT NULL,
-         payload_json TEXT,
-         status TEXT NOT NULL,
-         actor TEXT,
-         note TEXT,
-         created_at INTEGER NOT NULL,
-         decided_at INTEGER
-       )`,
-      `CREATE INDEX IF NOT EXISTS idx_ai_approvals_status ON ai_approvals(status, created_at)`,
-      /* Experiment outcomes: which variant was shown and whether it converted, so
-       * A/B optimisation has data instead of a guess. */
-      `CREATE TABLE IF NOT EXISTS ai_experiments (
-         id TEXT PRIMARY KEY,
-         experiment TEXT NOT NULL,
-         variant TEXT NOT NULL,
-         student_id TEXT,
-         shown_at INTEGER NOT NULL,
-         opened_at INTEGER,
-         clicked_at INTEGER,
-         converted_at INTEGER
-       )`,
-      `CREATE INDEX IF NOT EXISTS idx_ai_experiments_exp ON ai_experiments(experiment, variant, shown_at)`
-    ];
-    for (const sql of statements) await this.#d1.prepare(sql).run();
-  }
-  /* ── cache ──────────────────────────────────────────────────────────────── */
-  async getCache(key, nowMs = Date.now()) {
-    if (!this.#d1) return null;
-    await this.init();
-    try {
-      const row = await this.#d1.prepare(
-        "SELECT payload_json, model, created_at, expires_at FROM ai_cache WHERE cache_key = ?"
-      ).bind(String(key)).first();
-      if (!row) return null;
-      if (asInt7(row.expires_at) <= asInt7(nowMs)) {
-        return null;
-      }
-      return {
-        payload: safeParse2(row.payload_json),
-        model: row.model || null,
-        createdAt: asInt7(row.created_at),
-        expiresAt: asInt7(row.expires_at),
-        fresh: true
-      };
-    } catch (err) {
-      if (isMissingSchemaError2(err)) return null;
-      throw err;
-    }
-  }
-  async putCache(key, kind, payload, options = {}) {
-    if (!this.#d1) return { stored: false };
-    await this.init();
-    const now = asInt7(options.now, Date.now());
-    const ttl = asInt7(options.ttlMs, AI_CACHE_TTL_MS[kind] ?? AI_CACHE_TTL_MS.insight);
-    await this.#d1.prepare(
-      `INSERT INTO ai_cache (cache_key, kind, payload_json, model, created_at, expires_at)
-       VALUES (?, ?, ?, ?, ?, ?)
-       ON CONFLICT(cache_key) DO UPDATE SET
-         payload_json = excluded.payload_json,
-         kind = excluded.kind,
-         model = excluded.model,
-         created_at = excluded.created_at,
-         expires_at = excluded.expires_at`
-    ).bind(
-      String(key),
-      String(kind),
-      JSON.stringify(payload ?? null),
-      options.model ? String(options.model) : null,
-      now,
-      now + ttl
-    ).run();
-    return { stored: true, expiresAt: now + ttl, ttlMs: ttl };
-  }
-  async sweepCache(nowMs = Date.now(), limit = 500) {
-    if (!this.#d1) return { removed: 0 };
-    await this.init();
-    const res = await this.#d1.prepare(
-      "DELETE FROM ai_cache WHERE cache_key IN (SELECT cache_key FROM ai_cache WHERE expires_at <= ? LIMIT ?)"
-    ).bind(asInt7(nowMs), asInt7(limit, 500)).run();
-    return { removed: asInt7(res?.meta?.changes) };
-  }
-  async cacheStats(nowMs = Date.now()) {
-    if (!this.#d1) return { total: 0, live: 0, expired: 0 };
-    await this.init();
-    const row = await this.#d1.prepare(
-      `SELECT COUNT(*) AS total,
-              SUM(CASE WHEN expires_at > ? THEN 1 ELSE 0 END) AS live
-       FROM ai_cache`
-    ).bind(asInt7(nowMs)).first();
-    const total = asInt7(row?.total);
-    const live = asInt7(row?.live);
-    return { total, live, expired: Math.max(0, total - live) };
-  }
-  /* ── decision log ───────────────────────────────────────────────────────── */
-  async logDecision(entry = {}, nowMs = Date.now()) {
-    if (!this.#d1) return { stored: false };
-    await this.init();
-    const now = asInt7(nowMs, Date.now());
-    const id = String(entry.id || makeId("dec", now, entry.studentId, entry.signal));
-    await this.#d1.prepare(
-      `INSERT INTO ai_decisions
-         (id, student_id, signal, recommendation, reason, model, model_version,
-          confidence, action_taken, outcome_json, latency_ms, cost_usd, created_at, resolved_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT(id) DO UPDATE SET
-         action_taken = excluded.action_taken,
-         outcome_json = excluded.outcome_json,
-         resolved_at = excluded.resolved_at`
-    ).bind(
-      id,
-      entry.studentId ? String(entry.studentId) : null,
-      String(entry.signal || "unknown"),
-      String(entry.recommendation || "none"),
-      entry.reason ? String(entry.reason) : null,
-      entry.model ? String(entry.model) : null,
-      entry.modelVersion ? String(entry.modelVersion) : null,
-      Number.isFinite(Number(entry.confidence)) ? Number(entry.confidence) : null,
-      entry.actionTaken ? String(entry.actionTaken) : null,
-      entry.outcome !== void 0 ? JSON.stringify(entry.outcome) : null,
-      Number.isFinite(Number(entry.latencyMs)) ? Math.trunc(Number(entry.latencyMs)) : null,
-      Number.isFinite(Number(entry.costUsd)) ? Number(entry.costUsd) : null,
-      now,
-      entry.outcome !== void 0 ? now : null
-    ).run();
-    return { stored: true, id };
-  }
-  async listDecisions(options = {}) {
-    if (!this.#d1) return [];
-    await this.init();
-    const limit = Math.min(asInt7(options.limit, 200), 1e3);
-    try {
-      const since = asInt7(options.sinceMs);
-      const rows = since > 0 ? await this.#readAll("SELECT * FROM ai_decisions WHERE created_at >= ? ORDER BY created_at DESC LIMIT ?", since, limit) : await this.#readAll("SELECT * FROM ai_decisions ORDER BY created_at DESC LIMIT ?", limit);
-      return rows.map(mapDecision);
-    } catch (err) {
-      if (isMissingSchemaError2(err)) return [];
-      throw err;
-    }
-  }
-  async getDecision(id) {
-    if (!this.#d1) return null;
-    await this.init();
-    try {
-      const row = await this.#d1.prepare("SELECT * FROM ai_decisions WHERE id = ?").bind(String(id)).first();
-      return row ? mapDecision(row) : null;
-    } catch (err) {
-      if (isMissingSchemaError2(err)) return null;
-      throw err;
-    }
-  }
-  async decisionStats(nowMs = Date.now()) {
-    if (!this.#d1) return { total: 0, resolved: 0 };
-    const row = await this.#d1.prepare(
-      `SELECT COUNT(*) AS total, SUM(CASE WHEN outcome_json IS NOT NULL THEN 1 ELSE 0 END) AS resolved
-       FROM ai_decisions`
-    ).first();
-    return { total: asInt7(row?.total), resolved: asInt7(row?.resolved) };
-  }
-  /* ── approvals ──────────────────────────────────────────────────────────── */
-  async createApproval(entry = {}, nowMs = Date.now()) {
-    if (!this.#d1) return { stored: false };
-    await this.init();
-    const now = asInt7(nowMs, Date.now());
-    const id = String(entry.id || makeId("apr", now, entry.kind, entry.actor));
-    await this.#d1.prepare(
-      `INSERT INTO ai_approvals (id, kind, payload_json, status, actor, note, created_at, decided_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-    ).bind(
-      id,
-      String(entry.kind || "unknown"),
-      entry.payload !== void 0 ? JSON.stringify(entry.payload) : null,
-      String(entry.status || "pending"),
-      entry.actor ? String(entry.actor) : null,
-      entry.note ? String(entry.note) : null,
-      now,
-      entry.status && entry.status !== "pending" ? now : null
-    ).run();
-    return { stored: true, id };
-  }
-  async getApproval(id) {
-    if (!this.#d1) return null;
-    await this.init();
-    try {
-      const row = await this.#d1.prepare("SELECT * FROM ai_approvals WHERE id = ?").bind(String(id)).first();
-      return row ? mapApproval(row) : null;
-    } catch (err) {
-      if (isMissingSchemaError2(err)) return null;
-      throw err;
-    }
-  }
-  async decideApproval(id, status, actor, options = {}, nowMs = Date.now()) {
-    if (!this.#d1) return { stored: false };
-    await this.init();
-    if (!["approved", "rejected", "modified"].includes(status)) return { stored: false, reason: "bad-status" };
-    if (!actor) return { stored: false, reason: "actor-required" };
-    const now = asInt7(nowMs, Date.now());
-    const res = await this.#d1.prepare(
-      `UPDATE ai_approvals
-       SET status = ?, actor = ?, note = COALESCE(?, note), payload_json = COALESCE(?, payload_json), decided_at = ?
-       WHERE id = ?`
-    ).bind(
-      status,
-      String(actor),
-      options.note ? String(options.note) : null,
-      options.payload !== void 0 ? JSON.stringify(options.payload) : null,
-      now,
-      String(id)
-    ).run();
-    return { stored: asInt7(res?.meta?.changes) > 0, id };
-  }
-  async listApprovals(options = {}) {
-    if (!this.#d1) return [];
-    await this.init();
-    const limit = Math.min(asInt7(options.limit, 100), 500);
-    try {
-      const rows = options.status ? await this.#readAll("SELECT * FROM ai_approvals WHERE status = ? ORDER BY created_at DESC LIMIT ?", String(options.status), limit) : await this.#readAll("SELECT * FROM ai_approvals ORDER BY created_at DESC LIMIT ?", limit);
-      return rows.map(mapApproval);
-    } catch (err) {
-      if (isMissingSchemaError2(err)) return [];
-      throw err;
-    }
-  }
-  /* ── experiments ────────────────────────────────────────────────────────── */
-  async recordExperiment(entry = {}, nowMs = Date.now()) {
-    if (!this.#d1) return { stored: false };
-    await this.init();
-    const now = asInt7(nowMs, Date.now());
-    const id = String(entry.id || makeId("exp", now, entry.experiment, entry.variant, entry.studentId));
-    await this.#d1.prepare(
-      `INSERT INTO ai_experiments (id, experiment, variant, student_id, shown_at, opened_at, clicked_at, converted_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT(id) DO UPDATE SET
-         opened_at = COALESCE(excluded.opened_at, opened_at),
-         clicked_at = COALESCE(excluded.clicked_at, clicked_at),
-         converted_at = COALESCE(excluded.converted_at, converted_at)`
-    ).bind(
-      id,
-      String(entry.experiment || "unknown"),
-      String(entry.variant || "A"),
-      entry.studentId ? String(entry.studentId) : null,
-      now,
-      entry.opened ? now : null,
-      entry.clicked ? now : null,
-      entry.converted ? now : null
-    ).run();
-    return { stored: true, id };
-  }
-  async experimentResults(experiment) {
-    if (!this.#d1) return [];
-    await this.init();
-    try {
-      const rows = await this.#readAll(
-        `SELECT variant,
-                COUNT(*) AS shown,
-                SUM(CASE WHEN opened_at IS NOT NULL THEN 1 ELSE 0 END) AS opened,
-                SUM(CASE WHEN clicked_at IS NOT NULL THEN 1 ELSE 0 END) AS clicked,
-                SUM(CASE WHEN converted_at IS NOT NULL THEN 1 ELSE 0 END) AS converted
-         FROM ai_experiments WHERE experiment = ? GROUP BY variant`,
-        String(experiment)
-      );
-      return rows.map((r) => ({
-        variant: r.variant,
-        shown: asInt7(r.shown),
-        opened: asInt7(r.opened),
-        clicked: asInt7(r.clicked),
-        converted: asInt7(r.converted),
-        openRate: asInt7(r.shown) ? Number((asInt7(r.opened) / asInt7(r.shown)).toFixed(4)) : 0,
-        clickRate: asInt7(r.shown) ? Number((asInt7(r.clicked) / asInt7(r.shown)).toFixed(4)) : 0,
-        conversionRate: asInt7(r.shown) ? Number((asInt7(r.converted) / asInt7(r.shown)).toFixed(4)) : 0
-      }));
-    } catch (err) {
-      if (isMissingSchemaError2(err)) return [];
-      throw err;
-    }
-  }
-  /* ── student activity hours ─────────────────────────────────────────────── */
-  /* Only the timestamp column is read. The AI best-time layer needs *when* a
-   * student studied, not *what* they did, so it never pulls event names or
-   * params into the intelligence path. Reads `analytics_events`, which Phase 4
-   * owns; a database that has not been through a Phase 4 ingest yet returns
-   * empty rather than throwing. */
-  async analyticsEventsFor(userId, sinceMs, limit = 2e3) {
-    if (!this.#d1) return [];
-    try {
-      const rows = await this.#d1.prepare(
-        "SELECT at FROM analytics_events WHERE user_id = ? AND at >= ? ORDER BY at ASC LIMIT ?"
-      ).bind(String(userId), asInt7(sinceMs), Math.min(asInt7(limit, 2e3), 5e3)).all();
-      return (rows?.results || []).map((r) => ({ at: asInt7(r.at) }));
-    } catch (err) {
-      if (isMissingSchemaError2(err)) return [];
-      throw err;
-    }
-  }
-  /* ── monitoring ─────────────────────────────────────────────────────────── */
-  /* One call the health route uses. Fail-soft per section so a single missing
-   * table cannot make the whole health check look down. */
-  async health(nowMs = Date.now()) {
-    if (!this.#d1) return { available: false };
-    try {
-      await this.init();
-    } catch (err) {
-      return { available: false, schemaError: String(err?.message || err) };
-    }
-    const [cache, decisions, approvals] = await Promise.all([
-      this.cacheStats(nowMs).catch(() => ({ total: 0, live: 0, expired: 0 })),
-      this.decisionStats(nowMs).catch(() => ({ total: 0, resolved: 0 })),
-      this.listApprovals({ status: "pending", limit: 1 }).catch(() => [])
-    ]);
-    return {
-      available: true,
-      version: AI_STORE_VERSION,
-      cache,
-      decisions,
-      pendingApprovals: Array.isArray(approvals) ? approvals.length : 0
-    };
-  }
-  /* ── internals ──────────────────────────────────────────────────────────── */
-  async #readAll(sql, ...bindings) {
-    try {
-      const res = await this.#d1.prepare(sql).bind(...bindings).all();
-      return res?.results || [];
-    } catch (err) {
-      if (isMissingSchemaError2(err)) return [];
-      throw err;
-    }
-  }
-};
-function mapDecision(row) {
-  return {
-    id: row.id,
-    studentId: row.student_id || null,
-    signal: row.signal,
-    recommendation: row.recommendation,
-    reason: row.reason || null,
-    model: row.model || null,
-    modelVersion: row.model_version || null,
-    confidence: row.confidence === null || row.confidence === void 0 ? null : Number(row.confidence),
-    actionTaken: row.action_taken || null,
-    outcome: row.outcome_json ? safeParse2(row.outcome_json) : null,
-    latencyMs: row.latency_ms === null || row.latency_ms === void 0 ? null : Number(row.latency_ms),
-    costUsd: row.cost_usd === null || row.cost_usd === void 0 ? null : Number(row.cost_usd),
-    createdAt: asInt7(row.created_at),
-    resolvedAt: row.resolved_at === null || row.resolved_at === void 0 ? null : asInt7(row.resolved_at)
-  };
-}
-function mapApproval(row) {
-  return {
-    id: row.id,
-    kind: row.kind,
-    payload: row.payload_json ? safeParse2(row.payload_json) : null,
-    status: row.status,
-    actor: row.actor || null,
-    note: row.note || null,
-    createdAt: asInt7(row.created_at),
-    decidedAt: row.decided_at === null || row.decided_at === void 0 ? null : asInt7(row.decided_at)
-  };
-}
-function makeId(prefix, ts, ...parts) {
-  const seed = `${prefix}|${ts}|${parts.filter(Boolean).join("|")}`;
-  let h = 2166136261;
-  for (let i = 0; i < seed.length; i++) {
-    h ^= seed.charCodeAt(i);
-    h = Math.imul(h, 16777619) >>> 0;
-  }
-  return `${prefix}_${ts.toString(36)}_${h.toString(36)}`;
-}
-function safeParse2(text) {
-  try {
-    return JSON.parse(text);
-  } catch (_) {
-    return null;
-  }
-}
-var __aiStoreTest = Object.freeze({ makeId, mapDecision, mapApproval, isMissingSchemaError: isMissingSchemaError2, nowIso });
-
 // ai-analytics-copilot.mjs
 var AI_COPILOT_VERSION = "ai-p5-copilot-v1";
 var asInt8 = (v, fallback = 0) => {
@@ -18486,10 +18621,10 @@ var asNum3 = (v, fallback = 0) => {
   const n = Number(v);
   return Number.isFinite(n) ? n : fallback;
 };
-var BN_DIGITS2 = "০১২৩৪৫৬৭৮৯";
+var BN_DIGITS3 = "০১২৩৪৫৬৭৮৯";
 function bn(value) {
   if (value === null || value === void 0 || value === "") return "—";
-  return String(value).replace(/[0-9]/g, (d) => BN_DIGITS2[Number(d)]);
+  return String(value).replace(/[0-9]/g, (d) => BN_DIGITS3[Number(d)]);
 }
 function sp(value) {
   return value === null || value === void 0 || value === "" ? "—" : String(value);
@@ -18551,11 +18686,11 @@ var INTENTS2 = Object.freeze([
     keywords: ["অস্বাভাবিক", "anomaly", "unusual", "হঠাৎ", "sudden", "spike"]
   }
 ]);
-function normaliseQuestion(question) {
+function normaliseQuestion2(question) {
   return normaliseBengaliDigits(String(question || "")).toLowerCase().replace(/\s+/g, " ").trim();
 }
 function detectIntent(question) {
-  const q = normaliseQuestion(question);
+  const q = normaliseQuestion2(question);
   if (!q) return { intent: null, query: null, confidence: 0, reason: "empty-question" };
   let best = null;
   for (const spec of INTENTS2) {
@@ -19021,7 +19156,7 @@ function optimiseExperiment(rows = [], options = {}) {
     noteEn: "Ranked on learning conversion, not on short-term clicks."
   };
 }
-var __copilotTest = Object.freeze({ nd, sp, bn, compactParams, isBangla, normaliseQuestion });
+var __copilotTest = Object.freeze({ nd, sp, bn, compactParams, isBangla, normaliseQuestion: normaliseQuestion2 });
 
 // ai-analytics-routes.mjs
 var AI_ANALYTICS_PREFIX = "/api/analytics/ai/";
@@ -19100,7 +19235,7 @@ async function handleAiAnalyticsRequest(request, env, ctx, deps = {}) {
     });
     if (!gate.ok) return json6(request, { error: "policy-denied", checks: gate.failed, ...examples() }, 429);
     const dashboard = await buildAdminDashboard(analyticsStore, questionFilters);
-    const cacheKey = `copilot:${await digest(question)}:${window}`;
+    const cacheKey = `copilot:${await digest2(question)}:${window}`;
     const cached = await store.getCache(cacheKey);
     if (cached?.payload) {
       return json6(request, { ok: true, cached: true, ...cached.payload });
@@ -19383,7 +19518,7 @@ async function aiCounters(store, trigger) {
     day: day.filter((r) => String(r.signal).startsWith(prefix)).length
   };
 }
-async function digest(text) {
+async function digest2(text) {
   const data = new TextEncoder().encode(String(text));
   if (globalThis.crypto?.subtle) {
     const hash = await globalThis.crypto.subtle.digest("SHA-256", data);
@@ -21332,8 +21467,8 @@ var SqliteAuthRepository = class _SqliteAuthRepository {
   static PUBLIC_ID_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
   async #derivePublicId(userId, attempt = 0) {
     const { crypto: crypto2 } = globalThis;
-    const digest2 = await crypto2.subtle.digest("SHA-256", new TextEncoder().encode(`ah-public-id-v1|${userId}|${attempt}`));
-    const bytes = new Uint8Array(digest2).subarray(0, 4);
+    const digest3 = await crypto2.subtle.digest("SHA-256", new TextEncoder().encode(`ah-public-id-v1|${userId}|${attempt}`));
+    const bytes = new Uint8Array(digest3).subarray(0, 4);
     const alphabet = _SqliteAuthRepository.PUBLIC_ID_ALPHABET;
     let value = (bytes[0] << 24 | bytes[1] << 16 | bytes[2] << 8 | bytes[3]) >>> 0;
     let out = "";
@@ -23595,9 +23730,9 @@ function cookiePairs(response3, jar) {
   return jar;
 }
 async function sha256Base64Url(text) {
-  const digest2 = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(String(text))));
+  const digest3 = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(String(text))));
   let bin = "";
-  for (const b of digest2) bin += String.fromCharCode(b);
+  for (const b of digest3) bin += String.fromCharCode(b);
   return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 var cookieHeader = (jar) => Object.entries(jar).map(([k, v]) => `${k}=${v}`).join("; ");
@@ -27126,6 +27261,14 @@ var gk_agent_worker_default = {
       if (env.PUB_KV && await env.PUB_KV.get(backupDay) !== "done") {
         await createSnapshot(env);
         await env.PUB_KV.put(backupDay, "done");
+      }
+    } catch (_) {
+    }
+    try {
+      const sweepDay = `cacheSweepDay:${dhakaToday()}`;
+      if (env.PROFILE_DB && env.PUB_KV && await env.PUB_KV.get(sweepDay) !== "done") {
+        await new AiAnalyticsStore(env.PROFILE_DB).sweepCache();
+        await env.PUB_KV.put(sweepDay, "done");
       }
     } catch (_) {
     }

@@ -19,6 +19,8 @@ import { handleFilesStorageRequest } from './files-storage.mjs';
 /* P13 — gzip/br for large JSON replies (read path scale). */
 import { compressResponse } from './p13-api-compression.mjs';
 import { createSnapshot } from './p19-backup.mjs';
+/* P25 — the daily cache sweep needs the store class here as well. */
+import { AiAnalyticsStore } from './ai-analytics-store.mjs';
 export { EmailGatewayCoordinator } from './email-gateway/worker/email-coordinator.mjs';
 export { AdmissionAuthAuthority } from './auth-native/worker/auth-authority-do.mjs';
 /* P23 — live voice agent. One Durable Object per owner holds the socket and the
@@ -614,6 +616,17 @@ export default {
       if (env.PUB_KV && (await env.PUB_KV.get(backupDay)) !== 'done') {
         await createSnapshot(env);
         await env.PUB_KV.put(backupDay, 'done');
+      }
+    } catch (_) {}
+    /* P25 — drop expired chat-cache rows. Reads already ignore an expired row,
+       so this is housekeeping, not correctness: it stops the table growing
+       without bound on a free-plan database. Guarded to once per Dhaka day for
+       the same reason the snapshot is — the cron ticks every minute. */
+    try {
+      const sweepDay = `cacheSweepDay:${dhakaToday()}`;
+      if (env.PROFILE_DB && env.PUB_KV && (await env.PUB_KV.get(sweepDay)) !== 'done') {
+        await new AiAnalyticsStore(env.PROFILE_DB).sweepCache();
+        await env.PUB_KV.put(sweepDay, 'done');
       }
     } catch (_) {}
     if (!env.GK_KV || !keys(env).length) return;

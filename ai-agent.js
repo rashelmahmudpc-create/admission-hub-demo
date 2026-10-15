@@ -23,6 +23,10 @@ import { validateResponse, describeResponseValidation, RESPONSE_VALIDATION_VERSI
 import { describeActions, ACTION_VERSION } from './action-engine.js';
 import { makeTrace, makeRequestId, callerRef, quotaState, renderTrace, estimateTokens, FALLBACK, OBSERVABILITY_VERSION, describeObservability, parseTraces, appendTrace, addUsage, emptyUsage, estimateCost, validateObservability } from './observability.js';
 import { aiStateStore, AI_STATE_VERSION } from './ai-state-do.mjs';
+/* P25 — chat response cache (step 1 of the owner's AI cost plan). The store is
+ * the existing analytics one, which already owns the `ai_cache` table. */
+import { AiAnalyticsStore } from './ai-analytics-store.mjs';
+import { chatCacheEnabled, isCacheableRequest, chatCacheKey, chatCacheTtl } from './ai-chat-cache.mjs';
 
 export const AGENT_VERSION = 'agent-f1';
 export const SYSTEM_PROMPT_V = 'sys-f1-3-ai-personalization';
@@ -1064,6 +1068,42 @@ export async function agentChat(request, env, uid, opts = {}) {
   const sys = [systemPrompt, formatRules, ctxText, memoryText, summaryText].filter(Boolean).join('\n\n');
 
   const hasImage = msgs.some(m => m.image);
+
+  /* ── P25 chat response cache ──
+     Placed after `sys` and `hasImage` so it can prove the prompt is impersonal,
+     and after the quota charge so a cached answer still counts against the
+     per-user cap (the cap is an abuse guard, not a spend guard, and must not
+     become bypassable). Everything below runs only when the flag is on AND the
+     request qualifies; otherwise behaviour is byte-identical to before. */
+  const chatCacheOn = chatCacheEnabled(env) && env && env.PROFILE_DB;
+  const cacheQuestion = (v.messages[v.messages.length - 1] || {}).content;
+  const cacheable = chatCacheOn && isCacheableRequest({
+    messages: v.messages, hasImage, quizMode, onboarding,
+    memoryText, summaryText, ctxText, stats, intent
+  });
+  let chatStore = null;
+  let cacheKey = '';
+  if (cacheable) {
+    try {
+      chatStore = new AiAnalyticsStore(env.PROFILE_DB);
+      cacheKey = await chatCacheKey({
+        question: cacheQuestion, intent,
+        promptVersion: SYSTEM_PROMPT_V, agentVersion: AGENT_VERSION
+      });
+      const hit = await chatStore.getCache(cacheKey);
+      if (hit && hit.payload && typeof hit.payload.text === 'string') {
+        /* Only the validated text is stored, so a cached reply is exactly what
+           the student would have received live. */
+        const cachedText = hit.payload.text;
+        const cachedModel = hit.payload.model || hit.model || '';
+        if (!stream) {
+          return jsonResp({ text: cachedText, structured: hit.payload.structured ?? null, model: cachedModel || null, intent, cached: true, pv: SYSTEM_PROMPT_V, latencyMs: Date.now() - startedAt, agent: AGENT_VERSION });
+        }
+        return sseCached(cachedText, intent, startedAt, cachedModel);
+      }
+    } catch (_) { /* a cache fault never breaks chat — fall through to the live path */ }
+  }
+
   const partsOf = (m) => {
     const p = [{ text: m.content }];
     if (m.image) {
@@ -1182,6 +1222,11 @@ export async function agentChat(request, env, uid, opts = {}) {
              output never leaves this function unchecked. */
           const check = validateResponse(raw, validationCtx);
           await finalize(c.model, c.provider, raw);
+          /* P25: same store-on-success rule as the streaming path. */
+          if (cacheable && chatStore) {
+            const toStore = check.text || raw;
+            Promise.resolve().then(() => chatStore.putCache(cacheKey, 'summary', { text: toStore, structured: check.structured ?? null, model: c.model, intent }, { ttlMs: chatCacheTtl(intent), model: c.model })).catch(() => {});
+          }
           emitTrace({ provider: c.provider, model: c.model, text: raw, responseType: check.structured?.type, validated: !check.enforced });
           return jsonResp({ text: check.text, structured: check.structured, model: c.model, intent, pv: SYSTEM_PROMPT_V, latencyMs: Date.now() - startedAt, agent: AGENT_VERSION });
         }
@@ -1237,6 +1282,13 @@ export async function agentChat(request, env, uid, opts = {}) {
                  rewritten mid-stream. */
               const check = validateResponse(full, validationCtx);
               if (check.enforced) push(`event: replace\ndata: ${JSON.stringify({ text: check.text })}\n\n`);
+              /* P25: store only the validated text, so a later cache hit returns
+                 exactly what the live caller received. Fire-and-forget: a cache
+                 write must never delay or fail the answer the student is reading. */
+              if (cacheable && chatStore) {
+                const toStore = check.text || full;
+                Promise.resolve().then(() => chatStore.putCache(cacheKey, 'summary', { text: toStore, structured: check.structured ?? null, model: c.model, intent }, { ttlMs: chatCacheTtl(intent), model: c.model })).catch(() => {});
+              }
               emitTrace({ provider: c.provider, model: c.model, text: full, responseType: check.structured?.type, validated: !check.enforced });
               push(`event: done\ndata: ${JSON.stringify({ model: c.model, provider: c.provider, intent, quiz: quizMode, pv: SYSTEM_PROMPT_V, agent: AGENT_VERSION, latencyMs: Date.now() - startedAt, structured: check.structured })}\n\n`);
               break;
@@ -1321,6 +1373,21 @@ function sseError(msg, status) {
       controller.close();
     }
   }), { status, headers: { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-cache', 'Access-Control-Allow-Origin': '*' } });
+}
+
+/* P25: replay a cached answer on the SSE contract the client already parses.
+   No provider was called, so no stage events are emitted — the text and the
+   `done` event are the whole exchange, exactly as the client expects. */
+function sseCached(text, intent, startedAt, model) {
+  const enc = new TextEncoder();
+  return new Response(new ReadableStream({
+    start(controller) {
+      const push = (s) => { try { controller.enqueue(enc.encode(s)); } catch (_) {} };
+      push(`data: ${JSON.stringify({ text })}\n\n`);
+      push(`event: done\ndata: ${JSON.stringify({ model: model || null, provider: 'cache', intent, cached: true, pv: SYSTEM_PROMPT_V, agent: AGENT_VERSION, latencyMs: Date.now() - startedAt })}\n\n`);
+      try { controller.close(); } catch (_) {}
+    }
+  }), { status: 200, headers: { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-cache', 'Access-Control-Allow-Origin': '*' } });
 }
 
 export const __test = {
