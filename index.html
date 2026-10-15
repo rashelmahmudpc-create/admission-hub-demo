@@ -54,7 +54,9 @@
       var inSky = !!(document.getElementById('app') && document.getElementById('app').classList.contains('sky'));
       var color = inSky ? (dark ? '#0B1020' : '#F6F9FF') : (dark ? (r === 'midnight' ? '#071512' : '#121212') : (r === 'green' ? '#eef7f1' : '#edf7f1'));
       var metas = document.querySelectorAll('meta[name="theme-color"]');
-      metas.forEach(function (m, i) { if (i === 0) m.setAttribute('content', color); });
+      /* Every theme-color tag, including the media-scoped light/dark ones the
+         mobile browser actually reads, so the status bar matches the app. */
+      metas.forEach(function (m) { m.setAttribute('content', color); });
       root.style.setProperty('--ah-chrome', color);
       if (document.body) document.body.style.backgroundColor = color;
     } catch (_) {}
@@ -5420,7 +5422,7 @@ window.__admissionBootPromise.catch(error => console.error('[Admission Hub] boot
     // The updated worker takes control now; the current document remains usable and the next launch uses the new shell.
     try{
 
-      const expectedSwVersion = 'v339-sky-chat-history';
+      const expectedSwVersion = 'v340-sky-rich-live';
       // register() on the same scope performs an in-place update. Never unregister
       // the active iOS worker first: that discards the instant offline shell.
       const registration=await navigator.serviceWorker.register('./sw.js',{scope:'./',updateViaCache:'none'});
@@ -5429,7 +5431,7 @@ window.__admissionBootPromise.catch(error => console.error('[Admission Hub] boot
       // stale pre-retirement application shells can never be served from cache again.
       try {
 
-        const cur = 'admission-hub-shell-v339-sky-chat-history';
+        const cur = 'admission-hub-shell-v340-sky-rich-live';
         const names = await caches.keys();
         for (const name of names) {
           if (name.startsWith('admission-hub-shell-') && name !== cur) await caches.delete(name).catch(()=>{});
@@ -5584,7 +5586,7 @@ window.__admissionBootPromise.catch(error => console.error('[Admission Hub] boot
 <script defer src="./dashboard-v2.js?v=dash2f16-avatar-cache"></script>
 <script defer src="./academic-catalog.js?v=acad-cat-v2"></script>
 <script defer src="./profile-ui.js?v=profile-v18-avatar-cache"></script>
-<script defer src="./ai-agent-chat.js?v=agent-f1-ui-skyv2"></script>
+<script defer src="./ai-agent-chat.js?v=agent-f1-ui-skyv3"></script>
 <script defer src="./question-engine.js?v=qe1"></script>
 <script defer src="./question-engine-panel.js?v=qe1"></script>
 <script defer src="qbank-redesign.js?v=practice15"></script>

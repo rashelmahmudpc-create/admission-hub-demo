@@ -39,8 +39,8 @@ t('discardActiveExam: retry-টাইমার ক্লিয়ার', /async
 
 /* ৬ — ভার্সন-ট্র্যাকিং v189 */
 
-t('sw BUILD_ID current shell', SW.includes("const BUILD_ID = 'v339-sky-chat-history'"));
-t('index sw-marker current shell', H.includes("const expectedSwVersion = 'v339-sky-chat-history'"));
+t('sw BUILD_ID current shell', SW.includes("const BUILD_ID = 'v340-sky-rich-live'"));
+t('index sw-marker current shell', H.includes("const expectedSwVersion = 'v340-sky-rich-live'"));
 
 console.log(`\nP08-AC3: ${pass} pass / ${fail} fail`);
 if (fail) process.exit(1);

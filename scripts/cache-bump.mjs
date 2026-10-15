@@ -20,8 +20,8 @@ const LANG_VERSION_TO = 'lang-v5-single-email-button';
 // NOTE: SW_BUILD_TO must always equal the BUILD_ID in sw.js. Without a bump the
 // deploy ships new files under old ?v= tokens; browsers then serve them
 // immutable for a year, so students keep the old app and every fix misses them.
-const SW_BUILD_FROM = 'v337-skyv2-20261017';
-const SW_BUILD_TO = 'v339-sky-chat-history';
+const SW_BUILD_FROM = 'v339-sky-chat-history';
+const SW_BUILD_TO = 'v340-sky-rich-live';
 
 const targets = [
   'index.html',
@@ -58,7 +58,7 @@ const replacements = [
   [SW_BUILD_FROM, SW_BUILD_TO],
   // The AI chat script's own cache-busting query moves with the shell build, so
   // it is bumped in the same pass to keep index.html and sw.js in lockstep.
-  ['ai-agent-chat.js?v=agent-f1-ui-skyv1', 'ai-agent-chat.js?v=agent-f1-ui-skyv2']
+  ['ai-agent-chat.js?v=agent-f1-ui-skyv2', 'ai-agent-chat.js?v=agent-f1-ui-skyv3']
 ];
 
 let changed = 0;

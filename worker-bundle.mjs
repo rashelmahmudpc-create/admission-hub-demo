@@ -1539,6 +1539,18 @@ var pickInstitutionType = (value) => {
   const v = String(value || "").trim().toLowerCase();
   return ["school", "college", "university", "madrasa", "other"].includes(v) ? v : "";
 };
+var RESPONSE_FORMAT_RULES = `RESPONSE FORMAT (the chat app renders Markdown — always use it):
+- Answer like a top-tier tutor in a ChatGPT-style layout. Default length is MEDIUM: complete and clear, never padded.
+- Open with a one-line direct answer. Then organise with "## " section headings and "### " sub-headings.
+- Use **bold** for key terms, ==highlight== for the single most important fact, numbered lists for steps, bullets for points, and "- [ ]" checklists for study tasks.
+- Use a Markdown table (header row + |---| separator) whenever comparing two or more things, listing formulas/values/dates, or summarising.
+- Use "> " quotes for definitions, laws and rules to memorise.
+- Callout lines start with one emoji: 💡 tip, 📌 key point, ⚠️ common mistake, 🧠 concept, 📚 revision, ✅ answer/summary.
+- For a process, cycle or sequence add a flow block: a line \`\`\`flow, then one short step per line (2-8 steps, each under 40 characters), then \`\`\`.
+- For a numeric comparison add a chart block: \`\`\`chart, then JSON {"type":"bar" or "line","title":"...","labels":[...],"values":[numbers]}, then \`\`\`. Never invent the student's own statistics.
+- Put "---" between major parts of a long answer and finish multi-section answers with a short "✅ সারসংক্ষেপ" line.
+- Greetings and small talk get a short friendly reply with no headings. If STUDENT PREFERENCES ask for short answers, stay short but keep the Markdown.
+- Never mention which AI model, provider or service is answering.`;
 function buildSystemPrompt(opts = {}) {
   const stats = capStats(opts.stats);
   const examMode = String(opts.examMode || "");
@@ -1650,6 +1662,44 @@ function summarizeTo(messages, maxTurns = 6, maxChars = 900) {
   }
   return out.length > maxChars ? out.slice(0, maxChars) + "…" : out;
 }
+var STAGE_UNDERSTAND = {
+  GENERAL_CHAT: "তোমার কথাটা বুঝে নিচ্ছি",
+  ACADEMIC_EXPLAIN: "প্রশ্নটা বুঝছি — ব্যাখ্যা তৈরি করব",
+  PERFORMANCE_REQUEST: "তোমার পারফরম্যান্সের প্রশ্ন বুঝছি",
+  QUIZ_REQUEST: "কুইজের অনুরোধ বুঝছি",
+  SEARCH_REQUEST: "কী খুঁজছ বুঝে নিচ্ছি",
+  IMAGE_REQUEST: "ছবির প্রশ্ন বুঝছি"
+};
+async function* firstChunkGuard(iterable, ms) {
+  const it = iterable[Symbol.asyncIterator]();
+  let timer;
+  let first;
+  try {
+    first = await Promise.race([
+      it.next(),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new ProviderError("first-chunk-timeout", { retryable: true, bad: false })), ms);
+      })
+    ]);
+  } catch (e) {
+    try {
+      const r = it.return && it.return();
+      if (r && r.catch) r.catch(() => {
+      });
+    } catch (_) {
+    }
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+  if (first.done) return;
+  yield first.value;
+  while (true) {
+    const n = await it.next();
+    if (n.done) return;
+    yield n.value;
+  }
+}
 var ProviderError = class extends Error {
   constructor(message, opts = {}) {
     super(message);
@@ -1695,7 +1745,7 @@ async function* geminiStream(key, model, payload, signal) {
     signal
   });
   if (!r.ok || !r.body) {
-    const bad = r.status === 401 || r.status === 402 || r.status === 429 || r.status >= 500;
+    const bad = r.status === 401 || r.status === 402 || r.status === 403 || r.status === 429 || r.status >= 500;
     throw new ProviderError(`Gemini HTTP ${r.status} (${model})`, { retryable: r.status >= 500 || r.status === 429, bad });
   }
   const reader = r.body.getReader();
@@ -1729,7 +1779,7 @@ async function* groqStream(key, model, payload, signal) {
     signal
   });
   if (!r.ok || !r.body) {
-    const bad = r.status === 401 || r.status === 402 || r.status === 429 || r.status >= 500;
+    const bad = r.status === 401 || r.status === 402 || r.status === 403 || r.status === 429 || r.status >= 500;
     throw new ProviderError(`Groq HTTP ${r.status} (${model})`, { retryable: r.status >= 500 || r.status === 429, bad });
   }
   const reader = r.body.getReader();
@@ -1774,7 +1824,7 @@ var GEMINI_ADAPTER = {
       body: JSON.stringify(payload)
     });
     if (!r.ok) {
-      const bad = r.status === 401 || r.status === 402 || r.status === 429 || r.status >= 500;
+      const bad = r.status === 401 || r.status === 402 || r.status === 403 || r.status === 429 || r.status >= 500;
       throw new ProviderError(`Gemini HTTP ${r.status} (${entry.model})`, { retryable: r.status >= 500 || r.status === 429, bad });
     }
     return geminiFirstText(await r.json().catch(() => ({})));
@@ -2096,9 +2146,15 @@ async function agentChat(request, env, uid, opts = {}) {
   const examMode = body.context && body.context.examMode === "mock-running" ? "mock-running" : "";
   const stats = capStats(body.context && body.context.stats);
   const safety = safetyGate(intent, examMode);
+  const memKeyEarly = "mem:" + MEMORY_VERSION + ":" + sendCtx.uid;
+  const safeRead = (fn) => Promise.resolve().then(fn).catch(() => null);
+  const prefsP = safeRead(() => getKv(env.PUB_KV, "aiprefs:" + sendCtx.uid));
+  const chatMemP = persistMemory ? safeRead(async () => await stateGet("chatmem:" + sendCtx.uid)) : Promise.resolve(null);
+  const sumP = persistMemory && v.fresh !== true ? safeRead(() => stateGet("chatmemsum:" + sendCtx.uid)) : Promise.resolve("");
+  const longP = persistMemory ? safeRead(() => stateGet(memKeyEarly)) : Promise.resolve(null);
   let aiPrefs = null;
   try {
-    const rawPrefs = await getKv(env.PUB_KV, "aiprefs:" + sendCtx.uid);
+    const rawPrefs = await prefsP;
     aiPrefs = rawPrefs ? sanitizeAiPrefs(JSON.parse(rawPrefs)) : null;
   } catch (_) {
     aiPrefs = null;
@@ -2107,7 +2163,7 @@ async function agentChat(request, env, uid, opts = {}) {
   let mem = [];
   if (memoryOn) {
     try {
-      const rawMem = await stateGet("chatmem:" + sendCtx.uid);
+      const rawMem = await chatMemP;
       const parsedMem = JSON.parse(rawMem || "[]");
       mem = Array.isArray(parsedMem) ? parsedMem : [];
     } catch (_) {
@@ -2117,8 +2173,10 @@ async function agentChat(request, env, uid, opts = {}) {
   const freshThread = v.fresh === true;
   let msgs = v.messages.slice();
   if (!freshThread && msgs.length < 3 && mem.length) msgs = mem.concat(msgs);
+  let freshSummary = null;
   if (msgs.length > 16) {
     const summary = summarizeTo(msgs);
+    freshSummary = summary;
     if (memoryOn) await statePut("chatmemsum:" + sendCtx.uid, summary);
     msgs = msgs.slice(-12);
   }
@@ -2127,12 +2185,12 @@ async function agentChat(request, env, uid, opts = {}) {
   const profileCtx = sendCtx.uid.startsWith("account-") ? sanitizeProfileContext(body?.context?.profile) : null;
   const ctxBundle = contextEngineEnabled(env) ? buildContext({ uid: sendCtx.uid, prefs: aiPrefs, stats, onboarding, profile: profileCtx, memoryOn }) : null;
   const ctxText = ctxBundle ? renderContext(ctxBundle) : "";
-  let summaryText = memoryOn && !freshThread ? await stateGet("chatmemsum:" + sendCtx.uid) : "";
+  let summaryText = memoryOn && !freshThread ? freshSummary != null ? freshSummary : await sumP || "" : "";
   const memKey = "mem:" + MEMORY_VERSION + ":" + sendCtx.uid;
   let memRecords = [];
   if (memoryOn) {
     try {
-      const rawLong = await stateGet(memKey);
+      const rawLong = await longP;
       memRecords = parseMemory(rawLong, sendCtx.uid);
     } catch (_) {
       memRecords = [];
@@ -2164,7 +2222,8 @@ async function agentChat(request, env, uid, opts = {}) {
   }
   const baseRecords = memRecords.filter((r) => !(r.kind === KIND.STUDIES && r.key === "last-topic"));
   const memoryText = memoryOn ? renderMemory(baseRecords.concat(tutorContext), MEMORY_VERSION) : "";
-  const sys = [systemPrompt, ctxText, memoryText, summaryText].filter(Boolean).join("\n\n");
+  const formatRules = !quizMode && !onboarding ? RESPONSE_FORMAT_RULES : "";
+  const sys = [systemPrompt, formatRules, ctxText, memoryText, summaryText].filter(Boolean).join("\n\n");
   const hasImage = msgs.some((m) => m.image);
   const partsOf = (m) => {
     const p = [{ text: m.content }];
@@ -2182,11 +2241,12 @@ async function agentChat(request, env, uid, opts = {}) {
   const payloadO = () => ({ messages: [{ role: "system", content: sys }].concat(msgs.map((m) => ({ role: m.role, content: m.content }))) });
   const kvKeys = await aiKeyOverlay(env);
   const badSet = /* @__PURE__ */ new Set();
-  for (const c of routerChain(env, tier, /* @__PURE__ */ new Set(), kvKeys)) {
-    try {
-      if (await getKv(env.PUB_KV, badKeyName(c.key, c.model))) badSet.add(String(c.key).slice(0, 12) + ":" + c.model);
-    } catch (_) {
-    }
+  {
+    const probe = routerChain(env, tier, /* @__PURE__ */ new Set(), kvKeys);
+    const flags = await Promise.all(probe.map((c) => Promise.resolve().then(() => getKv(env.PUB_KV, badKeyName(c.key, c.model))).catch(() => null)));
+    probe.forEach((c, i) => {
+      if (flags[i]) badSet.add(String(c.key).slice(0, 12) + ":" + c.model);
+    });
   }
   let chain = routerChain(env, tier, badSet, kvKeys);
   if (hasImage) chain = chain.filter((c) => c.provider === "gemini");
@@ -2286,23 +2346,43 @@ async function agentChat(request, env, uid, opts = {}) {
         } catch (_) {
         }
       };
+      const sentStages = /* @__PURE__ */ new Set();
+      const stage = (id, label) => {
+        if (sentStages.has(id)) return;
+        sentStages.add(id);
+        push(`event: stage
+data: ${JSON.stringify({ stage: id, label })}
+
+`);
+      };
       try {
+        stage("understand", STAGE_UNDERSTAND[intent] || STAGE_UNDERSTAND.GENERAL_CHAT);
+        if (memoryText || summaryText || msgs.length > v.messages.length) stage("memory", "তোমার আগের কথাগুলো মনে করছি");
+        if (stats && intent === INTENTS.PERFORMANCE_REQUEST) stage("tool", "টুল চালাচ্ছি — তোমার অগ্রগতির তথ্য পড়ছি");
+        else if (profileCtx && ctxBundle) stage("profile", "তোমার লক্ষ্য অনুযায়ী উত্তর মিলিয়ে নিচ্ছি");
+        if (hasImage) stage("image", "ছবিটা বিশ্লেষণ করছি");
+        stage("think", "ভাবছি — উত্তর সাজাচ্ছি");
         let ok2 = false;
         let lastErr = "";
+        const firstMs = Math.max(3e3, Math.min(3e4, Number(env && env.AGENT_FIRST_CHUNK_MS) || 1e4));
         for (const c of chain) {
           try {
             let full = "";
             const adapter = adapterFor(c);
             if (!adapter) throw new ProviderError("unknown-provider:" + c.provider, { retryable: false, bad: false });
             const payload = adapter.id === "gemini" ? payloadG() : payloadO();
-            for await (const t of adapter.chatStream(c, payload, env)) {
+            for await (const t of firstChunkGuard(adapter.chatStream(c, payload, env), firstMs)) {
+              if (!full) stage("write", quizMode ? "প্রশ্ন তৈরি করছি" : "উত্তর লিখছি");
               full += t;
+              if (/```(chart|flow)/i.test(full)) stage("visual", "চার্ট / ডায়াগ্রাম আঁকছি");
+              if (/\n\s*\|?\s*:?-{3,}/.test(full)) stage("table", "টেবিল সাজাচ্ছি");
               push(`data: ${JSON.stringify({ text: t })}
 
 `);
             }
             if (full.trim()) {
               ok2 = true;
+              stage("verify", "উত্তর যাচাই করছি");
               await finalize(c.model, c.provider, full);
               const check = validateResponse(full, validationCtx);
               if (check.enforced) push(`event: replace

@@ -135,27 +135,107 @@
   }
 
   /* ───────── markdown → safe HTML (escape-first) ───────── */
-  function md(src) {
-    let s = esc(String(src == null ? '' : src));
-    const blocks = [];
-    s = s.replace(/```([\s\S]*?)```/g, (m, c) => { blocks.push(c); return '\u0000CB' + (blocks.length - 1) + '\u0000'; });
-    s = s.replace(/((?:^\|.*\|\s*$\n?)+)/gm, (block) => {
-      const rows = block.trim().split('\n').map((r) => r.replace(/^\||\|$/g, '').split('|').map((c) => c.trim()));
-      if (rows.length < 2) return block;
-      const head = rows[0];
-      let out = '<div class="tw"><table><thead><tr>' + head.map((c) => '<th>' + c + '</th>').join('') + '</tr></thead><tbody>';
-      for (const r of rows.slice(1)) { if (r.length === 1 && /^:?-{2,}:?$/.test(r[0])) continue; out += '<tr>' + r.map((c) => '<td>' + c + '</td>').join('') + '</tr>'; }
-      return out + '</tbody></table></div>';
-    });
-    s = s.replace(/^### (.*)$/gm, '<h3>$1</h3>').replace(/^## (.*)$/gm, '<h2>$1</h2>').replace(/^# (.*)$/gm, '<h3>$1</h3>');
-    s = s.replace(/^(✅|📌|🧠|📚|💡|⚠️|❗)\s*(.+)$/gm, (m, k, txt) => '<div class="cal ' + ({ '✅': 'ok', '📌': 'key', '🧠': 'con', '📚': 'rev', '💡': 'tip', '⚠️': 'warn', '❗': 'warn' }[k]) + '"><b>' + k + '</b> ' + txt + '</div>');
-    s = s.replace(/^\s*[-*] (.*)$/gm, '<li>$1</li>').replace(/^\s*\d+[.)] (.*)$/gm, '<li>$1</li>');
-    s = s.replace(/(?:<li>[\s\S]*?<\/li>)(?=(?:\s*<li>|$))/g, (m) => '<ul>' + m + '</ul>');
-    s = s.replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>').replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<i>$2</i>').replace(/`([^`\n]+)`/g, '<code>$1</code>');
-    s = s.replace(/\n{2,}/g, '</p><p>').replace(/\n/g, '<br>');
-    s = '<div class="body"><p>' + s + '</p></div>';
-    return s.replace(/\u0000CB(\d+)\u0000/g, (m, i) => '<pre><code>' + blocks[+i].replace(/\n$/, '') + '</code></pre>');
+  function mdInline(raw) {
+    const codes = [];
+    let s = String(raw).replace(/`([^`\n]+)`/g, (m, c) => { codes.push(c); return '\u0002C' + (codes.length - 1) + '\u0002'; });
+    s = esc(s);
+    s = s.replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+    s = s.replace(/==([^=\n]+)==/g, '<mark>$1</mark>');
+    s = s.replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>').replace(/__([^_\n]+)__/g, '<b>$1</b>');
+    s = s.replace(/(^|[^*\w])\*([^*\n]+)\*(?!\*)/g, '$1<i>$2</i>');
+    s = s.replace(/~~([^~\n]+)~~/g, '<s>$1</s>');
+    return s.replace(/\u0002C(\d+)\u0002/g, (m, i) => '<code>' + esc(codes[+i]) + '</code>');
   }
+  const MD_CAL = { '✅': 'ok', '📌': 'key', '🧠': 'con', '📚': 'rev', '💡': 'tip', '⚠️': 'warn', '❗': 'warn', '🎯': 'key', '📝': 'rev', '🔑': 'key' };
+  const MD_CAL_RE = /^(✅|📌|🧠|📚|💡|⚠️|❗|🎯|📝|🔑)\s*(.+)$/;
+  const MD_SEP_RE = /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/;
+  const MD_LIST_RE = /^(\s*)([-*+]|\d+[.)])\s+(.*)$/;
+  const mdCells = (line) => line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((c) => c.trim());
+  function mdBlocks(lines) {
+    const out = [];
+    let para = [];
+    const flush = () => { if (para.length) { out.push('<p>' + para.map(mdInline).join('<br>') + '</p>'); para = []; } };
+    let i = 0;
+    while (i < lines.length) {
+      const L = lines[i];
+      let m = L.match(/^\s*```\s*([\w-]*)\s*$/);
+      if (m) {
+        flush();
+        const buf = []; i++;
+        while (i < lines.length && !/^\s*```\s*$/.test(lines[i])) { buf.push(lines[i]); i++; }
+        i++;
+        out.push((m[1] ? '<pre data-lang="' + esc(m[1]) + '"><code>' : '<pre><code>') + esc(buf.join('\n')) + '</code></pre>');
+        continue;
+      }
+      if (!L.trim()) { flush(); i++; continue; }
+      if (/^\s*\u0001V\d+\u0001\s*$/.test(L)) { flush(); out.push(L.trim()); i++; continue; }
+      m = L.match(/^\s{0,3}(#{1,6})\s+(.+?)\s*#*\s*$/);
+      if (m) {
+        flush();
+        const n = m[1].length;
+        const tag = n <= 2 ? 'h2' : n === 3 ? 'h3' : 'h4';
+        out.push('<' + tag + (n === 1 ? ' class="h1"' : '') + '>' + mdInline(m[2]) + '</' + tag + '>');
+        i++; continue;
+      }
+      if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(L)) { flush(); out.push('<hr>'); i++; continue; }
+      if (L.indexOf('|') >= 0 && i + 1 < lines.length && MD_SEP_RE.test(lines[i + 1]) && lines[i + 1].indexOf('-') >= 0) {
+        flush();
+        const head = mdCells(L);
+        const al = mdCells(lines[i + 1]).map((c) => /^:-+:$/.test(c) ? 'center' : /-+:$/.test(c) ? 'right' : '');
+        const st = (k) => al[k] ? ' style="text-align:' + al[k] + '"' : '';
+        let html = '<div class="tw"><table><thead><tr>' + head.map((c, k) => '<th' + st(k) + '>' + mdInline(c) + '</th>').join('') + '</tr></thead><tbody>';
+        i += 2;
+        while (i < lines.length && lines[i].indexOf('|') >= 0 && lines[i].trim()) {
+          const r = mdCells(lines[i]);
+          html += '<tr>' + head.map((_, k) => '<td' + st(k) + '>' + mdInline(r[k] == null ? '' : r[k]) + '</td>').join('') + '</tr>';
+          i++;
+        }
+        out.push(html + '</tbody></table></div>');
+        continue;
+      }
+      if (/^\s*>/.test(L)) {
+        flush();
+        const buf = [];
+        while (i < lines.length && /^\s*>/.test(lines[i])) { buf.push(lines[i].replace(/^\s*>\s?/, '')); i++; }
+        out.push('<blockquote>' + mdBlocks(buf) + '</blockquote>');
+        continue;
+      }
+      m = L.match(MD_CAL_RE);
+      if (m) { flush(); out.push('<div class="cal ' + MD_CAL[m[1]] + '"><b>' + m[1] + '</b> ' + mdInline(m[2]) + '</div>'); i++; continue; }
+      if (MD_LIST_RE.test(L)) {
+        flush();
+        const items = [];
+        while (i < lines.length) {
+          const lm = lines[i].match(MD_LIST_RE);
+          if (lm) { items.push({ ind: lm[1].replace(/\t/g, '  ').length, ord: /\d/.test(lm[2]), text: lm[3] }); i++; continue; }
+          if (lines[i].trim() && /^\s{2,}\S/.test(lines[i]) && items.length) { items[items.length - 1].text += ' ' + lines[i].trim(); i++; continue; }
+          break;
+        }
+        let html = '';
+        const stack = [];
+        for (const it of items) {
+          while (stack.length && it.ind < stack[stack.length - 1].ind) { html += '</li></' + stack.pop().tag + '>'; }
+          if (stack.length && it.ind === stack[stack.length - 1].ind && stack[stack.length - 1].tag !== (it.ord ? 'ol' : 'ul')) { html += '</li></' + stack.pop().tag + '>'; }
+          if (!stack.length || it.ind > stack[stack.length - 1].ind) { const tag = it.ord ? 'ol' : 'ul'; stack.push({ ind: it.ind, tag }); html += '<' + tag + '>'; }
+          else html += '</li>';
+          const task = it.text.match(/^\[( |x|X)\]\s+(.*)$/);
+          html += task ? '<li class="task"><span class="ck' + (task[1] === ' ' ? '' : ' on') + '">' + (task[1] === ' ' ? '' : '✓') + '</span>' + mdInline(task[2]) : '<li>' + mdInline(it.text);
+        }
+        while (stack.length) html += '</li></' + stack.pop().tag + '>';
+        out.push(html);
+        continue;
+      }
+      para.push(L);
+      i++;
+    }
+    flush();
+    return out.join('');
+  }
+  function md(src) {
+    const lines = String(src == null ? '' : src).replace(/\r\n?/g, '\n').split('\n');
+    return '<div class="body">' + mdBlocks(lines) + '</div>';
+  }
+
 
   /* ───────── interactive visuals: charts + flow diagrams (student data / AI blocks) ─────────
      Charts and flows are drawn from THIS student's own local stats, or from an
@@ -210,7 +290,7 @@
   }
   try {
     const st = document.createElement('style'); st.id = 'skyVizCss';
-    st.textContent = '#app.sky .md{font-size:15.5px;line-height:1.75}#app.sky .md h2,#app.sky .md h3{letter-spacing:-.01em}#app.sky .md table{font-size:14px}#app.sky .md th{background:var(--soft);color:var(--mute)}#app.sky .md td{color:var(--ink)}#app.sky .viz{margin:12px 0;padding:12px 12px 6px;border-radius:18px;background:var(--surf);box-shadow:0 0 0 1px var(--line)}#app.sky .viz figcaption{font-size:13px;font-weight:700;color:var(--ink);margin-bottom:6px}#app.sky .viz svg{width:100%;height:auto;display:block}#app.sky .viz .cg{stroke:var(--chart-grid,var(--line));stroke-width:1}#app.sky .viz .cl{fill:none;stroke:#3D6BFF;stroke-width:3;stroke-linecap:round;stroke-linejoin:round}#app.sky .viz .cp{fill:#3D6BFF;stroke:var(--surf);stroke-width:2}#app.sky .viz .cfr{fill:#3D6BFF;opacity:.88}#app.sky .viz .cx{fill:var(--mute);font-size:9px;text-anchor:middle}#app.sky .viz .cv{fill:var(--ink);font-size:10px;font-weight:700;text-anchor:middle}#app.sky .viz .fb{fill:var(--soft);stroke:var(--line)}#app.sky .viz .ft{fill:var(--ink);font-size:11.5px;font-weight:600;text-anchor:middle}#app.sky .viz .fa{stroke:#3D6BFF;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round}@media (prefers-reduced-motion:no-preference){#app.sky .viz{animation:up .35s both}}';
+    st.textContent = '#app.sky .md{--h2c:#3D6BFF;--h3c:#7C4DFF;--h4c:#0E9F9A;--bc:#1B2F8F;--ic:#B4530F;--mk:rgba(255,182,61,.38);--cc:#B0179F;--vio:#7C4DFF;--vioS:rgba(124,77,255,.08);font-size:17px;line-height:1.8;color:var(--ink)}#app.sky[data-sky-theme="dark"] .md{--h2c:#86A6FF;--h3c:#B9A2FF;--h4c:#5FD8CF;--bc:#A9C1FF;--ic:#FDBA74;--mk:rgba(255,182,61,.3);--cc:#F2A8F7;--vioS:rgba(124,77,255,.16)}#app.sky .md p{margin:0 0 12px}#app.sky .md>p:last-child{margin-bottom:0}#app.sky .md h2{font-size:21px;line-height:1.4;font-weight:800;margin:20px 0 10px;color:var(--h2c)}#app.sky .md h2.h1{font-size:23px}#app.sky .md>h2:first-child,#app.sky .md>h3:first-child{margin-top:4px}#app.sky .md h3{font-size:18.5px;line-height:1.45;font-weight:700;margin:18px 0 8px;color:var(--h3c);padding-left:10px;border-left:4px solid var(--h3c)}#app.sky .md h4{font-size:17px;font-weight:700;margin:14px 0 6px;color:var(--h4c)}#app.sky .md b{color:var(--bc);font-weight:700}#app.sky .md i{color:var(--ic)}#app.sky .md mark{background:var(--mk);color:inherit;padding:1px 5px;border-radius:6px}#app.sky .md s{opacity:.7}#app.sky .md code{font-size:.88em;background:var(--soft);color:var(--cc);padding:1px 6px;border-radius:6px}#app.sky .md pre{background:#0F1630;color:#E6ECFF;padding:12px 14px;border-radius:14px;overflow:auto;font-size:14px;line-height:1.6;margin:12px 0}#app.sky .md pre code{background:none;color:inherit;padding:0}#app.sky .md ul,#app.sky .md ol{margin:6px 0 12px;padding-left:24px}#app.sky .md li{margin:5px 0}#app.sky .md li::marker{color:var(--h2c);font-weight:700}#app.sky .md li li::marker{color:var(--h4c)}#app.sky .md li.task{list-style:none;margin-left:-22px}#app.sky .md .ck{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:5px;border:2px solid var(--h2c);margin-right:8px;font-size:12px;line-height:1;vertical-align:-3px;color:#fff}#app.sky .md .ck.on{background:var(--ok);border-color:var(--ok)}#app.sky .md blockquote{margin:12px 0;padding:10px 14px;border-left:4px solid var(--vio);background:var(--vioS);border-radius:0 14px 14px 0}#app.sky .md blockquote p{margin:0}#app.sky .md hr{border:0;height:2px;background:linear-gradient(90deg,transparent,var(--line),transparent);margin:18px 0}#app.sky .md .tw{overflow-x:auto;margin:12px 0;border-radius:14px;box-shadow:0 0 0 1px var(--line)}#app.sky .md table{border-collapse:collapse;width:100%;font-size:15px}#app.sky .md th{background:var(--grad);color:#fff;font-weight:700;padding:9px 12px;text-align:left;white-space:nowrap}#app.sky .md td{padding:9px 12px;border-top:1px solid var(--line);color:var(--ink)}#app.sky .md tbody tr:nth-child(even) td{background:var(--soft)}#app.sky .md a{color:var(--h2c);text-decoration:underline}#app.sky .md .cal{font-size:16px;line-height:1.7;border-left:4px solid;border-radius:0 14px 14px 0;padding:10px 14px;margin:10px 0}#app.sky .md .cal.tip{background:rgba(255,182,61,.14);border-color:#FFB63D}#app.sky .md .cal.warn{background:rgba(229,72,77,.1);border-color:#E5484D}#app.sky .md .cal.ok{background:rgba(18,163,107,.1);border-color:#12A36B}#app.sky .md .cal.con{background:var(--vioS);border-color:var(--vio)}#app.sky .md .cal.rev{background:rgba(14,159,154,.1);border-color:#0E9F9A}#app.sky .md .cal.key{background:rgba(61,107,255,.1);border-color:#3D6BFF}#app.sky .md .cal b{color:inherit}#app.sky .md{font-size:17px;line-height:1.8}#app.sky .md h2,#app.sky .md h3{letter-spacing:-.01em}#app.sky .md table{font-size:14px}#app.sky .md th{background:var(--soft);color:var(--mute)}#app.sky .md td{color:var(--ink)}#app.sky .viz{margin:12px 0;padding:12px 12px 6px;border-radius:18px;background:var(--surf);box-shadow:0 0 0 1px var(--line)}#app.sky .viz figcaption{font-size:13px;font-weight:700;color:var(--ink);margin-bottom:6px}#app.sky .viz svg{width:100%;height:auto;display:block}#app.sky .viz .cg{stroke:var(--chart-grid,var(--line));stroke-width:1}#app.sky .viz .cl{fill:none;stroke:#3D6BFF;stroke-width:3;stroke-linecap:round;stroke-linejoin:round}#app.sky .viz .cp{fill:#3D6BFF;stroke:var(--surf);stroke-width:2}#app.sky .viz .cfr{fill:#3D6BFF;opacity:.88}#app.sky .viz .cx{fill:var(--mute);font-size:9px;text-anchor:middle}#app.sky .viz .cv{fill:var(--ink);font-size:10px;font-weight:700;text-anchor:middle}#app.sky .viz .fb{fill:var(--soft);stroke:var(--line)}#app.sky .viz .ft{fill:var(--ink);font-size:11.5px;font-weight:600;text-anchor:middle}#app.sky .viz .fa{stroke:#3D6BFF;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round}@media (prefers-reduced-motion:no-preference){#app.sky .viz{animation:up .35s both}}';
     document.head.appendChild(st);
   } catch (_) {}
 
@@ -309,6 +389,7 @@
           if (t.startsWith('event:')) { evt = t.slice(6).trim(); continue; }
           if (!t.startsWith('data:')) continue;
           let j = null; try { j = JSON.parse(t.slice(5).trim()); } catch (_) { continue; }
+          if (evt === 'stage') { if (j.label && opts.onStage) { try { opts.onStage(String(j.label)); } catch (_) {} } continue; }
           if (evt === 'replace' && typeof j.text === 'string') { full = j.text; if (onReplace) onReplace(full); else onChunk(full, true); }
           else if (j.text) { full += j.text; onChunk(full, false); }
           else if (j.error) failed = { message: j.message, retryable: j.retryable };
@@ -950,15 +1031,16 @@ const ACT_ACTIONS = { 'prefs.write': { bn: 'তোমার AI পছন্দ �
       .slice(-MAX_HISTORY)
       .map((m) => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.role === 'user' ? m.text.slice(0, 4000) : m.text.slice(0, 1500) }));
     procStage(node, holder, T.stageSend);
+    /* Live progress comes from the server: each `stage` event is real work the
+       gateway is doing right now. Nothing here is simulated. */
     const res = await ask(history, (full) => {
       holder.text = full;
-      if (!gotFirst) { gotFirst = true; procStage(node, holder, T.stageStream); mood('type');
-        try { const wantQuiz=/MCQ|কুইজ|প্রশ্ন তৈরি|প্রশ্ন বানাও/i.test(t); const wantViz=/চার্ট|গ্রাফ|ডায়াগ্রাম|flow|তুলনা|পারফরম্যান্স/i.test(t)||/```(chart|flow)/.test(full); setTimeout(()=>{ try{ if (wantQuiz||wantViz) procStage(node, holder, T.stageWrite); }catch(_){} },650); } catch(_){} }
-      /* stream straight into the live node so the student sees text as it
-         arrives; only the inner body is touched, never the action bar. */
-      if (node) { const b = node.querySelector('.bw'); if (b) b.innerHTML = md(full); }
+      if (!gotFirst) { gotFirst = true; mood('type'); }
+      /* stream straight into the live node with the full rich renderer, so
+         headings, tables and diagrams appear while the answer is written. */
+      if (node) { const b = node.querySelector('.bw'); if (b) b.innerHTML = mdRich(full); }
       scrollEnd();
-    }, (corrected) => { holder.text = corrected; replaceStream(corrected); });
+    }, { onStage: (label) => procStage(node, holder, label) }, (corrected) => { holder.text = corrected; replaceStream(corrected); });
 
     setBusy(false);
     if (holder.stage) { holder.steps.push(holder.stage); holder.stage = ''; }
@@ -1096,7 +1178,7 @@ const ACT_ACTIONS = { 'prefs.write': { bn: 'তোমার AI পছন্দ �
   function backHome() {
     try {
       document.documentElement.classList.remove('ai-chat-open');
-      const a = document.getElementById('app'); if (a) a.classList.remove('ai-chat-open', 'sky');
+      const a = document.getElementById('app'); if (a) a.classList.remove('ai-chat-open', 'sky'); try { if (window.AhAppearance && window.AhAppearance.apply) window.AhAppearance.apply(); } catch (_) {}
       const nb = document.querySelector('.bottomnav'); if (nb) nb.style.display = '';
     } catch (_) {}
     if (window.navigate) window.navigate('dashboard'); else history.back();
@@ -1119,6 +1201,7 @@ const ACT_ACTIONS = { 'prefs.write': { bn: 'তোমার AI পছন্দ �
     } catch (_) {}
     load();
     root.className = 'sky';
+    try { if (window.AhAppearance && window.AhAppearance.apply) window.AhAppearance.apply(); } catch (_) {}
     root.classList.add('ai-chat-open');
     root.innerHTML = shell();
     try { document.documentElement.classList.add('ai-chat-open'); } catch (_) {}
@@ -1256,7 +1339,7 @@ const ACT_ACTIONS = { 'prefs.write': { bn: 'তোমার AI পছন্দ �
         layer(false);
         try {
           document.documentElement.classList.remove('ai-chat-open');
-          const a = document.getElementById('app'); if (a) a.classList.remove('ai-chat-open', 'sky');
+          const a = document.getElementById('app'); if (a) a.classList.remove('ai-chat-open', 'sky'); try { if (window.AhAppearance && window.AhAppearance.apply) window.AhAppearance.apply(); } catch (_) {}
           const nb = document.querySelector('.bottomnav'); if (nb) nb.style.display = '';
         } catch (_) {}
         if (window.navigate) window.navigate(p); else location.hash = p;
@@ -1319,7 +1402,7 @@ const ACT_ACTIONS = { 'prefs.write': { bn: 'তোমার AI পছন্দ �
       const p = (location.hash.slice(1).split('?')[0] || '').toLowerCase();
       if (p !== 'ai' && p !== 'ai-chat') {
         document.documentElement.classList.remove('ai-chat-open');
-        const a = document.getElementById('app'); if (a) a.classList.remove('ai-chat-open', 'sky');
+        const a = document.getElementById('app'); if (a) a.classList.remove('ai-chat-open', 'sky'); try { if (window.AhAppearance && window.AhAppearance.apply) window.AhAppearance.apply(); } catch (_) {}
         const nb = document.querySelector('.bottomnav'); if (nb) nb.style.display = '';
       }
     } catch (_) {}

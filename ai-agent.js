@@ -266,6 +266,20 @@ const pickInstitutionType = value => {
   return ['school', 'college', 'university', 'madrasa', 'other'].includes(v) ? v : '';
 };
 
+/* Rich-answer contract. The chat UI renders every construct named here. */
+export const RESPONSE_FORMAT_RULES = `RESPONSE FORMAT (the chat app renders Markdown — always use it):
+- Answer like a top-tier tutor in a ChatGPT-style layout. Default length is MEDIUM: complete and clear, never padded.
+- Open with a one-line direct answer. Then organise with "## " section headings and "### " sub-headings.
+- Use **bold** for key terms, ==highlight== for the single most important fact, numbered lists for steps, bullets for points, and "- [ ]" checklists for study tasks.
+- Use a Markdown table (header row + |---| separator) whenever comparing two or more things, listing formulas/values/dates, or summarising.
+- Use "> " quotes for definitions, laws and rules to memorise.
+- Callout lines start with one emoji: 💡 tip, 📌 key point, ⚠️ common mistake, 🧠 concept, 📚 revision, ✅ answer/summary.
+- For a process, cycle or sequence add a flow block: a line \`\`\`flow, then one short step per line (2-8 steps, each under 40 characters), then \`\`\`.
+- For a numeric comparison add a chart block: \`\`\`chart, then JSON {"type":"bar" or "line","title":"...","labels":[...],"values":[numbers]}, then \`\`\`. Never invent the student's own statistics.
+- Put "---" between major parts of a long answer and finish multi-section answers with a short "✅ সারসংক্ষেপ" line.
+- Greetings and small talk get a short friendly reply with no headings. If STUDENT PREFERENCES ask for short answers, stay short but keep the Markdown.
+- Never mention which AI model, provider or service is answering.`;
+
 /* ── Master System Prompt (মালিক-স্পেক §9) ------------------------------- */
 export function buildSystemPrompt(opts = {}) {
   const stats = capStats(opts.stats);
@@ -403,6 +417,36 @@ export function summarizeTo(messages, maxTurns = 6, maxChars = 900) {
 }
 
 /* ── Provider Adapters (model-independent interface) --------------------- */
+/* Live-progress labels for the understood intent (shown in the chat card). */
+const STAGE_UNDERSTAND = {
+  GENERAL_CHAT: 'তোমার কথাটা বুঝে নিচ্ছি',
+  ACADEMIC_EXPLAIN: 'প্রশ্নটা বুঝছি — ব্যাখ্যা তৈরি করব',
+  PERFORMANCE_REQUEST: 'তোমার পারফরম্যান্সের প্রশ্ন বুঝছি',
+  QUIZ_REQUEST: 'কুইজের অনুরোধ বুঝছি',
+  SEARCH_REQUEST: 'কী খুঁজছ বুঝে নিচ্ছি',
+  IMAGE_REQUEST: 'ছবির প্রশ্ন বুঝছি'
+};
+
+/* A provider that has not produced its first token within `ms` is skipped so a
+   stalled endpoint can never hold the student's answer hostage. */
+export async function* firstChunkGuard(iterable, ms) {
+  const it = iterable[Symbol.asyncIterator]();
+  let timer;
+  let first;
+  try {
+    first = await Promise.race([
+      it.next(),
+      new Promise((_, reject) => { timer = setTimeout(() => reject(new ProviderError('first-chunk-timeout', { retryable: true, bad: false })), ms); })
+    ]);
+  } catch (e) {
+    try { const r = it.return && it.return(); if (r && r.catch) r.catch(() => {}); } catch (_) {}
+    throw e;
+  } finally { clearTimeout(timer); }
+  if (first.done) return;
+  yield first.value;
+  while (true) { const n = await it.next(); if (n.done) return; yield n.value; }
+}
+
 export class ProviderError extends Error {
   constructor(message, opts = {}) {
     super(message);
@@ -450,7 +494,7 @@ export async function* geminiStream(key, model, payload, signal) {
     signal
   });
   if (!r.ok || !r.body) {
-    const bad = r.status === 401 || r.status === 402 || r.status === 429 || r.status >= 500;
+    const bad = r.status === 401 || r.status === 402 || r.status === 403 || r.status === 429 || r.status >= 500;
     throw new ProviderError(`Gemini HTTP ${r.status} (${model})`, { retryable: r.status >= 500 || r.status === 429, bad });
   }
   const reader = r.body.getReader();
@@ -485,7 +529,7 @@ export async function* groqStream(key, model, payload, signal) {
     signal
   });
   if (!r.ok || !r.body) {
-    const bad = r.status === 401 || r.status === 402 || r.status === 429 || r.status >= 500;
+    const bad = r.status === 401 || r.status === 402 || r.status === 403 || r.status === 429 || r.status >= 500;
     throw new ProviderError(`Groq HTTP ${r.status} (${model})`, { retryable: r.status >= 500 || r.status === 429, bad });
   }
   const reader = r.body.getReader();
@@ -547,7 +591,7 @@ export const GEMINI_ADAPTER = {
       body: JSON.stringify(payload)
     });
     if (!r.ok) {
-      const bad = r.status === 401 || r.status === 402 || r.status === 429 || r.status >= 500;
+      const bad = r.status === 401 || r.status === 402 || r.status === 403 || r.status === 429 || r.status >= 500;
       throw new ProviderError(`Gemini HTTP ${r.status} (${entry.model})`, { retryable: r.status >= 500 || r.status === 429, bad });
     }
     return geminiFirstText(await r.json().catch(() => ({})));
@@ -911,9 +955,17 @@ export async function agentChat(request, env, uid, opts = {}) {
 
   /* AI personalization (blueprint §19-20): per-user KV prefs, allowlisted.
      Keyed by identity uid — never shared/leaked between users. */
+  /* Independent per-user reads start together; each is awaited where it was
+     read before, so behaviour is unchanged and only the waiting overlaps. */
+  const memKeyEarly = 'mem:' + MEMORY_VERSION + ':' + sendCtx.uid;
+  const safeRead = (fn) => Promise.resolve().then(fn).catch(() => null);
+  const prefsP = safeRead(() => getKv(env.PUB_KV, 'aiprefs:' + sendCtx.uid));
+  const chatMemP = persistMemory ? safeRead(async () => await stateGet('chatmem:' + sendCtx.uid)) : Promise.resolve(null);
+  const sumP = persistMemory && v.fresh !== true ? safeRead(() => stateGet('chatmemsum:' + sendCtx.uid)) : Promise.resolve('');
+  const longP = persistMemory ? safeRead(() => stateGet(memKeyEarly)) : Promise.resolve(null);
   let aiPrefs = null;
   try {
-    const rawPrefs = await getKv(env.PUB_KV, 'aiprefs:' + sendCtx.uid);
+    const rawPrefs = await prefsP;
     aiPrefs = rawPrefs ? sanitizeAiPrefs(JSON.parse(rawPrefs)) : null;
   } catch (_) { aiPrefs = null; }
   /* M7: long-term memory is automatic for a signed-in student — no toggle and no
@@ -924,7 +976,7 @@ export async function agentChat(request, env, uid, opts = {}) {
   let mem = [];
   if (memoryOn) {
     try {
-      const rawMem = await stateGet('chatmem:' + sendCtx.uid);
+      const rawMem = await chatMemP;
       const parsedMem = JSON.parse(rawMem || '[]');
       mem = Array.isArray(parsedMem) ? parsedMem : [];
     } catch (_) { mem = []; }
@@ -937,8 +989,10 @@ export async function agentChat(request, env, uid, opts = {}) {
   const freshThread = v.fresh === true;
   let msgs = v.messages.slice();
   if (!freshThread && msgs.length < 3 && mem.length) msgs = mem.concat(msgs);
+  let freshSummary = null;
   if (msgs.length > 16) {
     const summary = summarizeTo(msgs);
+    freshSummary = summary;
     if (memoryOn) await statePut('chatmemsum:' + sendCtx.uid, summary);
     msgs = msgs.slice(-12);
   }
@@ -960,7 +1014,7 @@ export async function agentChat(request, env, uid, opts = {}) {
   const ctxText = ctxBundle ? renderContext(ctxBundle) : '';
   /* The rolling summary carries older topics too, so it is suppressed with
      memory — otherwise the stale subject leaks back through the system prompt. */
-  let summaryText = memoryOn && !freshThread ? await stateGet('chatmemsum:' + sendCtx.uid) : '';
+  let summaryText = memoryOn && !freshThread ? (freshSummary != null ? freshSummary : ((await sumP) || '')) : '';
 
   /* M7 long-term memory: read the caller's own records, render only the newest,
      most confident few. Storage is bounded by the engine and the owner is the
@@ -969,7 +1023,7 @@ export async function agentChat(request, env, uid, opts = {}) {
   let memRecords = [];
   if (memoryOn) {
     try {
-      const rawLong = await stateGet(memKey);
+      const rawLong = await longP;
       memRecords = parseMemory(rawLong, sendCtx.uid);
     } catch (_) { memRecords = []; }
   }
@@ -1004,7 +1058,10 @@ export async function agentChat(request, env, uid, opts = {}) {
   }
   const baseRecords = memRecords.filter(r => !(r.kind === KIND.STUDIES && r.key === 'last-topic'));
   const memoryText = memoryOn ? renderMemory(baseRecords.concat(tutorContext), MEMORY_VERSION) : '';
-  const sys = [systemPrompt, ctxText, memoryText, summaryText].filter(Boolean).join('\n\n');
+  /* The rich-answer contract rides beside the registered base prompt (whose
+     text and hash stay locked) and is skipped for quiz JSON and onboarding. */
+  const formatRules = (!quizMode && !onboarding) ? RESPONSE_FORMAT_RULES : '';
+  const sys = [systemPrompt, formatRules, ctxText, memoryText, summaryText].filter(Boolean).join('\n\n');
 
   const hasImage = msgs.some(m => m.image);
   const partsOf = (m) => {
@@ -1025,8 +1082,12 @@ export async function agentChat(request, env, uid, opts = {}) {
   /* bad-set (আজ-মার্ক-করা key/model) */
   const kvKeys = await aiKeyOverlay(env);
   const badSet = new Set();
-  for (const c of routerChain(env, tier, new Set(), kvKeys)) {
-    try { if (await getKv(env.PUB_KV, badKeyName(c.key, c.model))) badSet.add(String(c.key).slice(0, 12) + ':' + c.model); } catch (_) {}
+  /* One parallel round instead of one KV read per chain entry in sequence —
+     the sequential loop cost seconds before the first token on a long chain. */
+  {
+    const probe = routerChain(env, tier, new Set(), kvKeys);
+    const flags = await Promise.all(probe.map(c => Promise.resolve().then(() => getKv(env.PUB_KV, badKeyName(c.key, c.model))).catch(() => null)));
+    probe.forEach((c, i) => { if (flags[i]) badSet.add(String(c.key).slice(0, 12) + ':' + c.model); });
   }
   let chain = routerChain(env, tier, badSet, kvKeys);
   if (hasImage) chain = chain.filter(c => c.provider === 'gemini');
@@ -1139,18 +1200,36 @@ export async function agentChat(request, env, uid, opts = {}) {
   const streamOut = new ReadableStream({
     async start(controller) {
       const push = (s) => { try { controller.enqueue(encoder.encode(s)); } catch (_) {} };
+      /* Live progress: each stage is sent only when that work really happens.
+         Provider / model switching is deliberately never surfaced. */
+      const sentStages = new Set();
+      const stage = (id, label) => { if (sentStages.has(id)) return; sentStages.add(id); push(`event: stage\ndata: ${JSON.stringify({ stage: id, label })}\n\n`); };
       try {
+        stage('understand', STAGE_UNDERSTAND[intent] || STAGE_UNDERSTAND.GENERAL_CHAT);
+        if (memoryText || summaryText || (msgs.length > v.messages.length)) stage('memory', 'তোমার আগের কথাগুলো মনে করছি');
+        if (stats && intent === INTENTS.PERFORMANCE_REQUEST) stage('tool', 'টুল চালাচ্ছি — তোমার অগ্রগতির তথ্য পড়ছি');
+        else if (profileCtx && ctxBundle) stage('profile', 'তোমার লক্ষ্য অনুযায়ী উত্তর মিলিয়ে নিচ্ছি');
+        if (hasImage) stage('image', 'ছবিটা বিশ্লেষণ করছি');
+        stage('think', 'ভাবছি — উত্তর সাজাচ্ছি');
         let ok = false;
         let lastErr = '';
+        const firstMs = Math.max(3000, Math.min(30000, Number(env && env.AGENT_FIRST_CHUNK_MS) || 10000));
         for (const c of chain) {
           try {
             let full = '';
             const adapter = adapterFor(c);
             if (!adapter) throw new ProviderError('unknown-provider:' + c.provider, { retryable: false, bad: false });
             const payload = adapter.id === 'gemini' ? payloadG() : payloadO();
-            for await (const t of adapter.chatStream(c, payload, env)) { full += t; push(`data: ${JSON.stringify({ text: t })}\n\n`); }
+            for await (const t of firstChunkGuard(adapter.chatStream(c, payload, env), firstMs)) {
+              if (!full) stage('write', quizMode ? 'প্রশ্ন তৈরি করছি' : 'উত্তর লিখছি');
+              full += t;
+              if (/```(chart|flow)/i.test(full)) stage('visual', 'চার্ট / ডায়াগ্রাম আঁকছি');
+              if (/\n\s*\|?\s*:?-{3,}/.test(full)) stage('table', 'টেবিল সাজাচ্ছি');
+              push(`data: ${JSON.stringify({ text: t })}\n\n`);
+            }
             if (full.trim()) {
               ok = true;
+              stage('verify', 'উত্তর যাচাই করছি');
               await finalize(c.model, c.provider, full);
               /* M8: text already streamed, so a blocked response is corrected in
                  place — the client replaces what it rendered with the safe notice.
