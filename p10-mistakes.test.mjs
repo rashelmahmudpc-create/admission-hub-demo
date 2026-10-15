@@ -48,8 +48,8 @@ t('note-icon: openQuestionNoteEditor ইন্টিগ্রেশন', MN.incl
 
 /* ৬ — ভার্সন v194 */
 
-t('sw BUILD_ID current shell', SW.includes("const BUILD_ID = 'v348-sky-dock-bottom'"));
-t('index sw-marker current shell', H.includes("const expectedSwVersion = 'v348-sky-dock-bottom'"));
+t('sw BUILD_ID current shell', SW.includes("const BUILD_ID = 'v349-sky-bottom-inset'"));
+t('index sw-marker current shell', H.includes("const expectedSwVersion = 'v349-sky-bottom-inset'"));
 
 console.log(`\nP10-MISTAKES: ${pass} pass / ${fail} fail`);
 if (fail) process.exit(1);

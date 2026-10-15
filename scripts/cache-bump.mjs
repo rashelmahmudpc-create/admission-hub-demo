@@ -20,8 +20,8 @@ const LANG_VERSION_TO = 'lang-v5-single-email-button';
 // NOTE: SW_BUILD_TO must always equal the BUILD_ID in sw.js. Without a bump the
 // deploy ships new files under old ?v= tokens; browsers then serve them
 // immutable for a year, so students keep the old app and every fix misses them.
-const SW_BUILD_FROM = 'v347-google-login-complete';
-const SW_BUILD_TO = 'v348-sky-dock-bottom';
+const SW_BUILD_FROM = 'v348-sky-dock-bottom';
+const SW_BUILD_TO = 'v349-sky-bottom-inset';
 
 const targets = [
   'index.html',
@@ -58,7 +58,7 @@ const replacements = [
   [SW_BUILD_FROM, SW_BUILD_TO],
   // The AI chat script's own cache-busting query moves with the shell build, so
   // it is bumped in the same pass to keep index.html and sw.js in lockstep.
-  ['ai-agent-chat.js?v=agent-f1-ui-skyv5', 'ai-agent-chat.js?v=agent-f1-ui-skyv6'],
+  ['ai-agent-chat.js?v=agent-f1-ui-skyv6', 'ai-agent-chat.js?v=agent-f1-ui-skyv7'],
   // dashboard-v2.js is served `immutable, max-age=31536000`, so its ?v= token IS
   // the only thing that makes a browser fetch a new build. This bump was missing
   // from the list: sw.js shipped new dashboard bytes under the old token, so
