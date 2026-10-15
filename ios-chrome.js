@@ -1,45 +1,141 @@
-/* Owner 2026-10-16: keep the phone's status-bar / notch area the same colour as
- * whatever screen is on top, and stop pinch / double-tap zoom and sideways drag
- * (iOS ignores user-scalable=no). */
+/* Owner 2026-10-16/17: native-app feel on iPhone (Home-Screen PWA, black-translucent
+ * status bar, viewport-fit=cover).
+ *  1. Status-bar / notch strip always matches the screen right below it.
+ *  2. Pinch / double-tap zoom and sideways drag are off (iOS ignores user-scalable=no).
+ *  3. The outer page never rubber-bands or pull-refreshes; real inner scrollers
+ *     (lists, forms, sheets) still scroll, and nothing is blocked while the
+ *     keyboard is up so a focused field can always be brought into view. */
 (() => {
   'use strict';
   const css = document.createElement('style');
   css.id = 'ah-ios-chrome';
-  css.textContent = 'html{touch-action:manipulation;overflow-x:hidden}body{touch-action:manipulation;overflow-x:clip;overscroll-behavior:none;max-width:100%}';
+  css.textContent = 'html{touch-action:manipulation;overflow-x:hidden;overscroll-behavior:none}'
+    + 'body{touch-action:manipulation;overflow-x:clip;overscroll-behavior:none;max-width:100%}'
+    // android-runtime-fix.js forces `html, body{overscroll-behavior-y:auto!important}` on every
+    // platform, which re-enabled the iPhone rubber-band. :root raises specificity above it.
+    + ':root,:root>body{overscroll-behavior:none!important}'
+    + '#ah-status-scrim{position:fixed;top:0;left:0;right:0;height:env(safe-area-inset-top,0px);z-index:1150;pointer-events:none;transition:background-color .2s}'
+    + 'body.ah-account-page-active #ah-status-scrim{display:none}';
   document.head.append(css);
+
   const stop = event => event.preventDefault();
   ['gesturestart', 'gesturechange', 'gestureend'].forEach(type => document.addEventListener(type, stop, { passive: false }));
-  document.addEventListener('touchmove', event => { if (event.touches && event.touches.length > 1) event.preventDefault(); }, { passive: false });
+
+  /* ---- 3. outer-shell bounce / pull-to-refresh guard ---- */
+  const EDITABLE = 'input,textarea,select,[contenteditable=""],[contenteditable="true"],[data-allow-touch-move]';
+  const canScrollY = el => {
+    if (el.scrollHeight <= el.clientHeight + 1) return false;
+    const oy = getComputedStyle(el).overflowY;
+    return oy === 'auto' || oy === 'scroll' || oy === 'overlay';
+  };
+  const canScrollX = el => {
+    if (el.scrollWidth <= el.clientWidth + 1) return false;
+    const ox = getComputedStyle(el).overflowX;
+    return ox === 'auto' || ox === 'scroll' || ox === 'overlay';
+  };
+  let lastX = 0, lastY = 0;
+  document.addEventListener('touchstart', event => {
+    if (event.touches && event.touches.length === 1) { lastX = event.touches[0].clientX; lastY = event.touches[0].clientY; }
+  }, { passive: true });
+  document.addEventListener('touchmove', event => {
+    if (event.touches && event.touches.length > 1) { event.preventDefault(); return; }
+    if (!event.cancelable || !event.touches || !event.touches[0]) return;
+    const touch = event.touches[0];
+    const dx = touch.clientX - lastX, dy = touch.clientY - lastY;
+    lastX = touch.clientX; lastY = touch.clientY;
+    const horizontal = Math.abs(dx) > Math.abs(dy);
+    let el = event.target instanceof Element ? event.target : null;
+    if (el && el.closest(EDITABLE)) return;
+    const body = document.body, root = document.scrollingElement || document.documentElement;
+    while (el && el !== body && el !== document.documentElement) {
+      if (horizontal) { if (canScrollX(el)) return; }
+      else if (canScrollY(el)) {
+        const atTop = el.scrollTop <= 0;
+        const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 1;
+        if (!((dy > 0 && atTop) || (dy < 0 && atBottom))) return;
+      }
+      el = el.parentElement;
+    }
+    // The document itself: scrolling is fine, only its two ends are guarded.
+    if (!horizontal && body && !body.classList.contains('ah-account-page-active')
+      && root.scrollHeight > root.clientHeight + 1 && getComputedStyle(body).overflowY !== 'hidden') {
+      const atTop = root.scrollTop <= 0;
+      const atBottom = root.scrollTop + root.clientHeight >= root.scrollHeight - 1;
+      if (!((dy > 0 && atTop) || (dy < 0 && atBottom))) return;
+    }
+    // With the keyboard up iOS must stay free to pan the visual viewport.
+    if (body && body.classList.contains('keyboard-open')) return;
+    event.preventDefault();
+  }, { passive: false });
+
+  /* ---- 1. status-bar colour ---- */
   const opaque = colour => colour && colour !== 'transparent' && !/rgba\([^)]*,\s*0(\.0+)?\)$/.test(colour);
   const hex = colour => {
     const parts = String(colour).match(/[\d.]+/g);
     if (!parts || parts.length < 3) return '';
     return '#' + parts.slice(0, 3).map(v => Math.max(0, Math.min(255, Math.round(+v))).toString(16).padStart(2, '0')).join('');
   };
-  const topColour = () => {
-    let el = document.elementFromPoint(Math.round(innerWidth / 2), 2);
+  // A gradient-only element has a transparent background-color; its top colour is
+  // the first stop, which is what the eye sees under the notch.
+  const firstStop = image => {
+    if (!image || image === 'none') return '';
+    const m = String(image).match(/rgba?\([^)]*\)|#[0-9a-f]{3,8}\b/i);
+    return m && opaque(m[0]) ? m[0] : '';
+  };
+  const colourAt = y => {
+    let el = document.elementFromPoint(Math.round(innerWidth / 2), Math.max(0, Math.round(y)));
     while (el && el !== document.documentElement) {
-      const bg = getComputedStyle(el).backgroundColor;
-      if (opaque(bg)) return bg;
+      const style = getComputedStyle(el);
+      if (opaque(style.backgroundColor)) return style.backgroundColor;
+      const stop = firstStop(style.backgroundImage);
+      if (stop) return stop;
       el = el.parentElement;
     }
     return document.body ? getComputedStyle(document.body).backgroundColor : '';
   };
+  let scrim = null;
+  const ensureScrim = () => {
+    if (scrim || !document.body) return scrim;
+    scrim = document.createElement('div');
+    scrim.id = 'ah-status-scrim';
+    scrim.setAttribute('aria-hidden', 'true');
+    document.body.append(scrim);
+    return scrim;
+  };
   let last = '';
+  let restColour = '';
   const sync = () => {
     try {
-      const value = hex(topColour());
-      if (!value || value === last) return;
-      last = value;
+      const strip = ensureScrim();
+      const inset = strip ? strip.getBoundingClientRect().height : 0;
+      const accountUp = document.body && document.body.classList.contains('ah-account-page-active');
+      // Account screens paint their own inset; elsewhere sample just below the strip.
+      // Main app: sample the screen's own top while it is at rest; once the page is
+      // scrolled keep that colour, so content slides under a steady bar (native feel)
+      // instead of the strip flickering with every card that passes beneath it.
+      const root = document.scrollingElement || document.documentElement;
+      const scrolled = !accountUp && root && root.scrollTop > 4;
+      const value = scrolled && restColour ? restColour : hex(colourAt(accountUp ? 2 : inset + 2));
+      if (!value) return;
+      if (!accountUp && !scrolled) restColour = value;
+      if (strip && !accountUp) strip.style.backgroundColor = value;
+      const key = value + (accountUp ? ':a' : ':m');
+      if (key === last) return;
+      last = key;
       let meta = document.querySelector('meta[name="theme-color"]');
       if (!meta) { meta = document.createElement('meta'); meta.name = 'theme-color'; document.head.append(meta); }
       meta.setAttribute('content', value);
-      document.documentElement.style.backgroundColor = value;
-      if (document.body) document.body.style.backgroundColor = value;
+      // Only the full-screen account surfaces recolour the canvas; the main app keeps
+      // its theme background (the scrim alone matches the strip there).
+      const canvas = accountUp ? value : '';
+      document.documentElement.style.backgroundColor = canvas;
+      if (document.body) document.body.style.backgroundColor = canvas;
     } catch (_) {}
   };
+  addEventListener('hashchange', () => { restColour = ''; });
   ['load', 'resize', 'hashchange', 'popstate', 'pageshow', 'orientationchange'].forEach(type => addEventListener(type, () => setTimeout(sync, 60)));
+  addEventListener('scroll', () => requestAnimationFrame(sync), { passive: true });
   document.addEventListener('visibilitychange', () => { if (!document.hidden) sync(); });
-  setInterval(sync, 700);
-  sync();
+  setInterval(sync, 500);
+  if (document.body) sync(); else document.addEventListener('DOMContentLoaded', sync);
 })();

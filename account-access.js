@@ -2448,6 +2448,16 @@
     const mode = name === 'signup' ? 'signup' : 'login';
     const resume = ['verify', 'telegram', 'email-ownership', 'email-intro', 'telegram-intro', 'created'].includes(name) ? 'verify' : '';
     state.skyEntry = { resume, email: String(state.verification?.email || '') };
+    // Owner 2026-10-17: after logout the previous screen (signed-in card, old
+    // login form or the last Sky screen) stayed painted for 1-2s while the flow
+    // loaded its data. Hide it now; the page shows the Sky colour + a spinner
+    // until reveal() mounts the fresh flow. Session cleanup is not touched here.
+    if (state.currentView !== 'sky') {
+      pageHost.querySelectorAll('.ah-account-shell [data-view]').forEach(view => { view.hidden = true; });
+      const staleSky = document.getElementById('ah-sky-flow');
+      if (staleSky) staleSky.hidden = true;
+      delete pageHost.dataset.skyFlow;
+    }
     state.currentView = 'sky';
     pageHost.dataset.currentView = 'sky';
     setAccountPageActive(true);

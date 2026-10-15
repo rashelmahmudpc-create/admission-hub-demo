@@ -1359,3 +1359,41 @@ body.ah-account-page-active{position:fixed;inset:0;width:100%;height:100%;overfl
 body.ah-account-page-active .ah-account-page{position:absolute;inset:0;width:100%;height:100%;min-height:0;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
 body.ah-account-page-active .ah-account-page[data-sky-flow="on"],body.ah-account-page-active .ah-account-page[data-current-view="welcome"]{overflow:hidden}
 body.ah-account-page-active input,body.ah-account-page-active select,body.ah-account-page-active textarea{font-size:max(16px,1em)}
+
+/* owner-2026-10-17-ios-shell — real iPhone Home-Screen app (standalone, viewport-fit=cover,
+   black-translucent status bar). index.html pads <body> by the top safe-area; the account page
+   used to sit BELOW that padding while also being 100svh tall, so it was one notch-height taller
+   than the screen: Get Started / "গেস্ট হিসেবে ঘুরে দেখি" lost their lower half and the status-bar
+   strip showed the body colour instead of the screen's. While the account page is up it is now
+   pinned to the real screen edges (no vh units at all) and every screen paints its own insets. */
+html{overscroll-behavior:none}
+html:has(> body.ah-account-page-active){overflow:hidden;height:100%}
+body.ah-account-page-active{padding-top:0!important;overflow:hidden!important;height:100%!important;min-height:0!important}
+body.ah-account-page-active>.ah-account-page:not([hidden]){
+  position:fixed!important;top:0!important;right:0!important;bottom:0!important;left:0!important;z-index:1200;
+  box-sizing:border-box;width:auto!important;height:auto!important;min-height:0!important;max-height:none!important;
+  margin:0!important;padding:0!important;overflow-x:hidden!important;overflow-y:auto!important;
+  -webkit-overflow-scrolling:touch;overscroll-behavior:none!important}
+body.ah-account-page-active>.ah-account-page[data-current-view="welcome"],
+body.ah-account-page-active>.ah-account-page[data-current-view="sky"],
+body.ah-account-page-active>.ah-account-page[data-sky-flow="on"]{overflow:hidden!important}
+body.ah-account-page-active>.ah-account-page[data-current-view="welcome"]>.ah-account-shell{height:100%!important;min-height:0!important;max-height:none!important}
+/* height:100% did not resolve here (its parents have no definite height), so the view
+   collapsed to its padding (~225px) and the story's second page slid off the top. Pin it
+   to the pinned page's edges instead. */
+body.ah-account-page-active>.ah-account-page[data-current-view="welcome"] .ah-welcome-view{position:absolute!important;top:0!important;right:0!important;bottom:0!important;left:0!important;height:auto!important;min-height:0!important;max-height:none!important;padding:0!important;margin:0!important}
+/* The second welcome page (auth sheet) may be taller than a small phone: scroll it inside
+   instead of clipping the last button. */
+#ah-welcome-story .auth{overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+/* Sky flow fills the pinned page exactly. With the keyboard up the page follows the visual
+   viewport so the focused field and the bottom action stay above the keyboard. */
+body.ah-account-page-active>.ah-account-page[data-current-view="sky"]>.ah-account-shell,
+body.ah-account-page-active>.ah-account-page[data-sky-flow="on"]>.ah-account-shell{display:none!important}
+body.ah-account-page-active>.ah-account-page[data-sky-flow="on"]>#ah-sky-flow{position:absolute!important;top:0!important;right:0!important;bottom:0!important;left:0!important;width:auto!important;height:auto!important;min-height:0!important;max-height:none!important}
+body.keyboard-open.ah-account-page-active>.ah-account-page[data-sky-flow="on"]{bottom:auto!important;top:var(--visual-viewport-offset-top,0px)!important;height:var(--visual-viewport-height,100%)!important}
+/* Logout / re-entry: until the Sky flow has mounted, show its colour and a quiet spinner —
+   never the previous (old) screen. */
+body.ah-account-page-active>.ah-account-page[data-current-view="sky"]:not([data-sky-flow="on"]){background:#E6F0FF!important}
+body.ah-account-page-active>.ah-account-page[data-current-view="sky"]:not([data-sky-flow="on"])::after{content:"";position:absolute;left:50%;top:50%;width:36px;height:36px;margin:-18px 0 0 -18px;box-sizing:border-box;border-radius:50%;border:3px solid rgba(47,107,255,.18);border-top-color:#2F6BFF;animation:ahSkyWait .8s linear infinite}
+@keyframes ahSkyWait{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){body.ah-account-page-active>.ah-account-page[data-current-view="sky"]::after{animation:none}}
