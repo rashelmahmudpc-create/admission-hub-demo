@@ -1335,3 +1335,15 @@ body.keyboard-open .ah-education-panel .ah-education-actions{
 }
 body.keyboard-open .ah-education-panel .ah-edu-assist{display:none}
 
+
+/* ---------------------------------------------------------------------------
+   App-surface contract (2026-10-15) — Welcome / Sign Up / Sign In must fit the
+   device exactly, on every phone, in the browser and when installed.
+   Root cause: index.html gives <body> padding-top:env(safe-area-inset-top), and
+   these screens ALSO pad themselves for the notch. On an iPhone that counted the
+   notch twice (the page started ~54px low) and, because the screen is exactly one
+   viewport tall, pushed the bottom button off-screen and made the page scroll.
+   Fix: while the account page is on screen it owns the whole viewport, including
+   the area under the status bar, so the body must not reserve the notch again.
+   --------------------------------------------------------------------------- */
+body.ah-account-page-active{padding-top:0!important;padding-bottom:0!important;overflow-x:hidden}

@@ -39,8 +39,8 @@ t('discardActiveExam: retry-টাইমার ক্লিয়ার', /async
 
 /* ৬ — ভার্সন-ট্র্যাকিং v189 */
 
-t('sw BUILD_ID current shell', SW.includes("const BUILD_ID = 'v333-skyux-20261015'"));
-t('index sw-marker current shell', H.includes("const expectedSwVersion = 'v333-skyux-20261015'"));
+t('sw BUILD_ID current shell', SW.includes("const BUILD_ID = 'v334-safearea-20261015'"));
+t('index sw-marker current shell', H.includes("const expectedSwVersion = 'v334-safearea-20261015'"));
 
 console.log(`\nP08-AC3: ${pass} pass / ${fail} fail`);
 if (fail) process.exit(1);
