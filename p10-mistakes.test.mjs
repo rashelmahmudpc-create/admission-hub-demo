@@ -31,7 +31,7 @@ t('removeMistake: dbDel + CACHE-refresh + toast', H.includes("removeMistake=asyn
 t('Practice-My-Mistakes মোডাল (10/20/50/100) + startMistakeCount', H.includes('openMistakePracticeModal') && H.includes('[10,20,50,100].map'));
 t('startMistakeExam(mock/flash) → beginExamFromPool', /window\.startMistakeExam=async function\(mode\)\{startMistakeCount/.test(H) && H.includes('beginExamFromPool(pool,mode)'));
 t('exam-setup-এ source: wrong (Mistakes) রুট+ব্যাজ', H.includes("['wrong','Mistakes']"));
-t('Dashboard-এ ❌ Mistakes টাইল (নতুন-ড্যাশবোর্ড dv2-তে — পুরোনো-ড্যাশ-মৃত)', H.includes('renderMistakes') && H.includes("if(p==='mistakes') return renderMistakes();") && V2.includes("navigate('mistakes')"));
+t('Dashboard-এ ❌ Mistakes টাইল (নতুন-ড্যাশবোর্ডে — পুরোনো-ড্যাশ-মৃত)', H.includes('renderMistakes') && H.includes("if(p==='mistakes') return renderMistakes();") && V2.includes("go('mistakes')"));
 
 /* ৪ — রেকর্ডিং-পথ (exam-submit + explorer + flash) */
 t('exam-submit: snapshot-wrong → enrichMistakeRecord + wrongCount++ + status UNRESOLVED', /for\(const s of result\.snapshot\.filter\(x=>x\.status==='wrong'\)\)/.test(H) && /m\.status='UNRESOLVED'\s*;?\s*m\.mastered=false/.test(H) && /m\.wrongCount=beforeWrong\+1;/.test(H));

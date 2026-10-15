@@ -29,10 +29,10 @@ test('p17-03: the engine loads before the panel that reads it', () => {
 });
 
 test('p17-04: the dashboard exposes a guarded prepare-me entry point', () => {
-  assert.match(V2, /onclick="window\.openStudyPlanPanel&&window\.openStudyPlanPanel\(\)"/,
-    'dashboard must call openStudyPlanPanel() through the standard guarded pattern');
-  assert.match(V2, /const prepare = /, 'the prepare card must be built in build()');
-  assert.match(V2, /header \+ prepare \+/, 'the prepare card must be placed in the rendered dashboard');
+  assert.match(V2, /'ai\.plan': \(\) => \(window\.openStudyPlanPanel \? window\.openStudyPlanPanel\(\)/,
+    'the plan card must call openStudyPlanPanel() through the guarded pattern');
+  assert.match(V2, /'ai\.plan'/, 'the prepare card must have an action id in the frame bridge');
+  assert.match(V2, /data-action="ai\.plan"/, 'the prepare card must be placed in the rendered frame');
 });
 
 test('p17-05: the button label names the action in Bangla', () => {

@@ -15,36 +15,35 @@ t('sw APP_SHELL-এ dashboard-v2 (js+css)', SW.includes("'./dashboard-v2.js?v=da
 t('sw BUILD_ID v337-skyv2-20261017', SW.includes("const BUILD_ID = 'v337-skyv2-20261017'"));
 t('index sw-marker v323', H.includes("const expectedSwVersion = 'v337-skyv2-20261017'") && H.includes('admission-hub-shell-v337-skyv2-20261017'));
 
-/* ২ — ১৪ মডিউল (ছবির প্রতিটি সেকশন) */
-t('১ Personal Header (avatar+তারিখ+🔔)', V2.includes('dv2-header') && V2.includes('Intl.DateTimeFormat') && V2.includes('dv2-bell'));
-t('২ Smart Daily Mission (63/100-স্টাইল + Focus Mode + Continue + ★)', V2.includes('dv2-mission') && V2.includes('Mission') && V2.includes('Focus Mode') && V2.includes('Continue →') && V2.includes('dv2-star') && V2.includes('MCQ'));
-t('৩ Streak Card (7-day dots + badge)', V2.includes('dv2-days') && V2.includes('Day Streak') && V2.includes('10 Day Badge'));
-t('৪ Today\u2019s Performance (Mastery-ring + Solved/Correct/Wrong + Time)', V2.includes('dv2-ring') && V2.includes('Mastery') && V2.includes('Solved') && V2.includes('Total Time'));
-t('৫ Study Insight (saved progress + Practice Weak Topic)', V2.includes('Study Insight') && V2.includes('>Progress</span>') && V2.includes('Practice Weak Topic →') && V2.includes('insightText'));
-t('৬ Continuous Learning (প্রগ্রেস-বার + Resume/কোর্স)', V2.includes('Continuous Learning') && V2.includes('dv2-bar') && V2.includes('subjectProgress'));
-t('৭ Command Center (Quick Practice/Mistakes/Courses + See more)', V2.includes('Command Center') && V2.includes('Quick Practice') && V2.includes('See more →') && V2.includes('dv2AllTools'));
-t('৮ Performance Graph (SVG লাইন-চার্ট + ৭-দিন)', V2.includes('graphSvg') && V2.includes('<svg viewBox') && V2.includes('সাপ্তাহিক'));
-t('৯ Weakness Radar (Topic-wise Accuracy + রঙিন বার)', V2.includes('Your Weakness Radar') && V2.includes('Topic-wise Accuracy') && V2.includes('topicWeak'));
-t('১০ Admission Goal (বিশ্ববিদ্যালয় + Days Left + ⚙-বদল)', V2.includes('Admission Goal') && V2.includes('Days Left') && V2.includes('dv2EditGoal') && V2.includes('Rajshahi University'));
-t('১১ 90-Day Roadmap (Day X/90 + checklist + Full Plan)', V2.includes('90-Day Roadmap') && V2.includes('Day ') && V2.includes('Study Checklist') && V2.includes('progress/plan'));
-t('১২ Study Tools (Notes/Vocabulary/Dictionary/More — Problem Solver বাদ)', V2.includes('Study Tools') && V2.includes('Notes') && V2.includes("navigate(\\'notes\\')") && V2.includes("navigate(\\'vocabulary-master\\')") && !V2.includes('Problem Solver'));
+/* ২ — ১৪ মডিউল (মালিকের নতুন ডিজাইন: Scholar Dashboard 3) */
+t('১ Personal Header (avatar+তারিখ+🔔)', V2.includes('id="greet"') && V2.includes('id="today"') && V2.includes('id="themeBtn"') && V2.includes('iconbtn'));
+t('২ Smart Daily Mission (done/total MCQ + Continue + chips)', V2.includes('s-mission') && V2.includes('mCnt') && V2.includes('Continue') && V2.includes('MCQ'));
+t('৩ Streak Card (7-day dots + badge)', V2.includes('s-streak') && V2.includes('days7') && V2.includes('Day Badge'));
+t('৪ Today’s Performance (Solved/Correct/Wrong + Time + Mastery)', V2.includes('stats') && V2.includes('Mastery') && V2.includes('timeTxt') && V2.includes('data-count="stats.solved"'));
+t('৫ Study Insight (mastery note + সৎ বার্তা)', V2.includes('mastNote') && V2.includes('mastBar'));
+t('৬ Continuous Learning (প্রগ্রেস-বার + চলমান কোর্স)', V2.includes('courseBar') && V2.includes('চলমান কোর্স'));
+t('৭ Command Center (Quick/Mock/Mistakes/Revision + আরও টুল)', V2.includes('toolGroups') && V2.includes('tool.quick') && V2.includes('tool.mistakes') && V2.includes('tool.revision'));
+t('৮ Performance Graph (SVG লাইন-চার্ট + ৭-দিন)', V2.includes('perfSvg') && V2.includes('<svg') && V2.includes('perfHasData'));
+t('৯ Weakness Radar (Topic-wise Accuracy + রঙিন বার)', V2.includes('radarFull') && V2.includes('wlist') && V2.includes('সবচেয়ে দুর্বল'));
+t('১০ Admission Goal (বিশ্ববিদ্যালয় + Days Left + ⚙-বদল)', V2.includes('goalDays') && V2.includes('goalUni') && V2.includes('dv2EditGoal'));
+t('১১ 90-Day Roadmap (৯০ দিনের প্ল্যান)', V2.includes('৯০ দিনের প্ল্যান') && V2.includes('roadmap.create'));
+t('১২ Study Tools (Notes/Vocabulary/Dictionary/Search — Problem Solver বাদ)', V2.includes('tool.notes') && V2.includes('tool.vocab') && V2.includes('tool.dict') && V2.includes('tool.search') && !V2.includes('Problem Solver'));
 t('১৩ Bottom Nav 4 core tabs (Home/Bank/Exam/Profile; AI → dashboard Command Center, History → Exam-এর ভিতরে)', (() => { const nav = (H.match(/const NAV_TABS=\[[\s\S]*?\];/) || [''])[0]; return /key:'dashboard'[\s\S]*key:'question-bank'[\s\S]*key:'exam'[\s\S]*key:'my-profile'/.test(nav) && !nav.includes("key:'ai'") && !nav.includes("key:'history'") && (nav.match(/\{key:/g) || []).length === 4; })() && !H.includes("key:'profile'") && !H.includes("key:'ai-chat'"));
-t('১৪ মূল অ্যাপের AI Assistant script/dashboard-এন্ট্রি/direct route চালু (floating FAB নেই)', H.includes('ai-agent-chat.js?v=agent-f1-ui-skyv2') && !H.includes('juju-floating') && H.includes("if(p==='ai'){ if(window.renderAiAgentPage)") && V2.includes("navigate('ai')") && V2.includes("navigate(\\'ai\\')"));
+t('১৪ মূল অ্যাপের AI Assistant script/dashboard-এন্ট্রি/direct route চালু (floating FAB নেই)', H.includes('ai-agent-chat.js?v=agent-f1-ui-skyv2') && !H.includes('juju-floating') && H.includes("if(p==='ai'){ if(window.renderAiAgentPage)") && V2.includes("'nav.ai'") && V2.includes("go('ai')"));
 t('পুরনো-ড্যাশ-সম্পূর্ণ-বিলুপ্ত (মালিক-নির্দেশ ২০২৬-০৯-০৭): renderV2-এ previous()/intel-ক্যাপচার-নেই + dv2Cleanup-পরিচ্ছন্নতা', !V2.includes('data-dv2-phase5') && !V2.includes('intel = el.outerHTML') && V2.includes('function dv2Cleanup') && V2.includes('[data-phase5-dashboard],[data-phase34-dashboard]') && !/previous\(\);[\s\S]{0,300}data-phase5-dashboard/.test(V2));
 
 /* ৩ — ডেটা-সততা: CACHE-ভিত্তিক, কোনো ফেক সংখ্যা নয় */
 t('সব-সংখ্যা CACHE-সূত্র (dailyStats/examResults/questions)', V2.includes('if (window.CACHE) return window.CACHE;') && V2.includes('examResults') && V2.includes('dailyStats'));
-t('শূন্য-অবস্থা-বার্তা (সৎ, কোনো বানানো-সংখ্যা নয়)', V2.includes('কোনো ডেটা নেই') && V2.includes('এখনো') && V2.includes('নেই'));
+t('শূন্য-অবস্থা-বার্তা (সৎ, কোনো বানানো-সংখ্যা নয়)', V2.includes('এখনো ডেটা নেই') && V2.includes('লিডারবোর্ড এখনো চালু হয়নি') && V2.includes('এখনো কোনো পরীক্ষার উত্তর নেই') && V2.includes('এখনো কোনো কোর্স শুরু করোনি'));
 t('অফলাইন: dashboard-v2.js-এ কোনো fetch/XHR/https-কল নেই', !/fetch\(|XMLHttpRequest|https:\/\//.test(V2));
 t('নতুন DB-স্কিমা নেই (idb-স্টোর-স্পর্শ নয়)', !/dbCreateStore|objectStore\(/.test(V2) || /dbPut\('settings'\)/.test(V2));
 t('goal-ডিফল্ট-স্যাম্পল + সেটিংস-সেভ (dv2SaveGoal)', V2.includes('dv2SaveGoal') && V2.includes("dbPut('settings'"));
-t('insightText: নিয়ম-ভিত্তিক (weak topic + streak-উল্লেখ)', V2.includes('weak') && V2.includes('insightText') && V2.includes('দিনের ধারাবাহিকতা'));
-
+t('সাপ্তাহিক-নোট: নিয়ম-ভিত্তিক (দিন-সংখ্যা + লক্ষ্য-শতাংশ)', V2.includes("weekNote')") && V2.includes('দিন</b> পড়েছ') && V2.includes('লক্ষ্যের'));
 /* ৪ — ইঞ্জিন-অক্ষত (additive-chain + গার্ড) */
-t('renderDashboard override: path-গার্ড + previous-ডেলিগেট', /if \(path !== 'dashboard'\) \{ if \(typeof previous === 'function'\) return previous\.apply/.test(V2));
+t('renderDashboard override: path-গার্ড + previous-ডেলিগেট', /if \(path !== 'dashboard'[\s\S]{0,120}typeof previous === 'function'\) return previous\.apply/.test(V2));
 t('renderShell-রেন্ডার + no-renderShell-ফলব্যাক', V2.includes("typeof window.renderShell === 'function'") && V2.includes('renderShell(html'));
 t('__dashboardV2Installed গার্ড (দ্বিগুণ-ইনস্টল নয়)', V2.includes('window.__dashboardV2Installed'));
-t('dv2AllTools: পুরনো ১১+ টুল No-loss (Bank/Mock/Progress/Settings…)', V2.includes("navigate('question-bank')") && V2.includes("navigate('progress')") && V2.includes("navigate('settings')") && V2.includes("navigate('vocabulary-master')"));
+t('dv2AllTools: পুরনো ১১+ টুল No-loss (Bank/Progress/Vocab/Study-tools)', V2.includes("go('question-bank')") && V2.includes("go('progress')") && V2.includes("go('vocabulary-master')") && V2.includes("go('study-tools')"));
 
 /* ৫ — রিগ্রেশন লক (অর্থাৎ আগের পোস্টার-কি অক্ষত) */
 // Anchored on the path boundary so welcome-onboarding.js/css (live assets) do not

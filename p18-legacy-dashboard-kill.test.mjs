@@ -47,10 +47,11 @@ test('dashboard-v2 renders without any account bootstrap', await (async () => {
   await new Promise(resolve => setTimeout(resolve, 30));
   try { w.renderDashboard?.(); } catch (_) {}
   const html = String(w.__shell || '') + w.document.getElementById('app').innerHTML;
-  /* The header avatar intentionally links to the Profile tab via the
-   * 'my-profile' route, so match the account-bootstrap prompt itself rather
-   * than any occurrence of those words. */
-  return html.includes('dv2-root') && !/\blog ?in\b|sign ?in|লগইন|লগ ইন/i.test(html);
+  /* The design rides in the frame's srcdoc, so assert both the mounted frame and
+   * the frame source; the shell itself must stay free of any account-bootstrap
+   * prompt (the header avatar routes to Profile, not a login gate). */
+  const src = String(w.document.querySelector('iframe.dv3-frame')?.getAttribute('srcdoc') || '');
+  return html.includes('dv3-frame') && src.includes('id="greet"') && !/\blog ?in\b|sign ?in|লগইন|লগ ইন/i.test(html);
 })());
 
 test('inline application shell cannot emit a legacy dashboard marker', !/TODAY COMMAND CENTER|Your Command Center|Swipe to explore|data-p3-command/.test(H));

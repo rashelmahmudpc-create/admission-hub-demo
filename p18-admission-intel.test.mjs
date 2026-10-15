@@ -37,9 +37,10 @@ test('p18-03: the catalog and pattern dataset load before the engine that reads 
 });
 
 test('p18-04: the dashboard exposes a guarded admission-intel entry point', () => {
-  assert.match(V2, /onclick="window\.openAdmissionIntelPanel&&window\.openAdmissionIntelPanel\(\)"/,
-    'dashboard must call openAdmissionIntelPanel() through the guarded pattern');
-  assert.match(V2, /header \+ prepare \+ intel \+/, 'the intel card must be rendered in the dashboard');
+  assert.match(V2, /window\.openAdmissionIntelPanel\) return window\.openAdmissionIntelPanel\(\)/,
+    'the goal card must open the intel panel through the guarded pattern');
+  assert.match(V2, /'goal\.open'/, 'the goal card must have an action id in the frame bridge');
+  assert.match(V2, /data-action="goal\.open"/, 'the goal card must be rendered in the dashboard frame');
 });
 
 test('p18-05: the panel exports the globals the dashboard calls', () => {
@@ -68,7 +69,7 @@ function boot(cache) {
     { runScripts: 'dangerously', pretendToBeVisual: true, url: 'https://example.com/' });
   const w = dom.window;
   const run = (code) => { const s = w.document.createElement('script'); s.textContent = code; w.document.body.appendChild(s); };
-  w.renderShell = (html) => { w.__shell = html; };
+  w.renderShell = (html) => { w.__shell = html; w.document.getElementById('app').innerHTML = html; };
   w.renderDashboard = function () { return 'OLD'; };
   w.navigate = () => {}; w.toast = () => {}; w.openModal = () => {};
   if (cache) run(`const CACHE = ${JSON.stringify(cache)};`);
@@ -76,6 +77,7 @@ function boot(cache) {
   w.renderDashboard();
   return w;
 }
+const frameSrc = (w) => String(w.document.querySelector('iframe.dv3-frame')?.getAttribute('srcdoc') || '');
 
 const WITH_GOAL = {
   subjects: [], topics: [{ id: 'phy1', name: 'Physics — Motion' }],
@@ -87,13 +89,14 @@ const WITH_GOAL = {
 
 test('p18r-01: the dashboard renders a working admission-intel card', () => {
   const w = boot(WITH_GOAL);
-  assert.match(w.__shell, /ভর্তি-বুদ্ধি/, 'intel card must be on the dashboard');
-  assert.match(w.document.body.innerHTML, /openAdmissionIntelPanel/, 'handler must be present');
+  assert.match(frameSrc(w), /লক্ষ্য দেখো/, 'the goal card must be in the dashboard frame');
+  assert.match(frameSrc(w), /data-action="goal\.open"/, 'the frame must carry the intel action');
+  assert.ok(w.__dv3Action('goal.open'), 'the outer bridge must accept the goal action');
 });
 
 test('p18r-02: opening it shows the official subject coverage for the goal', () => {
   const w = boot(WITH_GOAL);
-  w.openAdmissionIntelPanel();
+  w.__dv3Action('goal.open');
   const panel = w.document.getElementById('aiPanel');
   assert.ok(panel, 'panel must be created');
   assert.match(panel.innerHTML, /ভর্তি-বুদ্ধি/, 'header present');
@@ -102,15 +105,11 @@ test('p18r-02: opening it shows the official subject coverage for the goal', () 
   assert.match(panel.innerHTML, /নিশ্চয়তা নয়/, 'the no-guarantee note must be visible');
 });
 
-test('p18r-03: with empty settings the dashboard default goal still resolves cleanly', () => {
+test('p18r-03: with empty settings the dashboard falls back to the goal editor, never a fabricated map', () => {
   const w = boot({ subjects: [], topics: [], questions: [], examResults: [], mistakes: [], settings: {} });
-  w.openAdmissionIntelPanel();
-  const panel = w.document.getElementById('aiPanel');
-  assert.ok(panel, 'panel must still open');
-  // dashboard-v2 supplies a default goal, so the panel must resolve it rather
-  // than showing an error — and still never invent a unit map.
-  assert.match(panel.innerHTML, /রাজশাহী|Rajshahi/, 'the default goal university must be shown');
-  assert.match(panel.innerHTML, /নিশ্চয়তা নয়/, 'policy note still present');
+  assert.ok(w.__dv3Action('goal.open'), 'the goal action must still be handled');
+  assert.equal(w.document.getElementById('aiPanel'), null,
+    'with no goal there is nothing to analyse, so the intel sheet must not open');
 });
 
 test('p18r-03b: without the catalog the panel asks for a goal, never invents a unit map', () => {

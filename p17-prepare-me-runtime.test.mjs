@@ -18,7 +18,7 @@ function boot(cache) {
     { runScripts: 'dangerously', pretendToBeVisual: true, url: 'https://example.com/' });
   const w = dom.window;
   const run = (code) => { const s = w.document.createElement('script'); s.textContent = code; w.document.body.appendChild(s); };
-  w.renderShell = (html) => { w.__shell = html; };
+  w.renderShell = (html) => { w.__shell = html; w.document.getElementById('app').innerHTML = html; };
   w.renderDashboard = function () { return 'OLD'; };
   w.navigate = () => {}; w.toast = () => {}; w.openModal = () => {};
   if (cache) run(`const CACHE = ${JSON.stringify(cache)};`);
@@ -26,6 +26,11 @@ function boot(cache) {
   w.renderDashboard();
   return w;
 }
+
+/* The dashboard mounts the design in an iframe; the card that carries the
+ * prepare-me action lives in the frame source, and the outer bridge is what the
+ * frame calls. Assert both, then drive the real panel through the bridge. */
+const frameSrc = (w) => String(w.document.querySelector('iframe.dv3-frame')?.getAttribute('srcdoc') || '');
 
 const EMPTY = { subjects: [], topics: [], questions: [], examResults: [], mistakes: [], settings: {} };
 const HISTORY = {
@@ -43,9 +48,9 @@ const HISTORY = {
 
 test('p17r-01: the dashboard renders a working prepare-me button', () => {
   const w = boot(HISTORY);
-  assert.match(w.__shell, /আমাকে প্রস্তুত করো/, 'prepare card must be on the dashboard');
-  const html = w.document.body.innerHTML;
-  assert.match(html, /openStudyPlanPanel/, 'the rendered dashboard must carry the handler');
+  assert.match(frameSrc(w), /আমাকে প্রস্তুত করো/, 'prepare card must be in the dashboard frame');
+  assert.match(frameSrc(w), /data-action="ai\.plan"/, 'the frame must carry the action the bridge handles');
+  assert.ok(w.__dv3Action('ai.plan'), 'the outer bridge must accept the prepare-me action');
 });
 
 test('p17r-02: tapping it opens the plan sheet (populated history)', () => {
