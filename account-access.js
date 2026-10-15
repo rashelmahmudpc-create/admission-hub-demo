@@ -1652,6 +1652,73 @@
     return state.firebaseAuthPromise;
   };
 
+  /* The Firebase OAuth popup completes through a hidden relay on the authDomain.
+   * A mobile WebView, an in-app browser (the Facebook/Instagram/TikTok view a
+   * shared link opens in) and an installed PWA all run that relay as a separate
+   * window with no shared storage, so the handshake never returns: Firebase
+   * aborts with its internal "Pending promise was never set" -- the crash the
+   * owner saw on 2026-10-15, on Google and Facebook alike. On those surfaces
+   * sign in by full-page redirect instead: Firebase persists the handshake in
+   * the authDomain's own storage, the whole page navigates, and
+   * getRedirectResult() hands the credential back on return. Desktop keeps the
+   * popup, which is smoother there and is verified working. */
+  const oauthPopupSupported = () => {
+    try {
+      if (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) return false;
+    } catch (_) {}
+    const ua = String((navigator && navigator.userAgent) || '');
+    if (/FBAN|FBAV|FB_IAB|Instagram|Line\/|MicroMessenger|Twitter|TikTok|SnapChat|Pinterest/i.test(ua)) return false;
+    if (/Android|iPhone|iPad|iPod/i.test(ua)) return false;
+    return true;
+  };
+
+  /* A popup that is blocked, unsupported, or killed by the missing shared
+   * storage all land in the same dead end on a phone; the redirect works there,
+   * so fall back to it rather than reporting the failure. A user who closed the
+   * popup deliberately is NOT one of these -- that intent is respected. */
+  const popupDead = error => ['auth/popup-blocked', 'auth/operation-not-supported-in-this-environment',
+    'auth/web-storage-unsupported', 'auth/internal-error'].includes(String(error?.code || ''));
+
+  const OAUTH_REDIRECT = 'oauth-redirect';
+  const OAUTH_REDIRECT_FLAG = 'ah-oauth-redirect';
+
+  const beginOAuthRedirect = async (auth, provider) => {
+    try { sessionStorage.setItem(OAUTH_REDIRECT_FLAG, '1'); } catch (_) {}
+    await auth.signInWithRedirect(provider);
+    return OAUTH_REDIRECT;
+  };
+
+  /* Runs once at boot, and only when a redirect we started is coming back, so
+   * an ordinary load never pays for the getRedirectResult round-trip. */
+  const finishOAuthRedirect = async () => {
+    let pending = false;
+    try {
+      pending = sessionStorage.getItem(OAUTH_REDIRECT_FLAG) === '1';
+      if (pending) sessionStorage.removeItem(OAUTH_REDIRECT_FLAG);
+    } catch (_) {}
+    if (!pending) return;
+    const auth = await loadFirebaseAuth().catch(() => null);
+    if (!auth || typeof auth.getRedirectResult !== 'function') return;
+    let result = null;
+    try { result = await auth.getRedirectResult(); } catch (_) { return; }
+    const accessToken = String(result?.credential?.accessToken || '');
+    if (!result?.user || accessToken.length < 20) return;
+    const providerId = String(result.credential?.providerId || result.user.providerId || '');
+    try {
+      if (providerId === 'facebook.com') {
+        open();
+        const r = await api('/facebook', { method: 'POST', body: { accessToken } });
+        await establishSession(r, 'Facebook \u09a6\u09bf\u09af\u09bc\u09c7 \u09a4\u09cb\u09ae\u09be\u09b0 account-\u098f \u09aa\u09cd\u09b0\u09ac\u09c7\u09b6 \u09b9\u09af\u09bc\u09c7\u099b\u09c7\u0964');
+      } else if (providerId === 'google.com') {
+        open();
+        const r = await api('/google', { method: 'POST', body: { accessToken } });
+        await establishSession(r, 'Google \u09a6\u09bf\u09af\u09bc\u09c7 \u09a4\u09cb\u09ae\u09be\u09b0 account-\u098f \u09aa\u09cd\u09b0\u09ac\u09c7\u09b6 \u09b9\u09af\u09bc\u09c7\u099b\u09c7\u0964');
+      }
+    } catch (error) {
+      message(error?.code ? friendlyError(error) : '\u09b2\u0997\u0987\u09a8 \u09b8\u09ae\u09cd\u09aa\u09a8\u09cd\u09a8 \u09b9\u09af\u09bc\u09a8\u09bf\u2014\u0986\u09ac\u09be\u09b0 \u099a\u09c7\u09b7\u09cd\u099f\u09be \u0995\u09b0\u09cb\u0964', 'error');
+    }
+  };
+
   const googleMessage = error => {
     const code = String(error?.code || '');
     if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
@@ -1668,11 +1735,13 @@
     const provider = new window.firebase.auth.GoogleAuthProvider();
     provider.addScope('email');
     provider.addScope('profile');
+    if (!oauthPopupSupported()) return beginOAuthRedirect(auth, provider);
     let credential;
     try {
       credential = await auth.signInWithPopup(provider);
     } catch (error) {
-      throw new Error(googleMessage(error));
+      if (!popupDead(error)) throw new Error(googleMessage(error));
+      return beginOAuthRedirect(auth, provider);
     }
     const token = String(credential?.credential?.accessToken || '');
     if (token.length < 20) throw new Error('Google অনুমতি পাওয়া যায়নি—আবার চেষ্টা করো বা ইমেইল দিয়ে ঢুকো।');
@@ -1684,6 +1753,7 @@
     setBusy(true);
     try {
       const accessToken = await googleAccessToken();
+      if (accessToken === OAUTH_REDIRECT) return;
       const result = await api('/google', { method: 'POST', body: { accessToken } });
       await establishSession(result, 'Google দিয়ে তোমার account-এ প্রবেশ হয়েছে।');
     } catch (error) {
@@ -1742,11 +1812,13 @@
     const provider = new window.firebase.auth.FacebookAuthProvider();
     provider.addScope('email');
     provider.addScope('public_profile');
+    if (!oauthPopupSupported()) return beginOAuthRedirect(auth, provider);
     let credential;
     try {
       credential = await auth.signInWithPopup(provider);
     } catch (error) {
-      throw new Error(facebookMessage(error));
+      if (!popupDead(error)) throw new Error(facebookMessage(error));
+      return beginOAuthRedirect(auth, provider);
     }
     const token = String(credential?.credential?.accessToken || '');
     if (token.length < 20) throw new Error('Facebook \u0985\u09a8\u09c1\u09ae\u09a4\u09bf \u09aa\u09be\u0993\u09af\u09bc\u09be \u09af\u09be\u09af\u09bc\u09a8\u09bf\u2014\u0986\u09ac\u09be\u09b0 \u099a\u09c7\u09b7\u09cd\u099f\u09be \u0995\u09b0\u09cb \u09ac\u09be \u0987\u09ae\u09c7\u0987\u09b2 \u09a6\u09bf\u09af\u09bc\u09c7 \u09a2\u09c1\u0995\u09cb\u0964');
@@ -1758,6 +1830,7 @@
     setBusy(true);
     try {
       const accessToken = await facebookAccessToken();
+      if (accessToken === OAUTH_REDIRECT) return;
       const result = await api('/facebook', { method: 'POST', body: { accessToken } });
       await establishSession(result, 'Facebook \u09a6\u09bf\u09af\u09bc\u09c7 \u09a4\u09cb\u09ae\u09be\u09b0 \u098f\u0995\u0987 account-\u098f \u09aa\u09cd\u09b0\u09ac\u09c7\u09b6 \u09b9\u09af\u09bc\u09c7\u099b\u09c7\u0964');
     } catch (error) {
@@ -3136,6 +3209,7 @@
     }).catch(() => { state.available = false; applyCapabilities({ available: false }); return false; });
     const sessionReady = refreshSession();
     Promise.allSettled([configReady, sessionReady]).then(async () => {
+      await finishOAuthRedirect();
       if (accountVerified(state.session)) return;
       if (returnedFromPasswordReset) {
         open();
@@ -3318,6 +3392,7 @@
     },
     google: async () => {
       const accessToken = await googleAccessToken();
+      if (accessToken === OAUTH_REDIRECT) return true;
       const result = await skyApi('/google', { method: 'POST', body: { accessToken } });
       await establishSession(result, 'Google দিয়ে তোমার account-এ প্রবেশ হয়েছে।');
       return true;
@@ -3330,6 +3405,7 @@
         message(facebookMessage(error), 'error');
         return false;
       }
+      if (accessToken === OAUTH_REDIRECT) return true;
       const result = await skyApi('/facebook', { method: 'POST', body: { accessToken } });
       await establishSession(result, 'Facebook \u09a6\u09bf\u09af\u09bc\u09c7 \u09a4\u09cb\u09ae\u09be\u09b0 \u098f\u0995\u0987 account-\u098f \u09aa\u09cd\u09b0\u09ac\u09c7\u09b6 \u09b9\u09af\u09bc\u09c7\u099b\u09c7\u0964');
       return true;

@@ -54,7 +54,14 @@ function setup({ methods = {}, signed = false, passkeyCredentials = null, backup
           }
           const token = dom.window.__googleAccessToken || `google-access-${'a'.repeat(32)}`;
           return { credential: { accessToken: token } };
-        }
+        },
+        // A blocked or unsupported popup falls back to a full-page redirect, so
+        // the mock needs the redirect pair the flow calls next.
+        async signInWithRedirect(provider) {
+          if (typeof dom.window.__googleRedirect === 'function') return dom.window.__googleRedirect(provider);
+          return undefined;
+        },
+        async getRedirectResult() { return null; }
       };
     }
   };
@@ -154,19 +161,43 @@ test('Google is capability-gated, uses Firebase endpoint, and keeps tokens out o
   app.dom.window.close();
 });
 
-test('a Google popup failure surfaces a friendly message instead of hanging forever', async () => {
+test('a blocked Google popup falls back to a full-page redirect instead of hanging', async () => {
   const clientId = '123456789012-exampleclientidentifier.apps.googleusercontent.com';
   const app = setup({ methods: { google: { available: true, clientId } } });
   await waitFor(() => app.document.querySelector('[data-role="google-button"] button'));
-  // A blocked or dismissed popup rejects signInWithPopup. Without handling, the
-  // button would spin with no message, which reads as a frozen app.
+  // A blocked popup rejects signInWithPopup. On a phone the same popup can die
+  // with no shared storage, so instead of reporting a dead end the flow must
+  // hand off to signInWithRedirect, which completes the handshake in the
+  // authDomain's own storage.
+  let redirectCalled = 0;
   app.window.__googlePopupFailure = () => Promise.reject(Object.assign(new Error('popup blocked'), { code: 'auth/popup-blocked' }));
+  app.window.__googleRedirect = () => { redirectCalled += 1; };
+  const settled = await Promise.race([
+    app.window.AdmissionSkyBridge.google().then(() => 'resolved', error => `rejected:${error.message}`),
+    sleep(1500).then(() => 'hung')
+  ]);
+  assert.equal(settled, 'resolved', 'a blocked popup must settle, not hang');
+  assert.equal(redirectCalled, 1, 'a blocked popup must fall back to signInWithRedirect');
+  assert.equal(app.calls.some(call => call.path.endsWith('/google')), false);
+  app.dom.window.close();
+});
+
+test('a user-cancelled Google popup shows a friendly message and never redirects', async () => {
+  const clientId = '123456789012-exampleclientidentifier.apps.googleusercontent.com';
+  const app = setup({ methods: { google: { available: true, clientId } } });
+  await waitFor(() => app.document.querySelector('[data-role="google-button"] button'));
+  // Closing the popup is a deliberate choice, not a failure to work around: the
+  // flow must respect it and show the hint, never hijack the page with a redirect.
+  let redirectCalled = 0;
+  app.window.__googlePopupFailure = () => Promise.reject(Object.assign(new Error('closed'), { code: 'auth/popup-closed-by-user' }));
+  app.window.__googleRedirect = () => { redirectCalled += 1; };
   const settled = await Promise.race([
     app.window.AdmissionSkyBridge.google().then(() => 'resolved', error => `rejected:${error.message}`),
     sleep(1500).then(() => 'hung')
   ]);
   assert.notEqual(settled, 'hung');
   assert.match(settled, /Google/);
+  assert.equal(redirectCalled, 0, 'a deliberate cancel must not trigger a redirect');
   assert.equal(app.calls.some(call => call.path.endsWith('/google')), false);
   app.dom.window.close();
 });

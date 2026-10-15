@@ -12,9 +12,9 @@ const HTML = read('index.html');
 const SW = read('sw.js');
 const PAGES_GUARD = read('.github/workflows/cf-pages.yml');
 const RELEASE_WORKFLOW = read('.github/workflows/telegram-auth-canary-activate.yml');
-const UI_VERSION = '20261015-fbauth1';
+const UI_VERSION = '20261015-fbredirect1';
 
-const SHELL_VERSION = 'v331-fbauth-20261015';
+const SHELL_VERSION = 'v332-fbredirect-20261015';
 
 const between = (source, start, end) => {
   const from = source.indexOf(start);

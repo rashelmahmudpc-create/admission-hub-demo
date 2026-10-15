@@ -31,16 +31,23 @@ async function waitFor(predicate, timeout = 2000) {
 
 // A Firebase Auth stand-in: initializeApp/auth/FacebookAuthProvider are the
 // only pieces loadFirebaseAuth touches when window.firebase already exists.
-function fakeFirebase(popup) {
-  const authInstance = { signInWithPopup: () => popup() };
+function fakeFirebase(popup, redirect, redirectResult) {
+  const authInstance = {
+    signInWithPopup: () => popup(),
+    // A blocked or unsupported popup falls back to a full-page redirect, so the
+    // mock carries the redirect pair the flow calls next.
+    signInWithRedirect: () => (redirect ? redirect() : Promise.resolve()),
+    getRedirectResult: () => Promise.resolve(redirectResult ? redirectResult() : null)
+  };
   function FacebookAuthProvider() { this.scopes = []; }
   FacebookAuthProvider.prototype.addScope = function (s) { this.scopes.push(s); };
   const auth = () => authInstance;
   auth.FacebookAuthProvider = FacebookAuthProvider;
+  auth.GoogleAuthProvider = function GoogleAuthProvider() { this.addScope = () => this; };
   return { apps: [], initializeApp: () => ({ name: 'ah-google' }), auth };
 }
 
-function setup(popup, onFacebook) {
+function setup(popup, onFacebook, options = {}) {
   const dom = new JSDOM('<!doctype html><html><body></body></html>', {
     url: 'https://admissionsky.pages.dev/',
     runScripts: 'dangerously',
@@ -66,7 +73,7 @@ function setup(popup, onFacebook) {
     if (path.endsWith('/session')) return reply(401, { error: { code: 'SESSION_INVALID' } });
     return reply(404, {});
   };
-  dom.window.firebase = fakeFirebase(popup);
+  dom.window.firebase = fakeFirebase(popup, options.redirect, options.redirectResult);
   dom.window.eval(script);
   return { dom, window: dom.window, calls };
 }
@@ -97,5 +104,44 @@ test('Facebook sign-in resolves false instead of rejecting when the popup fails'
 
   const outcome = await app.window.AdmissionSkyBridge.facebook();
   assert.equal(outcome, false, 'a failed popup must resolve false, not reject');
+  app.dom.window.close();
+});
+
+test('a blocked Facebook popup falls back to a full-page redirect instead of hanging', async () => {
+  let redirectCalled = 0;
+  const app = setup(
+    async () => { const e = new Error('popup blocked'); e.code = 'auth/popup-blocked'; throw e; },
+    null,
+    { redirect: () => { redirectCalled += 1; } }
+  );
+  await waitFor(() => app.window.AdmissionSkyBridge);
+  await waitFor(() => app.calls.some(call => call.path.endsWith('/config')));
+  await sleep(20);
+
+  const outcome = await app.window.AdmissionSkyBridge.facebook();
+  assert.equal(outcome, true, 'the hand-off to redirect must settle, not hang');
+  assert.equal(redirectCalled, 1, 'a blocked popup must fall back to signInWithRedirect');
+  assert.equal(app.calls.some(call => call.path.endsWith('/facebook')), false,
+    'nothing is posted until the redirect returns');
+  app.dom.window.close();
+});
+
+test('a returning Facebook redirect signs the account in through POST /facebook', async () => {
+  let seenToken = null;
+  const app = setup(
+    async () => { throw new Error('popup must not be used for the return leg'); },
+    body => { seenToken = body.accessToken; },
+    { redirectResult: () => ({ user: { providerId: 'facebook.com' }, credential: { providerId: 'facebook.com', accessToken: 'facebook-return-token-abcdefghij' } }) }
+  );
+  await waitFor(() => app.window.AdmissionSkyBridge);
+  await waitFor(() => app.calls.some(call => call.path.endsWith('/config')));
+  // The return leg only runs when the flow itself asked for a redirect, which
+  // it records in sessionStorage before leaving the page.
+  app.window.sessionStorage.setItem('ah-oauth-redirect', '1');
+  app.window.AdmissionAccount.open();
+  await waitFor(() => app.calls.some(call => call.path.endsWith('/facebook')), 4000);
+
+  assert.equal(seenToken, 'facebook-return-token-abcdefghij', 'the returned token must reach POST /facebook');
+  assert.equal(app.window.sessionStorage.getItem('ah-oauth-redirect'), null, 'the pending flag is cleared');
   app.dom.window.close();
 });
