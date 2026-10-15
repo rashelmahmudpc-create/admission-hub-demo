@@ -1,0 +1,52 @@
+name: Apply Dashboard v3 (manual)
+
+# One-shot, owner-approved (2026-10-15): replaces the dashboard UI file with the
+# verified Scholar Dashboard v3 build, regenerates the SW asset digests and
+# commits both to main. Frontend only - no backend / worker / secret changes.
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: Build URL
+        required: true
+        type: string
+      sha256:
+        description: Expected sha256 of dashboard-v2.js
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Download and verify build
+        env:
+          URL: ${{ inputs.url }}
+          SHA: ${{ inputs.sha256 }}
+        run: |
+          set -eu
+          curl -fsSL "$URL" -o /tmp/dashboard-v2.js
+          echo "$SHA  /tmp/dashboard-v2.js" | sha256sum -c -
+          node --check /tmp/dashboard-v2.js
+          cp /tmp/dashboard-v2.js dashboard-v2.js
+      - name: Regenerate SW digests
+        run: node scripts/sw-manifest.mjs
+      - name: Commit
+        run: |
+          set -eu
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add dashboard-v2.js sw.js
+          git diff --cached --stat
+          git diff --cached --quiet || git commit -m "feat(dashboard): Scholar Dashboard v3 - new UI wired to real CACHE data, no demo values"
+          git push origin HEAD:main
