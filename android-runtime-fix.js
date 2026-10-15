@@ -23,6 +23,10 @@
       overflow: visible !important;
       touch-action: pan-y !important;
     }
+    /* Sky sizes its fixed shell to visualViewport.height when the keyboard
+       opens. Do not let the global #app min-height:100dvh keep the composer
+       below that visible viewport. Scoped to chat; other pages are unchanged. */
+    #app.sky { min-height: 0; }
     .command-carousel, .command-track { touch-action: pan-y !important; }
     .setup-scroll {
       height: auto !important;
