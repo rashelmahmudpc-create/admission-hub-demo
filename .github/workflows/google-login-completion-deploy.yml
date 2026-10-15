@@ -53,8 +53,8 @@ jobs:
           npm run build:worker
           npm run sw:manifest
           node --check sw.js
-          grep -Fq "const expectedSwVersion = 'v347-google-login-complete'" index.html
-          grep -Fq "const BUILD_ID = 'v347-google-login-complete'" sw.js
+          grep -Fq "const expectedSwVersion = 'v348-sky-dock-bottom'" index.html
+          grep -Fq "const BUILD_ID = 'v348-sky-dock-bottom'" sw.js
       - name: Commit tested source and artifacts without force or rebase
         id: commit
         run: |
@@ -101,6 +101,6 @@ jobs:
           set -eu
           curl --fail --retry 3 --retry-delay 3 'https://admissionsky.pages.dev/api/auth/v1/config' -o /tmp/live-auth-config.json
           node -e "const d=JSON.parse(require('fs').readFileSync('/tmp/live-auth-config.json')); if(!d.ok || !d.auth.available || !d.auth.methods.google.available) process.exit(1); console.log('Live Google auth capability READY; a real user OAuth round trip is still required.');"
-          curl --fail --retry 3 --retry-delay 3 'https://admissionsky.pages.dev/sw.js?build=v347-google-login-complete' | grep -F "const BUILD_ID = 'v347-google-login-complete'"
+          curl --fail --retry 3 --retry-delay 3 'https://admissionsky.pages.dev/sw.js?build=v348-sky-dock-bottom' | grep -F "const BUILD_ID = 'v348-sky-dock-bottom'"
           echo "Published commit: ${{ steps.commit.outputs.sha }}" >> "$GITHUB_STEP_SUMMARY"
           echo 'No user data, OAuth provider settings, or secrets were changed.' >> "$GITHUB_STEP_SUMMARY"

@@ -511,9 +511,8 @@
 #app.sky svg.i{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
 #app.sky{max-width:520px;height:100%;margin:0 auto;display:flex;flex-direction:column;position:relative;overflow:hidden;background:radial-gradient(90% 38% at 50% -6%,var(--soft),transparent 72%),var(--bg)}
 /* Sky has no bottom nav, so the shell's 82px nav reserve would float the composer
-   far above the true bottom. The dock owns the bottom edge, plus the home-bar inset. */
+   far above the true bottom. The dock itself owns the bottom edge. */
 #app.sky{padding-bottom:0}
-#app.sky .dock{padding-bottom:calc(6px + env(safe-area-inset-bottom,0px))}
 #app.sky header{display:flex;align-items:center;gap:8px;padding:calc(8px) 14px 6px;position:relative;z-index:3;background:transparent;color:var(--ink)}
 #app.sky .ib{width:42px;height:42px;border-radius:50%;display:grid;place-items:center;background:var(--surf);box-shadow:0 0 0 1px var(--line),0 2px 6px rgba(40,70,160,.05);transition:transform .15s}
 #app.sky .ib:active{transform:scale(.88)}

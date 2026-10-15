@@ -20,8 +20,8 @@ const LANG_VERSION_TO = 'lang-v5-single-email-button';
 // NOTE: SW_BUILD_TO must always equal the BUILD_ID in sw.js. Without a bump the
 // deploy ships new files under old ?v= tokens; browsers then serve them
 // immutable for a year, so students keep the old app and every fix misses them.
-const SW_BUILD_FROM = 'v345-google-client';
-const SW_BUILD_TO = 'v346-fastboot-lazypack';
+const SW_BUILD_FROM = 'v347-google-login-complete';
+const SW_BUILD_TO = 'v348-sky-dock-bottom';
 
 const targets = [
   'index.html',
