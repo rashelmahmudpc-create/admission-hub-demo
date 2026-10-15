@@ -32,11 +32,12 @@ jobs:
       - name: Apply guarded frontend-only optimization
         run: |
           node scripts/optimize-startup.mjs
+          node scripts/fix-startup-overlay.mjs
           node scripts/align-startup-guards.mjs
           node --check account-access.js
           node scripts/sw-manifest.mjs
       - name: Startup, routing and auth protection regression tests
-        run: node --test --test-concurrency=1 startup-fast.test.mjs p19-perf-budget.test.mjs seo-routing.test.mjs native-auth-protection.test.mjs session-recovery-api.test.mjs
+        run: node --test --test-concurrency=1 startup-fast.test.mjs startup-overlay.test.mjs startup-cache-release.test.mjs p19-perf-budget.test.mjs seo-routing.test.mjs native-auth-protection.test.mjs session-recovery-api.test.mjs
       - name: Persist tested source on production release only
         if: ${{ inputs.mode == 'production' }}
         run: |
@@ -44,7 +45,7 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add index.html account-access.js sw.js native-auth-protection.test.mjs .github/workflows/telegram-auth-canary-activate.yml
           if ! git diff --cached --quiet; then
-            git commit -m 'perf: release verified-session fast startup and defer optional features'
+            git commit -m 'perf: release fast startup, rendered-dashboard overlay and optional feature loading'
             git push origin HEAD:main
           fi
       - name: Build sanitized frontend only
