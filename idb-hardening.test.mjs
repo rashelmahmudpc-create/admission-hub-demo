@@ -39,9 +39,9 @@ test('retired identity/onboarding scripts are no longer boot-critical or loaded'
 
 
 test('service-worker build marker is synchronized',
-  SW.includes("const BUILD_ID = 'v346-fastboot-lazypack'") &&
-  H.includes("const expectedSwVersion = 'v346-fastboot-lazypack'") &&
-  H.includes('admission-hub-shell-v346-fastboot-lazypack'));
+  SW.includes("const BUILD_ID = 'v347-google-login-complete'") &&
+  H.includes("const expectedSwVersion = 'v347-google-login-complete'") &&
+  H.includes('admission-hub-shell-v347-google-login-complete'));
 test('data protection summarizes stores with count rather than full reads', DP.includes('tx.objectStore(name).count()'));
 test('unprotected automatic Pages deploy stays retired', WF.includes('Cloudflare Pages Bundle Guard (No Deploy)') && !WF.includes('wrangler-action') && !WF.includes('pages deploy dist --project-name admissionhub'));
 

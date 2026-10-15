@@ -12,9 +12,9 @@ const HTML = read('index.html');
 const SW = read('sw.js');
 const PAGES_GUARD = read('.github/workflows/cf-pages.yml');
 const RELEASE_WORKFLOW = read('.github/workflows/telegram-auth-canary-activate.yml');
-const UI_VERSION = '20261017-gclient1';
+const UI_VERSION = '20261015-login-complete-v1';
 
-const SHELL_VERSION = 'v346-fastboot-lazypack';
+const SHELL_VERSION = 'v347-google-login-complete';
 
 const between = (source, start, end) => {
   const from = source.indexOf(start);

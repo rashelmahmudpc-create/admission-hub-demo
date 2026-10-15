@@ -1390,7 +1390,8 @@
      * that the server then completed: the "sometimes the OTP never comes" bug.
      * Those paths get a 45s ceiling; everything else keeps 18s. */
     const slowSend = /\/(email-ownership|telegram\/verification|account-verification\/email|backup)\/(start|resend)(\?|$)/.test(String(path || ''));
-    const ceiling = slowSend ? 45000 : 18000;
+    const socialSignIn = /^\/(google|facebook)(\/link)?(\?|$)/.test(String(path || ''));
+    const ceiling = slowSend || socialSignIn ? 45000 : 18000;
     const timeoutMs = Math.min(ceiling, Math.max(2000, Number(options.timeoutMs) || ceiling));  
     const timeout = setTimeout(() => controller.abort(), timeoutMs);  
     try {  
@@ -1408,11 +1409,14 @@
       const text = error?.name === 'AbortError' ? 'সেবাটি সময়মতো সাড়া দেয়নি—আবার চেষ্টা করুন।' : 'ইন্টারনেট সংযোগ পাওয়া যাচ্ছে না।';  
       throw Object.assign(new Error(text), { status: 0 });  
     } finally { clearTimeout(timeout); }  
-    let data = {};  
-    try { data = await response.json(); } catch (_) {}  
+    let data = {};
+    let parsed = false;
+    try { data = await response.json(); parsed = Boolean(data && typeof data === 'object'); } catch (_) {}  
     if (!response.ok) {  
       const error = new Error('Admission Hub অনুরোধটি শেষ করতে পারেনি।');  
-      error.status = response.status;  
+      error.status = response.status;
+      error.authStage = String(response.headers.get('X-AH-Auth-Stage') || '').replace(/[^A-Z0-9_]/g, '').slice(0, 40);
+      error.diagnostic = String(response.headers.get('X-AH-Auth-Diagnostic') || '').replace(/[^A-Z0-9_]/g, '').slice(0, 80);
       error.code = typeof data?.error?.code === 'string' ? data.error.code : '';  
       // A host that serves the SPA but has no auth backend (the legacy GitHub
       // Pages mirror, or the stale hyphenated Pages project) replies with an
@@ -1858,7 +1862,9 @@
       await establishSession(result, 'Google দিয়ে তোমার account-এ প্রবেশ হয়েছে।');
     } catch (error) {
       if (error?.code === 'ACCOUNT_LINK_REQUIRED') showView('google-link');
-      message(error?.code ? friendlyError(error) : googleMessage(error), 'error');
+      const detail = error?.diagnostic || error?.authStage || '';
+      const text = error?.code ? friendlyError(error) : googleMessage(error);
+      message(detail ? `${text} [${detail}]` : text, 'error');
     } finally { setBusy(false); }
   };
 

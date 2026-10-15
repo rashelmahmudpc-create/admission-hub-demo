@@ -9109,7 +9109,7 @@ var passkeyPublished = (env) => env?.PASSKEY_AUTH_ACTIVATION === "enabled";
 var passkeyCanaryRequested = (env, url) => env?.PASSKEY_AUTH_ACTIVATION === "canary" && url.searchParams.get("passkeyCanary") === "1";
 function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
   const publicConfigCache = /* @__PURE__ */ new WeakMap();
-  return async function handleNativeAuthRequest(request, env) {
+  return async function handleNativeAuthRequest(request, env, executionContext) {
     const url = new URL(request.url);
     const isPublicProfileRoute = url.pathname.startsWith(PUBLIC_PROFILE_PREFIX);
     if (!url.pathname.startsWith(`${AUTH_API_PREFIX}/`) && url.pathname !== AUTH_API_PREFIX && !isPublicProfileRoute) return null;
@@ -9142,6 +9142,8 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
     });
     const jar = cookies(request);
     const context = clientContext(request, jar[AUTH_DEVICE_COOKIE]);
+    const googleRequest = request.method === "POST" && url.pathname === `${AUTH_API_PREFIX}/google`;
+    let authStage = "PROVIDER_CONFIG";
     try {
       if (request.method === "POST" && [
         `${AUTH_API_PREFIX}/telegram/canary/activate`,
@@ -9618,15 +9620,19 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         } catch (cause) {
           throw providerError(cause, "google-config");
         }
+        authStage = "CREDENTIAL_INPUT";
         const credential = googleCredential2(await readJson(request));
+        authStage = "RATE_CHECK";
         await callAuthority(env, "/internal/firebase/rate", { input: { operation: "google" }, context });
         let signed;
         let user;
+        authStage = "FIREBASE_EXCHANGE";
         try {
           signed = await provider.signInWithGoogle(credential);
         } catch (cause) {
           throw providerError(cause, "google-signin");
         }
+        authStage = "IDENTITY_LOOKUP";
         try {
           user = await provider.lookup(signed.idToken);
         } catch (cause) {
@@ -9635,6 +9641,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         assertProviderUser(signed, user);
         if (!user.providers.includes("google.com")) throw new NativeAuthError(AUTH_ERROR_CODES.ACCOUNT_CONFLICT);
         if (!user.emailVerified) throw new NativeAuthError(AUTH_ERROR_CODES.EMAIL_NOT_VERIFIED);
+        authStage = "ACCOUNT_SESSION";
         let established;
         try {
           established = await callAuthority(env, "/internal/firebase/session/create", { input: { email: user.email, subject: user.subject }, context });
@@ -9650,12 +9657,13 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           }
           throw cause;
         }
-        try {
-          const establishedBody = established?.result || established;
-          await seedGoogleProfile(env, context, establishedBody, user);
-        } catch {
-        }
-        return authSuccess(request, established, signed.refreshToken, context);
+        const enrichment = seedGoogleProfile(env, context, established, user).catch(() => {
+        });
+        if (typeof executionContext?.waitUntil === "function") executionContext.waitUntil(enrichment);
+        else await enrichment;
+        const result = authSuccess(request, established, signed.refreshToken, context);
+        result.headers.set("X-AH-Auth-Stage", "SESSION_CREATED");
+        return result;
       }
       if (request.method === "POST" && url.pathname === `${AUTH_API_PREFIX}/google/link`) {
         if (!provider.configured || !googleEndpointReady(env)) throw new NativeAuthError(AUTH_ERROR_CODES.GOOGLE_UNAVAILABLE);
@@ -10712,6 +10720,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
       return json4(request, error.status, { ok: false, error: error.toPublic() }, {
         ...error.retryAfter ? { "Retry-After": String(error.retryAfter) } : {},
         ...providerDiagnosticCode ? { "X-AH-Auth-Diagnostic": providerDiagnosticCode } : {},
+        ...googleRequest ? { "X-AH-Auth-Stage": authStage } : {},
         ...clearSession ? { "Set-Cookie": clearAuthCookies() } : {}
       });
     }
