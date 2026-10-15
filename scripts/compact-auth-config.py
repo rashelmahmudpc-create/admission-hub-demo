@@ -1,56 +1,25 @@
 from pathlib import Path
-import json, re
+import re
 
-wrangler = Path('wrangler.toml')
+wrangler = Path('wrangler.toml').read_text()
 providers = Path('auth-native/verification/providers.mjs')
-text = wrangler.read_text()
 source = providers.read_text()
-marker = '  // Compact public Logto settings share the existing orchestrator binding.'
-if marker not in source:
-    match = re.search(r"^VERIFICATION_ORCHESTRATOR_CONFIG = '(.*)'$", text, re.M)
-    if not match:
-        raise SystemExit('Missing orchestrator configuration; refusing to change deployment')
-    config = json.loads(match.group(1))
-    slot = next(row for row in config['providers'] if row['id'] == 'otp-h')
-    names = {'LOGTO_ENDPOINT': 'endpoint', 'LOGTO_APP_ID': 'appId', 'LOGTO_REDIRECT_URI': 'redirectUri', 'OTP_H_DAILY_QUOTA': 'dailyQuota'}
-    for name, field in names.items():
-        row = re.search(r'^' + name + r' = "([^"\n]+)"$', text, re.M)
-        if not row:
-            raise SystemExit('Expected public configuration is absent; refusing partial migration')
-        value = int(row.group(1)) if field == 'dailyQuota' else row.group(1)
-        if field == 'dailyQuota' and value != slot['dailyQuota']:
-            raise SystemExit('Quota mismatch; refusing to change provider capacity')
-        slot[field] = value
-        text = re.sub(r'^' + name + r' = "[^"\n]+"\n', '', text, flags=re.M)
-    packed = json.dumps(config, separators=(',', ':'), ensure_ascii=False)
-    text = re.sub(r"^VERIFICATION_ORCHESTRATOR_CONFIG = '.*'$", lambda _: "VERIFICATION_ORCHESTRATOR_CONFIG = '" + packed + "'", text, flags=re.M)
-    start = 'export function createConfiguredVerificationProviders(env = {}, { fetchImpl = globalThis.fetch } = {}) {\n'
-    assert source.count(start) == 1
-    prelude = '''  // Compact public Logto settings share the existing orchestrator binding.
-  // Explicit environment overrides still win; malformed config fails closed.
-  let logtoSettings = {};
-  try {
-    const raw = env.VERIFICATION_ORCHESTRATOR_CONFIG;
-    const config = typeof raw === 'string' ? JSON.parse(raw) : raw;
-    const row = Array.isArray(config?.providers) ? config.providers.find(item => item?.id === 'otp-h') : null;
-    if (config?.enabled === true && row?.enabled === true) logtoSettings = row;
-  } catch { /* no implicit provider activation */ }
-'''
-    source = source.replace(start, start + prelude)
-    replacements = {
-        'endpoint: env.LOGTO_ENDPOINT,': 'endpoint: env.LOGTO_ENDPOINT ?? logtoSettings.endpoint,',
-        'appId: env.LOGTO_APP_ID,': 'appId: env.LOGTO_APP_ID ?? logtoSettings.appId,',
-        'redirectUri: env.LOGTO_REDIRECT_URI,': 'redirectUri: env.LOGTO_REDIRECT_URI ?? logtoSettings.redirectUri,',
-        'declaredDailyQuota: env.OTP_H_DAILY_QUOTA,': 'declaredDailyQuota: env.OTP_H_DAILY_QUOTA ?? logtoSettings.dailyQuota,'
-    }
-    for before, after in replacements.items():
-        assert source.count(before) == 1, before
-        source = source.replace(before, after)
-    wrangler.write_text(text)
+# A concurrent repair already moved the four public values into code defaults.
+# Validate and retain it instead of overwriting that repair.
+assert not re.search(r'^(?:LOGTO_ENDPOINT|LOGTO_APP_ID|LOGTO_REDIRECT_URI|OTP_H_DAILY_QUOTA)\s*=', wrangler, re.M), 'Public bindings are not compacted'
+assert 'LOGTO_PUBLIC_DEFAULTS' in source, 'Missing equivalent public defaults'
+assert "endpoint: 'https://dl635v.logto.app'" in source
+assert "appId: 'dk00yf3jvdmyy4mduoizp'" in source
+assert "redirectUri: 'https://admissionsky.pages.dev/logto-callback'" in source
+before = '    const rows = JSON.parse(text)?.providers;'
+after = "    const config = JSON.parse(text);\n    if (config?.enabled !== true) return null;\n    const rows = config.providers;"
+if before in source:
+    assert source.count(before) == 1
+    source = source.replace(before, after)
     providers.write_text(source)
-    print('Compacted four public settings without deleting secrets or changing provider quotas')
 else:
-    print('Configuration already compacted')
+    assert 'if (config?.enabled !== true) return null;' in source
+print('Equivalent compact configuration retained; explicit disabled state fails closed')
 
 tests = Path('firebase-google-auth.test.mjs')
 extra = r'''
