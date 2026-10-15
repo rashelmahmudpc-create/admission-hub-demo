@@ -698,12 +698,10 @@ const ACT_ACTIONS = { 'prefs.write': { bn: 'তোমার AI পছন্দ �
     liveNode = node;
     setBusy(true); mood('think');
 
-    let prior = sessions[cur].msgs.slice(0, -1).slice(-MAX_HISTORY).map((m) => ({ role: m.role, content: m.text }));
-    /* The turn the student just typed is already the last entry; drop it here or
-       the model receives it twice and reads "৮" as "৮৮" (regression 2026-09). */
-    const last = prior[prior.length - 1];
-    if (last && last.role === 'user' && last.content === userText) prior = prior.slice(0, -1);
-    const history = prior;
+    /* slice(0,-1) drops the pending AI placeholder, so the history ends with the
+       turn the student just typed. It must stay: the model needs the question.
+       Adding it a second time is the duplicate-turn bug (regression 2026-09). */
+    const history = sessions[cur].msgs.slice(0, -1).slice(-MAX_HISTORY).map((m) => ({ role: m.role, content: m.text }));
     const res = await ask(history, (full) => {
       holder.text = full;
       /* stream straight into the live node so the student sees text as it
