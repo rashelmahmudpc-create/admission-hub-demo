@@ -20,6 +20,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Bengali:wght@400;500;600;700;800&family=Noto+Serif+Bengali:wght@500;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
 <noscript><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Bengali:wght@400;500;600;700;800&family=Noto+Serif+Bengali:wght@500;600;700&display=swap" rel="stylesheet"></noscript>
 <meta name="theme-color" content="#edf7f1">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0B1020">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#F6F9FF">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -47,6 +49,15 @@
     var root = document.documentElement;
     if (r === 'light') { root.removeAttribute('data-theme'); root.style.colorScheme = 'light'; }
     else { root.setAttribute('data-theme', r); root.style.colorScheme = (r === 'green') ? 'light' : r; }
+    try {
+      var dark = (r === 'dark' || r === 'midnight');
+      var inSky = !!(document.getElementById('app') && document.getElementById('app').classList.contains('sky'));
+      var color = inSky ? (dark ? '#0B1020' : '#F6F9FF') : (dark ? (r === 'midnight' ? '#071512' : '#121212') : (r === 'green' ? '#eef7f1' : '#edf7f1'));
+      var metas = document.querySelectorAll('meta[name="theme-color"]');
+      metas.forEach(function (m, i) { if (i === 0) m.setAttribute('content', color); });
+      root.style.setProperty('--ah-chrome', color);
+      if (document.body) document.body.style.backgroundColor = color;
+    } catch (_) {}
   }
   function set(mode) {
     if (MODES.indexOf(mode) < 0) mode = 'light';
@@ -5903,7 +5914,7 @@ setTimeout(() => { if (location.hash.replace(/^#/, '').split('?')[0] === 'dictio
 <script>window.AH_CLOUD_ROLE='public';</script>
 <script defer src="./cloud-content-sync.js?v=vm-erase-v223"></script>
 <script defer src="./student-data-sync.js?v=student-sync-v1"></script>
-<script src="./app-seed.js?v=v189-empty" defer></script>
+<script src="./app-seed.js?v=sky-flow-20261016-v6" defer></script>
 <script src="./a11y-core.js?v=a11y-v1" defer></script>
 <script src="./offline-status.js?v=offline-v2" defer></script>
 <script src="./install-guide.js?v=install-v4" defer></script>

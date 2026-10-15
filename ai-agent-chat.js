@@ -157,6 +157,63 @@
     return s.replace(/\u0000CB(\d+)\u0000/g, (m, i) => '<pre><code>' + blocks[+i].replace(/\n$/, '') + '</code></pre>');
   }
 
+  /* ───────── interactive visuals: charts + flow diagrams (student data / AI blocks) ─────────
+     Charts and flows are drawn from THIS student's own local stats, or from an
+     explicit ```chart / ```flow block in the AI answer. Nothing is invented. */
+  function ahChartSVG(a) {
+    const W = 320, H = 150, P = 26;
+    const nums = (a.values || []).map((v) => Math.max(0, Number(v) || 0));
+    if (!nums.length) return '';
+    const max = Math.max(...nums, 1), iw = W - P * 2, ih = H - P - 18;
+    const gid = 'g' + Math.random().toString(36).slice(2, 8);
+    const grid = [0.25, 0.5, 0.75, 1].map((f) => { const y = (P + ih - ih * f).toFixed(1); return '<line x1="' + P + '" y1="' + y + '" x2="' + (W - P) + '" y2="' + y + '" class="cg"/>'; }).join('');
+    let body = '';
+    if ((a.type || 'bar') === 'line') {
+      const pts = nums.map((v, i) => (P + (nums.length === 1 ? iw / 2 : iw * i / (nums.length - 1))).toFixed(1) + ',' + (P + ih - ih * v / max).toFixed(1)).join(' ');
+      body = '<polyline points="' + pts + '" class="cl"/><polygon points="' + P + ',' + (P + ih) + ' ' + pts + ' ' + (W - P) + ',' + (P + ih) + '" fill="url(#' + gid + ')" opacity=".35"/><circle cx="' + pts.split(' ').slice(-1)[0].split(',')[0] + '" cy="' + pts.split(' ').slice(-1)[0].split(',')[1] + '" r="4" class="cp"/>';
+    } else {
+      const bw = iw / nums.length;
+      body = nums.map((v, i) => { const h = Math.max(4, ih * v / max), x = (P + i * bw + bw * .18).toFixed(1), y = (P + ih - h).toFixed(1); return '<rect x="' + x + '" y="' + y + '" width="' + (bw * .64).toFixed(1) + '" height="' + h.toFixed(1) + '" rx="6" class="cfr"/><text x="' + (P + i * bw + bw / 2).toFixed(1) + '" y="' + (H - 4) + '" class="cx">' + esc(String((a.labels || [])[i] || (i + 1)).slice(0, 8)) + '</text><text x="' + (P + i * bw + bw / 2).toFixed(1) + '" y="' + (y - 5).toFixed(1) + '" class="cv">' + bn(Math.round(v)) + '</text>'; }).join('');
+    }
+    return '<figure class="viz"><figcaption>' + esc(a.title || 'চার্ট') + '</figcaption><svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + esc(a.title || 'chart') + '"><defs><linearGradient id="' + gid + '" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3D6BFF"/><stop offset="1" stop-color="#3D6BFF" stop-opacity="0"/></linearGradient></defs>' + grid + body + '</svg></figure>';
+  }
+  function ahFlowSVG(steps) {
+    const rows = (steps || []).map((x) => String(x || '').trim()).filter(Boolean).slice(0, 8);
+    if (rows.length < 2) return '';
+    const W = 320, rh = 40, H = rows.length * rh + 10;
+    const body = rows.map((t, i) => { const y = 6 + i * rh; return '<g><rect x="46" y="' + y + '" width="228" height="30" rx="15" class="fb"/><text x="160" y="' + (y + 19) + '" class="ft">' + esc(t.slice(0, 42)) + '</text>' + (i < rows.length - 1 ? '<path d="M160 ' + (y + 30) + 'v8m0 0l-4-5m4 5l4-5" class="fa"/>' : '') + '</g>'; }).join('');
+    return '<figure class="viz flowz"><figcaption>ধাপে ধাপে</figcaption><svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="flow diagram">' + body + '</svg></figure>';
+  }
+  function ahStudentChart() {
+    try {
+      const st = (typeof localStats === 'function') ? localStats() : null;
+      if (!st) return '';
+      const weak = (st.weakTopics || []).filter((t) => t && t.name);
+      if (weak.length >= 2) return ahChartSVG({ type: 'bar', title: 'তোমার দুর্বল টপিক — Accuracy %', labels: weak.map((t) => t.name), values: weak.map((t) => t.accuracy) });
+      if (Number(st.questions) > 0) return ahChartSVG({ type: 'bar', title: 'তোমার অগ্রগতি', labels: ['প্রশ্ন', 'সঠিক হার %', 'পরীক্ষা'], values: [st.questions, st.accuracy, st.exams] });
+    } catch (_) {}
+    return '';
+  }
+  function mdRich(src) {
+    let t = String(src == null ? '' : src);
+    const visuals = [];
+    t = t.replace(/```(chart|flow)\s*\n([\s\S]*?)```/gi, (m, kind, body) => {
+      try {
+        if (kind.toLowerCase() === 'flow') { const v = ahFlowSVG(body.split('\n')); if (v) visuals.push(v); }
+        else { const j = JSON.parse(body); const v = ahChartSVG(j); if (v) visuals.push(v); }
+      } catch (_) {}
+      return '\u0001V' + (visuals.length - 1) + '\u0001';
+    });
+    let out = md(t).replace(/\u0001V(\d+)\u0001/g, (m, i) => visuals[+i] || '');
+    if (/পারফরম্যান্স|অগ্রগতি|accuracy|performance|দুর্বল/i.test(t) && !visuals.length) { const c = ahStudentChart(); if (c) out += c; }
+    return out.replace('<div class="body">', '<div class="body md">');
+  }
+  try {
+    const st = document.createElement('style'); st.id = 'skyVizCss';
+    st.textContent = '#app.sky .md{font-size:15.5px;line-height:1.75}#app.sky .md h2,#app.sky .md h3{letter-spacing:-.01em}#app.sky .md table{font-size:14px}#app.sky .md th{background:var(--soft);color:var(--mute)}#app.sky .md td{color:var(--ink)}#app.sky .viz{margin:12px 0;padding:12px 12px 6px;border-radius:18px;background:var(--surf);box-shadow:0 0 0 1px var(--line)}#app.sky .viz figcaption{font-size:13px;font-weight:700;color:var(--ink);margin-bottom:6px}#app.sky .viz svg{width:100%;height:auto;display:block}#app.sky .viz .cg{stroke:var(--chart-grid,var(--line));stroke-width:1}#app.sky .viz .cl{fill:none;stroke:#3D6BFF;stroke-width:3;stroke-linecap:round;stroke-linejoin:round}#app.sky .viz .cp{fill:#3D6BFF;stroke:var(--surf);stroke-width:2}#app.sky .viz .cfr{fill:#3D6BFF;opacity:.88}#app.sky .viz .cx{fill:var(--mute);font-size:9px;text-anchor:middle}#app.sky .viz .cv{fill:var(--ink);font-size:10px;font-weight:700;text-anchor:middle}#app.sky .viz .fb{fill:var(--soft);stroke:var(--line)}#app.sky .viz .ft{fill:var(--ink);font-size:11.5px;font-weight:600;text-anchor:middle}#app.sky .viz .fa{stroke:#3D6BFF;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round}@media (prefers-reduced-motion:no-preference){#app.sky .viz{animation:up .35s both}}';
+    document.head.appendChild(st);
+  } catch (_) {}
+
   /* ───────── session store: Firebase-account scoped ─────────
      Chat history is personal. It is keyed by the signed-in account and is never
      written to a shared key, so one student's conversations can never surface in
@@ -280,7 +337,7 @@
 
   /* ───────── UI strings (no demo content) ───────── */
   const T = {
-    stageRead: 'তোমার প্রশ্ন বুঝে নিচ্ছি', stageWrite: 'উত্তর লিখছি',
+    stageRead: 'তোমার প্রশ্ন বুঝে নিচ্ছি', stageWrite: 'উত্তর লিখছি', stageConnect: 'সার্ভারের সঙ্গে যুক্ত হচ্ছি', stageSend: 'প্রশ্ন পাঠাচ্ছি', stageFirst: 'প্রথম অংশ এসেছে', stageStream: 'উত্তর আসছে', stageChart: 'ছবি/চার্ট সাজাচ্ছি', stageQuiz: 'প্রশ্ন তৈরি করছি', stageDone: 'উত্তর তৈরি',
     title: 'Sky', sub: 'স্টাডি পার্টনার', online: 'অনলাইন',
     heroTitle: 'আমি স্কাই — তোমার পড়ার সঙ্গী',
     heroBody: 'ভর্তি প্রস্তুতির প্রশ্ন, MCQ, ব্যাখ্যা আর পড়ার সব সাহায্য — সব এখানে।',
@@ -322,15 +379,16 @@
 
   /* ───────── styles (scoped to #app.sky) ───────── */
   const CSS = `
-#app.sky{--bg:#F6F9FF;--surf:#fff;--ink:#0F1B3D;--mute:#6B7799;--line:#E4EAF7;--pri:#3D6BFF;--pri2:#5AA9FF;--soft:#EDF2FF;--sun:#FFB63D;--ok:#12A36B;--bad:#E5484D;--grad:linear-gradient(135deg,#3D6BFF,#5AA9FF);--sh:0 8px 24px rgba(40,70,160,.08);--sh2:0 14px 34px rgba(61,107,255,.22);box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
-#app.sky[data-sky-theme="dark"]{--bg:#0B1020;--surf:#131A33;--ink:#EAF0FF;--mute:#93A0C6;--line:#222C50;--soft:#1A2448;--sh:0 8px 24px rgba(0,0,0,.35);--sh2:0 14px 34px rgba(61,107,255,.3)}
+#app.sky{--bg:#F6F9FF;--surf:#fff;--ink:#0F1B3D;--mute:#6B7799;--line:#E4EAF7;--field:#fff;--field-line:#E4EAF7;--chart-grid:#DCE6FB;--pri:#3D6BFF;--pri2:#5AA9FF;--soft:#EDF2FF;--sun:#FFB63D;--ok:#12A36B;--bad:#E5484D;--grad:linear-gradient(135deg,#3D6BFF,#5AA9FF);--sh:0 8px 24px rgba(40,70,160,.08);--sh2:0 14px 34px rgba(61,107,255,.22);box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+#app.sky[data-sky-theme="dark"]{--bg:#0B1020;--surf:#131A33;--ink:#EAF0FF;--mute:#93A0C6;--line:#222C50;--soft:#1A2448;--sh:0 8px 24px rgba(0,0,0,.35);--sh2:0 14px 34px rgba(61,107,255,.3);--field:#0F1730;--field-line:#2A3766;--chart-grid:#24305C}
 #app.sky *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 #app.sky,#app.sky{height:100%;margin:0;background:var(--bg);color:var(--ink);font-family:"Hind Siliguri",system-ui,sans-serif;font-size:16px;-webkit-font-smoothing:antialiased}
 #app.sky button,#app.sky input,#app.sky textarea{font:inherit;color:inherit}
+#app.sky{color-scheme:light}#app.sky[data-sky-theme="dark"]{color-scheme:dark}
 #app.sky button{background:none;border:0;cursor:pointer;padding:0}
 #app.sky svg.i{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
 #app.sky{max-width:520px;height:100%;margin:0 auto;display:flex;flex-direction:column;position:relative;overflow:hidden;background:radial-gradient(90% 38% at 50% -6%,var(--soft),transparent 72%),var(--bg)}
-#app.sky header{display:flex;align-items:center;gap:8px;padding:10px 16px;position:relative;z-index:3}
+#app.sky header{display:flex;align-items:center;gap:8px;padding:calc(8px) 14px 6px;position:relative;z-index:3;background:transparent;color:var(--ink)}
 #app.sky .ib{width:42px;height:42px;border-radius:50%;display:grid;place-items:center;background:var(--surf);box-shadow:0 0 0 1px var(--line),0 2px 6px rgba(40,70,160,.05);transition:transform .15s}
 #app.sky .ib:active{transform:scale(.88)}
 #app.sky .brand{flex:1;display:flex;align-items:center;gap:6px;min-width:0;padding-left:4px}
@@ -508,13 +566,13 @@
 #app.sky .acts svg{width:19px;height:19px}
 #app.sky .say2{position:absolute;top:60px;left:60px;z-index:4;max-width:260px;padding:8px 15px;border-radius:14px 14px 14px 4px;background:var(--surf);box-shadow:0 0 0 1px var(--line),var(--sh);font-size:13.5px;font-weight:600;opacity:0;transform:translateY(-4px);transition:.25s;pointer-events:none}
 #app.sky .say2.on{opacity:1;transform:none}
-#app.sky .dock{padding:6px 16px calc(8px);position:relative;z-index:3;background:linear-gradient(transparent,var(--bg) 35%)}
-#app.sky .comp{display:flex;align-items:flex-end;gap:6px;padding:6px;border-radius:30px;background:var(--surf);box-shadow:0 0 0 1px var(--line),var(--sh);transition:box-shadow .2s}
+#app.sky .dock{padding:4px 14px calc(6px + env(safe-area-inset-bottom,0px));position:relative;z-index:3;background:linear-gradient(transparent,var(--bg) 45%)}
+#app.sky .comp{display:flex;align-items:flex-end;gap:4px;padding:5px;border-radius:26px;background:var(--field,var(--surf));box-shadow:0 0 0 1px var(--field-line,var(--line)),var(--sh);transition:box-shadow .2s,background .2s}
 #app.sky .comp:focus-within{box-shadow:0 0 0 1.5px var(--pri),0 0 0 6px rgba(61,107,255,.12)}
-#app.sky .comp textarea{flex:1;border:0;outline:0;background:none;resize:none;font-size:16px;padding:10px 4px;max-height:120px;line-height:1.4}
-#app.sky .comp textarea::placeholder{color:var(--mute)}
-#app.sky .cb{width:42px;height:42px;border-radius:50%;display:grid;place-items:center;background:var(--soft);color:var(--pri);flex:none;transition:background .2s,color .2s,transform .15s,box-shadow .2s}
-#app.sky .cb.send{background:var(--grad);color:#fff;box-shadow:0 6px 16px rgba(61,107,255,.4)}
+#app.sky .comp textarea{flex:1;min-width:0;min-height:0;height:auto;border:0;outline:0;background:transparent;color:var(--ink);resize:none;font-size:15.5px;padding:8px 2px;max-height:132px;line-height:1.45;-webkit-appearance:none;appearance:none;color-scheme:inherit}
+#app.sky .comp textarea::placeholder{color:var(--mute);opacity:.85}
+#app.sky .cb{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;background:transparent;color:var(--mute);flex:none;transition:background .2s,color .2s,transform .15s,box-shadow .2s}
+#app.sky .cb.send{background:var(--ink);color:var(--bg);box-shadow:0 4px 14px rgba(15,27,61,.28)}#app.sky[data-sky-theme="dark"] .cb.send{background:#EAF0FF;color:#0B1020;box-shadow:0 4px 14px rgba(0,0,0,.4)}#app.sky .cb svg{width:20px;height:20px}
 #app.sky .cb:active{transform:scale(.88)}
 #app.sky .scrim{position:absolute;inset:0;background:rgba(10,16,38,.42);opacity:0;pointer-events:none;transition:opacity .25s;z-index:20}
 #app.sky .scrim.on{opacity:1;pointer-events:auto}
@@ -532,9 +590,9 @@
 #app.sky .sc button{display:flex;flex-direction:column;align-items:center;gap:6px;padding:11px 4px;border-radius:16px;background:var(--bg);font-size:12.5px;font-weight:600;transition:.15s}
 #app.sky .sc button:active{background:var(--soft);transform:scale(.96)}
 #app.sky .sc svg{color:var(--pri);width:22px;height:22px}
-#app.sky .srch{display:flex;align-items:center;gap:8px;padding:0 14px;border-radius:14px;background:var(--bg);color:var(--mute)}
+#app.sky .srch{display:flex;align-items:center;gap:8px;padding:0 12px;border-radius:999px;background:var(--field,var(--bg));box-shadow:inset 0 0 0 1px var(--field-line,var(--line));color:var(--mute)}
 #app.sky .srch svg{width:18px;height:18px}
-#app.sky .srch input{flex:1;border:0;outline:0;background:none;padding:11px 0;font-size:14.5px}
+#app.sky .srch input{flex:1;min-width:0;border:0;outline:0;background:transparent;color:var(--ink);padding:10px 0;font-size:14.5px;-webkit-appearance:none;appearance:none;color-scheme:inherit}#app.sky .srch input::placeholder{color:var(--mute);opacity:.85}#app.sky input,#app.sky textarea,#app.sky select{color-scheme:inherit}#app.sky .comp:focus-within{box-shadow:0 0 0 1.5px var(--pri),var(--sh)}
 #app.sky .dl{flex:1;overflow-y:auto;margin:4px -4px 0;padding:0 4px}
 #app.sky .gl{font-size:12.5px;color:var(--mute);font-weight:600;margin:14px 6px 4px}
 #app.sky .hi{border-radius:14px;transition:background .15s}
@@ -580,7 +638,7 @@
 #app.sky .ai .bw li{margin:4px 0}
 #app.sky .ai .bw h2,#app.sky .ai .bw h3{font-size:16.5px;margin:14px 0 8px;color:var(--pri)}
 #app.sky .ai .bw code{background:var(--soft);padding:2px 6px;border-radius:6px;font-size:13.5px}
-#app.sky .ai .bw pre{background:#0F1B3D;color:#EAF0FF;padding:12px;border-radius:12px;overflow-x:auto;margin:10px 0}
+#app.sky .ai .bw pre{background:var(--field);color:var(--ink);box-shadow:inset 0 0 0 1px var(--field-line,var(--line));padding:12px 14px;border-radius:14px;overflow-x:auto;margin:10px 0;font-size:13.5px;line-height:1.6}
 #app.sky .ai .bw pre code{background:none;color:inherit;padding:0}
 #app.sky .cal{border-radius:12px;padding:10px 12px;margin:8px 0;font-size:14.5px;line-height:1.6}
 #app.sky .cal.tip{background:#FFF6E5}
@@ -827,7 +885,7 @@ const ACT_ACTIONS = { 'prefs.write': { bn: 'তোমার AI পছন্দ �
     let inner;
     if (m.error) inner = '<div class="cal warn"><b>⚠️</b> ' + esc(m.error) + '</div>';
     else if (m.pending && !m.text) inner = '';
-    else inner = md(m.text);
+    else inner = mdRich(m.text);
     const acts = (!m.pending && !m.error && m.text) ? '<div class="acts">' +
       '<button data-c="' + idx + '" aria-label="' + T.copy + '">' + ic('copy') + '</button>' +
       '<button data-r="' + idx + '" aria-label="' + T.regen + '">' + ic('redo') + '</button>' +
@@ -884,9 +942,11 @@ const ACT_ACTIONS = { 'prefs.write': { bn: 'তোমার AI পছন্দ �
        turn the student just typed. It must stay: the model needs the question.
        Adding it a second time is the duplicate-turn bug (regression 2026-09). */
     const history = sessions[cur].msgs.slice(0, -1).slice(-MAX_HISTORY).map((m) => ({ role: m.role, content: m.text }));
+    procStage(node, holder, T.stageSend);
     const res = await ask(history, (full) => {
       holder.text = full;
-      if (!gotFirst) { gotFirst = true; procStage(node, holder, T.stageWrite); mood('type'); }
+      if (!gotFirst) { gotFirst = true; procStage(node, holder, T.stageStream); mood('type');
+        try { const wantQuiz=/MCQ|কুইজ|প্রশ্ন তৈরি|প্রশ্ন বানাও/i.test(t); const wantViz=/চার্ট|গ্রাফ|ডায়াগ্রাম|flow|তুলনা|পারফরম্যান্স/i.test(t)||/```(chart|flow)/.test(full); setTimeout(()=>{ try{ if (wantQuiz||wantViz) procStage(node, holder, T.stageWrite); }catch(_){} },650); } catch(_){} }
       /* stream straight into the live node so the student sees text as it
          arrives; only the inner body is touched, never the action bar. */
       if (node) { const b = node.querySelector('.bw'); if (b) b.innerHTML = md(full); }
