@@ -37,13 +37,17 @@ VERIFICATION_AUTH_ACTIVATION = "enabled"
 # NOT move another mailer behind them; `native-auth-protection.test.mjs` fails
 # if this pairing breaks. Dead Simple delivery lands in Gmail spam by design
 # (shared inbox domain) — it is kept only as a final channel, never a primary.
-VERIFICATION_ORCHESTRATOR_CONFIG = '{"enabled":true,"providers":[{"id":"otp-a","enabled":true,"priority":10,"dailyQuota":300,"timeoutMs":15000,"label":"secure backup"},{"id":"otp-h","enabled":true,"priority":15,"dailyQuota":1000,"timeoutMs":20000,"label":"secure backup"},{"id":"otp-b","enabled":true,"priority":20,"dailyQuota":100,"timeoutMs":20000,"label":"secure backup"},{"id":"otp-d","enabled":true,"priority":35,"dailyQuota":100,"timeoutMs":15000,"label":"secure backup"},{"id":"otp-e","enabled":true,"priority":37,"dailyQuota":100,"timeoutMs":15000,"label":"secure backup"},{"id":"otp-f","enabled":true,"priority":38,"dailyQuota":100,"timeoutMs":15000,"label":"secure backup"},{"id":"otp-g","enabled":true,"priority":39,"dailyQuota":150,"timeoutMs":15000,"label":"secure backup"},{"id":"otp-c","enabled":true,"priority":45,"dailyQuota":200,"timeoutMs":15000,"label":"secure backup"},{"id":"telegram","enabled":true,"priority":50,"dailyQuota":172800,"timeoutMs":20000,"label":"secure backup"}]}'
+VERIFICATION_ORCHESTRATOR_CONFIG = '{"enabled":true,"providers":[{"id":"otp-a","enabled":true,"priority":10,"dailyQuota":300,"timeoutMs":15000,"label":"secure backup"},{"id":"otp-h","enabled":true,"priority":15,"dailyQuota":5000,"timeoutMs":20000,"label":"secure backup"},{"id":"otp-b","enabled":true,"priority":20,"dailyQuota":100,"timeoutMs":20000,"label":"secure backup"},{"id":"otp-d","enabled":true,"priority":35,"dailyQuota":100,"timeoutMs":15000,"label":"secure backup"},{"id":"otp-e","enabled":true,"priority":37,"dailyQuota":100,"timeoutMs":15000,"label":"secure backup"},{"id":"otp-f","enabled":true,"priority":38,"dailyQuota":100,"timeoutMs":15000,"label":"secure backup"},{"id":"otp-g","enabled":true,"priority":39,"dailyQuota":150,"timeoutMs":15000,"label":"secure backup"},{"id":"otp-c","enabled":true,"priority":45,"dailyQuota":200,"timeoutMs":15000,"label":"secure backup"},{"id":"telegram","enabled":true,"priority":50,"dailyQuota":172800,"timeoutMs":20000,"label":"secure backup"}]}'
 OTP_A_DAILY_QUOTA = "300"
 OTP_B_DAILY_QUOTA = "100"
 # otp-h (Logto) endpoint, app id and redirect are public values kept in
 # auth-native/verification/providers.mjs (LOGTO_PUBLIC_DEFAULTS) and its daily cap
-# is the otp-h dailyQuota above (1000), not separate vars here:
+# is the otp-h dailyQuota above (5000), not separate vars here:
 # adding them as vars pushed the Worker to 68 of the 64-variable free ceiling.
+# Raised 1000 -> 5000 on the owner's order (2026-10-15). Logto's built-in email
+# service documents no daily sending limit, so this number is our own safety
+# ceiling, not a provider constraint — unlike otp-a..g, whose caps track real
+# free tiers. It is the backup slot's headroom beyond Firebase's 1000/day.
 OTP_C_DAILY_QUOTA = "200"
 OTP_D_DAILY_QUOTA = "100"
 OTP_E_DAILY_QUOTA = "100"

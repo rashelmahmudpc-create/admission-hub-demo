@@ -13,7 +13,9 @@ test('compact configuration keeps Logto identity, quota and all existing mailer 
   assert.equal(p.endpoint, 'https://dl635v.logto.app');
   assert.equal(p.appId, 'dk00yf3jvdmyy4mduoizp');
   assert.equal(p.redirectUri, 'https://admissionsky.pages.dev/logto-callback');
-  assert.equal(p.declaredDailyQuota, 1000);
+  // Raised 1000 -> 5000 by owner order 2026-10-15: Logto documents no daily
+  // sending limit, so this is our own safety ceiling, not a provider cap.
+  assert.equal(p.declaredDailyQuota, 5000);
   assert.equal(p.declaredDailyQuota, slot.dailyQuota);
   for (const [name, quota] of Object.entries({ A: 300, B: 100, C: 200, D: 100, E: 100, F: 100, G: 150 })) {
     assert.match(text, new RegExp(`^OTP_${name}_DAILY_QUOTA = "${quota}"$`, 'm'));
