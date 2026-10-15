@@ -108,14 +108,14 @@ await test('content hydration is public and account-independent',
   !/AHAuth|ahPubToken|authHeaders|Authorization/.test(CLOUD));
 
 await test('service-worker build and HTML registration are synchronized',
-  SW.includes("const BUILD_ID = 'v344-sky-dark-keyboard'") &&
-  H.includes("const expectedSwVersion = 'v344-sky-dark-keyboard'") &&
-  H.includes('admission-hub-shell-v344-sky-dark-keyboard'));
+  SW.includes("const BUILD_ID = 'v345-google-client'") &&
+  H.includes("const expectedSwVersion = 'v345-google-client'") &&
+  H.includes('admission-hub-shell-v345-google-client'));
 await test('service-worker shell cannot cache retired assets', !retiredAssetRe.test(SW));
 await test('premium account and institution assets use synchronized cache-busting versions',
-  ['account-access.css?v=20261017-iosshell1', 'account-access.js?v=20261017-iosshell1', 'institutions-bd.js?v=bd-institutions-v2']
+  ['account-access.css?v=20261017-gclient1', 'account-access.js?v=20261017-gclient1', 'institutions-bd.js?v=bd-institutions-v2']
     .every(asset => H.includes(asset) && SW.includes(asset)) &&
-  H.indexOf('institutions-bd.js?v=bd-institutions-v2') < H.indexOf('account-access.js?v=20261017-iosshell1'));
+  H.indexOf('institutions-bd.js?v=bd-institutions-v2') < H.indexOf('account-access.js?v=20261017-gclient1'));
 await test('premium Auth UI/server contract and curated-manual institution policy are locked',
   ACCOUNT_UI.includes("'X-AH-Auth-UI': 'auth-premium-v6'") &&
   AUTH_HANDLER.includes("const AUTH_UI_VERSION = 'auth-premium-v6'") &&

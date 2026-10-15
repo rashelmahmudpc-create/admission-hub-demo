@@ -48,8 +48,8 @@ t('note-icon: openQuestionNoteEditor ইন্টিগ্রেশন', MN.incl
 
 /* ৬ — ভার্সন v194 */
 
-t('sw BUILD_ID current shell', SW.includes("const BUILD_ID = 'v344-sky-dark-keyboard'"));
-t('index sw-marker current shell', H.includes("const expectedSwVersion = 'v344-sky-dark-keyboard'"));
+t('sw BUILD_ID current shell', SW.includes("const BUILD_ID = 'v345-google-client'"));
+t('index sw-marker current shell', H.includes("const expectedSwVersion = 'v345-google-client'"));
 
 console.log(`\nP10-MISTAKES: ${pass} pass / ${fail} fail`);
 if (fail) process.exit(1);

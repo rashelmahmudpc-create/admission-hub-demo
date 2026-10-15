@@ -1779,7 +1779,7 @@
    * shows the long Firebase authDomain. The Firebase path stays as the automatic
    * fallback: GSI missing, in-app browser, or the backend refusing the external
    * client's token until it is safelisted in Firebase. */
-  const DIRECT_GOOGLE_CLIENT_ID = '203304845427-lpfj17ponue2bjapvt8mnl7tioupar27.apps.googleusercontent.com';
+  const DIRECT_GOOGLE_CLIENT_ID = '916950643726-6ul6djp3ve11ek37bbht715afb6pc0ka.apps.googleusercontent.com';
   const DIRECT_GOOGLE_OFF = 'ah-google-direct-off';
   let gsiTokenClient = null;
   let gsiPending = null;
