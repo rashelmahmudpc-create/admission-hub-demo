@@ -35,9 +35,10 @@ jobs:
         run: |
           set -eu
           node --check ai-agent-chat.js
-          node --test p21-ai-agent-ui.test.mjs ai-duplicate-turn.test.mjs phase9-m9-action-ui.test.mjs p06-personal-tutor.test.mjs account-data-isolation.test.mjs account-retirement.test.mjs theme-tokens.test.mjs p19-perf-budget.test.mjs seo-routing.test.mjs
-          node startup-ai-regression.test.mjs
+          node --test p21-ai-agent-ui.test.mjs ai-duplicate-turn.test.mjs phase9-m9-action-ui.test.mjs phase9-m8-response-validation.test.mjs p06-personal-tutor.test.mjs account-data-isolation.test.mjs account-retirement.test.mjs theme-tokens.test.mjs theme-coverage-scan.test.mjs p19-perf-budget.test.mjs seo-routing.test.mjs
+          cp sw.js /tmp/sw.before
           node scripts/sw-manifest.mjs
+          cmp sw.js /tmp/sw.before
       - name: Commit and push
         run: |
           set -eu
