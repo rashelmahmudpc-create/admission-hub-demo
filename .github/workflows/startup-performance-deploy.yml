@@ -41,7 +41,7 @@ jobs:
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add index.html account-access.js sw.js
+          git add index.html account-access.js sw.js .github/workflows/telegram-auth-canary-activate.yml
           if ! git diff --cached --quiet; then
             git commit -m 'perf: release verified-session fast startup and defer optional features'
             git push origin HEAD:main

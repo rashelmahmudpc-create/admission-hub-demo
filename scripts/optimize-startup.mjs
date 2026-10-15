@@ -56,7 +56,7 @@ const refresh='const sessionReady = refreshSession();';
 if(!auth.includes(refresh))throw Error('Session bootstrap contract changed');
 auth=auth.replace(refresh,`const sessionReady = refreshSession().then(session => {
       // Only the SERVER-verified session releases the startup hide. No cached
-      // cookie, localStorage flag or guessed identity is accepted as authority.
+      // cookie, browser hint or guessed identity is accepted as authority.
       if (accountVerified(session) && pageHost.hidden) {
         document.documentElement.classList.remove('ah-pre');
       }
@@ -69,5 +69,13 @@ html=html.split(old).join(next);
 let sw=read('sw.js').split(old).join(next);
 sw=sw.replace(/const BUILD_ID = '[^']*';/,"const BUILD_ID = 'v350-fast-startup';");
 html=html.split('v349-sky-bottom-inset').join('v350-fast-startup');
+// Keep the existing production verification workflow's asset pins current.
+const guardPath='.github/workflows/telegram-auth-canary-activate.yml';
+let guard=read(guardPath);
+guard=guard.split('account-access.js?v=20261015-safearea1').join(next)
+ .split('account-access.css?v=20261015-safearea1').join('account-access.css?v=20261015-login-complete-v1')
+ .split('agent-f1-ui-p06chat').join('agent-f1-ui-skyv7')
+ .split('v335-lock-20261016').join('v350-fast-startup');
+write(guardPath,guard);
 write('account-access.js',auth);write('index.html',html);write('sw.js',sw);
 console.log('Optimized 14 optional modules, server-verified entry gate, first-frame warmup, welcome priority and duplicate iframe render.');
