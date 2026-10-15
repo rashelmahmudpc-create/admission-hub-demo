@@ -8,12 +8,12 @@ const V2 = readFileSync('dashboard-v2.js', 'utf8');
 const CSS = readFileSync('dashboard-v2.css', 'utf8');
 
 /* ১ — ফাইল-লোড + ক্যাশ-কী */
-t('dashboard-v2.js defer-লোড (?v=dash2)', H.includes('<script defer src="./dashboard-v2.js?v=dash2f16-avatar-cache"></script>'));
+t('dashboard-v2.js defer-লোড (?v=dash2)', H.includes('<script defer src="./dashboard-v2.js?v=dash2f17-v3frame"></script>'));
 t('dashboard-v2.css link (?v=dash2)', H.includes('<link rel="stylesheet" href="./dashboard-v2.css?v=dash2f13-theme">'));
-t('sw APP_SHELL-এ dashboard-v2 (js+css)', SW.includes("'./dashboard-v2.js?v=dash2f16-avatar-cache'") && SW.includes("'./dashboard-v2.css?v=dash2f13-theme'"));
+t('sw APP_SHELL-এ dashboard-v2 (js+css)', SW.includes("'./dashboard-v2.js?v=dash2f17-v3frame'") && SW.includes("'./dashboard-v2.css?v=dash2f13-theme'"));
 
-t('sw BUILD_ID v340-sky-rich-live', SW.includes("const BUILD_ID = 'v340-sky-rich-live'"));
-t('index sw-marker v323', H.includes("const expectedSwVersion = 'v340-sky-rich-live'") && H.includes('admission-hub-shell-v340-sky-rich-live'));
+t('sw BUILD_ID v341-dash-v3frame', SW.includes("const BUILD_ID = 'v341-dash-v3frame'"));
+t('index sw-marker v323', H.includes("const expectedSwVersion = 'v341-dash-v3frame'") && H.includes('admission-hub-shell-v341-dash-v3frame'));
 
 /* ২ — ১৪ মডিউল (মালিকের নতুন ডিজাইন: Scholar Dashboard 3) */
 t('১ Personal Header (avatar+তারিখ+🔔)', V2.includes('id="greet"') && V2.includes('id="today"') && V2.includes('id="themeBtn"') && V2.includes('iconbtn'));

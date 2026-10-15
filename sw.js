@@ -3,7 +3,7 @@ const CACHE_PREFIX = 'admission-hub-shell-';
 // hold user data; this one holds exactly one image and is trimmed on write.
 const AVATAR_CACHE = 'admission-hub-avatar-v1';
 
-const BUILD_ID = 'v340-sky-rich-live';
+const BUILD_ID = 'v341-dash-v3frame';
 const CACHE_NAME = `${CACHE_PREFIX}${BUILD_ID}`;
 const VERSION_HEADER = 'X-Admission-Hub-Build';
 const DOCUMENT_NETWORK_TIMEOUT_MS = 2500;
@@ -45,7 +45,7 @@ const APP_SHELL = [
   './profile-ui.js?v=profile-v18-avatar-cache',
   './profile-ui.css?v=profile-v15-uni-tap',
   './data-protection.js?v=dp-v3-fastboot',
-  './dashboard-v2.js?v=dash2f16-avatar-cache',
+  './dashboard-v2.js?v=dash2f17-v3frame',
   './ai-agent-chat.js?v=agent-f1-ui-skyv3',
   './question-engine.js?v=qe1',
   './question-engine-panel.js?v=qe1',
@@ -80,7 +80,7 @@ const APP_SHELL = [
 // A truncated/corrupt download is NEVER written to the shell cache.
 const ASSET_DIGESTS = {
 /* sw-manifest:start */
-  "./index.html": "329c1574a0b3561c7cd6421db51c584e68a954c43f2a7c555253c7a619faf07f",
+  "./index.html": "8540389b9b2807ac0136c0ad23e8fcdd70bf37b72e7dee8f379046fa69d4913b",
   "./manifest.json": "6dcf0e0c6f7671750549e53558ba8b9f0c2c83b0c6759072a6b5e2276331f491",
   "./manifest.webmanifest": "abcd26174710f6df3e183889a5a9da182f73ee8cdcc543b43db8fb4070cad54f",
   "./dashboard-v2.css?v=dash2f13-theme": "4541bc1e65fd158c593443562975400d128b8f1d3b636595df3c235b99e8cced",
@@ -99,7 +99,7 @@ const ASSET_DIGESTS = {
   "./profile-ui.js?v=profile-v18-avatar-cache": "aaa1bf37e54b4dd44bad0a9ea6c904645f0457cea98d10aaa02bf39664d6b1b8",
   "./profile-ui.css?v=profile-v15-uni-tap": "6408a4b7ac8acf6845cd0148c58377a4953c8ff879d30b2c520eafae0314b98a",
   "./data-protection.js?v=dp-v3-fastboot": "359dc907ade4bcb3a6a722385969ebb6af47f7e436e6cdf2cce0dd6b7343723d",
-  "./dashboard-v2.js?v=dash2f16-avatar-cache": "2a45b8f41734b43ec30a34740b32043ca4819c9bea05a8366ea26523f20a7b75",
+  "./dashboard-v2.js?v=dash2f17-v3frame": "2a45b8f41734b43ec30a34740b32043ca4819c9bea05a8366ea26523f20a7b75",
   "./ai-agent-chat.js?v=agent-f1-ui-skyv3": "97bf73e013b769e842d81fcf55e4b8e4a8a1a8e47b9cc527e2540ccf3750678c",
   "./question-engine.js?v=qe1": "db404fefd97bea27dad177748bafb0a9ba7d87bedca094e3da795c5b77946cd4",
   "./question-engine-panel.js?v=qe1": "33376e371654d575484194b5fcf8e486f4e3329c13e5330ff8619caab0399ec4",
