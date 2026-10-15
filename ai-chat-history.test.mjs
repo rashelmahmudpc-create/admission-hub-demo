@@ -32,3 +32,27 @@ test('the UI maps stored ai turns to assistant and drops failed ones', () => {
   assert.match(UI, /role: m\.role === 'user' \? 'user' : 'assistant'/);
   assert.match(UI, /!m\.pending && !m\.error/);
 });
+
+/* Regression 2026-10-15 (owner voice note): two UI faults seen on iPhone PWA.
+   (1) A guest who was not signed in got the generic "উত্তরটা আসেনি" instead of
+       being told to log in. (2) The bottom safe-area inset was added twice - by
+       the fixed shell and again by .dock - so a band of --bg (near-white) was
+       painted below the composer and the composer sat too high. */
+test('a 401 shows the full login explanation, not the generic failure', () => {
+  const UI = readFileSync('ai-agent-chat.js', 'utf8');
+  assert.match(UI, /needLoginLong:/);
+  assert.match(UI, /res\.status === 401/);
+  assert.match(UI, /holder\.errorKind = 'login'/);
+});
+test('the login explanation is multi-line and renders as paragraphs', () => {
+  const UI = readFileSync('ai-agent-chat.js', 'utf8');
+  assert.match(UI, /\[\s*'স্কাই উত্তর দিতে পারেনি[\s\S]*?\.join\(/);
+  assert.match(UI, /m\.errorKind === 'login'/);
+});
+test('the bottom safe-area inset is applied exactly once', () => {
+  const UI = readFileSync('ai-agent-chat.js', 'utf8');
+  const uses = UI.match(/padding-bottom:env\(safe-area-inset-bottom/g) || [];
+  assert.equal(uses.length, 0, 'shell must not repeat the inset .dock already owns');
+  const dock = UI.match(/#app\.sky \.dock\{[^}]*padding:[^}]*env\(safe-area-inset-bottom/g) || [];
+  assert.equal(dock.length, 1, '.dock is the single owner of the bottom inset');
+});

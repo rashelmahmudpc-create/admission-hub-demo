@@ -440,6 +440,13 @@
     tools: 'স্কাই টুলস', attach: 'কথোপকথনে যোগ করুন',
     offline: 'এখন ইন্টারনেট নেই — একটু পরে আবার চেষ্টা করো।',
     failed: 'উত্তরটা আসেনি। আবার চেষ্টা করো।',
+    needLoginLong: [
+      'স্কাই উত্তর দিতে পারেনি, কারণ তুমি এখনো লগইন করোনি।',
+      '',
+      'লগইন ছাড়া স্কাই তোমার পড়ার অগ্রগতি, ভুলের তালিকা বা লক্ষ্য দেখতে পায় না — তাই সে জানেই না তুমি কোন বিষয়ে কতটা এগিয়েছ। শুধু এই কারণেই উত্তরটা আসেনি; কোনো সমস্যা হয়নি।',
+      '',
+      'লগইন করলে স্কাই তোমার নিজের তথ্য অনুযায়ী উত্তর দিতে পারবে — কোন বিষয়ে দুর্বল, কী অনুশীলন করা দরকার, কোনটা আগে পড়া উচিত।'
+    ].join('\n'),
     stopped: 'থামানো হয়েছে', stop: 'থামাও', send: 'পাঠাও', menu: 'মেনু',
     clear: 'সব মুছো', del: 'ডিলিট', pin: 'পিন', ren: 'নাম বদলাও', search: 'খুঁজুন',
     actTitle: 'নিশ্চিত করো', actConfirmQ: 'সেভ করবো?', actYes: 'হ্যাঁ', actNo: 'না',
@@ -460,7 +467,7 @@
 
   /* ───────── styles (scoped to #app.sky) ───────── */
   const CSS = `
-#app.sky{--bg:#F6F9FF;--surf:#fff;--ink:#0F1B3D;--mute:#6B7799;--line:#E4EAF7;--field:#fff;--field-line:#E4EAF7;--chart-grid:#DCE6FB;--pri:#3D6BFF;--pri2:#5AA9FF;--soft:#EDF2FF;--sun:#FFB63D;--ok:#12A36B;--bad:#E5484D;--grad:linear-gradient(135deg,#3D6BFF,#5AA9FF);--sh:0 8px 24px rgba(40,70,160,.08);--sh2:0 14px 34px rgba(61,107,255,.22);box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+#app.sky{--bg:#F6F9FF;--surf:#fff;--ink:#0F1B3D;--mute:#6B7799;--line:#E4EAF7;--field:#fff;--field-line:#E4EAF7;--chart-grid:#DCE6FB;--pri:#3D6BFF;--pri2:#5AA9FF;--soft:#EDF2FF;--sun:#FFB63D;--ok:#12A36B;--bad:#E5484D;--grad:linear-gradient(135deg,#3D6BFF,#5AA9FF);--sh:0 8px 24px rgba(40,70,160,.08);--sh2:0 14px 34px rgba(61,107,255,.22);box-sizing:border-box;padding-top:env(safe-area-inset-top,0px)}
 #app.sky[data-sky-theme="dark"]{--bg:#0B1020;--surf:#131A33;--ink:#EAF0FF;--mute:#93A0C6;--line:#222C50;--soft:#1A2448;--sh:0 8px 24px rgba(0,0,0,.35);--sh2:0 14px 34px rgba(61,107,255,.3);--field:#0F1730;--field-line:#2A3766;--chart-grid:#24305C}
 #app.sky *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 #app.sky,#app.sky{height:100%;margin:0;background:var(--bg);color:var(--ink);font-family:"Hind Siliguri",system-ui,sans-serif;font-size:16px;-webkit-font-smoothing:antialiased}
@@ -743,7 +750,7 @@
 #app.sky .ha button:active{background:var(--soft)}
 /* host shell: fixed full-screen inside the SPA */
 #app.sky .comp textarea{-webkit-appearance:none;appearance:none}
-#app.sky{position:fixed;inset:0;height:auto;max-width:520px;margin:0 auto;display:flex;flex-direction:column;overflow:hidden;color:var(--ink);font-family:"Hind Siliguri",system-ui,-apple-system,"Noto Sans Bengali",sans-serif;font-size:16px;-webkit-font-smoothing:antialiased;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);box-sizing:border-box}
+#app.sky{position:fixed;inset:0;height:auto;max-width:520px;margin:0 auto;display:flex;flex-direction:column;overflow:hidden;color:var(--ink);font-family:"Hind Siliguri",system-ui,-apple-system,"Noto Sans Bengali",sans-serif;font-size:16px;-webkit-font-smoothing:antialiased;padding-top:env(safe-area-inset-top,0px);box-sizing:border-box}
 `;
 
   /* ───────── avatar (owner's Sky orb) ───────── */
@@ -964,7 +971,15 @@ const ACT_ACTIONS = { 'prefs.write': { bn: 'তোমার AI পছন্দ �
   function bubble(m, idx) {
     if (m.role === 'user') return '<div class="u"><span>' + esc(m.text) + '</span></div>';
     let inner;
-    if (m.error) inner = '<div class="cal warn"><b>⚠️</b> ' + esc(m.error) + '</div>';
+    if (m.error) {
+      const login = m.errorKind === 'login';
+      const body = String(m.error).split('\n')
+        .map((ln) => ln.trim())
+        .filter(Boolean)
+        .map((ln) => '<p>' + esc(ln) + '</p>')
+        .join('');
+      inner = '<div class="cal ' + (login ? 'key' : 'warn') + '"><b>' + (login ? '🔒' : '⚠️') + '</b> ' + body + '</div>';
+    }
     else if (m.pending && !m.text) inner = '';
     else inner = mdRich(m.text);
     const acts = (!m.pending && !m.error && m.text) ? '<div class="acts">' +
@@ -1049,7 +1064,10 @@ const ACT_ACTIONS = { 'prefs.write': { bn: 'তোমার AI পছন্দ �
       holder.pending = false; holder.text = res.text;
       mood('happy', 1200);
     } else {
-      holder.pending = false; holder.error = res.code === 'offline' ? T.offline : T.failed;
+      const needLogin = res.status === 401 || (res.meta && /sign_in_required/.test(String(res.meta.error || '')));
+      holder.pending = false;
+      holder.error = needLogin ? T.needLoginLong : (res.code === 'offline' ? T.offline : T.failed);
+      if (needLogin) holder.errorKind = 'login';
       mood('sad', 1400);
     }
     save(); renderMsgs();
