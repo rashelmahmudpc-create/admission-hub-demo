@@ -49,28 +49,64 @@ test('the login explanation is multi-line and renders as paragraphs', () => {
   assert.match(UI, /\[\s*'স্কাই উত্তর দিতে পারেনি[\s\S]*?\.join\(/);
   assert.match(UI, /m\.errorKind === 'login'/);
 });
-test('the bottom safe-area inset is applied exactly once', () => {
+test('no bottom save-area gap survives anywhere in the shell', () => {
   const UI = readFileSync('ai-agent-chat.js', 'utf8');
-  const uses = UI.match(/padding-bottom:env\(safe-area-inset-bottom/g) || [];
-  assert.equal(uses.length, 0, 'shell must not repeat the inset .dock already owns');
-  const dock = UI.match(/#app\.sky \.dock\{[^}]*padding:[^}]*env\(safe-area-inset-bottom/g) || [];
-  assert.equal(dock.length, 1, '.dock is the single owner of the bottom inset');
+  const uses = UI.match(/safe-area-inset-bottom/g) || [];
+  assert.equal(uses.length, 0,
+    'owner ordered the composer flush at the very bottom, like ChatGPT and WhatsApp');
 });
 
-/* Regression 2026-10-15 (owner photo): in the app's dark theme the composer and
-   the drawer search box were painted WHITE, and the composer was nowhere near the
-   bottom. Root cause: the app has TWO theme engines. AhAppearance reads
-   'ah-appearance' and reports phase1's dark theme, 'midnight-academic', as
-   "light", so the chat painted its light palette over a midnight app. A third
-   fault: with the soft keyboard open the composer was invisible, because the
-   keyboard shrinks visualViewport without resizing the layout viewport, and the
-   dock is bottom-anchored inside a fixed full-height shell. */
-test('a phase1 dark theme is treated as dark by the chat', () => {
+/* Regression 2026-10-15 (owner voice note: "এগুলা একটাও হয় নাই, আরও উপরে উঠে
+   গেছে, ভিতরে এখনো সাদা"). The earlier attempt failed because it missed the
+   real cause. phase1-upgrade.js owns the app's theme through
+   'admission_theme_v1' and writes <html data-theme>, and it ships a global
+   input,textarea,select{background:var(--glass-strong)!important} rule. That
+   variable is near-white at :root and only becomes dark under
+   [data-theme="midnight-academic"]. AhAppearance.apply() REMOVES data-theme
+   whenever its own key - 'ah-appearance', default light - says light, and the
+   chat called apply() on open, so phase1's dark override stopped matching and
+   the composer and drawer search box were painted rgba(255,255,255,.88). The
+   chat also consulted AhAppearance first, which only ever says "light" for
+   phase1's dark theme. */
+test('phase1 is the authority on the app theme, not AhAppearance', () => {
   const UI = readFileSync('ai-agent-chat.js', 'utf8');
-  assert.match(UI, /midnight-academic/,
-    'the chat must know phase1 calls its dark theme midnight-academic');
-  assert.match(UI, /function appResolved\(\)[\s\S]*?darkName[\s\S]*?return 'dark'/,
-    'appResolved must return dark when either theme engine says dark');
+  const fn = UI.match(/function appResolved\(\)[\s\S]*?\n  \}/)[0];
+  const code = fn.replace(/\/\*[\s\S]*?\*\//g, ''); // drop the explanatory comment
+  assert.ok(code.indexOf("getAttribute('data-theme')") < code.indexOf('window.AhAppearance'),
+    'data-theme must be read before AhAppearance, which mislabels phase1 dark as light');
+  assert.match(fn, /midnight-academic/);
+  assert.match(fn, /admission_theme_v1/, "phase1's stored pick must be consulted");
+});
+test('opening the chat cannot wipe phase1 data-theme', () => {
+  const UI = readFileSync('ai-agent-chat.js', 'utf8');
+  assert.match(UI, /function syncAppChrome\(\)/);
+  assert.match(UI, /window\.applyTheme/,
+    "phase1's pick must be re-asserted after AhAppearance.apply() removes data-theme");
+  const bare = UI.match(/window\.AhAppearance\.apply\(\)/g) || [];
+  assert.equal(bare.length, 1,
+    'only syncAppChrome may call AhAppearance.apply(); every other call site must re-assert phase1');
+});
+test('the composer and drawer search beat phase1 global !important rule', () => {
+  const UI = readFileSync('ai-agent-chat.js', 'utf8');
+  assert.match(UI, /#app\.sky \.comp textarea\{[^}]*background:transparent!important/,
+    'phase1 sets background on every textarea with !important');
+  assert.match(UI, /#app\.sky \.srch input\{[^}]*background:transparent!important/);
+});
+test('the composer sits flush at the very bottom, with no save-area gap', () => {
+  const UI = readFileSync('ai-agent-chat.js', 'utf8');
+  const dock = UI.match(/#app\.sky \.dock\{[^}]*\}/)[0];
+  assert.ok(!/env\(safe-area-inset-bottom/.test(dock),
+    'owner asked for no save area under the composer, like ChatGPT');
+});
+test('the drawer clears the notch in a PWA', () => {
+  const UI = readFileSync('ai-agent-chat.js', 'utf8');
+  assert.match(UI, /#app\.sky \.drawer\{[^}]*padding:calc\(16px \+ env\(safe-area-inset-top/,
+    'the fixed shell ignores body padding, so the drawer must add the top inset itself');
+});
+test('the chat theme buttons move phase1 too', () => {
+  const UI = readFileSync('ai-agent-chat.js', 'utf8');
+  assert.match(UI, /window\.setTheme\(t === 'dark' \? 'midnight-academic' : 'emerald-glass'\)/,
+    'a tap that only moved AhAppearance left the app and the chat disagreeing');
 });
 test('a theme switch is repainted without a custom event', () => {
   const UI = readFileSync('ai-agent-chat.js', 'utf8');
@@ -79,9 +115,7 @@ test('a theme switch is repainted without a custom event', () => {
 });
 test('the composer follows the visual viewport when the keyboard opens', () => {
   const UI = readFileSync('ai-agent-chat.js', 'utf8');
-  assert.match(UI, /visualViewport/);
   assert.match(UI, /vv\.height/, 'shell must be sized to the visible height');
-  assert.match(UI, /vv\.offsetTop/, 'shell must be pinned to the visual viewport top');
   assert.match(UI, /window\.innerHeight - vv\.height - vv\.offsetTop/,
     'keyboard height is innerHeight minus the visible viewport');
 });

@@ -19,6 +19,13 @@
   const remaining = () => Math.max(0, state.duration * 60 - state.elapsed);
 
   function setSeed() {
+    /* The seed pack is deferred off the boot path. It is warmed at idle, so it
+       is normally present; if not, load it and seed again. */
+    if (!Array.isArray(window.OneTimeMockSeed) && typeof window.admissionLoadPack === 'function') {
+      window.admissionLoadPack('one-time-mock-seed')
+        .then(() => { try { setSeed(); } catch (_) {} })
+        .catch(() => {});
+    }
     const seed = Array.isArray(window.OneTimeMockSeed) ? window.OneTimeMockSeed : [];
     state.bank = cloneQuestions(seed);
     state.pool = cloneQuestions(seed);

@@ -274,6 +274,15 @@
     const base = window.renderResultView;
     if (typeof base !== 'function' || base.__ahResultExperience) return;
     function wrapped(result, isFresh) {
+      /* The analysis pack is deferred off the boot path, so it may not have
+         arrived on the very first result. Render now with what we have, then
+         re-render once it lands - the pack is warmed at idle, so this is only
+         insurance for an immediate first result. */
+      if (!Array.isArray(window.RESULT_ANALYSIS_500) && typeof window.admissionLoadPack === 'function') {
+        window.admissionLoadPack('result-analysis-500')
+          .then(() => { try { window.renderResultView(result, isFresh); } catch (_) {} })
+          .catch(() => {});
+      }
       const output = base.apply(this, arguments);
       const page = document.querySelector('.result-page');
       const stats = page?.querySelector('.result-stat-grid');

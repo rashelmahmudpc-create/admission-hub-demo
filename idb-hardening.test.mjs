@@ -19,7 +19,19 @@ test('batched cloud writes retry a closing database using the fresh connection',
 const deferCount = (H.match(/<script defer src=/g) || []).length;
 test('optional internal modules remain deferred', deferCount >= 40);
 test('boot-critical local scripts remain parser-ordered', /src="\.\/session-persist\.js/.test(H) && /src="data-protection\.js/.test(H));
-test('heavy app seed and result analysis remain deferred', /app-seed\.js[^>]*defer/.test(H) && /result-analysis-500\.js[^>]*defer/.test(H));
+/* The 650KB analysis pack and the mock seed used to ride the boot path as
+   `defer`, which still executes before the first paint. They are now fetched
+   only when their screen needs them and warmed at idle, so the guard checks
+   they are off the boot path AND still reachable through the lazy loader. */
+test('heavy app seed and result analysis stay off the boot path but remain loadable',
+  /app-seed\.js[^>]*defer/.test(H) &&
+  !/<script[^>]*src="\.\/result-analysis-500\.js/.test(H) &&
+  !/<script[^>]*src="\.\/one-time-mock-seed\.js/.test(H) &&
+  /admissionLoadPack/.test(H) &&
+  H.includes("'result-analysis-500'") &&
+  H.includes("'one-time-mock-seed'") &&
+  /result-analysis-500\.js\?v=/.test(H) &&
+  /one-time-mock-seed\.js\?v=/.test(H));
 // Guard the retired assets by name, not by substring: a bare onboarding\.js also
 // matches the live welcome-onboarding.js, so the pattern is anchored on the
 // path boundary to keep catching a real regression without flagging the current asset.
@@ -27,9 +39,9 @@ test('retired identity/onboarding scripts are no longer boot-critical or loaded'
 
 
 test('service-worker build marker is synchronized',
-  SW.includes("const BUILD_ID = 'v345-google-client'") &&
-  H.includes("const expectedSwVersion = 'v345-google-client'") &&
-  H.includes('admission-hub-shell-v345-google-client'));
+  SW.includes("const BUILD_ID = 'v346-fastboot-lazypack'") &&
+  H.includes("const expectedSwVersion = 'v346-fastboot-lazypack'") &&
+  H.includes('admission-hub-shell-v346-fastboot-lazypack'));
 test('data protection summarizes stores with count rather than full reads', DP.includes('tx.objectStore(name).count()'));
 test('unprotected automatic Pages deploy stays retired', WF.includes('Cloudflare Pages Bundle Guard (No Deploy)') && !WF.includes('wrangler-action') && !WF.includes('pages deploy dist --project-name admissionhub'));
 

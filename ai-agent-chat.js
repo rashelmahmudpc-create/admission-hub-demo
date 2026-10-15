@@ -19,33 +19,49 @@
 
   /* ───────── theme: single source of truth is the app's engine ───────── */
   function appResolved() {
-    /* The app carries two theme engines that can disagree: AhAppearance reads
-       'ah-appearance' (light/dark/system/green) and phase1-upgrade reads
-       'admission_theme_v1' (emerald-glass/midnight-academic/ivory-academic).
-       AhAppearance calls the phase1 dark theme "light", so trusting it alone
-       left the chat painted light over a midnight app - white composer and
-       search boxes. Treat the chat as dark if EITHER engine says dark, which is
-       what the user is actually looking at. */
+    /* The app carries two theme engines: phase1-upgrade owns
+       'admission_theme_v1' (emerald-glass/midnight-academic/ivory-academic) and
+       writes <html data-theme>, while AhAppearance owns 'ah-appearance'
+       (light/dark/system/green). They can disagree, so ask them in order of
+       authority: the attribute phase1 writes, then phase1's stored pick, then
+       AhAppearance. AhAppearance only ever reports 'light' for phase1's dark
+       theme, so it must never be consulted first. */
     const darkName = (v) => v === 'dark' || v === 'midnight' || v === 'midnight-academic';
-    try {
-      if (window.AhAppearance && typeof window.AhAppearance.resolved === 'function') {
-        if (darkName(window.AhAppearance.resolved())) return 'dark';
-      }
-    } catch (_) {}
+    const lightName = (v) => v === 'light' || v === 'green' || v === 'emerald-glass' || v === 'ivory-academic';
     try {
       const t = document.documentElement.getAttribute('data-theme')
         || (document.body && document.body.getAttribute('data-theme')) || '';
       if (darkName(t)) return 'dark';
-      if (t) return 'light';
+      if (lightName(t)) return 'light';
     } catch (_) {}
     try { if (darkName(localStorage.getItem('admission_theme_v1'))) return 'dark'; } catch (_) {}
+    try {
+      const r = (window.AhAppearance && typeof window.AhAppearance.resolved === 'function')
+        ? window.AhAppearance.resolved() : '';
+      if (darkName(r)) return 'dark';
+    } catch (_) {}
     return 'light';
+  }
+  /* AhAppearance.apply() REMOVES <html data-theme> whenever its own key says
+     light - which is its default - so calling it from the chat wiped phase1's
+     midnight theme out from under the app. With the attribute gone, phase1's
+     [data-theme="midnight-academic"] overrides stopped matching and every input
+     fell back to phase1's :root --glass-strong of rgba(255,255,255,.88), which
+     its global input,textarea,select{background:...!important} rule then painted
+     over the composer and the drawer search box. Re-assert phase1's pick after. */
+  function syncAppChrome() {
+    try { if (window.AhAppearance && window.AhAppearance.apply) window.AhAppearance.apply(); } catch (_) {}
+    try { if (typeof window.applyTheme === 'function') window.applyTheme(); } catch (_) {}
   }
   function paintTheme() {
     const r = appResolved();
     const app = document.getElementById('app');
     if (app) app.setAttribute('data-sky-theme', r);
     syncThemeBtns(r);
+    try {
+      const c = r === 'dark' ? '#0B1020' : '#F6F9FF';
+      document.querySelectorAll('meta[name="theme-color"]').forEach((m) => m.setAttribute('content', c));
+    } catch (_) {}
   }
   function syncThemeBtns(r) {
     const th = document.getElementById('th');
@@ -672,17 +688,17 @@
 #app.sky .acts svg{width:19px;height:19px}
 #app.sky .say2{position:absolute;top:60px;left:60px;z-index:4;max-width:260px;padding:8px 15px;border-radius:14px 14px 14px 4px;background:var(--surf);box-shadow:0 0 0 1px var(--line),var(--sh);font-size:13.5px;font-weight:600;opacity:0;transform:translateY(-4px);transition:.25s;pointer-events:none}
 #app.sky .say2.on{opacity:1;transform:none}
-#app.sky .dock{padding:4px 14px calc(6px + env(safe-area-inset-bottom,0px));position:relative;z-index:3;background:linear-gradient(transparent,var(--bg) 45%)}
+#app.sky .dock{padding:4px 14px 6px;position:relative;z-index:3;background:linear-gradient(transparent,var(--bg) 45%)}
 #app.sky .comp{display:flex;align-items:flex-end;gap:4px;padding:5px;border-radius:26px;background:var(--field,var(--surf));box-shadow:0 0 0 1px var(--field-line,var(--line)),var(--sh);transition:box-shadow .2s,background .2s}
 #app.sky .comp:focus-within{box-shadow:0 0 0 1.5px var(--pri),0 0 0 6px rgba(61,107,255,.12)}
-#app.sky .comp textarea{flex:1;min-width:0;min-height:0;height:auto;border:0;outline:0;background:transparent;color:var(--ink);resize:none;font-size:15.5px;padding:8px 2px;max-height:132px;line-height:1.45;-webkit-appearance:none;appearance:none;color-scheme:inherit}
+#app.sky .comp textarea{flex:1;min-width:0;min-height:0;height:auto;border:0;outline:0;background:transparent!important;color:var(--ink)!important;box-shadow:none!important;resize:none;font-size:15.5px;padding:8px 2px;max-height:132px;line-height:1.45;-webkit-appearance:none;appearance:none;color-scheme:inherit}
 #app.sky .comp textarea::placeholder{color:var(--mute);opacity:.85}
 #app.sky .cb{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;background:transparent;color:var(--mute);flex:none;transition:background .2s,color .2s,transform .15s,box-shadow .2s}
 #app.sky .cb.send{background:var(--ink);color:var(--bg);box-shadow:0 4px 14px rgba(15,27,61,.28)}#app.sky[data-sky-theme="dark"] .cb.send{background:#EAF0FF;color:#0B1020;box-shadow:0 4px 14px rgba(0,0,0,.4)}#app.sky .cb svg{width:20px;height:20px}
 #app.sky .cb:active{transform:scale(.88)}
 #app.sky .scrim{position:absolute;inset:0;background:rgba(10,16,38,.42);opacity:0;pointer-events:none;transition:opacity .25s;z-index:20}
 #app.sky .scrim.on{opacity:1;pointer-events:auto}
-#app.sky .drawer{position:absolute;top:0;bottom:0;left:0;width:86%;max-width:350px;background:var(--surf);z-index:30;transform:translateX(-102%);transition:transform .3s cubic-bezier(.2,.9,.25,1);display:flex;flex-direction:column;padding:16px 14px;border-radius:0 28px 28px 0;box-shadow:var(--sh);will-change:transform}
+#app.sky .drawer{position:absolute;top:0;bottom:0;left:0;width:86%;max-width:350px;background:var(--surf);z-index:30;transform:translateX(-102%);transition:transform .3s cubic-bezier(.2,.9,.25,1);display:flex;flex-direction:column;padding:calc(16px + env(safe-area-inset-top,0px)) 14px 16px;border-radius:0 28px 28px 0;box-shadow:var(--sh);will-change:transform}
 #app.sky .drawer.on{transform:none}
 #app.sky .drawer.drag{transition:none}
 #app.sky .dp{display:flex;align-items:center;gap:12px;padding:12px;border-radius:20px;background:linear-gradient(135deg,var(--soft),transparent);box-shadow:0 0 0 1px var(--line);margin-bottom:12px}
@@ -698,7 +714,7 @@
 #app.sky .sc svg{color:var(--pri);width:22px;height:22px}
 #app.sky .srch{display:flex;align-items:center;gap:8px;padding:0 12px;border-radius:999px;background:var(--field,var(--bg));box-shadow:inset 0 0 0 1px var(--field-line,var(--line));color:var(--mute)}
 #app.sky .srch svg{width:18px;height:18px}
-#app.sky .srch input{flex:1;min-width:0;border:0;outline:0;background:transparent;color:var(--ink);padding:10px 0;font-size:14.5px;-webkit-appearance:none;appearance:none;color-scheme:inherit}#app.sky .srch input::placeholder{color:var(--mute);opacity:.85}#app.sky input,#app.sky textarea,#app.sky select{color-scheme:inherit}#app.sky .comp:focus-within{box-shadow:0 0 0 1.5px var(--pri),var(--sh)}
+#app.sky .srch input{flex:1;min-width:0;border:0;outline:0;background:transparent!important;color:var(--ink)!important;box-shadow:none!important;padding:10px 0;font-size:14.5px;-webkit-appearance:none;appearance:none;color-scheme:inherit}#app.sky .srch input::placeholder{color:var(--mute);opacity:.85}#app.sky input,#app.sky textarea,#app.sky select{color-scheme:inherit}#app.sky .comp:focus-within{box-shadow:0 0 0 1.5px var(--pri),var(--sh)}
 #app.sky .dl{flex:1;overflow-y:auto;margin:4px -4px 0;padding:0 4px}
 #app.sky .gl{font-size:12.5px;color:var(--mute);font-weight:600;margin:14px 6px 4px}
 #app.sky .hi{border-radius:14px;transition:background .15s}
@@ -1214,7 +1230,7 @@ const ACT_ACTIONS = { 'prefs.write': { bn: 'তোমার AI পছন্দ �
   function backHome() {
     try {
       document.documentElement.classList.remove('ai-chat-open');
-      const a = document.getElementById('app'); if (a) { a.classList.remove('ai-chat-open', 'sky'); a.style.height = a.style.top = a.style.bottom = a.style.paddingBottom = ''; } try { if (window.AhAppearance && window.AhAppearance.apply) window.AhAppearance.apply(); } catch (_) {}
+      const a = document.getElementById('app'); if (a) { a.classList.remove('ai-chat-open', 'sky'); a.style.height = a.style.top = a.style.bottom = a.style.paddingBottom = ''; } try { syncAppChrome(); } catch (_) {}
       const nb = document.querySelector('.bottomnav'); if (nb) nb.style.display = '';
     } catch (_) {}
     if (window.navigate) window.navigate('dashboard'); else history.back();
@@ -1237,7 +1253,7 @@ const ACT_ACTIONS = { 'prefs.write': { bn: 'তোমার AI পছন্দ �
     } catch (_) {}
     load();
     root.className = 'sky';
-    try { if (window.AhAppearance && window.AhAppearance.apply) window.AhAppearance.apply(); } catch (_) {}
+    try { syncAppChrome(); } catch (_) {}
     root.classList.add('ai-chat-open');
     root.innerHTML = shell();
     try { document.documentElement.classList.add('ai-chat-open'); } catch (_) {}
@@ -1337,12 +1353,17 @@ const ACT_ACTIONS = { 'prefs.write': { bn: 'তোমার AI পছন্দ �
     document.getElementById('plusB').onclick = () => { inpEl.blur(); layer(true, document.getElementById('sheet')); };
     document.getElementById('newD').onclick = newChat;
 
-    /* theme buttons drive the APP's engine, so the chat can never diverge */
+    /* Theme buttons drive BOTH engines. phase1-upgrade owns the app's real
+       theme, so a tap that only moved AhAppearance left the app and the chat
+       disagreeing - the fault the owner reported as white boxes in dark mode. */
     document.getElementById('th').onclick = (e) => {
       const b = e.target.closest('button'); if (!b) return;
       const t = b.getAttribute('data-t');
       try {
         if (window.AhAppearance && window.AhAppearance.set) window.AhAppearance.set(t === 'auto' ? 'system' : t);
+      } catch (_) {}
+      try {
+        if (typeof window.setTheme === 'function') window.setTheme(t === 'dark' ? 'midnight-academic' : 'emerald-glass');
       } catch (_) {}
       paintTheme();
     };
@@ -1375,7 +1396,7 @@ const ACT_ACTIONS = { 'prefs.write': { bn: 'তোমার AI পছন্দ �
         layer(false);
         try {
           document.documentElement.classList.remove('ai-chat-open');
-          const a = document.getElementById('app'); if (a) { a.classList.remove('ai-chat-open', 'sky'); a.style.height = a.style.top = a.style.bottom = a.style.paddingBottom = ''; } try { if (window.AhAppearance && window.AhAppearance.apply) window.AhAppearance.apply(); } catch (_) {}
+          const a = document.getElementById('app'); if (a) { a.classList.remove('ai-chat-open', 'sky'); a.style.height = a.style.top = a.style.bottom = a.style.paddingBottom = ''; } try { syncAppChrome(); } catch (_) {}
           const nb = document.querySelector('.bottomnav'); if (nb) nb.style.display = '';
         } catch (_) {}
         if (window.navigate) window.navigate(p); else location.hash = p;
@@ -1470,7 +1491,7 @@ const ACT_ACTIONS = { 'prefs.write': { bn: 'তোমার AI পছন্দ �
       const p = (location.hash.slice(1).split('?')[0] || '').toLowerCase();
       if (p !== 'ai' && p !== 'ai-chat') {
         document.documentElement.classList.remove('ai-chat-open');
-        const a = document.getElementById('app'); if (a) { a.classList.remove('ai-chat-open', 'sky'); a.style.height = a.style.top = a.style.bottom = a.style.paddingBottom = ''; } try { if (window.AhAppearance && window.AhAppearance.apply) window.AhAppearance.apply(); } catch (_) {}
+        const a = document.getElementById('app'); if (a) { a.classList.remove('ai-chat-open', 'sky'); a.style.height = a.style.top = a.style.bottom = a.style.paddingBottom = ''; } try { syncAppChrome(); } catch (_) {}
         const nb = document.querySelector('.bottomnav'); if (nb) nb.style.display = '';
       }
     } catch (_) {}

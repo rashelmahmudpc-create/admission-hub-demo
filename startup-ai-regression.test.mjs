@@ -71,7 +71,7 @@ test('১২. build/cache/static-Welcome and main-app AI versions are synchroniz
     const loaded = H.match(/account-access\.(?:css|js)\?v=([^"']+)/);
     return Boolean(loaded) && SW.includes(`account-access.css?v=${loaded[1]}`) && SW.includes(`account-access.js?v=${loaded[1]}`);
   })() &&
-  H.includes('ai-agent-chat.js?v=agent-f1-ui-skyv5') && SW.includes('ai-agent-chat.js?v=agent-f1-ui-skyv5'));
+  H.includes('ai-agent-chat.js?v=agent-f1-ui-skyv6') && SW.includes('ai-agent-chat.js?v=agent-f1-ui-skyv6'));
 test('১৩. service-worker activation never navigates or reloads open clients',
   !SW.includes('c.navigate(c.url)') && !SW.includes("self.clients.matchAll({ type: 'window', includeUncontrolled: true });\n      for"));
 test('১৪. installed PWA serves the current-build shell instantly, then revalidates; a first visit is never aborted on a timer',

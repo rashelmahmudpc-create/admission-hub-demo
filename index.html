@@ -4810,6 +4810,10 @@ async function boot(){
   document.body.classList.remove('app-booting');
   window.__admissionCoreBootComplete=true;
   window.dispatchEvent(new CustomEvent('admission:boot-ready',{detail:{storageMode:STORAGE_MODE}}));
+  // Warm the deferred data packs after the dashboard is interactive, so the
+  // result and mock screens still open with no wait.
+  const warmPacks=()=>{ ['result-analysis-500','one-time-mock-seed'].forEach(n=>{ try{ window.admissionLoadPack(n).catch(()=>{}); }catch(_){} }); };
+  if(typeof requestIdleCallback==='function') requestIdleCallback(warmPacks,{timeout:6000}); else setTimeout(warmPacks,3000);
   // Deferred dashboard code owns the first real render. Marking modules ready in
   // boot caused a race where renderDashboard was still absent and the loader lived forever.
   if(typeof window.__admissionRequestFinalRender==='function') window.__admissionRequestFinalRender();
@@ -5422,7 +5426,7 @@ window.__admissionBootPromise.catch(error => console.error('[Admission Hub] boot
     // The updated worker takes control now; the current document remains usable and the next launch uses the new shell.
     try{
 
-      const expectedSwVersion = 'v345-google-client';
+      const expectedSwVersion = 'v346-fastboot-lazypack';
       // register() on the same scope performs an in-place update. Never unregister
       // the active iOS worker first: that discards the instant offline shell.
       const registration=await navigator.serviceWorker.register('./sw.js',{scope:'./',updateViaCache:'none'});
@@ -5431,7 +5435,7 @@ window.__admissionBootPromise.catch(error => console.error('[Admission Hub] boot
       // stale pre-retirement application shells can never be served from cache again.
       try {
 
-        const cur = 'admission-hub-shell-v345-google-client';
+        const cur = 'admission-hub-shell-v346-fastboot-lazypack';
         const names = await caches.keys();
         for (const name of names) {
           if (name.startsWith('admission-hub-shell-') && name !== cur) await caches.delete(name).catch(()=>{});
@@ -5586,7 +5590,7 @@ window.__admissionBootPromise.catch(error => console.error('[Admission Hub] boot
 <script defer src="./dashboard-v2.js?v=dash2f17-v3frame"></script>
 <script defer src="./academic-catalog.js?v=acad-cat-v2"></script>
 <script defer src="./profile-ui.js?v=profile-v18-avatar-cache"></script>
-<script defer src="./ai-agent-chat.js?v=agent-f1-ui-skyv5"></script>
+<script defer src="./ai-agent-chat.js?v=agent-f1-ui-skyv6"></script>
 <script defer src="./question-engine.js?v=qe1"></script>
 <script defer src="./question-engine-panel.js?v=qe1"></script>
 <script defer src="qbank-redesign.js?v=practice15"></script>
@@ -5882,9 +5886,31 @@ setTimeout(() => { if (location.hash.replace(/^#/, '').split('?')[0] === 'dictio
   [0, 120, 500, 1100].forEach((delay) => setTimeout(mountStandaloneMockTool, delay));
 })();
 </script>
-<script src="./one-time-mock-seed.js?v=20260824-native" defer></script>
+<script>
+/* Deferred data packs. Every <script defer> runs before the first paint, so a
+   data blob that only the result and mock screens read must not be on that path.
+   Each consumer waits for its pack, and the pack is fetched at idle after boot
+   so the screens still open instantly. */
+window.__admissionLazyPacks = window.__admissionLazyPacks || {};
+window.admissionLoadPack = function admissionLoadPack(name) {
+  if (window.__admissionLazyPacks[name]) return window.__admissionLazyPacks[name];
+  const url = { 'result-analysis-500': './result-analysis-500.js?v=result-analysis-500-deep-matched-v2',
+                'one-time-mock-seed': './one-time-mock-seed.js?v=20260824-native' }[name];
+  if (!url) return Promise.resolve();
+  window.__admissionLazyPacks[name] = new Promise((resolve, reject) => {
+    const el = document.createElement('script');
+    el.src = url;
+    el.async = true;
+    el.onload = () => resolve();
+    el.onerror = () => reject(new Error('pack failed: ' + name));
+    document.head.appendChild(el);
+  });
+  return window.__admissionLazyPacks[name];
+};
+</script>
+
 <script src="./vocabulary-a-seed.js?v=vocab-a-1" defer></script>
-<script src="./one-time-mock-tool.js?v=20260824-native" defer></script>
+<script src="./one-time-mock-tool.js?v=20260824-native-lazypack1" defer></script>
 <script src="./vocabulary-master-tool.js?v=vm-erase-v111" defer></script>
 <script src="./vocabulary-pronunciation.js?v=voice-el-v104" defer></script>
 <script src="./vocabulary-elevenlabs.js?v=el-voice-v111" defer></script>
@@ -5899,8 +5925,7 @@ setTimeout(() => { if (location.hash.replace(/^#/, '').split('?')[0] === 'dictio
 <script defer src="./analytics-insights-panel.js?v=p09-v1"></script>
 <script src="./memorizing-match-tool.js?v=memorizing-match-v8-stable-cards" defer></script>
 <script src="./question-card-game-visual.js?v=question-card-game-v2-persistent" defer></script>
-<script src="./result-analysis-500.js?v=result-analysis-500-deep-matched-v2" defer></script>
-<script src="./mock-result-experience.js?v=result-insights-200-single-card-v5" defer></script>
+<script src="./mock-result-experience.js?v=result-insights-200-single-card-v6-lazypack" defer></script>
     <script src="./mistake-notebook-tool.js?v=nb-v1" defer></script>
     <script src="./weekly-report-tool.js?v=wr-v2-real-payload" defer></script>
 <script defer src="./result-interaction-polish.js?v=result-interaction-polish-v1"></script>
