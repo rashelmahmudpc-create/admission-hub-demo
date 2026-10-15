@@ -107,6 +107,6 @@ test('code-native release markers and fail-closed publication checks are synchro
 test('Signup stays AI-free while the ordinary application AI remains shipped', () => {
   assert.doesNotMatch(JS, /\/api\/ai\/chat|data-role="guide|class="ah-guide/);
   assert.doesNotMatch(CSS, /\.ah-guide/);
-  assert.match(HTML, /<script defer src="\.\/ai-agent-chat\.js\?v=agent-f1-ui-p06chat"><\/script>/);
-  assert.match(SW, /\.\/ai-agent-chat\.js\?v=agent-f1-ui-p06chat/);
+  assert.match(HTML, /<script defer src="\.\/ai-agent-chat\.js\?v=agent-f1-ui-skyv1"><\/script>/);
+  assert.match(SW, /\.\/ai-agent-chat\.js\?v=agent-f1-ui-skyv1/);
 });

@@ -71,7 +71,7 @@ test('১২. build/cache/static-Welcome and main-app AI versions are synchroniz
     const loaded = H.match(/account-access\.(?:css|js)\?v=([^"']+)/);
     return Boolean(loaded) && SW.includes(`account-access.css?v=${loaded[1]}`) && SW.includes(`account-access.js?v=${loaded[1]}`);
   })() &&
-  H.includes('ai-agent-chat.js?v=agent-f1-ui-p06chat') && SW.includes('ai-agent-chat.js?v=agent-f1-ui-p06chat'));
+  H.includes('ai-agent-chat.js?v=agent-f1-ui-skyv1') && SW.includes('ai-agent-chat.js?v=agent-f1-ui-skyv1'));
 test('১৩. service-worker activation never navigates or reloads open clients',
   !SW.includes('c.navigate(c.url)') && !SW.includes("self.clients.matchAll({ type: 'window', includeUncontrolled: true });\n      for"));
 test('১৪. installed PWA serves the current-build shell instantly, then revalidates; a first visit is never aborted on a timer',
@@ -116,14 +116,18 @@ test('১৫. precache stays lean because code-native entry pages add no raster 
 test('১৬. PWA updates are in-place; active worker is never unregistered first', !H.includes('registration.unregister()'));
 
 /* AI composer and response */
-test('১৭. contenteditable has no independent iOS frame',
-  AI.includes(':focus-visible:not(.ai-editor)') && AI.includes('.ai-agent-root .ai-editor:focus-visible{outline:0!important') && AI.includes('-webkit-appearance:none;appearance:none'));
+test('১৭. composer ইনপুট iOS-এ আলাদা ফ্রেম বানায় না (textarea + ১৬px, no contenteditable)',
+  /* Sky uses a plain textarea. A font below 16px makes iOS Safari zoom the
+     whole page on focus, which is the frame this guard exists to prevent. */
+  !AI.includes('contenteditable') && AI.includes('id="inp"') && AI.includes('font-size:16px') && AI.includes('-webkit-appearance:none;appearance:none'));
 test('১৮. rich and plain AI messages render their complete bodies directly',
-  AI.includes("const inner = respRender(blocks, { idx });") && AI.includes('bodyHtml = md(esc(m.text));'));
+  /* Escape-first, then markdown: every message body goes through md() whole,
+     with no fold step between the model text and the DOM. */
+  AI.includes('function md(src)') && AI.includes('inner = md(m.text)') && AI.includes('b.innerHTML = md(full)'));
 test('১৯. AI response/code collapse implementation and label are completely absent',
   !AI.includes('ai-rb-fold') && !AI.includes('ai-code-fold') && !AI.includes('respFold(') && !AI.includes('সম্পূর্ণ দেখুন') && !AI.includes('Expand full response'));
-test('২০. long code stays fully visible while copy header remains',
-  AI.includes("return '<div class=\"ai-code\">' + head + body + '</div>';") && !AI.includes('if (n > 18)'));
+test('২০. long code stays fully visible (কোনো truncate নয়)',
+  AI.includes('<pre><code>') && !AI.includes('if (n > 18)') && !AI.includes('ai-code-fold'));
 
 console.log(`\nFAST-START + AI REGRESSION: ${pass} pass / ${fail} fail`);
 process.exit(fail ? 1 : 0);
