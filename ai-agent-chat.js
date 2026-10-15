@@ -19,9 +19,27 @@
 
   /* ───────── theme: single source of truth is the app's engine ───────── */
   function appResolved() {
-    try { if (window.AhAppearance && typeof window.AhAppearance.resolved === 'function') return window.AhAppearance.resolved(); } catch (_) {}
-    const t = document.documentElement.getAttribute('data-theme');
-    return (t === 'dark' || t === 'midnight') ? 'dark' : 'light';
+    /* The app carries two theme engines that can disagree: AhAppearance reads
+       'ah-appearance' (light/dark/system/green) and phase1-upgrade reads
+       'admission_theme_v1' (emerald-glass/midnight-academic/ivory-academic).
+       AhAppearance calls the phase1 dark theme "light", so trusting it alone
+       left the chat painted light over a midnight app - white composer and
+       search boxes. Treat the chat as dark if EITHER engine says dark, which is
+       what the user is actually looking at. */
+    const darkName = (v) => v === 'dark' || v === 'midnight' || v === 'midnight-academic';
+    try {
+      if (window.AhAppearance && typeof window.AhAppearance.resolved === 'function') {
+        if (darkName(window.AhAppearance.resolved())) return 'dark';
+      }
+    } catch (_) {}
+    try {
+      const t = document.documentElement.getAttribute('data-theme')
+        || (document.body && document.body.getAttribute('data-theme')) || '';
+      if (darkName(t)) return 'dark';
+      if (t) return 'light';
+    } catch (_) {}
+    try { if (darkName(localStorage.getItem('admission_theme_v1'))) return 'dark'; } catch (_) {}
+    return 'light';
   }
   function paintTheme() {
     const r = appResolved();
@@ -1196,7 +1214,7 @@ const ACT_ACTIONS = { 'prefs.write': { bn: 'তোমার AI পছন্দ �
   function backHome() {
     try {
       document.documentElement.classList.remove('ai-chat-open');
-      const a = document.getElementById('app'); if (a) a.classList.remove('ai-chat-open', 'sky'); try { if (window.AhAppearance && window.AhAppearance.apply) window.AhAppearance.apply(); } catch (_) {}
+      const a = document.getElementById('app'); if (a) { a.classList.remove('ai-chat-open', 'sky'); a.style.height = a.style.top = a.style.bottom = a.style.paddingBottom = ''; } try { if (window.AhAppearance && window.AhAppearance.apply) window.AhAppearance.apply(); } catch (_) {}
       const nb = document.querySelector('.bottomnav'); if (nb) nb.style.display = '';
     } catch (_) {}
     if (window.navigate) window.navigate('dashboard'); else history.back();
@@ -1357,7 +1375,7 @@ const ACT_ACTIONS = { 'prefs.write': { bn: 'তোমার AI পছন্দ �
         layer(false);
         try {
           document.documentElement.classList.remove('ai-chat-open');
-          const a = document.getElementById('app'); if (a) a.classList.remove('ai-chat-open', 'sky'); try { if (window.AhAppearance && window.AhAppearance.apply) window.AhAppearance.apply(); } catch (_) {}
+          const a = document.getElementById('app'); if (a) { a.classList.remove('ai-chat-open', 'sky'); a.style.height = a.style.top = a.style.bottom = a.style.paddingBottom = ''; } try { if (window.AhAppearance && window.AhAppearance.apply) window.AhAppearance.apply(); } catch (_) {}
           const nb = document.querySelector('.bottomnav'); if (nb) nb.style.display = '';
         } catch (_) {}
         if (window.navigate) window.navigate(p); else location.hash = p;
@@ -1399,6 +1417,38 @@ const ACT_ACTIONS = { 'prefs.write': { bn: 'তোমার AI পছন্দ �
     /* follow the app's appearance engine live */
     try { window.addEventListener('ah:appearance', paintTheme); } catch (_) {}
     try { if (window.matchMedia) matchMedia('(prefers-color-scheme: dark)').addEventListener('change', paintTheme); } catch (_) {}
+    /* phase1's setTheme rewrites <html data-theme> in place and fires no event,
+       so watch the attribute itself or a theme switch while the chat is open
+       would not repaint it. */
+    try {
+      new MutationObserver(paintTheme).observe(document.documentElement, {
+        attributes: true, attributeFilter: ['data-theme'],
+      });
+    } catch (_) {}
+    try {
+      if (window.visualViewport) {
+        /* The soft keyboard shrinks visualViewport without resizing the layout
+           viewport. The dock is bottom-anchored inside a fixed, full-height
+           shell, so without this it stays under the keyboard and the composer
+           is invisible while typing. Size the shell to the VISIBLE height and
+           pin it to the visual viewport's top, which keeps the composer just
+           above the keyboard the way a chat input should sit. */
+        const vv = window.visualViewport;
+        const fitKeyboard = () => {
+          const a = document.getElementById('app');
+          if (!a || !a.classList.contains('sky')) return;
+          const kb = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+          a.style.height = vv.height + 'px';
+          a.style.top = vv.offsetTop + 'px';
+          a.style.bottom = 'auto';
+          a.style.paddingBottom = kb > 0 ? '0px' : '';
+          if (kb > 0 && msgsEl) msgsEl.scrollIntoView({ block: 'end' });
+        };
+        vv.addEventListener('resize', fitKeyboard);
+        vv.addEventListener('scroll', fitKeyboard);
+        window.__skyFitKeyboard = fitKeyboard;
+      }
+    } catch (_) {}
 
     /* drawer swipe */
     let sx = 0, dx0 = 0, dr = 0;
@@ -1420,7 +1470,7 @@ const ACT_ACTIONS = { 'prefs.write': { bn: 'তোমার AI পছন্দ �
       const p = (location.hash.slice(1).split('?')[0] || '').toLowerCase();
       if (p !== 'ai' && p !== 'ai-chat') {
         document.documentElement.classList.remove('ai-chat-open');
-        const a = document.getElementById('app'); if (a) a.classList.remove('ai-chat-open', 'sky'); try { if (window.AhAppearance && window.AhAppearance.apply) window.AhAppearance.apply(); } catch (_) {}
+        const a = document.getElementById('app'); if (a) { a.classList.remove('ai-chat-open', 'sky'); a.style.height = a.style.top = a.style.bottom = a.style.paddingBottom = ''; } try { if (window.AhAppearance && window.AhAppearance.apply) window.AhAppearance.apply(); } catch (_) {}
         const nb = document.querySelector('.bottomnav'); if (nb) nb.style.display = '';
       }
     } catch (_) {}

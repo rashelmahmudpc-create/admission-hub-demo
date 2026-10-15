@@ -56,3 +56,38 @@ test('the bottom safe-area inset is applied exactly once', () => {
   const dock = UI.match(/#app\.sky \.dock\{[^}]*padding:[^}]*env\(safe-area-inset-bottom/g) || [];
   assert.equal(dock.length, 1, '.dock is the single owner of the bottom inset');
 });
+
+/* Regression 2026-10-15 (owner photo): in the app's dark theme the composer and
+   the drawer search box were painted WHITE, and the composer was nowhere near the
+   bottom. Root cause: the app has TWO theme engines. AhAppearance reads
+   'ah-appearance' and reports phase1's dark theme, 'midnight-academic', as
+   "light", so the chat painted its light palette over a midnight app. A third
+   fault: with the soft keyboard open the composer was invisible, because the
+   keyboard shrinks visualViewport without resizing the layout viewport, and the
+   dock is bottom-anchored inside a fixed full-height shell. */
+test('a phase1 dark theme is treated as dark by the chat', () => {
+  const UI = readFileSync('ai-agent-chat.js', 'utf8');
+  assert.match(UI, /midnight-academic/,
+    'the chat must know phase1 calls its dark theme midnight-academic');
+  assert.match(UI, /function appResolved\(\)[\s\S]*?darkName[\s\S]*?return 'dark'/,
+    'appResolved must return dark when either theme engine says dark');
+});
+test('a theme switch is repainted without a custom event', () => {
+  const UI = readFileSync('ai-agent-chat.js', 'utf8');
+  assert.match(UI, /new MutationObserver\(paintTheme\)/,
+    'phase1.setTheme rewrites data-theme and fires no event, so watch the attribute');
+});
+test('the composer follows the visual viewport when the keyboard opens', () => {
+  const UI = readFileSync('ai-agent-chat.js', 'utf8');
+  assert.match(UI, /visualViewport/);
+  assert.match(UI, /vv\.height/, 'shell must be sized to the visible height');
+  assert.match(UI, /vv\.offsetTop/, 'shell must be pinned to the visual viewport top');
+  assert.match(UI, /window\.innerHeight - vv\.height - vv\.offsetTop/,
+    'keyboard height is innerHeight minus the visible viewport');
+});
+test('closing the chat clears the keyboard-fit inline geometry', () => {
+  const UI = readFileSync('ai-agent-chat.js', 'utf8');
+  const clears = UI.match(/a\.style\.height = a\.style\.top = a\.style\.bottom = a\.style\.paddingBottom = ''/g) || [];
+  assert.equal(clears.length, 3,
+    'every close path must drop the inline size, or the shell stays shrunk');
+});
