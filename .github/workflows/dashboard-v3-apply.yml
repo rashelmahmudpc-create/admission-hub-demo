@@ -38,6 +38,22 @@ jobs:
           curl -fsSL "$URL" -o /tmp/dashboard-v2.js
           echo "$SHA  /tmp/dashboard-v2.js" | sha256sum -c -
           node --check /tmp/dashboard-v2.js
+          # A download that matches its hash and parses is NOT a working build.
+          # The 2026-10-15 breakage passed both checks with an empty design block
+          # (<style></style>, 0 bytes) and shipped unstyled markup whose tool
+          # labels collided. Assert the design block is actually present before
+          # this file is allowed anywhere near main.
+          node -e '
+            const s = require("fs").readFileSync("/tmp/dashboard-v2.js", "utf8");
+            const blocks = [...s.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g)].map(m => m[1]);
+            const css = blocks.join("\n");
+            const die = (m) => { console.error("REFUSING BUILD: " + m); process.exit(1); };
+            if (!blocks.length) die("no <style> block at all");
+            if (blocks.some(b => b.trim() === "")) die("empty <style> block");
+            if (css.length < 8000) die("design block only " + css.length + " bytes");
+            if (!/\.tools\s*\{/.test(css) || !/\.tl\s*\{/.test(css)) die("tool-grid styles missing");
+            console.log("design block OK: " + css.length + " bytes of CSS");
+          '
           cp /tmp/dashboard-v2.js dashboard-v2.js
       - name: Regenerate SW digests
         run: node scripts/sw-manifest.mjs
