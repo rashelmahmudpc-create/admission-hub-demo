@@ -535,3 +535,66 @@ test('Telegram webhook setup is available only through the enabled Telegram slot
   const disabled = setup({ providers: [provider], config: { enabled: false, providers: [{ id: 'telegram', enabled: false }] } });
   await expectCode(() => disabled.orchestrator.configureTelegramWebhook(), AUTH_ERROR_CODES.BACKUP_UNAVAILABLE);
 });
+
+// Owner 2026-10-16 anti-abuse: email-ownership may only deliver to an approved
+// domain, and no single address may take more than three OTPs a day.
+const ownershipIdentity = email => Object.freeze({
+  purpose: 'email-ownership',
+  trustedIdentity: {
+    userId: 'usr_ownership_guard',
+    sessionRef: 'a'.repeat(64),
+    subjectRef: 'b'.repeat(64),
+    emailRef: 'c'.repeat(64),
+    email
+  }
+});
+const allowConfig = (providers, allowedDomains) => ({ ...rawConfig(providers), allowedDomains });
+
+test('email-ownership refuses a domain outside the allowlist and sends nothing', async () => {
+  const provider = new MockProvider({ id: 'otp-a' });
+  const app = setup({ providers: [provider], config: allowConfig([provider], ['gmail.com', 'yahoo.com', 'icloud.com', 'outlook.com']) });
+  await expectCode(() => app.orchestrator.requestVerification(ownershipIdentity('student@mailinator.com'), context), AUTH_ERROR_CODES.INVALID_INPUT);
+  assert.equal(provider.sends.length, 0);
+});
+
+test('email-ownership accepts an approved consumer domain and a Bangladesh college suffix', async () => {
+  const provider = new MockProvider({ id: 'otp-a' });
+  const app = setup({ providers: [provider], config: allowConfig([provider], ['gmail.com', 'outlook.com']) });
+  const gmail = await app.orchestrator.requestVerification(ownershipIdentity('student@gmail.com'), context);
+  assert.equal(gmail.accepted, true);
+  app.advance(61_000);
+  const collegeIdentity = ownershipIdentity('student@college.ac.bd');
+  const college = await app.orchestrator.requestVerification(
+    { ...collegeIdentity, trustedIdentity: { ...collegeIdentity.trustedIdentity, emailRef: 'd'.repeat(64) } },
+    context
+  );
+  assert.equal(college.accepted, true);
+  assert.equal(provider.sends.length, 2);
+});
+
+test('an explicit empty allowlist opts out and stays unrestricted', async () => {
+  const provider = new MockProvider({ id: 'otp-a' });
+  const app = setup({ providers: [provider], config: allowConfig([provider], []) });
+  const requested = await app.orchestrator.requestVerification(ownershipIdentity('anything@example.com'), context);
+  assert.equal(requested.accepted, true);
+});
+
+test('the fourth email-ownership OTP to one address in a day is rate limited', async () => {
+  const provider = new MockProvider({ id: 'otp-a' });
+  const app = setup({ providers: [provider], config: allowConfig([provider], ['gmail.com']) });
+  const one = ownershipIdentity('repeat@gmail.com');
+  for (let index = 0; index < 3; index += 1) {
+    const answer = await app.orchestrator.requestVerification(one, { ...context, deviceId: `device-verification-0000000000${index}` });
+    assert.equal(answer.accepted, true, `send ${index + 1} should be allowed`);
+    app.advance(61_000);
+  }
+  await expectCode(() => app.orchestrator.requestVerification(one, { ...context, deviceId: 'device-verification-00000000009' }), AUTH_ERROR_CODES.RATE_LIMITED);
+});
+
+test('the account-backup purpose ignores the email-ownership allowlist', async () => {
+  const provider = new MockProvider({ id: 'otp-a' });
+  const app = setup({ providers: [provider], config: allowConfig([provider], ['gmail.com']) });
+  const requested = await app.orchestrator.requestVerification(identity, context);
+  assert.equal(requested.accepted, true);
+});
+

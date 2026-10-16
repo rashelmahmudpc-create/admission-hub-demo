@@ -317,7 +317,7 @@ test('SQLite proves email ownership from a pre-verification OTP and survives a r
 
   let now = START;
   const engine = new CloudflareNativeAuthEngine({ repository: authRepository, hmacSecret: SECRET, now: () => now });
-  const session = await engine.establishFirebaseSession({ email: 'owner@example.com', subject: 'firebase-owner-uid' }, CONTEXT);
+  const session = await engine.establishFirebaseSession({ email: 'owner@gmail.com', subject: 'firebase-owner-uid' }, CONTEXT);
   const otp = new OtpProvider(() => now);
   const orchestrator = new VerificationOrchestrator({
     repository: verificationRepository, hmacSecret: SECRET, providers: [otp], activated: true, now: () => now,
@@ -332,7 +332,7 @@ test('SQLite proves email ownership from a pre-verification OTP and survives a r
       sessionRef: 'a'.repeat(64),
       subjectRef: 'b'.repeat(64),
       emailRef: 'c'.repeat(64),
-      email: 'owner@example.com',
+      email: 'owner@gmail.com',
       recipientName: 'Owner'
     }
   };
@@ -347,7 +347,7 @@ test('SQLite proves email ownership from a pre-verification OTP and survives a r
   assert.equal(row.providerId, 'otp-a');
   // The destination is hashed, and the plaintext address never lands in the table.
   const stored = JSON.stringify(fixture.database.prepare('SELECT * FROM auth_verification_challenges').all());
-  assert.equal(stored.includes('owner@example.com'), false);
+  assert.equal(stored.includes('owner@gmail.com'), false);
 
   const verified = await orchestrator.verify({ ...trusted, attemptId: sent.attemptId, code: otp.code }, CONTEXT);
   assert.equal(verified.verified, true);
@@ -362,7 +362,7 @@ test('SQLite proves email ownership from a pre-verification OTP and survives a r
   assert.equal(link.method, 'email-otp');
   assert.equal(link.status, 'active');
   assert.equal(link.providerId, 'otp-a');
-  assert.equal(link.emailRef.includes('owner@example.com'), false);
+  assert.equal(link.emailRef.includes('owner@gmail.com'), false);
 
   await verificationRepository.revokeEmailOwnership({ userId: session.user.id, now });
   assert.equal((await orchestrator.isEmailOwnershipProven({ purpose: 'email-ownership', trustedIdentity: trusted.trustedIdentity }, CONTEXT)).proven, false);

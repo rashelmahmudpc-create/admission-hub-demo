@@ -45,6 +45,13 @@ function safeJson(raw) {
   } catch { return {}; }
 }
 
+// Owner 2026-10-16 (final): "শুধুমাত্র gmail.com, yahoo.com, icloud.com,
+// outlook.com ... বাইরে একটাও না". Real .ac.bd / .edu.bd college addresses are
+// allowed by suffix in the orchestrator. Applied whenever a deployment does not
+// set allowedDomains, so the guard is live by default; an explicit empty array
+// opts out (unrestricted).
+export const OWNER_ALLOWED_DOMAINS = Object.freeze(['gmail.com', 'yahoo.com', 'icloud.com', 'outlook.com']);
+
 export function verificationConfig(raw) {
   const input = typeof raw === 'string' ? safeJson(raw) : (raw && typeof raw === 'object' ? raw : {});
   const policyInput = input.policy && typeof input.policy === 'object' ? input.policy : {};
@@ -73,9 +80,17 @@ export function verificationConfig(raw) {
       label: cleanReason(row.label) || id.toUpperCase()
     });
   }).sort((left, right) => left.priority - right.priority || left.id.localeCompare(right.id));
+  // Owner 2026-10-16: only real, deliverable mailboxes may take an email-ownership
+  // OTP. An absent list falls back to OWNER_ALLOWED_DOMAINS so the guard is live by
+  // default; an explicit empty array opts out. Widenable from the admin config.
+  const allowedDomains = Object.freeze((Array.isArray(input.allowedDomains) ? input.allowedDomains : OWNER_ALLOWED_DOMAINS)
+    .map(value => String(value || '').trim().toLowerCase().replace(/^\.+/, ''))
+    .filter(value => /^[a-z0-9.-]+$/.test(value) && value.length <= 253)
+    .slice(0, 200));
   return Object.freeze({
     enabled: bool(input.enabled),
     policy,
+    allowedDomains,
     providers: Object.freeze(providers)
   });
 }

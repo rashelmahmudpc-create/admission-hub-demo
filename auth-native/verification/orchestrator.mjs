@@ -19,6 +19,11 @@ const SEND_LIMITS = Object.freeze([
   Object.freeze({ scope: 'backup-global-minute', source: 'global', limit: 120, windowMs: 60_000 })
 ]);
 
+// Owner 2026-10-16: "এক E-mail এ দিনে ৩–৫ বার সর্বোচ্চ, যতটা কম রাখা যায় ভালো" —
+// 3 per address per day, counted per email, on top of the hourly windows above.
+const DAY_MS = 24 * HOUR_MS;
+const EMAIL_DAILY_LIMIT = 3;
+
 const validText = (value, min, max) => typeof value === 'string' && value.length >= min && value.length <= max && !/[\r\n\u0000]/.test(value);
 
 // Greeting personalisation only: it never feeds a lock, ref, or rate key, so it is
@@ -73,6 +78,14 @@ function recipientBias(providerId, email) {
   const domain = String(email || '').trim().toLowerCase().split('@').pop();
   return NON_GMAIL_FREEMAIL.has(domain) ? (NON_GMAIL_PREFERENCE[providerId] || 0) : 0;
 }
+
+// Suffix forms that must match as the whole registrable domain or a parent
+// (a.bd college would pass had we used a bare endsWith on '.bd').
+const INSTITUTIONAL_SUFFIXES = Object.freeze(['.ac.bd', '.edu.bd']);
+// A domain is accepted when it equals an entry, or ends with `entry` where the
+// entry already carries its leading dot (e.g. '.ac.bd').
+const matchesDomain = (domain, list) =>
+  list.some(entry => domain === entry || (entry.startsWith('.') && domain.endsWith(entry)));
 
 async function bounded(action, milliseconds) {
   let timer;
@@ -134,6 +147,7 @@ export class VerificationOrchestrator {
       // from client input, which keeps this from becoming a send-to-anyone vector.
       const ownershipEmail = purpose === 'email-ownership' ? normalizeAuthEmail(trusted.email) : '';
       if (purpose === 'email-ownership' && !ownershipEmail) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+      this.#assertDeliverable(ownershipEmail);
       const recipientName = purpose === 'email-ownership' ? cleanRecipientName(trusted.recipientName) : '';
       const [ipRef, deviceRef, destinationRef] = await Promise.all([
         this.hmac.hex('network-ref-v1', context.ip),
@@ -156,6 +170,7 @@ export class VerificationOrchestrator {
     const subject = String(input?.subject || '').trim();
     const userId = String(input?.userId || '').trim();
     const email = normalizeAuthEmail(input?.email);
+    if (purpose === 'email-ownership') this.#assertDeliverable(email);
     if (!/^[A-Za-z0-9_-]{40,96}$/.test(sessionToken) || !validText(subject, 1, 256) || !validText(userId, 3, 128)) {
       failAuth(AUTH_ERROR_CODES.SESSION_INVALID);
     }
@@ -177,8 +192,19 @@ export class VerificationOrchestrator {
     return Object.freeze({ sessionToken, subject, userId, email, purpose, recipientName, destinations, context, sessionRef, subjectRef, emailRef, ipRef, deviceRef, destinationRef });
   }
 
+  // Email-ownership only. The other purposes carry no real address in tests or
+  // deliveries, and the allowlist is opt-in, so an unset list never blocks.
+  #assertDeliverable(email) {
+    if (!email) return;
+    const allow = this.config.allowedDomains;
+    if (!allow || allow.length === 0) return;
+    const domain = email.slice(email.lastIndexOf('@') + 1);
+    if (matchesDomain(domain, allow) || matchesDomain(domain, INSTITUTIONAL_SUFFIXES)) return;
+    failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+  }
+
   #limits(identity) {
-    return SEND_LIMITS.map(limit => Object.freeze({
+    const limits = SEND_LIMITS.map(limit => Object.freeze({
       scope: limit.scope,
       key: limit.source === 'user' ? identity.userId
         : limit.source === 'ip' ? identity.ipRef
@@ -186,6 +212,10 @@ export class VerificationOrchestrator {
       limit: limit.limit,
       windowMs: limit.windowMs
     }));
+    if (identity.purpose === 'email-ownership' && identity.emailRef) {
+      limits.push(Object.freeze({ scope: 'ownership-email-day', key: identity.emailRef, limit: EMAIL_DAILY_LIMIT, windowMs: DAY_MS }));
+    }
+    return limits;
   }
 
   async #record(entry, input) {
