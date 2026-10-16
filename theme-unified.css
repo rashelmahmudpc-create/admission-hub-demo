@@ -1,0 +1,124 @@
+/* ============================================================
+   ADMISSION SKY — UNIFIED THEME (2026-10-16)
+   One app, two themes, both taken from the Scholar Dashboard
+   design (tools/design/scholar-dashboard-3.html):
+     • dark  (default) — deep navy  #080D29 / card #121A48
+     • light            — cool paper #F4F6FD / card #FFFFFF
+   Every older palette (emerald, green, pink, midnight, focus,
+   emerald-glass, ivory, profile --pp-*, account --ah-*, Sky chat,
+   Question Bank, Notes, welcome, sign-up) is re-pointed here.
+   Tokens use !important so no older block can win.
+   theme-unified.js handles colours that were hard-coded inline.
+   ============================================================ */
+
+html[data-theme="light"]{
+  --u-bg:#F4F6FD; --u-card:#FFFFFF; --u-soft:#EEF2FC; --u-field:#FFFFFF;
+  --u-ink:#111B4B; --u-ink2:#2A3670; --u-sub:#525E93; --u-mute:#8B94BC;
+  --u-line:rgba(30,42,94,.10); --u-line2:rgba(30,42,94,.18);
+  --u-pri:#3B6FE8; --u-pri-d:#2C56C9; --u-pri-ink:#2F5FD6; --u-tint:#E9EFFD; --u-tint2:#D6E1FB;
+  --u-ok:#12A27D; --u-bad:#E5484D; --u-warn:#D9921F; --u-gold:#F5B03E; --u-violet:#7A5AF0;
+  --u-glow:rgba(59,111,232,.12);
+  --u-shadow:0 1px 2px rgba(30,42,94,.04),0 10px 28px rgba(30,42,94,.07);
+  --u-glass:rgba(255,255,255,.92);
+  color-scheme:light;
+}
+html[data-theme="dark"]{
+  --u-bg:#080D29; --u-card:#121A48; --u-soft:#18225A; --u-field:#0E1540;
+  --u-ink:#EEF2FF; --u-ink2:#D5DCFA; --u-sub:#B0BAE8; --u-mute:#7E8BC6;
+  --u-line:rgba(150,175,255,.13); --u-line2:rgba(150,175,255,.24);
+  --u-pri:#6C95FF; --u-pri-d:#4F7BF0; --u-pri-ink:#8FB0FF; --u-tint:#1A2560; --u-tint2:#22307A;
+  --u-ok:#34D9A5; --u-bad:#FF8A78; --u-warn:#F5B03E; --u-gold:#F5B03E; --u-violet:#A58BFF;
+  --u-glow:rgba(59,111,232,.30);
+  --u-shadow:0 1px 2px rgba(0,0,10,.40),0 14px 32px rgba(0,0,10,.40);
+  --u-glass:rgba(18,26,72,.92);
+  color-scheme:dark;
+}
+
+/* ---- legacy app tokens (index.html, phase1, experience studio, profile) ---- */
+html[data-theme]{
+  --emerald:var(--u-pri)!important; --emerald-d:var(--u-pri-d)!important; --mint:var(--u-tint)!important;
+  --bg:var(--u-bg)!important; --card:var(--u-card)!important; --text:var(--u-ink)!important;
+  --sub:var(--u-sub)!important; --line:var(--u-line)!important; --green:var(--u-ok)!important;
+  --red:var(--u-bad)!important; --orange:var(--u-warn)!important;
+  --accent:var(--u-pri)!important; --accent-soft:var(--u-tint)!important;
+  --shadow:var(--u-shadow)!important; --upgrade-shadow:var(--u-shadow)!important;
+  --glass-bg:var(--u-glass)!important; --glass-strong:var(--u-glass)!important;
+  --glass-border:var(--u-line)!important; --glass-shadow:var(--u-shadow)!important;
+  --pp-emerald:var(--u-pri)!important; --pp-emerald-deep:var(--u-pri-d)!important;
+  --pp-emerald-soft:var(--u-tint)!important; --pp-emerald-mid:var(--u-tint2)!important;
+  --pp-ink:var(--u-ink)!important; --pp-line:var(--u-line)!important; --pp-card:var(--u-card)!important;
+  --pp-soft:var(--u-soft)!important; --pp-input:var(--u-field)!important; --pp-fine:var(--u-sub)!important;
+}
+/* ---- account / auth surfaces ---- */
+html[data-theme] .ah-account-shell,html[data-theme] .ah-account-page{
+  --ah-ink:var(--u-ink)!important; --ah-ink-mid:var(--u-ink2)!important; --ah-ink-soft:var(--u-sub)!important;
+  --ah-ink-muted:var(--u-mute)!important; --ah-brand-ink:var(--u-pri-ink)!important; --ah-brand-fill:var(--u-pri)!important;
+  --ah-brand-line:var(--u-line2)!important; --ah-surface:var(--u-card)!important; --ah-surface-alt:var(--u-soft)!important;
+  --ah-line:var(--u-line)!important; --ah-line-strong:var(--u-line2)!important; --ah-mint:var(--u-pri)!important;
+  --ah-mint-dark:var(--u-pri-d)!important; --ah-paper:var(--u-card)!important;
+  --ah-accent-fill:var(--u-violet)!important; --ah-info-fill:var(--u-pri)!important;
+}
+html[data-theme="dark"] .ah-account-shell,html[data-theme="dark"] .ah-account-page{
+  --ah-info-soft:#16245E!important; --ah-warn-soft:#2E2A3A!important; --ah-danger-soft:#3A1F3A!important; --ah-accent-soft:#241F5E!important;
+}
+html[data-theme="light"] .ah-account-shell,html[data-theme="light"] .ah-account-page{
+  --ah-info-soft:#E9EFFD!important; --ah-accent-soft:#EFEAFE!important;
+}
+/* ---- Sky AI chat ---- */
+html[data-theme] #app.sky{
+  --bg:var(--u-bg)!important; --surf:var(--u-card)!important; --ink:var(--u-ink)!important; --mute:var(--u-sub)!important;
+  --line:var(--u-line)!important; --soft:var(--u-tint)!important; --field:var(--u-field)!important; --field-line:var(--u-line2)!important;
+  --pri:var(--u-pri)!important; --ok:var(--u-ok)!important; --bad:var(--u-bad)!important; --sh:var(--u-shadow)!important;
+  --grad:linear-gradient(135deg,var(--u-pri),#5AA9FF)!important;
+}
+html[data-theme="dark"] #app.sky{--chart-grid:#24305C!important}
+/* ---- Question Bank ---- */
+html[data-theme] #qbc{
+  --bg:var(--u-bg)!important; --card:var(--u-card)!important; --ink:var(--u-ink)!important; --mute:var(--u-sub)!important;
+  --line:var(--u-line)!important; --pri:var(--u-pri)!important; --soft:var(--u-tint)!important; --ok:var(--u-ok)!important;
+  --bad:var(--u-bad)!important; --sh:var(--u-shadow)!important; --glass:var(--u-glass)!important;
+}
+html[data-theme="dark"] #qbc{--okbg:#0E2E3A!important; --badbg:#3A1C33!important}
+/* ---- Notes ---- */
+html[data-theme] .ntx{
+  --p:var(--u-pri)!important; --navy:var(--u-ink)!important; --bg:var(--u-bg)!important; --sol:var(--u-card)!important;
+  --mut:var(--u-sub)!important; --ln:var(--u-line)!important; --chip:var(--u-tint)!important; --ok:var(--u-ok)!important;
+  --bad:var(--u-bad)!important; --cs:var(--u-shadow)!important;
+}
+
+/* ---- base surfaces ---- */
+html[data-theme],html[data-theme] body{background-color:var(--u-bg)!important;color:var(--u-ink)}
+html[data-theme] body{background-image:radial-gradient(120% 46% at 50% -8%,var(--u-glow),transparent 62%);background-repeat:no-repeat;background-attachment:fixed}
+html[data-theme] ::selection{background:var(--u-tint2);color:var(--u-ink)}
+
+/* ---- form controls ---- */
+html[data-theme] input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]),
+html[data-theme] textarea,html[data-theme] select{color:var(--u-ink)!important;caret-color:var(--u-pri)}
+html[data-theme] input::placeholder,html[data-theme] textarea::placeholder{color:var(--u-mute)!important;opacity:1}
+html[data-theme] input:focus,html[data-theme] textarea:focus,html[data-theme] select:focus{
+  border-color:var(--u-pri)!important;outline:none;box-shadow:0 0 0 3px color-mix(in srgb,var(--u-pri) 22%,transparent)!important}
+html[data-theme] select option{background:var(--u-card);color:var(--u-ink)}
+html[data-theme] input:-webkit-autofill,html[data-theme] textarea:-webkit-autofill{
+  -webkit-text-fill-color:var(--u-ink)!important;-webkit-box-shadow:0 0 0 1000px var(--u-field) inset!important;transition:background-color 9999s}
+html[data-theme] input[type="checkbox"],html[data-theme] input[type="radio"],html[data-theme] input[type="range"],html[data-theme] progress{accent-color:var(--u-pri)}
+html[data-theme] hr{border-color:var(--u-line)}
+html[data-theme] *{scrollbar-color:var(--u-line2) transparent}
+
+/* ---- welcome story + bird sign-up / log-in flow ---- */
+html[data-theme="dark"] #ah-welcome-story,html[data-theme="dark"] #ah-sky-flow{
+  --t:#0E1540!important; --p:#6C95FF!important; --ink:#EEF2FF!important; --mut:#B0BAE8!important;
+  --ln:rgba(150,175,255,.14)!important; --ok:#34D9A5!important; --er:#FF8A78!important;
+  background:var(--u-bg)!important; color:var(--u-ink)!important}
+html[data-theme="dark"] #ah-welcome-story .app,html[data-theme="dark"] #ah-sky-flow .app{
+  background:radial-gradient(120% 46% at 50% -8%,var(--u-glow),transparent 62%),var(--u-bg)!important}
+html[data-theme="dark"] #ah-welcome-story .auth{
+  background:radial-gradient(120% 55% at 90% 0%,rgba(108,149,255,.22),transparent 60%),radial-gradient(90% 45% at 0% 100%,rgba(165,139,255,.16),transparent 60%),var(--u-bg)!important}
+html[data-theme="dark"] #ah-welcome-story .scr{background:var(--u-bg)!important}
+html[data-theme="dark"] #ah-welcome-story .deskbg{background:linear-gradient(180deg,#0E1540,#080D29)!important}
+html[data-theme="dark"] #ah-welcome-story .cl{background:#22307A!important;opacity:.35!important}
+html[data-theme="dark"] #ah-welcome-story .b.s{background:linear-gradient(var(--u-card),var(--u-card)) padding-box,linear-gradient(120deg,#4F6FD0,#6E5BC8,#B08A3E) border-box!important}
+html[data-theme="dark"] #ah-welcome-story .b.s .gi,html[data-theme="dark"] #ah-welcome-story .b.s .ar,html[data-theme="dark"] #ah-welcome-story .so .b i{background:var(--u-tint)!important}
+html[data-theme="dark"] #ah-welcome-story .go:not(.lit){background:rgba(18,26,72,.7)!important;color:var(--u-sub)!important}
+html[data-theme="dark"] #ah-welcome-story .toast,html[data-theme="dark"] #ah-sky-flow .toast{background:#EEF2FF!important;color:#080D29!important}
+html[data-theme="dark"] #ah-sky-flow .back{background:var(--u-card)!important}
+html[data-theme="light"] #ah-welcome-story,html[data-theme="light"] #ah-sky-flow{--ink:#111B4B!important;--mut:#525E93!important}
