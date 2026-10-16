@@ -1,0 +1,189 @@
+name: Apply OTP audit hardening 2026-10-16
+
+# Owner order 2026-10-16 (audit, owner cannot use the admin panel):
+#  1. otp-f (MailerSend, 0% success, HTTP 422) is switched off in code.
+#  2. Code TTL floor 600s even if a saved panel policy says 300s.
+#  3. A PROVIDER_TIMEOUT hands over to the next slot (no second wait); Brevo otp-a
+#     timeout capped at 8s.
+#  4. hotmail/live/msn/ymail/rocketmail/yahoo.co.in/yahoo.co.uk/me/mac always allowed
+#     on top of a saved non-empty allowlist (empty list stays unrestricted).
+#  5. wrangler.toml comment no longer trips the email-gateway credential guard.
+# Runs the broad suites before and after the edit and fails on any NEW failure.
+# Commits to the SAME branch. Never touches main, never deploys.
+
+on:
+  push:
+    branches: [fix/otp-audit-hardening]
+    paths:
+      - '.github/workflows/apply-otp-audit-hardening-20261016.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-otp-audit-hardening-20261016
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: github.ref_name == 'fix/otp-audit-hardening'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: fix/otp-audit-hardening
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install
+        run: npm ci
+      - name: Baseline broad suites (before edit)
+        run: |
+          node --test --test-concurrency=1 verification-admin.test.mjs email-gateway.test.mjs email-gateway-failover.test.mjs email-gateway-integration.test.mjs email-gateway-security.test.mjs auth-foundation.test.mjs auth-foundation-chaos.test.mjs compact-auth-config.test.mjs native-auth-protection.test.mjs email-policy.test.mjs > /tmp/base.log 2>&1 || true
+          grep -E '^\s*not ok [0-9]+ - ' /tmp/base.log | sed -E 's/^\s*not ok [0-9]+ - //' | sort -u > /tmp/base.txt || true
+          echo "baseline failures: $(wc -l < /tmp/base.txt)"; cat /tmp/base.txt
+      - name: Apply audit hardening
+        run: |
+          set -eu
+          python3 - <<'PY'
+          import re
+          p = 'auth-native/verification/config.mjs'
+          s = open(p, encoding='utf-8').read()
+          if 'CODE_DISABLED_SLOTS' not in s:
+              anchor = "export const OWNER_ALLOWED_DOMAINS = Object.freeze(['gmail.com', 'yahoo.com', 'icloud.com', 'outlook.com']);\n"
+              assert s.count(anchor) == 1
+              s = s.replace(anchor, anchor + (
+                  "// Owner 2026-10-16 (audit): other real consumer mailboxes students use. They are\n"
+                  "// added on top of any saved (non-empty) list, so an old admin-panel save that only\n"
+                  "// holds the four domains above cannot lock these students out.\n"
+                  "export const ALWAYS_ALLOWED_DOMAINS = Object.freeze(['hotmail.com', 'live.com', 'msn.com', 'ymail.com', 'rocketmail.com', 'yahoo.co.in', 'yahoo.co.uk', 'me.com', 'mac.com']);\n"
+                  "// Owner 2026-10-16 (audit): MailerSend (otp-f) never delivered (0% success, HTTP 422).\n"
+                  "// It is switched off in code so a stale admin-panel toggle cannot turn it back on.\n"
+                  "const CODE_DISABLED_SLOTS = new Set(['otp-f']);\n"
+                  "// Brevo (otp-a) is one fast API call; a hung request must hand over within 8s\n"
+                  "// instead of holding a Gmail student for the panel's 15s (twice, with a retry).\n"
+                  "const SLOT_TIMEOUT_CAP_MS = Object.freeze({ 'otp-a': 8_000 });\n"
+                  "// Some mailers deliver late; a code must stay valid for the 10-minute maximum even\n"
+                  "// when an older admin-panel save still says 300s.\n"
+                  "const MIN_CODE_TTL_SECONDS = 600;\n"))
+              o = "    codeTtlSeconds: int(policyInput.codeTtlSeconds, DEFAULT_POLICY.codeTtlSeconds, 60, 600),"
+              assert s.count(o) == 1
+              s = s.replace(o, "    codeTtlSeconds: Math.max(MIN_CODE_TTL_SECONDS, int(policyInput.codeTtlSeconds, DEFAULT_POLICY.codeTtlSeconds, 60, 600)),")
+              o = "      enabled: bool(row.enabled),"
+              assert s.count(o) == 1
+              s = s.replace(o, "      enabled: bool(row.enabled) && !CODE_DISABLED_SLOTS.has(id),")
+              o = "      timeoutMs: int(row.timeoutMs, 8_000, 1_000, 20_000),"
+              assert s.count(o) == 1
+              s = s.replace(o, "      timeoutMs: Math.min(int(row.timeoutMs, 8_000, 1_000, 20_000), SLOT_TIMEOUT_CAP_MS[id] || 20_000),")
+              start = s.index("  const allowedDomains = Object.freeze((Array.isArray(input.allowedDomains)")
+              end = s.index(".slice(0, 200));", start) + len(".slice(0, 200));")
+              s = s[:start] + (
+                  "  const baseDomains = Array.isArray(input.allowedDomains) ? input.allowedDomains : OWNER_ALLOWED_DOMAINS;\n"
+                  "  const allowedDomains = Object.freeze([...new Set((baseDomains.length ? [...baseDomains, ...ALWAYS_ALLOWED_DOMAINS] : [])\n"
+                  "    .map(value => String(value || '').trim().toLowerCase().replace(/^\\.+/, ''))\n"
+                  "    .filter(value => /^[a-z0-9.-]+$/.test(value) && value.length <= 253))].slice(0, 200));") + s[end:]
+          open(p, 'w', encoding='utf-8').write(s)
+
+          p = 'auth-native/verification/orchestrator.mjs'
+          s = open(p, encoding='utf-8').read()
+          o = "          if (failure.failureClass === VERIFICATION_FAILURE_CLASS.HARD || providerState.circuit === 'open') break;\n"
+          n = ("          // Owner 2026-10-16 (audit): a provider that timed out hands over to the next slot\n"
+               "          // at once instead of making the student wait for a second timeout.\n"
+               "          if (failure.failureClass === VERIFICATION_FAILURE_CLASS.HARD || providerState.circuit === 'open' || failure.code === 'PROVIDER_TIMEOUT') break;\n")
+          if "failure.code === 'PROVIDER_TIMEOUT') break;" not in s:
+              assert s.count(o) == 1, 'orchestrator anchor'
+              s = s.replace(o, n)
+          open(p, 'w', encoding='utf-8').write(s)
+
+          p = 'wrangler.toml'
+          s = open(p, encoding='utf-8').read()
+          s = s.replace('Optional secret APPWRITE_API_KEY.', 'Optional Appwrite server key (bound as a secret, never here).')
+          open(p, 'w', encoding='utf-8').write(s)
+
+          t = 'verification-orchestrator.test.mjs'
+          y = open(t, encoding='utf-8').read()
+          y = y.replace("policy: { codeTtlSeconds: 240, maxAttempts: 4, apiKey: 'must-not-persist' },", "policy: { codeTtlSeconds: 240, maxAttempts: 4, apiKey: 'must-not-persist' }, // TTL floor lifts 240 to 600")
+          y = y.replace("assert.equal(updated.policy.codeTtlSeconds, 240);", "assert.equal(updated.policy.codeTtlSeconds, 600);")
+          y = y.replace("const mailersend = new MockProvider({ id: 'otp-f' });", "const mailersend = new MockProvider({ id: 'otp-d' });")
+          y = y.replace("const first = new MockProvider({ id: 'otp-f', sendPlan: ['user'] });", "const first = new MockProvider({ id: 'otp-d', sendPlan: ['user'] });")
+          marker = 'owner 2026-10-16 (audit)'
+          if marker not in y:
+              y = y.rstrip('\n') + '\n' + r'''
+          test('owner 2026-10-16 (audit): MailerSend otp-f stays off even when a saved config enables it', async () => {
+            const mailersend = new MockProvider({ id: 'otp-f' });
+            const brevo = new MockProvider({ id: 'otp-a' });
+            const app = setup({ providers: [mailersend, brevo] });
+            await app.orchestrator.requestVerification(identity, context);
+            assert.equal(mailersend.sends.length, 0, 'otp-f is never tried');
+            assert.equal(brevo.sends.length, 1);
+          });
+
+          test('owner 2026-10-16 (audit): a code lives 10 minutes even if a saved policy says 300s', async () => {
+            const provider = new MockProvider({ id: 'otp-a' });
+            const app = setup({ providers: [provider], config: rawConfig([provider], { codeTtlSeconds: 300 }) });
+            const requested = await app.orchestrator.requestVerification(identity, context);
+            app.advance(400_000);
+            const verified = await app.orchestrator.verify({ ...identity, attemptId: requested.attemptId, code: provider.sends[0].code }, context);
+            assert.ok(verified);
+          });
+
+          test('owner 2026-10-16 (audit): hotmail/live/ymail pass a saved four-domain allowlist; junk still refused', async () => {
+            const provider = new MockProvider({ id: 'otp-a' });
+            const app = setup({ providers: [provider], config: allowConfig([provider], ['gmail.com', 'yahoo.com', 'icloud.com', 'outlook.com']) });
+            const hot = ownershipIdentity('student@hotmail.com');
+            assert.equal((await app.orchestrator.requestVerification(hot, context)).accepted, true);
+            await expectCode(() => app.orchestrator.requestVerification(ownershipIdentity('student@mailinator.com'), context), AUTH_ERROR_CODES.INVALID_INPUT);
+          });
+
+          test('owner 2026-10-16 (audit): a timed-out provider hands over without a same-provider retry', async () => {
+            const slow = new MockProvider({ id: 'otp-a' });
+            slow.sendVerification = async input => { slow.sends.push(input); return new Promise(() => {}); };
+            const next = new MockProvider({ id: 'otp-b' });
+            const config = rawConfig([slow, next]);
+            config.providers = config.providers.map(row => ({ ...row, timeoutMs: 1000 }));
+            const app = setup({ providers: [slow, next], config });
+            const result = await app.orchestrator.requestVerification(identity, context);
+            assert.equal(result.accepted, true);
+            assert.equal(slow.sends.length, 1, 'no second wait on the hung provider');
+            assert.equal(next.sends.length, 1);
+          });
+
+          test('owner 2026-10-16 (audit): Brevo otp-a timeout is capped at 8s', async () => {
+            const { verificationConfig } = await import('./auth-native/verification/config.mjs');
+            const cfg = verificationConfig({ providers: [{ id: 'otp-a', enabled: true, dailyQuota: 300, timeoutMs: 15000 }, { id: 'otp-b', enabled: true, dailyQuota: 100, timeoutMs: 20000 }] });
+            assert.equal(cfg.providers.find(row => row.id === 'otp-a').timeoutMs, 8000);
+            assert.equal(cfg.providers.find(row => row.id === 'otp-b').timeoutMs, 20000);
+          });
+          '''
+          open(t, 'w', encoding='utf-8').write(y)
+          PY
+          git diff --stat
+      - name: Rebuild and verify the Worker bundle
+        run: |
+          set -eu
+          npm run build:worker
+          npm run check:worker-bundle
+      - name: Verification tests (must all pass)
+        run: node --test --test-concurrency=1 verification-providers.test.mjs verification-orchestrator.test.mjs free-tier-failover.test.mjs backup-public-handler.test.mjs email-branding.test.mjs
+      - name: Broad suites must not gain a failure
+        run: |
+          node --test --test-concurrency=1 verification-admin.test.mjs email-gateway.test.mjs email-gateway-failover.test.mjs email-gateway-integration.test.mjs email-gateway-security.test.mjs auth-foundation.test.mjs auth-foundation-chaos.test.mjs compact-auth-config.test.mjs native-auth-protection.test.mjs email-policy.test.mjs > /tmp/after.log 2>&1 || true
+          grep -E '^\s*not ok [0-9]+ - ' /tmp/after.log | sed -E 's/^\s*not ok [0-9]+ - //' | sort -u > /tmp/after.txt || true
+          echo "after failures: $(wc -l < /tmp/after.txt)"
+          comm -13 /tmp/base.txt /tmp/after.txt > /tmp/new.txt
+          if [ -s /tmp/new.txt ]; then echo 'NEW failures:'; cat /tmp/new.txt; exit 1; fi
+          echo 'fixed by this change:'; comm -23 /tmp/base.txt /tmp/after.txt
+      - name: Commit and push to the feature branch
+        run: |
+          set -eu
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add auth-native/verification/config.mjs auth-native/verification/orchestrator.mjs verification-orchestrator.test.mjs wrangler.toml worker-bundle.mjs
+          if git diff --cached --quiet; then echo 'Nothing to commit (already applied).'; else
+            git commit -m 'fix(otp): audit hardening - otp-f off, TTL 600, timeout handover, more freemail domains' -m 'Applied by apply-otp-audit-hardening-20261016.yml. No deploy.'
+            git push origin HEAD:fix/otp-audit-hardening
+          fi
