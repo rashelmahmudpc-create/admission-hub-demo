@@ -59,7 +59,7 @@
     if (app) app.setAttribute('data-sky-theme', r);
     syncThemeBtns(r);
     try {
-      const c = r === 'dark' ? '#080D29' : '#F4F6FD';
+      const c = r === 'dark' ? '#0B1020' : '#F6F9FF';
       document.querySelectorAll('meta[name="theme-color"]').forEach((m) => m.setAttribute('content', c));
     } catch (_) {}
   }

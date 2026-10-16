@@ -749,8 +749,9 @@ var mq=window.matchMedia('(prefers-color-scheme: dark)');
 function isDark(){var t=document.documentElement.getAttribute('data-theme');return t?t==='dark':mq.matches}
 function paintThemeIcon(){var el=$('#themeIcon');if(el)el.innerHTML=icon(isDark()?'sun':'moon',false)}
 function syncTheme(){
-  var mode='light';try{mode=parent.AhAppearance&&parent.AhAppearance.resolved?parent.AhAppearance.resolved():'dark'}catch(_){}
-  document.documentElement.setAttribute('data-theme',mode==='light'?'light':'dark');
+  var mode='light';try{mode=parent.AhAppearance&&parent.AhAppearance.resolved?parent.AhAppearance.resolved():'light'}catch(_){}
+  if(mode==='dark')document.documentElement.setAttribute('data-theme','dark');
+  else document.documentElement.removeAttribute('data-theme');
   paintThemeIcon();paintChrome();
 }
 function paintChrome(){
