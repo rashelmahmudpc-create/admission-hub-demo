@@ -27,6 +27,8 @@ import { aiStateStore, AI_STATE_VERSION } from './ai-state-do.mjs';
  * the existing analytics one, which already owns the `ai_cache` table. */
 import { AiAnalyticsStore } from './ai-analytics-store.mjs';
 import { chatCacheEnabled, isCacheableRequest, chatCacheKey, chatCacheTtl } from './ai-chat-cache.mjs';
+/* P26 — difficulty-aware tier routing (step 2 of the AI cost plan). */
+import { routeTier, assessDifficulty } from './ai-tier-router.mjs';
 
 export const AGENT_VERSION = 'agent-f1';
 export const SYSTEM_PROMPT_V = 'sys-f1-3-ai-personalization';
@@ -951,7 +953,12 @@ export async function agentChat(request, env, uid, opts = {}) {
 
   const intentCls = classifyIntent(v.messages[v.messages.length - 1].content);
   const intent = intentCls.intent;
-  const tier = intentCls.tier;
+  const baseTier = intentCls.tier;
+  /* P26: a provably simple academic question goes to the FAST model even though
+     the classifier called it academic. This can only lower spend — it never
+     upgrades a tier — so the worst case is a correct but cheaper answer. */
+  const routing = routeTier(intent, v.messages[v.messages.length - 1].content, baseTier);
+  const tier = routing.tier;
   const quizMode = intent === INTENTS.QUIZ_REQUEST;
   const examMode = body.context && body.context.examMode === 'mock-running' ? 'mock-running' : '';
   const stats = capStats(body.context && body.context.stats);

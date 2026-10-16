@@ -1834,6 +1834,54 @@ function chatCacheTtl(intent) {
 }
 var __chatCacheTest = Object.freeze({ digest, BN_DIGITS });
 
+// ai-tier-router.mjs
+var DIFFICULTY = Object.freeze({ SIMPLE: "simple", COMPLEX: "complex" });
+var HARD_MARKERS = [
+  /পার্থক্য|তুলনা|তুলনামূলক/u,
+  // compare / contrast
+  /\bdifference\b|\bcompare\b|\bcontrast\b|\bversus\b|\bvs\.?\b/,
+  /কেন(?![\p{L}\p{M}])|কী কারণে|কারণ কী/u,
+  // why / for what reason
+  /\bwhy\b|\bexplain why\b/,
+  /প্রমাণ|সিদ্ধ/u,
+  // prove
+  /\bprove\b|\bderive\b|\bderivation\b/,
+  /বের করো|গণনা|হিসাব করো|সমাধান করো/u,
+  // calculate / solve
+  /\bcalculate\b|\bcompute\b|\bsolve\b/,
+  /ধাপে ধাপে|স্তরে স্তরে|পদক্ষেপ/u,
+  // step by step
+  /\bstep by step\b|\bstep-by-step\b|\bshow your work\b/,
+  /এবং|তারপর|তার সাথে|পাশাপাশি/u,
+  // multi-part conjunctions
+  /\bexplain in detail\b|\bin detail\b|\belaborate\b/
+];
+var SIMPLE_MAX_WORDS = 14;
+function assessDifficulty(text) {
+  const raw = String(text == null ? "" : text);
+  const t = raw.toLowerCase().replace(/\s+/g, " ").trim();
+  if (!t) return { level: DIFFICULTY.COMPLEX, reason: "empty" };
+  const words = t.split(" ").filter(Boolean);
+  if (words.length > SIMPLE_MAX_WORDS) {
+    return { level: DIFFICULTY.COMPLEX, reason: "long:" + words.length };
+  }
+  const marks = (raw.match(/[?？]/g) || []).length;
+  if (marks > 1) return { level: DIFFICULTY.COMPLEX, reason: "multi-part" };
+  for (const re of HARD_MARKERS) {
+    if (re.test(t)) return { level: DIFFICULTY.COMPLEX, reason: "marker:" + re.source.slice(0, 24) };
+  }
+  return { level: DIFFICULTY.SIMPLE, reason: "short-single" };
+}
+function routeTier(intent, text, baseTier) {
+  const tier = String(baseTier || "");
+  if (tier !== "SMART") return { tier, downgraded: false, reason: "not-smart" };
+  if (intent !== "ACADEMIC_EXPLAIN") return { tier, downgraded: false, reason: "intent-kept" };
+  const d = assessDifficulty(text);
+  if (d.level !== DIFFICULTY.SIMPLE) return { tier, downgraded: false, reason: d.reason };
+  return { tier: "FAST", downgraded: true, reason: d.reason };
+}
+var __tierTest = Object.freeze({ HARD_MARKERS, SIMPLE_MAX_WORDS });
+
 // ai-agent.js
 var AGENT_VERSION = "agent-f1";
 var SYSTEM_PROMPT_V = "sys-f1-3-ai-personalization";
@@ -2646,7 +2694,9 @@ async function agentChat(request, env, uid, opts = {}) {
   if (verificationGuidance) return guidanceResponse(verificationGuidance, stream);
   const intentCls = classifyIntent(v.messages[v.messages.length - 1].content);
   const intent = intentCls.intent;
-  const tier = intentCls.tier;
+  const baseTier = intentCls.tier;
+  const routing = routeTier(intent, v.messages[v.messages.length - 1].content, baseTier);
+  const tier = routing.tier;
   const quizMode = intent === INTENTS.QUIZ_REQUEST;
   const examMode = body.context && body.context.examMode === "mock-running" ? "mock-running" : "";
   const stats = capStats(body.context && body.context.stats);
