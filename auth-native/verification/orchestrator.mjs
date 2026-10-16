@@ -418,6 +418,8 @@ export class VerificationOrchestrator {
             }
             break;
           }
+          // Owner 2026-10-16: a timed-out mailer is not retried; the next slot sends at once.
+          if (failure.code === 'PROVIDER_TIMEOUT') break;
           if (failure.failureClass === VERIFICATION_FAILURE_CLASS.HARD || providerState.circuit === 'open') break;
         }
       }

@@ -9546,11 +9546,23 @@ function safeJson(raw) {
   }
 }
 var OWNER_ALLOWED_DOMAINS = Object.freeze(["gmail.com", "yahoo.com", "icloud.com", "outlook.com"]);
+var CODE_DISABLED_SLOTS = /* @__PURE__ */ new Set(["otp-f"]);
+var SLOT_TIMEOUT_CAP_MS = Object.freeze({ "otp-a": 8e3 });
+var MIN_CODE_TTL_SECONDS = 600;
+var ALWAYS_ALLOWED_DOMAINS = Object.freeze(["hotmail.com", "live.com", "msn.com", "ymail.com", "rocketmail.com", "yahoo.co.in", "yahoo.co.uk", "me.com", "mac.com"]);
+var withAlwaysAllowed = (list) => list.length ? [...list, ...ALWAYS_ALLOWED_DOMAINS] : list;
+function withMissingSlotsFrom(primary, fallbackRaw) {
+  if (!primary || typeof primary !== "object" || !Array.isArray(primary.providers)) return primary;
+  const fallback = typeof fallbackRaw === "string" ? safeJson(fallbackRaw) : fallbackRaw && typeof fallbackRaw === "object" ? fallbackRaw : {};
+  const have = new Set(primary.providers.map((row) => String(row?.id || "")));
+  const extra = (Array.isArray(fallback.providers) ? fallback.providers : []).filter((row) => row && !have.has(String(row.id || "")));
+  return extra.length ? { ...primary, providers: [...primary.providers, ...extra] } : primary;
+}
 function verificationConfig(raw) {
   const input = typeof raw === "string" ? safeJson(raw) : raw && typeof raw === "object" ? raw : {};
   const policyInput = input.policy && typeof input.policy === "object" ? input.policy : {};
   const policy = Object.freeze({
-    codeTtlSeconds: int(policyInput.codeTtlSeconds, DEFAULT_POLICY.codeTtlSeconds, 60, 600),
+    codeTtlSeconds: Math.max(MIN_CODE_TTL_SECONDS, int(policyInput.codeTtlSeconds, DEFAULT_POLICY.codeTtlSeconds, 60, 600)),
     maxAttempts: int(policyInput.maxAttempts, DEFAULT_POLICY.maxAttempts, 1, 5),
     resendCooldownSeconds: int(policyInput.resendCooldownSeconds, DEFAULT_POLICY.resendCooldownSeconds, 30, 600),
     lockoutSeconds: int(policyInput.lockoutSeconds, DEFAULT_POLICY.lockoutSeconds, 60, 86400),
@@ -9567,14 +9579,14 @@ function verificationConfig(raw) {
       id,
       channel: slot.channel,
       verificationMode: slot.verificationMode,
-      enabled: bool(row.enabled),
+      enabled: bool(row.enabled) && !CODE_DISABLED_SLOTS.has(id),
       priority: int(row.priority, slot.priority, 1, 1e4),
       dailyQuota: int(row.dailyQuota, 0, 0, 1e7),
-      timeoutMs: int(row.timeoutMs, 8e3, 1e3, 2e4),
+      timeoutMs: Math.min(int(row.timeoutMs, 8e3, 1e3, 2e4), SLOT_TIMEOUT_CAP_MS[id] || 2e4),
       label: cleanReason(row.label) || id.toUpperCase()
     });
   }).sort((left, right) => left.priority - right.priority || left.id.localeCompare(right.id));
-  const allowedDomains = Object.freeze((Array.isArray(input.allowedDomains) ? input.allowedDomains : OWNER_ALLOWED_DOMAINS).map((value) => String(value || "").trim().toLowerCase().replace(/^\.+/, "")).filter((value) => /^[a-z0-9.-]+$/.test(value) && value.length <= 253).slice(0, 200));
+  const allowedDomains = Object.freeze([...new Set(withAlwaysAllowed(Array.isArray(input.allowedDomains) ? input.allowedDomains : OWNER_ALLOWED_DOMAINS).map((value) => String(value || "").trim().toLowerCase().replace(/^\.+/, "")).filter((value) => /^[a-z0-9.-]+$/.test(value) && value.length <= 253))].slice(0, 200));
   return Object.freeze({
     enabled: bool(input.enabled),
     policy,
@@ -22853,6 +22865,7 @@ var VerificationOrchestrator = class {
             }
             break;
           }
+          if (failure.code === "PROVIDER_TIMEOUT") break;
           if (failure.failureClass === VERIFICATION_FAILURE_CLASS.HARD || providerState.circuit === "open") break;
         }
       }
@@ -26232,7 +26245,7 @@ var AdmissionAuthAuthority = class {
       this.verification = new VerificationOrchestrator({
         repository: this.verificationRepository,
         hmacSecret: env.AUTH_HMAC_SECRET,
-        config: persistedVerificationConfig || env.VERIFICATION_ORCHESTRATOR_CONFIG,
+        config: withMissingSlotsFrom(persistedVerificationConfig, env.VERIFICATION_ORCHESTRATOR_CONFIG) || env.VERIFICATION_ORCHESTRATOR_CONFIG,
         providers: createConfiguredVerificationProviders(env),
         activated: ["canary", "enabled"].includes(String(env.VERIFICATION_AUTH_ACTIVATION || ""))
       });

@@ -472,7 +472,7 @@ test('safe admin policy updates persist only normalized non-secret fields', asyn
     policy: { codeTtlSeconds: 240, maxAttempts: 4, apiKey: 'must-not-persist' },
     providers: [{ id: 'otp-a', enabled: true, priority: 77, dailyQuota: 12, token: 'must-not-persist' }]
   });
-  assert.equal(updated.policy.codeTtlSeconds, 240);
+  assert.equal(updated.policy.codeTtlSeconds, 600, 'code TTL never drops below 10 minutes');
   assert.equal(updated.policy.maxAttempts, 4);
   assert.equal(updated.providers.find(row => row.id === 'otp-a').priority, 77);
   const persisted = await app.repository.getRuntimeConfig();
@@ -688,7 +688,7 @@ test('owner 2026-10-16 (Logto first): a Gmail recipient keeps Brevo first', asyn
 });
 
 test('owner 2026-10-16 (user-error failover): a provider 422 fails over to the next slot', async () => {
-  const mailersend = new MockProvider({ id: 'otp-f' });
+  const mailersend = new MockProvider({ id: 'otp-d' });
   mailersend.sendVerification = async input => {
     mailersend.sends.push(input);
     throw new VerificationProviderError('PROVIDER_HTTP_422', VERIFICATION_FAILURE_CLASS.USER);
@@ -702,9 +702,41 @@ test('owner 2026-10-16 (user-error failover): a provider 422 fails over to the n
 });
 
 test('owner 2026-10-16 (user-error failover): an invalid destination still stops the request', async () => {
-  const first = new MockProvider({ id: 'otp-f', sendPlan: ['user'] });
+  const first = new MockProvider({ id: 'otp-d', sendPlan: ['user'] });
   const second = new MockProvider({ id: 'otp-h', verificationMode: VERIFICATION_MODES.PROVIDER_EVIDENCE });
   const app = setup({ providers: [first, second] });
   await expectCode(() => app.orchestrator.requestVerification(identity, context), AUTH_ERROR_CODES.INVALID_INPUT);
   assert.equal(second.sends.length, 0);
+});
+
+test('owner 2026-10-16 (signin hardening): MailerSend otp-f stays off even when the panel enables it', async () => {
+  const mailersend = new MockProvider({ id: 'otp-f' });
+  const next = new MockProvider({ id: 'otp-g' });
+  const app = setup({ providers: [mailersend, next] });
+  await app.orchestrator.requestVerification(identity, context);
+  assert.equal(mailersend.sends.length, 0, 'otp-f is disabled in code');
+  assert.equal(next.sends.length, 1);
+});
+
+test('owner 2026-10-16 (signin hardening): a provider timeout hands over to the next slot without a retry', async () => {
+  const slow = new MockProvider({ id: 'otp-a' });
+  slow.sendVerification = async input => {
+    slow.sends.push(input);
+    throw new VerificationProviderError('PROVIDER_TIMEOUT', VERIFICATION_FAILURE_CLASS.TEMPORARY);
+  };
+  const next = new MockProvider({ id: 'otp-b' });
+  const app = setup({ providers: [slow, next] });
+  const result = await app.orchestrator.requestVerification(identity, context);
+  assert.equal(result.accepted, true);
+  assert.equal(slow.sends.length, 1, 'no second wait on the same slow mailer');
+  assert.equal(next.sends.length, 1);
+});
+
+test('owner 2026-10-16 (signin hardening): hotmail and ymail students can take an email-ownership OTP', async () => {
+  for (const email of ['student@hotmail.com', 'student@ymail.com', 'student@yahoo.co.in']) {
+    const provider = new MockProvider({ id: 'otp-a' });
+    const app = setup({ providers: [provider], config: allowConfig([provider], ['gmail.com', 'yahoo.com', 'icloud.com', 'outlook.com']) });
+    const result = await app.orchestrator.requestVerification(ownershipIdentity(email), context);
+    assert.equal(result.accepted, true, email);
+  }
 });

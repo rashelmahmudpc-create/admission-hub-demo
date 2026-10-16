@@ -55,11 +55,32 @@ function safeJson(raw) {
 // opts out (unrestricted).
 export const OWNER_ALLOWED_DOMAINS = Object.freeze(['gmail.com', 'yahoo.com', 'icloud.com', 'outlook.com']);
 
+// Owner 2026-10-16 (code-enforced; wins over the persisted admin-panel config).
+// otp-f MailerSend never delivered (HTTP 422), so it is off in code.
+const CODE_DISABLED_SLOTS = new Set(['otp-f']);
+// Brevo is a single HTTP call; a slow reply must hand over to the next mailer fast.
+const SLOT_TIMEOUT_CAP_MS = Object.freeze({ 'otp-a': 8_000 });
+// Late provider mail (Appwrite/Logto) must still verify.
+const MIN_CODE_TTL_SECONDS = 600;
+// Common Bangladeshi student mailboxes, always allowed whenever an allowlist is active.
+export const ALWAYS_ALLOWED_DOMAINS = Object.freeze(['hotmail.com', 'live.com', 'msn.com', 'ymail.com', 'rocketmail.com', 'yahoo.co.in', 'yahoo.co.uk', 'me.com', 'mac.com']);
+const withAlwaysAllowed = list => (list.length ? [...list, ...ALWAYS_ALLOWED_DOMAINS] : list);
+
+// A persisted panel config saved before a slot existed has no row for it, which
+// would leave that slot at dailyQuota 0 forever. Inherit the deployment row instead.
+export function withMissingSlotsFrom(primary, fallbackRaw) {
+  if (!primary || typeof primary !== 'object' || !Array.isArray(primary.providers)) return primary;
+  const fallback = typeof fallbackRaw === 'string' ? safeJson(fallbackRaw) : (fallbackRaw && typeof fallbackRaw === 'object' ? fallbackRaw : {});
+  const have = new Set(primary.providers.map(row => String(row?.id || '')));
+  const extra = (Array.isArray(fallback.providers) ? fallback.providers : []).filter(row => row && !have.has(String(row.id || '')));
+  return extra.length ? { ...primary, providers: [...primary.providers, ...extra] } : primary;
+}
+
 export function verificationConfig(raw) {
   const input = typeof raw === 'string' ? safeJson(raw) : (raw && typeof raw === 'object' ? raw : {});
   const policyInput = input.policy && typeof input.policy === 'object' ? input.policy : {};
   const policy = Object.freeze({
-    codeTtlSeconds: int(policyInput.codeTtlSeconds, DEFAULT_POLICY.codeTtlSeconds, 60, 600),
+    codeTtlSeconds: Math.max(MIN_CODE_TTL_SECONDS, int(policyInput.codeTtlSeconds, DEFAULT_POLICY.codeTtlSeconds, 60, 600)),
     maxAttempts: int(policyInput.maxAttempts, DEFAULT_POLICY.maxAttempts, 1, 5),
     resendCooldownSeconds: int(policyInput.resendCooldownSeconds, DEFAULT_POLICY.resendCooldownSeconds, 30, 600),
     lockoutSeconds: int(policyInput.lockoutSeconds, DEFAULT_POLICY.lockoutSeconds, 60, 86_400),
@@ -76,19 +97,19 @@ export function verificationConfig(raw) {
       id,
       channel: slot.channel,
       verificationMode: slot.verificationMode,
-      enabled: bool(row.enabled),
+      enabled: bool(row.enabled) && !CODE_DISABLED_SLOTS.has(id),
       priority: int(row.priority, slot.priority, 1, 10_000),
       dailyQuota: int(row.dailyQuota, 0, 0, 10_000_000),
-      timeoutMs: int(row.timeoutMs, 8_000, 1_000, 20_000),
+      timeoutMs: Math.min(int(row.timeoutMs, 8_000, 1_000, 20_000), SLOT_TIMEOUT_CAP_MS[id] || 20_000),
       label: cleanReason(row.label) || id.toUpperCase()
     });
   }).sort((left, right) => left.priority - right.priority || left.id.localeCompare(right.id));
   // Owner 2026-10-16: only real, deliverable mailboxes may take an email-ownership
   // OTP. An absent list falls back to OWNER_ALLOWED_DOMAINS so the guard is live by
   // default; an explicit empty array opts out. Widenable from the admin config.
-  const allowedDomains = Object.freeze((Array.isArray(input.allowedDomains) ? input.allowedDomains : OWNER_ALLOWED_DOMAINS)
+  const allowedDomains = Object.freeze([...new Set(withAlwaysAllowed(Array.isArray(input.allowedDomains) ? input.allowedDomains : OWNER_ALLOWED_DOMAINS)
     .map(value => String(value || '').trim().toLowerCase().replace(/^\.+/, ''))
-    .filter(value => /^[a-z0-9.-]+$/.test(value) && value.length <= 253)
+    .filter(value => /^[a-z0-9.-]+$/.test(value) && value.length <= 253))]
     .slice(0, 200));
   return Object.freeze({
     enabled: bool(input.enabled),
