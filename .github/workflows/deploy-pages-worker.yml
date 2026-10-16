@@ -59,6 +59,23 @@ jobs:
           test "${#KEY}" -eq 39
           printf '%s' "$KEY" | npx --yes wrangler@4.35.0 secret put FIREBASE_WEB_API_KEY --name admission-gk
 
+      # Owner 2026-10-16: the human check before an ownership OTP. The matching
+      # site key is public and lives in index.html; only this secret is bound
+      # here. Without it verifyTurnstile stays inert, so a missing secret cannot
+      # lock students out of signup.
+      - name: Bind the Turnstile secret key
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TURNSTILE_SECRET_KEY: ${{ secrets.TURNSTILE_SECRET_KEY }}
+        run: |
+          set -eu
+          if [ -z "${TURNSTILE_SECRET_KEY:-}" ]; then
+            echo "::notice title=Turnstile skipped::TURNSTILE_SECRET_KEY is not set; the human check stays inert."
+            exit 0
+          fi
+          printf '%s' "$TURNSTILE_SECRET_KEY" | npx --yes wrangler@4.35.0 secret put TURNSTILE_SECRET_KEY --name admission-gk
+
       # The sender name is a provider-account value, not Worker code, so a secret
       # left over from the old brand keeps showing "Admission Hub" even after the
       # templates changed. Overwrite the existing from-name secrets only: this

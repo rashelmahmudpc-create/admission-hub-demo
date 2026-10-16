@@ -13,15 +13,15 @@ const relative = path => new URL(path, root);
 
 // The asset version string shared by account-access.{js,css} and the
 // language-engine table. Bump both when either file changes.
-const UI_VERSION_FROM = '20261017-gclient1';
-const UI_VERSION_TO = '20261017-gclient1';
+const UI_VERSION_FROM = '20261015-login-complete-v1';
+const UI_VERSION_TO = '20261016-turnstile-v1';
 const LANG_VERSION_FROM = 'lang-v5-single-email-button';
 const LANG_VERSION_TO = 'lang-v5-single-email-button';
 // NOTE: SW_BUILD_TO must always equal the BUILD_ID in sw.js. Without a bump the
 // deploy ships new files under old ?v= tokens; browsers then serve them
 // immutable for a year, so students keep the old app and every fix misses them.
-const SW_BUILD_FROM = 'v349-sky-bottom-inset';
-const SW_BUILD_TO = 'v350-notes-screen-v2';
+const SW_BUILD_FROM = 'v350-fast-startup';
+const SW_BUILD_TO = 'v350-turnstile';
 
 const targets = [
   'index.html',
@@ -31,6 +31,7 @@ const targets = [
   'interactive-native-personal-v1.test.mjs',
   'code-native-welcome-v1.test.mjs',
   'startup-ai-regression.test.mjs',
+  'startup-fast.test.mjs',
   'profile-ui.test.mjs',
   'fcm-global-contract.test.mjs',
   // The shell version is asserted by these older shell-contract suites too.
