@@ -211,12 +211,12 @@ test('wrong OTP never sends again or switches provider and locks at five attempt
   assert.equal(first.sends.length, 2);
 });
 
-test('OTP expires after five minutes and resend cooldown is enforced', async () => {
+test('OTP expires after ten minutes and resend cooldown is enforced', async () => {
   const provider = new MockProvider({ id: 'otp-a' });
   const app = setup({ providers: [provider] });
   const requested = await app.orchestrator.requestVerification(identity, context);
   await expectCode(() => app.orchestrator.requestVerification(identity, context), AUTH_ERROR_CODES.RESEND_COOLDOWN);
-  app.advance(300_001);
+  app.advance(600_001);
   await expectCode(
     () => app.orchestrator.verify({ ...identity, attemptId: requested.attemptId, code: provider.sends[0].code }, context),
     AUTH_ERROR_CODES.OTP_EXPIRED
@@ -685,4 +685,26 @@ test('owner 2026-10-16 (Logto first): a Gmail recipient keeps Brevo first', asyn
   assert.equal(brevo.sends.length, 1, 'Gmail keeps the operator order');
   assert.equal(logto.sends.length, 0);
   assert.equal(appwrite.sends.length, 0);
+});
+
+test('owner 2026-10-16 (user-error failover): a provider 422 fails over to the next slot', async () => {
+  const mailersend = new MockProvider({ id: 'otp-f' });
+  mailersend.sendVerification = async input => {
+    mailersend.sends.push(input);
+    throw new VerificationProviderError('PROVIDER_HTTP_422', VERIFICATION_FAILURE_CLASS.USER);
+  };
+  const logto = new MockProvider({ id: 'otp-h', verificationMode: VERIFICATION_MODES.PROVIDER_EVIDENCE });
+  const app = setup({ providers: [mailersend, logto] });
+  const result = await app.orchestrator.requestVerification(identity, context);
+  assert.equal(result.accepted, true);
+  assert.equal(mailersend.sends.length, 1, 'no retry on the same provider');
+  assert.equal(logto.sends.length, 1, 'Logto carries the send');
+});
+
+test('owner 2026-10-16 (user-error failover): an invalid destination still stops the request', async () => {
+  const first = new MockProvider({ id: 'otp-f', sendPlan: ['user'] });
+  const second = new MockProvider({ id: 'otp-h', verificationMode: VERIFICATION_MODES.PROVIDER_EVIDENCE });
+  const app = setup({ providers: [first, second] });
+  await expectCode(() => app.orchestrator.requestVerification(identity, context), AUTH_ERROR_CODES.INVALID_INPUT);
+  assert.equal(second.sends.length, 0);
 });

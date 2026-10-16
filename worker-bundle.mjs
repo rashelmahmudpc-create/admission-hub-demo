@@ -9494,7 +9494,7 @@ var ratio = (value, fallback) => {
 var bool = (value) => value === true;
 var cleanReason = (value) => String(value || "").replace(/[^A-Za-z0-9 _.-]/g, "").slice(0, 80);
 var DEFAULT_POLICY = Object.freeze({
-  codeTtlSeconds: 300,
+  codeTtlSeconds: 600,
   maxAttempts: 5,
   resendCooldownSeconds: 60,
   lockoutSeconds: 900,
@@ -22816,8 +22816,11 @@ var VerificationOrchestrator = class {
             now
           });
           if (failure.failureClass === VERIFICATION_FAILURE_CLASS.USER) {
-            await this.repository.failChallenge({ attemptId, reason: failure.code, now });
-            throw new NativeAuthError(AUTH_ERROR_CODES.INVALID_INPUT);
+            if (failure.code === "INVALID_DESTINATION") {
+              await this.repository.failChallenge({ attemptId, reason: failure.code, now });
+              throw new NativeAuthError(AUTH_ERROR_CODES.INVALID_INPUT);
+            }
+            break;
           }
           if (failure.failureClass === VERIFICATION_FAILURE_CLASS.HARD || providerState.circuit === "open") break;
         }
