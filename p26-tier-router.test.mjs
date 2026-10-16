@@ -123,7 +123,7 @@ t('P26-৯. E2E: a hard academic question still reaches the SMART model',
 
 /* ── ৫. Wiring invariants ── */
 t('P26-১০. routing runs before the chain is built',
-  SRC.indexOf('routeTier(intent') < SRC.indexOf('let chain = routerChain('));
+  SRC.indexOf('routeTier(intent') < SRC.indexOf('const fullChain = routerChain('));
 t('P26-১১. the trace records the effective tier, so a downgrade is observable',
   /traceCtx = \{[\s\S]{0,400}?\btier,/.test(SRC));
 

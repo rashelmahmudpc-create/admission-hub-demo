@@ -31,6 +31,8 @@ import { chatCacheEnabled, isCacheableRequest, chatCacheKey, chatCacheTtl } from
 import { routeTier, assessDifficulty } from './ai-tier-router.mjs';
 /* P27 — bounded history (step 3 of the AI cost plan). */
 import { selectHistory, capRecalledTurns } from './ai-history-trim.mjs';
+/* P28 — provider chain health: a transient 5xx must not disable a model for a day. */
+import { healthyChain, failureMarker, isEntryHealthy } from './ai-provider-health.mjs';
 
 export const AGENT_VERSION = 'agent-f1';
 export const SYSTEM_PROMPT_V = 'sys-f1-3-ai-personalization';
@@ -460,6 +462,10 @@ export class ProviderError extends Error {
     super(message);
     this.retryable = !!opts.retryable;
     this.bad = !!opts.bad; /* এই key/model আজ আর চেষ্টা করবে না (401/402/429/5xx) */
+    /* P28: the HTTP status, so the catch site can tell a transient 5xx (short
+       cooldown) from a revoked key (day-long ban) instead of treating both as an
+       equally permanent failure. */
+    this.status = Number(opts.status) || 0;
   }
 }
 
@@ -503,7 +509,7 @@ export async function* geminiStream(key, model, payload, signal) {
   });
   if (!r.ok || !r.body) {
     const bad = r.status === 401 || r.status === 402 || r.status === 403 || r.status === 429 || r.status >= 500;
-    throw new ProviderError(`Gemini HTTP ${r.status} (${model})`, { retryable: r.status >= 500 || r.status === 429, bad });
+    throw new ProviderError(`Gemini HTTP ${r.status} (${model})`, { retryable: r.status >= 500 || r.status === 429, bad, status: r.status });
   }
   const reader = r.body.getReader();
   const dec = new TextDecoder();
@@ -538,7 +544,7 @@ export async function* groqStream(key, model, payload, signal) {
   });
   if (!r.ok || !r.body) {
     const bad = r.status === 401 || r.status === 402 || r.status === 403 || r.status === 429 || r.status >= 500;
-    throw new ProviderError(`Groq HTTP ${r.status} (${model})`, { retryable: r.status >= 500 || r.status === 429, bad });
+    throw new ProviderError(`Groq HTTP ${r.status} (${model})`, { retryable: r.status >= 500 || r.status === 429, bad, status: r.status });
   }
   const reader = r.body.getReader();
   const dec = new TextDecoder();
@@ -600,7 +606,7 @@ export const GEMINI_ADAPTER = {
     });
     if (!r.ok) {
       const bad = r.status === 401 || r.status === 402 || r.status === 403 || r.status === 429 || r.status >= 500;
-      throw new ProviderError(`Gemini HTTP ${r.status} (${entry.model})`, { retryable: r.status >= 500 || r.status === 429, bad });
+      throw new ProviderError(`Gemini HTTP ${r.status} (${entry.model})`, { retryable: r.status >= 500 || r.status === 429, bad, status: r.status });
     }
     return geminiFirstText(await r.json().catch(() => ({})));
   },
@@ -635,7 +641,7 @@ async function* openAiCompatStream({ url, key, model, payload, signal }) {
   });
   if (!r.ok || !r.body) {
     const bad = r.status === 401 || r.status === 402 || r.status === 403 || r.status === 429 || r.status >= 500;
-    throw new ProviderError(`OpenAI-compat HTTP ${r.status} (${model})`, { retryable: r.status >= 500 || r.status === 429, bad });
+    throw new ProviderError(`OpenAI-compat HTTP ${r.status} (${model})`, { retryable: r.status >= 500 || r.status === 429, bad, status: r.status });
   }
   const reader = r.body.getReader();
   const dec = new TextDecoder();
@@ -865,6 +871,18 @@ export function readQuota(raw, now) {
 const getKv = async (kv, key) => { try { return await kv.get(key); } catch (_) { return null; } };
 const putKv = async (kv, key, val, ttl) => { try { await kv.put(key, val, ttl ? { expirationTtl: ttl } : undefined); } catch (_) {} };
 const badKeyName = (key, model) => 'aibad:' + String(key).slice(0, 12) + ':' + model + ':' + dayKey();
+
+/* P28: record a failed chain entry with the cooldown its status earns. A 5xx is
+   transient and clears in minutes; a bad credential keeps the long ban. A status
+   with no cooldown (4xx other than 401/402/403/429) is not remembered at all —
+   it would otherwise be retried forever against a request-shaped error. */
+const markEntryFailed = async (kv, key, model, status) => {
+  const marker = failureMarker(status, Date.now());
+  if (!marker) return;
+  const until = Number(JSON.parse(marker).until) || 0;
+  const ttl = Math.max(60, Math.round((until - Date.now()) / 1000));
+  await putKv(kv, badKeyName(key, model), marker, ttl);
+};
 
 /* ── নিরাপদ-টেক্সট আউটপুট: লজিক-গার্ড (safety) ---------------------------- */
 export function safetyGate(intent, examMode) {
@@ -1139,15 +1157,31 @@ export async function agentChat(request, env, uid, opts = {}) {
 
   /* bad-set (আজ-মার্ক-করা key/model) */
   const kvKeys = await aiKeyOverlay(env);
+  const healthNow = Date.now();
+  /* P28: per-entry markers, kept so the chain can tell a cooling-down model from
+     a healthy one rather than treating every past failure as permanent. */
+  const badMap = {};
   const badSet = new Set();
   /* One parallel round instead of one KV read per chain entry in sequence —
      the sequential loop cost seconds before the first token on a long chain. */
   {
     const probe = routerChain(env, tier, new Set(), kvKeys);
     const flags = await Promise.all(probe.map(c => Promise.resolve().then(() => getKv(env.PUB_KV, badKeyName(c.key, c.model))).catch(() => null)));
-    probe.forEach((c, i) => { if (flags[i]) badSet.add(String(c.key).slice(0, 12) + ':' + c.model); });
+    probe.forEach((c, i) => {
+      const sig = String(c.key).slice(0, 12) + ':' + c.model;
+      badMap[sig] = flags[i];
+      /* Only entries still inside their cooldown are excluded — a transient 5xx
+         earns a short cooldown and is retried automatically afterwards. */
+      if (!isEntryHealthy(flags[i], healthNow)) badSet.add(sig);
+    });
   }
-  let chain = routerChain(env, tier, badSet, kvKeys);
+  /* A model that failed transiently (503 "high demand") must not disable its tier
+     for the rest of the day. If every entry is cooling down, the whole list comes
+     back for one attempt, so the student gets an answer instead of a 503 — the
+     previous behaviour read as "the AI is switched off". */
+  const fullChain = routerChain(env, tier, new Set(), kvKeys)
+    .map(c => ({ ...c, sig: String(c.key).slice(0, 12) + ':' + c.model }));
+  let chain = healthyChain(fullChain, badMap, healthNow);
   if (hasImage) chain = chain.filter(c => c.provider === 'gemini');
   if (!chain.length) {
     const msg = { error: 'no_providers', message: 'AI-সেবা এখন কনফিগার করা নেই — দয়া করে মালিককে জানাও (GEMINI_KEYS)।' };
@@ -1232,7 +1266,10 @@ export async function agentChat(request, env, uid, opts = {}) {
 
   if (!stream) {
     let lastErr = '';
-    for (const c of providerChain(env, tier, badSet, kvKeys)) {
+    /* P28: same health-aware chain as the streaming path (Gemini-only here, since
+       it is the only adapter with a one-shot path). Never empty when keys exist. */
+    const oneShot = chain.filter(c => { const a = adapterFor(c); return Boolean(a) && a.oneShot === true; });
+    for (const c of (oneShot.length ? oneShot : providerChain(env, tier, badSet, kvKeys))) {
       try {
         const raw = await GEMINI_ADAPTER.chatOnce(c, payloadG());
         if (raw) {
@@ -1251,7 +1288,9 @@ export async function agentChat(request, env, uid, opts = {}) {
         lastErr = 'empty-' + c.model;
       } catch (e) {
         lastErr = String(e.message || e);
-        if (e instanceof ProviderError && e.bad) await putKv(env.PUB_KV, badKeyName(c.key, c.model), '1', 86400);
+        /* P28: a transient 5xx earns a short cooldown and recovers on its own;
+           only a credential failure keeps the day-long ban. */
+        if (e instanceof ProviderError && e.bad) await markEntryFailed(env.PUB_KV, c.key, c.model, e.status);
       }
     }
     emitTrace({ fallbackReason: FALLBACK.PROVIDER_ERROR, validated: false });
@@ -1315,7 +1354,7 @@ export async function agentChat(request, env, uid, opts = {}) {
           } catch (e) {
             if (e instanceof ProviderError) {
               lastErr = e.message;
-              if (e.bad) await putKv(env.PUB_KV, badKeyName(c.key, c.model), '1', 86400);
+              if (e.bad) await markEntryFailed(env.PUB_KV, c.key, c.model, e.status);
             } else lastErr = String(e.message || e);
           }
         }

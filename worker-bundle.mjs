@@ -1929,6 +1929,53 @@ function capRecalledTurns(mem, max = 4) {
   return list.length <= max ? list.slice() : list.slice(list.length - max);
 }
 
+// ai-provider-health.mjs
+var HEALTH = Object.freeze({
+  /* A 5xx means "busy right now", not "broken". Two minutes is long enough to
+     stop hammering an overloaded model and short enough that a blip heals
+     inside the same session. */
+  TRANSIENT_COOLDOWN_S: 120,
+  /* 429 is a quota clock: refills are usually per-minute. */
+  RATE_LIMIT_COOLDOWN_S: 60,
+  /* Bad credentials (401/402/403) genuinely need a human, so they keep the long
+     window. The adapter already 403/401s a revoked key. */
+  CREDENTIAL_BAN_S: 86400
+});
+function cooldownForStatus(status) {
+  const s = Number(status);
+  if (!Number.isFinite(s)) return null;
+  if (s === 401 || s === 402 || s === 403) return HEALTH.CREDENTIAL_BAN_S;
+  if (s === 429) return HEALTH.RATE_LIMIT_COOLDOWN_S;
+  if (s >= 500 && s <= 599) return HEALTH.TRANSIENT_COOLDOWN_S;
+  return null;
+}
+function isEntryHealthy(marker, now) {
+  if (!marker) return true;
+  if (marker === "1" || marker === 1 || marker === true) return false;
+  let parsed = marker;
+  if (typeof marker === "string") {
+    try {
+      parsed = JSON.parse(marker);
+    } catch (_) {
+      return false;
+    }
+  }
+  if (!parsed || typeof parsed !== "object") return false;
+  const until = Number(parsed.until) || 0;
+  return until <= now;
+}
+function healthyChain(entries, badMap, now) {
+  const list = Array.isArray(entries) ? entries : [];
+  const fresh = list.filter((e) => isEntryHealthy(badMap[e.sig], now));
+  if (fresh.length) return fresh;
+  return list.slice();
+}
+function failureMarker(status, now) {
+  const cooldown = cooldownForStatus(status);
+  if (cooldown == null) return null;
+  return JSON.stringify({ until: now + cooldown * 1e3, status: Number(status) });
+}
+
 // ai-agent.js
 var AGENT_VERSION = "agent-f1";
 var SYSTEM_PROMPT_V = "sys-f1-3-ai-personalization";
@@ -2292,6 +2339,7 @@ var ProviderError = class extends Error {
     super(message);
     this.retryable = !!opts.retryable;
     this.bad = !!opts.bad;
+    this.status = Number(opts.status) || 0;
   }
 };
 var GEMINI_MODELS = {
@@ -2333,7 +2381,7 @@ async function* geminiStream(key, model, payload, signal) {
   });
   if (!r.ok || !r.body) {
     const bad = r.status === 401 || r.status === 402 || r.status === 403 || r.status === 429 || r.status >= 500;
-    throw new ProviderError(`Gemini HTTP ${r.status} (${model})`, { retryable: r.status >= 500 || r.status === 429, bad });
+    throw new ProviderError(`Gemini HTTP ${r.status} (${model})`, { retryable: r.status >= 500 || r.status === 429, bad, status: r.status });
   }
   const reader = r.body.getReader();
   const dec = new TextDecoder();
@@ -2367,7 +2415,7 @@ async function* groqStream(key, model, payload, signal) {
   });
   if (!r.ok || !r.body) {
     const bad = r.status === 401 || r.status === 402 || r.status === 403 || r.status === 429 || r.status >= 500;
-    throw new ProviderError(`Groq HTTP ${r.status} (${model})`, { retryable: r.status >= 500 || r.status === 429, bad });
+    throw new ProviderError(`Groq HTTP ${r.status} (${model})`, { retryable: r.status >= 500 || r.status === 429, bad, status: r.status });
   }
   const reader = r.body.getReader();
   const dec = new TextDecoder();
@@ -2412,7 +2460,7 @@ var GEMINI_ADAPTER = {
     });
     if (!r.ok) {
       const bad = r.status === 401 || r.status === 402 || r.status === 403 || r.status === 429 || r.status >= 500;
-      throw new ProviderError(`Gemini HTTP ${r.status} (${entry.model})`, { retryable: r.status >= 500 || r.status === 429, bad });
+      throw new ProviderError(`Gemini HTTP ${r.status} (${entry.model})`, { retryable: r.status >= 500 || r.status === 429, bad, status: r.status });
     }
     return geminiFirstText(await r.json().catch(() => ({})));
   },
@@ -2439,7 +2487,7 @@ async function* openAiCompatStream({ url, key, model, payload, signal }) {
   });
   if (!r.ok || !r.body) {
     const bad = r.status === 401 || r.status === 402 || r.status === 403 || r.status === 429 || r.status >= 500;
-    throw new ProviderError(`OpenAI-compat HTTP ${r.status} (${model})`, { retryable: r.status >= 500 || r.status === 429, bad });
+    throw new ProviderError(`OpenAI-compat HTTP ${r.status} (${model})`, { retryable: r.status >= 500 || r.status === 429, bad, status: r.status });
   }
   const reader = r.body.getReader();
   const dec = new TextDecoder();
@@ -2633,6 +2681,13 @@ var putKv = async (kv2, key, val, ttl) => {
   }
 };
 var badKeyName = (key, model) => "aibad:" + String(key).slice(0, 12) + ":" + model + ":" + dayKey();
+var markEntryFailed = async (kv2, key, model, status) => {
+  const marker = failureMarker(status, Date.now());
+  if (!marker) return;
+  const until = Number(JSON.parse(marker).until) || 0;
+  const ttl = Math.max(60, Math.round((until - Date.now()) / 1e3));
+  await putKv(kv2, badKeyName(key, model), marker, ttl);
+};
 function safetyGate(intent, examMode) {
   if (examMode === "mock-running" && (intent === INTENTS.ACADEMIC_EXPLAIN || intent === INTENTS.QUIZ_REQUEST)) {
     return { blocked: true, message: "মক-পরীক্ষা চলছে — এখানে উত্তর বা হিন্ট দেওয়া হয় না। পরীক্ষা শেষ হলে সম্পূর্ণ বিশ্লেষণ পাবে।" };
@@ -2862,15 +2917,20 @@ async function agentChat(request, env, uid, opts = {}) {
   });
   const payloadO = () => ({ messages: [{ role: "system", content: sys }].concat(msgs.map((m) => ({ role: m.role, content: m.content }))) });
   const kvKeys = await aiKeyOverlay(env);
+  const healthNow = Date.now();
+  const badMap = {};
   const badSet = /* @__PURE__ */ new Set();
   {
     const probe = routerChain(env, tier, /* @__PURE__ */ new Set(), kvKeys);
     const flags = await Promise.all(probe.map((c) => Promise.resolve().then(() => getKv(env.PUB_KV, badKeyName(c.key, c.model))).catch(() => null)));
     probe.forEach((c, i) => {
-      if (flags[i]) badSet.add(String(c.key).slice(0, 12) + ":" + c.model);
+      const sig = String(c.key).slice(0, 12) + ":" + c.model;
+      badMap[sig] = flags[i];
+      if (!isEntryHealthy(flags[i], healthNow)) badSet.add(sig);
     });
   }
-  let chain = routerChain(env, tier, badSet, kvKeys);
+  const fullChain = routerChain(env, tier, /* @__PURE__ */ new Set(), kvKeys).map((c) => ({ ...c, sig: String(c.key).slice(0, 12) + ":" + c.model }));
+  let chain = healthyChain(fullChain, badMap, healthNow);
   if (hasImage) chain = chain.filter((c) => c.provider === "gemini");
   if (!chain.length) {
     const msg = { error: "no_providers", message: "AI-সেবা এখন কনফিগার করা নেই — দয়া করে মালিককে জানাও (GEMINI_KEYS)।" };
@@ -2941,7 +3001,11 @@ async function agentChat(request, env, uid, opts = {}) {
   };
   if (!stream) {
     let lastErr = "";
-    for (const c of providerChain(env, tier, badSet, kvKeys)) {
+    const oneShot = chain.filter((c) => {
+      const a = adapterFor(c);
+      return Boolean(a) && a.oneShot === true;
+    });
+    for (const c of oneShot.length ? oneShot : providerChain(env, tier, badSet, kvKeys)) {
       try {
         const raw = await GEMINI_ADAPTER.chatOnce(c, payloadG());
         if (raw) {
@@ -2958,7 +3022,7 @@ async function agentChat(request, env, uid, opts = {}) {
         lastErr = "empty-" + c.model;
       } catch (e) {
         lastErr = String(e.message || e);
-        if (e instanceof ProviderError && e.bad) await putKv(env.PUB_KV, badKeyName(c.key, c.model), "1", 86400);
+        if (e instanceof ProviderError && e.bad) await markEntryFailed(env.PUB_KV, c.key, c.model, e.status);
       }
     }
     emitTrace({ fallbackReason: FALLBACK.PROVIDER_ERROR, validated: false });
@@ -3032,7 +3096,7 @@ data: ${JSON.stringify({ model: c.model, provider: c.provider, intent, quiz: qui
           } catch (e) {
             if (e instanceof ProviderError) {
               lastErr = e.message;
-              if (e.bad) await putKv(env.PUB_KV, badKeyName(c.key, c.model), "1", 86400);
+              if (e.bad) await markEntryFailed(env.PUB_KV, c.key, c.model, e.status);
             } else lastErr = String(e.message || e);
           }
         }
