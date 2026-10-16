@@ -26,7 +26,7 @@ const bool = value => value === true;
 const cleanReason = value => String(value || '').replace(/[^A-Za-z0-9 _.-]/g, '').slice(0, 80);
 
 const DEFAULT_POLICY = Object.freeze({
-  codeTtlSeconds: 300,
+  codeTtlSeconds: 600,
   maxAttempts: 5,
   resendCooldownSeconds: 60,
   lockoutSeconds: 900,

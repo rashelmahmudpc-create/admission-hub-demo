@@ -409,8 +409,14 @@ export class VerificationOrchestrator {
             latencyMs: Date.now() - started, now
           });
           if (failure.failureClass === VERIFICATION_FAILURE_CLASS.USER) {
-            await this.repository.failChallenge({ attemptId, reason: failure.code, now });
-            throw new NativeAuthError(AUTH_ERROR_CODES.INVALID_INPUT);
+            // Owner 2026-10-16: only a rejected address stops the request. Any other
+            // USER-class reply (e.g. MailerSend 422 while half-open) is that provider's
+            // problem, so skip it and let the next slot (Logto/Appwrite) carry the send.
+            if (failure.code === 'INVALID_DESTINATION') {
+              await this.repository.failChallenge({ attemptId, reason: failure.code, now });
+              throw new NativeAuthError(AUTH_ERROR_CODES.INVALID_INPUT);
+            }
+            break;
           }
           if (failure.failureClass === VERIFICATION_FAILURE_CLASS.HARD || providerState.circuit === 'open') break;
         }
