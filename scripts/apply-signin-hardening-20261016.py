@@ -9,7 +9,7 @@ Code-level rules that win over the persisted admin-panel config:
     allowed whenever an allowlist is active (an empty list still means open).
  5. Slots missing from a persisted panel config (e.g. new otp-j/otp-k) inherit
     their wrangler row instead of silently getting dailyQuota 0.
- 6. wrangler: comment no longer names a secret; otp-f off, otp-i quota 1000.
+ 6. wrangler: comment no longer names a secret; otp-i quota 1000.
 Idempotent. Never touches otp-g/otp-c order.
 """
 import json, re
@@ -87,7 +87,8 @@ edit('auth-native/worker/auth-authority-do.mjs', [
      "withMissingSlotsFrom(persistedVerificationConfig"),
 ])
 
-# wrangler.toml: no secret name in comments; mirror the panel (otp-f off, otp-i 1000)
+# wrangler.toml: no secret name in comments; otp-i quota 1000 like the panel.
+# otp-f stays enabled here (release guard literal); config.mjs disables it in code.
 w = 'wrangler.toml'
 t = open(w, encoding='utf-8').read()
 t = t.replace('Optional secret APPWRITE_API_KEY.', 'An optional Appwrite server key may be bound as a Worker secret.')
@@ -95,8 +96,6 @@ m = re.search(r"^VERIFICATION_ORCHESTRATOR_CONFIG = '(.*)'$", t, re.M)
 assert m, 'orchestrator config line'
 cfg = json.loads(m.group(1))
 for row in cfg['providers']:
-    if row['id'] == 'otp-f':
-        row['enabled'] = False
     if row['id'] == 'otp-i':
         row['dailyQuota'] = max(int(row.get('dailyQuota') or 0), 1000)
 line = "VERIFICATION_ORCHESTRATOR_CONFIG = '" + json.dumps(cfg, separators=(',', ':'), ensure_ascii=False) + "'"
@@ -107,10 +106,12 @@ open(w, 'w', encoding='utf-8').write(t)
 tp = 'verification-orchestrator.test.mjs'
 x = open(tp, encoding='utf-8').read()
 x = x.replace("assert.equal(updated.policy.codeTtlSeconds, 240);", "assert.equal(updated.policy.codeTtlSeconds, 600, 'code TTL never drops below 10 minutes');")
-x = x.replace("new MockProvider({ id: 'otp-f' });\n    mailersend.sendVerification", "new MockProvider({ id: 'otp-d' });\n    mailersend.sendVerification")
-x = x.replace("const first = new MockProvider({ id: 'otp-f', sendPlan: ['user'] });", "const first = new MockProvider({ id: 'otp-d', sendPlan: ['user'] });")
 marker = 'owner 2026-10-16 (signin hardening)'
 if marker not in x:
+    # PR #53 tests used otp-f as a generic mock; otp-f is now off in code.
+    assert x.count("const mailersend = new MockProvider({ id: 'otp-f' });") == 1
+    x = x.replace("const mailersend = new MockProvider({ id: 'otp-f' });", "const mailersend = new MockProvider({ id: 'otp-d' });")
+    x = x.replace("const first = new MockProvider({ id: 'otp-f', sendPlan: ['user'] });", "const first = new MockProvider({ id: 'otp-d', sendPlan: ['user'] });")
     x = x.rstrip('\n') + '\n' + r'''
 test('owner 2026-10-16 (signin hardening): MailerSend otp-f stays off even when the panel enables it', async () => {
   const mailersend = new MockProvider({ id: 'otp-f' });
