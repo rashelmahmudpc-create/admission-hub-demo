@@ -900,6 +900,10 @@ textarea{min-height:96px}
   function accountShell(){return document.querySelector('.ah-account-page');}
   function accountReady(){var el=accountShell();return !!el&&!el.hidden&&el.getClientRects().length>0&&(el.innerText||'').trim().length>20;}
   function real(){return vis(appPageEl())||accountReady()||vis(document.querySelector('[data-admission-usable="true"]'));}
+  /* SKY ENTRY SPLASH (owner 2026-10-16): the dashboard is revealed only after the
+     Sky avatar has been on screen for at least 5s. The welcome screen is not delayed. */
+  var SKY_MIN=5000,t0=Date.now();
+  function dropDash(){var w=SKY_MIN-(Date.now()-t0);if(w>0){setTimeout(function(){if(o.parentNode)o.remove();},w);}else if(o.parentNode)o.remove();}
   var stuck=0;
   var iv=setInterval(function(){
     var el=accountShell();
@@ -908,18 +912,42 @@ textarea{min-height:96px}
     // must NEVER release the gate: doing that un-hid the already-built dashboard
     // *and its bottom nav bar* underneath the welcome (owner: "সবার ফোনে সেইম").
     // Keep the overlay until the welcome itself is visible, then just drop it.
-    if(el){ if(accountReady()||(!gate&&(vis(appPageEl())||dashboardFrameReady()))){if(o.parentNode)o.remove();clearInterval(iv);} return; }
+    if(el){ if(accountReady()){if(o.parentNode)o.remove();clearInterval(iv);} else if(!gate&&(vis(appPageEl())||dashboardFrameReady())){clearInterval(iv);dropDash();} return; }
     if(gate&&appReady()){
       stuck++;
       // No account shell at all and the gate hid #app: the device sat on a blank
       // screen. After a short sustain, release the hidden state so the app shows.
-      if(stuck>=3){document.body.classList.remove('ah-account-page-active');if(o.parentNode)o.remove();clearInterval(iv);return;}
+      if(stuck>=3){document.body.classList.remove('ah-account-page-active');clearInterval(iv);dropDash();return;}
     }else stuck=0;
-    if(real()){if(o.parentNode)o.remove();clearInterval(iv);}
+    if(accountReady()){if(o.parentNode)o.remove();clearInterval(iv);return;}
+    if(real()){clearInterval(iv);dropDash();}
   },150);
   setTimeout(function(){if(o.parentNode)o.remove();clearInterval(iv);},15000);
   document.body.appendChild(o);
 })();
+</script>
+<script id="ah-sky-entry">
+/* SKY ENTRY SPLASH: when the user leaves the welcome/account screen for the
+   dashboard (sign in, sign up, guest), cover everything with ONLY the Sky avatar
+   for 5s, then show the dashboard (hard cap 12s). */
+(function(){
+  var src=document.getElementById('ahBootGuard');if(!src)return;
+  var html=src.innerHTML,css=src.style.cssText,MIN=5000;
+  function shown(el){return !!el&&!el.hidden&&el.getClientRects().length>0;}
+  function acct(){var el=document.querySelector('.ah-account-page');return shown(el)&&(el.innerText||'').trim().length>20;}
+  function dash(){var fr=document.querySelector('#app iframe.dv3-frame');try{if(fr&&fr.getClientRects().length&&fr.contentDocument&&fr.contentDocument.body&&fr.contentDocument.body.children.length)return true;}catch(_){}var pg=document.querySelector('#app .page');return shown(pg);}
+  function show(){
+    if(document.getElementById('ahSkyEntry'))return;
+    var n=document.createElement('div');n.id='ahSkyEntry';n.className='ah-boot';n.style.cssText=css;n.innerHTML=html;
+    document.body.appendChild(n);var s0=Date.now();
+    var w=setInterval(function(){var e=Date.now()-s0;if((e>=MIN&&dash())||e>=12000){clearInterval(w);n.remove();}},150);
+  }
+  window.__ahSkySplash=show;
+  document.addEventListener('admissionhub:entry-complete',show);
+  var was=false,last=document.body.classList.contains('ah-account-page-active');
+  new MutationObserver(function(){var g=document.body.classList.contains('ah-account-page-active');if(g&&acct())was=true;if(last&&!g&&was){was=false;show();}last=g;}).observe(document.body,{attributes:true,attributeFilter:['class']});
+  setInterval(function(){if(document.body.classList.contains('ah-account-page-active')&&acct())was=true;},300);
+}());
 </script>
 <div id="navRoot" aria-label="Primary navigation"></div>
 <div id="toast" class="toast"></div>
