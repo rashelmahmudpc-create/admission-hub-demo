@@ -1,0 +1,103 @@
+name: Revert unified theme + redeploy 2026-10-16
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/revert-unified-theme-20261016.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: admission-hub-pages-deploy
+  cancel-in-progress: false
+
+jobs:
+  revert:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Revert the theme changes only (keep every later commit)
+        run: |
+          set -eu
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          if [ -f theme-unified.css ] || grep -q 'theme-unified' index.html; then
+            git revert --no-commit 3f842af6c0321f6d2357baa86e08995a92a8b143 || true
+            for f in $(git diff --name-only --diff-filter=U); do
+              echo "conflict: $f -> keep current, strip theme edits"
+              git checkout --ours -- "$f"
+            done
+            git rm -f --ignore-unmatch theme-unified.css theme-unified.js
+            python3 - <<'EOF'
+          import re
+          for p in ['index.html', 'sw.js']:
+              s = open(p, encoding='utf-8').read()
+              s = re.sub(r"\n\s*'\./theme-unified\.(css|js)\?v=unified-theme-v1',", '', s)
+              s = re.sub(r'\n\s*"\./theme-unified\.(css|js)\?v=unified-theme-v1": "[0-9a-f]+",', '', s)
+              s = s.replace('<link rel="stylesheet" href="./theme-unified.css?v=unified-theme-v1">\n', '')
+              s = s.replace('<script src="./theme-unified.js?v=unified-theme-v1"></script>\n', '')
+              s = s.replace('-ut1', '')
+              open(p, 'w', encoding='utf-8').write(s)
+          EOF
+            npm run sw:manifest
+            git restore --source=HEAD --staged --worktree -- .github/workflows || true
+            git add -A
+          fi
+      - name: Verify the old look is back
+        run: |
+          set -eu
+          ! grep -q 'theme-unified' index.html
+          ! grep -q 'theme-unified' sw.js
+          ! grep -q -- '-ut1' index.html
+          test ! -e theme-unified.css
+          grep -q "var MODES = \['light', 'dark', 'system', 'green'\];" index.html
+          grep -q "appt('green', 'Premium Green'" profile-ui.js
+          node --check profile-ui.js && node --check phase1-upgrade.js && node --check dashboard-v2.js && node --check ai-agent-chat.js && node --check question-bank-clean.js
+          node --test --test-concurrency=1 seo-routing.test.mjs p19-perf-budget.test.mjs theme-tokens.test.mjs theme-coverage-scan.test.mjs
+      - name: Commit and push
+        run: |
+          set -eu
+          if git diff --cached --quiet; then echo 'Already reverted.'; else
+            git commit -m 'revert(theme): restore the previous look (owner request 2026-10-16)' -m 'Reverts 3f842af (unified theme). Later commits (Inbox v7, p28 AI fix) are kept. sw.js digests regenerated.'
+            ok=0
+            for i in 1 2 3; do
+              if git push origin HEAD:main; then ok=1; break; fi
+              git pull --rebase origin main
+            done
+            test "$ok" = 1
+          fi
+      - name: Build sanitized frontend bundle
+        run: |
+          set -eu
+          rm -rf dist && mkdir -p dist
+          rsync -a --exclude='.git' --exclude='node_modules' --exclude='dist' --exclude='docs' --exclude='AGENT_RESUME' --exclude='ai-proxy' --exclude='auth' --exclude='auth-native' --exclude='email-gateway' --exclude='apps-script' --exclude='uploads' --exclude='.github' --exclude='gk-agent-worker.js' --exclude='public-worker.js' --exclude='ai-agent.js' --exclude='worker-bundle.mjs' --exclude='voice-worker.js' --exclude='notification-worker.js' --exclude='fcm-notification.mjs' --exclude='wrangler.toml' --exclude='package.json' --exclude='package-lock.json' --exclude='*.test.mjs' --exclude='*.md' ./ dist/
+          GITHUB_SHA="$(git rev-parse HEAD)" node scripts/build-welcome-pages.mjs dist
+          test -s dist/index.html
+          test ! -e dist/theme-unified.css
+      - name: Deploy admissionsky
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx --yes wrangler@4.35.0 pages deploy dist --project-name admissionsky --branch main --commit-hash "$(git rev-parse HEAD)" --commit-dirty=true
+      - name: Deploy admissionhub (same bytes)
+        continue-on-error: true
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx --yes wrangler@4.35.0 pages deploy dist --project-name admissionhub --branch main --commit-hash "$(git rev-parse HEAD)" --commit-dirty=true
+      - name: Verify live
+        run: |
+          sleep 20
+          ! curl -fsS -H 'Cache-Control: no-cache' 'https://admissionsky.pages.dev/' | grep -F 'theme-unified'
