@@ -1990,6 +1990,22 @@ function failureMarker(status, now) {
   if (cooldown == null) return null;
   return JSON.stringify({ until: now + cooldown * 1e3, status: Number(status) });
 }
+function rankChainByModelHealth(entries, badMap, now) {
+  const list = Array.isArray(entries) ? entries : [];
+  if (!list.length) return list;
+  const byModel = /* @__PURE__ */ new Map();
+  for (const e of list) {
+    const m = byModel.get(e.model) || { total: 0, failing: 0 };
+    m.total += 1;
+    if (!isEntryHealthy(badMap[e.sig], now)) m.failing += 1;
+    byModel.set(e.model, m);
+  }
+  const dead = (e) => {
+    const m = byModel.get(e.model);
+    return Boolean(m) && m.total > 0 && m.failing === m.total;
+  };
+  return list.filter((e) => !dead(e)).concat(list.filter(dead));
+}
 
 // ai-agent.js
 var AGENT_VERSION = "agent-f1";
@@ -2987,6 +3003,7 @@ async function agentChat(request, env, uid, opts = {}) {
   const fullChain = routerChain(env, tier, /* @__PURE__ */ new Set(), kvKeys).map((c) => ({ ...c, sig: String(c.key).slice(0, 12) + ":" + c.model }));
   let chain = healthyChain(fullChain, badMap, healthNow);
   if (hasImage) chain = chain.filter((c) => c.provider === "gemini");
+  chain = rankChainByModelHealth(chain, badMap, healthNow);
   if (!chain.length) {
     await settleBackground();
     const msg = { error: "no_providers", message: "AI-সেবা এখন কনফিগার করা নেই — দয়া করে মালিককে জানাও (GEMINI_KEYS)।" };
@@ -3064,7 +3081,10 @@ async function agentChat(request, env, uid, opts = {}) {
       return Boolean(a) && a.oneShot === true;
     });
     mark("modelStart");
+    const oneShotFails = /* @__PURE__ */ new Map();
+    const ONESHOT_FAIL_LIMIT = 2;
     for (const c of oneShot.length ? oneShot : providerChain(env, tier, badSet, kvKeys)) {
+      if ((oneShotFails.get(c.model) || 0) >= ONESHOT_FAIL_LIMIT) continue;
       try {
         const raw = await GEMINI_ADAPTER.chatOnce(c, payloadG());
         if (raw) {
@@ -3083,7 +3103,11 @@ async function agentChat(request, env, uid, opts = {}) {
         lastErr = "empty-" + c.model;
       } catch (e) {
         lastErr = String(e.message || e);
-        if (e instanceof ProviderError && e.bad) await markEntryFailed(env.PUB_KV, c.key, c.model, e.status);
+        if (e instanceof ProviderError) {
+          const st = Number(e.status) || 0;
+          oneShotFails.set(c.model, st >= 500 || st === 429 ? ONESHOT_FAIL_LIMIT : (oneShotFails.get(c.model) || 0) + 1);
+          if (e.bad) await markEntryFailed(env.PUB_KV, c.key, c.model, e.status);
+        }
       }
     }
     await settleBackground();
@@ -3118,9 +3142,12 @@ data: ${JSON.stringify({ stage: id, label })}
         stage("think", "ভাবছি — উত্তর সাজাচ্ছি");
         let ok2 = false;
         let lastErr = "";
+        const modelFails = /* @__PURE__ */ new Map();
+        const MODEL_FAIL_LIMIT = 2;
         const firstMs = Math.max(3e3, Math.min(3e4, Number(env && env.AGENT_FIRST_CHUNK_MS) || 5e3));
         mark("modelStart");
         for (const c of chain) {
+          if ((modelFails.get(c.model) || 0) >= MODEL_FAIL_LIMIT) continue;
           try {
             let full = "";
             const adapter = adapterFor(c);
@@ -3165,6 +3192,8 @@ data: ${JSON.stringify({ model: c.model, provider: c.provider, intent, quiz: qui
           } catch (e) {
             if (e instanceof ProviderError) {
               lastErr = e.message;
+              const st = Number(e.status) || 0;
+              modelFails.set(c.model, st >= 500 || st === 429 ? MODEL_FAIL_LIMIT : (modelFails.get(c.model) || 0) + 1);
               if (e.bad) await markEntryFailed(env.PUB_KV, c.key, c.model, e.status);
             } else lastErr = String(e.message || e);
           }

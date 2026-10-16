@@ -101,3 +101,50 @@ export function failureMarker(status, now) {
   if (cooldown == null) return null;
   return JSON.stringify({ until: now + cooldown * 1000, status: Number(status) });
 }
+
+/**
+ * P31 (owner voice order 2026-10-16: "যেগুলা একদম অচল সেগুলা একদম শেষে করে দাও
+ * আর যেগুলা সচল সেগুলা একদম ফাস্টে করে দাও") — order the chain so a working
+ * model is tried first and a dead one is tried last.
+ *
+ * WHY ORDERING AND NOT JUST A COOLDOWN
+ * ------------------------------------
+ * `routerChain` emits ONE ENTRY PER KEY PER MODEL, so a model that is globally
+ * unavailable is retried once for every key we hold. Measured 2026-10-16:
+ * `gemini-3.1-flash-lite` answered 503 to 6/6 probes at ~0.42 s each, and with
+ * ~17 Gemini keys the student waited ~7.2 s of silent retries before the second
+ * model was even reached — on a question the healthy model answers in ~1.1 s.
+ *
+ * The 503 is a property of the MODEL, not of the key, so a per-key cooldown
+ * cannot express it. This function expresses it directly: an entry is demoted
+ * to the end when its model — across every key — is currently failing, and
+ * promoted to the front when it is not.
+ *
+ * DEMOTED, NEVER DROPPED. A dead model stays in the chain as the last resort,
+ * so a wrong guess about "dead" can only cost time, never an answer. That keeps
+ * P28's guarantee intact: the chain is never empty while a key exists.
+ *
+ * A model counts as failing when EVERY key we hold for it carries a live
+ * failure marker. One bad key must not demote a model the other keys still
+ * serve — the credential-ban case is per key and already handled per entry.
+ *
+ * Order is otherwise stable, so the configured priority within each group is
+ * preserved exactly.
+ */
+export function rankChainByModelHealth(entries, badMap, now) {
+  const list = Array.isArray(entries) ? entries : [];
+  if (!list.length) return list;
+  /* model -> {total, failing} across every key in this chain. */
+  const byModel = new Map();
+  for (const e of list) {
+    const m = byModel.get(e.model) || { total: 0, failing: 0 };
+    m.total += 1;
+    if (!isEntryHealthy(badMap[e.sig], now)) m.failing += 1;
+    byModel.set(e.model, m);
+  }
+  const dead = (e) => {
+    const m = byModel.get(e.model);
+    return Boolean(m) && m.total > 0 && m.failing === m.total;
+  };
+  return list.filter((e) => !dead(e)).concat(list.filter(dead));
+}

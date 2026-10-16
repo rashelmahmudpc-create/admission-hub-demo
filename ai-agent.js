@@ -32,7 +32,7 @@ import { routeTier, assessDifficulty } from './ai-tier-router.mjs';
 /* P27 — bounded history (step 3 of the AI cost plan). */
 import { selectHistory, capRecalledTurns } from './ai-history-trim.mjs';
 /* P28 — provider chain health: a transient 5xx must not disable a model for a day. */
-import { healthyChain, failureMarker, isEntryHealthy } from './ai-provider-health.mjs';
+import { healthyChain, failureMarker, isEntryHealthy, rankChainByModelHealth } from './ai-provider-health.mjs';
 
 export const AGENT_VERSION = 'agent-f1';
 export const SYSTEM_PROMPT_V = 'sys-f1-3-ai-personalization';
@@ -1220,6 +1220,10 @@ export async function agentChat(request, env, uid, opts = {}) {
     .map(c => ({ ...c, sig: String(c.key).slice(0, 12) + ':' + c.model }));
   let chain = healthyChain(fullChain, badMap, healthNow);
   if (hasImage) chain = chain.filter(c => c.provider === 'gemini');
+  /* P31: a working model is tried before a dead one. `healthyChain` already
+     drops individually-cooling entries, so this matters when everything is
+     cooling and the whole list comes back — the least-broken model then leads. */
+  chain = rankChainByModelHealth(chain, badMap, healthNow);
   if (!chain.length) {
     await settleBackground();
     const msg = { error: 'no_providers', message: 'AI-সেবা এখন কনফিগার করা নেই — দয়া করে মালিককে জানাও (GEMINI_KEYS)।' };
@@ -1312,7 +1316,12 @@ export async function agentChat(request, env, uid, opts = {}) {
        it is the only adapter with a one-shot path). Never empty when keys exist. */
     const oneShot = chain.filter(c => { const a = adapterFor(c); return Boolean(a) && a.oneShot === true; });
     mark('modelStart');
+    /* P31: the same per-model fail limit as the streaming loop, so a busy model
+       is not retried once per key on the one-shot path either. */
+    const oneShotFails = new Map();
+    const ONESHOT_FAIL_LIMIT = 2;
     for (const c of (oneShot.length ? oneShot : providerChain(env, tier, badSet, kvKeys))) {
+      if ((oneShotFails.get(c.model) || 0) >= ONESHOT_FAIL_LIMIT) continue;
       try {
         const raw = await GEMINI_ADAPTER.chatOnce(c, payloadG());
         if (raw) {
@@ -1338,7 +1347,13 @@ export async function agentChat(request, env, uid, opts = {}) {
         lastErr = String(e.message || e);
         /* P28: a transient 5xx earns a short cooldown and recovers on its own;
            only a credential failure keeps the day-long ban. */
-        if (e instanceof ProviderError && e.bad) await markEntryFailed(env.PUB_KV, c.key, c.model, e.status);
+        if (e instanceof ProviderError) {
+          const st = Number(e.status) || 0;
+          oneShotFails.set(c.model, (st >= 500 || st === 429)
+            ? ONESHOT_FAIL_LIMIT
+            : (oneShotFails.get(c.model) || 0) + 1);
+          if (e.bad) await markEntryFailed(env.PUB_KV, c.key, c.model, e.status);
+        }
       }
     }
     await settleBackground();
@@ -1365,12 +1380,24 @@ export async function agentChat(request, env, uid, opts = {}) {
         stage('think', 'ভাবছি — উত্তর সাজাচ্ছি');
         let ok = false;
         let lastErr = '';
+        /* P31: a model that fails is not retried once per key inside this same
+           request. Measured 2026-10-16: a globally busy `gemini-3.1-flash-lite`
+           was tried ~17 times at ~0.42 s each, so the student waited ~7.2 s of
+           silence before the healthy model was even reached.
+           An explicit 5xx/429 kills the model outright — that status is a
+           property of the model, not the key. Any other failure (including a
+           first-chunk stall, which is ambiguous) is tolerated once per model so
+           a single bad key can still be routed around, but never more. */
+        const modelFails = new Map();
+        const MODEL_FAIL_LIMIT = 2;
         /* P30 (ক): a busy provider is abandoned after 5 s instead of 10 s, so one
            stalled model no longer costs the student ten seconds of silence.
            AGENT_FIRST_CHUNK_MS still overrides it (3–30 s). */
         const firstMs = Math.max(3000, Math.min(30000, Number(env && env.AGENT_FIRST_CHUNK_MS) || 5000));
         mark('modelStart');
         for (const c of chain) {
+          /* P31: skip the rest of a model's keys once that model has failed. */
+          if ((modelFails.get(c.model) || 0) >= MODEL_FAIL_LIMIT) continue;
           try {
             let full = '';
             const adapter = adapterFor(c);
@@ -1414,6 +1441,15 @@ export async function agentChat(request, env, uid, opts = {}) {
           } catch (e) {
             if (e instanceof ProviderError) {
               lastErr = e.message;
+              /* P31: count the failure against the MODEL. A 5xx/429 is the model
+                 being unavailable, so it is retired at once; anything else is
+                 tolerated up to the limit so one bad key can still be routed
+                 around. Credentials stay per key — another key may still serve
+                 the same model. */
+              const st = Number(e.status) || 0;
+              modelFails.set(c.model, (st >= 500 || st === 429)
+                ? MODEL_FAIL_LIMIT
+                : (modelFails.get(c.model) || 0) + 1);
               if (e.bad) await markEntryFailed(env.PUB_KV, c.key, c.model, e.status);
             } else lastErr = String(e.message || e);
           }
