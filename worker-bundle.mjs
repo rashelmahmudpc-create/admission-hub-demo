@@ -22854,6 +22854,7 @@ var VerificationOrchestrator = class {
             break;
           }
           if (failure.failureClass === VERIFICATION_FAILURE_CLASS.HARD || providerState.circuit === "open") break;
+          if (failure.code === "PROVIDER_TIMEOUT") break;
         }
       }
     }
