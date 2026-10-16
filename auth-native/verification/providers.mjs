@@ -1398,6 +1398,364 @@ export class AppwriteOtpVerificationProvider {
   }
 }
 
+// Shared KV/memory store for provider-evidence slots that must remember a
+// provider-side flow between send and verify (otp-j Ory, otp-k Hanko).
+function evidenceStateStore(prefix, ttlSeconds, kv, now) {
+  const memory = new Map();
+  const key = attemptId => `${prefix}:${attemptId}`;
+  return {
+    async save(attemptId, state) {
+      const expires = Number(now()) + ttlSeconds * 1000;
+      memory.set(attemptId, { ...state, expires });
+      for (const [id, row] of memory) if (row.expires < Number(now())) memory.delete(id);
+      if (kv) { try { await kv.put(key(attemptId), JSON.stringify(state), { expirationTtl: ttlSeconds }); } catch {} }
+    },
+    async load(attemptId) {
+      const row = memory.get(attemptId);
+      if (row && row.expires >= Number(now())) return row;
+      if (!kv) return null;
+      try { const raw = await kv.get(key(attemptId)); return raw ? JSON.parse(raw) : null; } catch { return null; }
+    },
+    async drop(attemptId) {
+      memory.delete(attemptId);
+      if (kv && typeof kv.delete === 'function') { try { await kv.delete(key(attemptId)); } catch {} }
+    }
+  };
+}
+const validOtpAttemptId = value => /^[A-Za-z0-9_-]{24,96}$/.test(String(value || ''));
+
+// Slot `otp-j` is Ory Network's built-in one-time code (project "Admission Sky",
+// free Developer plan). Ory creates, mails (its own SMTP, sender
+// "Admission Sky via Ory") and checks the code, so the slot is provider-evidence.
+// It drives the public native self-service API with no secret:
+//   GET  /self-service/login/api                -> flow id
+//   POST /self-service/login?flow=<id>           {"method":"code","identifier":email}
+// and, when Ory answers 4000035 (no such account), the registration flow with
+// traits.email instead. Verify posts the code to the same flow; the session that a
+// correct code yields is revoked straight away via DELETE /self-service/logout/api.
+// Probed live 2026-10-16 (login + registration, both mailboxes, logout -> 401).
+const ORY_STATE_TTL_SECONDS = 900;
+// Public, non-secret values live in code for the 64-variable reason (see Logto).
+const ORY_PUBLIC_DEFAULTS = Object.freeze({
+  endpoint: 'https://ecstatic-torvalds-2tcj5aljui.projects.oryapis.com'
+});
+const ORY_ACCOUNT_UNKNOWN = 4000035;
+function oryEndpoint(value) {
+  try {
+    const url = new URL(String(value || ''));
+    if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash || url.port) return '';
+    if (url.pathname.replace(/\/+$/, '') !== '') return '';
+    if (!/^[a-z0-9][a-z0-9-]{2,80}\.projects\.oryapis\.com$/.test(url.hostname)) return '';
+    return url.origin;
+  } catch { return ''; }
+}
+const validOryFlowId = value => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(value || ''));
+const oryMessageIds = payload => (Array.isArray(payload?.ui?.messages) ? payload.ui.messages : []).map(row => Number(row?.id));
+const orySentEmail = result => [200, 400].includes(Number(result.response.status)) && result.payload?.state === 'sent_email';
+
+export class OryOtpVerificationProvider {
+  constructor({ id = 'otp-j', endpoint, declaredDailyQuota, kv = null, fetchImpl = globalThis.fetch, now = Date.now } = {}) {
+    this.id = String(id || '');
+    this.channel = VERIFICATION_CHANNELS.OTP;
+    this.verificationMode = VERIFICATION_MODES.PROVIDER_EVIDENCE;
+    this.endpoint = oryEndpoint(endpoint);
+    this.declaredDailyQuota = safeInteger(declaredDailyQuota, 1, 10_000_000);
+    this.kv = kv && typeof kv.get === 'function' && typeof kv.put === 'function' ? kv : null;
+    this.fetch = typeof fetchImpl === 'function' ? fetchImpl.bind(globalThis) : null;
+    this.now = typeof now === 'function' ? now : Date.now;
+    this.state = evidenceStateStore('ory-otp', ORY_STATE_TTL_SECONDS, this.kv, this.now);
+    this.configured = Boolean(this.endpoint && this.declaredDailyQuota && this.fetch);
+  }
+
+  async #call(path, { method = 'GET', body } = {}) {
+    let response;
+    try {
+      response = await this.fetch(`${this.endpoint}${path}`, {
+        method,
+        redirect: 'manual',
+        headers: { Accept: 'application/json', 'Cache-Control': 'no-store', ...(body ? { 'Content-Type': 'application/json' } : {}) },
+        ...(body ? { body: JSON.stringify(body) } : {}),
+        signal: AbortSignal.timeout(8_000)
+      });
+    } catch { throw new VerificationProviderError('NETWORK_ERROR', VERIFICATION_FAILURE_CLASS.TEMPORARY); }
+    const payload = response.status === 204 ? {} : await boundedJson(response);
+    return { response, payload };
+  }
+
+  async #flow(kind) {
+    const result = await this.#call(`/self-service/${kind}/api`);
+    if (!result.response.ok) throw httpFailure(result.response, result.payload, { userStatuses: [] });
+    const flowId = String(result.payload?.id || '');
+    if (!validOryFlowId(flowId)) throw new VerificationProviderError('INVALID_PROVIDER_RESPONSE', VERIFICATION_FAILURE_CLASS.HARD);
+    return flowId;
+  }
+
+  #submit(kind, flowId, body) {
+    return this.#call(`/self-service/${kind}?flow=${encodeURIComponent(flowId)}`, { method: 'POST', body });
+  }
+
+  // 400 without `sent_email` means the project refused (e.g. code method off): a
+  // config fault, so the orchestrator moves on instead of blaming the student.
+  #failure(result) {
+    const status = Number(result.response.status);
+    if (status === 400 || result.response.ok) return new VerificationProviderError('PROVIDER_REJECTED', VERIFICATION_FAILURE_CLASS.HARD);
+    if (status === 410) return new VerificationProviderError('PROVIDER_HTTP_410', VERIFICATION_FAILURE_CLASS.TEMPORARY, { retryAfter: 5 });
+    return httpFailure(result.response, result.payload, { userStatuses: [] });
+  }
+
+  async #discardSession(sessionToken) {
+    try { await this.#call('/self-service/logout/api', { method: 'DELETE', body: { session_token: sessionToken } }); } catch {}
+  }
+
+  async checkAvailability() {
+    if (!this.configured) return { available: false, code: 'NOT_CONFIGURED' };
+    return { available: true, code: 'READY' };
+  }
+
+  async getRemainingQuota() {
+    if (!this.configured) return { remaining: 0, limit: 0, resetAt: 0, source: 'not-configured' };
+    return { remaining: this.declaredDailyQuota, limit: this.declaredDailyQuota, resetAt: nextUtcMidnight(this.now()), source: 'declared' };
+  }
+
+  async sendVerification(input = {}) {
+    if (!this.configured) throw new VerificationProviderError('NOT_CONFIGURED', VERIFICATION_FAILURE_CLASS.HARD);
+    const destination = String(input.destination || '').trim().toLowerCase();
+    const attemptId = String(input.attemptId || '');
+    if (!validEmailAddress(destination) || !validOtpAttemptId(attemptId)) {
+      throw new VerificationProviderError('INVALID_DESTINATION', VERIFICATION_FAILURE_CLASS.USER);
+    }
+    const loginFlow = await this.#flow('login');
+    const login = await this.#submit('login', loginFlow, { method: 'code', identifier: destination });
+    if (orySentEmail(login)) {
+      await this.state.save(attemptId, { kind: 'login', flowId: loginFlow, email: destination });
+      return { accepted: true };
+    }
+    if (!(Number(login.response.status) === 400 && oryMessageIds(login.payload).includes(ORY_ACCOUNT_UNKNOWN))) throw this.#failure(login);
+    const registrationFlow = await this.#flow('registration');
+    const registration = await this.#submit('registration', registrationFlow, { method: 'code', traits: { email: destination } });
+    if (!orySentEmail(registration)) throw this.#failure(registration);
+    await this.state.save(attemptId, { kind: 'registration', flowId: registrationFlow, email: destination });
+    return { accepted: true };
+  }
+
+  async verifyCode(input = {}) {
+    if (!this.configured) throw new VerificationProviderError('NOT_CONFIGURED', VERIFICATION_FAILURE_CLASS.HARD);
+    const attemptId = String(input.attemptId || '');
+    const code = String(input.evidence || '').trim();
+    if (!/^\d{6}$/.test(code)) return { verified: false };
+    const state = await this.state.load(attemptId);
+    if (!state?.flowId || !['login', 'registration'].includes(state.kind)) throw new VerificationProviderError('CHALLENGE_EXPIRED', VERIFICATION_FAILURE_CLASS.USER);
+    const body = state.kind === 'registration'
+      ? { method: 'code', code, traits: { email: state.email } }
+      : { method: 'code', code, identifier: state.email };
+    const result = await this.#submit(state.kind, state.flowId, body);
+    const status = Number(result.response.status);
+    const sessionToken = String(result.payload?.session_token || '');
+    if (result.response.ok && sessionToken) {
+      const identity = result.payload?.session?.identity || result.payload?.identity || {};
+      const email = String(identity?.traits?.email || '').trim().toLowerCase();
+      await this.state.drop(attemptId);
+      await this.#discardSession(sessionToken);
+      if (email !== state.email) throw new VerificationProviderError('INVALID_PROVIDER_RESPONSE', VERIFICATION_FAILURE_CLASS.HARD);
+      return { verified: true };
+    }
+    if (status === 400) return { verified: false };
+    if (status === 410 || status === 403) {
+      await this.state.drop(attemptId);
+      throw new VerificationProviderError('CHALLENGE_EXPIRED', VERIFICATION_FAILURE_CLASS.USER);
+    }
+    throw httpFailure(result.response, result.payload, { userStatuses: [] });
+  }
+
+  async getProviderStatus() {
+    return { status: this.configured ? 'configured' : 'disabled', configured: this.configured, officialApi: true, mailer: 'ory' };
+  }
+}
+
+// Slot `otp-k` is Hanko Cloud's email passcode (free plan, 10,000 MAU, Hanko's
+// own mailer). Hanko creates, mails and checks the code, so the slot is
+// provider-evidence. It drives the public Flow API (POST /registration, /login,
+// /profile) with no secret; every step returns the next action href + csrf token,
+// and no cookie is needed. Project settings this relies on (owner 2026-10-16):
+// passwords OFF, account deletion ON.
+// Hanko hides whether an address exists: a login for an unknown address and a
+// registration for a known one both look accepted but mail a notice instead of a
+// code. So every verified address is deleted from Hanko straight after the check
+// (profile flow `account_delete`), which keeps every next send a fresh
+// registration. Only if that deletion fails is a hashed "known" marker kept in KV
+// so the next send uses the login flow instead.
+const HANKO_STATE_TTL_SECONDS = 900;
+const HANKO_KNOWN_TTL_SECONDS = 31_536_000;
+const HANKO_PUBLIC_DEFAULTS = Object.freeze({
+  endpoint: 'https://9b4c7063-c179-4586-8481-a415631a710a.hanko.io'
+});
+const HANKO_SKIPPABLE = new Set(['mfa_method_chooser', 'passkey_onboarding', 'credential_onboarding_chooser']);
+function hankoEndpoint(value) {
+  try {
+    const url = new URL(String(value || ''));
+    if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash || url.port) return '';
+    if (url.pathname.replace(/\/+$/, '') !== '') return '';
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.hanko\.io$/.test(url.hostname)) return '';
+    return url.origin;
+  } catch { return ''; }
+}
+const validHankoHref = value => typeof value === 'string' && /^\/[A-Za-z0-9_\-/?=&%@.~]{1,511}$/.test(value) && !value.startsWith('//');
+
+export class HankoOtpVerificationProvider {
+  constructor({ id = 'otp-k', endpoint, declaredDailyQuota, kv = null, fetchImpl = globalThis.fetch, now = Date.now } = {}) {
+    this.id = String(id || '');
+    this.channel = VERIFICATION_CHANNELS.OTP;
+    this.verificationMode = VERIFICATION_MODES.PROVIDER_EVIDENCE;
+    this.endpoint = hankoEndpoint(endpoint);
+    this.declaredDailyQuota = safeInteger(declaredDailyQuota, 1, 10_000_000);
+    this.kv = kv && typeof kv.get === 'function' && typeof kv.put === 'function' ? kv : null;
+    this.fetch = typeof fetchImpl === 'function' ? fetchImpl.bind(globalThis) : null;
+    this.now = typeof now === 'function' ? now : Date.now;
+    this.state = evidenceStateStore('hanko-otp', HANKO_STATE_TTL_SECONDS, this.kv, this.now);
+    this.knownMemory = new Set();
+    this.configured = Boolean(this.endpoint && this.declaredDailyQuota && this.fetch);
+  }
+
+  async #call(path, { body = {}, token = '' } = {}) {
+    let response;
+    try {
+      response = await this.fetch(`${this.endpoint}${path}`, {
+        method: 'POST',
+        redirect: 'manual',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-store',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(8_000)
+      });
+    } catch { throw new VerificationProviderError('NETWORK_ERROR', VERIFICATION_FAILURE_CLASS.TEMPORARY); }
+    const payload = response.status === 204 ? {} : await boundedJson(response);
+    return { response, payload };
+  }
+
+  #act(payload, name, inputData = {}, token = '') {
+    const href = payload?.actions?.[name]?.href;
+    if (!validHankoHref(href)) throw new VerificationProviderError('INVALID_PROVIDER_RESPONSE', VERIFICATION_FAILURE_CLASS.HARD);
+    return this.#call(href, { body: { input_data: inputData, csrf_token: String(payload?.csrf_token || '') }, token });
+  }
+
+  #ok(result) {
+    if (!result.response.ok) throw httpFailure(result.response, result.payload, { userStatuses: [] });
+    return result.payload;
+  }
+
+  async #start(path, token = '') {
+    let payload = this.#ok(await this.#call(path, { token }));
+    if (payload?.name === 'preflight') payload = this.#ok(await this.#act(payload, 'register_client_capabilities', { webauthn_available: false }, token));
+    return payload;
+  }
+
+  async #knownKey(email) { return `hanko-known:${await sha256Base64Url(email)}`; }
+  async #isKnown(email) {
+    if (this.knownMemory.has(email)) return true;
+    if (!this.kv) return false;
+    try { return Boolean(await this.kv.get(await this.#knownKey(email))); } catch { return false; }
+  }
+  async #setKnown(email, known) {
+    if (known) this.knownMemory.add(email); else this.knownMemory.delete(email);
+    if (!this.kv) return;
+    try {
+      const key = await this.#knownKey(email);
+      if (known) await this.kv.put(key, '1', { expirationTtl: HANKO_KNOWN_TTL_SECONDS });
+      else if (typeof this.kv.delete === 'function') await this.kv.delete(key);
+    } catch {}
+  }
+
+  // The session only proves the code was right: delete the Hanko account it
+  // belongs to; fall back to logout and remember the address as known.
+  async #discardAccount(token, email) {
+    try {
+      const profile = await this.#start('/profile', token);
+      if (profile?.actions?.account_delete) {
+        const deleted = await this.#act(profile, 'account_delete', {}, token);
+        if (deleted.response.ok && deleted.payload?.name === 'account_deleted') { await this.#setKnown(email, false); return; }
+      }
+    } catch {}
+    await this.#setKnown(email, true);
+    try { await this.#call('/logout', { token }); } catch {}
+  }
+
+  async checkAvailability() {
+    if (!this.configured) return { available: false, code: 'NOT_CONFIGURED' };
+    return { available: true, code: 'READY' };
+  }
+
+  async getRemainingQuota() {
+    if (!this.configured) return { remaining: 0, limit: 0, resetAt: 0, source: 'not-configured' };
+    return { remaining: this.declaredDailyQuota, limit: this.declaredDailyQuota, resetAt: nextUtcMidnight(this.now()), source: 'declared' };
+  }
+
+  async sendVerification(input = {}) {
+    if (!this.configured) throw new VerificationProviderError('NOT_CONFIGURED', VERIFICATION_FAILURE_CLASS.HARD);
+    const destination = String(input.destination || '').trim().toLowerCase();
+    const attemptId = String(input.attemptId || '');
+    if (!validEmailAddress(destination) || !validOtpAttemptId(attemptId)) {
+      throw new VerificationProviderError('INVALID_DESTINATION', VERIFICATION_FAILURE_CLASS.USER);
+    }
+    let payload;
+    if (await this.#isKnown(destination)) {
+      payload = await this.#start('/login');
+      payload = this.#ok(await this.#act(payload, 'continue_with_login_identifier', { email: destination }));
+      if (payload?.name === 'login_method_chooser') payload = this.#ok(await this.#act(payload, 'continue_to_passcode_confirmation'));
+    } else {
+      payload = await this.#start('/registration');
+      payload = this.#ok(await this.#act(payload, 'register_login_identifier', { email: destination }));
+    }
+    const href = payload?.actions?.verify_passcode?.href;
+    if (payload?.name !== 'passcode_confirmation' || !validHankoHref(href)) throw new VerificationProviderError('PROVIDER_REJECTED', VERIFICATION_FAILURE_CLASS.HARD);
+    await this.state.save(attemptId, { email: destination, href, csrf: String(payload.csrf_token || '') });
+    return { accepted: true };
+  }
+
+  async verifyCode(input = {}) {
+    if (!this.configured) throw new VerificationProviderError('NOT_CONFIGURED', VERIFICATION_FAILURE_CLASS.HARD);
+    const attemptId = String(input.attemptId || '');
+    const code = String(input.evidence || '').trim();
+    if (!/^\d{6}$/.test(code)) return { verified: false };
+    const state = await this.state.load(attemptId);
+    if (!state?.href || !validHankoHref(state.href)) throw new VerificationProviderError('CHALLENGE_EXPIRED', VERIFICATION_FAILURE_CLASS.USER);
+    let result = await this.#act({ csrf_token: state.csrf, actions: { verify_passcode: { href: state.href } } }, 'verify_passcode', { code });
+    let payload = result.payload;
+    if (!result.response.ok || payload?.name === 'passcode_confirmation') {
+      const status = Number(result.response.status);
+      if (status === 429 || status >= 500 || status === 0) throw httpFailure(result.response, payload, { userStatuses: [] });
+      const next = payload?.actions?.verify_passcode?.href;
+      if (payload?.name === 'passcode_confirmation' && validHankoHref(next)) {
+        // Each Hanko step issues a fresh href + csrf token; the next try must use them.
+        await this.state.save(attemptId, { email: state.email, href: next, csrf: String(payload.csrf_token || '') });
+        return { verified: false };
+      }
+      await this.state.drop(attemptId);
+      throw new VerificationProviderError('CHALLENGE_EXPIRED', VERIFICATION_FAILURE_CLASS.USER);
+    }
+    for (let step = 0; step < 3 && HANKO_SKIPPABLE.has(payload?.name) && payload?.actions?.skip; step += 1) {
+      result = await this.#act(payload, 'skip');
+      payload = this.#ok(result);
+    }
+    if (payload?.name !== 'success') {
+      await this.state.drop(attemptId);
+      throw new VerificationProviderError('INVALID_PROVIDER_RESPONSE', VERIFICATION_FAILURE_CLASS.HARD);
+    }
+    await this.state.drop(attemptId);
+    const token = String(result.response?.headers?.get?.('X-Auth-Token') || '');
+    if (token && token.length <= 4096 && !/[\r\n\s]/.test(token)) await this.#discardAccount(token, state.email);
+    else await this.#setKnown(state.email, true);
+    return { verified: true };
+  }
+
+  async getProviderStatus() {
+    return { status: this.configured ? 'configured' : 'disabled', configured: this.configured, officialApi: true, mailer: 'hanko' };
+  }
+}
+
 export class TelegramLinkVerificationProvider {
   constructor({ botUsername, botToken, webhookSecret, webhookSecretSource, webhookUrl, declaredDailyQuota, fetchImpl = globalThis.fetch, cryptoImpl = globalThis.crypto } = {}) {
     this.id = 'telegram';
@@ -1700,6 +2058,22 @@ export function createConfiguredVerificationProviders(env = {}, { fetchImpl = gl
     kv: env.GK_KV || null,
     fetchImpl
   });
+  const orySlot = slotFromConfig(env.VERIFICATION_ORCHESTRATOR_CONFIG, 'otp-j');
+  const oryOtpJ = new OryOtpVerificationProvider({
+    id: 'otp-j',
+    endpoint: orySlot ? ORY_PUBLIC_DEFAULTS.endpoint : '',
+    declaredDailyQuota: orySlot ? orySlot.dailyQuota : '',
+    kv: env.GK_KV || null,
+    fetchImpl
+  });
+  const hankoSlot = slotFromConfig(env.VERIFICATION_ORCHESTRATOR_CONFIG, 'otp-k');
+  const hankoOtpK = new HankoOtpVerificationProvider({
+    id: 'otp-k',
+    endpoint: hankoSlot ? HANKO_PUBLIC_DEFAULTS.endpoint : '',
+    declaredDailyQuota: hankoSlot ? hankoSlot.dailyQuota : '',
+    kv: env.GK_KV || null,
+    fetchImpl
+  });
   return [
     brevoOtpA.configured ? brevoOtpA : bridgeOtpA,
     appsScriptOtpB.configured ? appsScriptOtpB : bridgeOtpB,
@@ -1710,6 +2084,8 @@ export function createConfiguredVerificationProviders(env = {}, { fetchImpl = gl
     deadSimpleOtpG.configured ? deadSimpleOtpG : bridgeOtpG,
     logtoOtpH,
     appwriteOtpI,
+    oryOtpJ,
+    hankoOtpK,
     new OfficialWhatsAppVerificationProvider({
       graphVersion: env.WHATSAPP_GRAPH_VERSION,
       phoneNumberId: env.WHATSAPP_PHONE_NUMBER_ID,
