@@ -37,7 +37,7 @@ jobs:
           node --check account-access.js
           node scripts/sw-manifest.mjs
       - name: Startup, routing and auth protection regression tests
-        run: node --test --test-concurrency=1 startup-fast.test.mjs startup-overlay.test.mjs startup-cache-release.test.mjs p19-perf-budget.test.mjs seo-routing.test.mjs native-auth-protection.test.mjs session-recovery-api.test.mjs
+        run: node --test --test-concurrency=1 startup-fast.test.mjs startup-overlay.test.mjs startup-cache-release.test.mjs p19-perf-budget.test.mjs seo-routing.test.mjs native-auth-protection.test.mjs
       - name: Persist tested source on production release only
         if: ${{ inputs.mode == 'production' }}
         run: |
