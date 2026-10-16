@@ -759,6 +759,7 @@ function paintChrome(){
   if(bg){try{parent.__dv3Chrome&&parent.__dv3Chrome(bg)}catch(_){}}
 }
 function syncSafe(){try{var v=parent.__dv3SafeTop&&parent.__dv3SafeTop();document.documentElement.style.setProperty('--sat-p',(v||0)+'px')}catch(_){}}
+setInterval(paintChrome,1200);addEventListener('pageshow',paintChrome);
 syncSafe();addEventListener('resize',syncSafe);addEventListener('orientationchange',function(){setTimeout(syncSafe,200)});
 try{parent.document.addEventListener('ah:appearance',syncTheme)}catch(_){}
 $('#themeBtn').addEventListener('click',function(){
@@ -1286,39 +1287,19 @@ requestAnimationFrame(function(){requestAnimationFrame(function(){onShow(0)})});
   };
   window.dv2Task = function () {};
 
-  /* ── Device chrome: status-bar area, iframe backdrop and page colour all follow
-     the dashboard's real background, so the phone's top bar and the app look like
-     one surface (no band). Restored when the user leaves the dashboard. ── */
-  let chromeOn = false;
-  const toRgb = (c) => {
-    const m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(c).trim());
-    if (!m) return String(c).trim();
-    let h = m[1]; if (h.length === 3) h = h.split('').map((x) => x + x).join('');
-    return 'rgb(' + parseInt(h.slice(0, 2), 16) + ', ' + parseInt(h.slice(2, 4), 16) + ', ' + parseInt(h.slice(4, 6), 16) + ')';
-  };
+  /* ── Device chrome: the dashboard is an iframe, so the page cannot see its colour.
+     The frame reports its real background and the iframe DECLARES it with
+     data-ah-chrome; ios-chrome.js then paints the strip, every theme-color tag and the
+     canvas from that one value, and drops it the moment the frame leaves. ── */
   window.__dv3Chrome = function (bg) {
     try {
       if (!bg) return;
-      chromeOn = true;
-      window.__ahChromeOverride = toRgb(bg);
-      document.querySelectorAll('meta[name="theme-color"]').forEach((m) => m.setAttribute('content', bg));
-      const root = document.documentElement;
-      root.style.setProperty('--ah-chrome', bg);
-      root.style.backgroundColor = bg;
-      if (document.body) document.body.style.backgroundColor = bg;
       const fr = document.querySelector('iframe.dv3-frame');
-      if (fr) fr.style.background = bg;
+      if (fr) { fr.setAttribute('data-ah-chrome', bg); fr.style.background = bg; }
+      document.documentElement.style.setProperty('--ah-chrome', bg);
+      if (window.AhChrome && window.AhChrome.sync) window.AhChrome.sync();
     } catch (_) {}
   };
-  function restoreChrome() {
-    if (!chromeOn) return;
-    chromeOn = false;
-    window.__ahChromeOverride = '';
-    try {
-      document.documentElement.style.backgroundColor = '';
-      if (window.AhAppearance && window.AhAppearance.apply) window.AhAppearance.apply();
-    } catch (_) {}
-  }
   window.__dv3SafeTop = function () {
     try {
       const d = document.createElement('div');
@@ -1329,12 +1310,6 @@ requestAnimationFrame(function(){requestAnimationFrame(function(){onShow(0)})});
       return h;
     } catch (_) { return 0; }
   };
-  const onRoute = () => setTimeout(() => {
-    const path = (window.Router && Router.path) || ((location.hash || '').replace(/^#\/?/, '').split(/[?/]/)[0]) || 'dashboard';
-    if (path !== 'dashboard' && path !== '') restoreChrome();
-  }, 120);
-  window.addEventListener('hashchange', onRoute);
-  window.addEventListener('popstate', onRoute);
 
   /* ── renderDashboard override (সব আগের ইঞ্জিন অক্ষত) ── */
   const previous = window.renderDashboard;

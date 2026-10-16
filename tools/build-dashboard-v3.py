@@ -100,6 +100,7 @@ JS = JS[:ti] + (
     "  if(bg){try{parent.__dv3Chrome&&parent.__dv3Chrome(bg)}catch(_){}}\n"
     "}\n"
     "function syncSafe(){try{var v=parent.__dv3SafeTop&&parent.__dv3SafeTop();document.documentElement.style.setProperty('--sat-p',(v||0)+'px')}catch(_){}}\n"
+    "setInterval(paintChrome,1200);addEventListener('pageshow',paintChrome);\n"
     "syncSafe();addEventListener('resize',syncSafe);addEventListener('orientationchange',function(){setTimeout(syncSafe,200)});\n"
     "try{parent.document.addEventListener('ah:appearance',syncTheme)}catch(_){}\n"
     "$('#themeBtn').addEventListener('click',function(){\n"

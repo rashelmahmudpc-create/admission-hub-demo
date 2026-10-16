@@ -741,6 +741,7 @@ function paintChrome(){
   if(bg){try{parent.__dv3Chrome&&parent.__dv3Chrome(bg)}catch(_){}}
 }
 function syncSafe(){try{var v=parent.__dv3SafeTop&&parent.__dv3SafeTop();document.documentElement.style.setProperty('--sat-p',(v||0)+'px')}catch(_){}}
+setInterval(paintChrome,1200);addEventListener('pageshow',paintChrome);
 syncSafe();addEventListener('resize',syncSafe);addEventListener('orientationchange',function(){setTimeout(syncSafe,200)});
 try{parent.document.addEventListener('ah:appearance',syncTheme)}catch(_){}
 $('#themeBtn').addEventListener('click',function(){

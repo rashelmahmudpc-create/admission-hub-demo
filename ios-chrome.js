@@ -82,16 +82,55 @@
     const m = String(image).match(/rgba?\([^)]*\)|#[0-9a-f]{3,8}\b/i);
     return m && opaque(m[0]) ? m[0] : '';
   };
-  const colourAt = y => {
-    let el = document.elementFromPoint(Math.round(innerWidth / 2), Math.max(0, Math.round(y)));
-    while (el && el !== document.documentElement) {
+  // Same-origin iframes are looked into, so a screen drawn inside one is never mistaken
+  // for the page behind it.
+  const colourAt = (y, doc, x, depth) => {
+    doc = doc || document; depth = depth || 0;
+    if (x === undefined) x = Math.round(innerWidth / 2);
+    let el = doc.elementFromPoint(x, Math.max(0, Math.round(y)));
+    if (el && el.tagName === 'IFRAME' && depth < 3) {
+      try {
+        const inner = el.contentDocument;
+        if (inner && inner.documentElement) {
+          const r = el.getBoundingClientRect();
+          const got = colourAt(y - r.top, inner, x - r.left, depth + 1);
+          if (got) return got;
+        }
+      } catch (_) {}
+    }
+    while (el && el !== doc.documentElement) {
       const style = getComputedStyle(el);
       if (opaque(style.backgroundColor)) return style.backgroundColor;
       const stop = firstStop(style.backgroundImage);
       if (stop) return stop;
       el = el.parentElement;
     }
-    return document.body ? getComputedStyle(document.body).backgroundColor : '';
+    return doc.body ? getComputedStyle(doc.body).backgroundColor : '';
+  };
+  // THE RULE (owner 2026-10-17): the strip under the clock always shows exactly what is
+  // directly below it. A screen that cannot be sampled (a full-screen iframe) declares its
+  // top colour with data-ah-chrome="#rrggbb"; the top-most visible declarer wins. With no
+  // declarer the real colour under the strip is read. Nothing else may colour the strip.
+  const norm = colour => {
+    const s = String(colour || '').trim();
+    let m = /^#([0-9a-f]{3})$/i.exec(s);
+    if (m) return '#' + m[1].split('').map(ch => ch + ch).join('').toLowerCase();
+    m = /^#([0-9a-f]{6})$/i.exec(s);
+    return m ? s.toLowerCase() : hex(s);
+  };
+  const declared = () => {
+    const list = document.querySelectorAll('[data-ah-chrome]');
+    for (let i = list.length - 1; i >= 0; i--) {
+      const el = list[i];
+      if (!el.isConnected) continue;
+      const cs = getComputedStyle(el);
+      if (cs.display === 'none' || cs.visibility === 'hidden' || +cs.opacity === 0) continue;
+      const r = el.getBoundingClientRect();
+      if (r.top > 2 || r.height < innerHeight * 0.5 || r.width < innerWidth * 0.5) continue;
+      const v = norm(el.getAttribute('data-ah-chrome'));
+      if (v) return v;
+    }
+    return '';
   };
   let scrim = null;
   const ensureScrim = () => {
@@ -104,30 +143,34 @@
   };
   let last = '';
   let restColour = '';
+  let hadDeclared = false;
   const sync = () => {
     try {
       const strip = ensureScrim();
       const inset = strip ? strip.getBoundingClientRect().height : 0;
       const accountUp = document.body && document.body.classList.contains('ah-account-page-active');
-      // Account screens paint their own inset; elsewhere sample just below the strip.
-      // Main app: sample the screen's own top while it is at rest; once the page is
-      // scrolled keep that colour, so content slides under a steady bar (native feel)
-      // instead of the strip flickering with every card that passes beneath it.
       const root = document.scrollingElement || document.documentElement;
       const scrolled = !accountUp && root && root.scrollTop > 4;
-      // A full-screen host (the dashboard iframe) can declare its own top colour: the
-      // page cannot see inside an iframe, so sampling would return the wrong surface.
-      const forced = window.__ahChromeOverride ? hex(window.__ahChromeOverride) : '';
+      const forced = accountUp ? '' : declared();
+      if (hadDeclared && !forced) { try { window.AhAppearance && window.AhAppearance.apply(); } catch (_) {} }
+      hadDeclared = Boolean(forced);
       const value = forced || (scrolled && restColour ? restColour : hex(colourAt(accountUp ? 2 : inset + 2)));
       if (!value) return;
       if (!accountUp && !scrolled) restColour = value;
-      if (strip && !accountUp) strip.style.backgroundColor = value;
+      if (strip && !accountUp && strip.style.getPropertyValue('background-color') !== value) {
+        strip.style.setProperty('background-color', value, 'important');
+      }
+      // Every theme-color tag (including the media-scoped ones iOS really reads) is
+      // re-checked on each pass, so nothing can leave one of them stale.
+      document.querySelectorAll('meta[name="theme-color"]').forEach(meta => {
+        if (meta.getAttribute('content') !== value) meta.setAttribute('content', value);
+      });
+      if (!document.querySelector('meta[name="theme-color"]')) {
+        const meta = document.createElement('meta'); meta.name = 'theme-color'; meta.content = value; document.head.append(meta);
+      }
       const key = value + (accountUp ? ':a' : ':m');
       if (key === last) return;
       last = key;
-      let meta = document.querySelector('meta[name="theme-color"]');
-      if (!meta) { meta = document.createElement('meta'); meta.name = 'theme-color'; document.head.append(meta); }
-      meta.setAttribute('content', value);
       // Only the full-screen account surfaces recolour the canvas; the main app keeps
       // its theme background (the scrim alone matches the strip there).
       const canvas = accountUp ? value : '';
@@ -139,6 +182,7 @@
   ['load', 'resize', 'hashchange', 'popstate', 'pageshow', 'orientationchange'].forEach(type => addEventListener(type, () => setTimeout(sync, 60)));
   addEventListener('scroll', () => requestAnimationFrame(sync), { passive: true });
   document.addEventListener('visibilitychange', () => { if (!document.hidden) sync(); });
-  setInterval(sync, 500);
+  window.AhChrome = { sync };
+  setInterval(sync, 400);
   if (document.body) sync(); else document.addEventListener('DOMContentLoaded', sync);
 })();
