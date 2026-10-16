@@ -76,7 +76,7 @@
       return {
         language: raw.language === 'en' ? 'en' : 'bn',
         notifications: raw.notifications === 'off' ? 'off' : 'on',
-        appearance: ['light', 'dark', 'system', 'green'].includes(raw.appearance) ? raw.appearance : 'light',
+        appearance: window.AhAppearance ? window.AhAppearance.get() : (['light', 'dark', 'system'].includes(raw.appearance) ? raw.appearance : (raw.appearance === 'green' ? 'light' : 'dark')),
         aiAssistant: raw.aiAssistant === 'off' ? 'off' : 'on',
         avatarStyle: Number.isInteger(raw.avatarStyle) && raw.avatarStyle >= 0 && raw.avatarStyle <= 9 ? raw.avatarStyle : 0,
         avatarGender: raw.avatarGender === 'girl' ? 'girl' : 'boy',
@@ -687,7 +687,7 @@
       <div class="card pp-card pp-prefs">
         <div class="pp-card-head"><span class="pp-card-title">Preferences</span><button class="pp-card-edit" data-role="open-prefs-sheet" type="button">Edit</button></div>
         ${row('🌐', 'Language', pf.language === 'en' ? 'English' : 'বাংলা (Bengali)', 'pref-language')}
-        ${row('🎨', 'Appearance', pf.appearance === 'dark' ? 'Dark' : pf.appearance === 'system' ? 'System' : pf.appearance === 'green' ? 'Premium Green' : 'Light Mode', 'pref-appearance')}
+        ${row('🎨', 'Appearance', pf.appearance === 'dark' ? 'Dark' : pf.appearance === 'system' ? 'System' : 'Light Mode', 'pref-appearance')}
         ${row('🤖', 'AI Personalization', state.aiPrefs ? aiPrefsSummary(state.aiPrefs) : 'Set your style', 'open-ai-prefs')}
         <p class="pp-fine">Explicit settings — তুমি কী চাও সেটা তুমিই ঠিক করো।</p>
       </div>`;
@@ -733,7 +733,7 @@
       </div>
       <div class="card pp-card pp-prefs-page">
         ${row('🌐', 'Language', pf.language === 'en' ? 'English' : 'বাংলা (Bengali)', 'pref-language')}
-        ${row('🎨', 'Appearance', pf.appearance === 'dark' ? 'Dark' : pf.appearance === 'system' ? 'System' : pf.appearance === 'green' ? 'Premium Green' : 'Light Mode', 'pref-appearance')}
+        ${row('🎨', 'Appearance', pf.appearance === 'dark' ? 'Dark' : pf.appearance === 'system' ? 'System' : 'Light Mode', 'pref-appearance')}
         ${row('🤖', 'AI Personalization', state.aiPrefs ? aiPrefsSummary(state.aiPrefs) : 'Set your style', 'open-ai-prefs')}
       </div>
       <p class="pp-fine">Explicit settings — তুমি কী চাও সেটা তুমিই ঠিক করো।</p>
@@ -1254,10 +1254,9 @@
       </div>
       <div class="pp-kicker" style="margin-top:14px">APPEARANCE — all pages, nav, cards</div>
       <div class="pp-vlist">
-        ${appt('light', 'Light', 'ডিফল্ট থিম')}
-        ${appt('dark', 'Dark', 'রাতের মোড')}
+        ${appt('dark', 'Dark', 'ডিফল্ট — ড্যাশবোর্ডের নেভি থিম')}
+        ${appt('light', 'Light', 'পরিষ্কার প্রিমিয়াম লাইট থিম')}
         ${appt('system', 'System', 'Device-এর সাথে মানানসই')}
-        ${appt('green', 'Premium Green', 'Admission Hub signature green')}
       </div>
       <div class="pp-sheet-actions"><button class="pp-btn-ghost" data-role="sheet-close" type="button">বাতিল</button></div>`);
   }

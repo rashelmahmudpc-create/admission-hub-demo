@@ -19,9 +19,10 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Bengali:wght@400;500;600;700;800&family=Noto+Serif+Bengali:wght@500;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
 <noscript><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Bengali:wght@400;500;600;700;800&family=Noto+Serif+Bengali:wght@500;600;700&display=swap" rel="stylesheet"></noscript>
-<meta name="theme-color" content="#edf7f1">
-<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0B1020">
+<meta name="theme-color" content="#080D29">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#080D29">
 <meta name="theme-color" media="(prefers-color-scheme: light)" content="#F6F9FF">
+<link rel="stylesheet" href="./theme-unified.css?v=unified-theme-v1">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -31,28 +32,35 @@
    <html data-theme="..."> — app chrome, profile, sheets all follow. */
 (function () {
   var KEY = 'ah-appearance';
-  var MODES = ['light', 'dark', 'system', 'green'];
+  /* Unified theme (2026-10-16): exactly two looks, both from the Scholar
+     Dashboard design - dark (default) and light. Older picks migrate. */
+  var MODES = ['dark', 'light', 'system'];
+  var LEGACY = { green: 'light', pink: 'light', focus: 'light', 'emerald-glass': 'light', 'ivory-academic': 'light', midnight: 'dark', 'midnight-academic': 'dark' };
   function get() {
-    try { var v = localStorage.getItem(KEY); return MODES.indexOf(v) >= 0 ? v : 'light'; }
-    catch (_) { return 'light'; }
+    try {
+      var v = localStorage.getItem(KEY);
+      if (LEGACY[v]) { v = LEGACY[v]; localStorage.setItem(KEY, v); }
+      return MODES.indexOf(v) >= 0 ? v : 'dark';
+    }
+    catch (_) { return 'dark'; }
   }
   function resolved() {
     var m = get();
     if (m === 'system') {
       try { return (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light'; }
-      catch (_) { return 'light'; }
+      catch (_) { return 'dark'; }
     }
-    return m;
+    return m === 'light' ? 'light' : 'dark';
   }
   function apply() {
     var r = resolved();
     var root = document.documentElement;
-    if (r === 'light') { root.removeAttribute('data-theme'); root.style.colorScheme = 'light'; }
-    else { root.setAttribute('data-theme', r); root.style.colorScheme = (r === 'green') ? 'light' : r; }
+    if (root.getAttribute('data-theme') !== r) root.setAttribute('data-theme', r);
+    root.style.colorScheme = r;
+    if (document.body && document.body.hasAttribute('data-theme')) document.body.removeAttribute('data-theme');
     try {
-      var dark = (r === 'dark' || r === 'midnight');
-      var inSky = !!(document.getElementById('app') && document.getElementById('app').classList.contains('sky'));
-      var color = inSky ? (dark ? '#0B1020' : '#F6F9FF') : (dark ? (r === 'midnight' ? '#071512' : '#121212') : (r === 'green' ? '#eef7f1' : '#edf7f1'));
+      var dark = r === 'dark';
+      var color = dark ? '#080D29' : '#F4F6FD';
       var metas = document.querySelectorAll('meta[name="theme-color"]');
       /* Every theme-color tag, including the media-scoped light/dark ones the
          mobile browser actually reads, so the status bar matches the app. */
@@ -62,14 +70,21 @@
     } catch (_) {}
   }
   function set(mode) {
-    if (MODES.indexOf(mode) < 0) mode = 'light';
+    if (LEGACY[mode]) mode = LEGACY[mode];
+    if (MODES.indexOf(mode) < 0) mode = 'dark';
     try { localStorage.setItem(KEY, mode); } catch (_) {}
     apply();
     try { window.dispatchEvent(new CustomEvent('ah:appearance', { detail: { mode: mode, resolved: resolved() } })); } catch (_) {}
   }
   try { if (window.matchMedia) matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function () { if (get() === 'system') apply(); }); } catch (_) {}
-  window.AhAppearance = { get: get, set: set, resolved: resolved, apply: apply };
+  window.AhAppearance = { get: get, set: set, resolved: resolved, apply: apply, modes: MODES.slice() };
   apply();
+  try {
+    new MutationObserver(function () {
+      var want = resolved();
+      if (document.documentElement.getAttribute('data-theme') !== want) apply();
+    }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+  } catch (_) {}
 })();
 /* ADMISSION HUB — Global i18n Engine (blueprint §17): bn (default) / en.
    Canonical key: ahLang (AI page reads it too). Markup contract for the
@@ -4907,10 +4922,10 @@ function resumeActiveExam(){
   function applyUpgradePrefs(){
     const s=normalizeSettings(CACHE.settings); CACHE.settings=s;
     document.body.classList.toggle('compact',s.density==='compact'); document.body.classList.toggle('no-motion',s.animation==='off'||s.reducedMotion);
-    document.documentElement.dataset.accent=s.accent||'emerald';
+    document.documentElement.removeAttribute('data-accent');
   }
-  applyTheme=function(){originalApplyTheme(); const s=normalizeSettings(CACHE.settings||{}); const theme=s.theme||'light'; if(theme==='light') document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme',theme); applyUpgradePrefs();};
-  setTheme=async function(theme){CACHE.settings=normalizeSettings(CACHE.settings); CACHE.settings.theme=theme; await dbPut('settings',CACHE.settings); applyTheme(); render(); toast('Theme updated');};
+  applyTheme=function(){originalApplyTheme(); if(window.AhAppearance) window.AhAppearance.apply(); applyUpgradePrefs();};
+  setTheme=async function(theme){if(window.AhAppearance) window.AhAppearance.set(theme); CACHE.settings=normalizeSettings(CACHE.settings); CACHE.settings.theme=window.AhAppearance?window.AhAppearance.get():theme; await dbPut('settings',CACHE.settings); applyTheme(); render(); toast('Theme updated');};
   window.setAccent=async function(accent){CACHE.settings=normalizeSettings(CACHE.settings); CACHE.settings.accent=accent; await dbPut('settings',CACHE.settings); applyUpgradePrefs(); render();};
   window.persistUpgradeSetting=async function(){CACHE.settings=normalizeSettings(CACHE.settings); await dbPut('settings',CACHE.settings); applyUpgradePrefs(); render();};
 
@@ -5594,10 +5609,10 @@ window.__admissionBootPromise.catch(error => console.error('[Admission Hub] boot
 })();
 </script>
 <!-- First-interaction modules execute before optional/heavy tools. -->
-<script defer src="./dashboard-v2.js?v=dash2f17-v3frame"></script>
+<script defer src="./dashboard-v2.js?v=dash2f17-v3frame-ut1"></script>
 <script defer src="./academic-catalog.js?v=acad-cat-v2"></script>
-<script defer src="./profile-ui.js?v=profile-v18-avatar-cache"></script>
-<script defer src="./ai-agent-chat.js?v=agent-f1-ui-skyv7"></script>
+<script defer src="./profile-ui.js?v=profile-v18-avatar-cache-ut1"></script>
+<script defer src="./ai-agent-chat.js?v=agent-f1-ui-skyv7-ut1"></script>
 <script defer src="./question-engine.js?v=qe1"></script>
 <script defer src="./question-engine-panel.js?v=qe1"></script>
 <script defer src="qbank-redesign.js?v=practice15"></script>
@@ -5605,7 +5620,7 @@ window.__admissionBootPromise.catch(error => console.error('[Admission Hub] boot
 <script defer src="phase12-ui.js?v=nav-resume-router-v11-main-ai"></script>
 <script defer src="phase23-ui.js?v=swipe-fix-0f10a28-safe-capture"></script>
 <script defer src="upgrade-features.js?v=4"></script>
-<script defer src="phase1-upgrade.js?v=4-nosplash"></script>
+<script defer src="phase1-upgrade.js?v=4-nosplash-ut1"></script>
 <script defer src="study-tools-restore.js?v=3"></script>
 <script defer src="urgent-topic-fix.js?v=practice10"></script>
 <script defer src="phase2-dictionary-parser.js?v=6"></script>
@@ -5954,7 +5969,7 @@ window.admissionLoadPack = function admissionLoadPack(name) {
 <script src="./a11y-core.js?v=a11y-v1" defer></script>
 <script src="./offline-status.js?v=offline-v2" defer></script>
 <script src="./install-guide.js?v=install-v4" defer></script>
-<script defer src="./question-bank-clean.js?v=qbc1"></script>
+<script defer src="./question-bank-clean.js?v=qbc1-ut1"></script>
 <script>
 /* Seed + cloud hydrate: cloud-content-sync.js (batched IDB, Android-safe). */
 </script>
@@ -5971,5 +5986,6 @@ window.admissionLoadPack = function admissionLoadPack(name) {
  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',queue,{once:true});else queue();
 })();
 </script>
+<script src="./theme-unified.js?v=unified-theme-v1"></script>
 </body>
 </html>

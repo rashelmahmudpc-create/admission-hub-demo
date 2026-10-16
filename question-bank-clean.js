@@ -79,7 +79,7 @@ async function bumpQuestionStats(q,ok){try{q.stats=q.stats||{attempts:0,correct:
 
 /* ---------- theme + device chrome ---------- */
 const isDark=()=>{try{const r=window.AhAppearance&&window.AhAppearance.resolved();return r==='dark'||r==='midnight'}catch(e){return false}};
-const BG=()=>isDark()?'#090e1b':'#f4f6fb';
+const BG=()=>isDark()?'#080D29':'#F4F6FD';
 function chromeOn(){const de=document.documentElement;de.classList.add('qbc-active');const c=BG();document.querySelectorAll('meta[name="theme-color"]').forEach(m=>m.setAttribute('content',c));de.style.setProperty('--ah-chrome',c);de.style.backgroundColor=c;if(document.body)document.body.style.backgroundColor=c;const r=document.getElementById('qbc');if(r)r.dataset.qtheme=isDark()?'dark':'light'}
 function chromeOff(){const de=document.documentElement;if(!de.classList.contains('qbc-active'))return;de.classList.remove('qbc-active');de.style.backgroundColor='';try{window.AhAppearance&&window.AhAppearance.apply()}catch(e){}}
 function toggleTheme(){try{window.AhAppearance&&window.AhAppearance.set(isDark()?'light':'dark')}catch(e){}chromeOn();document.querySelectorAll('#qbc .tb').forEach(b=>b.innerHTML=ic(isDark()?'sun':'moon'))}
