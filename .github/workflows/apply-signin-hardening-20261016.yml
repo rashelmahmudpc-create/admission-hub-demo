@@ -1,0 +1,94 @@
+name: Apply sign-in hardening 2026-10-16
+
+# Owner order 2026-10-16 (owner has only a phone, cannot use the admin panel):
+# code-enforce otp-f off, code TTL >= 600s, timeout fail-over (Brevo capped 8s),
+# common student mail domains allowed, new slots inherit wrangler rows, and the
+# wrangler comment/config cleanup. See scripts/apply-signin-hardening-20261016.py.
+# Runs the auth test set on the untouched branch first (baseline), applies the
+# edits, rebuilds worker-bundle.mjs, runs the same set again and refuses to
+# commit if any test fails that did not already fail on main. Never deploys.
+
+on:
+  push:
+    branches: [fix/signin-hardening]
+    paths:
+      - '.github/workflows/apply-signin-hardening-20261016.yml'
+      - 'scripts/apply-signin-hardening-20261016.py'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-signin-hardening-20261016
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: github.ref_name == 'fix/signin-hardening'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      TESTS: >-
+        verification-providers.test.mjs verification-orchestrator.test.mjs verification-admin.test.mjs
+        free-tier-failover.test.mjs backup-public-handler.test.mjs email-branding.test.mjs email-policy.test.mjs
+        email-gateway.test.mjs email-gateway-failover.test.mjs email-gateway-security.test.mjs
+        native-auth.test.mjs native-auth-operations.test.mjs native-auth-protection.test.mjs
+        compact-auth-config.test.mjs auth-foundation.test.mjs auth-foundation-chaos.test.mjs
+        telegram-otp-auth.test.mjs firebase-google-auth.test.mjs
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: fix/signin-hardening
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install
+        run: npm ci
+      - name: Baseline (before edits)
+        run: |
+          set +e
+          : > /tmp/base.txt
+          for f in $TESTS; do
+            [ -f "$f" ] || { echo "missing $f"; continue; }
+            node --test --test-concurrency=1 "$f" 2>&1 | sed -n 's/^ *not ok [0-9]* - //p' | sed "s|^|$f :: |" >> /tmp/base.txt
+          done
+          sort -u /tmp/base.txt -o /tmp/base.txt
+          echo "baseline failures: $(wc -l < /tmp/base.txt)"; cat /tmp/base.txt
+      - name: Apply edits
+        run: |
+          set -eu
+          python3 scripts/apply-signin-hardening-20261016.py
+          git diff --stat
+      - name: Rebuild and verify the Worker bundle
+        run: |
+          set -eu
+          npm run build:worker
+          npm run check:worker-bundle
+      - name: After edits (must not add failures)
+        run: |
+          set +e
+          : > /tmp/after.txt
+          for f in $TESTS verification-config-hardening.test.mjs; do
+            [ -f "$f" ] || continue
+            node --test --test-concurrency=1 "$f" 2>&1 | sed -n 's/^ *not ok [0-9]* - //p' | sed "s|^|$f :: |" >> /tmp/after.txt
+          done
+          sort -u /tmp/after.txt -o /tmp/after.txt
+          echo "after failures: $(wc -l < /tmp/after.txt)"
+          comm -13 /tmp/base.txt /tmp/after.txt > /tmp/new.txt
+          echo "fixed by this change:"; comm -23 /tmp/base.txt /tmp/after.txt
+          if [ -s /tmp/new.txt ]; then echo "NEW FAILURES:"; cat /tmp/new.txt; exit 1; fi
+          echo "no new failures"
+      - name: Commit and push to the feature branch
+        run: |
+          set -eu
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -u
+          git add verification-config-hardening.test.mjs
+          if git diff --cached --quiet; then echo 'Nothing to commit (already applied).'; else
+            git commit -m 'fix(otp): code-enforced sign-in hardening (otp-f off, TTL>=600, timeout fail-over, student domains, slot inheritance)' -m 'Applied by apply-signin-hardening-20261016.yml. No deploy.'
+            git push origin HEAD:fix/signin-hardening
+          fi

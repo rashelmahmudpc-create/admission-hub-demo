@@ -4,6 +4,7 @@ import { reconcileIdentitySnapshot, summarizeIdentityHealth } from '../core/iden
 import { SqliteAuthRepository } from '../storage/sqlite-auth-repository.mjs';
 import { VerificationOrchestrator } from '../verification/orchestrator.mjs';
 import { createConfiguredVerificationProviders } from '../verification/providers.mjs';
+import { withMissingSlotsFrom } from '../verification/config.mjs';
 import { dispatchSecurityNotifications } from '../core/security-notifications.mjs';
 import { SqliteVerificationRepository } from '../verification/sqlite-verification-repository.mjs';
 import { D1ProfileStore } from '../storage/d1-profile-repository.mjs';
@@ -47,7 +48,7 @@ export class AdmissionAuthAuthority {
       this.verification = new VerificationOrchestrator({
         repository: this.verificationRepository,
         hmacSecret: env.AUTH_HMAC_SECRET,
-        config: persistedVerificationConfig || env.VERIFICATION_ORCHESTRATOR_CONFIG,
+        config: withMissingSlotsFrom(persistedVerificationConfig, env.VERIFICATION_ORCHESTRATOR_CONFIG) || env.VERIFICATION_ORCHESTRATOR_CONFIG,
         providers: createConfiguredVerificationProviders(env),
         activated: ['canary', 'enabled'].includes(String(env.VERIFICATION_AUTH_ACTIVATION || ''))
       });
