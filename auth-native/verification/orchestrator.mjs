@@ -418,7 +418,9 @@ export class VerificationOrchestrator {
             }
             break;
           }
-          if (failure.failureClass === VERIFICATION_FAILURE_CLASS.HARD || providerState.circuit === 'open') break;
+          // Owner 2026-10-16 (audit): a provider that timed out hands over to the next slot
+          // at once instead of making the student wait for a second timeout.
+          if (failure.failureClass === VERIFICATION_FAILURE_CLASS.HARD || providerState.circuit === 'open' || failure.code === 'PROVIDER_TIMEOUT') break;
         }
       }
     }

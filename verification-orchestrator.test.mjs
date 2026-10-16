@@ -469,10 +469,10 @@ test('safe admin policy updates persist only normalized non-secret fields', asyn
   const updated = await app.orchestrator.updateConfig({
     enabled: true,
     secret: 'must-not-persist',
-    policy: { codeTtlSeconds: 240, maxAttempts: 4, apiKey: 'must-not-persist' },
+    policy: { codeTtlSeconds: 240, maxAttempts: 4, apiKey: 'must-not-persist' }, // TTL floor lifts 240 to 600
     providers: [{ id: 'otp-a', enabled: true, priority: 77, dailyQuota: 12, token: 'must-not-persist' }]
   });
-  assert.equal(updated.policy.codeTtlSeconds, 240);
+  assert.equal(updated.policy.codeTtlSeconds, 600);
   assert.equal(updated.policy.maxAttempts, 4);
   assert.equal(updated.providers.find(row => row.id === 'otp-a').priority, 77);
   const persisted = await app.repository.getRuntimeConfig();
@@ -688,7 +688,7 @@ test('owner 2026-10-16 (Logto first): a Gmail recipient keeps Brevo first', asyn
 });
 
 test('owner 2026-10-16 (user-error failover): a provider 422 fails over to the next slot', async () => {
-  const mailersend = new MockProvider({ id: 'otp-f' });
+  const mailersend = new MockProvider({ id: 'otp-d' });
   mailersend.sendVerification = async input => {
     mailersend.sends.push(input);
     throw new VerificationProviderError('PROVIDER_HTTP_422', VERIFICATION_FAILURE_CLASS.USER);
@@ -702,9 +702,55 @@ test('owner 2026-10-16 (user-error failover): a provider 422 fails over to the n
 });
 
 test('owner 2026-10-16 (user-error failover): an invalid destination still stops the request', async () => {
-  const first = new MockProvider({ id: 'otp-f', sendPlan: ['user'] });
+  const first = new MockProvider({ id: 'otp-d', sendPlan: ['user'] });
   const second = new MockProvider({ id: 'otp-h', verificationMode: VERIFICATION_MODES.PROVIDER_EVIDENCE });
   const app = setup({ providers: [first, second] });
   await expectCode(() => app.orchestrator.requestVerification(identity, context), AUTH_ERROR_CODES.INVALID_INPUT);
   assert.equal(second.sends.length, 0);
+});
+
+test('owner 2026-10-16 (audit): MailerSend otp-f stays off even when a saved config enables it', async () => {
+  const mailersend = new MockProvider({ id: 'otp-f' });
+  const brevo = new MockProvider({ id: 'otp-a' });
+  const app = setup({ providers: [mailersend, brevo] });
+  await app.orchestrator.requestVerification(identity, context);
+  assert.equal(mailersend.sends.length, 0, 'otp-f is never tried');
+  assert.equal(brevo.sends.length, 1);
+});
+
+test('owner 2026-10-16 (audit): a code lives 10 minutes even if a saved policy says 300s', async () => {
+  const provider = new MockProvider({ id: 'otp-a' });
+  const app = setup({ providers: [provider], config: rawConfig([provider], { codeTtlSeconds: 300 }) });
+  const requested = await app.orchestrator.requestVerification(identity, context);
+  app.advance(400_000);
+  const verified = await app.orchestrator.verify({ ...identity, attemptId: requested.attemptId, code: provider.sends[0].code }, context);
+  assert.ok(verified);
+});
+
+test('owner 2026-10-16 (audit): hotmail/live/ymail pass a saved four-domain allowlist; junk still refused', async () => {
+  const provider = new MockProvider({ id: 'otp-a' });
+  const app = setup({ providers: [provider], config: allowConfig([provider], ['gmail.com', 'yahoo.com', 'icloud.com', 'outlook.com']) });
+  const hot = ownershipIdentity('student@hotmail.com');
+  assert.equal((await app.orchestrator.requestVerification(hot, context)).accepted, true);
+  await expectCode(() => app.orchestrator.requestVerification(ownershipIdentity('student@mailinator.com'), context), AUTH_ERROR_CODES.INVALID_INPUT);
+});
+
+test('owner 2026-10-16 (audit): a timed-out provider hands over without a same-provider retry', async () => {
+  const slow = new MockProvider({ id: 'otp-a' });
+  slow.sendVerification = async input => { slow.sends.push(input); return new Promise(() => {}); };
+  const next = new MockProvider({ id: 'otp-b' });
+  const config = rawConfig([slow, next]);
+  config.providers = config.providers.map(row => ({ ...row, timeoutMs: 1000 }));
+  const app = setup({ providers: [slow, next], config });
+  const result = await app.orchestrator.requestVerification(identity, context);
+  assert.equal(result.accepted, true);
+  assert.equal(slow.sends.length, 1, 'no second wait on the hung provider');
+  assert.equal(next.sends.length, 1);
+});
+
+test('owner 2026-10-16 (audit): Brevo otp-a timeout is capped at 8s', async () => {
+  const { verificationConfig } = await import('./auth-native/verification/config.mjs');
+  const cfg = verificationConfig({ providers: [{ id: 'otp-a', enabled: true, dailyQuota: 300, timeoutMs: 15000 }, { id: 'otp-b', enabled: true, dailyQuota: 100, timeoutMs: 20000 }] });
+  assert.equal(cfg.providers.find(row => row.id === 'otp-a').timeoutMs, 8000);
+  assert.equal(cfg.providers.find(row => row.id === 'otp-b').timeoutMs, 20000);
 });

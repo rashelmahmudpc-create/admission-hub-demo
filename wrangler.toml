@@ -43,7 +43,7 @@ VERIFICATION_ORCHESTRATOR_CONFIG = '{"enabled":true,"providers":[{"id":"otp-a","
 # mailer (own logo/subject; ties sort by id so otp-f MailerSend goes first) and BEFORE
 # the spam-prone last-resort pair. Endpoint and project id are public and live in
 # providers.mjs (APPWRITE_PUBLIC_DEFAULTS) to stay under the 64-variable ceiling;
-# dailyQuota 300 above is our own safety cap. Optional secret APPWRITE_API_KEY.
+# dailyQuota 300 above is our own safety cap. Optional Appwrite server key (bound as a secret, never here).
 # otp-j is Ory Network one-time code (project "Admission Sky", free Developer plan),
 # added 2026-10-16. Ory mails the code from its own SMTP (sender "Admission Sky via
 # Ory"; subject/body are Ory's default and stay so: changing them needs own SMTP).
