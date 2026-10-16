@@ -598,3 +598,50 @@ test('the account-backup purpose ignores the email-ownership allowlist', async (
   assert.equal(requested.accepted, true);
 });
 
+
+test('owner 2026-10-16: an iCloud/Yahoo/Outlook recipient is offered to Appwrite first', async () => {
+  // Owner report: those mailboxes did not get codes the top slot accepted, and he
+  // verified Appwrite delivers to all three. Brevo (otp-a) keeps the best operator
+  // priority, so only the recipient bias can move the send.
+  const brevo = new MockProvider({ id: 'otp-a' });
+  const appwrite = new MockProvider({ id: 'otp-i', verificationMode: VERIFICATION_MODES.PROVIDER_EVIDENCE });
+  const app = setup({
+    providers: [brevo, appwrite],
+    config: allowConfig([brevo, appwrite], ['gmail.com', 'yahoo.com', 'icloud.com', 'outlook.com'])
+  });
+  const result = await app.orchestrator.requestVerification(ownershipIdentity('student@yahoo.com'), context);
+  assert.equal(result.accepted, true);
+  assert.equal(appwrite.sends.length, 1, 'Appwrite must carry the Yahoo send');
+  assert.equal(brevo.sends.length, 0, 'Brevo must not be chosen for a Yahoo recipient');
+});
+
+test('owner 2026-10-16: an iCloud recipient uses Appwrite and a Gmail recipient keeps the operator order', async () => {
+  const brevo = new MockProvider({ id: 'otp-a' });
+  const appwrite = new MockProvider({ id: 'otp-i', verificationMode: VERIFICATION_MODES.PROVIDER_EVIDENCE });
+  const app = setup({
+    providers: [brevo, appwrite],
+    config: allowConfig([brevo, appwrite], ['gmail.com', 'yahoo.com', 'icloud.com', 'outlook.com'])
+  });
+  await app.orchestrator.requestVerification(ownershipIdentity('student@icloud.com'), context);
+  assert.equal(appwrite.sends.length, 1);
+  assert.equal(brevo.sends.length, 0);
+  app.advance(61_000);
+  await app.orchestrator.requestVerification(ownershipIdentity('student@gmail.com'), context);
+  assert.equal(brevo.sends.length, 1, 'a Gmail recipient must still prefer the operator order');
+  assert.equal(appwrite.sends.length, 1);
+});
+
+test('owner 2026-10-16: a misconfigured Appwrite falls through instead of starving a Yahoo send', async () => {
+  const brevo = new MockProvider({ id: 'otp-a' });
+  const appwrite = new MockProvider({ id: 'otp-i', verificationMode: VERIFICATION_MODES.PROVIDER_EVIDENCE });
+  // A preference lowers a score; it must never promote a slot the probe rejected.
+  appwrite.checkAvailability = async () => ({ available: false, code: 'NOT_CONFIGURED' });
+  const app = setup({
+    providers: [brevo, appwrite],
+    config: allowConfig([brevo, appwrite], ['gmail.com', 'yahoo.com', 'icloud.com', 'outlook.com'])
+  });
+  const result = await app.orchestrator.requestVerification(ownershipIdentity('student@yahoo.com'), context);
+  assert.equal(result.accepted, true);
+  assert.equal(appwrite.sends.length, 0);
+  assert.equal(brevo.sends.length, 1, 'the send must fall through to a healthy slot');
+});

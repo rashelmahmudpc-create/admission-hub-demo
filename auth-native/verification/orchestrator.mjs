@@ -68,12 +68,16 @@ function providerFailure(error) {
 const PROBE_TIMEOUT_MS = 5000;
 
 // Owner 2026-10-16: iCloud / Yahoo / Outlook mailboxes did not receive codes that
-// Brevo (top slot) accepted. For those recipients prefer otp-b (Apps Script,
-// sends from the real Gmail account) then otp-e (AgentMail, own signed domain).
-// Gmail recipients keep the operator order. A resend demotes the slot that
-// carried the previous code so each retry goes out through a different sender.
+// Brevo (top slot) accepted. Owner 2026-10-16 (later): route those recipients
+// through Appwrite (otp-i), which he has confirmed does land in iCloud, Yahoo and
+// Outlook. Appwrite mails the code itself from its own well-signed domain, so it
+// does not depend on any sender verification the owner still has to do.
+// A preference only lowers a slot's score; it cannot promote a slot the probe
+// judged unready, so a misconfigured Appwrite falls through to the next slot
+// instead of starving the send. Gmail recipients keep the operator order. A
+// resend still demotes the slot that carried the previous code.
 const NON_GMAIL_FREEMAIL = new Set(['icloud.com', 'me.com', 'mac.com', 'yahoo.com', 'yahoo.co.uk', 'yahoo.co.in', 'ymail.com', 'rocketmail.com', 'outlook.com', 'hotmail.com', 'live.com', 'msn.com', 'aol.com']);
-const NON_GMAIL_PREFERENCE = Object.freeze({ 'otp-b': -15, 'otp-e': -30 });
+const NON_GMAIL_PREFERENCE = Object.freeze({ 'otp-i': -40, 'otp-b': -15, 'otp-e': -30 });
 function recipientBias(providerId, email) {
   const domain = String(email || '').trim().toLowerCase().split('@').pop();
   return NON_GMAIL_FREEMAIL.has(domain) ? (NON_GMAIL_PREFERENCE[providerId] || 0) : 0;
