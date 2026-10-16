@@ -29,6 +29,8 @@ import { AiAnalyticsStore } from './ai-analytics-store.mjs';
 import { chatCacheEnabled, isCacheableRequest, chatCacheKey, chatCacheTtl } from './ai-chat-cache.mjs';
 /* P26 — difficulty-aware tier routing (step 2 of the AI cost plan). */
 import { routeTier, assessDifficulty } from './ai-tier-router.mjs';
+/* P27 — bounded history (step 3 of the AI cost plan). */
+import { selectHistory, capRecalledTurns } from './ai-history-trim.mjs';
 
 export const AGENT_VERSION = 'agent-f1';
 export const SYSTEM_PROMPT_V = 'sys-f1-3-ai-personalization';
@@ -999,15 +1001,24 @@ export async function agentChat(request, env, uid, opts = {}) {
      fresh thread and that flag suppresses memory entirely. */
   const freshThread = v.fresh === true;
   let msgs = v.messages.slice();
-  if (!freshThread && msgs.length < 3 && mem.length) msgs = mem.concat(msgs);
-  let freshSummary = null;
-  if (msgs.length > 16) {
-    const summary = summarizeTo(msgs);
-    freshSummary = summary;
-    if (memoryOn) await statePut('chatmemsum:' + sendCtx.uid, summary);
-    msgs = msgs.slice(-12);
-  }
-  msgs = msgs.slice(-24);
+  /* P27: the recalled turns are prepended before the current thread, so an
+     over-long stored value would inflate every request in the session. Keep the
+     newest few only. */
+  if (!freshThread && msgs.length < 3 && mem.length) msgs = capRecalledTurns(mem).concat(msgs);
+  /* P27: keep the last few turns word-for-word and digest everything older, so a
+     follow-up still has its immediate context without re-sending the whole
+     thread. A thread at or below the window is returned byte-identical to
+     before. */
+  const history = selectHistory(msgs);
+  msgs = history.kept;
+  /* P27: for a short thread (<= 16 turns) the digest is shown for this request
+     only and nothing is persisted, so the chat path keeps its two-write budget.
+     For a genuinely long one the digest is also saved as the rolling summary, so
+     the same context carries into the next session. Stored memory already
+     suppresses the summary (see summaryText below), so there is no double-count. */
+  const persistSummary = memoryOn && history.digest && history.compacted >= 8;
+  let freshSummary = history.digest || null;
+  if (persistSummary) await statePut('chatmemsum:' + sendCtx.uid, freshSummary);
 
   const systemPrompt = buildSystemPrompt({ stats, examMode, quiz: quizMode, onboarding, prefs: aiPrefs });
   /* M4 Context Engine (opt-in). When enabled, a typed permission-scoped bundle

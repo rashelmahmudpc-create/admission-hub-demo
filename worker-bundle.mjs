@@ -1882,6 +1882,53 @@ function routeTier(intent, text, baseTier) {
 }
 var __tierTest = Object.freeze({ HARD_MARKERS, SIMPLE_MAX_WORDS });
 
+// ai-history-trim.mjs
+var HISTORY = Object.freeze({
+  /* Turns kept word-for-word. Eight is enough for "explain that again" style
+   * follow-ups while still halving a typical 16-turn thread. */
+  RECENT: 8,
+  /* Layout matches the existing rolling summary, which tests and the prompt
+   * renderer already expect. */
+  DIGEST_HEADER: "পূর্বের কথোপকথন (সংক্ষেপ):\n",
+  DIGEST_PER_TURN_CHARS: 90,
+  DIGEST_MAX_CHARS: 900
+});
+function digestTurns(messages, maxChars = HISTORY.DIGEST_MAX_CHARS) {
+  const msgs = Array.isArray(messages) ? messages : [];
+  if (!msgs.length) return "";
+  let out = HISTORY.DIGEST_HEADER;
+  for (const m of msgs) {
+    const who = m && m.role === "user" ? "শিক্ষার্থী" : "AI";
+    const txt = String(m && m.content || "").replace(/\s+/g, " ").trim().slice(0, HISTORY.DIGEST_PER_TURN_CHARS);
+    if (!txt) continue;
+    out += `- ${who}: ${txt}
+`;
+  }
+  return out.length > maxChars ? out.slice(0, maxChars) + "…" : out;
+}
+function selectHistory(messages, opts = {}) {
+  const msgs = Array.isArray(messages) ? messages : [];
+  const recent = Number.isInteger(opts.recent) && opts.recent > 0 ? opts.recent : HISTORY.RECENT;
+  if (msgs.length <= recent) {
+    return { kept: msgs.slice(), digest: "", compacted: 0, droppedChars: 0 };
+  }
+  const cut = msgs.length - recent;
+  const older = msgs.slice(0, cut);
+  const kept = msgs.slice(cut);
+  const before = older.reduce((n, m) => n + String(m && m.content || "").length, 0);
+  const digest3 = digestTurns(older, opts.maxDigestChars);
+  return {
+    kept,
+    digest: digest3,
+    compacted: older.length,
+    droppedChars: Math.max(0, before - digest3.length)
+  };
+}
+function capRecalledTurns(mem, max = 4) {
+  const list = Array.isArray(mem) ? mem.filter(Boolean) : [];
+  return list.length <= max ? list.slice() : list.slice(list.length - max);
+}
+
 // ai-agent.js
 var AGENT_VERSION = "agent-f1";
 var SYSTEM_PROMPT_V = "sys-f1-3-ai-personalization";
@@ -2201,19 +2248,6 @@ function buildImprovementLine(stats, opts = {}) {
     return en ? `Your accuracy dipped this week: ${prev.accuracy}% → ${cur.accuracy}% (down ${Math.abs(delta)} points). Slow down and revise the basics before the next test.` : `এই সপ্তাহে একুরেসি একটু কমেছে: গত সপ্তাহে ${prev.accuracy}% → এখন ${cur.accuracy}% (${Math.abs(delta)} পয়েন্ট কম)। পরের পরীক্ষার আগে বেসিকটা আরেকবার দেখে নাও।`;
   }
   return en ? `Steady this week: ${prev.accuracy}% → ${cur.accuracy}% accuracy. Push a little harder to move it up.` : `এই সপ্তাহে প্রায় একই রকম: গত সপ্তাহে ${prev.accuracy}% → এখন ${cur.accuracy}%। একটু বেশি চেষ্টা করলে বাড়বে।`;
-}
-function summarizeTo(messages, maxTurns = 6, maxChars = 900) {
-  const msgs = Array.isArray(messages) ? messages.slice(0, -maxTurns) : [];
-  if (!msgs.length) return "";
-  let out = "পূর্বের কথোপকথন (সংক্ষেপ):\n";
-  for (const m of msgs) {
-    const who = m.role === "user" ? "শিক্ষার্থী" : "AI";
-    const txt = String(m.content || "").replace(/\s+/g, " ").trim().slice(0, 90);
-    if (!txt) continue;
-    out += `- ${who}: ${txt}
-`;
-  }
-  return out.length > maxChars ? out.slice(0, maxChars) + "…" : out;
 }
 var STAGE_UNDERSTAND = {
   GENERAL_CHAT: "তোমার কথাটা বুঝে নিচ্ছি",
@@ -2727,15 +2761,12 @@ async function agentChat(request, env, uid, opts = {}) {
   }
   const freshThread = v.fresh === true;
   let msgs = v.messages.slice();
-  if (!freshThread && msgs.length < 3 && mem.length) msgs = mem.concat(msgs);
-  let freshSummary = null;
-  if (msgs.length > 16) {
-    const summary = summarizeTo(msgs);
-    freshSummary = summary;
-    if (memoryOn) await statePut("chatmemsum:" + sendCtx.uid, summary);
-    msgs = msgs.slice(-12);
-  }
-  msgs = msgs.slice(-24);
+  if (!freshThread && msgs.length < 3 && mem.length) msgs = capRecalledTurns(mem).concat(msgs);
+  const history = selectHistory(msgs);
+  msgs = history.kept;
+  const persistSummary = memoryOn && history.digest && history.compacted >= 8;
+  let freshSummary = history.digest || null;
+  if (persistSummary) await statePut("chatmemsum:" + sendCtx.uid, freshSummary);
   const systemPrompt = buildSystemPrompt({ stats, examMode, quiz: quizMode, onboarding, prefs: aiPrefs });
   const profileCtx = sendCtx.uid.startsWith("account-") ? sanitizeProfileContext(body?.context?.profile) : null;
   const ctxBundle = contextEngineEnabled(env) ? buildContext({ uid: sendCtx.uid, prefs: aiPrefs, stats, onboarding, profile: profileCtx, memoryOn }) : null;
