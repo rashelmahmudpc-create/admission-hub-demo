@@ -72,10 +72,9 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           set -eu
-          # The deployed script must carry the P31 marker. Read the Worker's own
-          # content back from the Cloudflare API rather than guessing from a route
-          # response: /api/ai/chat answers 403 to a non-app caller by design.
-          npx --yes wrangler@4.35.0 deployments list --name admission-gk | head -20
+          # Read the deployed script back from the Cloudflare API. A route
+          # response cannot be used here: /api/ai/chat answers 403 to any caller
+          # that is not the app, by design.
           curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/admission-gk/content" \
             -o /tmp/deployed.mjs
