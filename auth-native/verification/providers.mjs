@@ -1224,6 +1224,180 @@ export class LogtoOtpVerificationProvider {
   }
 }
 
+// Slot `otp-i` is Appwrite Cloud's built-in Email OTP (project 6ad1e9280025bf4464ee,
+// Frankfurt region). Appwrite creates, mails and checks the 6-digit code itself, so
+// like otp-h this slot is provider-evidence. It drives the public Account API
+// (POST /account/tokens/email, then POST /account/sessions/token) with only the
+// public project id, so no secret is required. The temporary Appwrite session
+// that a successful check creates is deleted straight away; we only need the
+// yes/no answer. An optional APPWRITE_API_KEY secret (scope sessions.write) lifts
+// Appwrite's per-IP abuse limits, but binding it costs one of the 64 Worker vars.
+const APPWRITE_STATE_TTL_SECONDS = 900;
+// Public, non-secret values live in code for the same 64-variable reason as Logto.
+const APPWRITE_PUBLIC_DEFAULTS = Object.freeze({
+  endpoint: 'https://fra.cloud.appwrite.io/v1',
+  projectId: '6ad1e9280025bf4464ee'
+});
+function slotFromConfig(raw, id) {
+  try {
+    const text = String(raw || '');
+    if (!text || text.length > 16_384) return null;
+    const config = JSON.parse(text);
+    if (config?.enabled !== true) return null;
+    const rows = config.providers;
+    const row = Array.isArray(rows) ? rows.find(item => item?.id === id) : null;
+    return row && row.enabled === true ? row : null;
+  } catch { return null; }
+}
+const validAppwriteProjectId = value => /^[A-Za-z0-9][A-Za-z0-9._-]{0,35}$/.test(String(value || ''));
+const validAppwriteUserId = value => /^[A-Za-z0-9][A-Za-z0-9._-]{0,35}$/.test(String(value || ''));
+function appwriteEndpoint(value) {
+  try {
+    const url = new URL(String(value || ''));
+    if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash) return '';
+    const path = url.pathname.replace(/\/+$/, '');
+    if (path !== '/v1') return '';
+    return `${url.origin}/v1`;
+  } catch { return ''; }
+}
+
+export class AppwriteOtpVerificationProvider {
+  constructor({ id = 'otp-i', endpoint, projectId, apiKey, declaredDailyQuota, kv = null, fetchImpl = globalThis.fetch, now = Date.now } = {}) {
+    this.id = String(id || '');
+    this.channel = VERIFICATION_CHANNELS.OTP;
+    this.verificationMode = VERIFICATION_MODES.PROVIDER_EVIDENCE;
+    this.endpoint = appwriteEndpoint(endpoint);
+    this.projectId = validAppwriteProjectId(projectId) ? String(projectId) : '';
+    this.apiKey = validSecret(apiKey) ? apiKey : '';
+    this.declaredDailyQuota = safeInteger(declaredDailyQuota, 1, 10_000_000);
+    this.kv = kv && typeof kv.get === 'function' && typeof kv.put === 'function' ? kv : null;
+    this.fetch = typeof fetchImpl === 'function' ? fetchImpl.bind(globalThis) : null;
+    this.now = typeof now === 'function' ? now : Date.now;
+    this.memory = new Map();
+    this.configured = Boolean(this.endpoint && this.projectId && this.declaredDailyQuota && this.fetch);
+  }
+
+  #headers(extra = {}) {
+    return {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      'Cache-Control': 'no-store',
+      'X-Appwrite-Project': this.projectId,
+      'X-Appwrite-Response-Format': '1.6.0',
+      ...(this.apiKey ? { 'X-Appwrite-Key': this.apiKey } : {}),
+      ...extra
+    };
+  }
+
+  async #call(path, { method = 'POST', body, headers = {} } = {}) {
+    let response;
+    try {
+      response = await this.fetch(`${this.endpoint}${path}`, {
+        method,
+        redirect: 'manual',
+        headers: this.#headers(headers),
+        ...(body ? { body: JSON.stringify(body) } : {}),
+        signal: AbortSignal.timeout(12_000)
+      });
+    } catch { throw new VerificationProviderError('NETWORK_ERROR', VERIFICATION_FAILURE_CLASS.TEMPORARY); }
+    const payload = response.status === 204 ? {} : await boundedJson(response);
+    return { response, payload };
+  }
+
+  async #saveState(attemptId, state) {
+    const expires = Number(this.now()) + APPWRITE_STATE_TTL_SECONDS * 1000;
+    this.memory.set(attemptId, { ...state, expires });
+    for (const [key, row] of this.memory) if (row.expires < Number(this.now())) this.memory.delete(key);
+    if (this.kv) {
+      try { await this.kv.put(`appwrite-otp:${attemptId}`, JSON.stringify(state), { expirationTtl: APPWRITE_STATE_TTL_SECONDS }); } catch {}
+    }
+  }
+
+  async #loadState(attemptId) {
+    const row = this.memory.get(attemptId);
+    if (row && row.expires >= Number(this.now())) return row;
+    if (!this.kv) return null;
+    try {
+      const raw = await this.kv.get(`appwrite-otp:${attemptId}`);
+      return raw ? JSON.parse(raw) : null;
+    } catch { return null; }
+  }
+
+  async #dropState(attemptId) {
+    this.memory.delete(attemptId);
+    if (this.kv && typeof this.kv.delete === 'function') { try { await this.kv.delete(`appwrite-otp:${attemptId}`); } catch {} }
+  }
+
+  // Best effort: the session only proves the code was right, so it is removed.
+  async #discardSession(response, payload, userId) {
+    try {
+      const sessionId = String(payload?.$id || '');
+      if (this.apiKey && validAppwriteUserId(sessionId)) {
+        await this.#call(`/users/${encodeURIComponent(userId)}/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' });
+        return;
+      }
+      const jar = cookiePairs(response, {});
+      const fallback = String(response?.headers?.get?.('X-Fallback-Cookies') || '');
+      const headers = {};
+      if (Object.keys(jar).length) headers.Cookie = cookieHeader(jar);
+      if (fallback && fallback.length <= 4096) headers['X-Fallback-Cookies'] = fallback;
+      if (!headers.Cookie && !headers['X-Fallback-Cookies']) return;
+      await this.#call('/account/sessions/current', { method: 'DELETE', headers });
+    } catch {}
+  }
+
+  async checkAvailability() {
+    if (!this.configured) return { available: false, code: 'NOT_CONFIGURED' };
+    return { available: true, code: 'READY' };
+  }
+
+  async getRemainingQuota() {
+    if (!this.configured) return { remaining: 0, limit: 0, resetAt: 0, source: 'not-configured' };
+    return { remaining: this.declaredDailyQuota, limit: this.declaredDailyQuota, resetAt: nextUtcMidnight(this.now()), source: 'declared' };
+  }
+
+  async sendVerification(input = {}) {
+    if (!this.configured) throw new VerificationProviderError('NOT_CONFIGURED', VERIFICATION_FAILURE_CLASS.HARD);
+    const destination = String(input.destination || '').trim().toLowerCase();
+    const attemptId = String(input.attemptId || '');
+    if (!validEmailAddress(destination) || !/^[A-Za-z0-9_-]{24,96}$/.test(attemptId)) {
+      throw new VerificationProviderError('INVALID_DESTINATION', VERIFICATION_FAILURE_CLASS.USER);
+    }
+    // 'unique()' lets Appwrite reuse the existing user for a known email or create one.
+    const sent = await this.#call('/account/tokens/email', { body: { userId: 'unique()', email: destination, phrase: false } });
+    if (!sent.response.ok) {
+      // 501 = Email OTP is switched off in the Appwrite console: a config fault, not an outage.
+      if (Number(sent.response.status) === 501) throw new VerificationProviderError('PROVIDER_HTTP_501', VERIFICATION_FAILURE_CLASS.HARD);
+      throw httpFailure(sent.response, sent.payload, { userStatuses: [] });
+    }
+    const userId = String(sent.payload?.userId || '');
+    if (!validAppwriteUserId(userId)) throw new VerificationProviderError('INVALID_PROVIDER_RESPONSE', VERIFICATION_FAILURE_CLASS.HARD);
+    await this.#saveState(attemptId, { userId, email: destination });
+    return { accepted: true };
+  }
+
+  async verifyCode(input = {}) {
+    if (!this.configured) throw new VerificationProviderError('NOT_CONFIGURED', VERIFICATION_FAILURE_CLASS.HARD);
+    const attemptId = String(input.attemptId || '');
+    const code = String(input.evidence || '').trim();
+    if (!/^\d{6}$/.test(code)) return { verified: false };
+    const state = await this.#loadState(attemptId);
+    if (!state?.userId) throw new VerificationProviderError('CHALLENGE_EXPIRED', VERIFICATION_FAILURE_CLASS.USER);
+    const result = await this.#call('/account/sessions/token', { body: { userId: state.userId, secret: code } });
+    if (result.response.ok && String(result.payload?.userId || '') === state.userId) {
+      await this.#dropState(attemptId);
+      await this.#discardSession(result.response, result.payload, state.userId);
+      return { verified: true };
+    }
+    if ([400, 401, 404].includes(Number(result.response.status))) return { verified: false };
+    throw httpFailure(result.response, result.payload, { userStatuses: [] });
+  }
+
+  async getProviderStatus() {
+    return { status: this.configured ? 'configured' : 'disabled', configured: this.configured, officialApi: true, mailer: 'appwrite' };
+  }
+}
+
 export class TelegramLinkVerificationProvider {
   constructor({ botUsername, botToken, webhookSecret, webhookSecretSource, webhookUrl, declaredDailyQuota, fetchImpl = globalThis.fetch, cryptoImpl = globalThis.crypto } = {}) {
     this.id = 'telegram';
@@ -1511,6 +1685,16 @@ export function createConfiguredVerificationProviders(env = {}, { fetchImpl = gl
     kv: env.GK_KV || null,
     fetchImpl
   });
+  const appwriteSlot = slotFromConfig(env.VERIFICATION_ORCHESTRATOR_CONFIG, 'otp-i');
+  const appwriteOtpI = new AppwriteOtpVerificationProvider({
+    id: 'otp-i',
+    endpoint: env.APPWRITE_ENDPOINT || (appwriteSlot ? APPWRITE_PUBLIC_DEFAULTS.endpoint : ''),
+    projectId: env.APPWRITE_PROJECT_ID || (appwriteSlot ? APPWRITE_PUBLIC_DEFAULTS.projectId : ''),
+    apiKey: env.APPWRITE_API_KEY,
+    declaredDailyQuota: env.OTP_I_DAILY_QUOTA || (appwriteSlot ? appwriteSlot.dailyQuota : ''),
+    kv: env.GK_KV || null,
+    fetchImpl
+  });
   return [
     brevoOtpA.configured ? brevoOtpA : bridgeOtpA,
     appsScriptOtpB.configured ? appsScriptOtpB : bridgeOtpB,
@@ -1520,6 +1704,7 @@ export function createConfiguredVerificationProviders(env = {}, { fetchImpl = gl
     mailerSendOtpF.configured ? mailerSendOtpF : bridgeOtpF,
     deadSimpleOtpG.configured ? deadSimpleOtpG : bridgeOtpG,
     logtoOtpH,
+    appwriteOtpI,
     new OfficialWhatsAppVerificationProvider({
       graphVersion: env.WHATSAPP_GRAPH_VERSION,
       phoneNumberId: env.WHATSAPP_PHONE_NUMBER_ID,

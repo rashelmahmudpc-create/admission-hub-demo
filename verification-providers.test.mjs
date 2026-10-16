@@ -23,7 +23,7 @@ const KEY = `provider-key-${'k'.repeat(32)}`;
 
 test('six OTP slots implement the shared contract and fail closed when not securely configured', async () => {
   const providers = createConfiguredVerificationProviders({});
-  assert.deepEqual(providers.map(row => row.id), ['otp-a', 'otp-b', 'otp-c', 'otp-d', 'otp-e', 'otp-f', 'otp-g', 'otp-h', 'whatsapp', 'telegram']);
+  assert.deepEqual(providers.map(row => row.id), ['otp-a', 'otp-b', 'otp-c', 'otp-d', 'otp-e', 'otp-f', 'otp-g', 'otp-h', 'otp-i', 'whatsapp', 'telegram']);
   for (const provider of providers) {
     assert.equal((await provider.checkAvailability()).available, false);
     assert.equal((await provider.getRemainingQuota()).remaining, 0);
@@ -662,7 +662,7 @@ test('OTP slots prefer Brevo and Apps Script and fall back to bridge bindings', 
   assert.equal(bridged[1].constructor.name, 'BridgeOtpVerificationProvider');
 
   const empty = createConfiguredVerificationProviders({});
-  assert.deepEqual(empty.map(row => row.id), ['otp-a', 'otp-b', 'otp-c', 'otp-d', 'otp-e', 'otp-f', 'otp-g', 'otp-h', 'whatsapp', 'telegram']);
+  assert.deepEqual(empty.map(row => row.id), ['otp-a', 'otp-b', 'otp-c', 'otp-d', 'otp-e', 'otp-f', 'otp-g', 'otp-h', 'otp-i', 'whatsapp', 'telegram']);
   for (const provider of empty) assert.equal((await provider.getProviderStatus()).configured, false);
 });
 
@@ -905,4 +905,76 @@ test('wrangler.toml stays off the Logto vars that broke the 64-variable free cei
   for (const name of ['LOGTO_ENDPOINT', 'LOGTO_APP_ID', 'LOGTO_REDIRECT_URI', 'OTP_H_DAILY_QUOTA']) {
     assert.equal(new RegExp(`^${name}\\s*=`, 'm').test(toml), false, name);
   }
+});
+
+
+test('otp-i Appwrite uses its public defaults only when the owner enabled the slot', async () => {
+  const off = createConfiguredVerificationProviders({}).find(row => row.id === 'otp-i');
+  assert.equal(off.configured, false);
+  const disabled = createConfiguredVerificationProviders({
+    VERIFICATION_ORCHESTRATOR_CONFIG: JSON.stringify({ enabled: true, providers: [{ id: 'otp-i', enabled: false, dailyQuota: 300 }] })
+  }).find(row => row.id === 'otp-i');
+  assert.equal(disabled.configured, false);
+  const on = createConfiguredVerificationProviders({
+    VERIFICATION_ORCHESTRATOR_CONFIG: JSON.stringify({ enabled: true, providers: [{ id: 'otp-i', enabled: true, dailyQuota: 300 }] })
+  }).find(row => row.id === 'otp-i');
+  assert.equal(on.configured, true);
+  assert.equal(on.verificationMode, 'provider-evidence');
+  assert.equal(on.endpoint, 'https://fra.cloud.appwrite.io/v1');
+  assert.equal(on.projectId, '6ad1e9280025bf4464ee');
+  assert.equal((await on.getRemainingQuota()).limit, 300);
+  const broken = createConfiguredVerificationProviders({ VERIFICATION_ORCHESTRATOR_CONFIG: '{not json' }).find(row => row.id === 'otp-i');
+  assert.equal(broken.configured, false);
+});
+
+test('otp-i Appwrite sends through the Email OTP API and checks the code at Appwrite', async () => {
+  const calls = [];
+  const fetchImpl = async (url, init) => {
+    calls.push({ url, method: init.method, headers: init.headers, body: init.body ? JSON.parse(init.body) : null });
+    if (url.endsWith('/account/tokens/email')) return json({ $id: 'tok', userId: 'user123', secret: '' }, 201);
+    if (url.endsWith('/account/sessions/token')) {
+      if (JSON.parse(init.body).secret === '123456') {
+        return new Response(JSON.stringify({ $id: 'sess1', userId: 'user123' }), { status: 201, headers: { 'Content-Type': 'application/json', 'Set-Cookie': 'a_session_6ad1e9280025bf4464ee=abc; Path=/' } });
+      }
+      return json({ message: 'Invalid token', code: 401, type: 'user_invalid_token' }, 401);
+    }
+    if (url.endsWith('/account/sessions/current')) return new Response(null, { status: 204 });
+    return json({}, 404);
+  };
+  const provider = createConfiguredVerificationProviders({
+    VERIFICATION_ORCHESTRATOR_CONFIG: JSON.stringify({ enabled: true, providers: [{ id: 'otp-i', enabled: true, dailyQuota: 300 }] })
+  }, { fetchImpl }).find(row => row.id === 'otp-i');
+  const attemptId = 'a'.repeat(32);
+  assert.deepEqual(await provider.sendVerification({ destination: 'Student@Gmail.com', attemptId }), { accepted: true });
+  assert.equal(calls[0].url, 'https://fra.cloud.appwrite.io/v1/account/tokens/email');
+  assert.equal(calls[0].headers['X-Appwrite-Project'], '6ad1e9280025bf4464ee');
+  assert.equal(calls[0].headers['X-Appwrite-Key'], undefined);
+  assert.deepEqual(calls[0].body, { userId: 'unique()', email: 'student@gmail.com', phrase: false });
+  assert.deepEqual(await provider.verifyCode({ attemptId, evidence: '000000' }), { verified: false });
+  assert.deepEqual(await provider.verifyCode({ attemptId, evidence: '12345' }), { verified: false });
+  assert.deepEqual(await provider.verifyCode({ attemptId, evidence: '123456' }), { verified: true });
+  const discard = calls.find(row => row.url.endsWith('/account/sessions/current'));
+  assert.equal(discard.method, 'DELETE');
+  assert.match(discard.headers.Cookie, /a_session_6ad1e9280025bf4464ee=abc/);
+  await assert.rejects(provider.verifyCode({ attemptId, evidence: '123456' }), error => error.code === 'CHALLENGE_EXPIRED');
+});
+
+test('otp-i Appwrite classifies provider failures', async () => {
+  const make = status => createConfiguredVerificationProviders({
+    VERIFICATION_ORCHESTRATOR_CONFIG: JSON.stringify({ enabled: true, providers: [{ id: 'otp-i', enabled: true, dailyQuota: 300 }] })
+  }, { fetchImpl: async () => json({ code: status }, status) }).find(row => row.id === 'otp-i');
+  const attemptId = 'b'.repeat(32);
+  await assert.rejects(make(501).sendVerification({ destination: 'x@gmail.com', attemptId }), error => error.failureClass === VERIFICATION_FAILURE_CLASS.HARD);
+  await assert.rejects(make(429).sendVerification({ destination: 'x@gmail.com', attemptId }), error => error.failureClass === VERIFICATION_FAILURE_CLASS.TEMPORARY);
+  await assert.rejects(make(401).sendVerification({ destination: 'x@gmail.com', attemptId }), error => error.failureClass === VERIFICATION_FAILURE_CLASS.HARD);
+  await assert.rejects(make(200).sendVerification({ destination: 'not-an-email', attemptId }), error => error.code === 'INVALID_DESTINATION');
+});
+
+test('wrangler.toml stays off the Appwrite vars so the 64-variable ceiling holds', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const toml = await readFile(new URL('./wrangler.toml', import.meta.url), 'utf8');
+  for (const name of ['APPWRITE_ENDPOINT', 'APPWRITE_PROJECT_ID', 'APPWRITE_API_KEY', 'OTP_I_DAILY_QUOTA']) {
+    assert.equal(new RegExp(`^${name}\\s*=`, 'm').test(toml), false, name);
+  }
+  assert.match(toml, /"id":"otp-i","enabled":true/);
 });
