@@ -115,7 +115,10 @@
       // instead of the strip flickering with every card that passes beneath it.
       const root = document.scrollingElement || document.documentElement;
       const scrolled = !accountUp && root && root.scrollTop > 4;
-      const value = scrolled && restColour ? restColour : hex(colourAt(accountUp ? 2 : inset + 2));
+      // A full-screen host (the dashboard iframe) can declare its own top colour: the
+      // page cannot see inside an iframe, so sampling would return the wrong surface.
+      const forced = window.__ahChromeOverride ? hex(window.__ahChromeOverride) : '';
+      const value = forced || (scrolled && restColour ? restColour : hex(colourAt(accountUp ? 2 : inset + 2)));
       if (!value) return;
       if (!accountUp && !scrolled) restColour = value;
       if (strip && !accountUp) strip.style.backgroundColor = value;

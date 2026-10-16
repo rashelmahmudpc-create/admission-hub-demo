@@ -20,7 +20,7 @@ t('১. #ahSplash লোডার exist (JS ছাড়াই)', !!ah);
 t('২. main.app-loading + role=status', ah && ah.tagName === 'MAIN' && ah.classList.contains('app-loading') && ah.getAttribute('role') === 'status');
 const boot = ah && ah.querySelector('.ah-boot');
 t('৩. .ah-boot শেল exist', !!boot);
-t('৪. .ah-boot-mark অ্যানিমেটেড Sky লোগো (SVG: chevron + cap + star)', boot && boot.querySelector('.ah-boot-mark svg .lg-ch') && boot.querySelector('.ah-boot-mark svg .lg-cap') && boot.querySelector('.ah-boot-mark svg .lg-st'));
+t('৪. .ah-boot-mark জীবন্ত Sky avatar (SVG পাখি: wing + eyes + cap)', boot && boot.querySelector('.ah-boot-mark svg .sk-all') && boot.querySelector('.ah-boot-mark svg .sk-wr') && boot.querySelector('.ah-boot-mark svg .sk-eyes'));
 t('৫. স্প্ল্যাশে শুধু লোগো — কোনো টেক্সট শিরোনাম (<b>) নেই', boot && !boot.querySelector('b'));
 t('৬. লোডিং-কপি বাংলা "লোড হচ্ছে…"', boot && boot.querySelector('i') && boot.querySelector('i').textContent.includes('লোড হচ্ছে'));
 t('৭. বুট-মিনিমাল CSS inline (ah-boot-min + keyframes ahBootPulse)', !!doc.getElementById('ah-boot-min') && doc.getElementById('ah-boot-min').textContent.includes('@keyframes ahBootPulse'));

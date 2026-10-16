@@ -1290,10 +1290,17 @@ requestAnimationFrame(function(){requestAnimationFrame(function(){onShow(0)})});
      the dashboard's real background, so the phone's top bar and the app look like
      one surface (no band). Restored when the user leaves the dashboard. ── */
   let chromeOn = false;
+  const toRgb = (c) => {
+    const m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(c).trim());
+    if (!m) return String(c).trim();
+    let h = m[1]; if (h.length === 3) h = h.split('').map((x) => x + x).join('');
+    return 'rgb(' + parseInt(h.slice(0, 2), 16) + ', ' + parseInt(h.slice(2, 4), 16) + ', ' + parseInt(h.slice(4, 6), 16) + ')';
+  };
   window.__dv3Chrome = function (bg) {
     try {
       if (!bg) return;
       chromeOn = true;
+      window.__ahChromeOverride = toRgb(bg);
       document.querySelectorAll('meta[name="theme-color"]').forEach((m) => m.setAttribute('content', bg));
       const root = document.documentElement;
       root.style.setProperty('--ah-chrome', bg);
@@ -1306,6 +1313,7 @@ requestAnimationFrame(function(){requestAnimationFrame(function(){onShow(0)})});
   function restoreChrome() {
     if (!chromeOn) return;
     chromeOn = false;
+    window.__ahChromeOverride = '';
     try {
       document.documentElement.style.backgroundColor = '';
       if (window.AhAppearance && window.AhAppearance.apply) window.AhAppearance.apply();
