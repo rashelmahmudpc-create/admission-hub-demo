@@ -893,8 +893,12 @@ textarea{min-height:96px}
   // textContent, not innerText: #app is display:none under the gate, so innerText is
   // empty even when the page is fully built.
   function appReady(){return !!appPageEl()&&(appPageEl().textContent||'').trim().length>20;}
+  function dashboardFrameReady(){
+    var fr=document.querySelector('#app iframe.dv3-frame');
+    try{return !!fr&&fr.getClientRects().length>0&&!!fr.contentDocument&&!!fr.contentDocument.body&&fr.contentDocument.body.children.length>0;}catch(_){return false;}
+  }
   function accountShell(){return document.querySelector('.ah-account-page');}
-  function accountReady(){var el=accountShell();return !!el&&!el.hidden&&el.getClientRects().length>0;}
+  function accountReady(){var el=accountShell();return !!el&&!el.hidden&&el.getClientRects().length>0&&(el.innerText||'').trim().length>20;}
   function real(){return vis(appPageEl())||accountReady()||vis(document.querySelector('[data-admission-usable="true"]'));}
   var stuck=0;
   var iv=setInterval(function(){
@@ -904,7 +908,7 @@ textarea{min-height:96px}
     // must NEVER release the gate: doing that un-hid the already-built dashboard
     // *and its bottom nav bar* underneath the welcome (owner: "সবার ফোনে সেইম").
     // Keep the overlay until the welcome itself is visible, then just drop it.
-    if(el){ if(accountReady()){if(o.parentNode)o.remove();clearInterval(iv);} return; }
+    if(el){ if(accountReady()||(!gate&&(vis(appPageEl())||dashboardFrameReady()))){if(o.parentNode)o.remove();clearInterval(iv);} return; }
     if(gate&&appReady()){
       stuck++;
       // No account shell at all and the gate hid #app: the device sat on a blank
@@ -945,7 +949,8 @@ textarea{min-height:96px}
 </noscript>
 <script defer src="./institutions-bd.js?v=bd-institutions-v2"></script>
 <script defer src="./language-engine.js?v=lang-v5-single-email-button"></script>
-<script defer src="./account-access.js?v=20261015-login-complete-v1"></script>
+<script defer src="./account-access.js?v=20261015-login-complete-v1&startup=fast1"></script>
+<script src="./app-seed.js?v=sky-flow-20261016-v6" defer></script>
 <script defer src="./ios-chrome.js?v=5"></script>
 <script>
 (function installAdmissionSafety(){
@@ -4814,7 +4819,8 @@ async function boot(){
   // Warm the deferred data packs after the dashboard is interactive, so the
   // result and mock screens still open with no wait.
   const warmPacks=()=>{ ['result-analysis-500','one-time-mock-seed'].forEach(n=>{ try{ window.admissionLoadPack(n).catch(()=>{}); }catch(_){} }); };
-  if(typeof requestIdleCallback==='function') requestIdleCallback(warmPacks,{timeout:6000}); else setTimeout(warmPacks,3000);
+  const queueWarmPacks=()=>setTimeout(()=>{if(typeof requestIdleCallback==='function') requestIdleCallback(warmPacks,{timeout:6000});else warmPacks();},5000);
+  if(document.readyState==='complete')queueWarmPacks();else window.addEventListener('load',queueWarmPacks,{once:true});
   // Deferred dashboard code owns the first real render. Marking modules ready in
   // boot caused a race where renderDashboard was still absent and the loader lived forever.
   if(typeof window.__admissionRequestFinalRender==='function') window.__admissionRequestFinalRender();
@@ -5706,12 +5712,12 @@ setTimeout(() => { if (location.hash.replace(/^#/, '').split('?')[0] === 'dictio
 
 <script defer src="nav-resume-fix.js?v=1"></script>
 <script defer src="mistake-note-icon.js?v=16-aiex"></script>
-<script defer src="experience-studio-store.js?v=2"></script>
-<script defer src="experience-studio-themes.js?v=2"></script>
-<script defer src="experience-studio-animations.js?v=2"></script>
-<script defer src="experience-studio-cards.js?v=2"></script>
-<script defer src="experience-studio-hooks.js?v=1"></script>
-<script defer src="experience-studio-shell.js?v=6"></script>
+<script type="application/x-ah-idle" data-ah-src="experience-studio-store.js?v=2"></script>
+<script type="application/x-ah-idle" data-ah-src="experience-studio-themes.js?v=2"></script>
+<script type="application/x-ah-idle" data-ah-src="experience-studio-animations.js?v=2"></script>
+<script type="application/x-ah-idle" data-ah-src="experience-studio-cards.js?v=2"></script>
+<script type="application/x-ah-idle" data-ah-src="experience-studio-hooks.js?v=1"></script>
+<script type="application/x-ah-idle" data-ah-src="experience-studio-shell.js?v=6"></script>
 <script defer src="performance-hardening.js?v=2"></script>
 <script>
 (() => {
@@ -5758,9 +5764,10 @@ setTimeout(() => { if (location.hash.replace(/^#/, '').split('?')[0] === 'dictio
   window.addEventListener('admission:boot-ready',startFinalRender);
   const modulesParsed=()=>{
     window.__admissionModuleBarrierReady=true;
-    startFinalRender();
+    const finish=()=>{if(window.__admissionBootStatus==='ready'&&document.querySelector('#app .dv3-frame'))return;startFinalRender();};
+    finish();
     const promise=window.__admissionBootPromise;
-    if(promise&&typeof promise.then==='function') promise.then(()=>startFinalRender()).catch(()=>{});
+    if(promise&&typeof promise.then==='function')promise.then(finish).catch(()=>{});
   };
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',modulesParsed,{once:true});
   else modulesParsed();
@@ -5918,13 +5925,13 @@ window.admissionLoadPack = function admissionLoadPack(name) {
 <script src="./vocabulary-elevenlabs.js?v=el-voice-v111" defer></script>
 <script src="./vocabulary-srs-engine.js?v=vocab-srs-engine-v1" defer></script>
 <script src="./vocabulary-srs-tool.js?v=vm-d1tool-v2" defer></script>
-<script defer src="./notification-hub.js?v=notify-p3-v122"></script>
-<script defer src="./notification-fcm.js?v=fcm-p3-v15"></script>
-<script defer src="./notification-inbox.js?v=notif-inbox-v6"></script>
-<script defer src="./notification-center-route.js?v=ns-cc-route-v1"></script>
-<script defer src="./analytics-dashboard.js?v=analytics-p4-v1"></script>
-<script defer src="./analytics-insight-engine.js?v=p09-v1"></script>
-<script defer src="./analytics-insights-panel.js?v=p09-v1"></script>
+<script type="application/x-ah-idle" data-ah-src="./notification-hub.js?v=notify-p3-v122"></script>
+<script type="application/x-ah-idle" data-ah-src="./notification-fcm.js?v=fcm-p3-v15"></script>
+<script type="application/x-ah-idle" data-ah-src="./notification-inbox.js?v=notif-inbox-v6"></script>
+<script type="application/x-ah-idle" data-ah-src="./notification-center-route.js?v=ns-cc-route-v1"></script>
+<script type="application/x-ah-idle" data-ah-src="./analytics-dashboard.js?v=analytics-p4-v1"></script>
+<script type="application/x-ah-idle" data-ah-src="./analytics-insight-engine.js?v=p09-v1"></script>
+<script type="application/x-ah-idle" data-ah-src="./analytics-insights-panel.js?v=p09-v1"></script>
 <script src="./memorizing-match-tool.js?v=memorizing-match-v8-stable-cards" defer></script>
 <script src="./question-card-game-visual.js?v=question-card-game-v2-persistent" defer></script>
 <script src="./mock-result-experience.js?v=result-insights-200-single-card-v6-lazypack" defer></script>
@@ -5941,15 +5948,28 @@ window.admissionLoadPack = function admissionLoadPack(name) {
 <script defer src="./source-course-tool.js?v=bangla-only-courses-v26-course-mcq-analytics"></script>
 <script defer src="./android-runtime-fix.js?v=and-scroll-v1"></script>
 <script>window.AH_CLOUD_ROLE='public';</script>
-<script defer src="./cloud-content-sync.js?v=vm-erase-v223"></script>
+<script type="application/x-ah-idle" data-ah-src="./cloud-content-sync.js?v=vm-erase-v223"></script>
 <script defer src="./student-data-sync.js?v=student-sync-v1"></script>
-<script src="./app-seed.js?v=sky-flow-20261016-v6" defer></script>
+
 <script src="./a11y-core.js?v=a11y-v1" defer></script>
 <script src="./offline-status.js?v=offline-v2" defer></script>
 <script src="./install-guide.js?v=install-v4" defer></script>
 <script defer src="./question-bank-clean.js?v=qbc1"></script>
 <script>
 /* Seed + cloud hydrate: cloud-content-sync.js (batched IDB, Android-safe). */
+</script>
+<script id="ah-idle-features">
+(()=>{'use strict';
+ const sources=["experience-studio-store.js?v=2","experience-studio-themes.js?v=2","experience-studio-animations.js?v=2","experience-studio-cards.js?v=2","experience-studio-hooks.js?v=1","experience-studio-shell.js?v=6","./notification-hub.js?v=notify-p3-v122","./notification-fcm.js?v=fcm-p3-v15","./notification-inbox.js?v=notif-inbox-v6","./notification-center-route.js?v=ns-cc-route-v1","./analytics-dashboard.js?v=analytics-p4-v1","./analytics-insight-engine.js?v=p09-v1","./analytics-insights-panel.js?v=p09-v1","./cloud-content-sync.js?v=vm-erase-v223"];
+ let work=null;
+ const state=window.AdmissionStartup= {version:'startup-fast-v1',loaded:[],failed:[],ready:false};
+ const pause=()=>new Promise(r=>setTimeout(r,16));
+ const load=src=>new Promise(resolve=>{const s=document.createElement('script');s.src=src;s.async=false;s.onload=()=>{state.loaded.push(src);resolve();};s.onerror=()=>{state.failed.push(src);console.warn('[Startup] Optional feature unavailable:',src);resolve();};document.head.appendChild(s);});
+ const start=()=>{if(work)return work;work=(async()=>{try{await window.__admissionBootPromise;}catch(_){} await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));try{performance.mark('ah-critical-first-frame');}catch(_){} for(const src of sources){await load(src);await pause();}state.ready=true;window.dispatchEvent(new CustomEvent('admission:idle-features-ready'));})();return work;};
+ state.loadFeatures=start;
+ const queue=()=>setTimeout(start,200);
+ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',queue,{once:true});else queue();
+})();
 </script>
 </body>
 </html>

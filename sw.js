@@ -3,7 +3,7 @@ const CACHE_PREFIX = 'admission-hub-shell-';
 // hold user data; this one holds exactly one image and is trimmed on write.
 const AVATAR_CACHE = 'admission-hub-avatar-v1';
 
-const BUILD_ID = 'v350-notes-screen-v2';
+const BUILD_ID = 'v350-fast-startup';
 const CACHE_NAME = `${CACHE_PREFIX}${BUILD_ID}`;
 const VERSION_HEADER = 'X-Admission-Hub-Build';
 const DOCUMENT_NETWORK_TIMEOUT_MS = 2500;
@@ -37,7 +37,7 @@ const APP_SHELL = [
   './sky-onboarding.css?v=sky-flow-20261016-v6',
   './institutions-bd.js?v=bd-institutions-v2',
   './language-engine.js?v=lang-v5-single-email-button',
-  './account-access.js?v=20261015-login-complete-v1',
+  './account-access.js?v=20261015-login-complete-v1&startup=fast1',
   './sky-onboarding.js?v=sky-flow-20261016-v6',
   './welcome-story.css?v=welcome-story-20261016-v2',
   './welcome-story.js?v=welcome-story-20261016-v2',
@@ -80,7 +80,7 @@ const APP_SHELL = [
 // A truncated/corrupt download is NEVER written to the shell cache.
 const ASSET_DIGESTS = {
 /* sw-manifest:start */
-  "./index.html": "6b47e5f0ca6ed678b4628cb1ed0c8a715dcf27887f0b7827e0b7d0078f6068b5",
+  "./index.html": "890f75773c0ea20f2dfd3180be00d6befcaae4ae7406a99dc6189d8a09ac5a6a",
   "./manifest.json": "6dcf0e0c6f7671750549e53558ba8b9f0c2c83b0c6759072a6b5e2276331f491",
   "./manifest.webmanifest": "abcd26174710f6df3e183889a5a9da182f73ee8cdcc543b43db8fb4070cad54f",
   "./dashboard-v2.css?v=dash2f13-theme": "4541bc1e65fd158c593443562975400d128b8f1d3b636595df3c235b99e8cced",
@@ -91,7 +91,7 @@ const ASSET_DIGESTS = {
   "./sky-onboarding.css?v=sky-flow-20261016-v6": "71a32e98b532951e6c645ca20d321c22c662bbe5de9e0074fc86f9bdd2dad802",
   "./institutions-bd.js?v=bd-institutions-v2": "602c5549515e8207ad152b948ca9b8fe3ad0fbe429afb56380e4e21b662f779d",
   "./language-engine.js?v=lang-v5-single-email-button": "52aaa5d77b3030721ccbc1c777801a3787c1d1061391b0f4b80841b6a9ddd054",
-  "./account-access.js?v=20261015-login-complete-v1": "df5269b644c8bcf0e651050f8eced6f83a691f2b1ff9f1b226e7e68f4b0e0dd9",
+  "./account-access.js?v=20261015-login-complete-v1&startup=fast1": "8e7e7a81b8ccf195419fe114f342aecafe73f5fa24f41a6f374201db0ade6c24",
   "./sky-onboarding.js?v=sky-flow-20261016-v6": "68038cf015d0aca393e2a17798abb1bd5d9e4b448732ff0a30482b2d58be93fe",
   "./welcome-story.css?v=welcome-story-20261016-v2": "21a22c43f68c7a07d3ba0d2ff57b5eec76ea56a7fe31984eba3ca5db5398c195",
   "./welcome-story.js?v=welcome-story-20261016-v2": "eec97464e5b177b533f2af35f2b6b80d30a4e8d6cbf1f7eebca6d3167c9a13bf",

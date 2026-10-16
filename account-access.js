@@ -3343,7 +3343,14 @@
       if (Number.isFinite(cooldown) && cooldown >= 1 && cooldown <= 86400) state.resendCooldownSeconds = Math.ceil(cooldown);
       return true;
     }).catch(() => { state.available = false; applyCapabilities({ available: false }); return false; });
-    const sessionReady = refreshSession();
+    const sessionReady = refreshSession().then(session => {
+      // Only the SERVER-verified session releases the startup hide. No cached
+      // cookie, browser hint or guessed identity is accepted as authority.
+      if (accountVerified(session) && pageHost.hidden) {
+        document.documentElement.classList.remove('ah-pre');
+      }
+      return session;
+    });
     Promise.allSettled([configReady, sessionReady]).then(async () => {
       await finishOAuthRedirect();
       if (accountVerified(state.session)) return;
