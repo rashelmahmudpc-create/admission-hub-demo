@@ -1667,14 +1667,19 @@ export function createConfiguredVerificationProviders(env = {}, { fetchImpl = gl
   // Slot `otp-g` is Dead Simple Email. Its inbox domain is provider-signed, so it
   // reaches real recipients with no owner domain, and it has no daily cap on the
   // free plan (5,000 emails/month).
+  // Quota comes from VERIFICATION_ORCHESTRATOR_CONFIG (the authoritative row),
+  // as otp-h/otp-i already do. The dedicated text var was a duplicate of the
+  // config value and only consumed one of the 64 Workers-Free variable slots.
+  const deadSimpleSlot = slotFromConfig(env.VERIFICATION_ORCHESTRATOR_CONFIG, 'otp-g');
+  const deadSimpleQuota = env.OTP_G_DAILY_QUOTA || (deadSimpleSlot ? deadSimpleSlot.dailyQuota : '');
   const deadSimpleOtpG = new DeadSimpleEmailOtpVerificationProvider({
     id: 'otp-g',
     apiKey: env.DEADSIMPLEEMAIL_API_KEY,
     inboxId: env.DEADSIMPLEEMAIL_INBOX_ID,
-    declaredDailyQuota: env.OTP_G_DAILY_QUOTA,
+    declaredDailyQuota: deadSimpleQuota,
     fetchImpl
   });
-  const bridgeOtpG = new BridgeOtpVerificationProvider({ id: 'otp-g', origin: env.OTP_G_PROVIDER_ORIGIN, apiKey: env.OTP_G_PROVIDER_KEY, declaredDailyQuota: env.OTP_G_DAILY_QUOTA, fetchImpl });
+  const bridgeOtpG = new BridgeOtpVerificationProvider({ id: 'otp-g', origin: env.OTP_G_PROVIDER_ORIGIN, apiKey: env.OTP_G_PROVIDER_KEY, declaredDailyQuota: deadSimpleQuota, fetchImpl });
   const logtoSlot = logtoSlotFromConfig(env.VERIFICATION_ORCHESTRATOR_CONFIG);
   const logtoOtpH = new LogtoOtpVerificationProvider({
     id: 'otp-h',

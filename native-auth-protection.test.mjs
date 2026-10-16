@@ -135,7 +135,10 @@ test('Google, Passkey, and the explicit Email-or-Telegram selector are public wi
   assert.match(wrangler, /OTP_D_DAILY_QUOTA = "100"/);
   assert.match(wrangler, /OTP_E_DAILY_QUOTA = "100"/);
   assert.match(wrangler, /OTP_F_DAILY_QUOTA = "100"/);
-  assert.match(wrangler, /OTP_G_DAILY_QUOTA = "150"/);
+  // otp-g quota now comes from the authoritative orchestrator config, not a
+  // duplicate text var (that duplicate pushed the Worker past the 64-var limit).
+  assert.doesNotMatch(wrangler, /OTP_G_DAILY_QUOTA\s*=/);
+  assert.match(wrangler, /\{"id":"otp-g","enabled":true,"priority":39,"dailyQuota":150/);
   assert.doesNotMatch(wrangler, /BREVO_API_KEY|BREVO_FROM_ADDRESS|OTP_B_PROVIDER_SHARED_SECRET\s*=|MAILJET_API_KEY|MAILJET_SECRET_KEY/);
   assert.doesNotMatch(wrangler, /"id":"whatsapp","enabled":true/);
   assert.match(handler, /googlePublished\(env\)/);

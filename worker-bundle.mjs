@@ -24607,14 +24607,16 @@ function createConfiguredVerificationProviders(env = {}, { fetchImpl = globalThi
     fetchImpl
   });
   const bridgeOtpF = new BridgeOtpVerificationProvider({ id: "otp-f", origin: env.OTP_F_PROVIDER_ORIGIN, apiKey: env.OTP_F_PROVIDER_KEY, declaredDailyQuota: env.OTP_F_DAILY_QUOTA, fetchImpl });
+  const deadSimpleSlot = slotFromConfig(env.VERIFICATION_ORCHESTRATOR_CONFIG, "otp-g");
+  const deadSimpleQuota = env.OTP_G_DAILY_QUOTA || (deadSimpleSlot ? deadSimpleSlot.dailyQuota : "");
   const deadSimpleOtpG = new DeadSimpleEmailOtpVerificationProvider({
     id: "otp-g",
     apiKey: env.DEADSIMPLEEMAIL_API_KEY,
     inboxId: env.DEADSIMPLEEMAIL_INBOX_ID,
-    declaredDailyQuota: env.OTP_G_DAILY_QUOTA,
+    declaredDailyQuota: deadSimpleQuota,
     fetchImpl
   });
-  const bridgeOtpG = new BridgeOtpVerificationProvider({ id: "otp-g", origin: env.OTP_G_PROVIDER_ORIGIN, apiKey: env.OTP_G_PROVIDER_KEY, declaredDailyQuota: env.OTP_G_DAILY_QUOTA, fetchImpl });
+  const bridgeOtpG = new BridgeOtpVerificationProvider({ id: "otp-g", origin: env.OTP_G_PROVIDER_ORIGIN, apiKey: env.OTP_G_PROVIDER_KEY, declaredDailyQuota: deadSimpleQuota, fetchImpl });
   const logtoSlot = logtoSlotFromConfig(env.VERIFICATION_ORCHESTRATOR_CONFIG);
   const logtoOtpH = new LogtoOtpVerificationProvider({
     id: "otp-h",
