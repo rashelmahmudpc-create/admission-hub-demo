@@ -419,6 +419,10 @@ export class VerificationOrchestrator {
             break;
           }
           if (failure.failureClass === VERIFICATION_FAILURE_CLASS.HARD || providerState.circuit === 'open') break;
+          // Owner 2026-10-16: a hung provider already burned its whole timeoutMs, so a
+          // second wait on it only doubles the delay. Move to the next slot at once;
+          // 429/5xx (also TEMPORARY) keep the single same-provider retry.
+          if (failure.code === 'PROVIDER_TIMEOUT') break;
         }
       }
     }

@@ -708,3 +708,44 @@ test('owner 2026-10-16 (user-error failover): an invalid destination still stops
   await expectCode(() => app.orchestrator.requestVerification(identity, context), AUTH_ERROR_CODES.INVALID_INPUT);
   assert.equal(second.sends.length, 0);
 });
+
+test('owner 2026-10-16 (timeout failover): a hung provider is tried once, then the next slot accepts', async () => {
+  const hung = new MockProvider({ id: 'otp-a' });
+  hung.sendVerification = async input => {
+    hung.sends.push(input);
+    return new Promise(() => {});
+  };
+  const next = new MockProvider({ id: 'otp-b' });
+  const app = setup({ providers: [hung, next] });
+  const started = Date.now();
+  const result = await app.orchestrator.requestVerification(identity, context);
+  assert.equal(result.accepted, true);
+  assert.equal(hung.sends.length, 1, 'no second wait on the hung provider');
+  assert.equal(next.sends.length, 1, 'the next slot carries the send');
+  assert.ok(Date.now() - started < 1900, 'only one timeoutMs was spent');
+});
+
+test('owner 2026-10-16 (timeout failover): a 503 still retries the same provider once', async () => {
+  const flaky = new MockProvider({ id: 'otp-a' });
+  flaky.sendVerification = async input => {
+    flaky.sends.push(input);
+    throw new VerificationProviderError('PROVIDER_HTTP_503', VERIFICATION_FAILURE_CLASS.TEMPORARY);
+  };
+  const next = new MockProvider({ id: 'otp-b' });
+  const app = setup({ providers: [flaky, next] });
+  const result = await app.orchestrator.requestVerification(identity, context);
+  assert.equal(result.accepted, true);
+  assert.equal(flaky.sends.length, 2, '503 keeps the single retry');
+  assert.equal(next.sends.length, 1);
+});
+
+test('wrangler.toml timeoutMs matches each slot speed (owner 2026-10-16)', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const toml = await readFile(new URL('./wrangler.toml', import.meta.url), 'utf8');
+  const rows = JSON.parse(toml.match(/VERIFICATION_ORCHESTRATOR_CONFIG = '(.*)'/)[1]).providers;
+  const got = Object.fromEntries(rows.map(row => [row.id, row.timeoutMs]));
+  assert.deepEqual(got, {
+    'otp-a': 8000, 'otp-h': 12000, 'otp-i': 12000, 'otp-j': 12000, 'otp-k': 12000, 'otp-b': 20000,
+    'otp-d': 8000, 'otp-e': 8000, 'otp-f': 8000, 'otp-g': 8000, 'otp-c': 8000, telegram: 20000
+  });
+});
