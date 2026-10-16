@@ -68,6 +68,25 @@ export class AiStateObject {
     return { allowed: true, used: n + 1, cap: limit, remaining: limit - n - 1, start, uid: String(uid || '') };
   }
 
+  /* AI audit 2026-10-16: give back one credit for a message the AI never
+     answered. Never goes below zero and keeps the window start. */
+  async refund() {
+    const cur = await this.#entry(K_QUOTA);
+    if (!cur || !cur.v) return { ok: true, used: 0 };
+    const n = Math.max(0, num(cur.v.n) - 1);
+    await this.ctx.storage.put(K_QUOTA, { v: { n, start: num(cur.v.start, Date.now()) }, exp: 0 });
+    return { ok: true, used: n };
+  }
+
+  /* Delete named keys (memory reset). Only keys the caller names — the quota
+     and rate keys are refused, so clearing memory can never reset a cap. */
+  async deleteState({ keys }) {
+    const list = (Array.isArray(keys) ? keys : []).map(String)
+      .filter(k => k && k !== K_QUOTA && !k.startsWith('rate:')).slice(0, 32);
+    for (const k of list) await this.ctx.storage.delete(k).catch(() => {});
+    return { ok: true, deleted: list.length };
+  }
+
   async getState({ key, now }) {
     const entry = await this.#entry(String(key));
     return { value: entry ? entry.v : null };
@@ -109,6 +128,8 @@ export class AiStateObject {
         case '/quota/consume': return json(await this.consume(body));
         case '/state/get': return json(await this.getState(body));
         case '/state/put': return json(await this.putState(body));
+        case '/state/delete': return json(await this.deleteState(body));
+        case '/quota/refund': return json(await this.refund(body));
         case '/rate/consume': return json(await this.consumeRate(body));
         default: return json({ error: 'not_found' }, 404);
       }
@@ -140,6 +161,8 @@ export function aiStateStore(env) {
     consumeQuota: (uid, cap) => call(uid, '/quota/consume', { cap }),
     get: async (uid, key) => (await call(uid, '/state/get', { key })).value,
     put: (uid, key, value, ttlMs) => call(uid, '/state/put', { key, value, ttlMs }),
+    del: (uid, keys) => call(uid, '/state/delete', { keys }),
+    refundQuota: (uid) => call(uid, '/quota/refund', {}),
     consumeRate: (uid, limit, windowMs, now) => call(uid, '/rate/consume', { limit, windowMs, now })
   };
 }

@@ -1259,6 +1259,23 @@ var AiStateObject = class {
     await this.ctx.storage.put(K_QUOTA, { v: { n: n + 1, start }, exp: 0 });
     return { allowed: true, used: n + 1, cap: limit, remaining: limit - n - 1, start, uid: String(uid || "") };
   }
+  /* AI audit 2026-10-16: give back one credit for a message the AI never
+     answered. Never goes below zero and keeps the window start. */
+  async refund() {
+    const cur = await this.#entry(K_QUOTA);
+    if (!cur || !cur.v) return { ok: true, used: 0 };
+    const n = Math.max(0, num2(cur.v.n) - 1);
+    await this.ctx.storage.put(K_QUOTA, { v: { n, start: num2(cur.v.start, Date.now()) }, exp: 0 });
+    return { ok: true, used: n };
+  }
+  /* Delete named keys (memory reset). Only keys the caller names — the quota
+     and rate keys are refused, so clearing memory can never reset a cap. */
+  async deleteState({ keys: keys2 }) {
+    const list = (Array.isArray(keys2) ? keys2 : []).map(String).filter((k) => k && k !== K_QUOTA && !k.startsWith("rate:")).slice(0, 32);
+    for (const k of list) await this.ctx.storage.delete(k).catch(() => {
+    });
+    return { ok: true, deleted: list.length };
+  }
   async getState({ key, now }) {
     const entry = await this.#entry(String(key));
     return { value: entry ? entry.v : null };
@@ -1297,6 +1314,10 @@ var AiStateObject = class {
           return json(await this.getState(body));
         case "/state/put":
           return json(await this.putState(body));
+        case "/state/delete":
+          return json(await this.deleteState(body));
+        case "/quota/refund":
+          return json(await this.refund(body));
         case "/rate/consume":
           return json(await this.consumeRate(body));
         default:
@@ -1325,6 +1346,8 @@ function aiStateStore(env) {
     consumeQuota: (uid, cap) => call(uid, "/quota/consume", { cap }),
     get: async (uid, key) => (await call(uid, "/state/get", { key })).value,
     put: (uid, key, value, ttlMs) => call(uid, "/state/put", { key, value, ttlMs }),
+    del: (uid, keys2) => call(uid, "/state/delete", { keys: keys2 }),
+    refundQuota: (uid) => call(uid, "/quota/refund", {}),
     consumeRate: (uid, limit, windowMs, now) => call(uid, "/rate/consume", { limit, windowMs, now })
   };
 }
@@ -2579,7 +2602,10 @@ function providerChain(env, tier = "FAST", badSet = /* @__PURE__ */ new Set(), k
   });
 }
 var COMPAT_PROVIDERS = [
-  { key: "OPENROUTER_API_KEYS", url: "https://openrouter.ai/api/v1/chat/completions", models: ["openai/gpt-4o-mini"] },
+  /* openai/gpt-4o-mini is a PAID OpenRouter model ($0.15/M input, checked
+     2026-10-16): with no credit it answers 402, with credit it spends money.
+     Default to free (`:free`) models; OPENROUTER_API_KEYS_MODELS overrides. */
+  { key: "OPENROUTER_API_KEYS", url: "https://openrouter.ai/api/v1/chat/completions", models: ["google/gemma-4-31b-it:free"] },
   /* Vercel AI Gateway is an OpenAI-compatible front door to many models; the
    * free tier serves openai/gpt-4o-mini. Its 400 floor on max_output_tokens is
    * satisfied by the agent core's normal token budget. */
@@ -2676,6 +2702,7 @@ function routerChain(env, tier, badSet = /* @__PURE__ */ new Set(), kv2 = {}) {
 }
 var dayKey = () => (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
 var RL_WINDOW_MS2 = 24 * 60 * 60 * 1e3;
+var CHAT_MEMORY_TTL_MS = 180 * 24 * 60 * 60 * 1e3;
 function readQuota(raw, now) {
   let n = 0, start = now;
   if (raw !== null && raw !== void 0 && raw !== "") {
@@ -2821,6 +2848,18 @@ async function agentChat(request, env, uid, opts = {}) {
   }
   mark("quota");
   if (quota.exhausted) return jsonResp({ error: "rate_limited", message: "আজকের AI-চ্যাট সীমা শেষ — ২৪ ঘণ্টা পর আবার চেষ্টা করো।", cap, remaining: quota.remaining }, 429);
+  const refundQuota = async () => {
+    try {
+      if (aiState && typeof aiState.refundQuota === "function") {
+        await aiState.refundQuota(sendCtx.uid);
+        return;
+      }
+      const rlKey = "airl:" + sendCtx.uid;
+      const q = readQuota(await getKv(env.PUB_KV, rlKey), Date.now());
+      if (q.n > 0) await putKv(env.PUB_KV, rlKey, JSON.stringify({ n: q.n - 1, start: q.start }), 172800);
+    } catch (_) {
+    }
+  };
   const verificationGuidance = authVerificationGuidance(v.messages[v.messages.length - 1].content);
   if (verificationGuidance) return guidanceResponse(verificationGuidance, stream);
   const intentCls = classifyIntent(v.messages[v.messages.length - 1].content);
@@ -2871,7 +2910,7 @@ async function agentChat(request, env, uid, opts = {}) {
   const settleBackground = async () => {
     if (background.length) await Promise.all(background.splice(0));
   };
-  if (persistSummary) later(() => statePut("chatmemsum:" + sendCtx.uid, freshSummary));
+  if (persistSummary) later(() => statePut("chatmemsum:" + sendCtx.uid, freshSummary, CHAT_MEMORY_TTL_MS));
   const systemPrompt = buildSystemPrompt({ stats, examMode, quiz: quizMode, onboarding, prefs: aiPrefs });
   const profileCtx = sendCtx.uid.startsWith("account-") ? sanitizeProfileContext(body?.context?.profile) : null;
   const ctxBundle = contextEngineEnabled(env) ? buildContext({ uid: sendCtx.uid, prefs: aiPrefs, stats, onboarding, profile: profileCtx, memoryOn }) : null;
@@ -3051,8 +3090,10 @@ async function agentChat(request, env, uid, opts = {}) {
     if (!memoryOn) return text;
     if (!validateResponse(text, validationCtx).persistable) return text;
     try {
-      const next = msgs.concat([{ role: "user", content: v.messages[v.messages.length - 1].content }, { role: "assistant", content: text }]).slice(-24).map((x) => ({ role: x.role, content: x.content }));
-      await statePut("chatmem:" + sendCtx.uid, JSON.stringify(next));
+      const lastTurn = msgs[msgs.length - 1];
+      const withUser = lastTurn && lastTurn.role === "user" ? msgs : msgs.concat([{ role: "user", content: v.messages[v.messages.length - 1].content }]);
+      const next = withUser.concat([{ role: "assistant", content: text }]).slice(-24).map((x) => ({ role: x.role, content: x.content }));
+      await statePut("chatmem:" + sendCtx.uid, JSON.stringify(next), CHAT_MEMORY_TTL_MS);
     } catch (_) {
     }
     try {
@@ -3111,9 +3152,10 @@ async function agentChat(request, env, uid, opts = {}) {
       }
     }
     await settleBackground();
+    await refundQuota();
     emitTrace({ fallbackReason: FALLBACK.PROVIDER_ERROR, validated: false });
     emitTiming({ failed: true });
-    return jsonResp({ error: "provider_failed", message: "AI একটু ব্যস্ত — কয়েক সেকেন্ড পরে আবার চেষ্টা করো।", detail: lastErr, retryable: true }, 502);
+    return jsonResp({ error: "provider_failed", message: "AI একটু ব্যস্ত — কয়েক সেকেন্ড পরে আবার চেষ্টা করো।", retryable: true }, 502);
   }
   const encoder7 = new TextEncoder();
   const streamOut = new ReadableStream({
@@ -3148,6 +3190,7 @@ data: ${JSON.stringify({ stage: id, label })}
         mark("modelStart");
         for (const c of chain) {
           if ((modelFails.get(c.model) || 0) >= MODEL_FAIL_LIMIT) continue;
+          let streamedAny = false;
           try {
             let full = "";
             const adapter = adapterFor(c);
@@ -3164,6 +3207,7 @@ data: ${JSON.stringify({ stage: id, label })}
               push(`data: ${JSON.stringify({ text: t })}
 
 `);
+              streamedAny = true;
             }
             if (full.trim()) {
               ok2 = true;
@@ -3190,6 +3234,10 @@ data: ${JSON.stringify({ model: c.model, provider: c.provider, intent, quiz: qui
             }
             lastErr = "empty-" + c.model;
           } catch (e) {
+            if (streamedAny) push(`event: replace
+data: ${JSON.stringify({ text: "" })}
+
+`);
             if (e instanceof ProviderError) {
               lastErr = e.message;
               const st = Number(e.status) || 0;
@@ -3200,17 +3248,18 @@ data: ${JSON.stringify({ model: c.model, provider: c.provider, intent, quiz: qui
         }
         if (!ok2) {
           await settleBackground();
+          await refundQuota();
           emitTrace({ fallbackReason: FALLBACK.PROVIDER_ERROR, validated: false });
           emitTiming({ failed: true });
           push(`event: error
-data: ${JSON.stringify({ error: "provider_failed", message: "AI একটু ব্যস্ত — কয়েক সেকেন্ড পরে আবার চেষ্টা করো।", detail: lastErr, retryable: true })}
+data: ${JSON.stringify({ error: "provider_failed", message: "AI একটু ব্যস্ত — কয়েক সেকেন্ড পরে আবার চেষ্টা করো।", retryable: true })}
 
 `);
         }
       } catch (e) {
         await settleBackground();
         push(`event: error
-data: ${JSON.stringify({ error: "stream_failed", message: "যুক্তি-বিচ্ছেদ ঘটেছে।", detail: String(e.message || e), retryable: true })}
+data: ${JSON.stringify({ error: "stream_failed", message: "সংযোগ বিচ্ছিন্ন হয়েছে — আবার চেষ্টা করো।", retryable: true })}
 
 `);
       } finally {
@@ -3231,6 +3280,25 @@ data: ${JSON.stringify({ error: "stream_failed", message: "যুক্তি-�
       "Access-Control-Allow-Origin": "*"
     }
   });
+}
+async function clearAiMemory(env, uid) {
+  const id = String(uid || "");
+  if (!id.startsWith("account-")) return { ok: false, reason: "no-account" };
+  const keys2 = ["chatmem:" + id, "chatmemsum:" + id, "mem:" + MEMORY_VERSION + ":" + id];
+  const aiState = aiStateStore(env);
+  if (aiState && typeof aiState.del === "function") {
+    try {
+      await aiState.del(id, keys2);
+    } catch (_) {
+    }
+  }
+  for (const k of keys2) {
+    try {
+      await env.PUB_KV.delete(k);
+    } catch (_) {
+    }
+  }
+  return { ok: true, cleared: keys2.length };
 }
 async function agentStatus(request, env, uid) {
   const kv2 = await aiKeyOverlay(env);
@@ -3719,6 +3787,14 @@ var sha256 = async (value) => {
   return [...new Uint8Array(bytes)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 };
 var dayKey2 = () => (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+var tokenEquals = (a, b) => {
+  const x = String(a == null ? "" : a);
+  const y = String(b == null ? "" : b);
+  if (!x || x.length !== y.length) return false;
+  let diff = 0;
+  for (let i = 0; i < x.length; i++) diff |= x.charCodeAt(i) ^ y.charCodeAt(i);
+  return diff === 0;
+};
 var readGuestHeader = (request) => {
   const value = String(request.headers.get("X-AH-Guest") || "").trim();
   return /^[A-Za-z0-9_-]{16,96}$/.test(value) ? value : "";
@@ -4039,7 +4115,7 @@ var public_worker_default = {
         const identity = await aiRequestIdentity(request, env, false);
         const res = await agentStatus(request, env, identity.uid);
         const token = String(request.headers.get("Authorization") || "").replace("Bearer ", "").trim();
-        if (env.ADMIN_TOKEN && token === env.ADMIN_TOKEN) return res;
+        if (env.ADMIN_TOKEN && tokenEquals(token, env.ADMIN_TOKEN)) return res;
         const data = await res.json().catch(() => null);
         if (!data) return res;
         delete data.providers;
@@ -4072,6 +4148,19 @@ var public_worker_default = {
           return json2({ error: "save_failed", message: "এখন save করা গেল না — আবার চেষ্টা করো।" }, 500);
         }
         return json2({ ok: true, prefs });
+      }
+      if (path === "/api/ai/memory/clear" && request.method === "POST") {
+        const identity = await aiRequestIdentity(request, env, false);
+        if (!identity.authenticated) return json2({ error: "sign_in_required", message: "AI মেমরি মুছতে লগইন করো।" }, 401);
+        try {
+          await clearAiMemory(env, identity.uid);
+          await env.PUB_KV.delete("aiprefs:" + identity.uid);
+          await env.PUB_KV.delete("actaudit:" + identity.uid);
+          await env.PUB_KV.delete("actprop:" + identity.uid);
+        } catch (_) {
+          return json2({ error: "clear_failed", message: "এখন মুছে ফেলা গেল না — আবার চেষ্টা করো।" }, 500);
+        }
+        return json2({ ok: true, message: "তোমার AI মেমরি মুছে ফেলা হয়েছে।" });
       }
       if (path === "/api/ai/actions/propose" && request.method === "POST") {
         const identity = await aiRequestIdentity(request, env, false);
@@ -19616,6 +19705,14 @@ var __copilotTest = Object.freeze({ nd, sp, bn, compactParams, isBangla, normali
 // ai-analytics-routes.mjs
 var AI_ANALYTICS_PREFIX = "/api/analytics/ai/";
 var DAY_MS6 = 24 * 3600 * 1e3;
+function constantTimeEqual2(a, b) {
+  const x = String(a == null ? "" : a);
+  const y = String(b == null ? "" : b);
+  if (!x || x.length !== y.length) return false;
+  let diff = 0;
+  for (let i = 0; i < x.length; i++) diff |= x.charCodeAt(i) ^ y.charCodeAt(i);
+  return diff === 0;
+}
 async function handleAiAnalyticsRequest(request, env, ctx, deps = {}) {
   const url = new URL(request.url);
   const path = url.pathname;
@@ -19625,7 +19722,7 @@ async function handleAiAnalyticsRequest(request, env, ctx, deps = {}) {
   if (!store.available()) return json6(request, { error: "storage-unavailable" }, 503);
   const analyticsStore = deps.store || new AnalyticsStore2(env?.PROFILE_DB);
   const adminToken = String(request.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "").trim();
-  const isAdmin = Boolean(env?.ADMIN_TOKEN) && adminToken === env.ADMIN_TOKEN;
+  const isAdmin = Boolean(env?.ADMIN_TOKEN) && constantTimeEqual2(adminToken, env.ADMIN_TOKEN);
   const resolveSession = deps.sessionUser || sessionUser;
   const filters = parseFilters(url);
   const route = path === "/api/analytics/ai" ? "" : path.slice(AI_ANALYTICS_PREFIX.length).replace(/\/$/, "");
@@ -27303,6 +27400,9 @@ function sessionCookieHeader(value, { secure = true, maxAge = Math.floor(SESSION
 // voice-agent.mjs
 var jsonReply = (body, status, headers) => Response.json(body, { status, headers });
 var HISTORY_KEY = "va_history";
+var LOGIN_FAIL_KEY = "va_login_fail";
+var LOGIN_FAIL_LIMIT = 5;
+var LOGIN_FAIL_WINDOW_MS = 15 * 60 * 1e3;
 var SUMMARY_KEY = "va_summary";
 var MEMORY_KEY = "va_memory";
 var TICKETS_KEY = "va_tickets";
@@ -27457,7 +27557,29 @@ var VoiceAgentSession = class {
       given = body && body.password;
     } catch (_) {
     }
-    if (!passwordMatches(env, given)) return jsonReply({ error: "bad_password" }, 403);
+    const now = Date.now();
+    let fails = null;
+    try {
+      fails = await this.ctx.storage.get(LOGIN_FAIL_KEY);
+    } catch (_) {
+      fails = null;
+    }
+    if (!fails || typeof fails !== "object" || now - Number(fails.start || 0) > LOGIN_FAIL_WINDOW_MS) fails = { n: 0, start: now };
+    if (fails.n >= LOGIN_FAIL_LIMIT) {
+      const retryAfter = Math.max(1, Math.ceil((Number(fails.start) + LOGIN_FAIL_WINDOW_MS - now) / 1e3));
+      return jsonReply({ error: "too_many_attempts", message: "অনেকবার ভুল পাসওয়ার্ড — কিছুক্ষণ পরে আবার চেষ্টা করো।", retryAfter }, 429, { "Retry-After": String(retryAfter) });
+    }
+    if (!passwordMatches(env, given)) {
+      try {
+        await this.ctx.storage.put(LOGIN_FAIL_KEY, { n: fails.n + 1, start: fails.start });
+      } catch (_) {
+      }
+      return jsonReply({ error: "bad_password" }, 403);
+    }
+    try {
+      await this.ctx.storage.delete(LOGIN_FAIL_KEY);
+    } catch (_) {
+    }
     const value = await makeSession(env);
     return jsonReply({ ok: true }, 200, { "Set-Cookie": sessionCookieHeader(value) });
   }
@@ -28204,6 +28326,18 @@ var gk_agent_worker_default = {
           AGENT_DAILY_CAP: env.AGENT_DAILY_CAP,
           AGENT_PUBLIC_DAILY_CAP: env.AGENT_PUBLIC_DAILY_CAP,
           AGENT_GEMINI_MODELS: env.AGENT_GEMINI_MODELS,
+          /* AI audit 2026-10-16: the dashboard kill-switches and tuning knobs the
+             AI path reads. Without them here a secret bound from the dashboard
+             (e.g. USE_WRITE_ACTIONS = "disabled", AI_CHAT_CACHE = "off") never
+             reaches the public handler and the switch silently does nothing. */
+          USE_WRITE_ACTIONS: env.USE_WRITE_ACTIONS,
+          AI_CHAT_CACHE: env.AI_CHAT_CACHE,
+          AGENT_GROQ_MODELS: env.AGENT_GROQ_MODELS,
+          AGENT_FIRST_CHUNK_MS: env.AGENT_FIRST_CHUNK_MS,
+          AI_KV_KEY_NAMES: env.AI_KV_KEY_NAMES,
+          PUBLIC_RATE_SALT: env.PUBLIC_RATE_SALT,
+          PUBLIC_RATE_LIMIT: env.PUBLIC_RATE_LIMIT,
+          PUBLIC_RATE_WINDOW_MS: env.PUBLIC_RATE_WINDOW_MS,
           /* P13 — D1 read path (public question/content lists). Absent binding
              leaves the KV path in place, so this is additive. */
           PROFILE_DB: env.PROFILE_DB,

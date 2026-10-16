@@ -378,10 +378,12 @@ t('৪৬. readQuota: ২৪ ঘণ্টা পার হলে window রি�
 
 t('৪৭. E2E: ডিফল্ট cap ১০ — ১১তম মেসেজে 429, আর remaining জানায়', async () => {
   const { env } = stubEnv({ AGENT_DAILY_CAP: undefined });
-  const restore = fakeFetch({ 'streamGenerateContent': sseRes(gChunk('x')) });
+  /* A fresh response per call: a reused body fails every call after the first,
+     and an unanswered message now refunds its credit (AI audit 2026-10-16). */
+  const restore = fakeFetch({ 'streamGenerateContent': () => sseRes(gChunk('x')) });
   const mk = () => new Request('https://x/api/ai/chat', { method: 'POST', body: JSON.stringify({ messages: [{ role: 'user', content: 'হ্যালো' }] }) });
   let last = null;
-  for (let i = 0; i < 10; i++) { const r = await A.agentChat(mk(), env, 'account-cap10'); if (r.status !== 200) { last = r; break; } }
+  for (let i = 0; i < 10; i++) { const r = await A.agentChat(mk(), env, 'account-cap10'); if (r.status !== 200) { last = r; break; } await r.text(); }
   const over = await A.agentChat(mk(), env, 'account-cap10');
   const body = await over.json();
   restore();

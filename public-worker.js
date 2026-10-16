@@ -1,7 +1,7 @@
 // Admission Hub — Public Product Worker (account system retired, v221)
 // Active routes: public content · Firebase-account/ephemeral-guest AI · content admin.
 // The former login/profile/onboarding/session/state APIs are intentionally absent.
-import { agentChat, agentStatus, sanitizeAiPrefs, AI_PREFS_DEFAULT } from './ai-agent.js';
+import { agentChat, agentStatus, sanitizeAiPrefs, AI_PREFS_DEFAULT, clearAiMemory } from './ai-agent.js';
 import {
   authorizeAction, makeProposal, confirmProposal, proposalSummary,
   makeAuditRecord, parseAudit, appendAudit, STATUS, actionsEnabled
@@ -104,6 +104,14 @@ const sha256 = async value => {
   return [...new Uint8Array(bytes)].map(byte => byte.toString(16).padStart(2, '0')).join('');
 };
 const dayKey = () => new Date().toISOString().slice(0, 10);
+/* Constant-time string compare for the admin token (AI audit 2026-10-16). */
+const tokenEquals = (a, b) => {
+  const x = String(a == null ? '' : a); const y = String(b == null ? '' : b);
+  if (!x || x.length !== y.length) return false;
+  let diff = 0;
+  for (let i = 0; i < x.length; i++) diff |= x.charCodeAt(i) ^ y.charCodeAt(i);
+  return diff === 0;
+};
 const readGuestHeader = request => {
   const value = String(request.headers.get('X-AH-Guest') || '').trim();
   return /^[A-Za-z0-9_-]{16,96}$/.test(value) ? value : '';
@@ -462,7 +470,7 @@ export default {
            gate /api/admin/* uses), so only that requester gets the full body.
            Everyone else keeps the generic shape the app already relies on. */
         const token = String(request.headers.get('Authorization') || '').replace('Bearer ', '').trim();
-        if (env.ADMIN_TOKEN && token === env.ADMIN_TOKEN) return res;
+        if (env.ADMIN_TOKEN && tokenEquals(token, env.ADMIN_TOKEN)) return res;
         const data = await res.json().catch(() => null);
         if (!data) return res;
         delete data.providers;
@@ -495,9 +503,25 @@ export default {
         }
         return json({ ok: true, prefs });
       }
-      /* M9: write/execute actions. The layer is OFF by default (action-engine
-         `ENABLED`), so both routes refuse with `layer-disabled` until the owner
-         turns it on. Confirmation is mandatory and single-use. */
+      /* AI audit 2026-10-16: the student's own "forget my AI memory". Signed-in
+         only; clears conversation + long-term memory, personalization and the
+         action audit. The daily quota is not reset. */
+      if (path === '/api/ai/memory/clear' && request.method === 'POST') {
+        const identity = await aiRequestIdentity(request, env, false);
+        if (!identity.authenticated) return json({ error: 'sign_in_required', message: 'AI মেমরি মুছতে লগইন করো।' }, 401);
+        try {
+          await clearAiMemory(env, identity.uid);
+          await env.PUB_KV.delete('aiprefs:' + identity.uid);
+          await env.PUB_KV.delete('actaudit:' + identity.uid);
+          await env.PUB_KV.delete('actprop:' + identity.uid);
+        } catch (_) {
+          return json({ error: 'clear_failed', message: 'এখন মুছে ফেলা গেল না — আবার চেষ্টা করো।' }, 500);
+        }
+        return json({ ok: true, message: 'তোমার AI মেমরি মুছে ফেলা হয়েছে।' });
+      }
+      /* M9: write/execute actions. Live by default (action-engine `ENABLED`);
+         the kill-switch is the USE_WRITE_ACTIONS = "disabled" secret, which
+         reaches this handler through envPub. Confirmation is single-use. */
       if (path === '/api/ai/actions/propose' && request.method === 'POST') {
         const identity = await aiRequestIdentity(request, env, false);
         if (!identity.authenticated) return json({ error: 'sign_in_required', message: 'AI action ব্যবহার করতে লগইন করো।' }, 401);

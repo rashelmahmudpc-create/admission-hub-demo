@@ -1,0 +1,92 @@
+name: Apply AI audit fixes 2026-10-16
+
+# Owner order 2026-10-16 ("এখন যা করা দরকার তা করো সব"), AI/voice audit fixes.
+# Runs ONLY on the fix branch and commits back to that branch. It never pushes
+# to main and never deploys; the owner merges the PR.
+#  1. envPub forwards USE_WRITE_ACTIONS / AI_CHAT_CACHE / PUBLIC_RATE_* etc.
+#  2. mid-stream provider failure clears the partial text (event: replace)
+#  3. conversation memory no longer stores each question twice
+#  4. chat memory TTL 180 days + POST /api/ai/memory/clear
+#  5. unanswered message refunds its quota credit
+#  6. no provider detail in client errors; Bangla stream error text
+#  7. voice login brute-force lockout (5 / 15 min)
+#  8. voice-worker origin allowlist limited to the app's own origins
+#  9. Pages no longer serves Worker-only AI modules
+# 10. OpenRouter default model is a free (:free) model
+# 11. constant-time admin token compare
+# The patch is verified by SHA-256 before it is applied.
+
+on:
+  push:
+    branches: [fix/ai-audit-20261016]
+    paths:
+      - '.github/workflows/apply-ai-audit-20261016.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-ai-audit-20261016
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: github.ref == 'refs/heads/fix/ai-audit-20261016'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: fix/ai-audit-20261016
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Download and verify patch
+        run: |
+          set -eu
+          curl -fsSL -o /tmp/ai-audit.patch 'https://backend.composio.dev/api/v3/sl/9ukhFo9deG'
+          echo '709f8215a106777dfdf356905e11d4584adaac0c785366ada2bb9af95763fd03  /tmp/ai-audit.patch' | sha256sum -c -
+      - name: Apply source changes
+        run: |
+          set -eu
+          if grep -q 'export async function clearAiMemory' ai-agent.js; then echo 'Already applied.'; exit 0; fi
+          git apply --3way /tmp/ai-audit.patch
+      - name: Syntax check
+        run: |
+          node --check ai-agent.js
+          node --check public-worker.js
+          node --check gk-agent-worker.js
+          node --check voice-worker.js
+          node --check _worker.js
+      - name: Rebuild Worker bundle
+        run: npm run build:worker
+      - name: Regression tests
+        run: |
+          set -eu
+          node --test --test-concurrency=1 ai-audit-fixes.test.mjs ai-duplicate-turn.test.mjs ai-state-do.test.mjs ai-chat-history.test.mjs ai-live-stages.test.mjs p25-chat-cache.test.mjs p26-tier-router.test.mjs p27-history-trim.test.mjs p28-provider-health.test.mjs p29-ai-status-privacy.test.mjs p30-ai-latency-cache.test.mjs p31-model-priority.test.mjs p21-ai-agent-ui.test.mjs p22-voice-cartesia.test.mjs voice-cache-storage.test.mjs account-data-isolation.test.mjs p14-security-gate.test.mjs
+          node ai-agent-f1.test.mjs
+          node ai-provider-adapters.test.mjs
+          node p06-personal-tutor.test.mjs
+          node phase9-m4-context-engine.test.mjs
+          node phase9-m7-memory-engine.test.mjs
+          node phase9-m8-response-validation.test.mjs
+          node phase9-m9-action-engine.test.mjs
+          node phase9-m10-observability.test.mjs
+          node voice-agent-core.test.mjs
+          node voice-agent.test.mjs
+          npm run test:ai-analytics
+          npm run check:worker-bundle
+      - name: Commit and push to the fix branch
+        run: |
+          set -eu
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git restore --source=HEAD --staged --worktree -- .github/workflows
+          git add -A
+          if git diff --cached --quiet; then echo 'Nothing to commit (already applied).'; exit 0; fi
+          git commit -m 'fix(ai): audit fixes 2026-10-16 (kill-switches, stream reset, memory TTL/clear, voice lockout, origin allowlist)' -m 'Owner-ordered 2026-10-16. Bundle rebuilt and verified with check:worker-bundle.'
+          git push origin HEAD:fix/ai-audit-20261016

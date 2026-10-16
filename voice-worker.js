@@ -42,13 +42,19 @@ const RATE_WINDOW_MS = 60000;
 
 const rateBuckets = new Map(); // per-isolate best effort (KV ছাড়াই মোটামুটি শক্ত রশ্মি)
 
+/* AI audit 2026-10-16: the allowlist used to accept ANY *.github.io and ANY
+   *.pages.dev site, so a stranger's page could spend this TTS quota from a
+   visitor's browser. Only the app's own origins (and their preview
+   subdomains) are allowed now; a request carrying any other Origin is refused. */
+const originAllowed = origin => /^https:\/\/([a-z0-9-]+\.)?(admissionsky|admissionhub)\.pages\.dev$/.test(origin)
+  || origin === 'https://sheikhrashel47-stack.github.io'
+  || /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+
 const corsHeaders = request => {
   const origin = request.headers.get('Origin') || '';
   /* P20 (v204): pages.dev-ও-অনুমোদিত — আগে ছিল শুধু github.io+localhost, তাই pages.dev-পেজ থেকে
      সরাসরি-ডাক CORS-এ আটকাত। (অ্যাপ-এখন same-origin-প্রক্সি-ব্যবহার-করে; তবু-allowlist-অসম্পূর্ণ-ছিল।) */
-  const ok = /^https:\/\/([a-z0-9-]+\.)?github\.io$/.test(origin)
-    || /^https:\/\/([a-z0-9-]+\.)?pages\.dev$/.test(origin)
-    || /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+  const ok = originAllowed(origin);
   const headers = {
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, X-AH-App',
@@ -181,6 +187,10 @@ export default {
     }
     if (request.headers.get('X-AH-App') !== 'admission-hub') {
       return json(request, { error: 'forbidden' }, 403);
+    }
+    const reqOrigin = request.headers.get('Origin') || '';
+    if (reqOrigin && !originAllowed(reqOrigin)) {
+      return json(request, { error: 'forbidden_origin' }, 403);
     }
     if (rateLimited(request)) {
       return json(request, { error: 'rate_limited' }, 429);
