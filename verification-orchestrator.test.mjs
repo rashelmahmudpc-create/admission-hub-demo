@@ -645,3 +645,44 @@ test('owner 2026-10-16: a misconfigured Appwrite falls through instead of starvi
   assert.equal(appwrite.sends.length, 0);
   assert.equal(brevo.sends.length, 1, 'the send must fall through to a healthy slot');
 });
+
+const liveOrderConfig = list => {
+  const base = rawConfig(list);
+  const live = { 'otp-a': 10, 'otp-h': 15, 'otp-i': 38 };
+  return { ...base, allowedDomains: ['gmail.com', 'yahoo.com', 'icloud.com', 'outlook.com'], providers: base.providers.map(row => ({ ...row, priority: live[row.id] })) };
+};
+
+test('owner 2026-10-16 (Logto first): a Yahoo recipient goes to Logto before Appwrite and Brevo', async () => {
+  const brevo = new MockProvider({ id: 'otp-a' });
+  const logto = new MockProvider({ id: 'otp-h', verificationMode: VERIFICATION_MODES.PROVIDER_EVIDENCE });
+  const appwrite = new MockProvider({ id: 'otp-i', verificationMode: VERIFICATION_MODES.PROVIDER_EVIDENCE });
+  const app = setup({ providers: [brevo, logto, appwrite], config: liveOrderConfig([brevo, logto, appwrite]) });
+  const result = await app.orchestrator.requestVerification(ownershipIdentity('student@yahoo.com'), context);
+  assert.equal(result.accepted, true);
+  assert.equal(logto.sends.length, 1, 'Logto must carry the Yahoo send');
+  assert.equal(appwrite.sends.length, 0);
+  assert.equal(brevo.sends.length, 0);
+});
+
+test('owner 2026-10-16 (Logto first): Appwrite carries a Yahoo send when Logto is unavailable', async () => {
+  const brevo = new MockProvider({ id: 'otp-a' });
+  const logto = new MockProvider({ id: 'otp-h', verificationMode: VERIFICATION_MODES.PROVIDER_EVIDENCE });
+  const appwrite = new MockProvider({ id: 'otp-i', verificationMode: VERIFICATION_MODES.PROVIDER_EVIDENCE });
+  logto.checkAvailability = async () => ({ available: false, code: 'NOT_CONFIGURED' });
+  const app = setup({ providers: [brevo, logto, appwrite], config: liveOrderConfig([brevo, logto, appwrite]) });
+  const result = await app.orchestrator.requestVerification(ownershipIdentity('student@outlook.com'), context);
+  assert.equal(result.accepted, true);
+  assert.equal(appwrite.sends.length, 1, 'Appwrite is the second choice');
+  assert.equal(brevo.sends.length, 0);
+});
+
+test('owner 2026-10-16 (Logto first): a Gmail recipient keeps Brevo first', async () => {
+  const brevo = new MockProvider({ id: 'otp-a' });
+  const logto = new MockProvider({ id: 'otp-h', verificationMode: VERIFICATION_MODES.PROVIDER_EVIDENCE });
+  const appwrite = new MockProvider({ id: 'otp-i', verificationMode: VERIFICATION_MODES.PROVIDER_EVIDENCE });
+  const app = setup({ providers: [brevo, logto, appwrite], config: liveOrderConfig([brevo, logto, appwrite]) });
+  await app.orchestrator.requestVerification(ownershipIdentity('student@gmail.com'), context);
+  assert.equal(brevo.sends.length, 1, 'Gmail keeps the operator order');
+  assert.equal(logto.sends.length, 0);
+  assert.equal(appwrite.sends.length, 0);
+});
