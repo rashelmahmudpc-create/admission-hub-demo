@@ -17,9 +17,12 @@ test('compact configuration keeps Logto identity, quota and all existing mailer 
   // sending limit, so this is our own safety ceiling, not a provider cap.
   assert.equal(p.declaredDailyQuota, 5000);
   assert.equal(p.declaredDailyQuota, slot.dailyQuota);
-  for (const [name, quota] of Object.entries({ A: 300, B: 100, C: 200, D: 100, E: 100, F: 100, G: 150 })) {
+  for (const [name, quota] of Object.entries({ A: 300, B: 100, C: 200, D: 100, E: 100, F: 100 })) {
     assert.match(text, new RegExp(`^OTP_${name}_DAILY_QUOTA = "${quota}"$`, 'm'));
   }
+  // otp-g's cap lives in the orchestrator row since its var was dropped (64-var ceiling).
+  assert.equal(JSON.parse(packed).providers.find(row => row.id === 'otp-g').dailyQuota, 150);
+  assert.doesNotMatch(text, /^OTP_G_DAILY_QUOTA\s*=/m);
   assert.doesNotMatch(text, /^(?:LOGTO_ENDPOINT|LOGTO_APP_ID|LOGTO_REDIRECT_URI|OTP_H_DAILY_QUOTA)\s*=/m);
 });
 

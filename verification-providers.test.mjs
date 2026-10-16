@@ -8,9 +8,11 @@ import {
   BridgeOtpVerificationProvider,
   createConfiguredVerificationProviders,
   DeadSimpleEmailOtpVerificationProvider,
+  HankoOtpVerificationProvider,
   MailjetOtpVerificationProvider,
   MailerSendOtpVerificationProvider,
   OfficialWhatsAppVerificationProvider,
+  OryOtpVerificationProvider,
   ResendOtpVerificationProvider,
   TelegramLinkVerificationProvider
 } from './auth-native/verification/providers.mjs';
@@ -23,7 +25,7 @@ const KEY = `provider-key-${'k'.repeat(32)}`;
 
 test('six OTP slots implement the shared contract and fail closed when not securely configured', async () => {
   const providers = createConfiguredVerificationProviders({});
-  assert.deepEqual(providers.map(row => row.id), ['otp-a', 'otp-b', 'otp-c', 'otp-d', 'otp-e', 'otp-f', 'otp-g', 'otp-h', 'otp-i', 'whatsapp', 'telegram']);
+  assert.deepEqual(providers.map(row => row.id), ['otp-a', 'otp-b', 'otp-c', 'otp-d', 'otp-e', 'otp-f', 'otp-g', 'otp-h', 'otp-i', 'otp-j', 'otp-k', 'whatsapp', 'telegram']);
   for (const provider of providers) {
     assert.equal((await provider.checkAvailability()).available, false);
     assert.equal((await provider.getRemainingQuota()).remaining, 0);
@@ -662,7 +664,7 @@ test('OTP slots prefer Brevo and Apps Script and fall back to bridge bindings', 
   assert.equal(bridged[1].constructor.name, 'BridgeOtpVerificationProvider');
 
   const empty = createConfiguredVerificationProviders({});
-  assert.deepEqual(empty.map(row => row.id), ['otp-a', 'otp-b', 'otp-c', 'otp-d', 'otp-e', 'otp-f', 'otp-g', 'otp-h', 'otp-i', 'whatsapp', 'telegram']);
+  assert.deepEqual(empty.map(row => row.id), ['otp-a', 'otp-b', 'otp-c', 'otp-d', 'otp-e', 'otp-f', 'otp-g', 'otp-h', 'otp-i', 'otp-j', 'otp-k', 'whatsapp', 'telegram']);
   for (const provider of empty) assert.equal((await provider.getProviderStatus()).configured, false);
 });
 
@@ -977,4 +979,207 @@ test('wrangler.toml stays off the Appwrite vars so the 64-variable ceiling holds
     assert.equal(new RegExp(`^${name}\\s*=`, 'm').test(toml), false, name);
   }
   assert.match(toml, /"id":"otp-i","enabled":true/);
+});
+
+
+const JK_CONFIG = JSON.stringify({ enabled: true, providers: [{ id: 'otp-j', enabled: true, dailyQuota: 300 }, { id: 'otp-k', enabled: true, dailyQuota: 300 }] });
+const ORY = 'https://ecstatic-torvalds-2tcj5aljui.projects.oryapis.com';
+const HANKO = 'https://9b4c7063-c179-4586-8481-a415631a710a.hanko.io';
+const ORY_FLOW = '11111111-2222-4333-8444-555555555555';
+
+test('otp-j Ory and otp-k Hanko use their public defaults only when the owner enabled the slot', async () => {
+  for (const id of ['otp-j', 'otp-k']) {
+    assert.equal(createConfiguredVerificationProviders({}).find(row => row.id === id).configured, false, id);
+    const disabled = createConfiguredVerificationProviders({
+      VERIFICATION_ORCHESTRATOR_CONFIG: JSON.stringify({ enabled: true, providers: [{ id, enabled: false, dailyQuota: 300 }] })
+    }).find(row => row.id === id);
+    assert.equal(disabled.configured, false, id);
+    const off = createConfiguredVerificationProviders({
+      VERIFICATION_ORCHESTRATOR_CONFIG: JSON.stringify({ enabled: false, providers: [{ id, enabled: true, dailyQuota: 300 }] })
+    }).find(row => row.id === id);
+    assert.equal(off.configured, false, id);
+    assert.equal(createConfiguredVerificationProviders({ VERIFICATION_ORCHESTRATOR_CONFIG: '{not json' }).find(row => row.id === id).configured, false, id);
+    const on = createConfiguredVerificationProviders({ VERIFICATION_ORCHESTRATOR_CONFIG: JK_CONFIG }).find(row => row.id === id);
+    assert.equal(on.configured, true, id);
+    assert.equal(on.verificationMode, 'provider-evidence');
+    assert.equal((await on.getRemainingQuota()).limit, 300);
+    assert.equal((await on.checkAvailability()).available, true);
+  }
+  const providers = createConfiguredVerificationProviders({ VERIFICATION_ORCHESTRATOR_CONFIG: JK_CONFIG });
+  assert.equal(providers.find(row => row.id === 'otp-j').endpoint, ORY);
+  assert.equal(providers.find(row => row.id === 'otp-k').endpoint, HANKO);
+  assert.equal(new OryOtpVerificationProvider({ endpoint: 'https://evil.example', declaredDailyQuota: 5 }).configured, false);
+  assert.equal(new OryOtpVerificationProvider({ endpoint: `${ORY}/path`, declaredDailyQuota: 5 }).configured, false);
+  assert.equal(new HankoOtpVerificationProvider({ endpoint: 'http://9b4c7063-c179-4586-8481-a415631a710a.hanko.io', declaredDailyQuota: 5 }).configured, false);
+  assert.equal(new HankoOtpVerificationProvider({ endpoint: 'https://x.hanko.io.evil.example', declaredDailyQuota: 5 }).configured, false);
+});
+
+function oryFake({ accountExists = false, code = '123456' } = {}) {
+  const calls = [];
+  const fetchImpl = async (url, init) => {
+    const body = init.body ? JSON.parse(init.body) : null;
+    calls.push({ url, method: init.method, body });
+    const path = url.slice(ORY.length);
+    if (init.method === 'GET' && /^\/self-service\/(login|registration)\/api$/.test(path)) return json({ id: ORY_FLOW, type: 'api', ui: { nodes: [] } });
+    if (path === `/self-service/login?flow=${ORY_FLOW}`) {
+      if (!accountExists) return json({ id: ORY_FLOW, state: 'choose_method', ui: { messages: [{ id: 4000035, text: 'This account does not exist or has not setup sign in with code.' }] } }, 400);
+      if (!body.code) return json({ id: ORY_FLOW, state: 'sent_email', ui: { messages: [{ id: 1010014 }] } }, 400);
+      if (body.code === code) return json({ session_token: 'ory_st_secret', session: { active: true, identity: { traits: { email: body.identifier } } } });
+      return json({ id: ORY_FLOW, state: 'sent_email', ui: { messages: [{ id: 4010008 }] } }, 400);
+    }
+    if (path === `/self-service/registration?flow=${ORY_FLOW}`) {
+      if (!body.code) return json({ id: ORY_FLOW, state: 'sent_email', ui: { messages: [{ id: 1040005 }] } }, 400);
+      if (body.code === code) return json({ session_token: 'ory_st_secret', identity: { traits: { email: body.traits.email } }, session: { active: true } });
+      return json({ id: ORY_FLOW, state: 'sent_email', ui: { messages: [{ id: 4040003 }] } }, 400);
+    }
+    if (path === '/self-service/logout/api' && init.method === 'DELETE') return new Response(null, { status: 204 });
+    return json({}, 404);
+  };
+  return { calls, fetchImpl };
+}
+
+test('otp-j Ory sends a one-time code (registration for a new address) and checks it at Ory', async () => {
+  const { calls, fetchImpl } = oryFake();
+  const provider = createConfiguredVerificationProviders({ VERIFICATION_ORCHESTRATOR_CONFIG: JK_CONFIG }, { fetchImpl }).find(row => row.id === 'otp-j');
+  const attemptId = 'j'.repeat(32);
+  assert.deepEqual(await provider.sendVerification({ destination: 'Student@Gmail.com', attemptId }), { accepted: true });
+  assert.deepEqual(calls.map(row => `${row.method} ${row.url.slice(ORY.length)}`), [
+    'GET /self-service/login/api', `POST /self-service/login?flow=${ORY_FLOW}`,
+    'GET /self-service/registration/api', `POST /self-service/registration?flow=${ORY_FLOW}`
+  ]);
+  assert.deepEqual(calls[1].body, { method: 'code', identifier: 'student@gmail.com' });
+  assert.deepEqual(calls[3].body, { method: 'code', traits: { email: 'student@gmail.com' } });
+  assert.deepEqual(await provider.verifyCode({ attemptId, evidence: '000000' }), { verified: false });
+  assert.deepEqual(await provider.verifyCode({ attemptId, evidence: '12345' }), { verified: false });
+  assert.deepEqual(await provider.verifyCode({ attemptId, evidence: '123456' }), { verified: true });
+  const logout = calls.find(row => row.url.endsWith('/self-service/logout/api'));
+  assert.equal(logout.method, 'DELETE');
+  assert.deepEqual(logout.body, { session_token: 'ory_st_secret' });
+  await assert.rejects(provider.verifyCode({ attemptId, evidence: '123456' }), error => error.code === 'CHALLENGE_EXPIRED');
+});
+
+test('otp-j Ory uses the login flow for a known address', async () => {
+  const { calls, fetchImpl } = oryFake({ accountExists: true });
+  const provider = createConfiguredVerificationProviders({ VERIFICATION_ORCHESTRATOR_CONFIG: JK_CONFIG }, { fetchImpl }).find(row => row.id === 'otp-j');
+  const attemptId = 'k'.repeat(32);
+  assert.deepEqual(await provider.sendVerification({ destination: 'known@icloud.com', attemptId }), { accepted: true });
+  assert.equal(calls.some(row => row.url.includes('/registration')), false);
+  assert.deepEqual(await provider.verifyCode({ attemptId, evidence: '123456' }), { verified: true });
+  assert.deepEqual(calls.find(row => row.body?.code === '123456').body, { method: 'code', code: '123456', identifier: 'known@icloud.com' });
+});
+
+test('otp-j Ory classifies provider failures', async () => {
+  const make = (status, payload = {}) => createConfiguredVerificationProviders({ VERIFICATION_ORCHESTRATOR_CONFIG: JK_CONFIG }, {
+    fetchImpl: async (url, init) => (init.method === 'GET' && status < 400 ? json({ id: ORY_FLOW }) : json(payload, status))
+  }).find(row => row.id === 'otp-j');
+  const attemptId = 'l'.repeat(32);
+  for (const [status, failureClass] of [[404, VERIFICATION_FAILURE_CLASS.HARD], [401, VERIFICATION_FAILURE_CLASS.HARD], [429, VERIFICATION_FAILURE_CLASS.TEMPORARY], [503, VERIFICATION_FAILURE_CLASS.TEMPORARY]]) {
+    await assert.rejects(make(status).sendVerification({ destination: 'x@gmail.com', attemptId }), error => error.failureClass === failureClass, String(status));
+  }
+  // Code method switched off in the console: the login submit is refused without 4000035.
+  const refused = createConfiguredVerificationProviders({ VERIFICATION_ORCHESTRATOR_CONFIG: JK_CONFIG }, {
+    fetchImpl: async (url, init) => (init.method === 'GET' ? json({ id: ORY_FLOW }) : json({ ui: { messages: [{ id: 4000001 }] } }, 400))
+  }).find(row => row.id === 'otp-j');
+  await assert.rejects(refused.sendVerification({ destination: 'x@gmail.com', attemptId }), error => error.code === 'PROVIDER_REJECTED' && error.failureClass === VERIFICATION_FAILURE_CLASS.HARD);
+  await assert.rejects(make(200).sendVerification({ destination: 'not-an-email', attemptId }), error => error.code === 'INVALID_DESTINATION');
+  await assert.rejects(make(200).verifyCode({ attemptId: 'm'.repeat(32), evidence: '123456' }), error => error.code === 'CHALLENGE_EXPIRED');
+});
+
+function hankoFake({ code = '123456', deletion = true } = {}) {
+  const calls = [];
+  let step = 0;
+  const next = (name, actions, status = 200, extra = {}) => {
+    step += 1;
+    const csrf = `csrf-${step}`;
+    const out = { name, status, csrf_token: csrf, payload: {}, actions: Object.fromEntries(actions.map(a => [a, { href: `/flow?action=${a}%40f${step}`, action: a }])), ...extra };
+    return new Response(JSON.stringify(out), { status, headers: { 'Content-Type': 'application/json', ...(name === 'success' ? { 'X-Auth-Token': 'hanko.jwt.token' } : {}) } });
+  };
+  const fetchImpl = async (url, init) => {
+    const body = JSON.parse(init.body || '{}');
+    const path = url.slice(HANKO.length);
+    calls.push({ path, body, auth: init.headers.Authorization || '' });
+    const action = (path.match(/action=([a-z_]+)/) || [])[1] || '';
+    if (path === '/registration' || path === '/login' || path === '/profile') return next('preflight', ['register_client_capabilities'], 200, { flow: path });
+    if (action === 'register_client_capabilities') {
+      if (calls.some(row => row.path === '/profile') && init.headers.Authorization) return next('profile_init', deletion ? ['account_delete', 'email_create'] : ['email_create']);
+      return calls.some(row => row.path === '/login') ? next('login_init', ['continue_with_login_identifier']) : next('registration_init', ['register_login_identifier']);
+    }
+    if (action === 'register_login_identifier' || action === 'continue_with_login_identifier') return next('passcode_confirmation', ['back', 'resend_passcode', 'verify_passcode']);
+    if (action === 'verify_passcode') {
+      if (body.input_data.code !== code) return next('passcode_confirmation', ['back', 'resend_passcode', 'verify_passcode'], 400, { error: { code: 'form_data_invalid_error' } });
+      return next('mfa_method_chooser', ['continue_to_otp_secret_creation', 'skip']);
+    }
+    if (action === 'skip') return next('success', []);
+    if (action === 'account_delete') return next('account_deleted', []);
+    if (path === '/logout') return new Response(null, { status: 204 });
+    return json({ code: 404 }, 404);
+  };
+  return { calls, fetchImpl };
+}
+
+test('otp-k Hanko sends a passcode through the Flow API, checks it at Hanko and deletes the account', async () => {
+  const { calls, fetchImpl } = hankoFake();
+  const provider = createConfiguredVerificationProviders({ VERIFICATION_ORCHESTRATOR_CONFIG: JK_CONFIG }, { fetchImpl }).find(row => row.id === 'otp-k');
+  const attemptId = 'n'.repeat(32);
+  assert.deepEqual(await provider.sendVerification({ destination: 'Student@Gmail.com', attemptId }), { accepted: true });
+  assert.equal(calls[0].path, '/registration');
+  assert.deepEqual(calls[1].body, { input_data: { webauthn_available: false }, csrf_token: 'csrf-1' });
+  assert.deepEqual(calls[2].body, { input_data: { email: 'student@gmail.com' }, csrf_token: 'csrf-2' });
+  assert.equal(calls.every(row => row.auth === ''), true);
+  assert.deepEqual(await provider.verifyCode({ attemptId, evidence: '000000' }), { verified: false });
+  assert.deepEqual(await provider.verifyCode({ attemptId, evidence: 'abc' }), { verified: false });
+  // A wrong code makes Hanko issue a fresh href + csrf; the next try must use them.
+  assert.deepEqual(await provider.verifyCode({ attemptId, evidence: '123456' }), { verified: true });
+  const verifies = calls.filter(row => row.path.includes('action=verify_passcode'));
+  assert.equal(verifies.length, 2);
+  assert.equal(verifies[1].body.csrf_token, 'csrf-4');
+  assert.match(verifies[1].path, /%40f4$/);
+  const deleted = calls.find(row => row.path.includes('action=account_delete'));
+  assert.equal(deleted.auth, 'Bearer hanko.jwt.token');
+  await assert.rejects(provider.verifyCode({ attemptId, evidence: '123456' }), error => error.code === 'CHALLENGE_EXPIRED');
+  // Deleted at Hanko, so the next send is a fresh registration again.
+  calls.length = 0;
+  await provider.sendVerification({ destination: 'student@gmail.com', attemptId: 'o'.repeat(32) });
+  assert.equal(calls[0].path, '/registration');
+});
+
+test('otp-k Hanko falls back to the login flow when the account could not be deleted', async () => {
+  const { calls, fetchImpl } = hankoFake({ deletion: false });
+  const provider = createConfiguredVerificationProviders({ VERIFICATION_ORCHESTRATOR_CONFIG: JK_CONFIG }, { fetchImpl }).find(row => row.id === 'otp-k');
+  await provider.sendVerification({ destination: 'kept@icloud.com', attemptId: 'p'.repeat(32) });
+  assert.deepEqual(await provider.verifyCode({ attemptId: 'p'.repeat(32), evidence: '123456' }), { verified: true });
+  assert.ok(calls.some(row => row.path === '/logout' && row.auth === 'Bearer hanko.jwt.token'));
+  calls.length = 0;
+  await provider.sendVerification({ destination: 'kept@icloud.com', attemptId: 'q'.repeat(32) });
+  assert.equal(calls[0].path, '/login');
+});
+
+test('otp-k Hanko classifies provider failures', async () => {
+  const make = status => createConfiguredVerificationProviders({ VERIFICATION_ORCHESTRATOR_CONFIG: JK_CONFIG }, {
+    fetchImpl: async () => json({ code: status }, status)
+  }).find(row => row.id === 'otp-k');
+  const attemptId = 'r'.repeat(32);
+  await assert.rejects(make(404).sendVerification({ destination: 'x@gmail.com', attemptId }), error => error.failureClass === VERIFICATION_FAILURE_CLASS.HARD);
+  await assert.rejects(make(429).sendVerification({ destination: 'x@gmail.com', attemptId }), error => error.failureClass === VERIFICATION_FAILURE_CLASS.TEMPORARY);
+  await assert.rejects(make(500).sendVerification({ destination: 'x@gmail.com', attemptId }), error => error.failureClass === VERIFICATION_FAILURE_CLASS.TEMPORARY);
+  await assert.rejects(make(200).sendVerification({ destination: 'not-an-email', attemptId }), error => error.code === 'INVALID_DESTINATION');
+  // Hanko hands back an absolute or protocol-relative href: refuse to follow it.
+  const hostile = createConfiguredVerificationProviders({ VERIFICATION_ORCHESTRATOR_CONFIG: JK_CONFIG }, {
+    fetchImpl: async () => json({ name: 'preflight', csrf_token: 'c', actions: { register_client_capabilities: { href: '//evil.example/x' } } })
+  }).find(row => row.id === 'otp-k');
+  await assert.rejects(hostile.sendVerification({ destination: 'x@gmail.com', attemptId }), error => error.code === 'INVALID_PROVIDER_RESPONSE');
+  await assert.rejects(make(200).verifyCode({ attemptId: 's'.repeat(32), evidence: '123456' }), error => error.code === 'CHALLENGE_EXPIRED');
+});
+
+test('wrangler.toml enables otp-j and otp-k at 38 without new vars, ahead of the last-resort pair', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const toml = await readFile(new URL('./wrangler.toml', import.meta.url), 'utf8');
+  for (const name of ['ORY_ENDPOINT', 'ORY_PROJECT_URL', 'HANKO_ENDPOINT', 'HANKO_API_URL', 'OTP_J_DAILY_QUOTA', 'OTP_K_DAILY_QUOTA']) {
+    assert.equal(new RegExp(`^${name}\\s*=`, 'm').test(toml), false, name);
+  }
+  assert.match(toml, /\{"id":"otp-j","enabled":true,"priority":38,"dailyQuota":300/);
+  assert.match(toml, /\{"id":"otp-k","enabled":true,"priority":38,"dailyQuota":300/);
+  const rows = JSON.parse(toml.match(/VERIFICATION_ORCHESTRATOR_CONFIG = '(.*)'/)[1]).providers;
+  const order = rows.slice().sort((a, b) => a.priority - b.priority || a.id.localeCompare(b.id)).map(row => row.id);
+  assert.deepEqual(order.slice(order.indexOf('otp-f')), ['otp-f', 'otp-i', 'otp-j', 'otp-k', 'otp-g', 'otp-c', 'telegram']);
 });

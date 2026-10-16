@@ -37,13 +37,25 @@ VERIFICATION_AUTH_ACTIVATION = "enabled"
 # NOT move another mailer behind them; `native-auth-protection.test.mjs` fails
 # if this pairing breaks. Dead Simple delivery lands in Gmail spam by design
 # (shared inbox domain) — it is kept only as a final channel, never a primary.
-VERIFICATION_ORCHESTRATOR_CONFIG = '{"enabled":true,"providers":[{"id":"otp-a","enabled":true,"priority":10,"dailyQuota":300,"timeoutMs":15000,"label":"secure backup"},{"id":"otp-h","enabled":true,"priority":15,"dailyQuota":5000,"timeoutMs":20000,"label":"secure backup"},{"id":"otp-i","enabled":true,"priority":38,"dailyQuota":300,"timeoutMs":20000,"label":"secure backup"},{"id":"otp-b","enabled":true,"priority":20,"dailyQuota":100,"timeoutMs":20000,"label":"secure backup"},{"id":"otp-d","enabled":true,"priority":35,"dailyQuota":100,"timeoutMs":15000,"label":"secure backup"},{"id":"otp-e","enabled":true,"priority":37,"dailyQuota":100,"timeoutMs":15000,"label":"secure backup"},{"id":"otp-f","enabled":true,"priority":38,"dailyQuota":100,"timeoutMs":15000,"label":"secure backup"},{"id":"otp-g","enabled":true,"priority":39,"dailyQuota":150,"timeoutMs":15000,"label":"secure backup"},{"id":"otp-c","enabled":true,"priority":45,"dailyQuota":200,"timeoutMs":15000,"label":"secure backup"},{"id":"telegram","enabled":true,"priority":50,"dailyQuota":172800,"timeoutMs":20000,"label":"secure backup"}]}'
+VERIFICATION_ORCHESTRATOR_CONFIG = '{"enabled":true,"providers":[{"id":"otp-a","enabled":true,"priority":10,"dailyQuota":300,"timeoutMs":15000,"label":"secure backup"},{"id":"otp-h","enabled":true,"priority":15,"dailyQuota":5000,"timeoutMs":20000,"label":"secure backup"},{"id":"otp-i","enabled":true,"priority":38,"dailyQuota":300,"timeoutMs":20000,"label":"secure backup"},{"id":"otp-j","enabled":true,"priority":38,"dailyQuota":300,"timeoutMs":20000,"label":"secure backup"},{"id":"otp-k","enabled":true,"priority":38,"dailyQuota":300,"timeoutMs":20000,"label":"secure backup"},{"id":"otp-b","enabled":true,"priority":20,"dailyQuota":100,"timeoutMs":20000,"label":"secure backup"},{"id":"otp-d","enabled":true,"priority":35,"dailyQuota":100,"timeoutMs":15000,"label":"secure backup"},{"id":"otp-e","enabled":true,"priority":37,"dailyQuota":100,"timeoutMs":15000,"label":"secure backup"},{"id":"otp-f","enabled":true,"priority":38,"dailyQuota":100,"timeoutMs":15000,"label":"secure backup"},{"id":"otp-g","enabled":true,"priority":39,"dailyQuota":150,"timeoutMs":15000,"label":"secure backup"},{"id":"otp-c","enabled":true,"priority":45,"dailyQuota":200,"timeoutMs":15000,"label":"secure backup"},{"id":"telegram","enabled":true,"priority":50,"dailyQuota":172800,"timeoutMs":20000,"label":"secure backup"}]}'
 # otp-i is Appwrite Cloud Email OTP (project 6ad1e9280025bf4464ee, fra region), added
 # 2026-10-16. Owner order (same day): moved 17 -> 38 so it runs AFTER every branded
 # mailer (own logo/subject; ties sort by id so otp-f MailerSend goes first) and BEFORE
 # the spam-prone last-resort pair. Endpoint and project id are public and live in
 # providers.mjs (APPWRITE_PUBLIC_DEFAULTS) to stay under the 64-variable ceiling;
 # dailyQuota 300 above is our own safety cap. Optional secret APPWRITE_API_KEY.
+# otp-j is Ory Network one-time code (project "Admission Sky", free Developer plan),
+# added 2026-10-16. Ory mails the code from its own SMTP (sender "Admission Sky via
+# Ory"; subject/body are Ory's default and stay so: changing them needs own SMTP).
+# Public native self-service API, no secret; the session a correct code yields is
+# revoked at once. Endpoint lives in providers.mjs (ORY_PUBLIC_DEFAULTS).
+# otp-k is Hanko Cloud passcode (free, 10,000 MAU; Hanko's own mailer), added
+# 2026-10-16. Public Flow API, no secret. Needs passwords OFF and account deletion
+# ON in the Hanko console: each verified address is deleted from Hanko right after
+# the check. Endpoint lives in providers.mjs (HANKO_PUBLIC_DEFAULTS).
+# Both sit at priority 38 like otp-i (ties sort by id: f, i, j, k), after every
+# branded mailer and before the locked last-resort pair; dailyQuota 300 is our
+# own cap. No new vars or secrets (64-variable ceiling).
 OTP_A_DAILY_QUOTA = "300"
 OTP_B_DAILY_QUOTA = "100"
 # otp-h (Logto) endpoint, app id and redirect are public values kept in
