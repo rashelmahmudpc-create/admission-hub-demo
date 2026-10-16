@@ -1,0 +1,85 @@
+name: Deploy AI model-priority fix P31 2026-10-16
+
+# Owner-approved 2026-10-16 (voice note): "যেগুলা একদম অচল সেগুলা একদম শেষে করে
+# দাও আর যেগুলা সচল সেগুলা একদম ফাস্টে করে দাও" — put the dead models last and
+# make the working ones fast.
+#
+# Worker-only change: ai-agent.js + ai-provider-health.mjs and the regenerated
+# worker-bundle.mjs. The Pages UI, D1 database and secrets are untouched.
+#
+# Why: routerChain emits one entry per key per model, so a model that is busy
+# across every key was retried once per key. Measured 2026-10-16:
+# gemini-3.1-flash-lite answered 503 to 6/6 probes at ~0.42s each, so ~17 Gemini
+# keys cost ~7.2s of silence before the healthy model was reached.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy-ai-model-priority-20261016.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: admission-hub-worker-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Confirm the fix is present in the sources
+        run: |
+          set -eu
+          grep -q 'rankChainByModelHealth' ai-provider-health.mjs
+          grep -q 'rankChainByModelHealth(chain, badMap, healthNow)' ai-agent.js
+          grep -q 'MODEL_FAIL_LIMIT' ai-agent.js
+          node --check ai-agent.js
+          node --check ai-provider-health.mjs
+      - name: Regression tests
+        run: |
+          set -eu
+          node p31-model-priority.test.mjs
+          node p28-provider-health.test.mjs
+          node p30-ai-latency-cache.test.mjs
+          node p26-tier-router.test.mjs
+          node ai-agent-f1.test.mjs
+          node ai-provider-adapters.test.mjs
+      - name: Verify the committed Worker bundle matches its sources
+        run: npm run check:worker-bundle
+      - name: Deploy Worker
+        id: deploy
+        uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd # v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: '4.35.0'
+      - name: Verify the live Worker is serving the new chain logic
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -eu
+          # The deployed script must carry the P31 marker. Read the Worker's own
+          # content back from the Cloudflare API rather than guessing from a route
+          # response: /api/ai/chat answers 403 to a non-app caller by design.
+          npx --yes wrangler@4.35.0 deployments list --name admission-gk | head -20
+          curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/admission-gk/content" \
+            -o /tmp/deployed.mjs
+          test -s /tmp/deployed.mjs
+          grep -q 'rankChainByModelHealth' /tmp/deployed.mjs
+          grep -q 'MODEL_FAIL_LIMIT' /tmp/deployed.mjs
+          echo 'Deployed Worker carries the P31 model-priority logic.'
