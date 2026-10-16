@@ -199,7 +199,10 @@ t('M10-৩০ঙ. the chain names only Groq models that still exist',
 t('M10-৩০খ. memory reads and writes go through the state helpers, not KV directly',
   AGENT_SRC.includes("await stateGet('chatmem:' + sendCtx.uid)")
   && AGENT_SRC.includes("await statePut('chatmem:' + sendCtx.uid, JSON.stringify(next))")
-  && AGENT_SRC.includes('await stateGet(memKey)')
+  /* P30: the long-term record is read once (memKeyEarly) and the last-topic save
+     reuses it, writing in the background — still through the state helper. */
+  && AGENT_SRC.includes('stateGet(memKeyEarly)')
+  && AGENT_SRC.includes('statePut(memKey, JSON.stringify(upsertMemory(stored, record, sendCtx.uid)))')
   && !AGENT_SRC.includes("putKv(env.PUB_KV, 'chatmem:' + sendCtx.uid")
   && !AGENT_SRC.includes("getKv(env.PUB_KV, memKey)"));
 

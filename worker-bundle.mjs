@@ -1806,6 +1806,21 @@ function isCacheableRequest(input = {}) {
   if (memoryText || summaryText || ctxText || stats) return false;
   return CACHEABLE_INTENTS.includes(String(intent || ""));
 }
+var SHARED_CACHE_INTENTS = Object.freeze(["ACADEMIC_EXPLAIN"]);
+var SHARED_MAX_CHARS = 300;
+var SELF_OR_DEICTIC = /(আমার|আমাকে|আমি|আমরা|আমাদের|আমায়|নিজের|আগের|আগে যে|উপরের|ওপরের|এটা|এটি|ওটা|ওটি|সেটা|সেটি|এইটা|ঐটা|এগুলো|ওগুলো|আবার বুঝ|আরো বুঝ|আরও বুঝ|বুঝিনি|বুঝলাম না|উত্তরটা|প্রশ্নটা|\b(my|me|mine|myself|i|i'm|im|we|our|us|this|that|these|those|it|above|previous|earlier|again)\b)/i;
+function isSharedAcademicCandidate(input = {}) {
+  const { messages, hasImage, quizMode, onboarding, examMode, intent, fresh, recalled } = input;
+  if (hasImage || quizMode || onboarding || examMode) return false;
+  if (!Array.isArray(messages) || messages.length !== 1) return false;
+  if (!messages[0] || messages[0].role !== "user") return false;
+  if (recalled && fresh !== true) return false;
+  if (!SHARED_CACHE_INTENTS.includes(String(intent || ""))) return false;
+  const q = normaliseQuestion(messages[0].content);
+  if (!q || q.length > SHARED_MAX_CHARS) return false;
+  if (SELF_OR_DEICTIC.test(q)) return false;
+  return true;
+}
 async function chatCacheKey({ question, intent, promptVersion, agentVersion }) {
   const material = [
     CHAT_CACHE_VERSION,
@@ -2724,6 +2739,16 @@ async function agentChat(request, env, uid, opts = {}) {
   const stream = opts && opts.stream !== false;
   const persistMemory = opts?.persistMemory !== false;
   const startedAt = Date.now();
+  const timings = {};
+  const mark = (name) => {
+    if (timings[name] == null) timings[name] = Date.now() - startedAt;
+  };
+  const emitTiming = (extra = {}) => {
+    try {
+      console.log(JSON.stringify({ evt: "ai.timing", agent: AGENT_VERSION, totalMs: Date.now() - startedAt, ...timings, ...extra }));
+    } catch (_) {
+    }
+  };
   const sendCtx = { uid: String(uid || ""), stream };
   if (!sendCtx.uid.startsWith("account-")) {
     const msg = { error: "sign_in_required", message: "AI চ্যাট ব্যবহার করতে লগইন করো।" };
@@ -2778,6 +2803,7 @@ async function agentChat(request, env, uid, opts = {}) {
     quota = quotaState({ used: quotaNow.n, cap });
     if (!quota.exhausted) await putKv(env.PUB_KV, rlKey, JSON.stringify({ n: quotaNow.n + 1, start: quotaNow.start }), 172800);
   }
+  mark("quota");
   if (quota.exhausted) return jsonResp({ error: "rate_limited", message: "আজকের AI-চ্যাট সীমা শেষ — ২৪ ঘণ্টা পর আবার চেষ্টা করো।", cap, remaining: quota.remaining }, 429);
   const verificationGuidance = authVerificationGuidance(v.messages[v.messages.length - 1].content);
   if (verificationGuidance) return guidanceResponse(verificationGuidance, stream);
@@ -2821,7 +2847,15 @@ async function agentChat(request, env, uid, opts = {}) {
   msgs = history.kept;
   const persistSummary = memoryOn && history.digest && history.compacted >= 8;
   let freshSummary = history.digest || null;
-  if (persistSummary) await statePut("chatmemsum:" + sendCtx.uid, freshSummary);
+  const background = [];
+  const later = (fn) => {
+    background.push(Promise.resolve().then(fn).catch(() => {
+    }));
+  };
+  const settleBackground = async () => {
+    if (background.length) await Promise.all(background.splice(0));
+  };
+  if (persistSummary) later(() => statePut("chatmemsum:" + sendCtx.uid, freshSummary));
   const systemPrompt = buildSystemPrompt({ stats, examMode, quiz: quizMode, onboarding, prefs: aiPrefs });
   const profileCtx = sendCtx.uid.startsWith("account-") ? sanitizeProfileContext(body?.context?.profile) : null;
   const ctxBundle = contextEngineEnabled(env) ? buildContext({ uid: sendCtx.uid, prefs: aiPrefs, stats, onboarding, profile: profileCtx, memoryOn }) : null;
@@ -2838,6 +2872,7 @@ async function agentChat(request, env, uid, opts = {}) {
     }
   }
   let tutorContext = [];
+  let lastTopicWrite = null;
   if (memoryOn) {
     const lastUser = v.messages[v.messages.length - 1];
     const priorTopic = memRecords.find((r) => r.kind === KIND.STUDIES && r.key === "last-topic");
@@ -2850,9 +2885,10 @@ async function agentChat(request, env, uid, opts = {}) {
           sendCtx.uid
         );
         if (record) {
-          const rawLong = await stateGet(memKey);
-          const stored = parseMemory(rawLong, sendCtx.uid).filter((r) => !(r.kind === KIND.STUDIES && r.key === "last-topic"));
-          await statePut(memKey, JSON.stringify(upsertMemory(stored, record, sendCtx.uid)));
+          const stored = memRecords.filter((r) => !(r.kind === KIND.STUDIES && r.key === "last-topic"));
+          lastTopicWrite = Promise.resolve().then(() => statePut(memKey, JSON.stringify(upsertMemory(stored, record, sendCtx.uid)))).catch(() => {
+          });
+          background.push(lastTopicWrite);
         }
       } catch (_) {
       }
@@ -2864,8 +2900,9 @@ async function agentChat(request, env, uid, opts = {}) {
   const baseRecords = memRecords.filter((r) => !(r.kind === KIND.STUDIES && r.key === "last-topic"));
   const memoryText = memoryOn ? renderMemory(baseRecords.concat(tutorContext), MEMORY_VERSION) : "";
   const formatRules = !quizMode && !onboarding ? RESPONSE_FORMAT_RULES : "";
-  const sys = [systemPrompt, formatRules, ctxText, memoryText, summaryText].filter(Boolean).join("\n\n");
+  let sys = [systemPrompt, formatRules, ctxText, memoryText, summaryText].filter(Boolean).join("\n\n");
   const hasImage = msgs.some((m) => m.image);
+  mark("context");
   const chatCacheOn = chatCacheEnabled(env) && env && env.PROFILE_DB;
   const cacheQuestion = (v.messages[v.messages.length - 1] || {}).content;
   const cacheable = chatCacheOn && isCacheableRequest({
@@ -2879,9 +2916,24 @@ async function agentChat(request, env, uid, opts = {}) {
     stats,
     intent
   });
+  const sharedCandidate = !cacheable && chatCacheOn && isSharedAcademicCandidate({
+    messages: v.messages,
+    hasImage,
+    quizMode,
+    onboarding,
+    examMode,
+    intent,
+    fresh: freshThread,
+    recalled: msgs.length > v.messages.length
+  });
+  const cacheMode = cacheable ? "strict" : sharedCandidate ? "shared" : "";
+  if (cacheMode === "shared") {
+    sys = [buildSystemPrompt({ stats: null, examMode: "", quiz: false, onboarding: null, prefs: null }), RESPONSE_FORMAT_RULES].join("\n\n");
+    msgs = v.messages.slice();
+  }
   let chatStore = null;
   let cacheKey = "";
-  if (cacheable) {
+  if (cacheMode) {
     try {
       chatStore = new AiAnalyticsStore(env.PROFILE_DB);
       cacheKey = await chatCacheKey({
@@ -2894,6 +2946,9 @@ async function agentChat(request, env, uid, opts = {}) {
       if (hit && hit.payload && typeof hit.payload.text === "string") {
         const cachedText = hit.payload.text;
         const cachedModel = hit.payload.model || hit.model || "";
+        mark("cacheHit");
+        await settleBackground();
+        emitTiming({ cache: cacheMode });
         if (!stream) {
           return jsonResp({ text: cachedText, structured: hit.payload.structured ?? null, model: cachedModel || null, intent, cached: true, pv: SYSTEM_PROMPT_V, latencyMs: Date.now() - startedAt, agent: AGENT_VERSION });
         }
@@ -2933,10 +2988,12 @@ async function agentChat(request, env, uid, opts = {}) {
   let chain = healthyChain(fullChain, badMap, healthNow);
   if (hasImage) chain = chain.filter((c) => c.provider === "gemini");
   if (!chain.length) {
+    await settleBackground();
     const msg = { error: "no_providers", message: "AI-সেবা এখন কনফিগার করা নেই — দয়া করে মালিককে জানাও (GEMINI_KEYS)।" };
     return stream ? sseError(msg, 503) : jsonResp(msg, 503);
   }
   if (safety.blocked) {
+    await settleBackground();
     const msg = { error: "mock_refused", message: safety.message };
     return stream ? sseError(msg, 403) : jsonResp(msg, 403);
   }
@@ -2982,6 +3039,7 @@ async function agentChat(request, env, uid, opts = {}) {
     } catch (_) {
     }
     try {
+      if (lastTopicWrite) await lastTopicWrite;
       const latest = String(v.messages[v.messages.length - 1].content || "");
       const candidates = extractMemoryCandidates(latest);
       if (candidates.length) {
@@ -3005,18 +3063,21 @@ async function agentChat(request, env, uid, opts = {}) {
       const a = adapterFor(c);
       return Boolean(a) && a.oneShot === true;
     });
+    mark("modelStart");
     for (const c of oneShot.length ? oneShot : providerChain(env, tier, badSet, kvKeys)) {
       try {
         const raw = await GEMINI_ADAPTER.chatOnce(c, payloadG());
         if (raw) {
           const check = validateResponse(raw, validationCtx);
-          await finalize(c.model, c.provider, raw);
-          if (cacheable && chatStore) {
+          mark("modelDone");
+          if (cacheMode && chatStore) {
             const toStore = check.text || raw;
-            Promise.resolve().then(() => chatStore.putCache(cacheKey, "summary", { text: toStore, structured: check.structured ?? null, model: c.model, intent }, { ttlMs: chatCacheTtl(intent), model: c.model })).catch(() => {
-            });
+            later(() => chatStore.putCache(cacheKey, "summary", { text: toStore, structured: check.structured ?? null, model: c.model, intent }, { ttlMs: chatCacheTtl(intent), model: c.model }));
           }
+          later(() => finalize(c.model, c.provider, raw));
+          await settleBackground();
           emitTrace({ provider: c.provider, model: c.model, text: raw, responseType: check.structured?.type, validated: !check.enforced });
+          emitTiming({ cache: cacheMode ? cacheMode + "-miss" : "off", provider: c.provider });
           return jsonResp({ text: check.text, structured: check.structured, model: c.model, intent, pv: SYSTEM_PROMPT_V, latencyMs: Date.now() - startedAt, agent: AGENT_VERSION });
         }
         lastErr = "empty-" + c.model;
@@ -3025,7 +3086,9 @@ async function agentChat(request, env, uid, opts = {}) {
         if (e instanceof ProviderError && e.bad) await markEntryFailed(env.PUB_KV, c.key, c.model, e.status);
       }
     }
+    await settleBackground();
     emitTrace({ fallbackReason: FALLBACK.PROVIDER_ERROR, validated: false });
+    emitTiming({ failed: true });
     return jsonResp({ error: "provider_failed", message: "AI একটু ব্যস্ত — কয়েক সেকেন্ড পরে আবার চেষ্টা করো।", detail: lastErr, retryable: true }, 502);
   }
   const encoder7 = new TextEncoder();
@@ -3055,7 +3118,8 @@ data: ${JSON.stringify({ stage: id, label })}
         stage("think", "ভাবছি — উত্তর সাজাচ্ছি");
         let ok2 = false;
         let lastErr = "";
-        const firstMs = Math.max(3e3, Math.min(3e4, Number(env && env.AGENT_FIRST_CHUNK_MS) || 1e4));
+        const firstMs = Math.max(3e3, Math.min(3e4, Number(env && env.AGENT_FIRST_CHUNK_MS) || 5e3));
+        mark("modelStart");
         for (const c of chain) {
           try {
             let full = "";
@@ -3063,7 +3127,10 @@ data: ${JSON.stringify({ stage: id, label })}
             if (!adapter) throw new ProviderError("unknown-provider:" + c.provider, { retryable: false, bad: false });
             const payload = adapter.id === "gemini" ? payloadG() : payloadO();
             for await (const t of firstChunkGuard(adapter.chatStream(c, payload, env), firstMs)) {
-              if (!full) stage("write", quizMode ? "প্রশ্ন তৈরি করছি" : "উত্তর লিখছি");
+              if (!full) {
+                mark("firstToken");
+                stage("write", quizMode ? "প্রশ্ন তৈরি করছি" : "উত্তর লিখছি");
+              }
               full += t;
               if (/```(chart|flow)/i.test(full)) stage("visual", "চার্ট / ডায়াগ্রাম আঁকছি");
               if (/\n\s*\|?\s*:?-{3,}/.test(full)) stage("table", "টেবিল সাজাচ্ছি");
@@ -3073,23 +3140,25 @@ data: ${JSON.stringify({ stage: id, label })}
             }
             if (full.trim()) {
               ok2 = true;
+              mark("modelDone");
               stage("verify", "উত্তর যাচাই করছি");
-              await finalize(c.model, c.provider, full);
               const check = validateResponse(full, validationCtx);
               if (check.enforced) push(`event: replace
 data: ${JSON.stringify({ text: check.text })}
 
 `);
-              if (cacheable && chatStore) {
+              if (cacheMode && chatStore) {
                 const toStore = check.text || full;
-                Promise.resolve().then(() => chatStore.putCache(cacheKey, "summary", { text: toStore, structured: check.structured ?? null, model: c.model, intent }, { ttlMs: chatCacheTtl(intent), model: c.model })).catch(() => {
-                });
+                later(() => chatStore.putCache(cacheKey, "summary", { text: toStore, structured: check.structured ?? null, model: c.model, intent }, { ttlMs: chatCacheTtl(intent), model: c.model }));
               }
-              emitTrace({ provider: c.provider, model: c.model, text: full, responseType: check.structured?.type, validated: !check.enforced });
               push(`event: done
 data: ${JSON.stringify({ model: c.model, provider: c.provider, intent, quiz: quizMode, pv: SYSTEM_PROMPT_V, agent: AGENT_VERSION, latencyMs: Date.now() - startedAt, structured: check.structured })}
 
 `);
+              later(() => finalize(c.model, c.provider, full));
+              await settleBackground();
+              emitTrace({ provider: c.provider, model: c.model, text: full, responseType: check.structured?.type, validated: !check.enforced });
+              emitTiming({ cache: cacheMode ? cacheMode + "-miss" : "off", provider: c.provider });
               break;
             }
             lastErr = "empty-" + c.model;
@@ -3101,13 +3170,16 @@ data: ${JSON.stringify({ model: c.model, provider: c.provider, intent, quiz: qui
           }
         }
         if (!ok2) {
+          await settleBackground();
           emitTrace({ fallbackReason: FALLBACK.PROVIDER_ERROR, validated: false });
+          emitTiming({ failed: true });
           push(`event: error
 data: ${JSON.stringify({ error: "provider_failed", message: "AI একটু ব্যস্ত — কয়েক সেকেন্ড পরে আবার চেষ্টা করো।", detail: lastErr, retryable: true })}
 
 `);
         }
       } catch (e) {
+        await settleBackground();
         push(`event: error
 data: ${JSON.stringify({ error: "stream_failed", message: "যুক্তি-বিচ্ছেদ ঘটেছে।", detail: String(e.message || e), retryable: true })}
 

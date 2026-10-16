@@ -26,7 +26,7 @@ import { aiStateStore, AI_STATE_VERSION } from './ai-state-do.mjs';
 /* P25 — chat response cache (step 1 of the owner's AI cost plan). The store is
  * the existing analytics one, which already owns the `ai_cache` table. */
 import { AiAnalyticsStore } from './ai-analytics-store.mjs';
-import { chatCacheEnabled, isCacheableRequest, chatCacheKey, chatCacheTtl } from './ai-chat-cache.mjs';
+import { chatCacheEnabled, isCacheableRequest, isSharedAcademicCandidate, chatCacheKey, chatCacheTtl } from './ai-chat-cache.mjs';
 /* P26 — difficulty-aware tier routing (step 2 of the AI cost plan). */
 import { routeTier, assessDifficulty } from './ai-tier-router.mjs';
 /* P27 — bounded history (step 3 of the AI cost plan). */
@@ -920,6 +920,14 @@ export async function agentChat(request, env, uid, opts = {}) {
   const stream = opts && opts.stream !== false;
   const persistMemory = opts?.persistMemory !== false;
   const startedAt = Date.now();
+  /* P30 (owner order 2026-10-16): per-stage timings, ms since startedAt. Only
+     numbers are recorded — never text — and they ride on the existing trace
+     line, so this adds no storage write. */
+  const timings = {};
+  const mark = (name) => { if (timings[name] == null) timings[name] = Date.now() - startedAt; };
+  const emitTiming = (extra = {}) => {
+    try { console.log(JSON.stringify({ evt: 'ai.timing', agent: AGENT_VERSION, totalMs: Date.now() - startedAt, ...timings, ...extra })); } catch (_) {}
+  };
   const sendCtx = { uid: String(uid || ''), stream };
   /* M7: AI chat is for signed-in students only. A guest has no durable identity,
      so it can neither personalise nor be remembered — it is refused up front. */
@@ -966,6 +974,7 @@ export async function agentChat(request, env, uid, opts = {}) {
     quota = quotaState({ used: quotaNow.n, cap });
     if (!quota.exhausted) await putKv(env.PUB_KV, rlKey, JSON.stringify({ n: quotaNow.n + 1, start: quotaNow.start }), 172800);
   }
+  mark('quota');
   if (quota.exhausted) return jsonResp({ error: 'rate_limited', message: 'আজকের AI-চ্যাট সীমা শেষ — ২৪ ঘণ্টা পর আবার চেষ্টা করো।', cap, remaining: quota.remaining }, 429);
 
   const verificationGuidance = authVerificationGuidance(v.messages[v.messages.length - 1].content);
@@ -1036,7 +1045,13 @@ export async function agentChat(request, env, uid, opts = {}) {
      suppresses the summary (see summaryText below), so there is no double-count. */
   const persistSummary = memoryOn && history.digest && history.compacted >= 8;
   let freshSummary = history.digest || null;
-  if (persistSummary) await statePut('chatmemsum:' + sendCtx.uid, freshSummary);
+  /* P30: background writes. Each is started here and awaited only at the end of
+     the request (see settleBackground), so the model call no longer waits on
+     a storage round-trip. They still finish inside this request. */
+  const background = [];
+  const later = (fn) => { background.push(Promise.resolve().then(fn).catch(() => {})); };
+  const settleBackground = async () => { if (background.length) await Promise.all(background.splice(0)); };
+  if (persistSummary) later(() => statePut('chatmemsum:' + sendCtx.uid, freshSummary));
 
   const systemPrompt = buildSystemPrompt({ stats, examMode, quiz: quizMode, onboarding, prefs: aiPrefs });
   /* M4 Context Engine (opt-in). When enabled, a typed permission-scoped bundle
@@ -1074,6 +1089,7 @@ export async function agentChat(request, env, uid, opts = {}) {
      memory. Joined to the render below for free: no extra read, no extra KV
      write on the read path. Guests are refused earlier, so this is account-only. */
   let tutorContext = [];
+  let lastTopicWrite = null;
   if (memoryOn) {
     const lastUser = v.messages[v.messages.length - 1];
     const priorTopic = memRecords.find(r => r.kind === KIND.STUDIES && r.key === 'last-topic');
@@ -1086,9 +1102,11 @@ export async function agentChat(request, env, uid, opts = {}) {
           sendCtx.uid
         );
         if (record) {
-          const rawLong = await stateGet(memKey);
-          const stored = parseMemory(rawLong, sendCtx.uid).filter(r => !(r.kind === KIND.STUDIES && r.key === 'last-topic'));
-          await statePut(memKey, JSON.stringify(upsertMemory(stored, record, sendCtx.uid)));
+          /* P30: reuse the records already read above (no second read) and write in
+             the background, so the model call is not held up by this save. */
+          const stored = memRecords.filter(r => !(r.kind === KIND.STUDIES && r.key === 'last-topic'));
+          lastTopicWrite = Promise.resolve().then(() => statePut(memKey, JSON.stringify(upsertMemory(stored, record, sendCtx.uid)))).catch(() => {});
+          background.push(lastTopicWrite);
         }
       } catch (_) {}
     }
@@ -1101,9 +1119,10 @@ export async function agentChat(request, env, uid, opts = {}) {
   /* The rich-answer contract rides beside the registered base prompt (whose
      text and hash stay locked) and is skipped for quiz JSON and onboarding. */
   const formatRules = (!quizMode && !onboarding) ? RESPONSE_FORMAT_RULES : '';
-  const sys = [systemPrompt, formatRules, ctxText, memoryText, summaryText].filter(Boolean).join('\n\n');
+  let sys = [systemPrompt, formatRules, ctxText, memoryText, summaryText].filter(Boolean).join('\n\n');
 
   const hasImage = msgs.some(m => m.image);
+  mark('context');
 
   /* ── P25 chat response cache ──
      Placed after `sys` and `hasImage` so it can prove the prompt is impersonal,
@@ -1117,9 +1136,23 @@ export async function agentChat(request, env, uid, opts = {}) {
     messages: v.messages, hasImage, quizMode, onboarding,
     memoryText, summaryText, ctxText, stats, intent
   });
+  /* P30 (গ): a shared academic answer. A first-turn, self-contained study
+     question ("সন্ধি কী?") does not need the student's stats or memory, so it is
+     answered from an IMPERSONAL prompt and that answer may be shared. The
+     personal prompt is never used to produce a shared answer, so nothing about
+     one student can reach another. Memory is still updated as usual. */
+  const sharedCandidate = !cacheable && chatCacheOn && isSharedAcademicCandidate({
+    messages: v.messages, hasImage, quizMode, onboarding, examMode, intent,
+    fresh: freshThread, recalled: msgs.length > v.messages.length
+  });
+  const cacheMode = cacheable ? 'strict' : (sharedCandidate ? 'shared' : '');
+  if (cacheMode === 'shared') {
+    sys = [buildSystemPrompt({ stats: null, examMode: '', quiz: false, onboarding: null, prefs: null }), RESPONSE_FORMAT_RULES].join('\n\n');
+    msgs = v.messages.slice();
+  }
   let chatStore = null;
   let cacheKey = '';
-  if (cacheable) {
+  if (cacheMode) {
     try {
       chatStore = new AiAnalyticsStore(env.PROFILE_DB);
       cacheKey = await chatCacheKey({
@@ -1132,6 +1165,10 @@ export async function agentChat(request, env, uid, opts = {}) {
            the student would have received live. */
         const cachedText = hit.payload.text;
         const cachedModel = hit.payload.model || hit.model || '';
+        mark('cacheHit');
+        /* P30: the background last-topic save must land before we return. */
+        await settleBackground();
+        emitTiming({ cache: cacheMode });
         if (!stream) {
           return jsonResp({ text: cachedText, structured: hit.payload.structured ?? null, model: cachedModel || null, intent, cached: true, pv: SYSTEM_PROMPT_V, latencyMs: Date.now() - startedAt, agent: AGENT_VERSION });
         }
@@ -1184,10 +1221,12 @@ export async function agentChat(request, env, uid, opts = {}) {
   let chain = healthyChain(fullChain, badMap, healthNow);
   if (hasImage) chain = chain.filter(c => c.provider === 'gemini');
   if (!chain.length) {
+    await settleBackground();
     const msg = { error: 'no_providers', message: 'AI-সেবা এখন কনফিগার করা নেই — দয়া করে মালিককে জানাও (GEMINI_KEYS)।' };
     return stream ? sseError(msg, 503) : jsonResp(msg, 503);
   }
   if (safety.blocked) {
+    await settleBackground();
     const msg = { error: 'mock_refused', message: safety.message };
     return stream ? sseError(msg, 403) : jsonResp(msg, 403);
   }
@@ -1247,6 +1286,9 @@ export async function agentChat(request, env, uid, opts = {}) {
        latest user turn. Each candidate must still clear makeMemory(), so a weak
        signal never stores, and no PII can enter a record. */
     try {
+      /* P30: the last-topic save now runs in the background and writes this
+         same key, so it must land before this read-modify-write. */
+      if (lastTopicWrite) await lastTopicWrite;
       const latest = String(v.messages[v.messages.length - 1].content || '');
       const candidates = extractMemoryCandidates(latest);
       if (candidates.length) {
@@ -1269,6 +1311,7 @@ export async function agentChat(request, env, uid, opts = {}) {
     /* P28: same health-aware chain as the streaming path (Gemini-only here, since
        it is the only adapter with a one-shot path). Never empty when keys exist. */
     const oneShot = chain.filter(c => { const a = adapterFor(c); return Boolean(a) && a.oneShot === true; });
+    mark('modelStart');
     for (const c of (oneShot.length ? oneShot : providerChain(env, tier, badSet, kvKeys))) {
       try {
         const raw = await GEMINI_ADAPTER.chatOnce(c, payloadG());
@@ -1276,13 +1319,18 @@ export async function agentChat(request, env, uid, opts = {}) {
           /* M8: the validated text is what the caller receives; the raw model
              output never leaves this function unchecked. */
           const check = validateResponse(raw, validationCtx);
-          await finalize(c.model, c.provider, raw);
-          /* P25: same store-on-success rule as the streaming path. */
-          if (cacheable && chatStore) {
+          mark('modelDone');
+          /* P25: same store-on-success rule as the streaming path. P30: the memory
+             save and the cache write now run together instead of one after the
+             other. */
+          if (cacheMode && chatStore) {
             const toStore = check.text || raw;
-            Promise.resolve().then(() => chatStore.putCache(cacheKey, 'summary', { text: toStore, structured: check.structured ?? null, model: c.model, intent }, { ttlMs: chatCacheTtl(intent), model: c.model })).catch(() => {});
+            later(() => chatStore.putCache(cacheKey, 'summary', { text: toStore, structured: check.structured ?? null, model: c.model, intent }, { ttlMs: chatCacheTtl(intent), model: c.model }));
           }
+          later(() => finalize(c.model, c.provider, raw));
+          await settleBackground();
           emitTrace({ provider: c.provider, model: c.model, text: raw, responseType: check.structured?.type, validated: !check.enforced });
+          emitTiming({ cache: cacheMode ? cacheMode + '-miss' : 'off', provider: c.provider });
           return jsonResp({ text: check.text, structured: check.structured, model: c.model, intent, pv: SYSTEM_PROMPT_V, latencyMs: Date.now() - startedAt, agent: AGENT_VERSION });
         }
         lastErr = 'empty-' + c.model;
@@ -1293,7 +1341,9 @@ export async function agentChat(request, env, uid, opts = {}) {
         if (e instanceof ProviderError && e.bad) await markEntryFailed(env.PUB_KV, c.key, c.model, e.status);
       }
     }
+    await settleBackground();
     emitTrace({ fallbackReason: FALLBACK.PROVIDER_ERROR, validated: false });
+    emitTiming({ failed: true });
     return jsonResp({ error: 'provider_failed', message: 'AI একটু ব্যস্ত — কয়েক সেকেন্ড পরে আবার চেষ্টা করো।', detail: lastErr, retryable: true }, 502);
   }
 
@@ -1315,7 +1365,11 @@ export async function agentChat(request, env, uid, opts = {}) {
         stage('think', 'ভাবছি — উত্তর সাজাচ্ছি');
         let ok = false;
         let lastErr = '';
-        const firstMs = Math.max(3000, Math.min(30000, Number(env && env.AGENT_FIRST_CHUNK_MS) || 10000));
+        /* P30 (ক): a busy provider is abandoned after 5 s instead of 10 s, so one
+           stalled model no longer costs the student ten seconds of silence.
+           AGENT_FIRST_CHUNK_MS still overrides it (3–30 s). */
+        const firstMs = Math.max(3000, Math.min(30000, Number(env && env.AGENT_FIRST_CHUNK_MS) || 5000));
+        mark('modelStart');
         for (const c of chain) {
           try {
             let full = '';
@@ -1323,7 +1377,7 @@ export async function agentChat(request, env, uid, opts = {}) {
             if (!adapter) throw new ProviderError('unknown-provider:' + c.provider, { retryable: false, bad: false });
             const payload = adapter.id === 'gemini' ? payloadG() : payloadO();
             for await (const t of firstChunkGuard(adapter.chatStream(c, payload, env), firstMs)) {
-              if (!full) stage('write', quizMode ? 'প্রশ্ন তৈরি করছি' : 'উত্তর লিখছি');
+              if (!full) { mark('firstToken'); stage('write', quizMode ? 'প্রশ্ন তৈরি করছি' : 'উত্তর লিখছি'); }
               full += t;
               if (/```(chart|flow)/i.test(full)) stage('visual', 'চার্ট / ডায়াগ্রাম আঁকছি');
               if (/\n\s*\|?\s*:?-{3,}/.test(full)) stage('table', 'টেবিল সাজাচ্ছি');
@@ -1331,8 +1385,8 @@ export async function agentChat(request, env, uid, opts = {}) {
             }
             if (full.trim()) {
               ok = true;
+              mark('modelDone');
               stage('verify', 'উত্তর যাচাই করছি');
-              await finalize(c.model, c.provider, full);
               /* M8: text already streamed, so a blocked response is corrected in
                  place — the client replaces what it rendered with the safe notice.
                  Only high-precision classes fire here, so a normal answer is never
@@ -1342,12 +1396,18 @@ export async function agentChat(request, env, uid, opts = {}) {
               /* P25: store only the validated text, so a later cache hit returns
                  exactly what the live caller received. Fire-and-forget: a cache
                  write must never delay or fail the answer the student is reading. */
-              if (cacheable && chatStore) {
+              if (cacheMode && chatStore) {
                 const toStore = check.text || full;
-                Promise.resolve().then(() => chatStore.putCache(cacheKey, 'summary', { text: toStore, structured: check.structured ?? null, model: c.model, intent }, { ttlMs: chatCacheTtl(intent), model: c.model })).catch(() => {});
+                later(() => chatStore.putCache(cacheKey, 'summary', { text: toStore, structured: check.structured ?? null, model: c.model, intent }, { ttlMs: chatCacheTtl(intent), model: c.model }));
               }
-              emitTrace({ provider: c.provider, model: c.model, text: full, responseType: check.structured?.type, validated: !check.enforced });
+              /* P30 (খ): `done` goes out first, so the student's answer is complete on
+                 screen right away; the memory save finishes afterwards, still inside
+                 this request (the stream closes only after it lands). */
               push(`event: done\ndata: ${JSON.stringify({ model: c.model, provider: c.provider, intent, quiz: quizMode, pv: SYSTEM_PROMPT_V, agent: AGENT_VERSION, latencyMs: Date.now() - startedAt, structured: check.structured })}\n\n`);
+              later(() => finalize(c.model, c.provider, full));
+              await settleBackground();
+              emitTrace({ provider: c.provider, model: c.model, text: full, responseType: check.structured?.type, validated: !check.enforced });
+              emitTiming({ cache: cacheMode ? cacheMode + '-miss' : 'off', provider: c.provider });
               break;
             }
             lastErr = 'empty-' + c.model;
@@ -1359,10 +1419,13 @@ export async function agentChat(request, env, uid, opts = {}) {
           }
         }
         if (!ok) {
+          await settleBackground();
           emitTrace({ fallbackReason: FALLBACK.PROVIDER_ERROR, validated: false });
+          emitTiming({ failed: true });
           push(`event: error\ndata: ${JSON.stringify({ error: 'provider_failed', message: 'AI একটু ব্যস্ত — কয়েক সেকেন্ড পরে আবার চেষ্টা করো।', detail: lastErr, retryable: true })}\n\n`);
         }
       } catch (e) {
+        await settleBackground();
         push(`event: error\ndata: ${JSON.stringify({ error: 'stream_failed', message: 'যুক্তি-বিচ্ছেদ ঘটেছে।', detail: String(e.message || e), retryable: true })}\n\n`);
       } finally {
         try { controller.close(); } catch (_) {}

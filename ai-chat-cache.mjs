@@ -88,6 +88,40 @@ export function isCacheableRequest(input = {}) {
   return CACHEABLE_INTENTS.includes(String(intent || ''));
 }
 
+/**
+ * P30 (owner order 2026-10-16) — the shared academic path.
+ *
+ * `isCacheableRequest` refuses any prompt that carries personalisation, and a
+ * signed-in student's prompt always does (last-topic memory, stats), so the
+ * cache never hit in practice. This predicate selects a narrower set of
+ * questions that can be answered from an IMPERSONAL prompt instead:
+ *
+ *   - one user turn, no image, no quiz, no onboarding, no running mock exam,
+ *   - a fresh thread, or no recalled turns were prepended,
+ *   - intent ACADEMIC_EXPLAIN only (a pure study question),
+ *   - the text does not refer to the student, earlier messages or "this/that".
+ *
+ * The caller must then build the prompt WITHOUT stats, memory, summary,
+ * context or prefs. Only that impersonal answer is ever stored, so a shared
+ * reply cannot contain anything about another student.
+ */
+export const SHARED_CACHE_INTENTS = Object.freeze(['ACADEMIC_EXPLAIN']);
+export const SHARED_MAX_CHARS = 300;
+const SELF_OR_DEICTIC = /(আমার|আমাকে|আমি|আমরা|আমাদের|আমায়|নিজের|আগের|আগে যে|উপরের|ওপরের|এটা|এটি|ওটা|ওটি|সেটা|সেটি|এইটা|ঐটা|এগুলো|ওগুলো|আবার বুঝ|আরো বুঝ|আরও বুঝ|বুঝিনি|বুঝলাম না|উত্তরটা|প্রশ্নটা|\b(my|me|mine|myself|i|i'm|im|we|our|us|this|that|these|those|it|above|previous|earlier|again)\b)/i;
+
+export function isSharedAcademicCandidate(input = {}) {
+  const { messages, hasImage, quizMode, onboarding, examMode, intent, fresh, recalled } = input;
+  if (hasImage || quizMode || onboarding || examMode) return false;
+  if (!Array.isArray(messages) || messages.length !== 1) return false;
+  if (!messages[0] || messages[0].role !== 'user') return false;
+  if (recalled && fresh !== true) return false;
+  if (!SHARED_CACHE_INTENTS.includes(String(intent || ''))) return false;
+  const q = normaliseQuestion(messages[0].content);
+  if (!q || q.length > SHARED_MAX_CHARS) return false;
+  if (SELF_OR_DEICTIC.test(q)) return false;
+  return true;
+}
+
 /** Cache key: question + intent + both versions, so a prompt change invalidates. */
 export async function chatCacheKey({ question, intent, promptVersion, agentVersion }) {
   const material = [
