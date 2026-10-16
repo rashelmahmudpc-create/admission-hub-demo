@@ -25,7 +25,7 @@ function burst(el,n=12){if(!el)return;const r=el.getBoundingClientRect(),x=r.lef
 function cu(el){const to=+el.dataset.cu,suf=el.dataset.s||'',t0=performance.now(),f=t=>{const p=Math.min(1,(t-t0)/900),e=1-Math.pow(1-p,3);el.textContent=Math.round(to*e)+suf;if(p<1)requestAnimationFrame(f)};requestAnimationFrame(f)}
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const jsq=s=>esc(String(s==null?'':s).replace(/\\/g,'\\\\').replace(/'/g,"\\'"));
-const C=()=>window.CACHE||{subjects:[],topics:[],questions:[],mistakes:[],dailyStats:[],settings:{}};
+const C=()=>{try{if(typeof CACHE!=='undefined'&&CACHE)return CACHE}catch(e){}return window.CACHE||{subjects:[],topics:[],questions:[],mistakes:[],dailyStats:[],settings:{}}};
 const PAL=[['#10b981','#059669'],['#8b5cf6','#6366f1'],['#3b82f6','#2563eb'],['#f59e0b','#f97316'],['#ec4899','#db2777'],['#14b8a6','#0d9488'],['#ef4444','#f97316'],['#64748b','#475569']];
 function artFor(name,sub){const n=String(name||'').toLowerCase();
  if(/বাংলা|bangla|bengali/.test(n))return /ব্যাকরণ|grammar/.test(n)?'bng':(sub&&/সাহিত্য|literature/.test(n)?'bnl':'bn');
