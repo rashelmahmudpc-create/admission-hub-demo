@@ -6544,6 +6544,7 @@ var AUTH_ERROR_CODES = Object.freeze({
   OTP_USED: "OTP_USED",
   INVALID_CREDENTIALS: "INVALID_CREDENTIALS",
   EMAIL_ALREADY_IN_USE: "EMAIL_ALREADY_IN_USE",
+  DISPOSABLE_EMAIL: "DISPOSABLE_EMAIL",
   ACCOUNT_LINK_REQUIRED: "ACCOUNT_LINK_REQUIRED",
   ACCOUNT_CONFLICT: "ACCOUNT_CONFLICT",
   GOOGLE_UNAVAILABLE: "GOOGLE_UNAVAILABLE",
@@ -6583,6 +6584,7 @@ var DEFAULTS2 = Object.freeze({
   [AUTH_ERROR_CODES.OTP_USED]: Object.freeze({ status: 409, message: "এই কোডটি ইতিমধ্যে ব্যবহার হয়েছে।" }),
   [AUTH_ERROR_CODES.INVALID_CREDENTIALS]: Object.freeze({ status: 401, message: "ইমেইল বা পাসওয়ার্ড সঠিক নয়।" }),
   [AUTH_ERROR_CODES.EMAIL_ALREADY_IN_USE]: Object.freeze({ status: 409, message: "এই ইমেইলে অ্যাকাউন্ট আছে—লগইন করুন।" }),
+  [AUTH_ERROR_CODES.DISPOSABLE_EMAIL]: Object.freeze({ status: 400, message: "এই ইমেইল সেবাটি দিয়ে অ্যাকাউন্ট খোলা যায় না। নিরাপত্তার জন্য একটি স্থায়ী ইমেইল ব্যবহার করুন—যেমন Gmail, Yahoo বা আপনার প্রতিষ্ঠানের ইমেইল।" }),
   [AUTH_ERROR_CODES.ACCOUNT_LINK_REQUIRED]: Object.freeze({ status: 409, message: "একই ইমেইলের আগের অ্যাকাউন্টে একবার পাসওয়ার্ড দিয়ে Google যুক্ত করুন।" }),
   [AUTH_ERROR_CODES.ACCOUNT_CONFLICT]: Object.freeze({ status: 409, message: "এই পরিচয়টি অন্য একটি অ্যাকাউন্টের সঙ্গে যুক্ত—নিরাপত্তার জন্য লগইন বন্ধ রাখা হয়েছে।" }),
   [AUTH_ERROR_CODES.GOOGLE_UNAVAILABLE]: Object.freeze({ status: 503, message: "Google দিয়ে প্রবেশ এখন পাওয়া যাচ্ছে না—ইমেইল দিয়ে চেষ্টা করুন।" }),
@@ -8863,6 +8865,112 @@ var CloudflareNativeAuthEngine = class {
   }
 };
 
+// email-policy.js
+var DISPOSABLE_DOMAINS = Object.freeze([
+  // Dedicated temporary-mail services.
+  "temp-mail.org",
+  "tempmail.com",
+  "tempmail.net",
+  "tempmail.dev",
+  "tempmailo.com",
+  "tempmail.plus",
+  "temp-mail.io",
+  "tempmailaddress.com",
+  "10minutemail.com",
+  "10minutemail.net",
+  "10minutemail.org",
+  "10minemail.com",
+  "20minutemail.com",
+  "guerrillamail.com",
+  "guerrillamail.net",
+  "guerrillamail.org",
+  "guerrillamail.de",
+  "sharklasers.com",
+  "grr.la",
+  "guerrillamailblock.com",
+  "spam4.me",
+  "mailinator.com",
+  "mailinator.net",
+  "mailinator2.com",
+  "notmailinator.com",
+  "yopmail.com",
+  "yopmail.fr",
+  "yopmail.net",
+  "cool.fr.nf",
+  "jetable.org",
+  "trashmail.com",
+  "trashmail.net",
+  "trashmail.org",
+  "trashmail.de",
+  "trash-mail.com",
+  "throwawaymail.com",
+  "throwaway.email",
+  "getnada.com",
+  "nada.email",
+  "dispostable.com",
+  "maildrop.cc",
+  "mailnesia.com",
+  "mailcatch.com",
+  "mytemp.email",
+  "moakt.com",
+  "tempr.email",
+  "discard.email",
+  "discardmail.com",
+  "fakeinbox.com",
+  "fakemail.net",
+  "mail-temporaire.fr",
+  "emailondeck.com",
+  "mohmal.com",
+  "mohmal.im",
+  "luxusmail.org",
+  "emailfake.com",
+  "crazymailing.com",
+  "generator.email",
+  "tempinbox.com",
+  "tempinbox.co",
+  "spamgourmet.com",
+  "mailmetrash.com",
+  "mailsac.com",
+  "inboxkitten.com",
+  "harakirimail.com",
+  "mailforspam.com",
+  "tempmailer.com",
+  "tempmailer.de",
+  "tempemail.net",
+  "burnermail.io",
+  "anonaddy.com",
+  "33mail.com",
+  "mailpoof.com",
+  "smailpro.com",
+  "vomoto.com",
+  "eyepaste.com",
+  "1secmail.com",
+  "1secmail.net",
+  "1secmail.org",
+  "1secmail.ru",
+  "tuta.io",
+  "tempmail.email",
+  "tempmailbox.net",
+  // Mailbox providers whose signup needs no verification, so they are used the
+  // same way as a throwaway inbox.
+  "mail.ru",
+  "bk.ru",
+  "inbox.ru",
+  "list.ru",
+  "internet.ru"
+]);
+function emailDomain(email) {
+  const value = String(email || "").trim().toLowerCase();
+  const at = value.lastIndexOf("@");
+  if (at < 0 || at === value.length - 1) return "";
+  return value.slice(at + 1).replace(/\.+$/, "");
+}
+function isDisposableEmail(email) {
+  const domain = emailDomain(email);
+  if (!domain) return false;
+  return DISPOSABLE_DOMAINS.some((blocked) => domain === blocked || domain.endsWith(`.${blocked}`));
+}
+
 // auth-native/providers/firebase-auth.mjs
 var IDENTITY_TOOLKIT = "https://identitytoolkit.googleapis.com/v1";
 var SECURE_TOKEN = "https://securetoken.googleapis.com/v1/token";
@@ -10179,6 +10287,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           throw new NativeAuthError(AUTH_ERROR_CODES.CLIENT_UPDATE_REQUIRED);
         }
         const input = credentials(await readJson(request));
+        if (isDisposableEmail(input.email)) throw new NativeAuthError(AUTH_ERROR_CODES.DISPOSABLE_EMAIL);
         const prepared = await callAuthority(env, "/internal/firebase/rate", { input: { operation: "signup", email: input.email }, context });
         let signed;
         try {

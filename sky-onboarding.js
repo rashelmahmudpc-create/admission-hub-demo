@@ -45,6 +45,16 @@ const SIGNUP_PROP = ['', 'cal', 'bok', 'mal', 'lck', 'lns', 'ear', ''];
 const LOGIN_PROP = ['mal', 'lck', 'lns', 'ear', ''];
 const MONTHS = ['জানুয়ারি', 'ফেব্রুয়ারি', 'মার্চ', 'এপ্রিল', 'মে', 'জুন', 'জুলাই', 'আগস্ট', 'সেপ্টেম্বর', 'অক্টোবর', 'নভেম্বর', 'ডিসেম্বর'];
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+// Owner order 2026-10-16: a throwaway inbox is refused at the field. The Worker
+// is the authority (it refuses POST /signup); this only moves the message to the
+// field so the student is told before a round-trip. The list itself ships in
+// email-policy-client.js, which email-policy.test.mjs pins to the server list.
+const disposableEmail = () => (typeof window.ADMISSION_HUB_isDisposableEmail === 'function'
+  ? window.ADMISSION_HUB_isDisposableEmail
+  : () => false);
+const disposableMessage = () => window.ADMISSION_HUB_DISPOSABLE_EMAIL_MESSAGE
+  || 'এই ইমেইল সেবাটি দিয়ে অ্যাকাউন্ট খোলা যায় না—একটি স্থায়ী ইমেইল ব্যবহার করুন।';
+const emailAcceptable = value => EMAIL_RE.test(value) && !disposableEmail()(value);
 
 const SIGNUP_CTA = ['পরের ধাপ', 'পরের ধাপ', 'পরের ধাপ', 'পরের ধাপ', 'অ্যাকাউন্ট তৈরি করো', 'কোড পাঠাও', 'যাচাই করো', ''];
 const LOGIN_CTA = ['পরের ধাপ', 'ঢুকে পড়ো', 'কোড পাঠাও', 'যাচাই করো', ''];
@@ -213,7 +223,7 @@ const refresh = () => {
   const i = state.i;
   let ok = false;
   if (state.mode === 'login') {
-    if (i === 0) ok = EMAIL_RE.test(state.email);
+    if (i === 0) ok = emailAcceptable(state.email);
     else if (i === 1) ok = state.pw.length > 0;
     else if (i === 2) ok = true;
     else if (i === 3) ok = state.link ? true : otpBoxes().every(x => x.value);
@@ -221,7 +231,7 @@ const refresh = () => {
     if (i === 0) ok = state.name.trim().length >= 2;
     else if (i === 1) ok = true;
     else if (i === 2) ok = !!state.level && !!state.school && (state.level === 'SSC' || state.skipC || !!state.college);
-    else if (i === 3) ok = EMAIL_RE.test(state.email);
+    else if (i === 3) ok = emailAcceptable(state.email);
     else if (i === 4) ok = state.pw.length >= 8 && state.pw === state.pw2;
     else if (i === 5) ok = true;
     else if (i === 6) ok = state.link ? true : otpBoxes().every(x => x.value);
@@ -722,9 +732,11 @@ const bindLogin = () => {
   em.addEventListener('blur', () => { mood(''); look(0, 0); });
   em.addEventListener('input', () => {
     state.email = em.value.trim();
-    const ok = EMAIL_RE.test(state.email);
+    const ok = emailAcceptable(state.email);
+    const blocked = EMAIL_RE.test(state.email) && !ok;
     $('sky-lf-em').classList.toggle('good', ok);
-    $('sky-lem-h').textContent = ok ? 'চমৎকার, ঠিকানাটা ঠিক আছে' : '';
+    $('sky-lem-h').className = blocked ? 'hint err' : 'hint';
+    $('sky-lem-h').textContent = blocked ? disposableMessage() : ok ? 'চমৎকার, ঠিকানাটা ঠিক আছে' : '';
     kick('peck', 250); mimic(); look(Math.max(-6, Math.min(6, state.email.length * .4 - 6)), 6);
     if (ok) { mood('happy'); setTimeout(() => { if (document.activeElement === em) mood('listen'); }, 800); } else mood('listen');
     refresh();
@@ -761,7 +773,7 @@ const bindLogin = () => {
     const api = bridge();
     if (!api) return fail('Account সেবা পাওয়া যাচ্ছে না—পেজটি একবার refresh করো।');
     const email = em.value.trim();
-    if (!EMAIL_RE.test(email)) { $('sky-lem-h').className = 'hint err'; $('sky-lem-h').textContent = 'আগে তোমার ইমেইলটা লিখো।'; em.focus(); return; }
+    if (!emailAcceptable(email)) { $('sky-lem-h').className = 'hint err'; $('sky-lem-h').textContent = EMAIL_RE.test(email) ? disposableMessage() : 'আগে তোমার ইমেইলটা লিখো।'; em.focus(); return; }
     setBusy(true);
     try {
       await api.forgot(email);
@@ -824,9 +836,11 @@ const bindSignup = () => {
   em.addEventListener('blur', () => { mood(''); look(0, 0); });
   em.addEventListener('input', () => {
     state.email = em.value.trim();
-    const ok = EMAIL_RE.test(state.email);
+    const ok = emailAcceptable(state.email);
+    const blocked = EMAIL_RE.test(state.email) && !ok;
     $('sky-f-em').classList.toggle('good', ok);
-    $('sky-em-h').textContent = ok ? 'চমৎকার, ঠিকানাটা ঠিক আছে' : '';
+    $('sky-em-h').className = blocked ? 'hint err' : 'hint';
+    $('sky-em-h').textContent = blocked ? disposableMessage() : ok ? 'চমৎকার, ঠিকানাটা ঠিক আছে' : '';
     kick('peck', 250); mimic(); look(Math.max(-6, Math.min(6, state.email.length * .4 - 6)), 6);
     if (ok) { mood('happy'); setTimeout(() => { if (document.activeElement === em) mood('listen'); }, 800); } else mood('listen');
     refresh();

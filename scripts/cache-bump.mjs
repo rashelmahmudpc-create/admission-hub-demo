@@ -13,19 +13,23 @@ const relative = path => new URL(path, root);
 
 // The asset version string shared by account-access.{js,css} and the
 // language-engine table. Bump both when either file changes.
-const UI_VERSION_FROM = '20261015-login-complete-v1';
-const UI_VERSION_TO = '20261016-turnstile-v1';
+const UI_VERSION_FROM = '20261016-turnstile-v1';
+const UI_VERSION_TO = '20261016-disposable-email-v1';
 const LANG_VERSION_FROM = 'lang-v5-single-email-button';
 const LANG_VERSION_TO = 'lang-v5-single-email-button';
 // NOTE: SW_BUILD_TO must always equal the BUILD_ID in sw.js. Without a bump the
 // deploy ships new files under old ?v= tokens; browsers then serve them
 // immutable for a year, so students keep the old app and every fix misses them.
-const SW_BUILD_FROM = 'v350-fast-startup';
-const SW_BUILD_TO = 'v350-turnstile';
+const SW_BUILD_FROM = 'v350-turnstile';
+const SW_BUILD_TO = 'v350-email-policy';
 
 const targets = [
   'index.html',
   'sw.js',
+  // app-seed.js carries the sky-flow version that loads sky-onboarding.{js,css};
+  // if it does not move, the browser asks for the old token and never fetches the
+  // newly precached flow.
+  'app-seed.js',
   'analytics-service.js',
   'account-retirement.test.mjs',
   'interactive-native-personal-v1.test.mjs',
@@ -65,7 +69,10 @@ const replacements = [
   // from the list: sw.js shipped new dashboard bytes under the old token, so
   // every phone kept the previous dashboard for a year and a fix looked like it
   // never deployed. It must move whenever dashboard-v2.js changes.
-  ['dashboard-v2.js?v=dash2f16-avatar-cache', 'dashboard-v2.js?v=dash2f17-v3frame']
+  ['dashboard-v2.js?v=dash2f16-avatar-cache', 'dashboard-v2.js?v=dash2f17-v3frame'],
+  // sky-onboarding.js gained the disposable-email hint at the field, so its
+  // token must move or a cached copy keeps the old flow.
+  ['sky-flow-20261016-v6', 'sky-flow-20261016-v7']
 ];
 
 let changed = 0;

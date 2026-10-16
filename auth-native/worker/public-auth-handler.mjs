@@ -1,5 +1,6 @@
 import { AUTH_NATIVE_VERSION, FIREBASE_VERIFICATION_RESEND_COOLDOWN_MS } from '../core/auth-engine.mjs';
 import { constantTimeEqual, normalizeAuthEmail, randomToken } from '../core/crypto.mjs';
+import { isDisposableEmail } from '../../email-policy.js';
 import { AUTH_ERROR_CODES, asNativeAuthError, NativeAuthError } from '../core/errors.mjs';
 import { FirebaseEmailPasswordProvider, FirebaseRequestError } from '../providers/firebase-auth.mjs';
 import { verificationConfig } from '../verification/config.mjs';
@@ -696,6 +697,9 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           throw new NativeAuthError(AUTH_ERROR_CODES.CLIENT_UPDATE_REQUIRED);
         }
         const input = credentials(await readJson(request));
+        // Owner order 2026-10-16: refuse a throwaway inbox before any account is
+        // created or any OTP is sent. Server-side so a patched client cannot skip it.
+        if (isDisposableEmail(input.email)) throw new NativeAuthError(AUTH_ERROR_CODES.DISPOSABLE_EMAIL);
         const prepared = await callAuthority(env, '/internal/firebase/rate', { input: { operation: 'signup', email: input.email }, context });
         let signed;
         try { signed = await provider.signUp(prepared.email, input.password); } catch (cause) { throw providerError(cause, 'signup'); }

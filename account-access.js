@@ -682,6 +682,7 @@
       CLIENT_UPDATE_REQUIRED: 'Admission Hub-এর নতুন সংস্করণ এসেছে—পেজটি একবার refresh করে আবার চেষ্টা করো।',
       INVALID_CREDENTIALS: 'Email বা Password সঠিক নয়। আবার দেখে লিখো।',
       EMAIL_ALREADY_IN_USE: 'এই Email-এ account আছে—Log In করো।',
+      DISPOSABLE_EMAIL: 'এই ইমেইল সেবাটি দিয়ে account খোলা যায় না—স্থায়ী ইমেইল ব্যবহার করো (Gmail, Yahoo বা প্রতিষ্ঠানের ইমেইল)।',
       EMAIL_NOT_VERIFIED: 'Account verification এখনো শেষ হয়নি।',
       WEAK_PASSWORD: 'কমপক্ষে ৮ অক্ষরের একটু শক্তিশালী Password দাও।',
       RATE_LIMITED: 'অনেকবার চেষ্টা হয়েছে—একটু অপেক্ষা করে আবার চেষ্টা করো।',
@@ -1084,6 +1085,13 @@
     const password = $('#ah-signup-password')?.value || '';
     const confirm = $('#ah-signup-confirm')?.value || '';
     if (!email?.value.trim() || !email.checkValidity()) { message('সঠিক Email address লিখো।', 'error'); email?.focus(); return false; }
+    // Owner order 2026-10-16: a throwaway inbox is refused at the field. The
+    // Worker refuses POST /signup too, so this is only the earlier, friendlier
+    // message; the list ships in email-policy-client.js.
+    if (window.ADMISSION_HUB_isDisposableEmail?.(email.value.trim())) {
+      message(window.ADMISSION_HUB_DISPOSABLE_EMAIL_MESSAGE || 'এই ইমেইল সেবাটি দিয়ে অ্যাকাউন্ট খোলা যায় না—একটি স্থায়ী ইমেইল ব্যবহার করুন।', 'error');
+      email.focus(); return false;
+    }
     if (password.length < 8) { message('কমপক্ষে ৮ অক্ষরের Password দাও।', 'error'); $('#ah-signup-password')?.focus(); return false; }
     if (!/[A-Z]/.test(password)) { message('Password-এ অন্তত একটি বড় English অক্ষর দাও।', 'error'); $('#ah-signup-password')?.focus(); return false; }
     if (!/\d/.test(password)) { message('Password-এ অন্তত একটি সংখ্যা দাও।', 'error'); $('#ah-signup-password')?.focus(); return false; }
