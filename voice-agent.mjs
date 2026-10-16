@@ -42,6 +42,9 @@ import { renderMemory, upsertMemory, extractMemoryCandidates, makeMemory, resolv
 const jsonReply = (body, status, headers) => Response.json(body, { status, headers });
 
 const HISTORY_KEY = 'va_history';
+const LOGIN_FAIL_KEY = 'va_login_fail';
+const LOGIN_FAIL_LIMIT = 5;
+const LOGIN_FAIL_WINDOW_MS = 15 * 60 * 1000;
 const SUMMARY_KEY = 'va_summary';
 const MEMORY_KEY = 'va_memory';
 const TICKETS_KEY = 'va_tickets';
@@ -230,7 +233,22 @@ export class VoiceAgentSession {
       const body = await request.json();
       given = body && body.password;
     } catch (_) { /* a malformed body is simply a wrong password */ }
-    if (!passwordMatches(env, given)) return jsonReply({ error: 'bad_password' }, 403);
+    /* AI audit 2026-10-16: brute-force guard. One object serves the owner, so a
+     * single counter is enough: 5 wrong passwords in 15 minutes lock the login
+     * for the rest of that window. A correct password clears the counter. */
+    const now = Date.now();
+    let fails = null;
+    try { fails = await this.ctx.storage.get(LOGIN_FAIL_KEY); } catch (_) { fails = null; }
+    if (!fails || typeof fails !== 'object' || now - Number(fails.start || 0) > LOGIN_FAIL_WINDOW_MS) fails = { n: 0, start: now };
+    if (fails.n >= LOGIN_FAIL_LIMIT) {
+      const retryAfter = Math.max(1, Math.ceil((Number(fails.start) + LOGIN_FAIL_WINDOW_MS - now) / 1000));
+      return jsonReply({ error: 'too_many_attempts', message: 'অনেকবার ভুল পাসওয়ার্ড — কিছুক্ষণ পরে আবার চেষ্টা করো।', retryAfter }, 429, { 'Retry-After': String(retryAfter) });
+    }
+    if (!passwordMatches(env, given)) {
+      try { await this.ctx.storage.put(LOGIN_FAIL_KEY, { n: fails.n + 1, start: fails.start }); } catch (_) {}
+      return jsonReply({ error: 'bad_password' }, 403);
+    }
+    try { await this.ctx.storage.delete(LOGIN_FAIL_KEY); } catch (_) {}
 
     const value = await makeSession(env);
     return jsonReply({ ok: true }, 200, { 'Set-Cookie': sessionCookieHeader(value) });

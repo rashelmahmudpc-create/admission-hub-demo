@@ -54,6 +54,15 @@ export const AI_ANALYTICS_PREFIX = '/api/analytics/ai/';
 
 const DAY_MS = 24 * 3600 * 1000;
 
+/* Constant-time compare for the admin token (AI audit 2026-10-16). */
+function constantTimeEqual(a, b) {
+  const x = String(a == null ? '' : a); const y = String(b == null ? '' : b);
+  if (!x || x.length !== y.length) return false;
+  let diff = 0;
+  for (let i = 0; i < x.length; i++) diff |= x.charCodeAt(i) ^ y.charCodeAt(i);
+  return diff === 0;
+}
+
 export async function handleAiAnalyticsRequest(request, env, ctx, deps = {}) {
   const url = new URL(request.url);
   const path = url.pathname;
@@ -70,7 +79,7 @@ export async function handleAiAnalyticsRequest(request, env, ctx, deps = {}) {
   const analyticsStore = deps.store || new AnalyticsStore(env?.PROFILE_DB);
 
   const adminToken = String(request.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '').trim();
-  const isAdmin = Boolean(env?.ADMIN_TOKEN) && adminToken === env.ADMIN_TOKEN;
+  const isAdmin = Boolean(env?.ADMIN_TOKEN) && constantTimeEqual(adminToken, env.ADMIN_TOKEN);
   const resolveSession = deps.sessionUser || sessionUser;
   const filters = parseFilters(url);
 

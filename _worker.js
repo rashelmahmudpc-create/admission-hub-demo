@@ -18,7 +18,16 @@ const SERVER_ONLY_ASSETS = new Set([
   '/gk-agent-worker.js', '/public-worker.js', '/ai-agent.js', '/worker-bundle.mjs',
   '/voice-worker.js', '/notification-worker.js', '/fcm-notification.mjs',
   '/p14-abuse-guard.mjs', '/action-engine.js', '/userdata-api.mjs',
-  '/wrangler.toml', '/package.json', '/package-lock.json'
+  '/wrangler.toml', '/package.json', '/package-lock.json',
+  /* AI audit 2026-10-16: Worker-only AI modules (system prompt text, safety
+     validator patterns, memory/cache/router internals). None is loaded by a
+     page; they were being served as public assets. */
+  '/prompt-registry.js', '/response-validator.js', '/memory-engine.js',
+  '/context-engine.js', '/tool-registry.js', '/observability.js',
+  '/ai-chat-cache.mjs', '/ai-history-trim.mjs', '/ai-tier-router.mjs',
+  '/ai-state-do.mjs', '/ai-provider-health.mjs', '/ai-analytics-copilot.mjs',
+  '/ai-analytics-routes.mjs', '/ai-analytics-provider.mjs', '/ai-analytics-store.mjs',
+  '/ai-analytics-policy.mjs', '/ai-analytics-intelligence.mjs', '/p19-error-monitor.mjs'
 ]);
 const SERVER_ONLY_PREFIXES = ['/auth/', '/auth-native/', '/email-gateway/', '/apps-script/', '/docs/', '/AGENT_RESUME/', '/.github/'];
 const isRetiredAsset = pathname => RETIRED_ASSETS.has(pathname) ||
