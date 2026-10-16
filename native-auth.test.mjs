@@ -229,6 +229,17 @@ class FirebaseMock {
 
   async fetch(url, init) {
     const parsed = new URL(url);
+    // The handler threads its fetchImpl into verifyTurnstile, so the Cloudflare
+    // siteverify call arrives here too. Answer it from the same seam the OTP
+    // mailer uses, so a route-level test can drive the human check without a
+    // live Cloudflare round trip.
+    if (parsed.hostname === 'challenges.cloudflare.com') {
+      const token = String(init?.body instanceof URLSearchParams ? init.body.get('response') : '');
+      const good = token === 'turnstile-good-token';
+      return Response.json(good
+        ? { success: true }
+        : { success: false, 'error-codes': ['invalid-input-response'] });
+    }
     const form = String(init?.headers?.['Content-Type'] || '').includes('x-www-form-urlencoded');
     const body = form ? Object.fromEntries(new URLSearchParams(String(init.body || ''))) : JSON.parse(String(init?.body || '{}'));
     this.calls.push({ pathname: parsed.pathname, body: { ...body, ...(body.password ? { password: '[redacted]' } : {}) } });
@@ -1136,4 +1147,56 @@ test('a fallback send is never followed by a second Firebase link for the same t
     method: 'POST', body: {}, cookie: ticketCookies
   }), app.env, {});
   assert.equal(oobCalls(), 1, 'a status poll must not trigger another verification email');
+});
+
+const signupTicketCookies = async (app, email, password) => {
+  const signup = await app.handler(apiRequest(`${AUTH_API_PREFIX}/signup`, {
+    method: 'POST', body: { email, password }
+  }), app.env, {});
+  assert.equal(signup.status, 202);
+  return [
+    extractCookiePair(signup, '__Host-ah_verification'),
+    extractCookiePair(signup, '__Host-ah_device')
+  ].filter(Boolean).join('; ');
+};
+
+test('a rejected human check stops the ownership OTP before any mailer is asked to send', async () => {
+  const app = handlerSetup();
+  app.env.VERIFICATION_AUTH_ACTIVATION = 'enabled';
+  app.env.TURNSTILE_SECRET_KEY = 'turnstile-secret-key';
+  const ticketCookies = await signupTicketCookies(app, 'human.check.fail@example.com', 'Human-check-fail-71');
+
+  let sendAsked = false;
+  const authorityFetch = app.authority.fetch.bind(app.authority);
+  app.authority.fetch = request => new URL(request.url).pathname === '/internal/verification/ownership/request'
+    ? (sendAsked = true, Response.json({ ok: true, result: { sent: true, attemptId: `attempt-${'a'.repeat(40)}` } }))
+    : authorityFetch(request);
+
+  const start = await app.handler(apiRequest(`${AUTH_API_PREFIX}/email-ownership/start`, {
+    method: 'POST', body: { turnstileToken: 'turnstile-bad-token' }, cookie: ticketCookies
+  }), app.env, {});
+  const body = await start.json();
+  assert.equal(start.status, 400);
+  assert.equal(body.error.code, AUTH_ERROR_CODES.INVALID_INPUT);
+  assert.equal(sendAsked, false, 'a failed human check must never reach the OTP send');
+});
+
+test('a verified human check lets the ownership OTP proceed', async () => {
+  const app = handlerSetup();
+  app.env.VERIFICATION_AUTH_ACTIVATION = 'enabled';
+  app.env.TURNSTILE_SECRET_KEY = 'turnstile-secret-key';
+  const ticketCookies = await signupTicketCookies(app, 'human.check.pass@example.com', 'Human-check-pass-71');
+
+  const authorityFetch = app.authority.fetch.bind(app.authority);
+  app.authority.fetch = request => new URL(request.url).pathname === '/internal/verification/ownership/request'
+    ? Response.json({ ok: true, result: { sent: true, attemptId: `attempt-${'a'.repeat(40)}`, resendAfter: 60 } })
+    : authorityFetch(request);
+
+  const start = await app.handler(apiRequest(`${AUTH_API_PREFIX}/email-ownership/start`, {
+    method: 'POST', body: { turnstileToken: 'turnstile-good-token' }, cookie: ticketCookies
+  }), app.env, {});
+  const body = await start.json();
+  assert.equal(start.status, 202);
+  assert.equal(body.delivery.method, 'email-otp');
+  assert.ok(body.ownership?.attemptId, 'a good human check must reach the OTP form');
 });

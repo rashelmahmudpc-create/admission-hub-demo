@@ -10632,7 +10632,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         const verificationTicket = jar[AUTH_VERIFICATION_COOKIE];
         if (!verificationTicket) throw new NativeAuthError(AUTH_ERROR_CODES.TELEGRAM_VERIFICATION_INVALID);
         const startBody = await readJson(request);
-        await verifyTurnstile({ env, token: startBody?.turnstileToken, ip: context.ip });
+        await verifyTurnstile({ env, token: startBody?.turnstileToken, ip: context.ip, fetchImpl });
         const material = await callAuthority(env, "/internal/firebase/account-verification/material", {
           verificationTicket,
           context
