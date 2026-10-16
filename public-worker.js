@@ -454,7 +454,23 @@ export default {
       if (path.startsWith('/api/admin/')) return admin(request, env, path);
       if (path === '/api/ai/status' && request.method === 'GET') {
         const identity = await aiRequestIdentity(request, env, false);
-        return agentStatus(request, env, identity.uid);
+        const res = await agentStatus(request, env, identity.uid);
+        /* Owner-only cost view. The provider list, model ids, the fallback
+           chain, the per-day limit and the pricing/observability block expose
+           which keys are live and what the AI costs; a student must not read
+           them. The admin token is the owner's own proof of identity (the same
+           gate /api/admin/* uses), so only that requester gets the full body.
+           Everyone else keeps the generic shape the app already relies on. */
+        const token = String(request.headers.get('Authorization') || '').replace('Bearer ', '').trim();
+        if (env.ADMIN_TOKEN && token === env.ADMIN_TOKEN) return res;
+        const data = await res.json().catch(() => null);
+        if (!data) return res;
+        delete data.providers;
+        delete data.models;
+        delete data.chain;
+        delete data.limits;
+        delete data.observability;
+        return json(data, res.status);
       }
       if (path === '/api/ai/prefs' && request.method === 'GET') {
         const identity = await aiRequestIdentity(request, env, false);

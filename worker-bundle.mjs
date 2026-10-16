@@ -3936,7 +3936,17 @@ var public_worker_default = {
       if (path.startsWith("/api/admin/")) return admin(request, env, path);
       if (path === "/api/ai/status" && request.method === "GET") {
         const identity = await aiRequestIdentity(request, env, false);
-        return agentStatus(request, env, identity.uid);
+        const res = await agentStatus(request, env, identity.uid);
+        const token = String(request.headers.get("Authorization") || "").replace("Bearer ", "").trim();
+        if (env.ADMIN_TOKEN && token === env.ADMIN_TOKEN) return res;
+        const data = await res.json().catch(() => null);
+        if (!data) return res;
+        delete data.providers;
+        delete data.models;
+        delete data.chain;
+        delete data.limits;
+        delete data.observability;
+        return json2(data, res.status);
       }
       if (path === "/api/ai/prefs" && request.method === "GET") {
         const identity = await aiRequestIdentity(request, env, false);
