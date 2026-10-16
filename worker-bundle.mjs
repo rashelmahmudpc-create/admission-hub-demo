@@ -8025,11 +8025,11 @@ var CloudflareNativeAuthEngine = class {
   // High-dynamic blueprint §01/§04/§05/§13/§14 — deterministic rule table.
   // No AI, no behavioral inference; only real account/profile state.
   profileContext({ profile = null, completion = 0, lastLoginAt = null, now = Date.now() }) {
-    const DAY_MS9 = 864e5;
+    const DAY_MS10 = 864e5;
     const createdAt = profile?.createdAt ? Number(profile.createdAt) : null;
     const hasTarget = Array.isArray(profile?.targets) && profile.targets.length > 0 && Boolean(profile.targets[0]?.name);
-    const ageDays = createdAt ? (now - createdAt) / DAY_MS9 : Number.POSITIVE_INFINITY;
-    const gapDays = lastLoginAt ? (now - Number(lastLoginAt)) / DAY_MS9 : Number.POSITIVE_INFINITY;
+    const ageDays = createdAt ? (now - createdAt) / DAY_MS10 : Number.POSITIVE_INFINITY;
+    const gapDays = lastLoginAt ? (now - Number(lastLoginAt)) / DAY_MS10 : Number.POSITIVE_INFINITY;
     let context = "DEFAULT";
     let greeting = "আগে থেকেই চলো";
     if (!profile || Number(completion) < 60) {
@@ -9333,6 +9333,7 @@ function safeJson(raw) {
     return {};
   }
 }
+var OWNER_ALLOWED_DOMAINS = Object.freeze(["gmail.com", "yahoo.com", "icloud.com", "outlook.com"]);
 function verificationConfig(raw) {
   const input = typeof raw === "string" ? safeJson(raw) : raw && typeof raw === "object" ? raw : {};
   const policyInput = input.policy && typeof input.policy === "object" ? input.policy : {};
@@ -9361,13 +9362,37 @@ function verificationConfig(raw) {
       label: cleanReason(row.label) || id.toUpperCase()
     });
   }).sort((left, right) => left.priority - right.priority || left.id.localeCompare(right.id));
+  const allowedDomains = Object.freeze((Array.isArray(input.allowedDomains) ? input.allowedDomains : OWNER_ALLOWED_DOMAINS).map((value) => String(value || "").trim().toLowerCase().replace(/^\.+/, "")).filter((value) => /^[a-z0-9.-]+$/.test(value) && value.length <= 253).slice(0, 200));
   return Object.freeze({
     enabled: bool(input.enabled),
     policy,
+    allowedDomains,
     providers: Object.freeze(providers)
   });
 }
 var __verificationConfigTest = Object.freeze({ SLOT_DEFINITIONS, DEFAULT_POLICY, safeJson });
+
+// auth-native/verification/turnstile.mjs
+var SITEVERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
+async function verifyTurnstile({ env, token, ip, fetchImpl = fetch, timeoutMs = 8e3 } = {}) {
+  const secret = String(env?.TURNSTILE_SECRET_KEY || "").trim();
+  if (!secret) return { enforced: false };
+  const value = String(token ?? "");
+  if (!value || value.length > 4096) throw new NativeAuthError(AUTH_ERROR_CODES.INVALID_INPUT);
+  const form = new URLSearchParams({ secret, response: value });
+  if (ip && ip !== "unknown") form.set("remoteip", String(ip).slice(0, 96));
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response3 = await fetchImpl(SITEVERIFY_URL, { method: "POST", body: form, signal: controller.signal });
+    const data = await response3.json().catch(() => null);
+    if (data && data.success === true) return { enforced: true };
+  } catch {
+  } finally {
+    clearTimeout(timer);
+  }
+  throw new NativeAuthError(AUTH_ERROR_CODES.INVALID_INPUT);
+}
 
 // auth-native/verification/telegram-security.mjs
 var WEBHOOK_CONTEXT = "admission-hub-telegram-webhook-v1";
@@ -10606,7 +10631,8 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         }
         const verificationTicket = jar[AUTH_VERIFICATION_COOKIE];
         if (!verificationTicket) throw new NativeAuthError(AUTH_ERROR_CODES.TELEGRAM_VERIFICATION_INVALID);
-        await readJson(request);
+        const startBody = await readJson(request);
+        await verifyTurnstile({ env, token: startBody?.turnstileToken, ip: context.ip });
         const material = await callAuthority(env, "/internal/firebase/account-verification/material", {
           verificationTicket,
           context
@@ -22233,6 +22259,8 @@ var SEND_LIMITS = Object.freeze([
   Object.freeze({ scope: "backup-device-hour", source: "device", limit: 10, windowMs: HOUR_MS }),
   Object.freeze({ scope: "backup-global-minute", source: "global", limit: 120, windowMs: 6e4 })
 ]);
+var DAY_MS8 = 24 * HOUR_MS;
+var EMAIL_DAILY_LIMIT = 3;
 var validText = (value, min, max) => typeof value === "string" && value.length >= min && value.length <= max && !/[\r\n\u0000]/.test(value);
 var cleanRecipientName = (value) => String(value ?? "").replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 60);
 var reason = (value) => String(value || "UNKNOWN").toUpperCase().replace(/[^A-Z0-9_-]/g, "_").slice(0, 64) || "UNKNOWN";
@@ -22273,6 +22301,8 @@ function recipientBias(providerId, email) {
   const domain = String(email || "").trim().toLowerCase().split("@").pop();
   return NON_GMAIL_FREEMAIL.has(domain) ? NON_GMAIL_PREFERENCE[providerId] || 0 : 0;
 }
+var INSTITUTIONAL_SUFFIXES = Object.freeze([".ac.bd", ".edu.bd"]);
+var matchesDomain = (domain, list) => list.some((entry) => domain === entry || entry.startsWith(".") && domain.endsWith(entry));
 async function bounded(action, milliseconds) {
   let timer;
   try {
@@ -22346,6 +22376,7 @@ var VerificationOrchestrator = class {
       }
       const ownershipEmail = purpose === "email-ownership" ? normalizeAuthEmail(trusted.email) : "";
       if (purpose === "email-ownership" && !ownershipEmail) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+      this.#assertDeliverable(ownershipEmail);
       const recipientName2 = purpose === "email-ownership" ? cleanRecipientName(trusted.recipientName) : "";
       const [ipRef2, deviceRef2, destinationRef2] = await Promise.all([
         this.hmac.hex("network-ref-v1", context.ip),
@@ -22377,6 +22408,7 @@ var VerificationOrchestrator = class {
     const subject = String(input?.subject || "").trim();
     const userId = String(input?.userId || "").trim();
     const email = normalizeAuthEmail(input?.email);
+    if (purpose === "email-ownership") this.#assertDeliverable(email);
     if (!/^[A-Za-z0-9_-]{40,96}$/.test(sessionToken) || !validText(subject, 1, 256) || !validText(userId, 3, 128)) {
       failAuth(AUTH_ERROR_CODES.SESSION_INVALID);
     }
@@ -22397,13 +22429,27 @@ var VerificationOrchestrator = class {
     ]);
     return Object.freeze({ sessionToken, subject, userId, email, purpose, recipientName, destinations, context, sessionRef, subjectRef, emailRef, ipRef, deviceRef, destinationRef });
   }
+  // Email-ownership only. The other purposes carry no real address in tests or
+  // deliveries, and the allowlist is opt-in, so an unset list never blocks.
+  #assertDeliverable(email) {
+    if (!email) return;
+    const allow = this.config.allowedDomains;
+    if (!allow || allow.length === 0) return;
+    const domain = email.slice(email.lastIndexOf("@") + 1);
+    if (matchesDomain(domain, allow) || matchesDomain(domain, INSTITUTIONAL_SUFFIXES)) return;
+    failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+  }
   #limits(identity) {
-    return SEND_LIMITS.map((limit) => Object.freeze({
+    const limits = SEND_LIMITS.map((limit) => Object.freeze({
       scope: limit.scope,
       key: limit.source === "user" ? identity.userId : limit.source === "ip" ? identity.ipRef : limit.source === "device" ? identity.deviceRef : "global",
       limit: limit.limit,
       windowMs: limit.windowMs
     }));
+    if (identity.purpose === "email-ownership" && identity.emailRef) {
+      limits.push(Object.freeze({ scope: "ownership-email-day", key: identity.emailRef, limit: EMAIL_DAILY_LIMIT, windowMs: DAY_MS8 }));
+    }
+    return limits;
   }
   async #record(entry, input) {
     return this.repository.recordProviderResult({
@@ -24487,8 +24533,8 @@ async function dispatchSecurityNotifications({
 }
 
 // auth-native/verification/sqlite-verification-repository.mjs
-var DAY_MS8 = 864e5;
-var EVENT_RETENTION_MS2 = 90 * DAY_MS8;
+var DAY_MS9 = 864e5;
+var EVENT_RETENTION_MS2 = 90 * DAY_MS9;
 var safeReason = (value) => String(value || "UNKNOWN").toUpperCase().replace(/[^A-Z0-9_-]/g, "_").slice(0, 64) || "UNKNOWN";
 var SqliteVerificationRepository = class {
   constructor(storage) {
@@ -25143,8 +25189,8 @@ var SqliteVerificationRepository = class {
     });
   }
   async dailyQuotaSnapshot({ providerId, dailyQuota, now }) {
-    const dayStart = Math.floor(now / DAY_MS8) * DAY_MS8;
-    const resetAt = dayStart + DAY_MS8;
+    const dayStart = Math.floor(now / DAY_MS9) * DAY_MS9;
+    const resetAt = dayStart + DAY_MS9;
     const row = this.#one(
       "SELECT used FROM auth_verification_daily_quota WHERE provider_id=? AND day_start=?",
       providerId,
@@ -25155,8 +25201,8 @@ var SqliteVerificationRepository = class {
   }
   async reserveDailyQuota({ providerId, dailyQuota, now }) {
     return this.#transaction(() => {
-      const dayStart = Math.floor(now / DAY_MS8) * DAY_MS8;
-      const resetAt = dayStart + DAY_MS8;
+      const dayStart = Math.floor(now / DAY_MS9) * DAY_MS9;
+      const resetAt = dayStart + DAY_MS9;
       this.sql.exec(
         `INSERT INTO auth_verification_daily_quota(provider_id,day_start,used,quota_limit,reset_at,updated_at)
          VALUES(?,?,0,?,?,?) ON CONFLICT(provider_id,day_start)

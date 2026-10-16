@@ -3,6 +3,7 @@ import { constantTimeEqual, normalizeAuthEmail, randomToken } from '../core/cryp
 import { AUTH_ERROR_CODES, asNativeAuthError, NativeAuthError } from '../core/errors.mjs';
 import { FirebaseEmailPasswordProvider, FirebaseRequestError } from '../providers/firebase-auth.mjs';
 import { verificationConfig } from '../verification/config.mjs';
+import { verifyTurnstile } from '../verification/turnstile.mjs';
 import { resolveTelegramWebhookSecret, validTelegramWebhookSecret } from '../verification/telegram-security.mjs';
 
 export const AUTH_API_PREFIX = '/api/auth/v1';
@@ -1172,7 +1173,8 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         }
         const verificationTicket = jar[AUTH_VERIFICATION_COOKIE];
         if (!verificationTicket) throw new NativeAuthError(AUTH_ERROR_CODES.TELEGRAM_VERIFICATION_INVALID);
-        await readJson(request);
+        const startBody = await readJson(request);
+        await verifyTurnstile({ env, token: startBody?.turnstileToken, ip: context.ip });
         const material = await callAuthority(env, '/internal/firebase/account-verification/material', {
           verificationTicket,
           context

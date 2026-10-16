@@ -1372,6 +1372,51 @@
     } catch (_) { return path; }
   };
 
+  // Owner 2026-10-16: an ownership OTP is only sent after a human check. The
+  // Worker verifies the token; this just mints it. With no site key configured
+  // (or the script unavailable) it resolves empty, and the server guard — which
+  // only arms once its secret exists — stays the single source of truth.
+  let tsApiPromise = null;
+  const humanToken = () => {
+    const siteKey = String(window.ADMISSION_HUB_TURNSTILE_SITEKEY || '').trim();
+    if (!siteKey) return Promise.resolve('');
+    if (!tsApiPromise) {
+      tsApiPromise = window.turnstile ? Promise.resolve(window.turnstile) : new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+        script.async = true;
+        script.onload = () => window.turnstile ? resolve(window.turnstile) : reject(new Error('Human check load failed'));
+        script.onerror = () => { tsApiPromise = null; reject(new Error('Human check load failed')); };
+        document.head.appendChild(script);
+      });
+    }
+    return tsApiPromise.then(api => new Promise((resolve, reject) => {
+      const host = document.createElement('div');
+      host.setAttribute('aria-hidden', 'true');
+      host.style.cssText = 'position:fixed;right:0;bottom:0;width:1px;height:1px;overflow:hidden;opacity:.01';
+      document.body.appendChild(host);
+      let done = false, widgetId = null;
+      const finish = (fn, value) => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        try { api.remove(widgetId); } catch (_) {}
+        try { host.remove(); } catch (_) {}
+        fn(value);
+      };
+      const timer = setTimeout(() => finish(resolve, ''), 15000);
+      try {
+        widgetId = api.render(host, {
+          sitekey: siteKey, action: 'email_ownership', size: 'invisible', appearance: 'interaction-only',
+          callback: token => finish(resolve, String(token || '')),
+          'error-callback': () => finish(resolve, ''),
+          'expired-callback': () => finish(resolve, '')
+        });
+      } catch (_) { finish(resolve, ''); return; }
+      try { api.execute(widgetId); } catch (_) {}
+    })).catch(() => '');
+  };
+
   const api = async (path, options = {}) => {
     const attempt = async () => {
     let requestPath = path;  
@@ -2652,7 +2697,7 @@
     setBusy(true);
     try {
       if (state.pendingProfile && state.profileBound && !state.profileSynced) await syncPendingProfile({ pending: true });
-      const result = await api('/email-ownership/start', { method: 'POST', body: {} });
+      const result = await api('/email-ownership/start', { method: 'POST', body: { turnstileToken: await humanToken() } });
       if (result.alreadyVerified) {
         setBusy(false);
         await checkEmailVerification();
@@ -3060,7 +3105,7 @@
       if (state.busy || Date.now() < Number(state.ownership?.resendUntil || 0)) return;
       setBusy(true);
       try {
-        const result = await api('/email-ownership/start', { method: 'POST', body: {} });
+        const result = await api('/email-ownership/start', { method: 'POST', body: { turnstileToken: await humanToken() } });
         if (result.delivery?.method === 'firebase-link') {
           state.verification.emailSent = true;
           state.verification.mode = 'email';
@@ -3405,7 +3450,7 @@
   };
   const startEmailChallenge = async () => {
     await bindPendingProfile();
-    const result = await skyApi('/email-ownership/start', { method: 'POST', body: {} });
+    const result = await skyApi('/email-ownership/start', { method: 'POST', body: { turnstileToken: await humanToken() } });
     if (result.alreadyVerified) { await checkEmailVerification(); return { resendAfter: 0, alreadyVerified: true }; }
     if (result.delivery?.method === 'firebase-link') {
       // Every OTP provider is out of quota: the Worker sent a Firebase link
