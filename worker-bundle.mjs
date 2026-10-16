@@ -22478,7 +22478,7 @@ function providerFailure(error) {
 }
 var PROBE_TIMEOUT_MS = 5e3;
 var NON_GMAIL_FREEMAIL = /* @__PURE__ */ new Set(["icloud.com", "me.com", "mac.com", "yahoo.com", "yahoo.co.uk", "yahoo.co.in", "ymail.com", "rocketmail.com", "outlook.com", "hotmail.com", "live.com", "msn.com", "aol.com"]);
-var NON_GMAIL_PREFERENCE = Object.freeze({ "otp-i": -40, "otp-b": -15, "otp-e": -30 });
+var NON_GMAIL_PREFERENCE = Object.freeze({ "otp-h": -30, "otp-i": -40, "otp-b": -15, "otp-e": -30 });
 function recipientBias(providerId, email) {
   const domain = String(email || "").trim().toLowerCase().split("@").pop();
   return NON_GMAIL_FREEMAIL.has(domain) ? NON_GMAIL_PREFERENCE[providerId] || 0 : 0;

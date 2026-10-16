@@ -77,7 +77,10 @@ const PROBE_TIMEOUT_MS = 5000;
 // instead of starving the send. Gmail recipients keep the operator order. A
 // resend still demotes the slot that carried the previous code.
 const NON_GMAIL_FREEMAIL = new Set(['icloud.com', 'me.com', 'mac.com', 'yahoo.com', 'yahoo.co.uk', 'yahoo.co.in', 'ymail.com', 'rocketmail.com', 'outlook.com', 'hotmail.com', 'live.com', 'msn.com', 'aol.com']);
-const NON_GMAIL_PREFERENCE = Object.freeze({ 'otp-i': -40, 'otp-b': -15, 'otp-e': -30 });
+// Owner 2026-10-16 (later still): Logto (otp-h) lands in Yahoo within seconds while
+// Appwrite can arrive after the code expired, so Logto goes first (15-30 = -15) and
+// Appwrite second (38-40 = -2); a resend (+25) then alternates between the two.
+const NON_GMAIL_PREFERENCE = Object.freeze({ 'otp-h': -30, 'otp-i': -40, 'otp-b': -15, 'otp-e': -30 });
 function recipientBias(providerId, email) {
   const domain = String(email || '').trim().toLowerCase().split('@').pop();
   return NON_GMAIL_FREEMAIL.has(domain) ? (NON_GMAIL_PREFERENCE[providerId] || 0) : 0;
