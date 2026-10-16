@@ -12049,6 +12049,13 @@ var FcmStore = class {
         user_id TEXT NOT NULL,
         read_at INTEGER NOT NULL,
         PRIMARY KEY (notification_id, user_id)
+      )`),
+      /* Inbox v7: a student can save (bookmark) a notice-board item. */
+      this.#d1.prepare(`CREATE TABLE IF NOT EXISTS notice_saves (
+        notification_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        saved_at INTEGER NOT NULL,
+        PRIMARY KEY (notification_id, user_id)
       )`)
     ]);
     try {
@@ -12286,6 +12293,33 @@ var FcmStore = class {
     for (const row of res?.results || []) out[row.notification_id] = Number(row.read_at);
     return out;
   }
+  /* Inbox v7: "mark all as read" must also clear server-side globals —
+   * before this only the local hub log was cleared, so globals came back unread. */
+  async markAllRead(userId, ids, now) {
+    if (!ids.length) return 0;
+    await this.#ensureTables();
+    const stmt = `INSERT OR IGNORE INTO notification_reads(notification_id, user_id, read_at) VALUES (?,?,?)`;
+    await this.#d1.batch(ids.map((id) => this.#d1.prepare(stmt).bind(id, userId, now)));
+    return ids.length;
+  }
+  async saveState(userId, ids) {
+    if (!ids.length) return {};
+    await this.#ensureTables();
+    const res = await this.#d1.prepare(
+      `SELECT notification_id, saved_at FROM notice_saves WHERE user_id=? AND notification_id IN (${ids.map(() => "?").join(",")})`
+    ).bind(userId, ...ids).all();
+    const out = {};
+    for (const row of res?.results || []) out[row.notification_id] = Number(row.saved_at);
+    return out;
+  }
+  async setSaved(userId, id, saved, now) {
+    await this.#ensureTables();
+    if (saved) {
+      await this.#d1.prepare(`INSERT OR REPLACE INTO notice_saves(notification_id, user_id, saved_at) VALUES (?,?,?)`).bind(id, userId, now).run();
+    } else {
+      await this.#d1.prepare(`DELETE FROM notice_saves WHERE notification_id=? AND user_id=?`).bind(id, userId).run();
+    }
+  }
   async globalFeed(limit = 30) {
     await this.#ensureTables();
     const res = await this.#d1.prepare(
@@ -12477,6 +12511,7 @@ var GLOBAL_AUDIENCES = Object.freeze({
 var GLOBAL_DAILY_CAP = 10;
 var GLOBAL_MAX_SCHEDULE_DAYS = 30;
 var GN_ID_RE = /^gn-[a-z0-9]{12}$/;
+var NOTICE_TYPES = /* @__PURE__ */ new Set(["announcement", "important", "course", "new-feature"]);
 var TOPIC_RE = /^[a-z][a-z0-9_-]{0,63}$/;
 var GLOBAL_TOPIC = "all_students";
 var APP_ICON_PATH = "/icons/icon-192.png";
@@ -13149,8 +13184,34 @@ async function handleFcmNotificationRequest(request, env) {
     if (!store.available()) return jsonResponse(request, { error: "storage-unavailable" }, 503);
     const feed = await store.globalFeed(30);
     const reads = await store.readState(userId, feed.map((r) => r.id));
-    const items = feed.map((r) => ({ ...r, readAt: reads[r.id] || null }));
+    const saves = await store.saveState(userId, feed.map((r) => r.id));
+    const items = feed.map((r) => ({
+      ...r,
+      readAt: reads[r.id] || null,
+      savedAt: saves[r.id] || null,
+      kind: NOTICE_TYPES.has(r.type) ? "notice" : "notification"
+    }));
     return jsonResponse(request, { ok: true, items, unread: items.filter((r) => !r.readAt).length });
+  }
+  if (path === "/api/notifications/read-all" && request.method === "POST") {
+    if (!store.available()) return jsonResponse(request, { error: "storage-unavailable" }, 503);
+    if (!await kvRateAllow(env, `readall:${userId}`, 20, 600)) return jsonResponse(request, { error: "rate-limited" }, 429);
+    const feed = await store.globalFeed(30);
+    const reads = await store.readState(userId, feed.map((r) => r.id));
+    const ids = feed.map((r) => r.id).filter((id) => !reads[id]);
+    const marked = await store.markAllRead(userId, ids, Date.now());
+    return jsonResponse(request, { ok: true, marked });
+  }
+  if (path === "/api/notifications/save" && request.method === "POST") {
+    if (!store.available()) return jsonResponse(request, { error: "storage-unavailable" }, 503);
+    const body = await parseBody(request);
+    if (!body) return jsonResponse(request, { error: "invalid-json" }, 400);
+    const id = String(body.id || "");
+    if (!GN_ID_RE.test(id)) return jsonResponse(request, { error: "invalid-id" }, 400);
+    if (!await kvRateAllow(env, `save:${userId}`, 60, 600)) return jsonResponse(request, { error: "rate-limited" }, 429);
+    const saved = body.saved !== false;
+    await store.setSaved(userId, id, saved, Date.now());
+    return jsonResponse(request, { ok: true, id, saved });
   }
   if (path === "/api/notifications/read" && request.method === "POST") {
     if (!store.available()) return jsonResponse(request, { error: "storage-unavailable" }, 503);

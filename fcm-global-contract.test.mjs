@@ -188,7 +188,7 @@ test('index.html: command-center script tag + route dispatch (hidden route, not 
 test('pin consistency: index.html script pins match sw.js cache entries + digests', () => {
   const pins = {
     'notification-fcm.js': 'fcm-p3-v15',
-    'notification-inbox.js': 'notif-inbox-v6',
+    'notification-inbox.js': 'notif-inbox-v7',
     'notification-hub.js': 'notify-p3-v122',
     'notification-center-route.js': 'ns-cc-route-v1'
   };

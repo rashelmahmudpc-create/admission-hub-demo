@@ -30,6 +30,7 @@ function makeFakeD1() {
   const devices = new Map();   // id → row
   const globals = new Map();   // id → row
   const reads = new Map();     // `${nid}|${uid}` → readAt
+  const saves = new Map();     // `${nid}|${uid}` → savedAt (inbox v7)
 
   const deviceRow = (args) => ({
     id: args[0], userId: args[1], fcmToken: args[2], platform: args[3],
@@ -98,6 +99,14 @@ function makeFakeD1() {
         const key = `${args[0]}|${args[1]}`;
         if (!reads.has(key)) reads.set(key, args[2]);
         return { success: true, meta: { changes: 1 } };
+      }
+      if (sql.includes('INSERT OR REPLACE INTO notice_saves')) {
+        saves.set(`${args[0]}|${args[1]}`, args[2]);
+        return { success: true, meta: { changes: 1 } };
+      }
+      if (sql.includes('DELETE FROM notice_saves')) {
+        const had = saves.delete(`${args[0]}|${args[1]}`);
+        return { success: true, meta: { changes: had ? 1 : 0 } };
       }
       if (sql.includes('INSERT INTO notification_settings')) {
         return { success: true, meta: { changes: 1 } };
@@ -181,6 +190,11 @@ function makeFakeD1() {
         return { results: ids.filter(nid => reads.has(`${nid}|${userId}`))
           .map(nid => ({ notification_id: nid, read_at: reads.get(`${nid}|${userId}`) })) };
       }
+      if (sql.includes('SELECT notification_id, saved_at FROM notice_saves')) {
+        const [userId, ...ids] = args;
+        return { results: ids.filter(nid => saves.has(`${nid}|${userId}`))
+          .map(nid => ({ notification_id: nid, saved_at: saves.get(`${nid}|${userId}`) })) };
+      }
       return { results: [] };
     };
 
@@ -188,7 +202,7 @@ function makeFakeD1() {
   };
 
   return {
-    _devices: devices, _globals: globals, _reads: reads,
+    _devices: devices, _globals: globals, _reads: reads, _saves: saves,
     prepare(sql) {
       /* D1 rejects a statement whose bind count differs from its placeholder
        * count ("N values for M columns"). The fake used to ignore both, so a
@@ -757,6 +771,43 @@ test('user inbox: sent feed + unread; read clears it; click counts', async () =>
 
     const badRead = await call(cookieRequest('/api/notifications/read', { method: 'POST', body: { id: 'nope' } }), env);
     assert.equal(badRead.response.status, 400);
+  } finally { stub.restore(); }
+});
+
+test('inbox v7: kind split, read-all clears globals server-side, save/unsave notices', async () => {
+  const env = await makeEnv();
+  await registerDevice(env, 'inboxv7');
+  const stub = withFcmStub(env);
+  try {
+    const n1 = await call(cookieRequest('/api/notifications/global/send', {
+      method: 'POST', body: { type: 'announcement', title: 'notice row', body: 'routine updated' }
+    }), env);
+    const n2 = await call(cookieRequest('/api/notifications/global/send', {
+      method: 'POST', body: { type: 'new-content', title: 'content row', body: 'lecture 3' }
+    }), env);
+    const feed = await call(cookieRequest('/api/notifications/inbox'), env);
+    const byId = Object.fromEntries(feed.data.items.map(r => [r.id, r]));
+    assert.equal(byId[n1.data.id].kind, 'notice');
+    assert.equal(byId[n2.data.id].kind, 'notification');
+    assert.equal(byId[n1.data.id].savedAt, null);
+    assert.equal(feed.data.unread, 2);
+
+    const all = await call(cookieRequest('/api/notifications/read-all', { method: 'POST', body: {} }), env);
+    assert.equal(all.response.status, 200);
+    assert.equal(all.data.marked, 2);
+    const after = await call(cookieRequest('/api/notifications/inbox'), env);
+    assert.equal(after.data.unread, 0, 'read-all must persist for globals');
+
+    const save = await call(cookieRequest('/api/notifications/save', { method: 'POST', body: { id: n1.data.id, saved: true } }), env);
+    assert.equal(save.response.status, 200);
+    const saved = await call(cookieRequest('/api/notifications/inbox'), env);
+    assert.ok(saved.data.items.find(r => r.id === n1.data.id).savedAt > 0);
+    await call(cookieRequest('/api/notifications/save', { method: 'POST', body: { id: n1.data.id, saved: false } }), env);
+    const unsaved = await call(cookieRequest('/api/notifications/inbox'), env);
+    assert.equal(unsaved.data.items.find(r => r.id === n1.data.id).savedAt, null);
+
+    const bad = await call(cookieRequest('/api/notifications/save', { method: 'POST', body: { id: 'nope' } }), env);
+    assert.equal(bad.response.status, 400);
   } finally { stub.restore(); }
 });
 
