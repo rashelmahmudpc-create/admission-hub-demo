@@ -57,7 +57,7 @@ const APP_SHELL = [
   './sky-faq-en.js?v=faq1',
   './sky-faq-sci.js?v=faq1',
   './sky-faq-gk.js?v=faq1',
-  './ai-agent-chat.js?v=agent-f1-ui-skyv7',
+  './ai-agent-chat.js?v=agent-f1-ui-skyv8',
   './question-engine.js?v=qe1',
   './question-engine-panel.js?v=qe1',
   './notification-fcm.js?v=fcm-p3-v15',
@@ -92,7 +92,7 @@ const APP_SHELL = [
 // A truncated/corrupt download is NEVER written to the shell cache.
 const ASSET_DIGESTS = {
 /* sw-manifest:start */
-  "./index.html": "a585c2a659460148bf8053e745616bffda9878173522ffffe307f5f04d53e8b5",
+  "./index.html": "6bf15a893bf102a3fef70a92fd4f79aea1d449181d19a540281254e17be7af06",
   "./manifest.json": "6dcf0e0c6f7671750549e53558ba8b9f0c2c83b0c6759072a6b5e2276331f491",
   "./manifest.webmanifest": "abcd26174710f6df3e183889a5a9da182f73ee8cdcc543b43db8fb4070cad54f",
   "./dashboard-v2.css?v=dash2f13-theme": "4541bc1e65fd158c593443562975400d128b8f1d3b636595df3c235b99e8cced",
@@ -123,7 +123,7 @@ const ASSET_DIGESTS = {
   "./sky-faq-en.js?v=faq1": "4923f584193c9569329b001b20867f2954b93b8e232a704e2effd632f25bb833",
   "./sky-faq-sci.js?v=faq1": "f574bcdb1441678c6ae4cbf6be8baa73d5cdd06a24bccfab712e241a29b6a42b",
   "./sky-faq-gk.js?v=faq1": "e406ee8982e255881ff5a6c854c19dc0c4f8004d6e4cc341a2c114bf678ee492",
-  "./ai-agent-chat.js?v=agent-f1-ui-skyv7": "f68a5822375a00668f7033ff9b26a378fe72fa634496b610f70112adf6c67345",
+  "./ai-agent-chat.js?v=agent-f1-ui-skyv8": "bb8027116e1b9c3413bc8967ccdcb95db9e6ecc34c57cda43fd88f6b6da1134b",
   "./question-engine.js?v=qe1": "db404fefd97bea27dad177748bafb0a9ba7d87bedca094e3da795c5b77946cd4",
   "./question-engine-panel.js?v=qe1": "33376e371654d575484194b5fcf8e486f4e3329c13e5330ff8619caab0399ec4",
   "./notification-fcm.js?v=fcm-p3-v15": "3b1880bc1ab5b9f91cf844b021369f2431eae099175873ab4d7eb018370318ee",
