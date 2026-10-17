@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /* Build the backend-wired Profile V2 page from the owner's static UI.
 
-   Source (never edited): /workspace/backups/profile-ui-2026-10-17/new-profile-ui.html
+   Source (never edited): design/profile-v2-source.html
    Output: profile-v2.html
 
    The owner's markup, CSS and UI script are copied verbatim EXCEPT for the
@@ -9,13 +9,20 @@
    that feeds the real per-student profile and wires every action back to the
    existing backend. Run:  node scripts/build-profile-v2.mjs
 */
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..');
-const SRC = '/workspace/backups/profile-ui-2026-10-17/new-profile-ui.html';
+/* The design is vendored so the build runs anywhere (CI included). The
+   sandbox-only copy is kept as a fallback for the session that produced it. */
+const CANDIDATES = [
+  join(root, 'design', 'profile-v2-source.html'),
+  '/workspace/backups/profile-ui-2026-10-17/new-profile-ui.html',
+];
+const SRC = CANDIDATES.find((p) => existsSync(p));
+if (!SRC) throw new Error(`build-profile-v2: source design not found in ${CANDIDATES.join(', ')}`);
 
 const raw = readFileSync(SRC, 'utf8');
 const pick = (re) => {
