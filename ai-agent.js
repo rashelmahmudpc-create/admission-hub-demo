@@ -20,6 +20,7 @@ import { getPromptText, BASE_PROMPT_ID } from './prompt-registry.js';
 import { listTools, TOOL_REGISTRY_VERSION } from './tool-registry.js';
 import { isAppFeatureQuestion, loadAppFeatures, renderAppFeatures } from './sky-app-features.mjs';
 import { planServerTools, isSimplePlan, simpleToolResponse, runTools, renderToolContext, toolsEnabled } from './sky-tools.mjs';
+import { bumpDailyStats, statsFromTiming } from './sky-daily-report.mjs';
 import { extractMemoryCandidates, makeMemory, upsertMemory, parseMemory, renderMemory, resolveMemoryOwner, isPiiFree, KIND, SOURCE, MEMORY_VERSION } from './memory-engine.js';
 import { validateResponse, describeResponseValidation, RESPONSE_VALIDATION_VERSION } from './response-validator.js';
 import { describeActions, ACTION_VERSION } from './action-engine.js';
@@ -940,6 +941,8 @@ export async function agentChat(request, env, uid, opts = {}) {
   const mark = (name) => { if (timings[name] == null) timings[name] = Date.now() - startedAt; };
   const emitTiming = (extra = {}) => {
     try { console.log(JSON.stringify({ evt: 'ai.timing', agent: AGENT_VERSION, totalMs: Date.now() - startedAt, ...timings, ...extra })); } catch (_) {}
+    /* Anonymous daily report (owner 2026-10-17): counts only — no uid, no text. */
+    try { bumpDailyStats(env, statsFromTiming({ totalMs: Date.now() - startedAt, ...timings, ...extra })).catch(() => {}); } catch (_) {}
   };
   const sendCtx = { uid: String(uid || ''), stream };
   /* M7: AI chat is for signed-in students only. A guest has no durable identity,
@@ -1056,6 +1059,7 @@ export async function agentChat(request, env, uid, opts = {}) {
   if (quota.exhausted) {
     /* Owner 2026-10-17: tell the student exactly when the window reopens. */
     const resetAt = (quota.start || now) + RL_WINDOW_MS;
+    try { bumpDailyStats(env, statsFromTiming({ limited: true })).catch(() => {}); } catch (_) {}
     return jsonResp({ error: 'rate_limited', message: limitMessage(cap, resetAt, now), cap, remaining: quota.remaining, resetAt, retryAfterSec: Math.max(60, Math.ceil((resetAt - now) / 1000)) }, 429);
   }
 

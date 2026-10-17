@@ -21,6 +21,7 @@
     </header>
     <main id="main" hidden>
       <section class="card"><h2>সংখ্যা</h2><div class="stats" id="stats"></div></section>
+      <section class="card" id="ai-report"><h2>Sky AI · দৈনিক রিপোর্ট (পরিচয়হীন)</h2><p class="lead">প্রতি রাত ১২টায় (বাংলাদেশ সময়) আগের দিনের হিসাব। শুধু সংখ্যা: কারো নাম, প্রশ্ন বা ID নেই।</p><div id="ai-report-body">লোড হচ্ছে…</div></section>
       <section class="card">
         <h2>Students</h2>
         <div class="row"><input id="q" type="search" autocomplete="off" placeholder="পুরো email, নাম বা User ID দিয়ে খুঁজুন" aria-label="খুঁজুন"><button class="button" id="search" type="button">খুঁজুন</button></div>
@@ -45,6 +46,7 @@
   const kv=pairs=>{const d=el('dl',null,'kv');pairs.forEach(([k,v])=>{d.append(el('dt',k),el('dd',v===null||v===undefined||v===''?'—':v))});return d};
   const renderCounts=c=>{const box=$('#stats');box.textContent='';[['total','মোট'],['active','সক্রিয়'],['disabled','বন্ধ'],['suspended','স্থগিত'],['last24h','গত ২৪ ঘণ্টা'],['last7d','গত ৭ দিন']].forEach(([k,l])=>{const s=el('div',null,'stat');s.append(el('b',c?.[k]??0),el('span',l));box.append(s)})};
   const renderList=(entries,append)=>{if(!append)list.textContent='';entries.forEach(s=>{const r=el('tr',null,'pick');r.dataset.id=s.userId;[s.fullName||'(নাম নেই)',s.emailMask,s.status,null,when(s.createdAt),when(s.lastLoginAt)].forEach((v,i)=>{const c=el('td');if(i===3)c.append(pills(s.methods));else c.textContent=v||'—';r.append(c)});r.addEventListener('click',()=>openProfile(s.userId));list.append(r)});if(!list.children.length){const r=el('tr');const c=el('td','কোনো student পাওয়া যায়নি','empty');c.colSpan=6;r.append(c);list.append(r)}$('#more').hidden=!nextBefore};
+  const loadAiReport=async()=>{const box=$('#ai-report-body');if(!box)return;try{const r=await fetch('/api/admin/ai-daily-report?days=7',{credentials:'same-origin',cache:'no-store',headers:{'Authorization':'Bearer '+token}});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error('x');const rows=Array.isArray(d.reports)?d.reports:[];if(!rows.length){box.replaceChildren(el('p','এখনো কোনো রিপোর্ট তৈরি হয়নি। প্রথম রিপোর্ট আসবে রাত ১২টার পরে।','lead'));return}const sec=ms=>ms==null?'—':(ms/1000).toFixed(1)+'s';box.replaceChildren(table(['দিন','মোট অনুরোধ','উত্তর','AI / ক্যাশ / টুল','ব্যর্থ','লিমিট শেষ','গড় সময়','প্রথম শব্দ','২s-এর কম'],rows.map(x=>[x.day,x.totals.requests,x.totals.answered+' ('+x.shares.successPct+'%)',x.answeredBy.model+' / '+x.answeredBy.cache+' / '+x.answeredBy.tools,x.totals.failed,x.totals.dailyLimitReached,sec(x.speed.avgMs),sec(x.speed.firstWordAvgMs),x.speed.under2sPct+'%'])))}catch(_){box.replaceChildren(el('p','রিপোর্ট আনা যায়নি (admin token বা server)।','lead'))}};
   const load=async(append=false)=>{const params=new URLSearchParams({limit:'50'});if(query)params.set('q',query);if(append&&nextBefore)params.set('before',String(nextBefore));const d=await request('?'+params.toString());renderCounts(d.counts);nextBefore=d.nextBefore||null;renderList(d.entries||[],append);main.hidden=false;setNotice('Student তালিকা লোড হয়েছে। Email শুধু mask করা রূপে দেখানো হয়; কোনো password, code বা token এই পেজে আসে না।')};
   const openProfile=async id=>{try{const d=await request('/profile?id='+encodeURIComponent(id));const s=d.student;detail.textContent='';detail.hidden=false;
     detail.append(el('h2',(s.profile?.fullName||'(নাম নেই)')+' · '+(s.account.emailMask||'')));
@@ -57,7 +59,7 @@
     detail.append(el('h3','Session (মোট '+(s.sessions?.total||0)+', সক্রিয় '+(s.sessions?.active||0)+')'),table(['শুরু','শেষ দেখা','Browser','Device','সক্রিয়'],(s.sessions?.recent||[]).map(v=>[when(v.createdAt),when(v.lastSeenAt),v.browser,v.device,v.active?'হ্যাঁ':'না'])));
     detail.append(el('h3','Timeline'),table(['সময়','ঘটনা','বিস্তারিত'],(s.timeline||[]).map(t=>[when(t.at),t.kind,t.detail])));
     detail.scrollIntoView({behavior:'smooth',block:'start'})}catch(e){setNotice(e.message,true)}};
-  $('#connect').addEventListener('click',async()=>{token=keyInput.value;keyInput.value='';if(token.length<20)return setNotice('সঠিক admin token দিন।',true);try{await load()}catch(e){token='';main.hidden=true;setNotice(e.message,true)}});
+  $('#connect').addEventListener('click',async()=>{token=keyInput.value;keyInput.value='';if(token.length<20)return setNotice('সঠিক admin token দিন।',true);try{await load();loadAiReport()}catch(e){token='';main.hidden=true;setNotice(e.message,true)}});
   $('#search').addEventListener('click',async()=>{query=$('#q').value.trim();detail.hidden=true;try{await load()}catch(e){setNotice(e.message,true)}});
   $('#q').addEventListener('keydown',ev=>{if(ev.key==='Enter')$('#search').click()});
   $('#more').addEventListener('click',async()=>{try{await load(true)}catch(e){setNotice(e.message,true)}});

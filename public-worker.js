@@ -8,6 +8,7 @@ import {
 } from './action-engine.js';
 import { checkAbuse, isGuarded } from './p14-abuse-guard.mjs';
 import { recordError, summarizeErrors } from './p19-error-monitor.mjs';
+import { listReports } from './sky-daily-report.mjs';
 import { createSnapshot, listSnapshots, restoreSnapshot } from './p19-backup.mjs';
 
 const JSONH = {
@@ -316,6 +317,11 @@ const admin = async (request, env, path) => {
       return json(result);
     }
     return json({ error: 'প্রশ্ন খালি' }, 400);
+  }
+  if (path === '/api/admin/ai-daily-report' && request.method === 'GET') {
+    /* Anonymous daily AI report — counts only, newest first. */
+    const days = new URL(request.url).searchParams.get('days');
+    return json(await listReports(env.PUB_KV, days || 7));
   }
   if (path === '/api/admin/errors' && request.method === 'GET') {
     /* P19 — what the Worker actually caught. Reads the same KV the catch block
