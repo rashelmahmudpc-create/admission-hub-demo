@@ -74,6 +74,7 @@ test('email-intro-continue starts the OTP chain, not the Firebase link, when ema
   document.querySelector('[data-role="email-intro-continue"]').click();
   await waitFor(() => ownershipCalls() === 2, 'second ownership start from email-intro');
   await waitFor(() => document.querySelector('[data-view="email-ownership"]')?.hidden === false, 'ownership view again');
+  await wait(50);
   assert.equal(app.calls.some(c => c.path.includes('/account-verification/email/start')), false);
   app.dom.window.close();
 });
@@ -92,6 +93,8 @@ test('email-intro-continue still sends the Firebase link when the OTP family is 
   await waitFor(() => document.querySelector('[data-view="email-intro"]')?.hidden === false, 'email intro view');
   document.querySelector('[data-role="email-intro-continue"]').click();
   await waitFor(() => app.calls.some(c => c.path.includes('/account-verification/email/start')), 'firebase link start');
+  await waitFor(() => document.querySelector('[data-role="verification-email-panel"]')?.hidden === false, 'link waiting panel');
+  await wait(50);
   assert.equal(app.calls.some(c => c.path.includes('/email-ownership/start')), false);
   app.dom.window.close();
 });
