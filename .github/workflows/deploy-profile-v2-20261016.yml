@@ -48,8 +48,8 @@ jobs:
         run: |
           set -eu
           node --check profile-v2-mount.js
-          grep -q 'profile-v2-mount.js?v=profile-v2-1' index.html
-          grep -q 'profile-v2.html?v=profile-v2-1' sw.js
+          grep -q 'profile-v2-mount.js?v=profile-v2-2' index.html
+          grep -q 'profile-v2.html?v=profile-v2-2' sw.js
           grep -q 'iframe class="pv2-frame"' profile-v2-mount.js
           npm run check:sw-manifest
       - name: Regenerate the page and prove the committed one is current
