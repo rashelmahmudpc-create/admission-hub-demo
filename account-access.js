@@ -1909,6 +1909,23 @@
     return beginOAuthRedirect(auth, provider, true);
   };
 
+  /* Owner 2026-10-17: a redirect login must end on the Dashboard. The popup
+   * path got there through AdmissionSkyBridge.finish() (Sky flow hidden, page
+   * closed, authchange fired); after a redirect the page is fresh and nothing
+   * called it, so the student stayed on the onboarding / account card and the
+   * Dashboard never loaded their data. Do the same here, and forget a
+   * half-finished signup so it cannot pull the next login back into it. */
+  const finishRedirectLogin = () => {
+    const mount = document.getElementById('ah-sky-flow');
+    if (mount) mount.hidden = true;
+    delete pageHost.dataset.skyFlow;
+    state.signupJourney = false;
+    rememberPendingSignup(false);
+    message();
+    close();
+    notify();
+  };
+
   /* Runs once at boot, and only when a redirect we started is coming back, so
    * an ordinary load never pays for the getRedirectResult round-trip. */
   const finishOAuthRedirect = async () => {
@@ -1959,6 +1976,7 @@
         const r = await api('/google', { method: 'POST', body: { accessToken } });
         await establishSession(r, 'Google \u09a6\u09bf\u09af\u09bc\u09c7 \u09a4\u09cb\u09ae\u09be\u09b0 account-\u098f \u09aa\u09cd\u09b0\u09ac\u09c7\u09b6 \u09b9\u09af\u09bc\u09c7\u099b\u09c7\u0964');
       }
+      if (accountVerified(state.session)) finishRedirectLogin();
     } catch (error) {
       if (providerId === 'google.com') {
         /* Keep the fresh Google token in memory only, so the "link to your

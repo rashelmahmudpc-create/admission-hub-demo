@@ -18,11 +18,14 @@ const SKY = 'https://admissionsky.pages.dev/';
 const ANDROID_FB = 'Mozilla/5.0 (Linux; Android 13; SM-A135F Build/TP1A; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/129.0 Mobile Safari/537.36 [FB_IAB/FB4A;FBAV/480.0.0.0;]';
 const IOS_MESSENGER = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 [FBAN/MessengerForiOS;FBAV/470.0;FBBV/1;FBDV/iPhone14,5;FBMD/iPhone;FBSN/iOS;FBSV/17.6;FBSS/3;FBCR/;FBID/phone;FBLC/en_US;FBOP/5]';
 
-function setup({ url = SKY, ua = '', redirectFlag = false, redirectResult = null, redirectError = null, googleReply = null } = {}) {
+function setup({ url = SKY, ua = '', redirectFlag = false, redirectResult = null, redirectError = null, googleReply = null, pendingSignup = false } = {}) {
   const dom = new JSDOM('<!doctype html><html><head></head><body></body></html>', { url, runScripts: 'dangerously', pretendToBeVisual: true });
   const w = dom.window;
   if (ua) Object.defineProperty(w.navigator, 'userAgent', { value: ua, configurable: true });
+  if (pendingSignup) w.document.cookie = 'ah_signup_pending_v1=select; Path=/';
   if (redirectFlag) w.sessionStorage.setItem('ah-google-redirect', '1');
+  w.__authEvents = [];
+  w.addEventListener('admissionhub:authchange', event => w.__authEvents.push(event.detail));
   const record = { apps: [], popup: 0, redirect: 0, providers: [], calls: [] };
   w.firebase = {
     apps: [],
@@ -66,6 +69,7 @@ function setup({ url = SKY, ua = '', redirectFlag = false, redirectResult = null
 }
 
 const TOKEN = `google-access-${'z'.repeat(32)}`;
+const authEvents = app => app.w.__authEvents || [];
 
 test('Google uses its own Firebase app on admissionsky.pages.dev and a full-page redirect, never a popup', async () => {
   const app = setup();
@@ -154,7 +158,19 @@ test('coming back from Google signs in through POST /google and clears the flag'
   assert.deepEqual(call.body, { accessToken: TOKEN });
   await waitFor(() => app.w.AdmissionAccount.isVerified() === true);
   assert.equal(app.w.sessionStorage.getItem('ah-google-redirect'), null);
+  await waitFor(() => app.document.body.classList.contains('ah-account-page-active') === false);
+  assert.ok(authEvents(app).some(detail => detail.authenticated === true), 'the Dashboard must be told about the login');
   assert.equal(app.w.localStorage.length, 0);
+  await sleep(100);
+  app.dom.window.close();
+});
+
+test('a half-finished signup does not trap a returning Google login on the onboarding screen', async () => {
+  const app = setup({ redirectFlag: true, pendingSignup: true, redirectResult: { user: { uid: 'g' }, credential: { providerId: 'google.com', accessToken: TOKEN } } });
+  await waitFor(() => app.w.AdmissionAccount.isVerified() === true, 2500);
+  await waitFor(() => app.document.body.classList.contains('ah-account-page-active') === false);
+  assert.equal(/ah_signup_pending_v1=[a-z]/.test(app.document.cookie), false);
+  assert.ok(authEvents(app).some(detail => detail.authenticated === true));
   await sleep(100);
   app.dom.window.close();
 });
