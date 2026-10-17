@@ -29,8 +29,7 @@
       "### হ্যালো{n}! 🦋✨\n\nকেমন আছো? আমি **Sky**, তোমার AI অ্যাসিস্ট্যান্ট। তোমার সঙ্গে কথা বলতে এবং বিভিন্ন বিষয়ে সাহায্য করতে প্রস্তুত আছি।\n\n- 🌱 নতুন কিছু শেখার আগ্রহ থাকলে **বলো**\n- 🧱 কোনো সমস্যায় আটকে গেলে **জানাও**\n- 🎯 স্পষ্ট ও প্রয়োজনীয় উত্তর দেওয়ার চেষ্টা করব, **তোমার প্রশ্ন অনুযায়ী**\n\nছোট একটা প্রশ্ন থেকেও দারুণ আলোচনা শুরু হতে পারে!\n\n> 🌿 **তো, আজ কী নিয়ে কথা বলতে চাও?**",
       "### হাই{n}! 💖😊\n\n**হ্যালো!** আমি **Sky**। তোমার সঙ্গে কথা বলার জন্য প্রস্তুত আছি।\n\n**যেকোনো কিছু নিয়ে আলোচনা করতে পারো:**\n\n| 🧭 ক্ষেত্র | 💬 কীভাবে সাহায্য করব |\n|---|---|\n| 📚 পড়াশোনা | টপিক বুঝতে সাহায্য করব |\n| 🌱 নতুন বিষয় শেখা | সহজ ধাপে সাজিয়ে দেব |\n| 🧠 প্রশ্নের ব্যাখ্যা | পরিষ্কার করে বুঝিয়ে বলব |\n| 🧩 অন্য সমস্যা | একসঙ্গে সমাধান খুঁজব |\n\nতোমাকে কীভাবে সাহায্য করলে সবচেয়ে বেশি কাজে লাগবে, সেটা বুঝে উত্তর দেওয়ার চেষ্টা করব।\n\n> 💚 **বলো, তোমার কী প্রয়োজন?**",
       "### হেই{n}! 🎉👋\n\n**হ্যালো!** AdmissionSky-তে স্বাগতম। আমি **Sky**, তোমার AI অ্যাসিস্ট্যান্ট। আজকের কথোপকথনে তুমি কী নিয়ে এসেছো, সেটা শুনতে আমি প্রস্তুত!\n\n**তুমি যা করতে পারো:**\n\n- ❓ কোনো প্রশ্নের উত্তর জানতে চাইলে **জিজ্ঞেস করো**\n- 📖 নতুন কিছু শিখতে চাইলে **বলো**\n- 💡 কোনো আইডিয়া নিয়ে আলোচনা করতে চাইলে **শেয়ার করো**\n\nআমরা তোমার প্রয়োজন অনুযায়ী কথাটা এগিয়ে নেব।\n\n> ✨ **তো, শুরু করা যাক—আজ কী জানতে চাও?**"
-    ],
-    thanks: [], who: [], bye: [], ok: []
+    ]
   };
   const P = {
     greet: ['hi', 'হ্যালো স্কাই', 'হাই স্কাই', 'hey hello sky', 'hi sky hello', 'hiiii sky', 'hiii sky', 'hlw sky', 'hi buddy', 'hey there', 'hello there', 'hi there', 'hiiii', 'hii', 'hiii', 'hey', 'hello', 'helo', 'hlw', 'hallo', 'hey sky', 'hi sky', 'hello sky', 'হাই', 'হায়', 'হ্যালো', 'হেলো', 'হেই', 'সালাম', 'আসসালামু আলাইকুম', 'আস্সালামু আলাইকুম', 'আসসালামুয়ালাইকুম', 'assalamu alaikum', 'assalamualaikum', 'salam', 'good morning', 'good evening', 'শুভ সকাল', 'শুভ সন্ধ্যা', 'কেমন আছো', 'কেমন আছ', 'কি খবর', 'কী খবর', 'kemon acho', 'how are you'],
@@ -45,11 +44,40 @@
     .replace(/[\u{1F300}-\u{1FAFF}\u2600-\u27BF]/gu, (e) => (e === '👍' || e === '👌') ? ' ' + e + ' ' : ' ')
     .replace(/\s+/g, ' ').trim()
     .replace(/\s+(ভাই|আপু|ভাইয়া|bhai|vai|apu|দোস্ত|dost)$/u, '').trim();
+  /* Owner 2026-10-17: the big reply bank (179 kinds, ~900 replies) lives in
+     sky-replies.json and is fetched once, lazily (first chat use), so app start
+     stays light. A whole message must equal a trigger; anything longer goes to
+     the AI. Kinds with c:1 show the WhatsApp / ইমেল buttons; the number and the
+     address are never in the app, the buttons open /api/go/whatsapp|email. */
+  const ALIAS = { who: 'who_are_you' };
   const MAP = new Map();
-  for (const k of Object.keys(P)) for (const p of P[k]) MAP.set(norm(p), k);
+  for (const k of Object.keys(P)) for (const p of P[k]) MAP.set(norm(p), ALIAS[k] || k);
+  const BANK = {};
+  let loading = null;
+  function load(data) {
+    const cats = data && data.cats;
+    if (!cats || typeof cats !== 'object') return false;
+    for (const id of Object.keys(cats)) {
+      const c = cats[id];
+      if (!c || !Array.isArray(c.r) || !c.r.length || !Array.isArray(c.t)) continue;
+      BANK[id] = { r: c.r.filter((x) => typeof x === 'string' && x.trim()), c: c.c === 1 };
+      if (!R[id]) R[id] = BANK[id].r;
+      for (const t of c.t) { const n = norm(t); if (n && n.length <= 60) MAP.set(n, id); }
+    }
+    return true;
+  }
+  function ready(ms) {
+    if (!loading) {
+      loading = (typeof fetch === 'function' && root.location
+        ? fetch('./sky-replies.json?v=r1', { credentials: 'same-origin' }).then((r) => r.ok ? r.json() : null).then(load).catch(() => false)
+        : Promise.resolve(false));
+    }
+    if (!ms) return loading;
+    return Promise.race([loading, new Promise((res) => setTimeout(() => res(false), ms))]);
+  }
   function kind(text) {
     const raw = String(text || '');
-    if (!raw.trim() || raw.length > 40) return '';
+    if (!raw.trim() || raw.length > 60) return '';
     return MAP.get(norm(raw)) || '';
   }
   const KEY = 'skySmallTalk:v1';
@@ -67,14 +95,19 @@
     try { root.localStorage.setItem(KEY, JSON.stringify(st)); } catch (_) {}
     return list[idx];
   }
-  function reply(text, firstName) {
+  /* {n} = ", নাম"  {m} = " নাম"  {N} = "নাম, "  — all vanish when there is no name. */
+  function fill(s, name) {
+    return String(s).replace(/\{n\}/g, name ? ', ' + name : '').replace(/\{m\}/g, name ? ' ' + name : '')
+      .replace(/\{N\}/g, name ? name + ', ' : '');
+  }
+  function replyMsg(text, firstName) {
     const cat = kind(text);
     if (!cat || !Array.isArray(R[cat]) || !R[cat].length) return null;
-    const name = String(firstName || '').replace(/[<>&"'\r\n*_`|#\[\]\\]/g, '').trim().slice(0, 30);
-    const out = pick(cat).replace('{n}', name ? ', ' + name : '');
-    return cat === 'who' && name ? name + ', ' + out : out;
+    const name = String(firstName || '').replace(/[<>&"'\r\n*_`|#\[\]\\{}]/g, '').trim().slice(0, 30);
+    return { text: fill(pick(cat), name), cat, contact: !!(BANK[cat] && BANK[cat].c) };
   }
-  const api = Object.freeze({ kind, reply, REPLIES: R, PHRASES: P });
+  function reply(text, firstName) { const m = replyMsg(text, firstName); return m ? m.text : null; }
+  const api = Object.freeze({ kind, reply, replyMsg, ready, load, REPLIES: R, PHRASES: P, BANK });
   root.SkySmallTalk = api;
   if (typeof module === 'object' && module && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);
