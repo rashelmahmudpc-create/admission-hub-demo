@@ -298,8 +298,8 @@ t('৩৯. SystemPrompt: STUDENT PREFERENCES block — lang/tone/len directive',
   let captured = '';
   const restore = fakeFetch({ 'streamGenerateContent': (url, init) => { captured = String(init.body || ''); return sseRes(gChunk('প্রশ্ন ভালো!')); } });
   const r1 = await A.agentChat(new Request('https://x/api/ai/chat', { method: 'POST', body: JSON.stringify({ messages: [{ role: 'user', content: 'নবজাতক টেটানাস কী?' }] }) }), env, 'account-upref_on');
-  restore();
   await r1.text(); // consume the stream — memory write happens on stream completion
+  restore();
   const sysSent = JSON.parse(captured).system_instruction?.parts?.[0]?.text || '';
   t('৪০. agentChat: saved user prefs reach the model request (per-user KV)',
     r1.status === 200 && sysSent.includes('STUDENT PREFERENCES')
@@ -308,8 +308,8 @@ t('৩৯. SystemPrompt: STUDENT PREFERENCES block — lang/tone/len directive',
   const { env: env2, store: store2 } = stubEnv();
   const restore2 = fakeFetch({ 'streamGenerateContent': sseRes(gChunk('চালিয়ে যাও!')) });
   const r2 = await A.agentChat(new Request('https://x/api/ai/chat', { method: 'POST', body: JSON.stringify({ messages: [{ role: 'user', content: 'হ্যালো' }] }) }), env2, 'account-upref_off');
-  restore2();
   const r2body = await r2.text();
+  restore2();
   void r2body;
   t('৪১. agentChat: memory is automatic now — a saved pref cannot switch it off',
     r2.status === 200 && [...store2.keys()].some(k => k.includes('chatmem:account-upref_off'))
@@ -334,8 +334,8 @@ t('৩৯. SystemPrompt: STUDENT PREFERENCES block — lang/tone/len directive',
   const r = await A.agentChat(new Request('https://x/api/ai/chat', { method: 'POST', body: JSON.stringify({
     messages: [{ role: 'user', content: 'হাই' }], fresh: true
   }) }), env, 'account-ufresh');
-  restore();
   const body = await r.text();
+  restore();
   const sent = JSON.parse(captured);
   const sentText = JSON.stringify(sent.contents || sent.messages || '');
   t('৪২. agentChat: fresh-thread greeting never inherits stale chatmem',
@@ -353,8 +353,8 @@ t('৩৯. SystemPrompt: STUDENT PREFERENCES block — lang/tone/len directive',
   const r3 = await A.agentChat(new Request('https://x/api/ai/chat', { method: 'POST', body: JSON.stringify({
     messages: [{ role: 'user', content: 'আরেকটা উদাহরণ দাও' }]
   }) }), env3, 'account-ufollow');
-  restore3();
   await r3.text();
+  restore3();
   t('৪৪. agentChat: a continuation without the fresh flag still receives stored memory',
     JSON.stringify(JSON.parse(captured3).contents).includes('দ্বিঘাত সমীকরণ'));
 }
@@ -393,9 +393,9 @@ t('৪৮. E2E: exhausted ছাড়া status-এ cap/remaining ঠিক দ
   const restore = fakeFetch({ 'streamGenerateContent': sseRes(gChunk('x')) });
   const mk = () => new Request('https://x/api/ai/chat', { method: 'POST', body: JSON.stringify({ messages: [{ role: 'user', content: 'হ্যালো' }] }) });
   await A.agentChat(mk(), env, 'account-quota');
-  restore();
   const st = await A.agentStatus(new Request('https://x/api/ai/status'), env, 'account-quota');
   const d = await st.json();
+  restore();
   return d.limits.perDay === 10;
 }, { timeout: 10000 });
 

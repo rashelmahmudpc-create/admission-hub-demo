@@ -100,8 +100,8 @@ t('P27-১০. a short recall is returned untouched',
   })());
 
 /* ── ৫. Wiring + real end-to-end prompt size ── */
-t('P27-১১. the trim runs before the provider chain is built',
-  SRC.indexOf('selectHistory(msgs)') < SRC.indexOf('const fullChain = routerChain('));
+t('P27-১১. the trim runs before the model is called (PR-2: the chain probe overlaps the quota read)',
+  SRC.indexOf('selectHistory(msgs)') < SRC.indexOf("mark('modelStart')"));
 t('P27-১২. the old unbounded slice(-24) on the history is gone',
   !/msgs = msgs\.slice\(-24\);/.test(SRC));
 

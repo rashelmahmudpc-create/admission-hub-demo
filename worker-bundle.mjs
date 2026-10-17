@@ -2908,6 +2908,37 @@ async function agentChat(request, env, uid, opts = {}) {
   if (onboarding && v.messages.some((message) => message.role === "user" && onboardingSecretDetected(message.content))) {
     return guidanceResponse("নিরাপত্তার জন্য Password, verification code বা গোপন তথ্য Assistant নেয় না। এমন কিছু লিখে থাকলে সেটি বদলে শুধু সাধারণ প্রশ্ন করো।", stream);
   }
+  const intentCls = classifyIntent(v.messages[v.messages.length - 1].content);
+  const intent = intentCls.intent;
+  const baseTier = intentCls.tier;
+  const routing = routeTier(intent, v.messages[v.messages.length - 1].content, baseTier);
+  const tier = routing.tier;
+  const quizMode = intent === INTENTS.QUIZ_REQUEST;
+  const examMode = body.context && body.context.examMode === "mock-running" ? "mock-running" : "";
+  const stats = capStats(body.context && body.context.stats);
+  const safety = safetyGate(intent, examMode);
+  const providersP = (async () => {
+    const kvKeys2 = await aiKeyOverlay(env);
+    const healthNow = Date.now();
+    const badMap2 = {};
+    const badSet2 = /* @__PURE__ */ new Set();
+    {
+      const probe = routerChain(env, tier, /* @__PURE__ */ new Set(), kvKeys2);
+      const flags = await Promise.all(probe.map((c) => Promise.resolve().then(() => getKv(env.PUB_KV, badKeyName(c.key, c.model))).catch(() => null)));
+      probe.forEach((c, i) => {
+        const sig = String(c.key).slice(0, 12) + ":" + c.model;
+        badMap2[sig] = flags[i];
+        if (!isEntryHealthy(flags[i], healthNow)) badSet2.add(sig);
+      });
+    }
+    const fullChain = routerChain(env, tier, /* @__PURE__ */ new Set(), kvKeys2).map((c) => ({ ...c, sig: String(c.key).slice(0, 12) + ":" + c.model }));
+    let chain2 = healthyChain(fullChain, badMap2, healthNow);
+    if (v.messages.some((m) => m.image)) chain2 = chain2.filter((c) => c.provider === "gemini");
+    chain2 = rankChainByModelHealth(chain2, badMap2, healthNow);
+    return { kvKeys: kvKeys2, badMap: badMap2, badSet: badSet2, chain: chain2 };
+  })();
+  providersP.catch(() => {
+  });
   const aiState = aiStateStore(env);
   const stateGet = async (key) => {
     if (aiState) {
@@ -2957,408 +2988,449 @@ async function agentChat(request, env, uid, opts = {}) {
   }
   const verificationGuidance = authVerificationGuidance(v.messages[v.messages.length - 1].content);
   if (verificationGuidance) return guidanceResponse(verificationGuidance, stream);
-  const intentCls = classifyIntent(v.messages[v.messages.length - 1].content);
-  const intent = intentCls.intent;
-  const baseTier = intentCls.tier;
-  const routing = routeTier(intent, v.messages[v.messages.length - 1].content, baseTier);
-  const tier = routing.tier;
-  const quizMode = intent === INTENTS.QUIZ_REQUEST;
-  const examMode = body.context && body.context.examMode === "mock-running" ? "mock-running" : "";
-  const stats = capStats(body.context && body.context.stats);
-  const safety = safetyGate(intent, examMode);
-  const memKeyEarly = "mem:" + MEMORY_VERSION + ":" + sendCtx.uid;
-  const safeRead = (fn) => Promise.resolve().then(fn).catch(() => null);
-  const prefsP = safeRead(() => getKv(env.PUB_KV, "aiprefs:" + sendCtx.uid));
-  const chatMemP = persistMemory ? safeRead(async () => await stateGet("chatmem:" + sendCtx.uid)) : Promise.resolve(null);
-  const sumP = persistMemory && v.fresh !== true ? safeRead(() => stateGet("chatmemsum:" + sendCtx.uid)) : Promise.resolve("");
-  const longP = persistMemory ? safeRead(() => stateGet(memKeyEarly)) : Promise.resolve(null);
-  let aiPrefs = null;
-  try {
-    const rawPrefs = await prefsP;
-    aiPrefs = rawPrefs ? sanitizeAiPrefs(JSON.parse(rawPrefs)) : null;
-  } catch (_) {
-    aiPrefs = null;
-  }
-  const memoryOn = persistMemory;
-  let mem = [];
-  if (memoryOn) {
-    try {
-      const rawMem = await chatMemP;
-      const parsedMem = JSON.parse(rawMem || "[]");
-      mem = Array.isArray(parsedMem) ? parsedMem : [];
-    } catch (_) {
-      mem = [];
-    }
-  }
-  const freshThread = v.fresh === true;
-  let msgs = v.messages.slice();
-  if (!freshThread && msgs.length < 3 && mem.length) msgs = capRecalledTurns(mem).concat(msgs);
-  const history = selectHistory(msgs);
-  msgs = history.kept;
-  const persistSummary = memoryOn && history.digest && history.compacted >= 8;
-  let freshSummary = history.digest || null;
-  const background = [];
-  const later = (fn) => {
-    background.push(Promise.resolve().then(fn).catch(() => {
-    }));
-  };
-  const settleBackground = async () => {
-    if (background.length) await Promise.all(background.splice(0));
-  };
-  if (persistSummary) later(() => statePut("chatmemsum:" + sendCtx.uid, freshSummary));
-  const systemPrompt = buildSystemPrompt({ stats, examMode, quiz: quizMode, onboarding, prefs: aiPrefs });
-  const profileCtx = sendCtx.uid.startsWith("account-") ? sanitizeProfileContext(body?.context?.profile) : null;
-  const ctxBundle = contextEngineEnabled(env) ? buildContext({ uid: sendCtx.uid, prefs: aiPrefs, stats, onboarding, profile: profileCtx, memoryOn }) : null;
-  const ctxText = ctxBundle ? renderContext(ctxBundle) : "";
-  let summaryText = memoryOn && !freshThread ? freshSummary != null ? freshSummary : await sumP || "" : "";
-  const memKey = "mem:" + MEMORY_VERSION + ":" + sendCtx.uid;
-  let memRecords = [];
-  if (memoryOn) {
-    try {
-      const rawLong = await longP;
-      memRecords = parseMemory(rawLong, sendCtx.uid);
-    } catch (_) {
-      memRecords = [];
-    }
-  }
-  let tutorContext = [];
-  let lastTopicWrite = null;
-  if (memoryOn) {
-    const lastUser = v.messages[v.messages.length - 1];
-    const priorTopic = memRecords.find((r) => r.kind === KIND.STUDIES && r.key === "last-topic");
-    const topic = String(lastUser.content || "").replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 80);
-    const isFresh = v.fresh === true;
-    if (topic && isPiiFree(topic) && !(isFresh && priorTopic)) {
-      try {
-        const record = makeMemory(
-          { kind: KIND.STUDIES, key: "last-topic", value: topic, source: SOURCE.USER_STATED, confidence: 0.9, reason: "সর্বশেষ আলোচনার বিষয়" },
-          sendCtx.uid
-        );
-        if (record) {
-          const stored = memRecords.filter((r) => !(r.kind === KIND.STUDIES && r.key === "last-topic"));
-          lastTopicWrite = Promise.resolve().then(() => statePut(memKey, JSON.stringify(upsertMemory(stored, record, sendCtx.uid)))).catch(() => {
-          });
-          background.push(lastTopicWrite);
-        }
-      } catch (_) {
-      }
-    }
-    if (priorTopic && !isFresh) {
-      tutorContext = [Object.freeze({ kind: KIND.STUDIES, key: "last-topic", value: priorTopic.value, source: SOURCE.USER_STATED, confidence: priorTopic.confidence, reason: priorTopic.reason, ts: priorTopic.ts, ownerUid: sendCtx.uid })];
-    }
-  }
-  const baseRecords = memRecords.filter((r) => !(r.kind === KIND.STUDIES && r.key === "last-topic"));
-  const memoryText = memoryOn ? renderMemory(baseRecords.concat(tutorContext), MEMORY_VERSION) : "";
-  const formatRules = !quizMode && !onboarding ? RESPONSE_FORMAT_RULES : "";
-  let sys = [systemPrompt, formatRules, ctxText, memoryText, summaryText].filter(Boolean).join("\n\n");
-  const hasImage = msgs.some((m) => m.image);
-  mark("context");
-  const appFeatureHit = !quizMode && !hasImage && isAppFeatureQuestion((v.messages[v.messages.length - 1] || {}).content);
-  if (appFeatureHit) sys = sys + "\n\n" + renderAppFeatures(await loadAppFeatures(env && env.PUB_KV));
-  const chatCacheOn = chatCacheEnabled(env) && env && env.PROFILE_DB && !appFeatureHit;
-  const cacheQuestion = (v.messages[v.messages.length - 1] || {}).content;
-  const cacheable = chatCacheOn && isCacheableRequest({
-    messages: v.messages,
-    hasImage,
-    quizMode,
-    onboarding,
-    memoryText,
-    summaryText,
-    ctxText,
-    stats,
-    intent
-  });
-  const sharedCandidate = !cacheable && chatCacheOn && isSharedAcademicCandidate({
-    messages: v.messages,
-    hasImage,
-    quizMode,
-    onboarding,
-    examMode,
-    intent,
-    fresh: freshThread,
-    recalled: msgs.length > v.messages.length
-  });
-  const cacheMode = cacheable ? "strict" : sharedCandidate ? "shared" : "";
-  if (cacheMode === "shared") {
-    sys = [buildSystemPrompt({ stats: null, examMode: "", quiz: false, onboarding: null, prefs: null }), RESPONSE_FORMAT_RULES].join("\n\n");
-    msgs = v.messages.slice();
-  }
-  let chatStore = null;
-  let cacheKey = "";
-  if (cacheMode) {
-    try {
-      chatStore = new AiAnalyticsStore(env.PROFILE_DB);
-      cacheKey = await chatCacheKey({
-        question: cacheQuestion,
-        intent,
-        promptVersion: SYSTEM_PROMPT_V,
-        agentVersion: AGENT_VERSION
-      });
-      const hit = await chatStore.getCache(cacheKey);
-      if (hit && hit.payload && typeof hit.payload.text === "string") {
-        const cachedText = hit.payload.text;
-        const cachedModel = hit.payload.model || hit.model || "";
-        mark("cacheHit");
-        await settleBackground();
-        emitTiming({ cache: cacheMode });
-        if (!stream) {
-          return jsonResp({ text: cachedText, structured: hit.payload.structured ?? null, model: cachedModel || null, intent, cached: true, pv: SYSTEM_PROMPT_V, latencyMs: Date.now() - startedAt, agent: AGENT_VERSION });
-        }
-        return sseCached(cachedText, intent, startedAt, cachedModel);
-      }
-    } catch (_) {
-    }
-  }
-  const partsOf = (m) => {
-    const p = [{ text: m.content }];
-    if (m.image) {
-      const i = m.image.indexOf(",");
-      const mt = String(m.image.slice(5, i) || "image/jpeg").split(";")[0];
-      p.push({ inline_data: { mime_type: mt, data: m.image.slice(i + 1) } });
-    }
-    return p;
-  };
-  const payloadG = () => ({
-    system_instruction: { parts: [{ text: sys }] },
-    contents: msgs.map((m) => ({ role: m.role, parts: partsOf(m) }))
-  });
-  const payloadO = () => ({ messages: [{ role: "system", content: sys }].concat(msgs.map((m) => ({ role: m.role, content: m.content }))) });
-  const kvKeys = await aiKeyOverlay(env);
-  const healthNow = Date.now();
-  const badMap = {};
-  const badSet = /* @__PURE__ */ new Set();
-  {
-    const probe = routerChain(env, tier, /* @__PURE__ */ new Set(), kvKeys);
-    const flags = await Promise.all(probe.map((c) => Promise.resolve().then(() => getKv(env.PUB_KV, badKeyName(c.key, c.model))).catch(() => null)));
-    probe.forEach((c, i) => {
-      const sig = String(c.key).slice(0, 12) + ":" + c.model;
-      badMap[sig] = flags[i];
-      if (!isEntryHealthy(flags[i], healthNow)) badSet.add(sig);
-    });
-  }
-  const fullChain = routerChain(env, tier, /* @__PURE__ */ new Set(), kvKeys).map((c) => ({ ...c, sig: String(c.key).slice(0, 12) + ":" + c.model }));
-  let chain = healthyChain(fullChain, badMap, healthNow);
-  if (hasImage) chain = chain.filter((c) => c.provider === "gemini");
-  chain = rankChainByModelHealth(chain, badMap, healthNow);
+  const { kvKeys, badMap, badSet } = await providersP;
+  let { chain } = await providersP;
   if (!chain.length) {
-    await settleBackground();
     const msg = { error: "no_providers", message: "AI-সেবা এখন কনফিগার করা নেই — দয়া করে মালিককে জানাও (GEMINI_KEYS)।" };
     return stream ? sseError(msg, 503) : jsonResp(msg, 503);
   }
   if (safety.blocked) {
-    await settleBackground();
     const msg = { error: "mock_refused", message: safety.message };
     return stream ? sseError(msg, 403) : jsonResp(msg, 403);
   }
-  const failures = [];
-  const rid = makeRequestId(sendCtx.uid + ":" + startedAt);
-  const traceCtx = {
-    rid,
-    callerRef: callerRef(sendCtx.uid),
-    intent,
-    tier,
-    stream,
-    promptVersion: SYSTEM_PROMPT_V,
-    contextVersion: ctxBundle ? CONTEXT_VERSION : "",
-    agentVersion: AGENT_VERSION
-  };
-  const emitTrace = (extra = {}) => {
-    try {
-      console.log(renderTrace(makeTrace({
-        ...traceCtx,
-        at: Date.now(),
-        latencyMs: Date.now() - startedAt,
-        tokensIn: estimateTokens(sys),
-        tokensOut: estimateTokens(extra.text || ""),
-        ...extra
-      })));
-    } catch (_) {
-    }
-  };
-  const validationCtx = {
-    intent,
-    intentConfidence: intentCls.confidence,
-    stats,
-    quiz: quizMode,
-    examMode,
-    blocked: safety.blocked
-  };
-  const finalize = async (model, provider, text) => {
-    if (!memoryOn) return text;
-    if (!validateResponse(text, validationCtx).persistable) return text;
-    try {
-      const next = msgs.concat([{ role: "user", content: v.messages[v.messages.length - 1].content }, { role: "assistant", content: text }]).slice(-24).map((x) => ({ role: x.role, content: x.content }));
-      await statePut("chatmem:" + sendCtx.uid, JSON.stringify(next));
-    } catch (_) {
-    }
-    try {
-      if (lastTopicWrite) await lastTopicWrite;
-      const latest = String(v.messages[v.messages.length - 1].content || "");
-      const candidates = extractMemoryCandidates(latest);
-      if (candidates.length) {
-        const key = "mem:" + MEMORY_VERSION + ":" + sendCtx.uid;
-        let list2 = parseMemory(await stateGet(key), sendCtx.uid);
-        let changed = false;
-        for (const candidate of candidates) {
-          const record = makeMemory(candidate, sendCtx.uid);
-          if (!record) continue;
-          list2 = upsertMemory(list2, record, sendCtx.uid);
-          changed = true;
-        }
-        if (changed) await statePut(key, JSON.stringify(list2));
-      }
-    } catch (_) {
-    }
-  };
-  if (!stream) {
-    let lastErr = "";
-    const oneShot = chain.filter((c) => {
-      const a = adapterFor(c);
-      return Boolean(a) && a.oneShot === true;
-    });
-    mark("modelStart");
-    const oneShotFails = /* @__PURE__ */ new Map();
-    const ONESHOT_FAIL_LIMIT = 2;
-    for (const c of oneShot.length ? oneShot : providerChain(env, tier, badSet, kvKeys)) {
-      if ((oneShotFails.get(c.model) || 0) >= ONESHOT_FAIL_LIMIT) continue;
-      try {
-        const raw = await GEMINI_ADAPTER.chatOnce(c, payloadG());
-        if (raw) {
-          const check = validateResponse(raw, validationCtx);
-          mark("modelDone");
-          if (cacheMode && chatStore) {
-            const toStore = check.text || raw;
-            later(() => chatStore.putCache(cacheKey, "summary", { text: toStore, structured: check.structured ?? null, model: c.model, intent }, { ttlMs: chatCacheTtl(intent), model: c.model }));
-          }
-          later(() => finalize(c.model, c.provider, raw));
-          await settleBackground();
-          emitTrace({ provider: c.provider, model: c.model, text: raw, responseType: check.structured?.type, validated: !check.enforced });
-          emitTiming({ cache: cacheMode ? cacheMode + "-miss" : "off", provider: c.provider });
-          return jsonResp({ text: check.text, structured: check.structured, model: c.model, intent, pv: SYSTEM_PROMPT_V, latencyMs: Date.now() - startedAt, agent: AGENT_VERSION });
-        }
-        lastErr = "empty-" + c.model;
-      } catch (e) {
-        lastErr = String(e.message || e);
-        if (e instanceof ProviderError) {
-          const st = Number(e.status) || 0;
-          oneShotFails.set(c.model, st >= 500 || st === 429 ? ONESHOT_FAIL_LIMIT : (oneShotFails.get(c.model) || 0) + 1);
-          if (e.bad) await markEntryFailed(env.PUB_KV, c.key, c.model, e.status);
-        }
-      }
-    }
-    await settleBackground();
-    emitTrace({ fallbackReason: FALLBACK.PROVIDER_ERROR, validated: false });
-    emitTiming({ failed: true });
-    return jsonResp({ error: "provider_failed", message: "AI একটু ব্যস্ত — কয়েক সেকেন্ড পরে আবার চেষ্টা করো।", detail: lastErr, retryable: true }, 502);
-  }
-  const encoder7 = new TextEncoder();
-  const streamOut = new ReadableStream({
-    async start(controller) {
-      const push = (s) => {
-        try {
-          controller.enqueue(encoder7.encode(s));
-        } catch (_) {
-        }
-      };
-      const sentStages = /* @__PURE__ */ new Set();
-      const stage = (id, label) => {
-        if (sentStages.has(id)) return;
-        sentStages.add(id);
-        push(`event: stage
+  const early = { sent: /* @__PURE__ */ new Set(), push: null };
+  const prepStage = (id, label) => {
+    if (!early.push || early.sent.has(id)) return;
+    early.sent.add(id);
+    early.push(`event: stage
 data: ${JSON.stringify({ stage: id, label })}
 
 `);
-      };
+  };
+  const core = async () => {
+    const appFeatureHit = !quizMode && !v.messages.some((m) => m.image) && isAppFeatureQuestion((v.messages[v.messages.length - 1] || {}).content);
+    if (appFeatureHit) prepStage("app-features", "টুল চালাচ্ছি — অ্যাপের ফিচার তালিকা দেখছি");
+    const appFeaturesP = appFeatureHit ? Promise.resolve().then(() => loadAppFeatures(env && env.PUB_KV)).catch(() => null) : null;
+    const memKeyEarly = "mem:" + MEMORY_VERSION + ":" + sendCtx.uid;
+    const safeRead = (fn) => Promise.resolve().then(fn).catch(() => null);
+    const prefsP = safeRead(() => getKv(env.PUB_KV, "aiprefs:" + sendCtx.uid));
+    const chatMemP = persistMemory ? safeRead(async () => await stateGet("chatmem:" + sendCtx.uid)) : Promise.resolve(null);
+    const sumP = persistMemory && v.fresh !== true ? safeRead(() => stateGet("chatmemsum:" + sendCtx.uid)) : Promise.resolve("");
+    const longP = persistMemory ? safeRead(() => stateGet(memKeyEarly)) : Promise.resolve(null);
+    let aiPrefs = null;
+    try {
+      const rawPrefs = await prefsP;
+      aiPrefs = rawPrefs ? sanitizeAiPrefs(JSON.parse(rawPrefs)) : null;
+    } catch (_) {
+      aiPrefs = null;
+    }
+    const memoryOn = persistMemory;
+    let mem = [];
+    if (memoryOn) {
       try {
-        stage("understand", STAGE_UNDERSTAND[intent] || STAGE_UNDERSTAND.GENERAL_CHAT);
-        if (appFeatureHit) stage("app-features", "টুল চালাচ্ছি — অ্যাপের ফিচার তালিকা দেখছি");
-        if (memoryText || summaryText || msgs.length > v.messages.length) stage("memory", "তোমার আগের কথাগুলো মনে করছি");
-        if (stats && intent === INTENTS.PERFORMANCE_REQUEST) stage("tool", "টুল চালাচ্ছি — তোমার অগ্রগতির তথ্য পড়ছি");
-        else if (profileCtx && ctxBundle) stage("profile", "তোমার লক্ষ্য অনুযায়ী উত্তর মিলিয়ে নিচ্ছি");
-        if (hasImage) stage("image", "ছবিটা বিশ্লেষণ করছি");
-        stage("think", "ভাবছি — উত্তর সাজাচ্ছি");
-        let ok2 = false;
-        let lastErr = "";
-        const modelFails = /* @__PURE__ */ new Map();
-        const MODEL_FAIL_LIMIT = 2;
-        const firstMs = Math.max(3e3, Math.min(3e4, Number(env && env.AGENT_FIRST_CHUNK_MS) || 5e3));
-        mark("modelStart");
-        for (const c of chain) {
-          if ((modelFails.get(c.model) || 0) >= MODEL_FAIL_LIMIT) continue;
-          try {
-            let full = "";
-            const adapter = adapterFor(c);
-            if (!adapter) throw new ProviderError("unknown-provider:" + c.provider, { retryable: false, bad: false });
-            const payload = adapter.id === "gemini" ? payloadG() : payloadO();
-            for await (const t of firstChunkGuard(adapter.chatStream(c, payload, env), firstMs)) {
-              if (!full) {
-                mark("firstToken");
-                stage("write", quizMode ? "প্রশ্ন তৈরি করছি" : "উত্তর লিখছি");
-              }
-              full += t;
-              if (/```(chart|flow)/i.test(full)) stage("visual", "চার্ট / ডায়াগ্রাম আঁকছি");
-              if (/\n\s*\|?\s*:?-{3,}/.test(full)) stage("table", "টেবিল সাজাচ্ছি");
-              push(`data: ${JSON.stringify({ text: t })}
-
-`);
-            }
-            if (full.trim()) {
-              ok2 = true;
-              mark("modelDone");
-              stage("verify", "উত্তর যাচাই করছি");
-              const check = validateResponse(full, validationCtx);
-              if (check.enforced) push(`event: replace
-data: ${JSON.stringify({ text: check.text })}
-
-`);
-              if (cacheMode && chatStore) {
-                const toStore = check.text || full;
-                later(() => chatStore.putCache(cacheKey, "summary", { text: toStore, structured: check.structured ?? null, model: c.model, intent }, { ttlMs: chatCacheTtl(intent), model: c.model }));
-              }
-              push(`event: done
-data: ${JSON.stringify({ model: c.model, provider: c.provider, intent, quiz: quizMode, pv: SYSTEM_PROMPT_V, agent: AGENT_VERSION, latencyMs: Date.now() - startedAt, structured: check.structured })}
-
-`);
-              later(() => finalize(c.model, c.provider, full));
-              await settleBackground();
-              emitTrace({ provider: c.provider, model: c.model, text: full, responseType: check.structured?.type, validated: !check.enforced });
-              emitTiming({ cache: cacheMode ? cacheMode + "-miss" : "off", provider: c.provider });
-              break;
-            }
-            lastErr = "empty-" + c.model;
-          } catch (e) {
-            if (e instanceof ProviderError) {
-              lastErr = e.message;
-              const st = Number(e.status) || 0;
-              modelFails.set(c.model, st >= 500 || st === 429 ? MODEL_FAIL_LIMIT : (modelFails.get(c.model) || 0) + 1);
-              if (e.bad) await markEntryFailed(env.PUB_KV, c.key, c.model, e.status);
-            } else lastErr = String(e.message || e);
-          }
-        }
-        if (!ok2) {
-          await settleBackground();
-          emitTrace({ fallbackReason: FALLBACK.PROVIDER_ERROR, validated: false });
-          emitTiming({ failed: true });
-          push(`event: error
-data: ${JSON.stringify({ error: "provider_failed", message: "AI একটু ব্যস্ত — কয়েক সেকেন্ড পরে আবার চেষ্টা করো।", detail: lastErr, retryable: true })}
-
-`);
-        }
-      } catch (e) {
-        await settleBackground();
-        push(`event: error
-data: ${JSON.stringify({ error: "stream_failed", message: "যুক্তি-বিচ্ছেদ ঘটেছে।", detail: String(e.message || e), retryable: true })}
-
-`);
-      } finally {
+        const rawMem = await chatMemP;
+        const parsedMem = JSON.parse(rawMem || "[]");
+        mem = Array.isArray(parsedMem) ? parsedMem : [];
+      } catch (_) {
+        mem = [];
+      }
+    }
+    const freshThread = v.fresh === true;
+    let msgs = v.messages.slice();
+    if (!freshThread && msgs.length < 3 && mem.length) msgs = capRecalledTurns(mem).concat(msgs);
+    const history = selectHistory(msgs);
+    msgs = history.kept;
+    const persistSummary = memoryOn && history.digest && history.compacted >= 8;
+    let freshSummary = history.digest || null;
+    const background = [];
+    const later = (fn) => {
+      background.push(Promise.resolve().then(fn).catch(() => {
+      }));
+    };
+    const settleBackground = async () => {
+      if (background.length) await Promise.all(background.splice(0));
+    };
+    if (persistSummary) later(() => statePut("chatmemsum:" + sendCtx.uid, freshSummary));
+    const systemPrompt = buildSystemPrompt({ stats, examMode, quiz: quizMode, onboarding, prefs: aiPrefs });
+    const profileCtx = sendCtx.uid.startsWith("account-") ? sanitizeProfileContext(body?.context?.profile) : null;
+    const ctxBundle = contextEngineEnabled(env) ? buildContext({ uid: sendCtx.uid, prefs: aiPrefs, stats, onboarding, profile: profileCtx, memoryOn }) : null;
+    const ctxText = ctxBundle ? renderContext(ctxBundle) : "";
+    let summaryText = memoryOn && !freshThread ? freshSummary != null ? freshSummary : await sumP || "" : "";
+    const memKey = "mem:" + MEMORY_VERSION + ":" + sendCtx.uid;
+    let memRecords = [];
+    if (memoryOn) {
+      try {
+        const rawLong = await longP;
+        memRecords = parseMemory(rawLong, sendCtx.uid);
+      } catch (_) {
+        memRecords = [];
+      }
+    }
+    let tutorContext = [];
+    let lastTopicWrite = null;
+    if (memoryOn) {
+      const lastUser = v.messages[v.messages.length - 1];
+      const priorTopic = memRecords.find((r) => r.kind === KIND.STUDIES && r.key === "last-topic");
+      const topic = String(lastUser.content || "").replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 80);
+      const isFresh = v.fresh === true;
+      if (topic && isPiiFree(topic) && !(isFresh && priorTopic)) {
         try {
-          controller.close();
+          const record = makeMemory(
+            { kind: KIND.STUDIES, key: "last-topic", value: topic, source: SOURCE.USER_STATED, confidence: 0.9, reason: "সর্বশেষ আলোচনার বিষয়" },
+            sendCtx.uid
+          );
+          if (record) {
+            const stored = memRecords.filter((r) => !(r.kind === KIND.STUDIES && r.key === "last-topic"));
+            lastTopicWrite = Promise.resolve().then(() => statePut(memKey, JSON.stringify(upsertMemory(stored, record, sendCtx.uid)))).catch(() => {
+            });
+            background.push(lastTopicWrite);
+          }
         } catch (_) {
         }
       }
+      if (priorTopic && !isFresh) {
+        tutorContext = [Object.freeze({ kind: KIND.STUDIES, key: "last-topic", value: priorTopic.value, source: SOURCE.USER_STATED, confidence: priorTopic.confidence, reason: priorTopic.reason, ts: priorTopic.ts, ownerUid: sendCtx.uid })];
+      }
     }
-  });
-  return new Response(streamOut, {
+    const baseRecords = memRecords.filter((r) => !(r.kind === KIND.STUDIES && r.key === "last-topic"));
+    const memoryText = memoryOn ? renderMemory(baseRecords.concat(tutorContext), MEMORY_VERSION) : "";
+    if (memoryText || summaryText || msgs.length > v.messages.length) prepStage("memory", "তোমার আগের কথাগুলো মনে করছি");
+    const formatRules = !quizMode && !onboarding ? RESPONSE_FORMAT_RULES : "";
+    let sys = [systemPrompt, formatRules, ctxText, memoryText, summaryText].filter(Boolean).join("\n\n");
+    const hasImage = msgs.some((m) => m.image);
+    mark("context");
+    if (appFeatureHit) sys = sys + "\n\n" + renderAppFeatures(await appFeaturesP);
+    const chatCacheOn = chatCacheEnabled(env) && env && env.PROFILE_DB && !appFeatureHit;
+    const cacheQuestion = (v.messages[v.messages.length - 1] || {}).content;
+    const cacheable = chatCacheOn && isCacheableRequest({
+      messages: v.messages,
+      hasImage,
+      quizMode,
+      onboarding,
+      memoryText,
+      summaryText,
+      ctxText,
+      stats,
+      intent
+    });
+    const sharedCandidate = !cacheable && chatCacheOn && isSharedAcademicCandidate({
+      messages: v.messages,
+      hasImage,
+      quizMode,
+      onboarding,
+      examMode,
+      intent,
+      fresh: freshThread,
+      recalled: msgs.length > v.messages.length
+    });
+    const cacheMode = cacheable ? "strict" : sharedCandidate ? "shared" : "";
+    if (cacheMode === "shared") {
+      sys = [buildSystemPrompt({ stats: null, examMode: "", quiz: false, onboarding: null, prefs: null }), RESPONSE_FORMAT_RULES].join("\n\n");
+      msgs = v.messages.slice();
+    }
+    let chatStore = null;
+    let cacheKey = "";
+    if (cacheMode) {
+      try {
+        chatStore = new AiAnalyticsStore(env.PROFILE_DB);
+        cacheKey = await chatCacheKey({
+          question: cacheQuestion,
+          intent,
+          promptVersion: SYSTEM_PROMPT_V,
+          agentVersion: AGENT_VERSION
+        });
+        const hit = await chatStore.getCache(cacheKey);
+        if (hit && hit.payload && typeof hit.payload.text === "string") {
+          const cachedText = hit.payload.text;
+          const cachedModel = hit.payload.model || hit.model || "";
+          mark("cacheHit");
+          await settleBackground();
+          emitTiming({ cache: cacheMode });
+          if (!stream) {
+            return jsonResp({ text: cachedText, structured: hit.payload.structured ?? null, model: cachedModel || null, intent, cached: true, pv: SYSTEM_PROMPT_V, latencyMs: Date.now() - startedAt, agent: AGENT_VERSION });
+          }
+          return sseCached(cachedText, intent, startedAt, cachedModel);
+        }
+      } catch (_) {
+      }
+    }
+    const partsOf = (m) => {
+      const p = [{ text: m.content }];
+      if (m.image) {
+        const i = m.image.indexOf(",");
+        const mt = String(m.image.slice(5, i) || "image/jpeg").split(";")[0];
+        p.push({ inline_data: { mime_type: mt, data: m.image.slice(i + 1) } });
+      }
+      return p;
+    };
+    const payloadG = () => ({
+      system_instruction: { parts: [{ text: sys }] },
+      contents: msgs.map((m) => ({ role: m.role, parts: partsOf(m) }))
+    });
+    const payloadO = () => ({ messages: [{ role: "system", content: sys }].concat(msgs.map((m) => ({ role: m.role, content: m.content }))) });
+    const failures = [];
+    const rid = makeRequestId(sendCtx.uid + ":" + startedAt);
+    const traceCtx = {
+      rid,
+      callerRef: callerRef(sendCtx.uid),
+      intent,
+      tier,
+      stream,
+      promptVersion: SYSTEM_PROMPT_V,
+      contextVersion: ctxBundle ? CONTEXT_VERSION : "",
+      agentVersion: AGENT_VERSION
+    };
+    const emitTrace = (extra = {}) => {
+      try {
+        console.log(renderTrace(makeTrace({
+          ...traceCtx,
+          at: Date.now(),
+          latencyMs: Date.now() - startedAt,
+          tokensIn: estimateTokens(sys),
+          tokensOut: estimateTokens(extra.text || ""),
+          ...extra
+        })));
+      } catch (_) {
+      }
+    };
+    const validationCtx = {
+      intent,
+      intentConfidence: intentCls.confidence,
+      stats,
+      quiz: quizMode,
+      examMode,
+      blocked: safety.blocked
+    };
+    const finalize = async (model, provider, text) => {
+      if (!memoryOn) return text;
+      if (!validateResponse(text, validationCtx).persistable) return text;
+      try {
+        const next = msgs.concat([{ role: "user", content: v.messages[v.messages.length - 1].content }, { role: "assistant", content: text }]).slice(-24).map((x) => ({ role: x.role, content: x.content }));
+        await statePut("chatmem:" + sendCtx.uid, JSON.stringify(next));
+      } catch (_) {
+      }
+      try {
+        if (lastTopicWrite) await lastTopicWrite;
+        const latest = String(v.messages[v.messages.length - 1].content || "");
+        const candidates = extractMemoryCandidates(latest);
+        if (candidates.length) {
+          const key = "mem:" + MEMORY_VERSION + ":" + sendCtx.uid;
+          let list2 = parseMemory(await stateGet(key), sendCtx.uid);
+          let changed = false;
+          for (const candidate of candidates) {
+            const record = makeMemory(candidate, sendCtx.uid);
+            if (!record) continue;
+            list2 = upsertMemory(list2, record, sendCtx.uid);
+            changed = true;
+          }
+          if (changed) await statePut(key, JSON.stringify(list2));
+        }
+      } catch (_) {
+      }
+    };
+    if (!stream) {
+      let lastErr = "";
+      const oneShot = chain.filter((c) => {
+        const a = adapterFor(c);
+        return Boolean(a) && a.oneShot === true;
+      });
+      mark("modelStart");
+      const oneShotFails = /* @__PURE__ */ new Map();
+      const ONESHOT_FAIL_LIMIT = 2;
+      for (const c of oneShot.length ? oneShot : providerChain(env, tier, badSet, kvKeys)) {
+        if ((oneShotFails.get(c.model) || 0) >= ONESHOT_FAIL_LIMIT) continue;
+        try {
+          const raw = await GEMINI_ADAPTER.chatOnce(c, payloadG());
+          if (raw) {
+            const check = validateResponse(raw, validationCtx);
+            mark("modelDone");
+            if (cacheMode && chatStore) {
+              const toStore = check.text || raw;
+              later(() => chatStore.putCache(cacheKey, "summary", { text: toStore, structured: check.structured ?? null, model: c.model, intent }, { ttlMs: chatCacheTtl(intent), model: c.model }));
+            }
+            later(() => finalize(c.model, c.provider, raw));
+            await settleBackground();
+            emitTrace({ provider: c.provider, model: c.model, text: raw, responseType: check.structured?.type, validated: !check.enforced });
+            emitTiming({ cache: cacheMode ? cacheMode + "-miss" : "off", provider: c.provider });
+            return jsonResp({ text: check.text, structured: check.structured, model: c.model, intent, pv: SYSTEM_PROMPT_V, latencyMs: Date.now() - startedAt, agent: AGENT_VERSION });
+          }
+          lastErr = "empty-" + c.model;
+        } catch (e) {
+          lastErr = String(e.message || e);
+          if (e instanceof ProviderError) {
+            const st = Number(e.status) || 0;
+            oneShotFails.set(c.model, st >= 500 || st === 429 ? ONESHOT_FAIL_LIMIT : (oneShotFails.get(c.model) || 0) + 1);
+            if (e.bad) await markEntryFailed(env.PUB_KV, c.key, c.model, e.status);
+          }
+        }
+      }
+      await settleBackground();
+      emitTrace({ fallbackReason: FALLBACK.PROVIDER_ERROR, validated: false });
+      emitTiming({ failed: true });
+      return jsonResp({ error: "provider_failed", message: "AI একটু ব্যস্ত — কয়েক সেকেন্ড পরে আবার চেষ্টা করো।", detail: lastErr, retryable: true }, 502);
+    }
+    const encoder7 = new TextEncoder();
+    const streamOut = new ReadableStream({
+      async start(controller) {
+        const push = (s) => {
+          try {
+            controller.enqueue(encoder7.encode(s));
+          } catch (_) {
+          }
+        };
+        const sentStages = early.sent;
+        const stage = (id, label) => {
+          if (sentStages.has(id)) return;
+          sentStages.add(id);
+          push(`event: stage
+data: ${JSON.stringify({ stage: id, label })}
+
+`);
+        };
+        try {
+          stage("understand", STAGE_UNDERSTAND[intent] || STAGE_UNDERSTAND.GENERAL_CHAT);
+          if (appFeatureHit) stage("app-features", "টুল চালাচ্ছি — অ্যাপের ফিচার তালিকা দেখছি");
+          if (memoryText || summaryText || msgs.length > v.messages.length) stage("memory", "তোমার আগের কথাগুলো মনে করছি");
+          if (stats && intent === INTENTS.PERFORMANCE_REQUEST) stage("tool", "টুল চালাচ্ছি — তোমার অগ্রগতির তথ্য পড়ছি");
+          else if (profileCtx && ctxBundle) stage("profile", "তোমার লক্ষ্য অনুযায়ী উত্তর মিলিয়ে নিচ্ছি");
+          if (hasImage) stage("image", "ছবিটা বিশ্লেষণ করছি");
+          stage("think", "ভাবছি — উত্তর সাজাচ্ছি");
+          let ok2 = false;
+          let lastErr = "";
+          const modelFails = /* @__PURE__ */ new Map();
+          const MODEL_FAIL_LIMIT = 2;
+          const firstMs = Math.max(3e3, Math.min(3e4, Number(env && env.AGENT_FIRST_CHUNK_MS) || 5e3));
+          mark("modelStart");
+          for (const c of chain) {
+            if ((modelFails.get(c.model) || 0) >= MODEL_FAIL_LIMIT) continue;
+            try {
+              let full = "";
+              const adapter = adapterFor(c);
+              if (!adapter) throw new ProviderError("unknown-provider:" + c.provider, { retryable: false, bad: false });
+              const payload = adapter.id === "gemini" ? payloadG() : payloadO();
+              for await (const t of firstChunkGuard(adapter.chatStream(c, payload, env), firstMs)) {
+                if (!full) {
+                  mark("firstToken");
+                  stage("write", quizMode ? "প্রশ্ন তৈরি করছি" : "উত্তর লিখছি");
+                }
+                full += t;
+                if (/```(chart|flow)/i.test(full)) stage("visual", "চার্ট / ডায়াগ্রাম আঁকছি");
+                if (/\n\s*\|?\s*:?-{3,}/.test(full)) stage("table", "টেবিল সাজাচ্ছি");
+                push(`data: ${JSON.stringify({ text: t })}
+
+`);
+              }
+              if (full.trim()) {
+                ok2 = true;
+                mark("modelDone");
+                stage("verify", "উত্তর যাচাই করছি");
+                const check = validateResponse(full, validationCtx);
+                if (check.enforced) push(`event: replace
+data: ${JSON.stringify({ text: check.text })}
+
+`);
+                if (cacheMode && chatStore) {
+                  const toStore = check.text || full;
+                  later(() => chatStore.putCache(cacheKey, "summary", { text: toStore, structured: check.structured ?? null, model: c.model, intent }, { ttlMs: chatCacheTtl(intent), model: c.model }));
+                }
+                push(`event: done
+data: ${JSON.stringify({ model: c.model, provider: c.provider, intent, quiz: quizMode, pv: SYSTEM_PROMPT_V, agent: AGENT_VERSION, latencyMs: Date.now() - startedAt, structured: check.structured })}
+
+`);
+                later(() => finalize(c.model, c.provider, full));
+                await settleBackground();
+                emitTrace({ provider: c.provider, model: c.model, text: full, responseType: check.structured?.type, validated: !check.enforced });
+                emitTiming({ cache: cacheMode ? cacheMode + "-miss" : "off", provider: c.provider });
+                break;
+              }
+              lastErr = "empty-" + c.model;
+            } catch (e) {
+              if (e instanceof ProviderError) {
+                lastErr = e.message;
+                const st = Number(e.status) || 0;
+                modelFails.set(c.model, st >= 500 || st === 429 ? MODEL_FAIL_LIMIT : (modelFails.get(c.model) || 0) + 1);
+                if (e.bad) await markEntryFailed(env.PUB_KV, c.key, c.model, e.status);
+              } else lastErr = String(e.message || e);
+            }
+          }
+          if (!ok2) {
+            await settleBackground();
+            emitTrace({ fallbackReason: FALLBACK.PROVIDER_ERROR, validated: false });
+            emitTiming({ failed: true });
+            push(`event: error
+data: ${JSON.stringify({ error: "provider_failed", message: "AI একটু ব্যস্ত — কয়েক সেকেন্ড পরে আবার চেষ্টা করো।", detail: lastErr, retryable: true })}
+
+`);
+          }
+        } catch (e) {
+          await settleBackground();
+          push(`event: error
+data: ${JSON.stringify({ error: "stream_failed", message: "যুক্তি-বিচ্ছেদ ঘটেছে।", detail: String(e.message || e), retryable: true })}
+
+`);
+        } finally {
+          try {
+            controller.close();
+          } catch (_) {
+          }
+        }
+      }
+    });
+    return new Response(streamOut, {
+      status: 200,
+      headers: {
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "Cache-Control": "no-cache, no-transform",
+        "Connection": "keep-alive",
+        "X-Accel-Buffering": "no",
+        "Access-Control-Allow-Origin": "*"
+      }
+    });
+  };
+  if (!stream) return core();
+  mark("open");
+  return openEarly(core, early, () => prepStage("understand", STAGE_UNDERSTAND[intent] || STAGE_UNDERSTAND.GENERAL_CHAT));
+}
+function openEarly(run, early, first) {
+  const enc = new TextEncoder();
+  let ctl = null;
+  const readable = new ReadableStream({ start(c) {
+    ctl = c;
+  } });
+  const write = (chunk) => {
+    try {
+      ctl.enqueue(typeof chunk === "string" ? enc.encode(chunk) : chunk);
+    } catch (_) {
+    }
+  };
+  early.push = write;
+  write(": open\n\n");
+  if (first) first();
+  (async () => {
+    try {
+      const resp = await run();
+      const reader = resp && resp.body ? resp.body.getReader() : null;
+      if (reader) {
+        for (; ; ) {
+          const step = await reader.read();
+          if (step.done) break;
+          write(step.value);
+        }
+      }
+    } catch (e) {
+      write(`event: error
+data: ${JSON.stringify({ error: "stream_failed", message: "যুক্তি-বিচ্ছেদ ঘটেছে।", detail: String(e && e.message || e), retryable: true })}
+
+`);
+    } finally {
+      early.push = null;
+      try {
+        ctl.close();
+      } catch (_) {
+      }
+    }
+  })();
+  return new Response(readable, {
     status: 200,
     headers: {
       "Content-Type": "text/event-stream; charset=utf-8",
