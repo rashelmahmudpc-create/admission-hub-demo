@@ -22,9 +22,9 @@ async function waitFor(predicate, timeout = 1000) {
 const bytes = (...values) => Uint8Array.of(...values).buffer;
 const challenge = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
 
-function setup({ methods = {}, signed = false, passkeyCredentials = null, backupInteraction = null, pageUrl = 'https://admissionhub.pages.dev/', accountCreated = true, existingPasskeys = 0 } = {}) {
+function setup({ methods = {}, signed = false, passkeyCredentials = null, backupInteraction = null, pageUrl = '', accountCreated = true, existingPasskeys = 0, googleReturn = false } = {}) {
   const dom = new JSDOM('<!doctype html><html><head></head><body></body></html>', {
-    url: pageUrl,
+    url: pageUrl || (googleReturn ? 'https://admissionsky.pages.dev/' : 'https://admissionhub.pages.dev/'),
     runScripts: 'dangerously',
     pretendToBeVisual: true
   });
@@ -36,9 +36,13 @@ function setup({ methods = {}, signed = false, passkeyCredentials = null, backup
     : [];
   let googleCallback = null;
   let tokenCallback = null;
-  /* Google sign-in now runs through Firebase's authDomain, not GSI on our own
-   * origin, so the mock provides firebase.auth().signInWithPopup and returns a
-   * Google access token, which is what POST /google accepts. */
+  /* Google sign-in is a full-page redirect (owner 2026-10-17). A test that
+   * needs a signed-in Google user starts as a page coming BACK from Google
+   * (googleReturn): the redirect flag is set and getRedirectResult waits until
+   * the test calls googleCredential(token), then returns that access token. */
+  let releaseGoogleReturn = null;
+  const googleReturnGate = googleReturn ? new Promise(resolve => { releaseGoogleReturn = resolve; }) : null;
+  if (googleReturn) dom.window.sessionStorage.setItem('ah-google-redirect', '1');
   dom.window.firebase = {
     apps: [],
     initializeApp(options, name) {
@@ -61,7 +65,11 @@ function setup({ methods = {}, signed = false, passkeyCredentials = null, backup
           if (typeof dom.window.__googleRedirect === 'function') return dom.window.__googleRedirect(provider);
           return undefined;
         },
-        async getRedirectResult() { return null; }
+        async getRedirectResult() {
+          if (!googleReturnGate || app?.name !== 'ah-google-sky') return null;
+          const token = await googleReturnGate;
+          return { user: { uid: 'google-user' }, credential: { providerId: 'google.com', accessToken: token } };
+        }
       };
     }
   };
@@ -135,6 +143,7 @@ function setup({ methods = {}, signed = false, passkeyCredentials = null, backup
   /* Drives the real user path: the mocked popup returns this access token and
    * the Google button is clicked, which is what a student does. */
   const googleCredential = token => {
+    if (releaseGoogleReturn) { releaseGoogleReturn(token); return; }
     dom.window.__googleAccessToken = token;
     const button = dom.window.document.querySelector('[data-role="google-button"] button')
       || dom.window.document.querySelector('[data-role="welcome-google-button"] button');
@@ -143,9 +152,9 @@ function setup({ methods = {}, signed = false, passkeyCredentials = null, backup
   return { dom, window: dom.window, document: dom.window.document, calls, googleCredential };
 }
 
-test('Google is capability-gated, uses Firebase endpoint, and keeps tokens out of browser storage', async () => {
+test('Google is capability-gated, returns from the redirect through POST /google, and keeps tokens out of browser storage', async () => {
   const clientId = '123456789012-exampleclientidentifier.apps.googleusercontent.com';
-  const app = setup({ methods: { google: { available: true, clientId } } });
+  const app = setup({ methods: { google: { available: true, clientId } }, googleReturn: true });
   await waitFor(() => app.document.querySelector('[data-role="google-button"] button'));
   app.window.AdmissionAccount.open();
   const accessToken = `google-access-${'x'.repeat(32)}`;
@@ -161,43 +170,22 @@ test('Google is capability-gated, uses Firebase endpoint, and keeps tokens out o
   app.dom.window.close();
 });
 
-test('a blocked Google popup falls back to a full-page redirect instead of hanging', async () => {
+test('Google never opens a popup: the button sends the whole page to Google', async () => {
   const clientId = '123456789012-exampleclientidentifier.apps.googleusercontent.com';
-  const app = setup({ methods: { google: { available: true, clientId } } });
+  const app = setup({ methods: { google: { available: true, clientId } }, pageUrl: 'https://admissionsky.pages.dev/' });
   await waitFor(() => app.document.querySelector('[data-role="google-button"] button'));
-  // A blocked popup rejects signInWithPopup. On a phone the same popup can die
-  // with no shared storage, so instead of reporting a dead end the flow must
-  // hand off to signInWithRedirect, which completes the handshake in the
-  // authDomain's own storage.
+  let popupCalled = 0;
   let redirectCalled = 0;
-  app.window.__googlePopupFailure = () => Promise.reject(Object.assign(new Error('popup blocked'), { code: 'auth/popup-blocked' }));
+  app.window.__googlePopupFailure = () => { popupCalled += 1; return Promise.reject(new Error('popup must not be used')); };
   app.window.__googleRedirect = () => { redirectCalled += 1; };
   const settled = await Promise.race([
     app.window.AdmissionSkyBridge.google().then(() => 'resolved', error => `rejected:${error.message}`),
     sleep(1500).then(() => 'hung')
   ]);
-  assert.equal(settled, 'resolved', 'a blocked popup must settle, not hang');
-  assert.equal(redirectCalled, 1, 'a blocked popup must fall back to signInWithRedirect');
-  assert.equal(app.calls.some(call => call.path.endsWith('/google')), false);
-  app.dom.window.close();
-});
-
-test('a user-cancelled Google popup shows a friendly message and never redirects', async () => {
-  const clientId = '123456789012-exampleclientidentifier.apps.googleusercontent.com';
-  const app = setup({ methods: { google: { available: true, clientId } } });
-  await waitFor(() => app.document.querySelector('[data-role="google-button"] button'));
-  // Closing the popup is a deliberate choice, not a failure to work around: the
-  // flow must respect it and show the hint, never hijack the page with a redirect.
-  let redirectCalled = 0;
-  app.window.__googlePopupFailure = () => Promise.reject(Object.assign(new Error('closed'), { code: 'auth/popup-closed-by-user' }));
-  app.window.__googleRedirect = () => { redirectCalled += 1; };
-  const settled = await Promise.race([
-    app.window.AdmissionSkyBridge.google().then(() => 'resolved', error => `rejected:${error.message}`),
-    sleep(1500).then(() => 'hung')
-  ]);
-  assert.notEqual(settled, 'hung');
-  assert.match(settled, /Google/);
-  assert.equal(redirectCalled, 0, 'a deliberate cancel must not trigger a redirect');
+  assert.equal(settled, 'resolved');
+  assert.equal(redirectCalled, 1, 'Google must use signInWithRedirect');
+  assert.equal(popupCalled, 0, 'Google must never use signInWithPopup');
+  assert.equal(app.window.sessionStorage.getItem('ah-google-redirect'), '1');
   assert.equal(app.calls.some(call => call.path.endsWith('/google')), false);
   app.dom.window.close();
 });
@@ -325,6 +313,7 @@ test('a returning account is never asked to add a passkey again', async () => {
   const clientId = '123456789012-exampleclientidentifier.apps.googleusercontent.com';
   const app = setup({
     methods: { google: { available: true, clientId }, passkey: { available: true } },
+    googleReturn: true,
     // An account that already exists — so `created` is false — and already owns
     // a passkey. The owner's report: "বারবার নতুন লগইন করার সময় পাস key যুক্ত
     // করতে বলে কেনো ১ বার বলবে ১ টা একাউন্ট এ".
@@ -351,6 +340,7 @@ test('a returning account that skipped a passkey is not asked again on login', a
   const clientId = '123456789012-exampleclientidentifier.apps.googleusercontent.com';
   const app = setup({
     methods: { google: { available: true, clientId }, passkey: { available: true } },
+    googleReturn: true,
     // Existing account, no passkey yet: the student tapped "পরে করব" earlier or
     // simply never enrolled. The offer belongs to signup — it must not return on
     // every later login. Adding one stays available on demand from the account
@@ -385,6 +375,7 @@ test('successful verification offers optional Passkey setup and Skip never block
   };
   const app = setup({
     methods: { google: { available: true, clientId }, passkey: { available: true } },
+    googleReturn: true,
     passkeyCredentials: {
       async get() { throw new Error('not used'); },
       async create() { return registration; }
@@ -404,6 +395,7 @@ test('successful verification offers optional Passkey setup and Skip never block
 
   const skipped = setup({
     methods: { google: { available: true, clientId }, passkey: { available: true } },
+    googleReturn: true,
     passkeyCredentials: {
       async get() { throw new Error('not used'); },
       async create() { throw new Error('must not be called'); }

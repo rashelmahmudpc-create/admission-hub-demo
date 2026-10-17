@@ -1676,17 +1676,18 @@
     finally { setBusy(false); }
   }
 
-  /* Google sign-in runs through Firebase's own authDomain rather than through
-   * GSI on our own origin. Google only accepts the OAuth handshake on an origin
-   * the OAuth client authorises. This project's client authorises
-   * `admissionsky-997d2.firebaseapp.com` (Firebase provisions it) but NOT
-   * `admissionsky.pages.dev`, so GSI here is refused with "The given origin is
-   * not allowed for the given client ID" — measured live 2026-10-14, on both
-   * the existing client and a newly created one. The Firebase SDK instead opens
-   * its handler on the authDomain, which IS authorised, and hands the result
-   * back to this page. Firebase returns a Google access token, which is exactly
-   * what POST /google accepts, so no backend change is needed. */
+  /* Owner 2026-10-17: "Continue with Google" is a full-page redirect straight to
+   * Google's own sign-in page (accounts.google.com) -- no popup, no direct GSI
+   * popup, no Firebase page in between. Google runs on its own Firebase app whose
+   * authDomain is THIS site: _worker.js proxies /__/auth/* to Firebase and the
+   * OAuth client authorises https://admissionsky.pages.dev/__/auth/handler, so
+   * Google says "continue to admissionsky.pages.dev" and the redirect result is
+   * kept in first-party storage (nothing lost to partitioning on phones/PWAs).
+   * Facebook stays on the old 'ah-google' app with the firebaseapp.com authDomain:
+   * its Facebook app only knows that redirect URI. POST /google is unchanged. */
   const GOOGLE_AUTH_DOMAIN = 'admissionsky-997d2.firebaseapp.com';
+  const GOOGLE_SKY_HOST = 'admissionsky.pages.dev';
+  const GOOGLE_SKY_APP = 'ah-google-sky';
   const GOOGLE_AUTH_PROJECT = 'admissionsky-997d2';
   /* Public Firebase Web API key of the auth project. Not a confidential secret:
    * the same value is inlined in .github/workflows/deploy-pages-worker.yml. */
@@ -1710,55 +1711,63 @@
     document.head.append(script);
   });
 
+  const loadFirebaseSdk = async () => {
+    /* app-compat is usually already on the page (the app preloads it for
+     * analytics), so only fetch what is actually missing. A host or test that
+     * injects firebase.auth is used as-is. */
+    if (!window.firebase) {
+      /* Self-hosted copy first (works offline and needs no third-party origin);
+       * gstatic is the fallback. */
+      let base = './sdk';
+      try { await loadScriptOnce(`${base}/firebase-app-compat.js`); }
+      catch (_) {
+        base = `https://www.gstatic.com/firebasejs/${FIREBASE_SDK_VERSION}`;
+        await loadScriptOnce(`${base}/firebase-app-compat.js`);
+      }
+    }
+    if (!(window.firebase && typeof window.firebase.auth === 'function')) {
+      await loadScriptOnce('./sdk/firebase-auth-compat.js');
+    }
+    if (!window.firebase || typeof window.firebase.auth !== 'function') throw new Error('Firebase Auth unavailable');
+    return window.firebase;
+  };
+
+  const firebaseAuthFor = async (name, authDomain) => {
+    const firebase = await loadFirebaseSdk();
+    const named = (firebase.apps || []).find(app => app.name === name);
+    const app = named || firebase.initializeApp({ apiKey: GOOGLE_AUTH_API_KEY, authDomain, projectId: GOOGLE_AUTH_PROJECT }, name);
+    return firebase.auth(app);
+  };
+
+  /* Facebook only: the original app, authDomain firebaseapp.com. */
   const loadFirebaseAuth = () => {
-    if (state.firebaseAuthPromise) return state.firebaseAuthPromise;
-    state.firebaseAuthPromise = (async () => {
-      /* app-compat is usually already on the page (the app preloads it for
-       * analytics), so only fetch what is actually missing. A host or test that
-       * injects firebase.auth is used as-is. */
-      if (!window.firebase) {
-        /* Self-hosted copy first (works offline and needs no third-party origin);
-         * gstatic is the fallback. */
-        let base = './sdk';
-        try { await loadScriptOnce(`${base}/firebase-app-compat.js`); }
-        catch (_) {
-          base = `https://www.gstatic.com/firebasejs/${FIREBASE_SDK_VERSION}`;
-          await loadScriptOnce(`${base}/firebase-app-compat.js`);
-        }
-      }
-      if (!(window.firebase && typeof window.firebase.auth === 'function')) {
-        await loadScriptOnce('./sdk/firebase-auth-compat.js');
-      }
-      if (!window.firebase || typeof window.firebase.auth !== 'function') throw new Error('Firebase Auth unavailable');
-      const cfg = { apiKey: GOOGLE_AUTH_API_KEY, authDomain: GOOGLE_AUTH_DOMAIN, projectId: GOOGLE_AUTH_PROJECT };
-      const named = (window.firebase.apps || []).find(app => app.name === 'ah-google');
-      const app = named || window.firebase.initializeApp(cfg, 'ah-google');
-      return window.firebase.auth(app);
-    })();
+    if (!state.firebaseAuthPromise) {
+      state.firebaseAuthPromise = firebaseAuthFor('ah-google', GOOGLE_AUTH_DOMAIN);
+      state.firebaseAuthPromise.catch(() => { state.firebaseAuthPromise = null; });
+    }
     return state.firebaseAuthPromise;
   };
 
-  /* The Firebase OAuth popup completes through a hidden relay on the authDomain.
-   * A mobile WebView, an in-app browser (the Facebook/Instagram/TikTok view a
-   * shared link opens in) and an installed PWA all run that relay as a separate
-   * window with no shared storage, so the handshake never returns: Firebase
-   * aborts with its internal "Pending promise was never set" -- the crash the
-   * owner saw on 2026-10-15, on Google and Facebook alike. On those surfaces
-   * sign in by full-page redirect instead: Firebase persists the handshake in
-   * the authDomain's own storage, the whole page navigates, and
-   * getRedirectResult() hands the credential back on return. Desktop keeps the
-   * popup, which is smoother there and is verified working. */
+  /* Google only: authDomain is our own site. */
+  const loadGoogleAuth = () => {
+    if (!state.googleAuthPromise) {
+      state.googleAuthPromise = firebaseAuthFor(GOOGLE_SKY_APP, GOOGLE_SKY_HOST);
+      state.googleAuthPromise.catch(() => { state.googleAuthPromise = null; });
+    }
+    return state.googleAuthPromise;
+  };
+
+  /* Facebook only (unchanged): the Firebase OAuth popup completes through a
+   * hidden relay on the authDomain. A mobile WebView, an in-app browser and an
+   * installed PWA run that relay with no shared storage, so the handshake never
+   * returns. On those surfaces Facebook signs in by full-page redirect instead;
+   * desktop keeps the popup, and a dead popup still falls back (popupDead). */
   const oauthPopupSupported = () => {
     try {
       if (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) return false;
     } catch (_) {}
     const ua = String((navigator && navigator.userAgent) || '');
     if (/FBAN|FBAV|FB_IAB|Instagram|Line\/|MicroMessenger|Twitter|TikTok|SnapChat|Pinterest/i.test(ua)) return false;
-    /* Ordinary mobile Chrome/Safari keep the popup: with the authDomain on
-     * firebaseapp.com, a redirect's result is lost to third-party storage
-     * partitioning, while the popup returns through postMessage. Only in-app
-     * browsers and installed PWAs take the redirect, and a dead popup still
-     * falls back to it (popupDead). */
     return true;
   };
 
@@ -1771,40 +1780,174 @@
 
   const OAUTH_REDIRECT = 'oauth-redirect';
   const OAUTH_REDIRECT_FLAG = 'ah-oauth-redirect';
+  const GOOGLE_REDIRECT_FLAG = 'ah-google-redirect';
 
-  const beginOAuthRedirect = async (auth, provider) => {
-    try { sessionStorage.setItem(OAUTH_REDIRECT_FLAG, '1'); } catch (_) {}
+  const beginOAuthRedirect = async (auth, provider, google = false) => {
+    try {
+      if (google) sessionStorage.setItem(GOOGLE_REDIRECT_FLAG, '1');
+      else sessionStorage.setItem(OAUTH_REDIRECT_FLAG, '1');
+    } catch (_) {}
     await auth.signInWithRedirect(provider);
     return OAUTH_REDIRECT;
+  };
+
+  /* Google refuses in-app browsers and WebViews (403 disallowed_useragent), so
+   * Google is never started there -- the visitor is sent to Chrome instead. */
+  const IN_APP_BROWSER_UA = /FBAN|FBAV|FB_IAB|FB4A|FBIOS|FBSS|Messenger|Instagram|Line\/|MicroMessenger|Twitter|TikTok|musical_ly|BytedanceWebview|SnapChat|Pinterest|LinkedInApp|; wv\)/i;
+  const userAgentText = () => String((navigator && navigator.userAgent) || '');
+  const inAppBrowser = () => IN_APP_BROWSER_UA.test(userAgentText());
+  const GOOGLE_SKY_URL = `https://${GOOGLE_SKY_HOST}/?ahGoogle=1`;
+  const GOOGLE_CHROME_INTENT = `intent://${GOOGLE_SKY_HOST}/?ahGoogle=1#Intent;scheme=https;package=com.android.chrome;end`;
+
+  const googleMessage = error => {
+    const code = String(error?.code || '');
+    let text = 'Google লগইন এই মুহূর্তে খুলছে না—আবার চেষ্টা করো বা ইমেইল দিয়ে ঢুকো।';
+    if (code === 'in-app-browser') text = 'এই app-এর ভেতরের browser-এ Google লগইন হয় না—Chrome-এ খুলে চেষ্টা করো।';
+    else if (code === 'auth/network-request-failed') text = 'ইন্টারনেট সংযোগ পাওয়া যায়নি—নেট চালু করে আবার চেষ্টা করো।';
+    else if (code === 'auth/web-storage-unsupported' || code === 'auth/operation-not-supported-in-this-environment') text = 'এই browser-এ Google লগইন হয় না—Chrome বা Safari-এ সাইটটি খুলে চেষ্টা করো।';
+    else if (code === 'auth/unauthorized-domain') text = 'এই ঠিকানা থেকে Google লগইন চালু নেই—admissionsky.pages.dev থেকে চেষ্টা করো।';
+    else if (code === 'auth/user-disabled') text = 'এই Google account বন্ধ করা আছে—অন্য পদ্ধতিতে ঢুকো।';
+    else if (code === 'auth/account-exists-with-different-credential') text = 'এই Email অন্য পদ্ধতিতে খোলা আছে—আগের পদ্ধতি দিয়ে ঢুকো।';
+    return code ? `${text} [${code}]` : text;
+  };
+  const GOOGLE_LOCAL_CODES = new Set(['in-app-browser', 'firebase-sdk-unavailable']);
+  const googleErrorText = error => {
+    const code = String(error?.code || '');
+    if (!code || code.startsWith('auth/') || GOOGLE_LOCAL_CODES.has(code)) return googleMessage(error);
+    const detail = String(error?.diagnostic || error?.authStage || '');
+    return `${friendlyError(error)} [${[code, detail].filter(Boolean).join(' · ')}]`;
+  };
+
+  const showGoogleInAppHelp = () => {
+    let panel = document.getElementById('ah-google-inapp');
+    if (!panel) {
+      const android = /Android/i.test(userAgentText());
+      panel = document.createElement('div');
+      panel.id = 'ah-google-inapp';
+      panel.dataset.role = 'google-inapp';
+      panel.setAttribute('role', 'dialog');
+      panel.setAttribute('aria-modal', 'true');
+      panel.style.cssText = 'position:fixed;inset:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(15,23,42,.6)';
+      const card = document.createElement('div');
+      card.style.cssText = 'width:100%;max-width:380px;background:#fff;color:#0f172a;border-radius:16px;padding:20px;font:15px/1.55 system-ui,sans-serif;box-shadow:0 12px 40px rgba(0,0,0,.35)';
+      const title = document.createElement('h3');
+      title.style.cssText = 'margin:0 0 8px;font-size:18px';
+      title.textContent = 'Chrome-এ খুলে Google দিয়ে ঢুকো';
+      const text = document.createElement('p');
+      text.style.cssText = 'margin:0 0 14px';
+      text.textContent = android
+        ? 'Facebook/Messenger-এর মতো app-এর ভেতরের browser-এ Google লগইন করতে দেয় না। নিচের বাটন চাপলে সাইটটি Chrome-এ খুলবে, সেখানে Google দিয়ে ঢুকো।'
+        : 'Facebook/Messenger-এর মতো app-এর ভেতরের browser-এ Google লগইন করতে দেয় না। উপরের ⋯ মেনু থেকে "Open in browser" চাপো, অথবা লিংক কপি করে Safari বা Chrome-এ খোলো।';
+      const style = primary => `display:block;box-sizing:border-box;width:100%;margin:0 0 10px;padding:12px;border-radius:12px;font:600 15px system-ui,sans-serif;text-align:center;text-decoration:none;cursor:pointer;${primary ? 'background:#2563eb;color:#fff;border:0' : 'background:#fff;color:#1e293b;border:1px solid #cbd5e1'}`;
+      card.append(title, text);
+      if (android) {
+        const chrome = document.createElement('a');
+        chrome.href = GOOGLE_CHROME_INTENT;
+        chrome.dataset.role = 'google-open-chrome';
+        chrome.textContent = 'Chrome-এ খুলুন';
+        chrome.style.cssText = style(true);
+        card.append(chrome);
+      }
+      const field = document.createElement('input');
+      field.type = 'text';
+      field.readOnly = true;
+      field.value = GOOGLE_SKY_URL;
+      field.dataset.role = 'google-link-field';
+      field.style.cssText = 'display:none;box-sizing:border-box;width:100%;margin:0 0 10px;padding:10px;border:1px solid #cbd5e1;border-radius:10px;font:14px system-ui,sans-serif';
+      const copy = document.createElement('button');
+      copy.type = 'button';
+      copy.dataset.role = 'google-copy-link';
+      copy.textContent = 'লিংক কপি করুন';
+      copy.style.cssText = style(!android);
+      copy.addEventListener('click', () => {
+        const done = () => { copy.textContent = 'লিংক কপি হয়েছে ✓'; };
+        const manual = () => {
+          field.style.display = 'block';
+          field.focus();
+          field.select();
+          try { if (document.execCommand && document.execCommand('copy')) done(); } catch (_) {}
+        };
+        try { navigator.clipboard.writeText(GOOGLE_SKY_URL).then(done, manual); } catch (_) { manual(); }
+      });
+      const close = document.createElement('button');
+      close.type = 'button';
+      close.dataset.role = 'google-inapp-close';
+      close.textContent = 'বন্ধ করুন';
+      close.style.cssText = style(false);
+      close.addEventListener('click', () => { panel.style.display = 'none'; });
+      const code = document.createElement('p');
+      code.style.cssText = 'margin:4px 0 0;font-size:12px;color:#64748b;text-align:center';
+      code.textContent = 'কোড: in-app-browser';
+      card.append(copy, field, close, code);
+      panel.append(card);
+      document.body.append(panel);
+    }
+    panel.style.display = 'flex';
+    return panel;
+  };
+
+  /* The only way Google starts. Never a popup: either the whole page goes to
+   * Google, or (wrong host) to admissionsky.pages.dev first, or (in-app
+   * browser) the "open in Chrome" panel. */
+  const startGoogleRedirect = async () => {
+    if (inAppBrowser()) {
+      showGoogleInAppHelp();
+      throw Object.assign(new Error('in-app-browser'), { code: 'in-app-browser' });
+    }
+    if (String(location.hostname || '') !== GOOGLE_SKY_HOST) {
+      location.assign(GOOGLE_SKY_URL);
+      return new Promise(() => {});
+    }
+    let auth;
+    try { auth = await loadGoogleAuth(); } catch (error) {
+      throw Object.assign(new Error('Firebase Auth unavailable'), { code: String(error?.code || 'firebase-sdk-unavailable') });
+    }
+    const provider = new window.firebase.auth.GoogleAuthProvider();
+    provider.addScope('email');
+    provider.addScope('profile');
+    if (typeof provider.setCustomParameters === 'function') provider.setCustomParameters({ prompt: 'select_account' });
+    return beginOAuthRedirect(auth, provider, true);
   };
 
   /* Runs once at boot, and only when a redirect we started is coming back, so
    * an ordinary load never pays for the getRedirectResult round-trip. */
   const finishOAuthRedirect = async () => {
-    let pending = false;
+    let facebookPending = false;
+    let googlePending = false;
     try {
-      pending = sessionStorage.getItem(OAUTH_REDIRECT_FLAG) === '1';
-      if (pending) sessionStorage.removeItem(OAUTH_REDIRECT_FLAG);
+      facebookPending = sessionStorage.getItem(OAUTH_REDIRECT_FLAG) === '1';
+      googlePending = sessionStorage.getItem(GOOGLE_REDIRECT_FLAG) === '1';
+      if (facebookPending) sessionStorage.removeItem(OAUTH_REDIRECT_FLAG);
+      if (googlePending) sessionStorage.removeItem(GOOGLE_REDIRECT_FLAG);
     } catch (_) {}
-    if (!pending) return;
-    const auth = await loadFirebaseAuth().catch(() => null);
-    if (!auth || typeof auth.getRedirectResult !== 'function') return;
+    if (!facebookPending && !googlePending) return;
+    const auth = await (googlePending ? loadGoogleAuth() : loadFirebaseAuth()).catch(() => null);
+    if (!auth || typeof auth.getRedirectResult !== 'function') {
+      if (googlePending) {
+        open();
+        showView('login');
+        message(googleMessage({ code: 'firebase-sdk-unavailable' }), 'error');
+      }
+      return;
+    }
     let result = null;
     let redirectError = null;
     try { result = await auth.getRedirectResult(); } catch (error) { redirectError = error; }
     const accessToken = String(result?.credential?.accessToken || '');
     if (!result?.user || accessToken.length < 20) {
-      /* The redirect came back empty: the browser blocked the authDomain's
-       * storage (Safari / Chrome third-party storage partitioning) or the user
-       * backed out. Say so instead of silently leaving them on the same page. */
+      /* The redirect came back empty: the user backed out, or the browser
+       * dropped the result. Say so (with the real code) instead of silently
+       * leaving them on the same page. */
       open();
       showView('login');
-      message(redirectError?.code === 'auth/account-exists-with-different-credential'
+      const code = String(redirectError?.code || '');
+      const text = code === 'auth/account-exists-with-different-credential'
         ? 'এই Email অন্য পদ্ধতিতে খোলা আছে—আগের পদ্ধতি দিয়ে ঢুকো।'
-        : 'লগইন সম্পন্ন হয়নি—আবার চেষ্টা করো। বারবার হলে Chrome/Safari-এ সাইটটি খুলে চেষ্টা করো বা Email দিয়ে ঢুকো।', 'error');
+        : 'লগইন সম্পন্ন হয়নি—আবার চেষ্টা করো। বারবার হলে Chrome/Safari-এ সাইটটি খুলে চেষ্টা করো বা Email দিয়ে ঢুকো।';
+      message(code ? `${text} [${code}]` : text, 'error');
       return;
     }
-    const providerId = String(result.credential?.providerId || result.user.providerId || '');
+    const providerId = googlePending ? 'google.com' : String(result.credential?.providerId || result.user.providerId || '');
     try {
       if (providerId === 'facebook.com') {
         open();
@@ -1812,117 +1955,36 @@
         await establishSession(r, 'Facebook \u09a6\u09bf\u09af\u09bc\u09c7 \u09a4\u09cb\u09ae\u09be\u09b0 account-\u098f \u09aa\u09cd\u09b0\u09ac\u09c7\u09b6 \u09b9\u09af\u09bc\u09c7\u099b\u09c7\u0964');
       } else if (providerId === 'google.com') {
         open();
+        state.googleLinkToken = '';
         const r = await api('/google', { method: 'POST', body: { accessToken } });
         await establishSession(r, 'Google \u09a6\u09bf\u09af\u09bc\u09c7 \u09a4\u09cb\u09ae\u09be\u09b0 account-\u098f \u09aa\u09cd\u09b0\u09ac\u09c7\u09b6 \u09b9\u09af\u09bc\u09c7\u099b\u09c7\u0964');
       }
     } catch (error) {
+      if (providerId === 'google.com') {
+        /* Keep the fresh Google token in memory only, so the "link to your
+         * existing account" form can finish without a second trip to Google. */
+        if (error?.code === 'ACCOUNT_LINK_REQUIRED') {
+          state.googleLinkToken = accessToken;
+          showView('google-link');
+        }
+        message(googleErrorText(error), 'error');
+        return;
+      }
       message(error?.code ? friendlyError(error) : '\u09b2\u0997\u0987\u09a8 \u09b8\u09ae\u09cd\u09aa\u09a8\u09cd\u09a8 \u09b9\u09af\u09bc\u09a8\u09bf\u2014\u0986\u09ac\u09be\u09b0 \u099a\u09c7\u09b7\u09cd\u099f\u09be \u0995\u09b0\u09cb\u0964', 'error');
     }
-  };
-
-  const googleMessage = error => {
-    const code = String(error?.code || '');
-    if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
-      return 'Google জানালাটি বন্ধ হয়ে গেছে—আবার চেষ্টা করো বা ইমেইল দিয়ে ঢুকো।';
-    }
-    if (code === 'auth/popup-blocked') {
-      return 'Google জানালা খোলা যায়নি—browser-এ popup অনুমতি দাও বা ইমেইল দিয়ে ঢুকো।';
-    }
-    return 'Google লগইন এই মুহূর্তে খুলছে না—আবার চেষ্টা করো বা ইমেইল দিয়ে ঢুকো।';
-  };
-
-  /* Owner 2026-10-16: Google signs in DIRECTLY through Google Identity Services
-   * on our own origin (the owner's OAuth client), so the consent screen no longer
-   * shows the long Firebase authDomain. The Firebase path stays as the automatic
-   * fallback: GSI missing, in-app browser, or the backend refusing the external
-   * client's token until it is safelisted in Firebase. */
-  const DIRECT_GOOGLE_CLIENT_ID = '916950643726-6ul6djp3ve11ek37bbht715afb6pc0ka.apps.googleusercontent.com';
-  const DIRECT_GOOGLE_OFF = 'ah-google-direct-off';
-  let gsiTokenClient = null;
-  let gsiPending = null;
-  const directGoogleOff = () => { try { return sessionStorage.getItem(DIRECT_GOOGLE_OFF) === '1'; } catch (_) { return false; } };
-  const prepareDirectGoogle = () => {
-    if (gsiTokenClient || directGoogleOff()) return;
-    loadScriptOnce('https://accounts.google.com/gsi/client').then(() => {
-      const oauth2 = window.google?.accounts?.oauth2;
-      if (!oauth2 || gsiTokenClient) return;
-      gsiTokenClient = oauth2.initTokenClient({
-        client_id: DIRECT_GOOGLE_CLIENT_ID,
-        scope: 'openid email profile',
-        callback: reply => {
-          const pending = gsiPending; gsiPending = null;
-          if (!pending) return;
-          if (reply?.access_token) pending.resolve(String(reply.access_token));
-          else pending.reject(Object.assign(new Error('gsi-denied'), { gsiType: String(reply?.error || 'access_denied') }));
-        },
-        error_callback: failure => {
-          const pending = gsiPending; gsiPending = null;
-          if (pending) pending.reject(Object.assign(new Error('gsi-failed'), { gsiType: String(failure?.type || 'failed') }));
-        }
-      });
-    }).catch(() => {});
-  };
-  const directGoogleToken = () => new Promise((resolve, reject) => {
-    if (!gsiTokenClient) { reject(new Error('gsi-not-ready')); return; }
-    gsiPending = { resolve, reject };
-    try { gsiTokenClient.requestAccessToken(); } catch (error) { gsiPending = null; reject(error); }
-  });
-  const googleSignInRequest = async () => {
-    if (gsiTokenClient && !directGoogleOff() && oauthPopupSupported()) {
-      let token = '';
-      try { token = await directGoogleToken(); } catch (error) {
-        if (error?.gsiType === 'popup_closed' || error?.gsiType === 'access_denied') {
-          const text = googleMessage({ code: 'auth/popup-closed-by-user' });
-          throw Object.assign(new Error(text), { userMessage: text });
-        }
-      }
-      if (token.length >= 20) {
-        try { return await api('/google', { method: 'POST', body: { accessToken: token } }); } catch (error) {
-          if (!['GOOGLE_UNAVAILABLE', 'INVALID_INPUT', 'AUTH_PROVIDER_UNAVAILABLE', 'INVALID_PROVIDER_RESPONSE'].includes(String(error?.code || ''))) throw error;
-          try { sessionStorage.setItem(DIRECT_GOOGLE_OFF, '1'); } catch (_) {}
-        }
-      }
-    }
-    const accessToken = await googleAccessToken();
-    if (accessToken === OAUTH_REDIRECT) return OAUTH_REDIRECT;
-    return api('/google', { method: 'POST', body: { accessToken } });
-  };
-
-  const googleAccessToken = async () => {
-    const auth = await loadFirebaseAuth();
-    const provider = new window.firebase.auth.GoogleAuthProvider();
-    provider.addScope('email');
-    provider.addScope('profile');
-    if (!oauthPopupSupported()) return beginOAuthRedirect(auth, provider);
-    let credential;
-    try {
-      credential = await auth.signInWithPopup(provider);
-    } catch (error) {
-      if (!popupDead(error)) throw new Error(googleMessage(error));
-      return beginOAuthRedirect(auth, provider);
-    }
-    const token = String(credential?.credential?.accessToken || '');
-    if (token.length < 20) throw new Error('Google অনুমতি পাওয়া যায়নি—আবার চেষ্টা করো বা ইমেইল দিয়ে ঢুকো।');
-    return token;
   };
 
   const signInWithGoogle = async () => {
     if (state.busy) return;
     setBusy(true);
     try {
-      const result = await googleSignInRequest();
-      if (result === OAUTH_REDIRECT) return;
-      await establishSession(result, 'Google দিয়ে তোমার account-এ প্রবেশ হয়েছে।');
+      await startGoogleRedirect();
     } catch (error) {
-      if (error?.code === 'ACCOUNT_LINK_REQUIRED') showView('google-link');
-      const detail = error?.diagnostic || error?.authStage || '';
-      const text = error?.code ? friendlyError(error) : googleMessage(error);
-      message(detail ? `${text} [${detail}]` : text, 'error');
+      message(googleErrorText(error), 'error');
     } finally { setBusy(false); }
   };
 
   const loadGoogle = clientId => {
-    prepareDirectGoogle();
     if (state.googlePromise) return state.googlePromise;
     if (clientId) state.googleClientId = clientId;
     state.googlePromise = Promise.resolve(true).then(() => {
@@ -2000,10 +2062,14 @@
   };
 
   const linkGoogle = async (email, password) => {
-    const accessToken = await googleAccessToken().catch(error => {
-      throw new Error(error?.code ? googleMessage(error) : 'Google popup এখন পাওয়া যাচ্ছে না—ইমেইল লগইন ব্যবহার করুন।');
-    });
-    return api('/google/link', { method: 'POST', body: { email, password, accessToken } });
+    // The Google token from the redirect that just came back (memory only).
+    const accessToken = String(state.googleLinkToken || '');
+    if (accessToken.length < 20) {
+      throw Object.assign(new Error('google-token-missing'), { userMessage: 'আগে আবার "Continue with Google" চাপো, ফিরে এসে এখানে ইমেইল ও পাসওয়ার্ড দাও। [google-token-missing]' });
+    }
+    const result = await api('/google/link', { method: 'POST', body: { email, password, accessToken } });
+    state.googleLinkToken = '';
+    return result;
   };
 
   const applyCapabilities = auth => {
@@ -3365,8 +3431,16 @@
 
     let returnedFromEmail = false;
     let returnedFromPasswordReset = false;
+    let googleHandoff = false;
     try {
       const current = new URL(location.href);
+      // ?ahGoogle=1: another host (or Chrome opened from an in-app browser)
+      // handed the Google sign-in over to admissionsky.pages.dev.
+      googleHandoff = current.searchParams.get('ahGoogle') === '1';
+      if (googleHandoff) {
+        current.searchParams.delete('ahGoogle');
+        history.replaceState(null, '', current.pathname + current.search + current.hash);
+      }
       returnedFromEmail = current.searchParams.get('firebaseVerified') === '1' || current.searchParams.get('emailVerified') === '1';
       returnedFromPasswordReset = current.searchParams.get('passwordReset') === '1';
       if (returnedFromEmail || returnedFromPasswordReset) {
@@ -3407,6 +3481,7 @@
     Promise.allSettled([configReady, sessionReady]).then(async () => {
       await finishOAuthRedirect();
       if (accountVerified(state.session)) return;
+      if (googleHandoff) { signInWithGoogle(); return; }
       if (returnedFromPasswordReset) {
         open();
         showView('login');
@@ -3596,9 +3671,12 @@
       return result;
     },
     google: async () => {
-      const result = await googleSignInRequest();
-      if (result === OAUTH_REDIRECT) return true;
-      await establishSession(result, 'Google দিয়ে তোমার account-এ প্রবেশ হয়েছে।');
+      // Full-page redirect only: the page leaves for Google and the sign-in
+      // finishes in finishOAuthRedirect() when it comes back.
+      try { await startGoogleRedirect(); } catch (error) {
+        const text = googleErrorText(error);
+        throw Object.assign(new Error(text), { userMessage: text });
+      }
       return true;
     },
     facebook: async () => {
