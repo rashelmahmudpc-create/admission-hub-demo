@@ -52,10 +52,15 @@ const mem = new Map();
 globalThis.localStorage = { getItem: (k) => mem.has(k) ? mem.get(k) : null, setItem: (k, v) => mem.set(k, String(v)) };
 await import('./sky-smalltalk.js');
 const S = globalThis.SkySmallTalk;
-// 2026-10-17: owner cleared every stored reply; new ones will be added later.
-await t('PR2-৫. reply lists are empty for now, so small talk goes to the AI (no crash)', () =>
-  Object.keys(S.REPLIES).length >= 4 && Object.values(S.REPLIES).every(l => Array.isArray(l) && l.length === 0)
-  && S.reply('hi', 'রাফি') === null && S.reply('ধন্যবাদ') === null && S.kind('hi') === 'greet');
+// 2026-10-17: owner 20 greeting replies; the other categories wait for the owner.
+await t('PR2-৫. greet has the owner 20 replies; other lists empty, so they go to the AI', () =>
+  S.REPLIES.greet.length === 20 && ['thanks', 'who', 'bye', 'ok'].every(k => S.REPLIES[k].length === 0)
+  && S.reply('ধন্যবাদ') === null && S.REPLIES.greet.every(x => x.startsWith('### ') && x.includes('{n}') && !x.includes('……')));
+await t('PR2-৫খ. name goes in after a comma; no name means no comma and no placeholder', () => {
+  const a = S.reply('hlw', 'রাফি'), b = S.reply('hello');
+  return /^### [^\n]+, রাফি!/.test(a) && /^### [^\n,]+!/.test(b) && !/\{n\}|……/.test(b)
+    && S.kind('Hi Sky, hello!') === 'greet' && S.kind('হাই স্কাই') === 'greet' && S.kind('hi there') === 'greet';
+});
 // Rotation/name checks below run on test-only replies (never shipped).
 for (const k of Object.keys(S.REPLIES)) for (let i = 0; i < 30; i++) S.REPLIES[k].push('t' + i + '{n}');
 await t('PR2-৬. hi / ধন্যবাদ / তুমি কে match; a real question does not', () =>
