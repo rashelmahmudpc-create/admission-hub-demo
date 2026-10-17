@@ -74,11 +74,16 @@ t('M6-১২. a missing or empty result is refused rather than trusted',
   guardToolResult(null, 'account-a').ok === false && guardToolResult({}, 'account-a').ok === false);
 
 /* ── ৬. M6 grants no runtime capability and changes no prompt ── */
-t('M6-১৩. the chat path does not invoke the tool registry (no execution wired)', (() => {
+/* Agent phase 1 (owner 2026-10-17): tools now run, but only through the READ-only,
+   owner-scoped runner in sky-tools.mjs — never by a name the model supplies. */
+t('M6-১৩. the chat path runs tools only through sky-tools.mjs (READ-only runner)', (() => {
   const agentSrc = readFileSync('ai-agent.js', 'utf8');
+  const toolsSrc = readFileSync('sky-tools.mjs', 'utf8');
   return typeof T.authorizeToolCall === 'function'
-    && !agentSrc.includes('authorizeToolCall')
-    && !/executeTool|runTool|invokeTool/i.test(agentSrc)
+    && agentSrc.includes("from './sky-tools.mjs'")
+    && !/executeTool|invokeTool/i.test(agentSrc)
+    && /owner-from-args-rejected/.test(toolsSrc)
+    && !/dbPut|\.put\(|\.delete\(/.test(toolsSrc)
     && agentSrc.includes('listTools');
 })());
 t('M6-১৪. the prompt text and its hash are unchanged by M6', (() => {

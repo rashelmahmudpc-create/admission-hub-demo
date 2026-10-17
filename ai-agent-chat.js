@@ -1016,6 +1016,11 @@ const ACT_ACTIONS = { 'prefs.write': { bn: 'তোমার AI পছন্দ �
     const more = String(m.q || '').slice(0, 120) + ' — আরো বিস্তারিত বুঝিয়ে বলো';
     return '<div class="faqm"><span>📌 সবার জন্য জমানো উত্তর</span><button data-q="' + esc(more) + '">আরো বিস্তারিত →</button></div>';
   }
+  /* Agent phase 1: open_page button. */
+  function goNote(m) {
+    if (!m.go || m.pending || !/^[a-z0-9-]{2,40}$/.test(String(m.go))) return '';
+    return '<div class="faqm"><span>🧭 ' + esc(m.goName || '') + '</span><button data-tgo="' + esc(m.go) + '">খুলে দাও →</button></div>';
+  }
   function bubble(m, idx) {
     if (m.role === 'user') return '<div class="u"><span>' + esc(m.text) + '</span></div>';
     let inner;
@@ -1036,7 +1041,7 @@ const ACT_ACTIONS = { 'prefs.write': { bn: 'তোমার AI পছন্দ �
       '<button data-r="' + idx + '" aria-label="' + T.regen + '">' + ic('redo') + '</button>' +
       '<button data-g="' + idx + '" aria-label="' + T.good + '">' + ic('up') + '</button>' +
       '</div>' : '';
-    return '<div class="ai" data-i="' + idx + '"><div class="who">' + av('xs') + 'Sky</div>' + procHtml(m) + '<div class="bw">' + inner + '</div>' + faqNote(m) + acts + '</div>';
+    return '<div class="ai" data-i="' + idx + '"><div class="who">' + av('xs') + 'Sky</div>' + procHtml(m) + '<div class="bw">' + inner + '</div>' + goNote(m) + faqNote(m) + acts + '</div>';
   }
   function procStage(node, holder, next) {
     if (holder.stage) (holder.steps = holder.steps || []).push(holder.stage);
@@ -1089,6 +1094,24 @@ const ACT_ACTIONS = { 'prefs.write': { bn: 'তোমার AI পছন্দ �
       sessions[cur].msgs.push({ role: 'ai', text: faq.a, ts: Date.now(), local: true, faq: faq.id, q: faq.q });
       save(); renderMsgs(); mood('happy', 1200);
       return;
+    }
+    /* Agent phase 1 (owner 2026-10-17): in-app tools (sky-tools-client.js) —
+       question bank search, quiz, quiz grading, knowledge lookup, open a page.
+       Instant, no server call, no AI limit. The proc panel lists the tools. */
+    if (window.SkyTools) {
+      const tq0 = Date.now();
+      const prevQuiz = (() => { const ms = sessions[cur].msgs; for (let i = ms.length - 2; i >= 0; i--) { if (ms[i].role === 'ai') return ms[i].quiz || null; } return null; })();
+      let tr = null;
+      try { tr = window.SkyTools.run(t, { lastQuiz: prevQuiz }); } catch (_) { tr = null; }
+      if (tr && tr.text) {
+        const m = { role: 'ai', text: tr.text, ts: Date.now(), local: true, steps: tr.steps || [], secs: Math.max(0.1, (Date.now() - tq0) / 1000).toFixed(1), tools: tr.tools || [] };
+        if (tr.quiz) m.quiz = tr.quiz;
+        if (tr.go) { m.go = tr.go; m.goName = tr.goName || ''; }
+        if (tr.faq) { m.faq = tr.faq; m.q = tr.q; }
+        sessions[cur].msgs.push(m);
+        save(); renderMsgs(); mood('happy', 1200);
+        return;
+      }
     }
     const holder = { role: 'ai', text: '', ts: Date.now(), pending: true, stage: T.stageRead, steps: [] };
     const t0 = Date.now();
@@ -1394,6 +1417,20 @@ const ACT_ACTIONS = { 'prefs.write': { bn: 'তোমার AI পছন্দ �
       if (r) { const i = +r.getAttribute('data-r'); const prev = sessions[cur].msgs[i - 1]; if (prev && prev.role === 'user') { sessions[cur].msgs.splice(i, 1); save(); renderMsgs(); send(prev.text); } return; }
       const g = e.target.closest('[data-g]');
       if (g) { g.classList.add('on'); say('ধন্যবাদ!', 1600); return; }
+      const tg = e.target.closest('[data-tgo]');
+      if (tg) {
+        const p = tg.getAttribute('data-tgo');
+        const sb = document.querySelector('[data-go="' + p + '"]');
+        if (sb) { sb.click(); return; }
+        closeLayers(); layer(false);
+        try {
+          document.documentElement.classList.remove('ai-chat-open');
+          const a = document.getElementById('app'); if (a) { a.classList.remove('ai-chat-open', 'sky'); ['height', 'top', 'bottom', 'paddingBottom'].forEach((k) => { a.style[k] = ''; }); } try { syncAppChrome(); } catch (_) {}
+          const nb = document.querySelector('.bottomnav'); if (nb) nb.style.display = '';
+        } catch (_) {}
+        if (window.navigate) window.navigate(p); else location.hash = p;
+        return;
+      }
       const q = e.target.closest('[data-q]');
       if (q) { closeLayers(); send(q.getAttribute('data-q')); return; }
     });

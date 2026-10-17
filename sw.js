@@ -55,6 +55,7 @@ const APP_SHELL = [
   './sky-faq-en.js?v=faq1',
   './sky-faq-sci.js?v=faq1',
   './sky-faq-gk.js?v=faq1',
+  './sky-tools-client.js?v=tools1',
   './ai-agent-chat.js?v=agent-f1-ui-skyv7',
   './question-engine.js?v=qe1',
   './question-engine-panel.js?v=qe1',
@@ -90,7 +91,7 @@ const APP_SHELL = [
 // A truncated/corrupt download is NEVER written to the shell cache.
 const ASSET_DIGESTS = {
 /* sw-manifest:start */
-  "./index.html": "4aaeffd6c251a32a2ade02b4a7ee877fd0b24969c3ec8e32ae2f15a453050794",
+  "./index.html": "0d2dd46ec4181bcb95329f798e2cc87b0555835adefdea131d297dbf6b28ee14",
   "./manifest.json": "6dcf0e0c6f7671750549e53558ba8b9f0c2c83b0c6759072a6b5e2276331f491",
   "./manifest.webmanifest": "abcd26174710f6df3e183889a5a9da182f73ee8cdcc543b43db8fb4070cad54f",
   "./dashboard-v2.css?v=dash2f13-theme": "4541bc1e65fd158c593443562975400d128b8f1d3b636595df3c235b99e8cced",
@@ -119,7 +120,8 @@ const ASSET_DIGESTS = {
   "./sky-faq-en.js?v=faq1": "f8b5d9be94f1fd1affeee8baab937ed229b206f1ca9862e60024592b3542d345",
   "./sky-faq-sci.js?v=faq1": "0ea5524263bf1f1e5df9e1a67665bd0106f61575b204cda16a9f0980c42981ef",
   "./sky-faq-gk.js?v=faq1": "fefaeeda3c18451c564850005ae90a08155704d85c0d6989d8acfb18070f5a69",
-  "./ai-agent-chat.js?v=agent-f1-ui-skyv7": "992c65796341b3af66a4425e63da22d4adbda84cce411f7dae39913c1da378f6",
+  "./sky-tools-client.js?v=tools1": "0c07c9945f1cca5210314b4885c5c821907807d89cf9555a8320681fdb0f6736",
+  "./ai-agent-chat.js?v=agent-f1-ui-skyv7": "55db23f9471b2c55842e3a2f582a4b74e74d9c9723b3ed8162f8a1e255ee4591",
   "./question-engine.js?v=qe1": "db404fefd97bea27dad177748bafb0a9ba7d87bedca094e3da795c5b77946cd4",
   "./question-engine-panel.js?v=qe1": "33376e371654d575484194b5fcf8e486f4e3329c13e5330ff8619caab0399ec4",
   "./notification-fcm.js?v=fcm-p3-v15": "3b1880bc1ab5b9f91cf844b021369f2431eae099175873ab4d7eb018370318ee",
