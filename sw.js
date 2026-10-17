@@ -45,8 +45,8 @@ const APP_SHELL = [
   './academic-catalog.js?v=acad-cat-v2',
   './profile-ui.js?v=profile-v18-avatar-cache',
   './profile-ui.css?v=profile-v15-uni-tap',
-  './profile-v2.html?v=profile-v2-1',
-  './profile-v2-mount.js?v=profile-v2-1',
+  './profile-v2.html?v=profile-v2-2',
+  './profile-v2-mount.js?v=profile-v2-2',
   './data-protection.js?v=dp-v3-fastboot',
   './dashboard-v2.js?v=dash2f17-v3frame',
   './ai-agent-chat.js?v=agent-f1-ui-skyv7',
@@ -83,7 +83,7 @@ const APP_SHELL = [
 // A truncated/corrupt download is NEVER written to the shell cache.
 const ASSET_DIGESTS = {
 /* sw-manifest:start */
-  "./index.html": "e317f8f87a9dc6c858597725fe418a0dbc7f2ec63d09564dd2f4ec8daac4981c",
+  "./index.html": "5554d79ae205dd284c5690bb694c03f3fa7a14d4d067f2e7908d249ffac7c83a",
   "./manifest.json": "6dcf0e0c6f7671750549e53558ba8b9f0c2c83b0c6759072a6b5e2276331f491",
   "./manifest.webmanifest": "abcd26174710f6df3e183889a5a9da182f73ee8cdcc543b43db8fb4070cad54f",
   "./dashboard-v2.css?v=dash2f13-theme": "4541bc1e65fd158c593443562975400d128b8f1d3b636595df3c235b99e8cced",
@@ -102,8 +102,8 @@ const ASSET_DIGESTS = {
   "./academic-catalog.js?v=acad-cat-v2": "75e7b80663d41330658c948ad1d4829d49f5c9abed581350582cfeace06d5b32",
   "./profile-ui.js?v=profile-v18-avatar-cache": "aaa1bf37e54b4dd44bad0a9ea6c904645f0457cea98d10aaa02bf39664d6b1b8",
   "./profile-ui.css?v=profile-v15-uni-tap": "6408a4b7ac8acf6845cd0148c58377a4953c8ff879d30b2c520eafae0314b98a",
-  "./profile-v2.html?v=profile-v2-1": "eb5a5b063229c5fa27d6b70d4849d3ebe1f7baab2c6dcb715dc41810a69c4397",
-  "./profile-v2-mount.js?v=profile-v2-1": "27faaed10ff447aef8512073927a42ae942374e663201d26781578b1bba135c7",
+  "./profile-v2.html?v=profile-v2-2": "06c87a9173f7dadd7302e5a37d120ba8d0e2abbeda179951313e08c360db4624",
+  "./profile-v2-mount.js?v=profile-v2-2": "78615d4aaefd8ac74dc83de2c5dabd8dde96230bdae0625b457f74527ee24e17",
   "./data-protection.js?v=dp-v3-fastboot": "359dc907ade4bcb3a6a722385969ebb6af47f7e436e6cdf2cce0dd6b7343723d",
   "./dashboard-v2.js?v=dash2f17-v3frame": "f53d800f44030fd02a36da9ad2292bd1ab3d958ab7c3c3ad5c65ef3942f88aee",
   "./ai-agent-chat.js?v=agent-f1-ui-skyv7": "2b8682b0fccdf4bcf4f727b5891ac8a4c54560dd8ec829be36f5509bd1710a18",
