@@ -507,12 +507,13 @@ select.inp{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.
     } catch (_) { return null; }
   }
 
-  /* The app speaks light/dark/system/green; this UI speaks auto/light/dark.
-     Inside the frame there is no AhAppearance global (index.html is not loaded
-     there), so read the app's own storage key directly — the frame is
-     same-origin, so localStorage is shared. The mount also hands its resolved
-     theme in as __AH_THEME__ before any script runs, which covers the first
-     paint and the case where the store is unreadable. */
+  /* The app's mode -> this UI's theme. Everything except an explicit 'dark'
+     maps to 'auto', never to 'light'. The app's light mode REMOVES data-theme
+     and lets its own prefers-color-scheme rule decide, so a phone in dark mode
+     paints the dashboard dark; the same rule is what this design keys off.
+     Pinning 'light' here made the profile lighter than the dashboard on exactly
+     those phones (owner report, 2026-10-16). 'green' has no equivalent in this
+     UI, so it follows the phone too — which is also what the dashboard does. */
   function themeForUi() {
     var mode = '';
     try {
@@ -520,11 +521,9 @@ select.inp{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.
         localStorage.getItem('ah-appearance') || window.__AH_THEME__ || '';
     } catch (_) {}
     if (!mode) {
-      try { mode = document.documentElement.getAttribute('data-theme') || 'light'; } catch (_) {}
+      try { mode = document.documentElement.getAttribute('data-theme') || ''; } catch (_) {}
     }
-    if (mode === 'dark') return 'dark';
-    if (mode === 'light' || mode === 'green') return 'light';
-    return 'auto';
+    return mode === 'dark' ? 'dark' : 'auto';
   }
   function themeForApp(mode) {
     if (mode === 'dark') return 'dark';
@@ -1014,12 +1013,13 @@ render();
     } catch (_) { return null; }
   }
 
-  /* The app speaks light/dark/system/green; this UI speaks auto/light/dark.
-     Inside the frame there is no AhAppearance global (index.html is not loaded
-     there), so read the app's own storage key directly — the frame is
-     same-origin, so localStorage is shared. The mount also hands its resolved
-     theme in as __AH_THEME__ before any script runs, which covers the first
-     paint and the case where the store is unreadable. */
+  /* The app's mode -> this UI's theme. Everything except an explicit 'dark'
+     maps to 'auto', never to 'light'. The app's light mode REMOVES data-theme
+     and lets its own prefers-color-scheme rule decide, so a phone in dark mode
+     paints the dashboard dark; the same rule is what this design keys off.
+     Pinning 'light' here made the profile lighter than the dashboard on exactly
+     those phones (owner report, 2026-10-16). 'green' has no equivalent in this
+     UI, so it follows the phone too — which is also what the dashboard does. */
   function themeForUi() {
     var mode = '';
     try {
@@ -1027,11 +1027,9 @@ render();
         localStorage.getItem('ah-appearance') || window.__AH_THEME__ || '';
     } catch (_) {}
     if (!mode) {
-      try { mode = document.documentElement.getAttribute('data-theme') || 'light'; } catch (_) {}
+      try { mode = document.documentElement.getAttribute('data-theme') || ''; } catch (_) {}
     }
-    if (mode === 'dark') return 'dark';
-    if (mode === 'light' || mode === 'green') return 'light';
-    return 'auto';
+    return mode === 'dark' ? 'dark' : 'auto';
   }
   function themeForApp(mode) {
     if (mode === 'dark') return 'dark';

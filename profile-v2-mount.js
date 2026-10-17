@@ -13,13 +13,14 @@
   'use strict';
 
   var FRAME_TITLE = 'প্রোফাইল';
-  /* The app's bottom nav is 74px plus the home indicator, and it sits above the
-     frame, so the design's last card needs that much clearance. */
-  var NAV_RESERVE = 96;
+  /* The app's bottom nav is fixed at 74px plus the home indicator. The frame
+     ends above it (see frameMarkup) so nothing the design pins to the bottom of
+     its own viewport can land behind the nav. */
+  var NAV_HEIGHT = 'calc(74px + var(--safe-b,0px))';
   /* Bump this whenever profile-v2.html changes. The page URL carries the token,
      so a new build fetches a new URL and the service worker can never serve the
      previous page from its shell cache. */
-  var PAGE_VERSION = 'profile-v2-1';
+  var PAGE_VERSION = 'profile-v2-2';
   var PAGE_URL = './profile-v2.html?v=' + PAGE_VERSION;
   /* A marker that exists only in the design's own page. If the fetched body
      lacks it we were handed something else (the service worker answers document
@@ -57,8 +58,19 @@
   }
 
   function frameMarkup() {
+    /* The frame stops where the nav begins. The app's nav is fixed at the
+       bottom of the viewport and paints above this frame (#navRoot z-index
+       1000, frame 5), so a frame spanning the whole viewport put the design's
+       bottom-anchored surfaces underneath it — the profile's last card, the
+       save bar, and every sheet's action button. Ending the frame above the
+       nav clears all of them at once instead of patching each one, and the
+       design's own bottom:0 means the bottom of the VISIBLE area.
+       --safe-b comes from the parent's :root, so the home indicator is
+       accounted for here rather than inside the frame, where env() resolves
+       to 0. */
     return '<iframe class="pv2-frame" title="' + FRAME_TITLE + '" ' +
-      'style="position:fixed;inset:0;width:100%;height:100%;border:0;display:block;z-index:5;' +
+      'style="position:fixed;left:0;right:0;top:0;width:100%;' +
+      'bottom:' + NAV_HEIGHT + ';height:auto;border:0;display:block;z-index:5;' +
       'background:var(--ah-chrome,#F4F6FD)"></iframe>';
   }
 
@@ -84,8 +96,11 @@
       'window.__AH_THEME__=' + JSON.stringify(mode) + ';' +
       '</' + 'script>' +
       '<style data-profile-v2-bridge="1">' +
-      '.scroll{padding-bottom:calc(' + NAV_RESERVE + 'px + env(safe-area-inset-bottom,0px))!important}' +
-      '.toast{bottom:calc(' + (NAV_RESERVE + 22) + 'px + env(safe-area-inset-bottom,0px))!important}' +
+      /* The frame already ends above the app's nav, so the design's own
+         bottom:0 is the bottom of the visible area. This is just breathing
+         room so the last card is not flush against the nav. */
+      '.scroll{padding-bottom:18px!important}' +
+      '.savebar{padding-bottom:calc(14px + env(safe-area-inset-bottom,0px) + 6px)!important}' +
       '</style>';
     return html.replace('</head>', bridge + '</head>');
   }

@@ -105,9 +105,10 @@ test('the frame clears the app bottom nav and carries the app theme', async () =
   assert.match(doc, /id="shell"/);
   // The app's theme reaches the frame.
   assert.match(doc, /window\.__AH_THEME__="dark"/);
-  // The bottom nav space is reserved for the design's scroll area.
+  // The frame must end above the app's nav: a full-height frame put the save
+  // bar and every sheet's action button behind the nav (owner report).
+  assert.match(frame.getAttribute('style') || frame.outerHTML, /bottom:calc\(74px \+ var\(--safe-b,0px\)\)/);
   assert.match(doc, /data-profile-v2-bridge="1"/);
-  assert.match(doc, /\.scroll\{padding-bottom:calc\(96px/);
   dom.window.close();
 });
 
