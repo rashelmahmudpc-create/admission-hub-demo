@@ -122,8 +122,8 @@ await test('premium Auth UI/server contract and curated-manual institution polic
   AUTH_HANDLER.includes("version: 'premium-onboarding-v1'") &&
   INSTITUTIONS.includes("coverage: 'curated-starter-index'") && INSTITUTIONS.includes("mode: 'manual'"));
 await test('main-app AI client is versioned in the public shell while prior shells are still purged',
-  SW.includes('ai-agent-chat.js?v=agent-f1-ui-skyv8') &&
-  H.includes('ai-agent-chat.js?v=agent-f1-ui-skyv8') &&
+  SW.includes('ai-agent-chat.js?v=agent-f1-ui-skyv9') &&
+  H.includes('ai-agent-chat.js?v=agent-f1-ui-skyv9') &&
   H.includes("name.startsWith('admission-hub-shell-')") && SW.includes('.filter(key => key !== CACHE_NAME)'));
 
 const forbiddenWorkerRoutes = retiredRoutes.filter(route => !route.startsWith('/api/admin/'));
