@@ -10244,6 +10244,7 @@ var SLOT_DEFINITIONS = Object.freeze({
   "otp-i": Object.freeze({ channel: VERIFICATION_CHANNELS.OTP, verificationMode: VERIFICATION_MODES.PROVIDER_EVIDENCE, priority: 38 }),
   "otp-j": Object.freeze({ channel: VERIFICATION_CHANNELS.OTP, verificationMode: VERIFICATION_MODES.PROVIDER_EVIDENCE, priority: 38 }),
   "otp-k": Object.freeze({ channel: VERIFICATION_CHANNELS.OTP, verificationMode: VERIFICATION_MODES.PROVIDER_EVIDENCE, priority: 38 }),
+  "otp-l": Object.freeze({ channel: VERIFICATION_CHANNELS.OTP, verificationMode: VERIFICATION_MODES.PROVIDER_EVIDENCE, priority: 38 }),
   "otp-b": Object.freeze({ channel: VERIFICATION_CHANNELS.OTP, verificationMode: VERIFICATION_MODES.LOCAL_CODE, priority: 20 }),
   "otp-c": Object.freeze({ channel: VERIFICATION_CHANNELS.OTP, verificationMode: VERIFICATION_MODES.LOCAL_CODE, priority: 30 }),
   "otp-d": Object.freeze({ channel: VERIFICATION_CHANNELS.OTP, verificationMode: VERIFICATION_MODES.LOCAL_CODE, priority: 35 }),
@@ -23749,6 +23750,9 @@ var VerificationOrchestrator = class {
         const result = await bounded(() => provider.verifyCode({
           attemptId,
           evidence: evidence2,
+          // Only this adapter needs the address at verification time. Resolve it
+          // from the identity already bound to the challenge, never client input.
+          ...entry.id === "otp-l" ? { destination: identity.destinations[entry.channel] } : {},
           purpose: identity.purpose,
           serverConfirmed: Boolean(selected.providerConfirmed)
         }), entry.timeoutMs);
@@ -25882,6 +25886,93 @@ var TelegramLinkVerificationProvider = class {
     return { status: this.configured ? "configured" : "disabled", configured: this.configured, identityKind: "telegram-account", phoneOwnership: false };
   }
 };
+var DescopeOtpVerificationProvider = class {
+  constructor({ id = "otp-l", projectId, declaredDailyQuota, fetchImpl = globalThis.fetch, now = Date.now } = {}) {
+    this.id = String(id || "");
+    this.channel = VERIFICATION_CHANNELS.OTP;
+    this.verificationMode = VERIFICATION_MODES.PROVIDER_EVIDENCE;
+    this.projectId = /^P[A-Za-z0-9]{20,63}$/.test(String(projectId || "")) ? String(projectId) : "";
+    this.declaredDailyQuota = safeInteger(declaredDailyQuota, 1, 1e3);
+    this.fetch = typeof fetchImpl === "function" ? fetchImpl : null;
+    this.now = typeof now === "function" ? now : Date.now;
+    this.configured = Boolean(this.projectId && this.declaredDailyQuota && this.fetch);
+  }
+  async checkAvailability() {
+    return { available: this.configured, code: this.configured ? "READY" : "NOT_CONFIGURED" };
+  }
+  async getRemainingQuota() {
+    if (!this.configured) return { remaining: 0, limit: 0, resetAt: 0, source: "not-configured" };
+    return { remaining: this.declaredDailyQuota, limit: this.declaredDailyQuota, resetAt: nextUtcMidnight(this.now()), source: "declared" };
+  }
+  async #request(action, body, verify = false) {
+    if (!this.configured) throw new VerificationProviderError("NOT_CONFIGURED", VERIFICATION_FAILURE_CLASS.HARD);
+    let response3;
+    try {
+      response3 = await this.fetch(`https://api.descope.com/v1/auth/otp/${action}/email`, {
+        method: "POST",
+        redirect: "manual",
+        credentials: "omit",
+        headers: {
+          Authorization: `Bearer ${this.projectId}`,
+          Accept: "application/json",
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(8e3)
+      });
+    } catch {
+      throw new VerificationProviderError("NETWORK_ERROR", VERIFICATION_FAILURE_CLASS.TEMPORARY, { retryAfter: 60 });
+    }
+    if (!response3.ok) {
+      if (response3.body) {
+        try {
+          await response3.body.cancel();
+        } catch {
+        }
+      }
+      throw httpFailure(response3, null, { userStatuses: verify ? [400, 404, 422] : [] });
+    }
+    let payload;
+    try {
+      payload = await boundedJson(response3);
+    } catch (error) {
+      if (error instanceof VerificationProviderError) throw error;
+      throw new VerificationProviderError("INVALID_PROVIDER_RESPONSE", VERIFICATION_FAILURE_CLASS.HARD);
+    }
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+      throw new VerificationProviderError("INVALID_PROVIDER_RESPONSE", VERIFICATION_FAILURE_CLASS.HARD);
+    }
+    return payload;
+  }
+  async sendVerification(input = {}) {
+    if (!this.configured) throw new VerificationProviderError("NOT_CONFIGURED", VERIFICATION_FAILURE_CLASS.HARD);
+    const destination = String(input.destination || "").trim().toLowerCase();
+    if (!validEmailAddress(destination)) throw new VerificationProviderError("INVALID_DESTINATION", VERIFICATION_FAILURE_CLASS.USER);
+    await this.#request("signup-in", { loginId: destination });
+    return { accepted: true };
+  }
+  async verifyCode(input = {}) {
+    if (!this.configured) throw new VerificationProviderError("NOT_CONFIGURED", VERIFICATION_FAILURE_CLASS.HARD);
+    const destination = String(input.destination || "").trim().toLowerCase();
+    const code = String(input.evidence || "").trim();
+    if (!validEmailAddress(destination) || !/^\d{6}$/.test(code)) return { verified: false };
+    let payload;
+    try {
+      payload = await this.#request("verify", { loginId: destination, code }, true);
+    } catch (error) {
+      if (error?.failureClass === VERIFICATION_FAILURE_CLASS.USER) return { verified: false };
+      throw error;
+    }
+    if (payload.user?.verifiedEmail !== true || String(payload.user?.email || "").trim().toLowerCase() !== destination || typeof payload.user?.userId !== "string" || !payload.user.userId || typeof payload.sessionJwt !== "string" || !payload.sessionJwt) {
+      throw new VerificationProviderError("INVALID_PROVIDER_RESPONSE", VERIFICATION_FAILURE_CLASS.HARD);
+    }
+    return { verified: true };
+  }
+  async getProviderStatus() {
+    return { status: this.configured ? "configured" : "disabled", configured: this.configured, officialApi: true, mailer: "descope", liveDeliveryVerified: false };
+  }
+};
 function createConfiguredVerificationProviders(env = {}, { fetchImpl = globalThis.fetch } = {}) {
   const brevoOtpA = new BrevoOtpVerificationProvider({
     id: "otp-a",
@@ -25983,6 +26074,13 @@ function createConfiguredVerificationProviders(env = {}, { fetchImpl = globalThi
     kv: env.GK_KV || null,
     fetchImpl
   });
+  const descopeSlot = slotFromConfig(env.VERIFICATION_ORCHESTRATOR_CONFIG, "otp-l");
+  const descopeOtpL = new DescopeOtpVerificationProvider({
+    id: "otp-l",
+    projectId: descopeSlot ? descopeSlot.projectId : "",
+    declaredDailyQuota: descopeSlot ? descopeSlot.dailyQuota : "",
+    fetchImpl
+  });
   return [
     brevoOtpA.configured ? brevoOtpA : bridgeOtpA,
     appsScriptOtpB.configured ? appsScriptOtpB : bridgeOtpB,
@@ -25995,6 +26093,7 @@ function createConfiguredVerificationProviders(env = {}, { fetchImpl = globalThi
     appwriteOtpI,
     oryOtpJ,
     hankoOtpK,
+    descopeOtpL,
     new OfficialWhatsAppVerificationProvider({
       graphVersion: env.WHATSAPP_GRAPH_VERSION,
       phoneNumberId: env.WHATSAPP_PHONE_NUMBER_ID,

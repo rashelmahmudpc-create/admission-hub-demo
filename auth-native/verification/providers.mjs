@@ -1956,6 +1956,107 @@ export class TelegramLinkVerificationProvider {
   }
 }
 
+
+// Descope is a verifier, not a generic mail transport. The existing Durable
+// Object owns challenge expiry, attempt limits, identity binding and single-use
+// consumption. Only a server-resolved destination reaches verifyCode; no raw
+// address, OTP, Descope JWT or second browser session is persisted here.
+export class DescopeOtpVerificationProvider {
+  constructor({ id = 'otp-l', projectId, declaredDailyQuota, fetchImpl = globalThis.fetch, now = Date.now } = {}) {
+    this.id = String(id || '');
+    this.channel = VERIFICATION_CHANNELS.OTP;
+    this.verificationMode = VERIFICATION_MODES.PROVIDER_EVIDENCE;
+    this.projectId = /^P[A-Za-z0-9]{20,63}$/.test(String(projectId || '')) ? String(projectId) : '';
+    this.declaredDailyQuota = safeInteger(declaredDailyQuota, 1, 1000);
+    this.fetch = typeof fetchImpl === 'function' ? fetchImpl : null;
+    this.now = typeof now === 'function' ? now : Date.now;
+    this.configured = Boolean(this.projectId && this.declaredDailyQuota && this.fetch);
+  }
+
+  async checkAvailability() {
+    // Configuration readiness only: this MUST NOT send a probe email or claim
+    // that the project/connector has passed a live delivery test.
+    return { available: this.configured, code: this.configured ? 'READY' : 'NOT_CONFIGURED' };
+  }
+
+  async getRemainingQuota() {
+    if (!this.configured) return { remaining: 0, limit: 0, resetAt: 0, source: 'not-configured' };
+    return { remaining: this.declaredDailyQuota, limit: this.declaredDailyQuota, resetAt: nextUtcMidnight(this.now()), source: 'declared' };
+  }
+
+  async #request(action, body, verify = false) {
+    if (!this.configured) throw new VerificationProviderError('NOT_CONFIGURED', VERIFICATION_FAILURE_CLASS.HARD);
+    let response;
+    try {
+      response = await this.fetch(`https://api.descope.com/v1/auth/otp/${action}/email`, {
+        method: 'POST',
+        redirect: 'manual',
+        credentials: 'omit',
+        headers: {
+          Authorization: `Bearer ${this.projectId}`,
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-store'
+        },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(8000)
+      });
+    } catch {
+      throw new VerificationProviderError('NETWORK_ERROR', VERIFICATION_FAILURE_CLASS.TEMPORARY, { retryAfter: 60 });
+    }
+    // Don't propagate provider messages, response bodies, JWTs or Set-Cookie.
+    if (!response.ok) {
+      if (response.body) { try { await response.body.cancel(); } catch {} }
+      throw httpFailure(response, null, { userStatuses: verify ? [400, 404, 422] : [] });
+    }
+    let payload;
+    try { payload = await boundedJson(response); }
+    catch (error) {
+      if (error instanceof VerificationProviderError) throw error;
+      throw new VerificationProviderError('INVALID_PROVIDER_RESPONSE', VERIFICATION_FAILURE_CLASS.HARD);
+    }
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+      throw new VerificationProviderError('INVALID_PROVIDER_RESPONSE', VERIFICATION_FAILURE_CLASS.HARD);
+    }
+    return payload;
+  }
+
+  async sendVerification(input = {}) {
+    if (!this.configured) throw new VerificationProviderError('NOT_CONFIGURED', VERIFICATION_FAILURE_CLASS.HARD);
+    const destination = String(input.destination || '').trim().toLowerCase();
+    if (!validEmailAddress(destination)) throw new VerificationProviderError('INVALID_DESTINATION', VERIFICATION_FAILURE_CLASS.USER);
+    // Descope generates its own OTP. Never transmit the app's local OTP.
+    await this.#request('signup-in', { loginId: destination });
+    return { accepted: true };
+  }
+
+  async verifyCode(input = {}) {
+    if (!this.configured) throw new VerificationProviderError('NOT_CONFIGURED', VERIFICATION_FAILURE_CLASS.HARD);
+    const destination = String(input.destination || '').trim().toLowerCase();
+    const code = String(input.evidence || '').trim();
+    if (!validEmailAddress(destination) || !/^\d{6}$/.test(code)) return { verified: false };
+    let payload;
+    try { payload = await this.#request('verify', { loginId: destination, code }, true); }
+    catch (error) {
+      if (error?.failureClass === VERIFICATION_FAILURE_CLASS.USER) return { verified: false };
+      throw error;
+    }
+    // Trust only the direct TLS response from the fixed Descope API, not a
+    // browser-supplied token. Require verified ownership of the exact address.
+    if (payload.user?.verifiedEmail !== true ||
+        String(payload.user?.email || '').trim().toLowerCase() !== destination ||
+        typeof payload.user?.userId !== 'string' || !payload.user.userId ||
+        typeof payload.sessionJwt !== 'string' || !payload.sessionJwt) {
+      throw new VerificationProviderError('INVALID_PROVIDER_RESPONSE', VERIFICATION_FAILURE_CLASS.HARD);
+    }
+    return { verified: true };
+  }
+
+  async getProviderStatus() {
+    return { status: this.configured ? 'configured' : 'disabled', configured: this.configured, officialApi: true, mailer: 'descope', liveDeliveryVerified: false };
+  }
+}
+
 export function createConfiguredVerificationProviders(env = {}, { fetchImpl = globalThis.fetch } = {}) {
   // Slot `otp-a` prefers the direct Brevo API and falls back to the external OTP
   // bridge when Brevo is not bound. Slot `otp-b` prefers the free Google Apps
@@ -2074,6 +2175,13 @@ export function createConfiguredVerificationProviders(env = {}, { fetchImpl = gl
     kv: env.GK_KV || null,
     fetchImpl
   });
+  const descopeSlot = slotFromConfig(env.VERIFICATION_ORCHESTRATOR_CONFIG, 'otp-l');
+  const descopeOtpL = new DescopeOtpVerificationProvider({
+    id: 'otp-l',
+    projectId: descopeSlot ? descopeSlot.projectId : '',
+    declaredDailyQuota: descopeSlot ? descopeSlot.dailyQuota : '',
+    fetchImpl
+  });
   return [
     brevoOtpA.configured ? brevoOtpA : bridgeOtpA,
     appsScriptOtpB.configured ? appsScriptOtpB : bridgeOtpB,
@@ -2086,6 +2194,7 @@ export function createConfiguredVerificationProviders(env = {}, { fetchImpl = gl
     appwriteOtpI,
     oryOtpJ,
     hankoOtpK,
+    descopeOtpL,
     new OfficialWhatsAppVerificationProvider({
       graphVersion: env.WHATSAPP_GRAPH_VERSION,
       phoneNumberId: env.WHATSAPP_PHONE_NUMBER_ID,

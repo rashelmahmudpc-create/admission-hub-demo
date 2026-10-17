@@ -499,6 +499,9 @@ export class VerificationOrchestrator {
         const result = await bounded(() => provider.verifyCode({
           attemptId,
           evidence,
+          // Only this adapter needs the address at verification time. Resolve it
+          // from the identity already bound to the challenge, never client input.
+          ...(entry.id === 'otp-l' ? { destination: identity.destinations[entry.channel] } : {}),
           purpose: identity.purpose,
           serverConfirmed: Boolean(selected.providerConfirmed)
         }), entry.timeoutMs);
