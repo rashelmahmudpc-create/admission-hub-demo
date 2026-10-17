@@ -9,9 +9,9 @@
 (function (root) {
   'use strict';
   const FILLER = new Set((
-    'কী কি কাকে বলে বলতে বোঝায় বোঝানো বোঝ বোঝো বুঝায় বুঝ বুঝি বুঝিয়ে বুঝাও বোঝাও দাও দাও না বলো বল বলেন ' +
+    'কী কি কাকে বলে বলতে বোঝায় বোঝানো বোঝ বোঝো বুঝায় বুঝ বুঝি বুঝিয়ে বুঝাও বোঝাও দাও দাও না বলো বলেন ' +
     'সংজ্ঞা সংজ্ঞাসহ উদাহরণসহ লেখ লেখো লিখ মানে অর্থ কয় কত প্রকার প্রকারভেদ একটু আমাকে প্লিজ স্কাই ভাই আপু ' +
-    'please plz pls sky what whats is are was define definition meaning of the a an explain tell me about'
+    'ki kake bole bolte bujhay bojhay bujhi bujhiye bujhao bojhao dao koy koto prokar mane please plz pls sky what whats is are was define definition meaning of the a an explain tell me about'
   ).split(/\s+/));
   const SUFFIX = ['ের', 'এর', 'র', 'টি', 'টা', "'s"];
   const MAX_LEN = 80;
