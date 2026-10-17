@@ -18,6 +18,9 @@ on:
       - 'design/profile-v2-source.html'
       - 'index.html'
       - 'sw.js'
+      - '_worker.js'
+      - '_headers'
+      - '_redirects'
   workflow_dispatch:
 
 permissions:
