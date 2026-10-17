@@ -84,6 +84,10 @@ jobs:
         run: |
           set -eu
           sleep 25
-          curl -fsS -H 'Cache-Control: no-cache' 'https://admissionsky.pages.dev/' | grep -Fq 'profile-v2-mount.js'
-          curl -fsS -H 'Cache-Control: no-cache' 'https://admissionsky.pages.dev/profile-v2-mount.js' | grep -Fq 'pv2-frame'
-          curl -fsS -H 'Cache-Control: no-cache' 'https://admissionsky.pages.dev/profile-v2.html' | grep -Fq 'id="shell"'
+          # Pages answers .html with a 308 to the clean URL, so follow redirects
+          # and assert the document itself, not the redirect.
+          curl -fsSL -H 'Cache-Control: no-cache' 'https://admissionsky.pages.dev/' | grep -Fq 'profile-v2-mount.js'
+          curl -fsSL -H 'Cache-Control: no-cache' 'https://admissionsky.pages.dev/profile-v2-mount.js' | grep -Fq 'pv2-frame'
+          curl -fsSL -H 'Cache-Control: no-cache' 'https://admissionsky.pages.dev/profile-v2.html' | grep -Fq 'id="shell"'
+          # The SEO allowlist in _worker.js must let the frame document through.
+          curl -fsSL -H 'Cache-Control: no-cache' 'https://admissionsky.pages.dev/profile-v2' | grep -Fq 'id="shell"'

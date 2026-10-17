@@ -38,6 +38,10 @@ const PUBLIC_ROUTES = new Set([
   '/verification-control-center', '/verification-control-center.html',
   '/ai-performance-analysis-live', '/ai-performance-analysis-live.html',
   '/notification-command-center', '/notification-command-center.html',
+  /* Profile V2 — the design is fetched as a document and injected into an
+     iframe's srcdoc, so the page itself is never navigated to. It still has to
+     be reachable, or the fetch gets the 404 page and the mount shows nothing. */
+  '/profile-v2', '/profile-v2.html',
   /* Owner-only live voice page, behind a password (owner's call, no login).
      The page and its module must be reachable, or the gate has nothing to
      protect; the socket and login calls are refused without the signed cookie

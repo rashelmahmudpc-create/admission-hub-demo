@@ -138,7 +138,11 @@ test('retired and server-only paths keep their original status codes', async () 
 
 test('preview surfaces are reachable but marked noindex', async () => {
   for (const path of ['/splash-preview.html', '/ai-performance-analysis-live.html',
-    '/verification-control-center.html', '/notification-command-center.html']) {
+    '/verification-control-center.html', '/notification-command-center.html',
+    /* The profile-v2 mount fetches this document into an iframe's srcdoc. The
+       page is never navigated to, so it is easy to forget it must still be
+       reachable — a 404 here leaves the profile screen blank (2026-10-16). */
+    '/profile-v2.html', '/profile-v2']) {
     const res = await get(path);
     assert.equal(res.status, 200, `${path} must stay reachable`);
   }
