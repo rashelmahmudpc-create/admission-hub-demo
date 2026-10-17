@@ -1890,7 +1890,7 @@ var __aiStoreTest = Object.freeze({ makeId, mapDecision, mapApproval, isMissingS
 // ai-chat-cache.mjs
 var BN_DIGITS = { "০": "0", "১": "1", "২": "2", "৩": "3", "৪": "4", "৫": "5", "৬": "6", "৭": "7", "৮": "8", "৯": "9" };
 var CACHEABLE_INTENTS = Object.freeze(["ACADEMIC_EXPLAIN", "GENERAL_CHAT", "SEARCH_REQUEST"]);
-var CHAT_CACHE_VERSION = "chat-cache-v1";
+var CHAT_CACHE_VERSION = "chat-cache-v2";
 var CHAT_CACHE_TTL_MS = Object.freeze({
   ACADEMIC_EXPLAIN: 24 * 3600 * 1e3,
   GENERAL_CHAT: 24 * 3600 * 1e3,

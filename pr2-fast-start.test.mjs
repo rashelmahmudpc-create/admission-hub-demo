@@ -52,7 +52,12 @@ const mem = new Map();
 globalThis.localStorage = { getItem: (k) => mem.has(k) ? mem.get(k) : null, setItem: (k, v) => mem.set(k, String(v)) };
 await import('./sky-smalltalk.js');
 const S = globalThis.SkySmallTalk;
-await t('PR2-৫. each small-talk category has 30–40 replies', () => Object.values(S.REPLIES).every(l => l.length >= 30 && l.length <= 40) && Object.keys(S.REPLIES).length >= 4);
+// 2026-10-17: owner cleared every stored reply; new ones will be added later.
+await t('PR2-৫. reply lists are empty for now, so small talk goes to the AI (no crash)', () =>
+  Object.keys(S.REPLIES).length >= 4 && Object.values(S.REPLIES).every(l => Array.isArray(l) && l.length === 0)
+  && S.reply('hi', 'রাফি') === null && S.reply('ধন্যবাদ') === null && S.kind('hi') === 'greet');
+// Rotation/name checks below run on test-only replies (never shipped).
+for (const k of Object.keys(S.REPLIES)) for (let i = 0; i < 30; i++) S.REPLIES[k].push('t' + i + '{n}');
 await t('PR2-৬. hi / ধন্যবাদ / তুমি কে match; a real question does not', () =>
   S.kind('hi!') === 'greet' && S.kind('হ্যালো ভাই') === 'greet' && S.kind('ধন্যবাদ') === 'thanks' && S.kind('তুমি কে?') === 'who'
   && S.kind('hi, সন্ধি কী?') === '' && S.kind('সমাস কী') === '' && S.kind('') === '' && S.reply('নিউটনের সূত্র') === null);
