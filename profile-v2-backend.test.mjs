@@ -179,3 +179,162 @@ test('the build is reproducible and the source stays read-only', () => {
   assert.doesNotMatch(BUILDER, /writeFileSync\(SRC/);
   assert.match(BUILDER, /writeFileSync\(join\(root, 'profile-v2\.html'\)/);
 });
+
+/* ---- the shapes the backend refused, and the avatar it never received ---- */
+const baseProfile = {
+  fullName: 'ক', mobile: '', dob: '', bio: '', school: null,
+  higherInstitution: null, targets: [], subjects: [],
+  admissionSession: '', academicGoal: '', visibility: 'private', version: 1,
+};
+
+function mount({ student, calls, onPatch }) {
+  const dom = new JSDOM(PAGE, {
+    url: 'https://admissionhub.pages.dev/profile-v2.html',
+    runScripts: 'dangerously',
+    pretendToBeVisual: true,
+    beforeParse(win) {
+      if (student.persisted) {
+        win.localStorage.setItem('as.profile.v4', JSON.stringify(student.persisted));
+      }
+      win.fetch = (path, opts) => {
+        const method = (opts && opts.method) || 'GET';
+        calls.push({ path: String(path), method, body: opts && opts.body });
+        if (String(path).includes('/profile/patch')) {
+          const patch = onPatch && onPatch(JSON.parse(opts.body));
+          return Promise.resolve({ ok: true, json: () => Promise.resolve({ ok: true, saved: true, profile: patch || student.profile }) });
+        }
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ ok: true, ...student }) });
+      };
+    },
+  });
+  return dom;
+}
+
+test('session: a year is sent as-is, the "not decided" label clears the field', async () => {
+  const calls = [];
+  const student = { publicId: 'AH-E1', email: 'e@example.com', profile: baseProfile, avatar: { present: false } };
+  const dom = mount({ student, calls });
+  const win = dom.window;
+  await new Promise((r) => setTimeout(r, 80));
+  calls.length = 0;
+
+  win.document.dispatchEvent(new win.CustomEvent('app:action', {
+    detail: { action: 'profile.update', field: 'session', value: '2026' },
+  }));
+  await new Promise((r) => setTimeout(r, 40));
+  const patches = calls.filter((c) => c.path.includes('/profile/patch'));
+  assert.deepEqual(JSON.parse(patches[0].body).fields, { admissionSession: '2026' });
+
+  win.document.dispatchEvent(new win.CustomEvent('app:action', {
+    detail: { action: 'profile.update', field: 'session', value: 'এখনো ঠিক করিনি' },
+  }));
+  await new Promise((r) => setTimeout(r, 40));
+  const patches2 = calls.filter((c) => c.path.includes('/profile/patch'));
+  assert.deepEqual(JSON.parse(patches2[1].body).fields, { admissionSession: '' });
+  dom.window.close();
+});
+
+test('targets: bare names are converted to the backend object shape', async () => {
+  const calls = [];
+  const student = { publicId: 'AH-F1', email: 'f@example.com', profile: baseProfile, avatar: { present: false } };
+  const dom = mount({ student, calls });
+  const win = dom.window;
+  await new Promise((r) => setTimeout(r, 80));
+  calls.length = 0;
+
+  win.document.dispatchEvent(new win.CustomEvent('app:action', {
+    detail: { action: 'profile.update', field: 'targets', value: ['ঢাকা বিশ্ববিদ্যালয়', 'BUET'] },
+  }));
+  await new Promise((r) => setTimeout(r, 40));
+  const patches = calls.filter((c) => c.path.includes('/profile/patch'));
+  assert.deepEqual(JSON.parse(patches[0].body).fields, {
+    targets: [
+      { name: 'ঢাকা বিশ্ববিদ্যালয়', unit: '', year: '' },
+      { name: 'BUET', unit: '', year: '' },
+    ],
+  });
+  dom.window.close();
+});
+
+test('avatar: a chosen photo is uploaded, base64 payload without the data: prefix', async () => {
+  const calls = [];
+  const photo = 'data:image/jpeg;base64,' + Buffer.from('hello-avatar').toString('base64');
+  const student = {
+    publicId: 'AH-G1', email: 'g@example.com', profile: baseProfile,
+    avatar: { present: true, updatedAt: 1234 },
+  };
+  const dom = mount({ student, calls });
+  const win = dom.window;
+  await new Promise((r) => setTimeout(r, 80));
+  calls.length = 0;
+
+  /* The real order: the design's commit() persists the crop to its own store and
+     only then raises the action. */
+  win.localStorage.setItem('as.profile.v4', JSON.stringify({ photo }));
+  win.document.dispatchEvent(new win.CustomEvent('app:action', {
+    detail: { action: 'profile.update', field: 'avatar', value: 0 },
+  }));
+  await new Promise((r) => setTimeout(r, 60));
+
+  const post = calls.find((c) => c.method === 'POST' && c.path.endsWith('/profile/avatar'));
+  assert.ok(post, 'the photo reached the avatar endpoint');
+  const body = JSON.parse(post.body);
+  assert.equal(body.mime, 'image/jpeg');
+  assert.equal(body.data, Buffer.from('hello-avatar').toString('base64'));
+  dom.window.close();
+});
+
+test('avatar: choosing a mascot colour with no photo deletes the stored avatar', async () => {
+  const calls = [];
+  const student = {
+    publicId: 'AH-H1', email: 'h@example.com', profile: baseProfile,
+    avatar: { present: false },
+  };
+  const dom = mount({ student, calls });
+  const win = dom.window;
+  await new Promise((r) => setTimeout(r, 80));
+  calls.length = 0;
+
+  win.localStorage.setItem('as.profile.v4', JSON.stringify({ photo: '' }));
+  win.document.dispatchEvent(new win.CustomEvent('app:action', {
+    detail: { action: 'profile.update', field: 'avatar', value: 2 },
+  }));
+  await new Promise((r) => setTimeout(r, 60));
+
+  assert.ok(calls.some((c) => c.method === 'DELETE' && c.path.endsWith('/profile/avatar')));
+  dom.window.close();
+});
+
+test('a refused save shows the student an error instead of a success toast', async () => {
+  const calls = [];
+  const student = { publicId: 'AH-I1', email: 'i@example.com', profile: baseProfile, avatar: { present: false } };
+  const dom = new JSDOM(PAGE, {
+    url: 'https://admissionhub.pages.dev/profile-v2.html',
+    runScripts: 'dangerously',
+    pretendToBeVisual: true,
+    beforeParse(win) {
+      win.fetch = (path, opts) => {
+        calls.push({ path: String(path), method: (opts && opts.method) || 'GET' });
+        if (String(path).includes('/profile/patch')) {
+          return Promise.resolve({
+            ok: false, status: 400,
+            json: () => Promise.resolve({ ok: false, error: { code: 'INVALID_INPUT', message: 'তথ্যটি সঠিক নয়' } }),
+          });
+        }
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ ok: true, ...student }) });
+      };
+    },
+  });
+  const win = dom.window;
+  await new Promise((r) => setTimeout(r, 80));
+
+  win.document.dispatchEvent(new win.CustomEvent('app:action', {
+    detail: { action: 'profile.update', field: 'name', value: 'ঠিক আছে' },
+  }));
+  await new Promise((r) => setTimeout(r, 60));
+
+  const toast = win.document.getElementById('toast');
+  assert.equal(toast.textContent, 'তথ্যটি সঠিক নয়');
+  assert.ok(toast.classList.contains('on'), 'the error toast is visible');
+  dom.window.close();
+});

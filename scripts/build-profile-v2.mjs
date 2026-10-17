@@ -247,9 +247,15 @@ ${shared}
   }
 
   var version = null;
+  /* The profile read carries the identity and avatar that a patch response does
+     not, so both are kept from the last successful read rather than re-derived. */
+  var cachedIdentity = { publicId: '', email: '' };
+  var lastAvatar = null;
 
   function loadProfile() {
     return api(API + '/profile').then(function (entry) {
+      cachedIdentity = { publicId: (entry && entry.publicId) || '', email: (entry && entry.email) || '' };
+      lastAvatar = (entry && entry.avatar) || null;
       push(entry);
       if (entry && entry.profile) version = entry.profile.version;
       return entry;
@@ -261,12 +267,40 @@ ${shared}
     name: 'fullName', mobile: 'mobile', bio: 'bio', dob: 'dob',
     goal: 'academicGoal', session: 'admissionSession'
   };
+  /* The backend validates every field and rejects the whole patch on one bad
+     value (normalizeProfilePatch in auth-engine.mjs). Two shapes here did not
+     match it, so those saves failed silently and the field snapped back:
+       - session: the UI stores a label ('2026', 'এখনো ঠিক করিনি'), the backend
+         wants a 4-digit year or ''. 'এখনো ঠিক করিনি' is sent as '' to clear.
+       - targets: the UI keeps a plain list of university names, the backend
+         wants [{ name, unit, year }] with name at least 2 characters.
+     Both are converted here, in the adapter, so the owner's design stays as-is. */
+  function sessionValue(value) {
+    var v = String(value == null ? '' : value).trim();
+    /* \\d, not \d: this code is emitted from a template literal in the builder,
+       which drops a single backslash and would turn \d into a literal 'd'. */
+    return /^(19|20|21)\\d{2}$/.test(v) ? v : '';
+  }
+  function targetList(value) {
+    if (!Array.isArray(value)) return [];
+    var out = [];
+    for (var i = 0; i < value.length && out.length < 5; i++) {
+      var raw = value[i];
+      var name = String(raw == null ? '' : (raw.name || raw)).trim();
+      // A 1-character name is rejected by the backend and would fail the whole
+      // patch, so drop it here rather than losing the rest of the edit.
+      if (name.length < 2) continue;
+      out.push({ name: name.slice(0, 120), unit: '', year: '' });
+    }
+    return out;
+  }
   function toBackend(field, value) {
     var f = FIELD_MAP[field];
-    if (f) return { key: f, value: value };
+    if (f) return { key: f, value: field === 'session' ? sessionValue(value) : value };
     if (field === 'school') return { key: 'school', value: value ? { name: value } : null };
     if (field === 'college') return { key: 'higherInstitution', value: value ? { name: value } : null };
-    if (field === 'targets' || field === 'subjects') return { key: field, value: value };
+    if (field === 'targets') return { key: 'targets', value: targetList(value) };
+    if (field === 'subjects') return { key: 'subjects', value: value };
     return null;
   }
 
@@ -276,17 +310,72 @@ ${shared}
       body: JSON.stringify({ fields: fields, expectVersion: version })
     }).then(function (res) {
       if (res && res.profile) {
-        var cached = readCache() || {};
         version = res.profile.version;
         push({
           profile: res.profile,
-          publicId: cached.publicId,
-          email: cached.email,
-          avatar: cached.avatar
+          publicId: cachedIdentity.publicId,
+          email: cachedIdentity.email,
+          /* The patch response carries the profile only, so the avatar must come
+             from the last good read. Taking it from localStorage instead showed
+             the mascot again after every edit — the cache key it reads is
+             written by the app, not by this frame. */
+          avatar: lastAvatar || undefined
         });
       }
       return res;
     });
+  }
+
+  /* Avatar upload/remove. The owner's design keeps the cropped photo in its own
+     store (as.profile.v4) and dispatches the action AFTER persisting it, so the
+     bytes are readable here without touching the design. The backend wants
+     { mime, data } with the base64 payload only — no data: prefix — and
+     validates the magic bytes itself. */
+  function readPersistedPhoto() {
+    try {
+      var raw = localStorage.getItem('as.profile.v4');
+      if (!raw) return '';
+      var parsed = JSON.parse(raw);
+      return (parsed && typeof parsed.photo === 'string') ? parsed.photo : '';
+    } catch (_) { return ''; }
+  }
+  function avatarPayload(dataUrl) {
+    /* The slash is escaped twice: this code lives inside a template literal in
+       the builder, where \/ would collapse to / and end the regex early. */
+    var m = /^data:(image\\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/.exec(String(dataUrl || ''));
+    return m ? { mime: m[1], data: m[2] } : null;
+  }
+  function saveAvatar(dataUrl) {
+    var payload = avatarPayload(dataUrl);
+    if (!payload) return Promise.resolve(false);
+    return api(API + '/profile/avatar', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    }).then(function () { return loadProfile(); }).then(function () { return true; });
+  }
+  function dropAvatar() {
+    return api(API + '/profile/avatar', { method: 'DELETE' })
+      .then(function () { return loadProfile(); })
+      .then(function () { return true; });
+  }
+  /* The design toasts "সংরক্ষণ হয়েছে" the moment a sheet closes, before the
+     request finishes, so a refused save still looked successful and the field
+     silently reverted on the next read. Every write now reports its own
+     outcome instead of failing invisibly. The design's own toast() is private
+     to its closure, so this drives the same #toast element it uses. */
+  function showError(text) {
+    try {
+      var el = document.getElementById('toast');
+      if (!el) return;
+      el.textContent = text;
+      el.classList.add('on');
+      clearTimeout(showError.t);
+      showError.t = setTimeout(function () { el.classList.remove('on'); }, 2600);
+    } catch (_) {}
+  }
+  function reportSaveFailure(e) {
+    showError((e && e.message) || 'সংরক্ষণ করা যায়নি — আবার চেষ্টা করুন।');
+    console.warn('[profile-v2] save failed', e && (e.code || e.message));
   }
 
   /* Every action the UI raises lands here. */
@@ -295,21 +384,32 @@ ${shared}
     var a = d.action;
     try {
       if (a === 'profile.update') {
+        /* The design persists and re-renders before dispatching, so the photo it
+           just cropped is already in its store. 'avatar' is the action for both
+           "photo chosen" and "mascot colour chosen"; a stored photo means an
+           upload, an empty one means the student picked a colour or removed the
+           picture. */
+        if (d.field === 'avatar') {
+          var photo = readPersistedPhoto();
+          var write = photo ? saveAvatar(photo) : dropAvatar();
+          write.catch(reportSaveFailure);
+          return;
+        }
         var one = toBackend(d.field, d.value);
         if (one) {
           var f = {}; f[one.key] = one.value;
-          patchFields(f).catch(function () {});
+          patchFields(f).catch(reportSaveFailure);
         }
       } else if (a === 'profile.save') {
         var p = d.profile || {};
         var all = {};
         Object.keys(FIELD_MAP).forEach(function (k) {
-          if (k in p) all[FIELD_MAP[k]] = p[k];
+          if (k in p) all[FIELD_MAP[k]] = k === 'session' ? sessionValue(p[k]) : p[k];
         });
         ['school', 'college', 'targets', 'subjects'].forEach(function (k) {
           if (k in p) { var o = toBackend(k, p[k]); if (o) all[o.key] = o.value; }
         });
-        if (Object.keys(all).length) patchFields(all).catch(function () {});
+        if (Object.keys(all).length) patchFields(all).catch(reportSaveFailure);
       } else if (a === 'profile.theme') {
         /* A theme tap inside the frame must reach the app's own store, or the
            rest of the app keeps the previous theme. AhAppearance lives on the
