@@ -132,7 +132,7 @@ await t('A8. in-app tools are read-only (no db writes, no fetch)', () => { const
 
 console.log('wiring');
 const chat = readFileSync('./ai-agent-chat.js', 'utf8'), idx = readFileSync('./index.html', 'utf8'), sw = readFileSync('./sw.js', 'utf8'), bundle = readFileSync('./worker-bundle.mjs', 'utf8');
-await t('W1. chat runs in-app tools after small talk and shared answers, before the server', () => { const a = chat.indexOf('SkySmallTalk.reply('), b = chat.indexOf('SkyFAQ.match(t)'), c = chat.indexOf('window.SkyTools.run('), d = chat.indexOf('const res = await ask('); return a > 0 && a < b && b < c && c < d; });
+await t('W1. chat runs in-app tools after small talk and shared answers, before the server', () => { const a = chat.indexOf('ST.replyMsg('), b = chat.indexOf('SkyFAQ.match(t)'), c = chat.indexOf('window.SkyTools.run('), d = chat.indexOf('const res = await ask('); return a > 0 && a < b && b < c && c < d; });
 await t('W2. page loads and precaches sky-tools-client.js', () => /sky-tools-client\.js\?v=tools1/.test(idx) && /sky-tools-client\.js\?v=tools1/.test(sw));
 await t('W3. worker bundle carries the server tools', () => /sky-tools-v1/.test(bundle) && /simpleToolResponse/.test(bundle));
 
