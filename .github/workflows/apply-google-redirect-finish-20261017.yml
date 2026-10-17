@@ -1,0 +1,78 @@
+name: Apply Google redirect finish 2026-10-17
+
+# Applies scripts/apply-google-redirect-finish-20261017.py on the feature branch:
+# after the Google/Facebook redirect returns and POST /google succeeds, the login
+# is finished like the old popup path (Sky flow hidden, account page closed,
+# admissionhub:authchange fired, half-finished signup forgotten) so the student
+# lands on the Dashboard. Regenerates sw.js digests, runs the login tests and
+# commits back to the SAME branch. Never touches main, never deploys.
+
+on:
+  push:
+    branches: [feat/google-redirect-finish]
+    paths:
+      - '.github/workflows/apply-google-redirect-finish-20261017.yml'
+      - 'scripts/apply-google-redirect-finish-20261017.py'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-google-redirect-finish-20261017
+  cancel-in-progress: false
+
+env:
+  SCRIPT: scripts/apply-google-redirect-finish-20261017.py
+  SCRIPT_SHA256: b8a8904d5f13d6f605013a8e2742770247f17403dbcff06c9bbd76e4010a8c65
+  SCRIPT_URL: https://backend.composio.dev/api/v3/sl/0tADEobJxI
+
+jobs:
+  apply:
+    if: github.ref_name == 'feat/google-redirect-finish'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: feat/google-redirect-finish
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Fetch the pinned patch script
+        run: |
+          set -eu
+          if [ ! -f "$SCRIPT" ]; then curl -fsSL "$SCRIPT_URL" -o "$SCRIPT"; fi
+          echo "$SCRIPT_SHA256  $SCRIPT" | sha256sum -c -
+      - name: Apply the patch
+        run: |
+          set -eu
+          python3 "$SCRIPT"
+          python3 "$SCRIPT" >/dev/null
+          grep -q "const finishRedirectLogin = () => {" account-access.js
+          grep -q "if (accountVerified(state.session)) finishRedirectLogin();" account-access.js
+          node --check account-access.js
+          git diff --stat
+      - name: Install and refresh the service-worker digests
+        run: |
+          set -eu
+          npm ci
+          npm run sw:manifest
+      - name: Google and Facebook login tests (must pass)
+        run: node --test --test-concurrency=1 google-redirect-login.test.mjs facebook-login-guard.test.mjs firebase-auth-ui.test.mjs firebase-google-auth.test.mjs
+      - name: Wider UI tests (informational; some fail on main too)
+        continue-on-error: true
+        run: node --test --test-concurrency=1 multimethod-auth-ui.test.mjs native-auth-protection.test.mjs premium-onboarding-ui.test.mjs profile-ui.test.mjs
+      - name: Commit and push to the feature branch
+        run: |
+          set -eu
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add "$SCRIPT" account-access.js sw.js google-redirect-login.test.mjs
+          if git diff --cached --quiet; then echo 'Nothing to commit (already applied).'; else
+            git commit -m 'fix(google): a returning redirect login lands on the Dashboard (Sky flow closed, authchange fired, stale signup cleared)' -m 'Applied by apply-google-redirect-finish-20261017.yml. No deploy.'
+            git push origin HEAD:feat/google-redirect-finish
+          fi
+          npm run check:sw-manifest
