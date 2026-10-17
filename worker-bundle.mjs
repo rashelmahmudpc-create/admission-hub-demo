@@ -615,6 +615,168 @@ function renderAppFeatures(data) {
   return ["APP FEATURES (live, " + clean(d.version, 40) + ") — the only source of truth for AdmissionSky features:"].concat(d.items.map((it) => "- " + clean(it.name, 80) + ": " + clean(it.what, 240))).concat(["Mention only what helps the student now; never add a feature that is not listed."]).join("\n");
 }
 
+// sky-daily-report.mjs
+var DAILY_REPORT_VERSION = "sky-daily-report-v1";
+var STATS_DO_NAME = "__sky-daily-stats__";
+var REPORT_KEY = (day) => "sky:daily-report:" + day;
+var REPORT_INDEX_KEY = "sky:daily-report:index";
+var REPORT_UTC_HOUR = 18;
+var REPORT_WINDOW_MIN = 10;
+var KEEP_DAYS = 60;
+var DHAKA_MS = 6 * 60 * 60 * 1e3;
+var STAT_FIELDS = Object.freeze([
+  "requests",
+  "out_model",
+  "out_cache",
+  "out_tools",
+  "out_failed",
+  "out_limited",
+  "prov_gemini",
+  "prov_groq",
+  "prov_cloudflare",
+  "prov_openai",
+  "prov_other",
+  "lat_lt2",
+  "lat_lt5",
+  "lat_ge5",
+  "lat_sum_ms",
+  "lat_n",
+  "ft_sum_ms",
+  "ft_n"
+]);
+function dhakaDay(ms) {
+  return new Date(Number(ms) + DHAKA_MS).toISOString().slice(0, 10);
+}
+function cleanInc(inc) {
+  const out = {};
+  if (!inc || typeof inc !== "object") return out;
+  for (const k of STAT_FIELDS) {
+    const n = Math.round(Number(inc[k]));
+    if (Number.isFinite(n) && n > 0) out[k] = Math.min(n, 6e5);
+  }
+  return out;
+}
+function statsFromTiming(t) {
+  t = t || {};
+  const inc = { requests: 1 };
+  if (t.limited) {
+    inc.out_limited = 1;
+    return inc;
+  }
+  if (t.failed) inc.out_failed = 1;
+  else if (t.provider === "tools" || t.quota === false) inc.out_tools = 1;
+  else if (t.cache && !/miss|off/.test(String(t.cache))) inc.out_cache = 1;
+  else inc.out_model = 1;
+  if (inc.out_model) {
+    const p = String(t.provider || "").toLowerCase();
+    const key = p === "gemini" || p === "groq" || p === "cloudflare" ? "prov_" + p : /openai|openrouter|compat/.test(p) ? "prov_openai" : "prov_other";
+    inc[key] = 1;
+  }
+  const total = Number(t.totalMs);
+  if (Number.isFinite(total) && total >= 0 && !inc.out_failed) {
+    inc[total < 2e3 ? "lat_lt2" : total < 5e3 ? "lat_lt5" : "lat_ge5"] = 1;
+    inc.lat_sum_ms = Math.round(total);
+    inc.lat_n = 1;
+  }
+  const ft = Number(t.firstToken);
+  if (Number.isFinite(ft) && ft > 0) {
+    inc.ft_sum_ms = Math.round(ft);
+    inc.ft_n = 1;
+  }
+  return cleanInc(inc);
+}
+var statsStub = (env) => {
+  const b = env && env.AI_STATE;
+  if (!b || typeof b.idFromName !== "function" || typeof b.get !== "function") return null;
+  return b.get(b.idFromName(STATS_DO_NAME));
+};
+var call = async (stub, path, body) => {
+  const r = await stub.fetch(new Request("https://ai-state" + path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) }));
+  if (!r.ok) throw new Error("ai-state-" + r.status);
+  return r.json();
+};
+async function bumpDailyStats(env, inc, now = Date.now()) {
+  try {
+    const stub = statsStub(env);
+    const clean2 = cleanInc(inc);
+    if (!stub || !Object.keys(clean2).length) return false;
+    await Promise.race([call(stub, "/stats/bump", { day: dhakaDay(now), inc: clean2 }), new Promise((r) => setTimeout(r, 500))]);
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+async function readDailyStats(env, day) {
+  const stub = statsStub(env);
+  if (!stub) return null;
+  return (await call(stub, "/stats/get", { day })).stats || {};
+}
+var pct = (a, b) => b > 0 ? Math.round(a * 1e3 / b) / 10 : 0;
+function buildReport(day, s, now = Date.now()) {
+  s = cleanInc(s);
+  const n = (k) => s[k] || 0;
+  const req = n("requests");
+  const answered = n("out_model") + n("out_cache") + n("out_tools");
+  return {
+    version: DAILY_REPORT_VERSION,
+    day,
+    generatedAt: new Date(now).toISOString(),
+    anonymous: true,
+    totals: { requests: req, answered, failed: n("out_failed"), dailyLimitReached: n("out_limited") },
+    answeredBy: { model: n("out_model"), cache: n("out_cache"), tools: n("out_tools") },
+    shares: { successPct: pct(answered, req - n("out_limited")), cachePct: pct(n("out_cache"), answered), toolsPct: pct(n("out_tools"), answered), failedPct: pct(n("out_failed"), req) },
+    providers: { gemini: n("prov_gemini"), groq: n("prov_groq"), cloudflare: n("prov_cloudflare"), openai: n("prov_openai"), other: n("prov_other") },
+    speed: {
+      avgMs: n("lat_n") ? Math.round(n("lat_sum_ms") / n("lat_n")) : null,
+      firstWordAvgMs: n("ft_n") ? Math.round(n("ft_sum_ms") / n("ft_n")) : null,
+      under2sPct: pct(n("lat_lt2"), n("lat_n")),
+      from2to5sPct: pct(n("lat_lt5"), n("lat_n")),
+      over5sPct: pct(n("lat_ge5"), n("lat_n"))
+    },
+    note: "অ্যাপের ভেতরে দেওয়া উত্তর (hi/ধন্যবাদ, জমানো উত্তর, অ্যাপের টুল) server-এ আসে না, তাই এখানে গোনা হয়নি।"
+  };
+}
+async function runDailyReport(env, now = Date.now()) {
+  const d = new Date(now);
+  if (d.getUTCHours() !== REPORT_UTC_HOUR || d.getUTCMinutes() >= REPORT_WINDOW_MIN) return { skipped: "not-time" };
+  const kv2 = env && env.PUB_KV;
+  if (!kv2) return { skipped: "no-kv" };
+  const day = dhakaDay(now - (d.getUTCMinutes() + 1) * 6e4);
+  if (await kv2.get(REPORT_KEY(day))) return { skipped: "done", day };
+  const stats = await readDailyStats(env, day);
+  if (stats == null) return { skipped: "no-state", day };
+  const report = buildReport(day, stats, now);
+  await kv2.put(REPORT_KEY(day), JSON.stringify(report), { expirationTtl: 400 * 86400 });
+  let index = [];
+  try {
+    index = JSON.parse(await kv2.get(REPORT_INDEX_KEY) || "[]");
+  } catch (_) {
+    index = [];
+  }
+  index = [day].concat((Array.isArray(index) ? index : []).filter((x) => x !== day)).slice(0, KEEP_DAYS);
+  await kv2.put(REPORT_INDEX_KEY, JSON.stringify(index));
+  return { ok: true, day, report };
+}
+async function listReports(kv2, days = 7) {
+  if (!kv2) return { version: DAILY_REPORT_VERSION, reports: [] };
+  const want = Math.max(1, Math.min(KEEP_DAYS, Math.round(Number(days)) || 7));
+  let index = [];
+  try {
+    index = JSON.parse(await kv2.get(REPORT_INDEX_KEY) || "[]");
+  } catch (_) {
+    index = [];
+  }
+  const reports = [];
+  for (const day of (Array.isArray(index) ? index : []).slice(0, want)) {
+    try {
+      const r = JSON.parse(await kv2.get(REPORT_KEY(day)) || "null");
+      if (r) reports.push(r);
+    } catch (_) {
+    }
+  }
+  return { version: DAILY_REPORT_VERSION, reports };
+}
+
 // memory-engine.js
 var MEMORY_VERSION = "mem-v1";
 var KIND = Object.freeze({
@@ -1403,6 +1565,24 @@ var AiStateObject = class {
     await this.ctx.storage.put(key, { v: count + 1, exp: Date.now() + win + 2e3 });
     return { allowed: true, limit: lim, windowMs: win, remaining: lim - count - 1 };
   }
+  /* Anonymous daily AI counters (sky-daily-report.mjs). Only whitelisted
+     numeric fields are kept; a day expires after 40 days. Single-threaded, so
+     the read-modify-write needs no lock. */
+  async bumpStats({ day, inc }) {
+    const d = String(day || "").slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return { ok: false };
+    const clean2 = cleanInc(inc);
+    const key = "stats:" + d;
+    const cur = await this.#entry(key) || { v: {} };
+    const v = Object.assign({}, cur.v || {});
+    for (const k of Object.keys(clean2)) v[k] = num2(v[k]) + clean2[k];
+    await this.ctx.storage.put(key, { v, exp: Date.now() + 40 * 864e5 });
+    return { ok: true };
+  }
+  async getStats({ day }) {
+    const entry = await this.#entry("stats:" + String(day || "").slice(0, 10));
+    return { stats: entry ? cleanInc(entry.v) : {} };
+  }
   async fetch(request) {
     const path = new URL(request.url).pathname;
     let body = {};
@@ -1417,6 +1597,10 @@ var AiStateObject = class {
           return json(await this.putState(body));
         case "/rate/consume":
           return json(await this.consumeRate(body));
+        case "/stats/bump":
+          return json(await this.bumpStats(body));
+        case "/stats/get":
+          return json(await this.getStats(body));
         default:
           return json({ error: "not_found" }, 404);
       }
@@ -1428,7 +1612,7 @@ var AiStateObject = class {
 function aiStateStore(env) {
   const binding = env && env.AI_STATE;
   if (!binding || typeof binding.idFromName !== "function" || typeof binding.get !== "function") return null;
-  const call = async (uid, path, body) => {
+  const call2 = async (uid, path, body) => {
     const stub = binding.get(binding.idFromName(String(uid)));
     const response3 = await stub.fetch(new Request("https://ai-state" + path, {
       method: "POST",
@@ -1440,10 +1624,10 @@ function aiStateStore(env) {
   };
   return {
     version: AI_STATE_VERSION,
-    consumeQuota: (uid, cap) => call(uid, "/quota/consume", { cap }),
-    get: async (uid, key) => (await call(uid, "/state/get", { key })).value,
-    put: (uid, key, value, ttlMs) => call(uid, "/state/put", { key, value, ttlMs }),
-    consumeRate: (uid, limit, windowMs, now) => call(uid, "/rate/consume", { limit, windowMs, now })
+    consumeQuota: (uid, cap) => call2(uid, "/quota/consume", { cap }),
+    get: async (uid, key) => (await call2(uid, "/state/get", { key })).value,
+    put: (uid, key, value, ttlMs) => call2(uid, "/state/put", { key, value, ttlMs }),
+    consumeRate: (uid, limit, windowMs, now) => call2(uid, "/rate/consume", { limit, windowMs, now })
   };
 }
 
@@ -2895,6 +3079,11 @@ async function agentChat(request, env, uid, opts = {}) {
       console.log(JSON.stringify({ evt: "ai.timing", agent: AGENT_VERSION, totalMs: Date.now() - startedAt, ...timings, ...extra }));
     } catch (_) {
     }
+    try {
+      bumpDailyStats(env, statsFromTiming({ totalMs: Date.now() - startedAt, ...timings, ...extra })).catch(() => {
+      });
+    } catch (_) {
+    }
   };
   const sendCtx = { uid: String(uid || ""), stream };
   if (!sendCtx.uid.startsWith("account-")) {
@@ -2984,6 +3173,11 @@ async function agentChat(request, env, uid, opts = {}) {
   mark("quota");
   if (quota.exhausted) {
     const resetAt = (quota.start || now) + RL_WINDOW_MS2;
+    try {
+      bumpDailyStats(env, statsFromTiming({ limited: true })).catch(() => {
+      });
+    } catch (_) {
+    }
     return jsonResp({ error: "rate_limited", message: limitMessage(cap, resetAt, now), cap, remaining: quota.remaining, resetAt, retryAfterSec: Math.max(60, Math.ceil((resetAt - now) / 1e3)) }, 429);
   }
   const verificationGuidance = authVerificationGuidance(v.messages[v.messages.length - 1].content);
@@ -4129,6 +4323,10 @@ var admin = async (request, env, path) => {
       return json2(result);
     }
     return json2({ error: "প্রশ্ন খালি" }, 400);
+  }
+  if (path === "/api/admin/ai-daily-report" && request.method === "GET") {
+    const days = new URL(request.url).searchParams.get("days");
+    return json2(await listReports(env.PUB_KV, days || 7));
   }
   if (path === "/api/admin/errors" && request.method === "GET") {
     let log = [];
@@ -11960,7 +12158,7 @@ var asInt2 = (v, fallback = 0) => {
   const n = Number(v);
   return Number.isFinite(n) ? n : fallback;
 };
-var pct = (part, whole) => whole > 0 ? Math.round(part / whole * 1e3) / 10 : 0;
+var pct2 = (part, whole) => whole > 0 ? Math.round(part / whole * 1e3) / 10 : 0;
 function computeAnalytics(rows4 = [], readCounts = {}, inactiveDevices = 0) {
   const items = [];
   let sent = 0;
@@ -11991,8 +12189,8 @@ function computeAnalytics(rows4 = [], readCounts = {}, inactiveDevices = 0) {
       delivered: reach,
       opened: reads,
       clicked: clicks,
-      openRate: pct(reads, reach),
-      ctr: pct(clicks, reach),
+      openRate: pct2(reads, reach),
+      ctr: pct2(clicks, reach),
       error: row?.error ? String(row.error).slice(0, 200) : null
     });
   }
@@ -12007,8 +12205,8 @@ function computeAnalytics(rows4 = [], readCounts = {}, inactiveDevices = 0) {
       /* Dead tokens are a health signal, not a send failure: they are the
        * registrations FCM rejected and the worker already deactivated. */
       invalidTokens: Math.max(0, asInt2(inactiveDevices, 0)),
-      ctr: pct(clicked, delivered),
-      engagement: pct(opened, delivered)
+      ctr: pct2(clicked, delivered),
+      engagement: pct2(opened, delivered)
     },
     items
   };
@@ -12074,7 +12272,7 @@ var AnalyticsStore = class {
     return asInt2(row?.n, 0);
   }
 };
-var __analyticsTest = Object.freeze({ computeAnalytics, summarizeHistory, pct });
+var __analyticsTest = Object.freeze({ computeAnalytics, summarizeHistory, pct: pct2 });
 
 // send-planner.mjs
 var clamp3 = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
@@ -15013,7 +15211,7 @@ function attributeConversion(send = {}, learningEvents = [], windowMs = 6 * 3600
   if (!candidates.length) return { converted: false, kind: null, lagMs: null };
   return { converted: true, kind: candidates[0].kind, lagMs: candidates[0].at - sentAt };
 }
-var pct2 = (part, whole) => whole > 0 ? Math.round(part / whole * 1e3) / 10 : 0;
+var pct3 = (part, whole) => whole > 0 ? Math.round(part / whole * 1e3) / 10 : 0;
 function computePerformance(rows4 = []) {
   const byKind = {};
   const byVariant = {};
@@ -15041,15 +15239,15 @@ function computePerformance(rows4 = []) {
   }
   for (const bucket of [byKind, byVariant, byHour]) {
     for (const b of Object.values(bucket)) {
-      b.openRate = pct2(b.opened, b.sent);
-      b.clickRate = pct2(b.clicked, b.sent);
-      b.conversion = pct2(b.converted, b.sent);
+      b.openRate = pct3(b.opened, b.sent);
+      b.clickRate = pct3(b.clicked, b.sent);
+      b.conversion = pct3(b.converted, b.sent);
     }
   }
   const hours = Object.entries(byHour).filter(([h]) => h !== "unknown").map(([h, b]) => ({ hour: Number(h), ...b })).filter((b) => b.sent >= 3).sort((a, b) => b.conversion - a.conversion || b.openRate - a.openRate);
   const bestHour = hours.length ? hours[0].hour : null;
   return {
-    totals: { sent, opened, clicked, converted, failed, openRate: pct2(opened, sent), clickRate: pct2(clicked, sent), conversion: pct2(converted, sent) },
+    totals: { sent, opened, clicked, converted, failed, openRate: pct3(opened, sent), clickRate: pct3(clicked, sent), conversion: pct3(converted, sent) },
     byKind,
     byVariant,
     byHour,
@@ -15109,14 +15307,14 @@ function computeDecisionStats(decisions = [], outcomes = []) {
       b.clicked += 1;
     }
   }
-  const perfRanked = Object.entries(perfByRule).map(([kind, b]) => ({ kind, ...b, clickRate: pct2(b.clicked, b.sent), openRate: pct2(b.opened, b.sent) })).sort((a, b) => b.clickRate - a.clickRate || b.openRate - a.openRate || a.kind.localeCompare(b.kind));
+  const perfRanked = Object.entries(perfByRule).map(([kind, b]) => ({ kind, ...b, clickRate: pct3(b.clicked, b.sent), openRate: pct3(b.opened, b.sent) })).sort((a, b) => b.clickRate - a.clickRate || b.openRate - a.openRate || a.kind.localeCompare(b.kind));
   return {
     eligible: rows4.length,
     sent,
     skipped,
     /* CTR is over delivered sends, not decisions: a decision to send that FCM
      * then rejected must not sit in the denominator. */
-    totals: { sent: delivered, opened, clicked, clickRate: pct2(clicked, delivered), openRate: pct2(opened, delivered) },
+    totals: { sent: delivered, opened, clicked, clickRate: pct3(clicked, delivered), openRate: pct3(opened, delivered) },
     byRule,
     bySkipStage,
     topSkipStage: rank2(bySkipStage)[0] || null,
@@ -16525,7 +16723,7 @@ var asNum = (v, fallback = 0) => {
   const n = Number(v);
   return Number.isFinite(n) ? n : fallback;
 };
-var pct3 = (part, whole, dp = 1) => whole > 0 ? Number((part / whole * 100).toFixed(dp)) : 0;
+var pct4 = (part, whole, dp = 1) => whole > 0 ? Number((part / whole * 100).toFixed(dp)) : 0;
 var ratio2 = (part, whole, dp = 4) => whole > 0 ? Number((part / whole).toFixed(dp)) : 0;
 var round = (n, dp = 2) => Number.isFinite(Number(n)) ? Number(Number(n).toFixed(dp)) : 0;
 var sum = (rows4, pick) => rows4.reduce((n, r) => n + asNum(pick(r)), 0);
@@ -16610,7 +16808,7 @@ function computeLearningMetrics(input = {}, options = {}) {
   const correct = sum(dailyStats, (d) => d.correct);
   const wrong = sum(dailyStats, (d) => d.wrong);
   const answered = correct + wrong;
-  const accuracy = answered > 0 ? pct3(correct, answered, 1) : exams.length ? round(sum(exams, (e) => e.score) / exams.length, 1) : 0;
+  const accuracy = answered > 0 ? pct4(correct, answered, 1) : exams.length ? round(sum(exams, (e) => e.score) / exams.length, 1) : 0;
   const lessonsCompleted = sum(dailyStats, (d) => d.lessons);
   const learningTimeMs = sum(dailyStats, (d) => d.timeMs);
   const coursesStarted = courses.filter((c) => c.lessonsDone > 0).length;
@@ -16656,7 +16854,7 @@ function computeLearningMetrics(input = {}, options = {}) {
       completed: coursesCompleted,
       lessonsTotal,
       lessonsDone,
-      percent: pct3(lessonsDone, lessonsTotal, 1)
+      percent: pct4(lessonsDone, lessonsTotal, 1)
     },
     mistakes: {
       pending: sum(mistakes, (m) => m.misses),
@@ -16695,7 +16893,7 @@ function comparePeriods(series = [], days = 7) {
     accuracy: (rows4) => {
       const c = sum(rows4, (r) => r.correct);
       const w = sum(rows4, (r) => r.wrong);
-      return c + w > 0 ? pct3(c, c + w, 1) : 0;
+      return c + w > 0 ? pct4(c, c + w, 1) : 0;
     }
   };
   const out = {};
@@ -16732,7 +16930,7 @@ function detectTrends(series = [], options = {}) {
     accuracy: linearTrend(rows4.map((r) => {
       const c = asNum(r.correct);
       const w = asNum(r.wrong);
-      return c + w > 0 ? pct3(c, c + w, 1) : 0;
+      return c + w > 0 ? pct4(c, c + w, 1) : 0;
     }), { window })
   };
 }
@@ -16863,10 +17061,10 @@ function buildCourseAnalytics(rows4 = [], events = []) {
   }
   return [...byCourse.values()].map((c) => ({
     ...c,
-    progressPercent: pct3(c.lessonsDone, c.lessonsTotal, 1),
-    completionRate: pct3(c.completed, c.learners, 1),
-    startRate: pct3(c.started, c.learners, 1),
-    lessonCompletionRate: pct3(c.lessonCompletes, c.lessonStarts, 1)
+    progressPercent: pct4(c.lessonsDone, c.lessonsTotal, 1),
+    completionRate: pct4(c.completed, c.learners, 1),
+    startRate: pct4(c.started, c.learners, 1),
+    lessonCompletionRate: pct4(c.lessonCompletes, c.lessonStarts, 1)
   })).sort((a, b) => b.learners - a.learners);
 }
 function buildLessonAnalytics(events = []) {
@@ -16927,7 +17125,7 @@ function buildLessonAnalytics(events = []) {
     completionRate: ratio2(l.completes, l.starts),
     avgTimeMs: l.timeSamples ? Math.round(l.timeMs / l.timeSamples) : 0,
     retryRate: ratio2(l.retries, l.starts),
-    quizAccuracy: pct3(l.quizCorrect, l.quizAttempts, 1)
+    quizAccuracy: pct4(l.quizCorrect, l.quizAttempts, 1)
   })).sort((a, b) => a.completionRate - b.completionRate);
 }
 function buildQuizAnalytics(events = []) {
@@ -16973,11 +17171,11 @@ function buildQuizAnalytics(events = []) {
     wrong: q.wrong,
     skipped: q.skipped,
     completed: q.completed,
-    accuracy: pct3(q.correct, q.attempts, 1),
+    accuracy: pct4(q.correct, q.attempts, 1),
     avgTimeMs: q.timeSamples ? Math.round(q.timeMs / q.timeSamples) : 0,
     completionRate: ratio2(q.completed, q.started),
     retryRate: ratio2(Math.max(0, q.attempts - 1), q.attempts),
-    hardestTopics: [...q.byTopic.values()].map((t) => ({ topic: t.topic, attempts: t.attempts, accuracy: pct3(t.correct, t.attempts, 1) })).filter((t) => t.attempts >= DROPOFF_MIN_SAMPLE).sort((a, b) => a.accuracy - b.accuracy).slice(0, 5)
+    hardestTopics: [...q.byTopic.values()].map((t) => ({ topic: t.topic, attempts: t.attempts, accuracy: pct4(t.correct, t.attempts, 1) })).filter((t) => t.attempts >= DROPOFF_MIN_SAMPLE).sort((a, b) => a.accuracy - b.accuracy).slice(0, 5)
   })).sort((a, b) => a.accuracy - b.accuracy);
 }
 function computeEngagement(students = [], options = {}) {
@@ -17000,14 +17198,14 @@ function computeEngagement(students = [], options = {}) {
     mau,
     dauWauRatio: ratio2(dau, wau),
     wauMauRatio: ratio2(wau, mau),
-    stickiness: pct3(dau, mau, 1),
+    stickiness: pct4(dau, mau, 1),
     sessions: sessionCount,
     avgSessionMs: sessionCount ? Math.round(totalMs / sessionCount) : 0,
     activeStudents: mau,
     totalStudents: rows4.length,
     returningUsers: returning,
     newUsers: rows4.length - returning,
-    returningRate: pct3(returning, rows4.length, 1),
+    returningRate: pct4(returning, rows4.length, 1),
     learningActiveStudents: rows4.filter((s) => asInt5(s.learningActions) > 0).length
   };
 }
@@ -17040,7 +17238,7 @@ function computeRetention(students = [], options = {}) {
       }
     }
   }
-  const windows = [...buckets.values()].map((b) => ({ ...b, rate: pct3(b.retained, b.matureCohortSize, 1) })).sort((a, b) => a.window - b.window);
+  const windows = [...buckets.values()].map((b) => ({ ...b, rate: pct4(b.retained, b.matureCohortSize, 1) })).sort((a, b) => a.window - b.window);
   return {
     windows,
     byWindow: Object.fromEntries(windows.map((w) => [`d${w.window}`, w.rate])),
@@ -17049,10 +17247,10 @@ function computeRetention(students = [], options = {}) {
     cohorts: [...cohorts.values()].map((c) => ({
       cohort: c.cohort,
       size: c.size,
-      d1: pct3(c.retained[1] || 0, c.matureSize[1] || 0, 1),
-      d7: pct3(c.retained[7] || 0, c.matureSize[7] || 0, 1),
-      d14: pct3(c.retained[14] || 0, c.matureSize[14] || 0, 1),
-      d30: pct3(c.retained[30] || 0, c.matureSize[30] || 0, 1)
+      d1: pct4(c.retained[1] || 0, c.matureSize[1] || 0, 1),
+      d7: pct4(c.retained[7] || 0, c.matureSize[7] || 0, 1),
+      d14: pct4(c.retained[14] || 0, c.matureSize[14] || 0, 1),
+      d30: pct4(c.retained[30] || 0, c.matureSize[30] || 0, 1)
     })).sort((a, b) => a.cohort < b.cohort ? 1 : -1).slice(0, 12)
   };
 }
@@ -17068,13 +17266,13 @@ function computeNotificationAnalytics(outcomes = [], options = {}) {
       opened,
       clicked,
       learning,
-      openRate: pct3(opened, sent, 1),
-      clickRate: pct3(clicked, sent, 1),
-      learningConversion: pct3(learning, sent, 1),
+      openRate: pct4(opened, sent, 1),
+      clickRate: pct4(clicked, sent, 1),
+      learningConversion: pct4(learning, sent, 1),
       /* Of the students who engaged, how many actually studied — separates a
        * good subject line from a good nudge. */
-      clickToLearning: pct3(learning, clicked, 1),
-      openToLearning: pct3(learning, opened, 1)
+      clickToLearning: pct4(learning, clicked, 1),
+      openToLearning: pct4(learning, opened, 1)
     };
   };
   const overall = bucket(rows4);
@@ -17133,7 +17331,7 @@ function computeCampaignAnalytics(globals = [], readCounts = {}) {
       delivered,
       opened: readers,
       failed: status === "failed",
-      openRate: pct3(readers, delivered, 1),
+      openRate: pct4(readers, delivered, 1),
       /* A campaign is only judged once it has actually gone out. */
       isLive: status === "sent" && delivered > 0
     };
@@ -17241,8 +17439,8 @@ function buildStudentInsights(metrics = {}, context = {}) {
   }
   const courses = Array.isArray(context.courses) ? context.courses : [];
   if (courses.length) {
-    const top = [...courses].sort((a, b) => pct3(b.lessonsDone, b.lessonsTotal, 1) - pct3(a.lessonsDone, a.lessonsTotal, 1))[0];
-    const percent = pct3(top.lessonsDone, top.lessonsTotal, 1);
+    const top = [...courses].sort((a, b) => pct4(b.lessonsDone, b.lessonsTotal, 1) - pct4(a.lessonsDone, a.lessonsTotal, 1))[0];
+    const percent = pct4(top.lessonsDone, top.lessonsTotal, 1);
     if (percent > 0) {
       out.push(insight(
         "neutral",
@@ -17320,7 +17518,7 @@ function buildAdminInsights(input = {}) {
       out.push(insight(
         "attention",
         "weakest-course",
-        `⚠️ ${weakest.courseId}-এ lesson completion সবচেয়ে কম (${pct3(weakest.lessonCompletionRate * 100, 100, 1)}%)।`,
+        `⚠️ ${weakest.courseId}-এ lesson completion সবচেয়ে কম (${pct4(weakest.lessonCompletionRate * 100, 100, 1)}%)।`,
         { courseId: weakest.courseId }
       ));
     }
@@ -17332,7 +17530,7 @@ function buildAdminInsights(input = {}) {
     out.push(insight(
       "attention",
       "lesson-dropoff",
-      `⚠️ Lesson ${worstLesson.lessonId}-এর completion rate অন্যান্য lesson-এর তুলনায় উল্লেখযোগ্যভাবে কম (${pct3(worstLesson.completionRate * 100, 100, 1)}%${avg !== null ? `, গড় ${pct3(avg * 100, 100, 1)}%` : ""})।`,
+      `⚠️ Lesson ${worstLesson.lessonId}-এর completion rate অন্যান্য lesson-এর তুলনায় উল্লেখযোগ্যভাবে কম (${pct4(worstLesson.completionRate * 100, 100, 1)}%${avg !== null ? `, গড় ${pct4(avg * 100, 100, 1)}%` : ""})।`,
       { courseId: worstLesson.courseId, lessonId: worstLesson.lessonId, completionRate: worstLesson.completionRate }
     ));
   }
@@ -27463,7 +27661,7 @@ function parseProviderPools(config = {}) {
     tts: parsePool(config.tts, KIND2.TTS)
   });
 }
-async function runWithFailover(pool, call, onFailover) {
+async function runWithFailover(pool, call2, onFailover) {
   if (!Array.isArray(pool) || pool.length === 0) {
     const err2 = new Error("no_provider_configured");
     err2.status = 503;
@@ -27473,7 +27671,7 @@ async function runWithFailover(pool, call, onFailover) {
   for (let i = 0; i < pool.length; i++) {
     const provider = pool[i];
     try {
-      return { result: await call(provider, i), provider: provider.id, index: i };
+      return { result: await call2(provider, i), provider: provider.id, index: i };
     } catch (e) {
       lastError = e;
       const status = e && e.status;
@@ -29079,6 +29277,10 @@ var gk_agent_worker_default = {
     }
     try {
       await runScheduledDigests(env);
+    } catch (_) {
+    }
+    try {
+      await runDailyReport(env);
     } catch (_) {
     }
     try {
