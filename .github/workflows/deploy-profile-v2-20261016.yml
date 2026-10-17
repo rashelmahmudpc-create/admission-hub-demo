@@ -12,6 +12,12 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/deploy-profile-v2-20261016.yml'
+      - 'profile-v2.html'
+      - 'profile-v2-mount.js'
+      - 'scripts/build-profile-v2.mjs'
+      - 'design/profile-v2-source.html'
+      - 'index.html'
+      - 'sw.js'
   workflow_dispatch:
 
 permissions:
