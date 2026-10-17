@@ -955,6 +955,58 @@ export async function agentChat(request, env, uid, opts = {}) {
     return guidanceResponse('নিরাপত্তার জন্য Password, verification code বা গোপন তথ্য Assistant নেয় না। এমন কিছু লিখে থাকলে সেটি বদলে শুধু সাধারণ প্রশ্ন করো।', stream);
   }
 
+  const intentCls = classifyIntent(v.messages[v.messages.length - 1].content);
+  const intent = intentCls.intent;
+  const baseTier = intentCls.tier;
+  /* P26: a provably simple academic question goes to the FAST model even though
+     the classifier called it academic. This can only lower spend — it never
+     upgrades a tier — so the worst case is a correct but cheaper answer. */
+  const routing = routeTier(intent, v.messages[v.messages.length - 1].content, baseTier);
+  const tier = routing.tier;
+  const quizMode = intent === INTENTS.QUIZ_REQUEST;
+  const examMode = body.context && body.context.examMode === 'mock-running' ? 'mock-running' : '';
+  const stats = capStats(body.context && body.context.stats);
+  const safety = safetyGate(intent, examMode);
+
+  /* PR-2 (owner 2026-10-17): the provider health probe needs only the tier, so it
+     starts now and overlaps the quota round-trip instead of running after it. */
+  const providersP = (async () => {
+  /* bad-set (আজ-মার্ক-করা key/model) */
+  const kvKeys = await aiKeyOverlay(env);
+  const healthNow = Date.now();
+  /* P28: per-entry markers, kept so the chain can tell a cooling-down model from
+     a healthy one rather than treating every past failure as permanent. */
+  const badMap = {};
+  const badSet = new Set();
+  /* One parallel round instead of one KV read per chain entry in sequence —
+     the sequential loop cost seconds before the first token on a long chain. */
+  {
+    const probe = routerChain(env, tier, new Set(), kvKeys);
+    const flags = await Promise.all(probe.map(c => Promise.resolve().then(() => getKv(env.PUB_KV, badKeyName(c.key, c.model))).catch(() => null)));
+    probe.forEach((c, i) => {
+      const sig = String(c.key).slice(0, 12) + ':' + c.model;
+      badMap[sig] = flags[i];
+      /* Only entries still inside their cooldown are excluded — a transient 5xx
+         earns a short cooldown and is retried automatically afterwards. */
+      if (!isEntryHealthy(flags[i], healthNow)) badSet.add(sig);
+    });
+  }
+  /* A model that failed transiently (503 "high demand") must not disable its tier
+     for the rest of the day. If every entry is cooling down, the whole list comes
+     back for one attempt, so the student gets an answer instead of a 503 — the
+     previous behaviour read as "the AI is switched off". */
+  const fullChain = routerChain(env, tier, new Set(), kvKeys)
+    .map(c => ({ ...c, sig: String(c.key).slice(0, 12) + ':' + c.model }));
+  let chain = healthyChain(fullChain, badMap, healthNow);
+  if (v.messages.some(m => m.image)) chain = chain.filter(c => c.provider === 'gemini');
+  /* P31: a working model is tried before a dead one. `healthyChain` already
+     drops individually-cooling entries, so this matters when everything is
+     cooling and the whole list comes back — the least-broken model then leads. */
+  chain = rankChainByModelHealth(chain, badMap, healthNow);
+  return { kvKeys, badMap, badSet, chain };
+  })();
+  providersP.catch(() => {});
+
   /* Per-user AI state lives in a Durable Object when the binding is present.
      The KV path wrote three keys a message, and the free plan allows only 1,000
      KV writes a day, which capped the whole app. The object allows 100,000
@@ -995,24 +1047,35 @@ export async function agentChat(request, env, uid, opts = {}) {
 
   const verificationGuidance = authVerificationGuidance(v.messages[v.messages.length - 1].content);
   if (verificationGuidance) return guidanceResponse(verificationGuidance, stream);
+  const { kvKeys, badMap, badSet } = await providersP;
+  let { chain } = await providersP;
+  if (!chain.length) {
+    const msg = { error: 'no_providers', message: 'AI-সেবা এখন কনফিগার করা নেই — দয়া করে মালিককে জানাও (GEMINI_KEYS)।' };
+    return stream ? sseError(msg, 503) : jsonResp(msg, 503);
+  }
+  if (safety.blocked) {
+    const msg = { error: 'mock_refused', message: safety.message };
+    return stream ? sseError(msg, 403) : jsonResp(msg, 403);
+  }
+  /* PR-2: from here on, in streaming mode the work runs inside an already-open
+     stream, so the student sees the first byte at once and each stage is sent
+     the moment that work really happens (not all together at the end). */
+  const early = { sent: new Set(), push: null };
+  const prepStage = (id, label) => {
+    if (!early.push || early.sent.has(id)) return;
+    early.sent.add(id);
+    early.push(`event: stage\ndata: ${JSON.stringify({ stage: id, label })}\n\n`);
+  };
+  const core = async () => {
 
-  const intentCls = classifyIntent(v.messages[v.messages.length - 1].content);
-  const intent = intentCls.intent;
-  const baseTier = intentCls.tier;
-  /* P26: a provably simple academic question goes to the FAST model even though
-     the classifier called it academic. This can only lower spend — it never
-     upgrades a tier — so the worst case is a correct but cheaper answer. */
-  const routing = routeTier(intent, v.messages[v.messages.length - 1].content, baseTier);
-  const tier = routing.tier;
-  const quizMode = intent === INTENTS.QUIZ_REQUEST;
-  const examMode = body.context && body.context.examMode === 'mock-running' ? 'mock-running' : '';
-  const stats = capStats(body.context && body.context.stats);
-  const safety = safetyGate(intent, examMode);
 
   /* AI personalization (blueprint §19-20): per-user KV prefs, allowlisted.
      Keyed by identity uid — never shared/leaked between users. */
   /* Independent per-user reads start together; each is awaited where it was
      read before, so behaviour is unchanged and only the waiting overlaps. */
+  const appFeatureHit = !quizMode && !v.messages.some(m => m.image) && isAppFeatureQuestion((v.messages[v.messages.length - 1] || {}).content);
+  if (appFeatureHit) prepStage('app-features', 'টুল চালাচ্ছি — অ্যাপের ফিচার তালিকা দেখছি');
+  const appFeaturesP = appFeatureHit ? Promise.resolve().then(() => loadAppFeatures(env && env.PUB_KV)).catch(() => null) : null;
   const memKeyEarly = 'mem:' + MEMORY_VERSION + ':' + sendCtx.uid;
   const safeRead = (fn) => Promise.resolve().then(fn).catch(() => null);
   const prefsP = safeRead(() => getKv(env.PUB_KV, 'aiprefs:' + sendCtx.uid));
@@ -1132,6 +1195,7 @@ export async function agentChat(request, env, uid, opts = {}) {
   }
   const baseRecords = memRecords.filter(r => !(r.kind === KIND.STUDIES && r.key === 'last-topic'));
   const memoryText = memoryOn ? renderMemory(baseRecords.concat(tutorContext), MEMORY_VERSION) : '';
+  if (memoryText || summaryText || (msgs.length > v.messages.length)) prepStage('memory', 'তোমার আগের কথাগুলো মনে করছি');
   /* The rich-answer contract rides beside the registered base prompt (whose
      text and hash stay locked) and is skipped for quiz JSON and onboarding. */
   const formatRules = (!quizMode && !onboarding) ? RESPONSE_FORMAT_RULES : '';
@@ -1148,8 +1212,7 @@ export async function agentChat(request, env, uid, opts = {}) {
      request qualifies; otherwise behaviour is byte-identical to before. */
   /* get_app_features (owner 2026-10-17): only a question about the app pays for
      the feature list; such answers are never cached, so a list edit shows at once. */
-  const appFeatureHit = !quizMode && !hasImage && isAppFeatureQuestion((v.messages[v.messages.length - 1] || {}).content);
-  if (appFeatureHit) sys = sys + '\n\n' + renderAppFeatures(await loadAppFeatures(env && env.PUB_KV));
+  if (appFeatureHit) sys = sys + '\n\n' + renderAppFeatures(await appFeaturesP);
   const chatCacheOn = chatCacheEnabled(env) && env && env.PROFILE_DB && !appFeatureHit;
   const cacheQuestion = (v.messages[v.messages.length - 1] || {}).content;
   const cacheable = chatCacheOn && isCacheableRequest({
@@ -1212,48 +1275,6 @@ export async function agentChat(request, env, uid, opts = {}) {
   });
   const payloadO = () => ({ messages: [{ role: 'system', content: sys }].concat(msgs.map(m => ({ role: m.role, content: m.content }))) });
 
-  /* bad-set (আজ-মার্ক-করা key/model) */
-  const kvKeys = await aiKeyOverlay(env);
-  const healthNow = Date.now();
-  /* P28: per-entry markers, kept so the chain can tell a cooling-down model from
-     a healthy one rather than treating every past failure as permanent. */
-  const badMap = {};
-  const badSet = new Set();
-  /* One parallel round instead of one KV read per chain entry in sequence —
-     the sequential loop cost seconds before the first token on a long chain. */
-  {
-    const probe = routerChain(env, tier, new Set(), kvKeys);
-    const flags = await Promise.all(probe.map(c => Promise.resolve().then(() => getKv(env.PUB_KV, badKeyName(c.key, c.model))).catch(() => null)));
-    probe.forEach((c, i) => {
-      const sig = String(c.key).slice(0, 12) + ':' + c.model;
-      badMap[sig] = flags[i];
-      /* Only entries still inside their cooldown are excluded — a transient 5xx
-         earns a short cooldown and is retried automatically afterwards. */
-      if (!isEntryHealthy(flags[i], healthNow)) badSet.add(sig);
-    });
-  }
-  /* A model that failed transiently (503 "high demand") must not disable its tier
-     for the rest of the day. If every entry is cooling down, the whole list comes
-     back for one attempt, so the student gets an answer instead of a 503 — the
-     previous behaviour read as "the AI is switched off". */
-  const fullChain = routerChain(env, tier, new Set(), kvKeys)
-    .map(c => ({ ...c, sig: String(c.key).slice(0, 12) + ':' + c.model }));
-  let chain = healthyChain(fullChain, badMap, healthNow);
-  if (hasImage) chain = chain.filter(c => c.provider === 'gemini');
-  /* P31: a working model is tried before a dead one. `healthyChain` already
-     drops individually-cooling entries, so this matters when everything is
-     cooling and the whole list comes back — the least-broken model then leads. */
-  chain = rankChainByModelHealth(chain, badMap, healthNow);
-  if (!chain.length) {
-    await settleBackground();
-    const msg = { error: 'no_providers', message: 'AI-সেবা এখন কনফিগার করা নেই — দয়া করে মালিককে জানাও (GEMINI_KEYS)।' };
-    return stream ? sseError(msg, 503) : jsonResp(msg, 503);
-  }
-  if (safety.blocked) {
-    await settleBackground();
-    const msg = { error: 'mock_refused', message: safety.message };
-    return stream ? sseError(msg, 403) : jsonResp(msg, 403);
-  }
 
   const failures = [];
   /* M10: one trace per request, emitted to the Worker log sink. It carries ids,
@@ -1389,7 +1410,7 @@ export async function agentChat(request, env, uid, opts = {}) {
       const push = (s) => { try { controller.enqueue(encoder.encode(s)); } catch (_) {} };
       /* Live progress: each stage is sent only when that work really happens.
          Provider / model switching is deliberately never surfaced. */
-      const sentStages = new Set();
+      const sentStages = early.sent;
       const stage = (id, label) => { if (sentStages.has(id)) return; sentStages.add(id); push(`event: stage\ndata: ${JSON.stringify({ stage: id, label })}\n\n`); };
       try {
         stage('understand', STAGE_UNDERSTAND[intent] || STAGE_UNDERSTAND.GENERAL_CHAT);
@@ -1490,6 +1511,46 @@ export async function agentChat(request, env, uid, opts = {}) {
     }
   });
   return new Response(streamOut, {
+    status: 200,
+    headers: {
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-cache, no-transform',
+      'Connection': 'keep-alive',
+      'X-Accel-Buffering': 'no',
+      'Access-Control-Allow-Origin': '*'
+    }
+  });
+  };
+  if (!stream) return core();
+  mark('open');
+  return openEarly(core, early, () => prepStage('understand', STAGE_UNDERSTAND[intent] || STAGE_UNDERSTAND.GENERAL_CHAT));
+}
+
+/* PR-2: open the SSE response at once and pipe the real answer into it when it
+   is ready. Stage events written during preparation go out first, in order.
+   A plain queue (no backpressure): the work and the memory save must finish
+   even when the reader is slow, exactly as with the inner stream. */
+function openEarly(run, early, first) {
+  const enc = new TextEncoder();
+  let ctl = null;
+  const readable = new ReadableStream({ start(c) { ctl = c; } });
+  const write = (chunk) => { try { ctl.enqueue(typeof chunk === 'string' ? enc.encode(chunk) : chunk); } catch (_) {} };
+  early.push = write;
+  write(': open\n\n');
+  if (first) first();
+  (async () => {
+    try {
+      const resp = await run();
+      const reader = resp && resp.body ? resp.body.getReader() : null;
+      if (reader) { for (;;) { const step = await reader.read(); if (step.done) break; write(step.value); } }
+    } catch (e) {
+      write(`event: error\ndata: ${JSON.stringify({ error: 'stream_failed', message: 'যুক্তি-বিচ্ছেদ ঘটেছে।', detail: String((e && e.message) || e), retryable: true })}\n\n`);
+    } finally {
+      early.push = null;
+      try { ctl.close(); } catch (_) {}
+    }
+  })();
+  return new Response(readable, {
     status: 200,
     headers: {
       'Content-Type': 'text/event-stream; charset=utf-8',

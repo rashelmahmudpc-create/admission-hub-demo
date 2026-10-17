@@ -160,8 +160,8 @@ function fakeFetch(responder) {
   let captured = '';
   const restore = fakeFetch((url, init) => { captured = String(init.body || ''); return sseRes('বুঝেছি'); });
   const res = await A.agentChat(new Request('https://x/api/ai/chat', { method: 'POST', body: JSON.stringify({ messages: [{ role: 'user', content: 'মনে রাখো, আমি ফিজিক্সে দুর্বল' }] }) }), env, 'account-mem1');
-  restore();
   await res.text();
+  restore();
   const memKey = [...store.keys()].find(k => k.startsWith('mem:mem-v1:account-mem1'));
   t('M7-২৯. E2E: a stated fact is stored under the caller\x27s own key',
     res.status === 200 && !!memKey && String(store.get(memKey)).includes('ফিজিক্স'));
@@ -172,8 +172,8 @@ function fakeFetch(responder) {
   let captured2 = '';
   const restore2 = fakeFetch((url, init) => { captured2 = String(init.body || ''); return sseRes('ঠিক আছে'); });
   const res2 = await A.agentChat(new Request('https://x/api/ai/chat', { method: 'POST', body: JSON.stringify({ messages: [{ role: 'user', content: 'আমাকে আরেকটা উদাহরণ দাও' }] }) }), env, 'account-mem1');
-  restore2();
   await res2.text();
+  restore2();
   t('M7-৩১. E2E: a follow-up prompt carries the long-term memory block',
     captured2.includes('LONG-TERM MEMORY') && captured2.includes('ফিজিক্স'));
 
@@ -182,8 +182,8 @@ function fakeFetch(responder) {
   let captured3 = '';
   const restore3 = fakeFetch((url, init) => { captured3 = String(init.body || ''); return sseRes('হ্যালো'); });
   const res3 = await A.agentChat(new Request('https://x/api/ai/chat', { method: 'POST', body: JSON.stringify({ messages: [{ role: 'user', content: 'আমাকে আরেকটা উদাহরণ দাও' }] }) }), env2, 'account-other');
-  restore3();
   await res3.text();
+  restore3();
   t('M7-৩২. E2E: another account never receives a foreign memory',
     res3.status === 200 && !captured3.includes('LONG-TERM MEMORY') && !captured3.includes('ফিজিক্স'));
 

@@ -49,6 +49,7 @@ const APP_SHELL = [
   './profile-v2-mount.js?v=profile-v2-3',
   './data-protection.js?v=dp-v3-fastboot',
   './dashboard-v2.js?v=dash2f18-chrome',
+  './sky-smalltalk.js?v=st1',
   './ai-agent-chat.js?v=agent-f1-ui-skyv7',
   './question-engine.js?v=qe1',
   './question-engine-panel.js?v=qe1',
@@ -84,7 +85,7 @@ const APP_SHELL = [
 // A truncated/corrupt download is NEVER written to the shell cache.
 const ASSET_DIGESTS = {
 /* sw-manifest:start */
-  "./index.html": "9c645479def9703c40b7363d2f8674e4a608f69fae7f23d7573b2d6b1de536a7",
+  "./index.html": "7eeb4196e6f52bb88df6ed76774f30666a212d8de8ebaa8f9fd9a6ee3ff198a6",
   "./manifest.json": "6dcf0e0c6f7671750549e53558ba8b9f0c2c83b0c6759072a6b5e2276331f491",
   "./manifest.webmanifest": "abcd26174710f6df3e183889a5a9da182f73ee8cdcc543b43db8fb4070cad54f",
   "./dashboard-v2.css?v=dash2f13-theme": "4541bc1e65fd158c593443562975400d128b8f1d3b636595df3c235b99e8cced",
@@ -107,7 +108,8 @@ const ASSET_DIGESTS = {
   "./profile-v2-mount.js?v=profile-v2-3": "21ba8c813c79b4b4a1c703ed7b812d77ff4411c5f17c1a14a1256ab040536f94",
   "./data-protection.js?v=dp-v3-fastboot": "359dc907ade4bcb3a6a722385969ebb6af47f7e436e6cdf2cce0dd6b7343723d",
   "./dashboard-v2.js?v=dash2f18-chrome": "f53d800f44030fd02a36da9ad2292bd1ab3d958ab7c3c3ad5c65ef3942f88aee",
-  "./ai-agent-chat.js?v=agent-f1-ui-skyv7": "2e4e18859bcd3676bb5c50c1a85b7dfa0d62fa4cc2ac7a5bbedfb46953cbcaa4",
+  "./sky-smalltalk.js?v=st1": "ce2972bda52563bc06a5acc4a5bed0cb835e64d1e2385556097ab42e2e0b8817",
+  "./ai-agent-chat.js?v=agent-f1-ui-skyv7": "a0de3f8be9a9fb449c2c92c8fbbcc9d1894d8b79e01d500ca90465a0b6f27583",
   "./question-engine.js?v=qe1": "db404fefd97bea27dad177748bafb0a9ba7d87bedca094e3da795c5b77946cd4",
   "./question-engine-panel.js?v=qe1": "33376e371654d575484194b5fcf8e486f4e3329c13e5330ff8619caab0399ec4",
   "./notification-fcm.js?v=fcm-p3-v15": "3b1880bc1ab5b9f91cf844b021369f2431eae099175873ab4d7eb018370318ee",

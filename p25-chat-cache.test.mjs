@@ -178,8 +178,8 @@ t('P25-১১. a personalised question is never served from the cache', (async (
 /* ── ৫. Wiring invariants ── */
 t('P25-১২. the cache never runs before the quota charge (the cap stays unbypassable)',
   SRC.indexOf('quota.exhausted) return jsonResp') < SRC.indexOf('isCacheableRequest({'));
-t('P25-১৩. the cache is consulted before the provider chain is built',
-  SRC.indexOf('isCacheableRequest({') < SRC.indexOf('const fullChain = routerChain('));
+t('P25-১৩. the cache is consulted before the model is called (PR-2: the chain probe overlaps the quota read)',
+  SRC.indexOf('isCacheableRequest({') < SRC.indexOf("mark('modelStart')"));
 t('P25-১৪. a cache fault is swallowed, never thrown at the student',
   /catch \(_\) \{ \/\* a cache fault never breaks chat/.test(SRC));
 
