@@ -338,3 +338,67 @@ test('a refused save shows the student an error instead of a success toast', asy
   assert.ok(toast.classList.contains('on'), 'the error toast is visible');
   dom.window.close();
 });
+
+/* The patch validator REQUIRES mobile to match a phone pattern, so '' is
+   rejected — but signup treats mobile as optional. A student who signed up
+   without a number therefore had every save refused, and because the edit-all
+   form sends the whole profile in one patch, one empty mobile silently lost
+   every other edit with it. The adapter must omit the key instead. */
+test('an empty mobile never poisons a single-field save', async () => {
+  const calls = [];
+  const dom = new JSDOM(PAGE, {
+    url: 'https://admissionhub.pages.dev/profile-v2.html',
+    runScripts: 'dangerously',
+    pretendToBeVisual: true,
+    beforeParse(win) {
+      win.fetch = (path, opts) => {
+        calls.push({ path: String(path), method: (opts && opts.method) || 'GET', body: opts && opts.body });
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ ok: true, ...student }) });
+      };
+    },
+  });
+  const win = dom.window;
+  await new Promise((r) => setTimeout(r, 80));
+
+  win.document.dispatchEvent(new win.CustomEvent('app:action', {
+    detail: { action: 'profile.update', field: 'mobile', value: '' },
+  }));
+  await new Promise((r) => setTimeout(r, 60));
+
+  assert.equal(calls.filter((c) => c.path.includes('/profile/patch')).length, 0,
+    'no doomed patch is sent for an empty mobile');
+  dom.window.close();
+});
+
+test('an empty mobile does not block a bulk save of the other fields', async () => {
+  const calls = [];
+  const dom = new JSDOM(PAGE, {
+    url: 'https://admissionhub.pages.dev/profile-v2.html',
+    runScripts: 'dangerously',
+    pretendToBeVisual: true,
+    beforeParse(win) {
+      win.fetch = (path, opts) => {
+        calls.push({ path: String(path), method: (opts && opts.method) || 'GET', body: opts && opts.body });
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ ok: true, ...student }) });
+      };
+    },
+  });
+  const win = dom.window;
+  await new Promise((r) => setTimeout(r, 80));
+
+  win.document.dispatchEvent(new win.CustomEvent('app:action', {
+    detail: {
+      action: 'profile.save',
+      profile: { name: 'রাশেল জায়ান', mobile: '', bio: 'ভালো ছেলে', dob: '', school: '', college: '', session: '', goal: '', targets: [], subjects: [] },
+    },
+  }));
+  await new Promise((r) => setTimeout(r, 60));
+
+  const patch = calls.filter((c) => c.path.includes('/profile/patch')).pop();
+  assert.ok(patch, 'the bulk save still reaches the backend');
+  const fields = JSON.parse(patch.body).fields;
+  assert.equal(fields.fullName, 'রাশেল জায়ান');
+  assert.equal(fields.bio, 'ভালো ছেলে');
+  assert.ok(!('mobile' in fields), 'the empty mobile is omitted, not sent');
+  dom.window.close();
+});

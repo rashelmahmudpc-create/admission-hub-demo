@@ -59,6 +59,16 @@ jobs:
           node scripts/build-profile-v2.mjs
           cmp /tmp/committed.html profile-v2.html || {
             echo 'profile-v2.html is stale; run: node scripts/build-profile-v2.mjs'; exit 1; }
+      - name: Prove every profile field still saves
+        run: |
+          set -eu
+          # The edit-all form sends the whole profile in one patch, and the
+          # backend rejects the ENTIRE patch on one bad field. An empty mobile
+          # is the field that used to do exactly that, so this gate is what
+          # keeps a save regression from reaching students.
+          node --test profile-v2-backend.test.mjs profile-v2-core.test.mjs \
+            profile-v2-mount.test.mjs profile-sheets.test.mjs profile-crop-flow.test.mjs \
+            profile-v2-audit.test.mjs
       - name: Build sanitized frontend bundle
         run: |
           set -eu

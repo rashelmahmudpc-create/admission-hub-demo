@@ -294,9 +294,30 @@ ${shared}
     }
     return out;
   }
+  /* The backend's patch validator REQUIRES mobile to match a phone pattern, so
+     an empty string is rejected — unlike signup, where mobile is optional.
+     A student who signed up without a number therefore had every save refused,
+     and because the edit-all form sends the whole profile in one patch, one
+     empty mobile lost every other edit with it. There is no way to express
+     "clear the mobile" in the patch API, so the key is omitted: an omitted key
+     means unchanged, which keeps the rest of the patch valid. Every other field
+     accepts its empty value.
+     The regex backslashes are doubled because this code is emitted from a
+     template literal, which collapses a single backslash. */
+  function mobileValue(value) {
+    var v = String(value == null ? '' : value).trim().replace(/[\\s()-]/g, '');
+    return /^\\+?[0-9]{8,15}$/.test(v) ? v : null;
+  }
   function toBackend(field, value) {
     var f = FIELD_MAP[field];
-    if (f) return { key: f, value: field === 'session' ? sessionValue(value) : value };
+    if (f) {
+      if (field === 'mobile') {
+        var m = mobileValue(value);
+        if (m === null) return null; // nothing sendable; never a doomed patch
+        return { key: f, value: m };
+      }
+      return { key: f, value: field === 'session' ? sessionValue(value) : value };
+    }
     if (field === 'school') return { key: 'school', value: value ? { name: value } : null };
     if (field === 'college') return { key: 'higherInstitution', value: value ? { name: value } : null };
     if (field === 'targets') return { key: 'targets', value: targetList(value) };
@@ -404,7 +425,15 @@ ${shared}
         var p = d.profile || {};
         var all = {};
         Object.keys(FIELD_MAP).forEach(function (k) {
-          if (k in p) all[FIELD_MAP[k]] = k === 'session' ? sessionValue(p[k]) : p[k];
+          if (!(k in p)) return;
+          /* An empty mobile must be omitted, not sent: the validator rejects ''
+             and would fail the whole bulk patch. See mobileValue(). */
+          if (k === 'mobile') {
+            var m = mobileValue(p[k]);
+            if (m !== null) all.mobile = m;
+            return;
+          }
+          all[FIELD_MAP[k]] = k === 'session' ? sessionValue(p[k]) : p[k];
         });
         ['school', 'college', 'targets', 'subjects'].forEach(function (k) {
           if (k in p) { var o = toBackend(k, p[k]); if (o) all[o.key] = o.value; }
