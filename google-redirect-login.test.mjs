@@ -18,9 +18,10 @@ const SKY = 'https://admissionsky.pages.dev/';
 const ANDROID_FB = 'Mozilla/5.0 (Linux; Android 13; SM-A135F Build/TP1A; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/129.0 Mobile Safari/537.36 [FB_IAB/FB4A;FBAV/480.0.0.0;]';
 const IOS_MESSENGER = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 [FBAN/MessengerForiOS;FBAV/470.0;FBBV/1;FBDV/iPhone14,5;FBMD/iPhone;FBSN/iOS;FBSV/17.6;FBSS/3;FBCR/;FBID/phone;FBLC/en_US;FBOP/5]';
 
-function setup({ url = SKY, ua = '', redirectFlag = false, redirectResult = null, redirectError = null, googleReply = null } = {}) {
+function setup({ url = SKY, ua = '', redirectFlag = false, redirectResult = null, redirectError = null, googleReply = null, cookie = '' } = {}) {
   const dom = new JSDOM('<!doctype html><html><head></head><body></body></html>', { url, runScripts: 'dangerously', pretendToBeVisual: true });
   const w = dom.window;
+  if (cookie) w.document.cookie = cookie;
   if (ua) Object.defineProperty(w.navigator, 'userAgent', { value: ua, configurable: true });
   if (redirectFlag) w.sessionStorage.setItem('ah-google-redirect', '1');
   const record = { apps: [], popup: 0, redirect: 0, providers: [], calls: [] };
@@ -182,6 +183,24 @@ test('ACCOUNT_LINK_REQUIRED after the redirect opens google-link and reuses the 
 test('a failed redirect shows the real error code', async () => {
   const app = setup({ redirectFlag: true, redirectError: Object.assign(new Error('net'), { code: 'auth/network-request-failed' }) });
   await waitFor(() => /\[auth\/network-request-failed\]/.test(app.messageText()), 2500);
+  await sleep(100);
+  app.dom.window.close();
+});
+
+test('a Google redirect sign-in lands on the Dashboard even from the signup flow, and a late Sky open is ignored', async () => {
+  const app = setup({
+    cookie: 'ah_signup_pending_v1=select; Path=/',
+    redirectFlag: true,
+    redirectResult: { user: { uid: 'g' }, credential: { providerId: 'google.com', accessToken: TOKEN } }
+  });
+  await waitFor(() => app.w.AdmissionAccount.isVerified() === true, 2500);
+  await waitFor(() => !app.document.body.classList.contains('ah-account-page-active'), 2500);
+  assert.doesNotMatch(app.document.cookie, /ah_signup_pending_v1=select/, 'the pending signup journey must end');
+  // sky-onboarding.js loads late on a cold page; its reveal() must not cover the Dashboard.
+  app.w.AdmissionSkyBridge.reveal();
+  assert.equal(app.document.body.classList.contains('ah-account-page-active'), false);
+  const mount = app.document.getElementById('ah-sky-flow');
+  assert.ok(!mount || mount.hidden === true);
   await sleep(100);
   app.dom.window.close();
 });
