@@ -1065,6 +1065,14 @@ const ACT_ACTIONS = { 'prefs.write': { bn: 'তোমার AI পছন্দ �
 
     sessions[cur].msgs.push({ role: 'user', text: t, ts: Date.now() });
     if (!sessions[cur].name) sessions[cur].name = t.slice(0, 40);
+    /* PR-2 (owner 2026-10-17): hi / ধন্যবাদ / তুমি কে … are answered here from the
+       in-app bank (sky-smalltalk.js): instant, no server call, no AI limit used. */
+    const quick = window.SkySmallTalk ? window.SkySmallTalk.reply(t, (profilePayload() || {}).firstName) : null;
+    if (quick) {
+      sessions[cur].msgs.push({ role: 'ai', text: quick, ts: Date.now(), local: true });
+      save(); renderMsgs(); mood('happy', 1200);
+      return;
+    }
     const holder = { role: 'ai', text: '', ts: Date.now(), pending: true, stage: T.stageRead, steps: [] };
     const t0 = Date.now();
     let gotFirst = false;
