@@ -334,11 +334,12 @@
    * the sign-up/sign-in flow when its last field loses focus: if nothing editable is focused
    * a moment later, the full height is restored. */
   window.AhViewport = {
-    settle() {
+    settle(force) {
       [150, 500, 1100].forEach(ms => setTimeout(() => {
         try {
+          // `force`: the caller already knows the keyboard is gone although a field is still focused
           const a = document.activeElement;
-          if (a && a.matches && a.matches('input,textarea,select,[contenteditable]')) return;
+          if (!force && a && a.matches && a.matches('input,textarea,select,[contenteditable]')) return;
           document.body.classList.remove('keyboard-open');
           const rootStyle = document.documentElement.style;
           rootStyle.setProperty('--visual-viewport-height', window.innerHeight + 'px');

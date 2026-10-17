@@ -753,7 +753,10 @@ const build = () => {
       if (!app || (app.dataset.kb === '1') === on) return;
       const bird = $('sky-bird'), bubble = $('sky-bubble');
       const first = bird && bird.getBoundingClientRect();
-      if (on) app.dataset.kb = '1'; else delete app.dataset.kb;
+      const hostEl = host();
+      const pageEl = hostEl && hostEl.parentElement;
+      if (on) { app.dataset.kb = '1'; if (hostEl) hostEl.dataset.kb = '1'; if (pageEl) pageEl.dataset.skyKb = '1'; }
+      else { delete app.dataset.kb; if (hostEl) delete hostEl.dataset.kb; if (pageEl) delete pageEl.dataset.skyKb; }
       if (bird && first && !reduce() && bird.animate) {
         const last = bird.getBoundingClientRect();
         if (last.width) {
@@ -771,24 +774,37 @@ const build = () => {
     // iOS sometimes never reports the keyboard going away (the page keeps its shrunken height
     // and the Next button stays high). With no field focused, the page-level helper in
     // ios-chrome.js restores the full height (the flow itself never touches html/body).
-    const settle = () => {
-      if (window.AhViewport) window.AhViewport.settle();
+    const settle = force => {
+      if (window.AhViewport) window.AhViewport.settle(force);
       [150, 500, 1100].forEach(ms => setTimeout(() => {
-        if (editing()) return;
+        if (editing() && !force) return;
         if (host()) host().style.removeProperty('--vh');
         window.scrollTo(0, 0);
       }, ms));
     };
+    // The keyboard is really up only while the visual viewport is clearly shorter than the layout
+    // viewport (the same test index.html uses for body.keyboard-open).
+    const kbVisible = () => { const vv = window.visualViewport; return !vv || vv.height < window.innerHeight * 0.88; };
+    let hideTimer = 0;
+    // A field can stay focused after the keyboard is dismissed with the iOS bar (the caret keeps
+    // blinking, the page keeps its shrunken height and the Next button hangs mid-screen). Compact
+    // mode must follow the keyboard, not just focus: give the keyboard time to appear, then relax.
+    const reeval = () => {
+      clearTimeout(hideTimer);
+      if (!editing()) return;
+      if (kbVisible()) { setKb(true); return; }
+      hideTimer = setTimeout(() => { if (editing() && !kbVisible()) { setKb(false); settle(true); } }, 900);
+    };
     const evalKb = () => {
       clearTimeout(kbTimer);
-      if (editing()) { setKb(true); placeLater(); return; }
+      if (editing()) { setKb(true); placeLater(); reeval(); return; }
       // focus often hops straight to the next field; only leave compact mode if it stays empty
-      kbTimer = setTimeout(() => { if (!editing()) { setKb(false); settle(); } }, 160);
+      kbTimer = setTimeout(() => { if (!editing()) { setKb(false); settle(false); } }, 160);
     };
     document.addEventListener('focusin', evalKb, true);
     document.addEventListener('focusout', evalKb, true);
     document.addEventListener('input', () => { if (!editing()) return; clearTimeout(inTimer); inTimer = setTimeout(place, 220); }, true);
-    if (window.visualViewport) window.visualViewport.addEventListener('resize', () => { if (editing()) placeLater(); });
+    if (window.visualViewport) window.visualViewport.addEventListener('resize', () => { if (editing()) { reeval(); placeLater(); } });
   }
   wake();
 };

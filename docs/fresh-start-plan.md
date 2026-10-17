@@ -10,9 +10,9 @@ Rule: "ধাপ X শুরু করো" = permission to merge + deploy that p
 - [x] Phase 1 (2026-10-17): `email-intro-continue` button -> `beginEmailOwnership` (OTP chain first, Firebase link fallback). sw:manifest. merge + deploy
 - [x] Phase 2 (2026-10-17): new versioned schema + migrations + tests (students, login_methods, email_verifications, otp_attempts, sessions, devices, profiles, activity_log; normalized unique email)
 - [x] Phase 3 (2026-10-17): Control Center Students section (list/search, profile, timeline; admin token only, noindex, no secrets)
-- [ ] Phase 4: wipe all users (Firebase Auth of admissionsky-997d2 + Cloudflare user data; keep OTP config) -- final yes with counts
-- [ ] Phase 5: owner deletes old Firebase project in console
-- [ ] Phase 6: end-to-end test (signup -> otp-a Brevo SENT/VERIFIED, Google login, student visible in Control Center)
+- [x] Phase 4 (2026-10-17 18:24 UTC): wipe all users -- owner yes `WIPE-FB78-CF201`, run 39057802059: Firebase 78 -> 0, Cloudflare 201 users / 3280 rows -> 0, KV 272 -> 0; OTP config kept
+- [~] Phase 5: SKIPPED -- owner has no access to `admission-hub-auth` any more. No app risk: the Worker signs in / verifies tokens only with the admissionsky-997d2 key (auth-native/providers/firebase-auth.mjs), so tokens from the old project are rejected.
+- [x] Phase 6 (2026-10-17): signup (password) + Google login OK; owner confirmed OTP came from otp-a Brevo and both students show in the Control Center; list run 39059868247: Firebase 2, Cloudflare 2
 
 ## Phase 0 findings
 
@@ -62,3 +62,9 @@ Rule: "ধাপ X শুরু করো" = permission to merge + deploy that p
   - `mode=wipe`: only if `confirm` equals the phrase for the counts measured in the same run.
 - Deletes: Firebase Auth users of admissionsky-997d2 (batchDelete, force); AUTH_AUTHORITY tables except the kept ones; D1 tables that have a user column (content tables kept); KV user prefixes (tok, user, sess, pkid, ustate, profile, chatmem, achat, mem, aiprefs, act, actaudit); R2 user files `<folder>/<user>/<date>/<file>` (not `notify/`).
 - Keeps: auth_verification_runtime_config, auth_verification_provider_state, auth_verification_daily_quota, auth_meta, schema_migrations; D1 questions/content_*/global_notifications/ai_cache/ai_experiments; system KV keys (secret:, admin:, backup:, pubContent, ...); R2 backups and notify/ images.
+
+## Phase 4-6 results (2026-10-17)
+- Wipe run 39057802059 (`mode=wipe`, `WIPE-FB78-CF201`): before = Firebase 78, Cloudflare 201 users (3280 rows), GK_KV 183 + OLD_KV 89 keys; after = all 0. Kept: auth_verification_runtime_config, provider_state, daily_quota, auth_meta, schema_migrations, content tables.
+- Phase 5 skipped (no owner access to `admission-hub-auth`). Optional: remove `admission-hub-auth.firebaseapp.com` from the live OAuth client `916950643726-...` if listed.
+- Phase 6 list run 39059868247: 2 Firebase users (1 password, 1 google.com), 2 Cloudflare users, 1 OTP challenge + 1 email-ownership link. Owner confirmed Brevo delivery and Control Center view.
+- Open follow-up: Phase 2 directory tables still get no writes (email-storage decision).

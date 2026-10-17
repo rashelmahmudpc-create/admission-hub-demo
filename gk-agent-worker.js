@@ -17,6 +17,7 @@ import { handleAnalyticsRequest } from './analytics-engine.mjs';
 import { handleAiAnalyticsRequest } from './ai-analytics-routes.mjs';
 import { aiGenerate } from './ai-analytics-provider.mjs';
 import { handleFilesStorageRequest } from './files-storage.mjs';
+import { handleSkyContactRequest } from './sky-contact.mjs';
 /* P13 — gzip/br for large JSON replies (read path scale). */
 import { compressResponse } from './p13-api-compression.mjs';
 import { createSnapshot } from './p19-backup.mjs';
@@ -588,6 +589,10 @@ export default {
      * the reporter is an unauthenticated same-origin browser request, so neither
      * gate would let it through. */
     if (request.method === 'POST' && url.pathname === '/api/report-error') return await handleErrorReport(request, env);
+    /* Owner 2026-10-17 — Sky support buttons: GET /api/go/whatsapp|email redirect to
+     * the contact kept in PUB_KV 'sky:contact' (never in the repo). Before the /api/* forward. */
+    const contactResponse = await handleSkyContactRequest(request, env);
+    if (contactResponse) return contactResponse;
 
     // Public product API: content, Firebase-session-aware or ephemeral-guest AI,
     // and content admin only. Retired legacy identity routes are not forwarded.

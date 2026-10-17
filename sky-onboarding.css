@@ -368,3 +368,13 @@
 #ah-sky-flow #sky-app[data-kb="1"] .scr{padding-top:6px;padding-bottom:26px}
 #ah-sky-flow #sky-app[data-kb="1"] .foot{padding:6px 20px 10px}
 #ah-sky-flow #sky-app[data-kb="1"] .cta{height:52px}
+
+/* iOS leaves a strip between the bottom of the visible page and the keyboard bar / Safari's bottom
+   chrome. The page used to end exactly at the visible edge, so that strip showed the flat page tint
+   and a hard seam cut through the Next button's glow. While the keyboard is up the flow is built
+   140px taller than the visible area and its content is pushed back up by the same amount, so the
+   gradient, blobs and glow simply carry on underneath the system bar instead of being cut off. */
+/* repeated class = enough specificity to beat account-access.css's keyboard-open rule without naming html/body */
+.ah-account-page.ah-account-page.ah-account-page[data-sky-flow="on"][data-sky-kb="1"]{height:calc(var(--visual-viewport-height,100dvh) + 140px)!important}
+#ah-sky-flow[data-kb="1"]{height:calc(var(--vh,100dvh) + 140px)!important}
+#ah-sky-flow[data-kb="1"] #sky-app{box-sizing:border-box;padding-bottom:140px}
