@@ -610,12 +610,41 @@ export class SqliteVerificationRepository {
       const selected = this.#challenge(input);
       if (selected.error) return selected;
       const row = selected.challenge;
+      // Owner 2026-10-17: a code checked by Logto/Appwrite/Ory/Hanko proves the
+      // address exactly like a locally checked one. Without the ownership link the
+      // worker refused the right code and the burned challenge then said "used".
+      // The conflict check runs before the challenge is spent.
+      const ownership = row.purpose === 'email-ownership';
+      if (ownership) {
+        const existing = this.#one(
+          'SELECT email_ref AS emailRef,subject_ref AS subjectRef,status FROM auth_email_ownership_links WHERE user_id=?',
+          row.userId
+        );
+        if (existing && (existing.subjectRef !== row.subjectRef || existing.emailRef !== row.emailRef)) {
+          return { error: AUTH_ERROR_CODES.ACCOUNT_CONFLICT };
+        }
+      }
       this.sql.exec(
         "UPDATE auth_verification_challenges SET state='verified',code_mac='',code_cipher='',link_token_mac='',link_cipher='',verified_at=? WHERE attempt_id=? AND state='sent'",
         input.now, input.attemptId
       );
+      if (ownership) {
+        this.sql.exec(
+          `INSERT INTO auth_email_ownership_links(
+            user_id,subject_ref,email_ref,provider_id,method,status,proven_at,last_verified_at,revoked_at
+          ) VALUES(?,?,?,?,'email-otp','active',?,?,NULL)
+          ON CONFLICT(user_id) DO UPDATE SET
+            status='active',provider_id=excluded.provider_id,last_verified_at=excluded.last_verified_at,revoked_at=NULL`,
+          row.userId, row.subjectRef, row.emailRef, row.providerId || 'otp', input.now, input.now
+        );
+      }
       this.#event({ ...row, now: input.now, outcome: 'verified', reason: 'provider_evidence' });
-      return { verified: true, userId: row.userId, purpose: row.purpose };
+      return {
+        verified: true,
+        userId: row.userId,
+        purpose: row.purpose,
+        ...(ownership ? { emailOwnershipProven: true, emailVerified: false } : {})
+      };
     });
   }
 

@@ -10067,6 +10067,20 @@ var telegramActivationAuthorized = (request, env) => {
   const supplied = String(request.headers.get("X-AH-Telegram-Activation") || "");
   return /^[A-Za-z0-9_-]{32,128}$/.test(expected) && supplied.length === expected.length && constantTimeEqual(supplied, expected);
 };
+var ADMIN_POLICY_KEYS = Object.freeze(["codeTtlSeconds", "maxAttempts", "resendCooldownSeconds", "lockoutSeconds", "maxProviderRetries", "circuitFailureThreshold", "circuitCooldownSeconds", "lowQuotaRatio"]);
+var ADMIN_PROVIDER_KEYS = Object.freeze(["id", "enabled", "priority", "dailyQuota", "timeoutMs", "label"]);
+var pickKeys = (source, keys2) => Object.fromEntries(keys2.filter((key) => Object.prototype.hasOwnProperty.call(source, key)).filter((key) => ["string", "number", "boolean"].includes(typeof source[key])).map((key) => [key, source[key]]));
+var adminVerificationConfigInput = (raw) => {
+  const sent = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+  const out = {};
+  if (typeof sent.enabled === "boolean") out.enabled = sent.enabled;
+  if (sent.policy && typeof sent.policy === "object" && !Array.isArray(sent.policy)) out.policy = pickKeys(sent.policy, ADMIN_POLICY_KEYS);
+  if (Array.isArray(sent.providers)) {
+    out.providers = sent.providers.slice(0, 64).filter((row) => row && typeof row === "object" && !Array.isArray(row)).map((row) => pickKeys(row, ADMIN_PROVIDER_KEYS));
+  }
+  if (Array.isArray(sent.allowedDomains)) out.allowedDomains = sent.allowedDomains.filter((value) => typeof value === "string").slice(0, 200);
+  return out;
+};
 var adminAuthorized = (request, env) => {
   const expected = String(env?.ADMIN_TOKEN || "");
   const supplied = String(request.headers.get("X-AH-Admin-Token") || "");
@@ -11530,7 +11544,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
       if (request.method === "POST" && url.pathname === `${AUTH_API_PREFIX}/admin/verification/config`) {
         if (!adminAuthorized(request, env)) return json4(request, 403, { ok: false, error: { code: "FORBIDDEN", message: "অনুমতি নেই।" } });
         const body = await readJson(request);
-        const result = await callAuthority(env, "/internal/verification/admin/config", { config: verificationConfig(body.config) });
+        const result = await callAuthority(env, "/internal/verification/admin/config", { config: adminVerificationConfigInput(body.config) });
         publicConfigCache.delete(env);
         return json4(request, 200, { ok: true, ...result });
       }
@@ -22510,6 +22524,17 @@ function providerFailure(error) {
 var PROBE_TIMEOUT_MS = 5e3;
 var NON_GMAIL_FREEMAIL = /* @__PURE__ */ new Set(["icloud.com", "me.com", "mac.com", "yahoo.com", "yahoo.co.uk", "yahoo.co.in", "ymail.com", "rocketmail.com", "outlook.com", "hotmail.com", "live.com", "msn.com", "aol.com"]);
 var NON_GMAIL_PREFERENCE = Object.freeze({ "otp-h": -30, "otp-i": -40, "otp-b": -15, "otp-e": -30 });
+function mergeRuntimeConfig(input, current) {
+  const raw = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+  const prior = new Map((current?.providers || []).map((row) => [row.id, row]));
+  const providers = Array.isArray(raw.providers) ? raw.providers.map((row) => {
+    const known = row && typeof row === "object" ? prior.get(String(row.id || "")) : null;
+    if (!known) return row;
+    return { ...row, timeoutMs: row.timeoutMs ?? known.timeoutMs, label: row.label ?? known.label };
+  }) : raw.providers;
+  const keepDomains = !Array.isArray(raw.allowedDomains) && Array.isArray(current?.allowedDomains);
+  return { ...raw, providers, ...keepDomains ? { allowedDomains: [...current.allowedDomains] } : {} };
+}
 function recipientBias(providerId, email) {
   const domain = String(email || "").trim().toLowerCase().split("@").pop();
   return NON_GMAIL_FREEMAIL.has(domain) ? NON_GMAIL_PREFERENCE[providerId] || 0 : 0;
@@ -22709,7 +22734,12 @@ var VerificationOrchestrator = class {
           entry,
           provider,
           probe: state.circuit === "half-open",
-          score: entry.priority + lowPenalty + failurePenalty + latencyPenalty + recipientBias(entry.id, destinations.otp) + (identity.previousProviderId && identity.previousProviderId === entry.id ? 25 : 0)
+          // Owner 2026-10-17: Brevo (10) must go before Logto (15) on Gmail. The
+          // soft health penalties reach 10, more than that gap, so a fresh Logto
+          // jumped ahead. They now only break ties; the order is the operator's
+          // priority plus the deliberate recipient bias and resend demotion.
+          score: entry.priority + lowPenalty + recipientBias(entry.id, destinations.otp) + (identity.previousProviderId && identity.previousProviderId === entry.id ? 25 : 0),
+          health: failurePenalty + latencyPenalty
         };
       } catch (cause) {
         const failure = providerFailure(cause);
@@ -22727,7 +22757,7 @@ var VerificationOrchestrator = class {
         return null;
       }
     }));
-    return rows.filter(Boolean).sort((left, right) => Number(right.probe) - Number(left.probe) || left.score - right.score || left.entry.priority - right.entry.priority);
+    return rows.filter(Boolean).sort((left, right) => left.score - right.score || Number(right.probe) - Number(left.probe) || left.health - right.health || left.entry.priority - right.entry.priority);
   }
   async requestVerification(input = {}, requestContext = {}) {
     const identity = await this.#identity(input, requestContext);
@@ -23150,6 +23180,7 @@ var VerificationOrchestrator = class {
         enabled: entry.enabled,
         configured: remoteStatus?.configured === true,
         priority: entry.priority,
+        timeoutMs: entry.timeoutMs,
         availability: availability?.available === true,
         availabilityCode: reason(availability?.code || "UNKNOWN"),
         quota: Object.freeze({
@@ -23186,7 +23217,7 @@ var VerificationOrchestrator = class {
     });
   }
   async updateConfig(input) {
-    const next = verificationConfig(input);
+    const next = verificationConfig(mergeRuntimeConfig(input, this.config));
     await this.repository.setRuntimeConfig({ config: next, now: Number(this.now()) });
     this.runtimeEnabled = next.enabled;
     this.config = this.activated ? next : Object.freeze({ ...next, enabled: false });
@@ -25939,13 +25970,43 @@ var SqliteVerificationRepository = class {
       const selected = this.#challenge(input);
       if (selected.error) return selected;
       const row = selected.challenge;
+      const ownership = row.purpose === "email-ownership";
+      if (ownership) {
+        const existing = this.#one(
+          "SELECT email_ref AS emailRef,subject_ref AS subjectRef,status FROM auth_email_ownership_links WHERE user_id=?",
+          row.userId
+        );
+        if (existing && (existing.subjectRef !== row.subjectRef || existing.emailRef !== row.emailRef)) {
+          return { error: AUTH_ERROR_CODES.ACCOUNT_CONFLICT };
+        }
+      }
       this.sql.exec(
         "UPDATE auth_verification_challenges SET state='verified',code_mac='',code_cipher='',link_token_mac='',link_cipher='',verified_at=? WHERE attempt_id=? AND state='sent'",
         input.now,
         input.attemptId
       );
+      if (ownership) {
+        this.sql.exec(
+          `INSERT INTO auth_email_ownership_links(
+            user_id,subject_ref,email_ref,provider_id,method,status,proven_at,last_verified_at,revoked_at
+          ) VALUES(?,?,?,?,'email-otp','active',?,?,NULL)
+          ON CONFLICT(user_id) DO UPDATE SET
+            status='active',provider_id=excluded.provider_id,last_verified_at=excluded.last_verified_at,revoked_at=NULL`,
+          row.userId,
+          row.subjectRef,
+          row.emailRef,
+          row.providerId || "otp",
+          input.now,
+          input.now
+        );
+      }
       this.#event({ ...row, now: input.now, outcome: "verified", reason: "provider_evidence" });
-      return { verified: true, userId: row.userId, purpose: row.purpose };
+      return {
+        verified: true,
+        userId: row.userId,
+        purpose: row.purpose,
+        ...ownership ? { emailOwnershipProven: true, emailVerified: false } : {}
+      };
     });
   }
   async dailyQuotaSnapshot({ providerId, dailyQuota, now }) {

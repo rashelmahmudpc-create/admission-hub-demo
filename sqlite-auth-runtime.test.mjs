@@ -594,3 +594,35 @@ test('SQLite schema v7 upgrades an existing v5 database and stays idempotent', a
   ).get('login-attempt');
   assert.deepEqual(fresh, { device_ref: null, purpose: null, policy_version: null });
 });
+
+test('owner 2026-10-17: SQLite records email ownership when Logto checked the code', async t => {
+  const fixture = storageFixture();
+  t.after(() => fixture.database.close());
+  const authRepository = new SqliteAuthRepository(fixture.storage);
+  authRepository.migrate();
+  const verificationRepository = new SqliteVerificationRepository(fixture.storage);
+  verificationRepository.migrate();
+  let now = START;
+  const engine = new CloudflareNativeAuthEngine({ repository: authRepository, hmacSecret: SECRET, now: () => now });
+  const session = await engine.establishFirebaseSession({ email: 'logto.owner@gmail.com', subject: 'firebase-logto-owner' }, CONTEXT);
+  const logto = {
+    id: 'otp-h', channel: VERIFICATION_CHANNELS.OTP, verificationMode: VERIFICATION_MODES.PROVIDER_EVIDENCE,
+    async checkAvailability() { return { available: true, code: 'READY' }; },
+    async getRemainingQuota() { return { remaining: 10, limit: 10, resetAt: now + 86_400_000 }; },
+    async getProviderStatus() { return { status: 'healthy', configured: true }; },
+    async sendVerification() { return { accepted: true }; },
+    async verifyCode() { return { verified: true }; }
+  };
+  const orchestrator = new VerificationOrchestrator({
+    repository: verificationRepository, hmacSecret: SECRET, providers: [logto], activated: true, now: () => now,
+    config: { enabled: true, providers: [{ id: 'otp-h', enabled: true, priority: 15, dailyQuota: 10, timeoutMs: 12000 }] }
+  });
+  const who = {
+    purpose: 'email-ownership',
+    trustedIdentity: { userId: session.user.id, sessionRef: 'a'.repeat(64), subjectRef: 'b'.repeat(64), emailRef: 'c'.repeat(64), email: 'logto.owner@gmail.com' }
+  };
+  const sent = await orchestrator.requestVerification(who, CONTEXT);
+  const verified = await orchestrator.verify({ ...who, attemptId: sent.attemptId, code: '325916' }, CONTEXT);
+  assert.equal(verified.emailOwnershipProven, true);
+  assert.equal((await verificationRepository.isEmailOwnershipProven({ userId: session.user.id, subjectRef: 'b'.repeat(64) })).proven, true);
+});

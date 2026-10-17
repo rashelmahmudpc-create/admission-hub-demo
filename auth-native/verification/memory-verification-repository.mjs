@@ -334,6 +334,25 @@ export class MemoryVerificationRepository {
     const selected = await this.getChallenge(input);
     if (selected.error) return selected;
     const row = this.challenges.get(input.attemptId);
+    // Owner 2026-10-17: provider-evidence codes prove ownership too (see sqlite).
+    const ownership = row.purpose === 'email-ownership';
+    const existingOwnership = ownership ? this.emailOwnership.get(row.userId) : null;
+    if (existingOwnership && (existingOwnership.subjectRef !== row.subjectRef || existingOwnership.emailRef !== row.emailRef)) {
+      return { error: AUTH_ERROR_CODES.ACCOUNT_CONFLICT };
+    }
+    if (ownership) {
+      this.emailOwnership.set(row.userId, {
+        userId: row.userId,
+        subjectRef: row.subjectRef,
+        emailRef: row.emailRef,
+        providerId: row.providerId || 'otp',
+        method: 'email-otp',
+        status: 'active',
+        provenAt: existingOwnership?.provenAt || input.now,
+        lastVerifiedAt: input.now,
+        revokedAt: null
+      });
+    }
     row.state = 'verified';
     row.codeMac = '';
     row.codeCipher = '';
@@ -341,7 +360,12 @@ export class MemoryVerificationRepository {
     row.linkCipher = '';
     row.verifiedAt = input.now;
     this.#event({ ...row, now: input.now, outcome: 'verified', reason: 'provider_evidence' });
-    return { verified: true, userId: row.userId, purpose: row.purpose };
+    return {
+      verified: true,
+      userId: row.userId,
+      purpose: row.purpose,
+      ...(ownership ? { emailOwnershipProven: true, emailVerified: false } : {})
+    };
   }
 
   async dailyQuotaSnapshot({ providerId, dailyQuota, now }) {

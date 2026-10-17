@@ -81,6 +81,21 @@ const NON_GMAIL_FREEMAIL = new Set(['icloud.com', 'me.com', 'mac.com', 'yahoo.co
 // Appwrite can arrive after the code expired, so Logto goes first (15-30 = -15) and
 // Appwrite second (38-40 = -2); a resend (+25) then alternates between the two.
 const NON_GMAIL_PREFERENCE = Object.freeze({ 'otp-h': -30, 'otp-i': -40, 'otp-b': -15, 'otp-e': -30 });
+// Owner 2026-10-17: the control center posts only enabled/priority/dailyQuota per
+// slot and no allowedDomains, so every save reset each timeoutMs to 8s (Logto,
+// Apps Script and Telegram need longer). Keep whatever the panel did not send.
+function mergeRuntimeConfig(input, current) {
+  const raw = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
+  const prior = new Map((current?.providers || []).map(row => [row.id, row]));
+  const providers = Array.isArray(raw.providers) ? raw.providers.map(row => {
+    const known = row && typeof row === 'object' ? prior.get(String(row.id || '')) : null;
+    if (!known) return row;
+    return { ...row, timeoutMs: row.timeoutMs ?? known.timeoutMs, label: row.label ?? known.label };
+  }) : raw.providers;
+  const keepDomains = !Array.isArray(raw.allowedDomains) && Array.isArray(current?.allowedDomains);
+  return { ...raw, providers, ...(keepDomains ? { allowedDomains: [...current.allowedDomains] } : {}) };
+}
+
 function recipientBias(providerId, email) {
   const domain = String(email || '').trim().toLowerCase().split('@').pop();
   return NON_GMAIL_FREEMAIL.has(domain) ? (NON_GMAIL_PREFERENCE[providerId] || 0) : 0;
@@ -285,7 +300,12 @@ export class VerificationOrchestrator {
           entry,
           provider,
           probe: state.circuit === 'half-open',
-          score: entry.priority + lowPenalty + failurePenalty + latencyPenalty + recipientBias(entry.id, destinations.otp) + (identity.previousProviderId && identity.previousProviderId === entry.id ? 25 : 0)
+          // Owner 2026-10-17: Brevo (10) must go before Logto (15) on Gmail. The
+          // soft health penalties reach 10, more than that gap, so a fresh Logto
+          // jumped ahead. They now only break ties; the order is the operator's
+          // priority plus the deliberate recipient bias and resend demotion.
+          score: entry.priority + lowPenalty + recipientBias(entry.id, destinations.otp) + (identity.previousProviderId && identity.previousProviderId === entry.id ? 25 : 0),
+          health: failurePenalty + latencyPenalty
         };
       } catch (cause) {
         const failure = providerFailure(cause);
@@ -303,7 +323,7 @@ export class VerificationOrchestrator {
         return null;
       }
     }));
-    return rows.filter(Boolean).sort((left, right) => (Number(right.probe) - Number(left.probe)) || left.score - right.score || left.entry.priority - right.entry.priority);
+    return rows.filter(Boolean).sort((left, right) => left.score - right.score || (Number(right.probe) - Number(left.probe)) || left.health - right.health || left.entry.priority - right.entry.priority);
   }
 
   async requestVerification(input = {}, requestContext = {}) {
@@ -729,6 +749,7 @@ export class VerificationOrchestrator {
         enabled: entry.enabled,
         configured: remoteStatus?.configured === true,
         priority: entry.priority,
+        timeoutMs: entry.timeoutMs,
         availability: availability?.available === true,
         availabilityCode: reason(availability?.code || 'UNKNOWN'),
         quota: Object.freeze({
@@ -766,7 +787,7 @@ export class VerificationOrchestrator {
   }
 
   async updateConfig(input) {
-    const next = verificationConfig(input);
+    const next = verificationConfig(mergeRuntimeConfig(input, this.config));
     await this.repository.setRuntimeConfig({ config: next, now: Number(this.now()) });
     this.runtimeEnabled = next.enabled;
     this.config = this.activated ? next : Object.freeze({ ...next, enabled: false });

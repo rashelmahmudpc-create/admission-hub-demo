@@ -431,6 +431,28 @@ const telegramActivationAuthorized = (request, env) => {
     && supplied.length === expected.length
     && constantTimeEqual(supplied, expected);
 };
+// Owner 2026-10-17: forward only known, non-secret fields, and only the ones the
+// admin actually sent. Normalizing here (verificationConfig) filled every missing
+// timeoutMs with 8s before the orchestrator could keep the current value.
+const ADMIN_POLICY_KEYS = Object.freeze(['codeTtlSeconds', 'maxAttempts', 'resendCooldownSeconds', 'lockoutSeconds', 'maxProviderRetries', 'circuitFailureThreshold', 'circuitCooldownSeconds', 'lowQuotaRatio']);
+const ADMIN_PROVIDER_KEYS = Object.freeze(['id', 'enabled', 'priority', 'dailyQuota', 'timeoutMs', 'label']);
+const pickKeys = (source, keys) => Object.fromEntries(keys
+  .filter(key => Object.prototype.hasOwnProperty.call(source, key))
+  .filter(key => ['string', 'number', 'boolean'].includes(typeof source[key]))
+  .map(key => [key, source[key]]));
+const adminVerificationConfigInput = raw => {
+  const sent = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+  const out = {};
+  if (typeof sent.enabled === 'boolean') out.enabled = sent.enabled;
+  if (sent.policy && typeof sent.policy === 'object' && !Array.isArray(sent.policy)) out.policy = pickKeys(sent.policy, ADMIN_POLICY_KEYS);
+  if (Array.isArray(sent.providers)) {
+    out.providers = sent.providers.slice(0, 64)
+      .filter(row => row && typeof row === 'object' && !Array.isArray(row))
+      .map(row => pickKeys(row, ADMIN_PROVIDER_KEYS));
+  }
+  if (Array.isArray(sent.allowedDomains)) out.allowedDomains = sent.allowedDomains.filter(value => typeof value === 'string').slice(0, 200);
+  return out;
+};
 const adminAuthorized = (request, env) => {
   const expected = String(env?.ADMIN_TOKEN || '');
   const supplied = String(request.headers.get('X-AH-Admin-Token') || '');
@@ -1816,7 +1838,9 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
       if (request.method === 'POST' && url.pathname === `${AUTH_API_PREFIX}/admin/verification/config`) {
         if (!adminAuthorized(request, env)) return json(request, 403, { ok: false, error: { code: 'FORBIDDEN', message: 'অনুমতি নেই।' } });
         const body = await readJson(request);
-        const result = await callAuthority(env, '/internal/verification/admin/config', { config: verificationConfig(body.config) });
+        // Allow-listed raw config: the orchestrator normalizes it after keeping the
+        // values the panel does not send (timeoutMs, allowedDomains).
+        const result = await callAuthority(env, '/internal/verification/admin/config', { config: adminVerificationConfigInput(body.config) });
         publicConfigCache.delete(env);
         return json(request, 200, { ok: true, ...result });
       }
