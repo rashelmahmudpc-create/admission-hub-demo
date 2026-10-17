@@ -274,15 +274,16 @@ test('credentials remain in server-managed HttpOnly cookies and are never return
   // remain in server-managed HttpOnly cookies; no browser identity cache.
   assert.doesNotMatch(client, /localStorage|Authorization\s*:\s*['"`]Bearer/i);
   assert.match(client, /const OAUTH_REDIRECT_FLAG = 'ah-oauth-redirect'/);
-  assert.match(client, /const DIRECT_GOOGLE_OFF = 'ah-google-direct-off'/);
+  assert.match(client, /const GOOGLE_REDIRECT_FLAG = 'ah-google-redirect'/);
+  assert.doesNotMatch(client, /DIRECT_GOOGLE|initTokenClient/);
   const storageCalls = [...client.matchAll(/sessionStorage\.(setItem|getItem|removeItem)\(([^)]*)\)/g)];
   assert.equal((client.match(/sessionStorage/g) || []).length, storageCalls.length,
     'all tab storage use must be an explicitly checked direct method call');
-  assert.equal(storageCalls.length, 5, 'only the five existing OAuth boolean flag accesses are permitted');
+  assert.equal(storageCalls.length, 6, 'only the six OAuth boolean flag accesses (Facebook + Google redirect) are permitted');
   for (const [, method, args] of storageCalls) {
     const permitted = method === 'setItem'
-      ? /^(?:OAUTH_REDIRECT_FLAG|DIRECT_GOOGLE_OFF),\s*'1'$/
-      : /^(?:OAUTH_REDIRECT_FLAG|DIRECT_GOOGLE_OFF)$/;
+      ? /^(?:OAUTH_REDIRECT_FLAG|GOOGLE_REDIRECT_FLAG),\s*'1'$/
+      : /^(?:OAUTH_REDIRECT_FLAG|GOOGLE_REDIRECT_FLAG)$/;
     assert.match(args.trim(), permitted, 'tab storage must never hold a token, profile or session');
   }
   assert.match(client, /ENTRY_COOKIE = 'ah_entry_v1'/);
