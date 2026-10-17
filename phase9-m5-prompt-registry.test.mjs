@@ -17,7 +17,7 @@ const { buildSystemPrompt, SYSTEM_PROMPT_V } = A;
 /* ── ১. Registry shape ── */
 t('M5-১. the core prompt entry carries the full required metadata', (() => {
   const e = getPrompt(BASE_PROMPT_ID);
-  return e && e.promptId === BASE_PROMPT_ID && e.version === 'v1'
+  return e && e.promptId === BASE_PROMPT_ID && e.version === 'v2'
     && typeof e.purpose === 'string' && e.purpose.length > 0
     && typeof e.createdAt === 'string' && e.status === 'active'
     && typeof e.text === 'string' && e.text.length > 0;
@@ -35,16 +35,16 @@ t('M5-৪. an unknown prompt id resolves to null, never an empty string',
 
 /* ── ২. The legacy version id is preserved, not deleted ── */
 t('M5-৫. the previous version constant is kept as a legacy alias',
-  getPrompt(BASE_PROMPT_ID).legacyVersion === SYSTEM_PROMPT_V && SYSTEM_PROMPT_V === 'sys-f1-3-ai-personalization');
+  getPrompt(BASE_PROMPT_ID).legacyVersion === SYSTEM_PROMPT_V && SYSTEM_PROMPT_V === 'sys-sky-v2-core-memory');
 
 /* ── ৩. Zero behaviour change: the prompt is byte-identical ── */
 t('M5-৬. buildSystemPrompt reads its core text from the registry, not an inline literal',
   SRC.includes('getPromptText(BASE_PROMPT_ID)') && !SRC.includes('let p = `You are Admission Hub AI.'));
 t('M5-৭. the composed base prompt equals the registry text exactly',
-  buildSystemPrompt({}) === getPromptText(BASE_PROMPT_ID) && buildSystemPrompt({}).length === 2044);
+  buildSystemPrompt({}) === getPromptText(BASE_PROMPT_ID) && buildSystemPrompt({}).length === 5612);
 t('M5-৮. the base prompt hash is stable (locks the exact wording against drift)', (() => {
   const h = createHash('sha256').update(buildSystemPrompt({})).digest('hex');
-  return h === '29f59a3e48ab27a7d284004cb784d457a7cd8f6378f3618ff724c1c2bcd01b7e';
+  return h === 'a4b802d1e5944acdf1af9cf9abdaefaeb52ad311de0add1e82571a0ddad31daa';
 })());
 t('M5-৯. conditional blocks still append on top of the shared base text', (() => {
   const base = buildSystemPrompt({});
@@ -61,7 +61,7 @@ t('M5-১০. the twelve hard rules and the OTP refusal are intact',
     const p = buildSystemPrompt({});
     return p.includes('HARD RULES:') && p.includes('12. Telegram verification proves control')
       && p.includes('Never generate, guess, transform, repeat, request, collect, or validate an OTP')
-      && (p.match(/^\d+\. /gm) || []).length === 12;
+      && (p.match(/^\d+\. /gm) || []).length === 14;
   })());
 
 console.log(`\n📚 PHASE9-M5-PROMPT-REGISTRY: ${pass} pass / ${fail} fail`);

@@ -18,6 +18,7 @@
 import { buildContext, renderContext, describeContext, CONTEXT_VERSION } from './context-engine.js';
 import { getPromptText, BASE_PROMPT_ID } from './prompt-registry.js';
 import { listTools, TOOL_REGISTRY_VERSION } from './tool-registry.js';
+import { isAppFeatureQuestion, loadAppFeatures, renderAppFeatures } from './sky-app-features.mjs';
 import { extractMemoryCandidates, makeMemory, upsertMemory, parseMemory, renderMemory, resolveMemoryOwner, isPiiFree, KIND, SOURCE, MEMORY_VERSION } from './memory-engine.js';
 import { validateResponse, describeResponseValidation, RESPONSE_VALIDATION_VERSION } from './response-validator.js';
 import { describeActions, ACTION_VERSION } from './action-engine.js';
@@ -35,7 +36,7 @@ import { selectHistory, capRecalledTurns } from './ai-history-trim.mjs';
 import { healthyChain, failureMarker, isEntryHealthy, rankChainByModelHealth } from './ai-provider-health.mjs';
 
 export const AGENT_VERSION = 'agent-f1';
-export const SYSTEM_PROMPT_V = 'sys-f1-3-ai-personalization';
+export const SYSTEM_PROMPT_V = 'sys-sky-v2-core-memory';
 
 /* ── M4 Context Engine feature flag (default off) ------------------------ */
 export function contextEngineEnabled(env) {
@@ -300,7 +301,7 @@ export function buildSystemPrompt(opts = {}) {
   let p = getPromptText(BASE_PROMPT_ID) || '';
   const onboarding = sanitizeOnboardingContext(opts.onboarding);
   if (onboarding) p += `\n\nONBOARDING ASSISTANT — STRICT MODE:
-- Help only with the visible Admission Hub welcome, signup, login, institution search, and verification journey.
+- Help only with the visible AdmissionSky welcome, signup, login, institution search, and verification journey.
 - The current structured context is ${JSON.stringify(onboarding)}.
 - Never ask for, repeat, infer, transform, store, or validate a password, confirm-password value, OTP, session value, key, secret, or credential.
 - Never claim signup, delivery, verification, Passkey creation, login, or profile saving succeeded. Only the application's confirmed state can show success.
@@ -853,6 +854,17 @@ const dayKey = () => new Date().toISOString().slice(0, 10);
    their first message of the window — not at UTC midnight (which lands mid-morning
    in Dhaka and would hand out a second allowance early). */
 const RL_WINDOW_MS = 24 * 60 * 60 * 1000;
+/* Owner 2026-10-17: official, kind daily-limit wording with the real reset time. */
+export function limitMessage(cap, resetAt, now) {
+  const bn = (s) => String(s).replace(/[0-9]/g, (d) => '০১২৩৪৫৬৭৮৯'[d]);
+  const left = Math.max(1, Math.round((Number(resetAt) - Number(now)) / 60000));
+  const h = Math.floor(left / 60), m = left % 60;
+  const span = ((h ? bn(h) + ' ঘণ্টা ' : '') + (m ? bn(m) + ' মিনিট' : '')).trim();
+  let clock = '';
+  try { clock = new Date(Number(resetAt)).toLocaleTimeString('bn-BD', { timeZone: 'Asia/Dhaka', hour: 'numeric', minute: '2-digit' }); } catch (_) { clock = ''; }
+  return 'আজকের জন্য তোমার ' + bn(cap) + 'টি AI প্রশ্নের সুযোগ ব্যবহার করা হয়ে গেছে। পরবর্তী সুযোগ চালু হবে '
+    + (clock ? 'বাংলাদেশ সময় ' + clock + '-এ, ' : '') + 'আর প্রায় ' + span + ' পর। তখন আমি আবার তোমার প্রশ্নের উত্তর দেবো।';
+}
 export function readQuota(raw, now) {
   let n = 0, start = now;
   if (raw !== null && raw !== undefined && raw !== '') {
@@ -897,7 +909,7 @@ export function authVerificationGuidance(text) {
   const verificationTopic = /(telegram|টেলিগ্রাম|\botp\b|ওটিপি|one[ -]?time code|verification code|যাচাই(?:য়ের)? কোড)/i.test(input);
   const possibleBareOtp = /^\D*\d{6}\D*$/.test(input);
   if (!verificationTopic && !possibleBareOtp) return '';
-  return 'Telegram যাচাই করতে Admission Hub-এ “Telegram দিয়ে যাচাই করুন” চাপুন, official bot খুলে START চাপুন, তারপর bot-এর পাঠানো কোডটি শুধু Admission Hub-এর verification box-এ লিখুন। আমি OTP তৈরি, অনুমান, দেখা, পুনরাবৃত্তি বা যাচাই করতে পারি না এবং verification সফলও ঘোষণা করতে পারি না—শুধু Admission Hub-এর নিশ্চিত ফলই চূড়ান্ত। Telegram যাচাই Gmail/ইমেইল মালিকানা প্রমাণ করে না।';
+  return 'Telegram যাচাই করতে AdmissionSky-এ “Telegram দিয়ে যাচাই করুন” চাপুন, official bot খুলে START চাপুন, তারপর bot-এর পাঠানো কোডটি শুধু AdmissionSky-এর verification box-এ লিখুন। আমি OTP তৈরি, অনুমান, দেখা, পুনরাবৃত্তি বা যাচাই করতে পারি না এবং verification সফলও ঘোষণা করতে পারি না—শুধু AdmissionSky-এর নিশ্চিত ফলই চূড়ান্ত। Telegram যাচাই Gmail/ইমেইল মালিকানা প্রমাণ করে না।';
 }
 
 function guidanceResponse(text, stream) {
@@ -964,18 +976,22 @@ export async function agentChat(request, env, uid, opts = {}) {
   if (aiState) {
     try {
       const q = await aiState.consumeQuota(sendCtx.uid, cap);
-      quota = { exhausted: !q.allowed, remaining: q.remaining };
+      quota = { exhausted: !q.allowed, remaining: q.remaining, start: Number(q.start) || 0 };
     } catch (_) { quota = null; }
   }
   if (!quota) {
     const rlKey = 'airl:' + sendCtx.uid;
     let quotaNow = { n: 0, start: now };
     try { quotaNow = readQuota(await getKv(env.PUB_KV, rlKey), now); } catch (_) { quotaNow = { n: 0, start: now }; }
-    quota = quotaState({ used: quotaNow.n, cap });
+    quota = Object.assign(quotaState({ used: quotaNow.n, cap }), { start: Number(quotaNow.start) || 0 });
     if (!quota.exhausted) await putKv(env.PUB_KV, rlKey, JSON.stringify({ n: quotaNow.n + 1, start: quotaNow.start }), 172800);
   }
   mark('quota');
-  if (quota.exhausted) return jsonResp({ error: 'rate_limited', message: 'আজকের AI-চ্যাট সীমা শেষ — ২৪ ঘণ্টা পর আবার চেষ্টা করো।', cap, remaining: quota.remaining }, 429);
+  if (quota.exhausted) {
+    /* Owner 2026-10-17: tell the student exactly when the window reopens. */
+    const resetAt = (quota.start || now) + RL_WINDOW_MS;
+    return jsonResp({ error: 'rate_limited', message: limitMessage(cap, resetAt, now), cap, remaining: quota.remaining, resetAt, retryAfterSec: Math.max(60, Math.ceil((resetAt - now) / 1000)) }, 429);
+  }
 
   const verificationGuidance = authVerificationGuidance(v.messages[v.messages.length - 1].content);
   if (verificationGuidance) return guidanceResponse(verificationGuidance, stream);
@@ -1130,7 +1146,11 @@ export async function agentChat(request, env, uid, opts = {}) {
      per-user cap (the cap is an abuse guard, not a spend guard, and must not
      become bypassable). Everything below runs only when the flag is on AND the
      request qualifies; otherwise behaviour is byte-identical to before. */
-  const chatCacheOn = chatCacheEnabled(env) && env && env.PROFILE_DB;
+  /* get_app_features (owner 2026-10-17): only a question about the app pays for
+     the feature list; such answers are never cached, so a list edit shows at once. */
+  const appFeatureHit = !quizMode && !hasImage && isAppFeatureQuestion((v.messages[v.messages.length - 1] || {}).content);
+  if (appFeatureHit) sys = sys + '\n\n' + renderAppFeatures(await loadAppFeatures(env && env.PUB_KV));
+  const chatCacheOn = chatCacheEnabled(env) && env && env.PROFILE_DB && !appFeatureHit;
   const cacheQuestion = (v.messages[v.messages.length - 1] || {}).content;
   const cacheable = chatCacheOn && isCacheableRequest({
     messages: v.messages, hasImage, quizMode, onboarding,
@@ -1373,6 +1393,7 @@ export async function agentChat(request, env, uid, opts = {}) {
       const stage = (id, label) => { if (sentStages.has(id)) return; sentStages.add(id); push(`event: stage\ndata: ${JSON.stringify({ stage: id, label })}\n\n`); };
       try {
         stage('understand', STAGE_UNDERSTAND[intent] || STAGE_UNDERSTAND.GENERAL_CHAT);
+        if (appFeatureHit) stage('app-features', 'টুল চালাচ্ছি — অ্যাপের ফিচার তালিকা দেখছি');
         if (memoryText || summaryText || (msgs.length > v.messages.length)) stage('memory', 'তোমার আগের কথাগুলো মনে করছি');
         if (stats && intent === INTENTS.PERFORMANCE_REQUEST) stage('tool', 'টুল চালাচ্ছি — তোমার অগ্রগতির তথ্য পড়ছি');
         else if (profileCtx && ctxBundle) stage('profile', 'তোমার লক্ষ্য অনুযায়ী উত্তর মিলিয়ে নিচ্ছি');

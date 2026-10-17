@@ -83,7 +83,7 @@ t('M6-১৩. the chat path does not invoke the tool registry (no execution wire
 })());
 t('M6-১৪. the prompt text and its hash are unchanged by M6', (() => {
   return createHash('sha256').update(A.buildSystemPrompt({})).digest('hex')
-    === '29f59a3e48ab27a7d284004cb784d457a7cd8f6378f3618ff724c1c2bcd01b7e';
+    === 'a4b802d1e5944acdf1af9cf9abdaefaeb52ad311de0add1e82571a0ddad31daa';
 })());
 t('M6-১৫. agentStatus advertises declared tools without exposing any executable path', (() => {
   const src = readFileSync('ai-agent.js', 'utf8');
