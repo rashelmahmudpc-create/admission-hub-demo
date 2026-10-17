@@ -1999,6 +1999,21 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         const result = await callAuthority(env, '/internal/admin/security/health', {});
         return json(request, 200, { ok: true, result });
       }
+      // Fresh Start phase 3 — Control Center Students (read-only, admin token).
+      if (request.method === 'GET' && url.pathname === `${AUTH_API_PREFIX}/admin/students`) {
+        if (!adminAuthorized(request, env)) return json(request, 403, { ok: false, error: { code: 'FORBIDDEN', message: 'অনুমতি নেই।' } });
+        const limit = Math.min(Math.max(Number(url.searchParams.get('limit')) || 50, 1), 100);
+        const before = url.searchParams.get('before') ? Number(url.searchParams.get('before')) : null;
+        const q = String(url.searchParams.get('q') || '').slice(0, 254);
+        const result = await callAuthority(env, '/internal/admin/students/list', { input: { limit, before, q } });
+        return json(request, 200, { ok: true, ...result }, { 'X-Robots-Tag': 'noindex, nofollow' });
+      }
+      if (request.method === 'GET' && url.pathname === `${AUTH_API_PREFIX}/admin/students/profile`) {
+        if (!adminAuthorized(request, env)) return json(request, 403, { ok: false, error: { code: 'FORBIDDEN', message: 'অনুমতি নেই।' } });
+        const userId = String(url.searchParams.get('id') || '').slice(0, 128);
+        const result = await callAuthority(env, '/internal/admin/students/get', { input: { userId } });
+        return json(request, result?.found ? 200 : 404, { ok: Boolean(result?.found), ...result }, { 'X-Robots-Tag': 'noindex, nofollow' });
+      }
       if (request.method === 'GET' && url.pathname === `${AUTH_API_PREFIX}/admin/security/events`) {
         if (!adminAuthorized(request, env)) return json(request, 403, { ok: false, error: { code: 'FORBIDDEN', message: 'অনুমতি নেই।' } });
         const limit = Math.min(Math.max(Number(url.searchParams.get('limit')) || 50, 1), 200);

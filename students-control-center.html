@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="bn">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow,noarchive">
+  <meta name="referrer" content="no-referrer">
+  <title>Students · Control Center · AdmissionSky</title>
+  <style>:root{color-scheme:light;--ink:#17362e;--muted:#61736e;--line:#dce8e4;--green:#14745a;--soft:#eff8f4;--red:#973c2b}*{box-sizing:border-box}body{margin:0;background:#f3f7f5;color:var(--ink);font-family:system-ui,-apple-system,"Noto Sans Bengali",sans-serif}.shell{width:min(1180px,calc(100% - 28px));margin:30px auto}.card{background:#fff;border:1px solid var(--line);border-radius:18px;box-shadow:0 10px 30px rgba(23,54,46,.06);padding:20px;margin-top:14px}h1{margin:0;font-size:26px}h2{margin:0 0 12px;font-size:18px}h3{margin:16px 0 8px;font-size:15px}p.lead{margin:8px 0 0;color:var(--muted);line-height:1.6}.row{display:grid;grid-template-columns:minmax(220px,1fr) auto;gap:10px;margin-top:16px}input{width:100%;height:44px;border:1.5px solid #cbdad5;border-radius:11px;padding:0 12px;font:inherit}.button{min-height:44px;border:0;border-radius:11px;padding:0 16px;background:var(--green);color:#fff;font-weight:800;cursor:pointer}.button.secondary{background:#fff;color:var(--green);border:1.5px solid #b9d1c9}.notice{margin:14px 0 0;padding:11px 13px;border-radius:11px;background:var(--soft);color:#285d4e;font-size:13px;line-height:1.55}.notice.error{background:#fff0ed;color:var(--red)}[hidden]{display:none!important}.stats{display:grid;grid-template-columns:repeat(6,1fr);gap:10px}.stat{padding:12px;border-radius:12px;background:#f5f9f7}.stat b{display:block;font-size:22px}.stat span{color:var(--muted);font-size:12px}table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:9px 7px;border-bottom:1px solid #edf2f0;text-align:left;vertical-align:top}th{color:var(--muted);font-size:12px}tbody tr.pick{cursor:pointer}tbody tr.pick:hover{background:#f5faf8}.empty{color:var(--muted);text-align:center}.pill{display:inline-block;margin:0 4px 4px 0;padding:3px 8px;border-radius:99px;background:#e8f7f1;color:#176148;font-size:11px;font-weight:700}.pill.off{background:#f2f2f2;color:#6b7471}.kv{display:grid;grid-template-columns:180px 1fr;gap:6px 12px;font-size:13px}.kv dt{color:var(--muted)}.kv dd{margin:0}.wrap{overflow:auto}.actions{display:flex;gap:10px;justify-content:flex-end;margin-top:12px}@media(max-width:760px){.stats{grid-template-columns:repeat(2,1fr)}.row{grid-template-columns:1fr}.kv{grid-template-columns:1fr}}</style>
+</head>
+<body>
+  <div class="shell">
+    <header class="card">
+      <h1>Students · Control Center</h1>
+      <p class="lead">প্রতিটা student-এর private profile: কবে account খুলেছে, login পদ্ধতি, email যাচাই, OTP ইতিহাস, device আর timeline। শুধু পড়া যায়, কিছু বদলায় না। Password, OTP code, token বা অন্য কোনো secret এখানে আসে না।</p>
+      <div class="row">
+        <input id="admin-key" type="password" autocomplete="off" placeholder="Admin access token (এই পেজে সংরক্ষণ হবে না)" aria-label="Admin access token">
+        <button class="button" id="connect" type="button">নিরাপদভাবে খুলুন</button>
+      </div>
+      <p class="notice" id="notice">Token শুধু অনুরোধের header-এ যায়; browser-এ বা log-এ কোথাও জমা হয় না।</p>
+    </header>
+    <main id="main" hidden>
+      <section class="card"><h2>সংখ্যা</h2><div class="stats" id="stats"></div></section>
+      <section class="card">
+        <h2>Students</h2>
+        <div class="row"><input id="q" type="search" autocomplete="off" placeholder="পুরো email, নাম বা User ID দিয়ে খুঁজুন" aria-label="খুঁজুন"><button class="button" id="search" type="button">খুঁজুন</button></div>
+        <div class="wrap"><table><thead><tr><th>নাম</th><th>Email (mask)</th><th>অবস্থা</th><th>Login পদ্ধতি</th><th>Account খুলেছে</th><th>শেষ login</th></tr></thead><tbody id="list"></tbody></table></div>
+        <div class="actions"><button class="button secondary" id="refresh" type="button">Refresh</button><button class="button secondary" id="more" type="button" hidden>আরও দেখুন</button></div>
+      </section>
+      <section class="card" id="detail" hidden></section>
+    </main>
+  </div>
+<script>(() => {
+  'use strict';
+  const API='/api/auth/v1/admin/students';
+  const $=s=>document.querySelector(s);
+  const keyInput=$('#admin-key'),notice=$('#notice'),main=$('#main'),list=$('#list'),detail=$('#detail');
+  let token='',nextBefore=null,query='';
+  const setNotice=(t,e=false)=>{notice.textContent=t;notice.classList.toggle('error',e)};
+  const when=v=>v?new Date(v).toLocaleString('bn-BD'):'—';
+  const el=(tag,text,cls)=>{const n=document.createElement(tag);if(text!==undefined&&text!==null)n.textContent=String(text);if(cls)n.className=cls;return n};
+  const request=async path=>{const r=await fetch(API+path,{credentials:'same-origin',cache:'no-store',headers:{'X-AH-Admin-Token':token}});let d={};try{d=await r.json()}catch(_){}if(!r.ok)throw new Error(d?.error?.message||(r.status===404?'পাওয়া যায়নি।':'অনুমতি বা server response পাওয়া যায়নি।'));return d};
+  const pills=items=>{const box=el('div');(items&&items.length?items:['—']).forEach(m=>box.append(el('span',m,'pill'+(m==='—'?' off':''))));return box};
+  const table=(head,rowsData)=>{const wrap=el('div',null,'wrap');const t=el('table');const th=el('thead');const tr=el('tr');head.forEach(h=>tr.append(el('th',h)));th.append(tr);const tb=el('tbody');if(!rowsData.length){const r=el('tr');const c=el('td','কিছু নেই','empty');c.colSpan=head.length;r.append(c);tb.append(r)}else rowsData.forEach(cells=>{const r=el('tr');cells.forEach(v=>{const c=el('td');if(v instanceof Node)c.append(v);else c.textContent=v===null||v===undefined||v===''?'—':String(v);r.append(c)});tb.append(r)});t.append(th,tb);wrap.append(t);return wrap};
+  const kv=pairs=>{const d=el('dl',null,'kv');pairs.forEach(([k,v])=>{d.append(el('dt',k),el('dd',v===null||v===undefined||v===''?'—':v))});return d};
+  const renderCounts=c=>{const box=$('#stats');box.textContent='';[['total','মোট'],['active','সক্রিয়'],['disabled','বন্ধ'],['suspended','স্থগিত'],['last24h','গত ২৪ ঘণ্টা'],['last7d','গত ৭ দিন']].forEach(([k,l])=>{const s=el('div',null,'stat');s.append(el('b',c?.[k]??0),el('span',l));box.append(s)})};
+  const renderList=(entries,append)=>{if(!append)list.textContent='';entries.forEach(s=>{const r=el('tr',null,'pick');r.dataset.id=s.userId;[s.fullName||'(নাম নেই)',s.emailMask,s.status,null,when(s.createdAt),when(s.lastLoginAt)].forEach((v,i)=>{const c=el('td');if(i===3)c.append(pills(s.methods));else c.textContent=v||'—';r.append(c)});r.addEventListener('click',()=>openProfile(s.userId));list.append(r)});if(!list.children.length){const r=el('tr');const c=el('td','কোনো student পাওয়া যায়নি','empty');c.colSpan=6;r.append(c);list.append(r)}$('#more').hidden=!nextBefore};
+  const load=async(append=false)=>{const params=new URLSearchParams({limit:'50'});if(query)params.set('q',query);if(append&&nextBefore)params.set('before',String(nextBefore));const d=await request('?'+params.toString());renderCounts(d.counts);nextBefore=d.nextBefore||null;renderList(d.entries||[],append);main.hidden=false;setNotice('Student তালিকা লোড হয়েছে। Email শুধু mask করা রূপে দেখানো হয়; কোনো password, code বা token এই পেজে আসে না।')};
+  const openProfile=async id=>{try{const d=await request('/profile?id='+encodeURIComponent(id));const s=d.student;detail.textContent='';detail.hidden=false;
+    detail.append(el('h2',(s.profile?.fullName||'(নাম নেই)')+' · '+(s.account.emailMask||'')));
+    detail.append(el('h3','Account'),kv([['User ID',s.account.userId],['Public ID',s.account.publicId],['অবস্থা',s.account.status],['Account খুলেছে',when(s.account.createdAt)],['শেষ login',when(s.account.lastLoginAt)]]));
+    const p=s.profile||{};detail.append(el('h3','Profile'),kv([['জন্ম তারিখ',p.dateOfBirth],['স্কুল',p.school?(p.school.name+(p.school.district?' · '+p.school.district:'')):null],['কলেজ',p.higher?(p.higher.name+(p.higher.district?' · '+p.higher.district:'')):null],['Admission session',p.admissionSession],['লক্ষ্য',p.academicGoal],['বিষয়',(p.subjects||[]).join(', ')],['Target',(p.targets||[]).join(', ')],['Mobile',p.mobileMasked],['Visibility',p.visibility]]));
+    detail.append(el('h3','Login পদ্ধতি'),table(['পদ্ধতি','নোট','অবস্থা','শুরু','শেষ ব্যবহার'],(s.loginMethods||[]).map(m=>[m.method,m.note,m.status,when(m.since),when(m.lastUsedAt)])));
+    const ev=s.emailVerification||{};const o=ev.otpOwnership;detail.append(el('h3','Email যাচাই'),kv([['OTP দিয়ে মালিকানা',o?(o.status+' · '+(o.providerId||'')):'হয়নি'],['প্রমাণ হয়েছে',o?when(o.provenAt):null]]),table(['Firebase link','উদ্দেশ্য','তৈরি','ব্যবহার'],(ev.firebaseLinks||[]).map(t=>[t.state,t.purpose,when(t.createdAt),when(t.consumedAt)])));
+    detail.append(el('h3','OTP ইতিহাস'),table(['সময়','Provider','Channel','ফল','কারণ','Latency'],(s.otp?.events||[]).map(e=>[when(e.occurredAt),e.providerId,e.channel,e.outcome,e.reason,(e.latencyMs||0)+' ms'])),table(['তৈরি','উদ্দেশ্য','Provider','অবস্থা','চেষ্টা','যাচাই'],(s.otp?.challenges||[]).map(c=>[when(c.createdAt),c.purpose,c.providerId,c.state,c.attempts+'/'+c.maxAttempts,when(c.verifiedAt)])));
+    detail.append(el('h3','Device'),table(['Device','Browser','বিশ্বস্ত হয়েছে','মেয়াদ','সক্রিয়'],(s.devices||[]).map(v=>[v.device,v.browser,when(v.trustedAt),when(v.expiresAt),v.active?'হ্যাঁ':'না'])));
+    detail.append(el('h3','Session (মোট '+(s.sessions?.total||0)+', সক্রিয় '+(s.sessions?.active||0)+')'),table(['শুরু','শেষ দেখা','Browser','Device','সক্রিয়'],(s.sessions?.recent||[]).map(v=>[when(v.createdAt),when(v.lastSeenAt),v.browser,v.device,v.active?'হ্যাঁ':'না'])));
+    detail.append(el('h3','Timeline'),table(['সময়','ঘটনা','বিস্তারিত'],(s.timeline||[]).map(t=>[when(t.at),t.kind,t.detail])));
+    detail.scrollIntoView({behavior:'smooth',block:'start'})}catch(e){setNotice(e.message,true)}};
+  $('#connect').addEventListener('click',async()=>{token=keyInput.value;keyInput.value='';if(token.length<20)return setNotice('সঠিক admin token দিন।',true);try{await load()}catch(e){token='';main.hidden=true;setNotice(e.message,true)}});
+  $('#search').addEventListener('click',async()=>{query=$('#q').value.trim();detail.hidden=true;try{await load()}catch(e){setNotice(e.message,true)}});
+  $('#q').addEventListener('keydown',ev=>{if(ev.key==='Enter')$('#search').click()});
+  $('#more').addEventListener('click',async()=>{try{await load(true)}catch(e){setNotice(e.message,true)}});
+  $('#refresh').addEventListener('click',async()=>{try{await load()}catch(e){setNotice(e.message,true)}});
+  window.addEventListener('pagehide',()=>{token='';keyInput.value=''});
+})();</script>
+</body>
+</html>

@@ -723,6 +723,73 @@ const build = () => {
     const fit = () => { host().style.setProperty('--vh', window.visualViewport.height + 'px'); window.scrollTo(0, 0); };
     window.visualViewport.addEventListener('resize', fit); fit();
   }
+
+  /* ---- keyboard-aware layout (owner 2026-10-17) ----
+     Keyboard up: compact mode (see sky-onboarding.css [data-kb]) - the bird glides to the top-left,
+     the focused field is kept in view and nothing is cut off. Keyboard down: the bird glides back
+     to the middle. The layout follows the focused field, not a guessed keyboard height, and the
+     glide is measured before/after the change (FLIP) so it is smooth on every phone. */
+  {
+    const reduce = () => window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const appEl = () => document.getElementById('sky-app');
+    const editing = () => { const a = document.activeElement; const h = host(); return !!(a && a.tagName === 'INPUT' && h && h.contains(a)); };
+    let kbTimer = 0, inTimer = 0, placeTimers = [];
+    const place = () => {
+      if (!editing()) return;
+      const f = document.activeElement, scr = f.closest('.scr');
+      if (!scr) return;
+      const box = f.closest('.fl, .otp, .ob') || f;
+      const sr = scr.getBoundingClientRect(), br = box.getBoundingClientRect();
+      const hasList = !!scr.querySelector('.sug');
+      let delta = 0;
+      if (br.top < sr.top + 4) delta = br.top - sr.top - 6;
+      else if (hasList && br.top > sr.top + 8) delta = br.top - sr.top - 6;   // keep the room below for suggestions
+      else if (br.bottom > sr.bottom - 10) delta = br.bottom - sr.bottom + 14;
+      if (Math.abs(delta) > 3) scr.scrollBy({ top: delta, behavior: reduce() ? 'auto' : 'smooth' });
+    };
+    const placeLater = () => { placeTimers.forEach(clearTimeout); placeTimers = [60, 380, 800].map(ms => setTimeout(place, ms)); };
+    const setKb = on => {
+      const app = appEl();
+      if (!app || (app.dataset.kb === '1') === on) return;
+      const bird = $('sky-bird'), bubble = $('sky-bubble');
+      const first = bird && bird.getBoundingClientRect();
+      if (on) app.dataset.kb = '1'; else delete app.dataset.kb;
+      if (bird && first && !reduce() && bird.animate) {
+        const last = bird.getBoundingClientRect();
+        if (last.width) {
+          const dx = first.left - last.left, dy = first.top - last.top, s = first.width / last.width;
+          bird.animate([
+            { transformOrigin: '0 0', translate: dx + 'px ' + dy + 'px', scale: String(s) },
+            { transformOrigin: '0 0', translate: '0 0', scale: '1' }
+          ], { duration: 340, easing: 'cubic-bezier(.2,.9,.25,1)' });
+        }
+        if (bubble) bubble.animate([{ opacity: 0, translate: on ? '-10px 0' : '0 -8px' }, { opacity: 1, translate: '0 0' }],
+          { duration: 260, delay: 60, fill: 'backwards', easing: 'ease-out' });
+      }
+      placeLater();
+    };
+    // iOS sometimes never reports the keyboard going away (the page keeps its shrunken height
+    // and the Next button stays high). With no field focused, the page-level helper in
+    // ios-chrome.js restores the full height (the flow itself never touches html/body).
+    const settle = () => {
+      if (window.AhViewport) window.AhViewport.settle();
+      [150, 500, 1100].forEach(ms => setTimeout(() => {
+        if (editing()) return;
+        if (host()) host().style.removeProperty('--vh');
+        window.scrollTo(0, 0);
+      }, ms));
+    };
+    const evalKb = () => {
+      clearTimeout(kbTimer);
+      if (editing()) { setKb(true); placeLater(); return; }
+      // focus often hops straight to the next field; only leave compact mode if it stays empty
+      kbTimer = setTimeout(() => { if (!editing()) { setKb(false); settle(); } }, 160);
+    };
+    document.addEventListener('focusin', evalKb, true);
+    document.addEventListener('focusout', evalKb, true);
+    document.addEventListener('input', () => { if (!editing()) return; clearTimeout(inTimer); inTimer = setTimeout(place, 220); }, true);
+    if (window.visualViewport) window.visualViewport.addEventListener('resize', () => { if (editing()) placeLater(); });
+  }
   wake();
 };
 
