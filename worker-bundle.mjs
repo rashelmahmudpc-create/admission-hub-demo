@@ -77,8 +77,8 @@ function normalizeRow(row) {
     ...payload
   };
 }
-function toPage(rows3, limit) {
-  const list2 = (rows3 || []).map(normalizeRow).filter(Boolean);
+function toPage(rows4, limit) {
+  const list2 = (rows4 || []).map(normalizeRow).filter(Boolean);
   const hasMore = list2.length >= num3(limit, DEFAULT_LIMIT);
   return { items: list2, nextCursor: hasMore ? encodeCursor({ sort_key: list2[list2.length - 1].sortKey, id: list2[list2.length - 1].id }) : null, count: list2.length };
 }
@@ -1644,8 +1644,8 @@ var AiAnalyticsStore = class {
     const limit = Math.min(asInt(options.limit, 200), 1e3);
     try {
       const since = asInt(options.sinceMs);
-      const rows3 = since > 0 ? await this.#readAll("SELECT * FROM ai_decisions WHERE created_at >= ? ORDER BY created_at DESC LIMIT ?", since, limit) : await this.#readAll("SELECT * FROM ai_decisions ORDER BY created_at DESC LIMIT ?", limit);
-      return rows3.map(mapDecision);
+      const rows4 = since > 0 ? await this.#readAll("SELECT * FROM ai_decisions WHERE created_at >= ? ORDER BY created_at DESC LIMIT ?", since, limit) : await this.#readAll("SELECT * FROM ai_decisions ORDER BY created_at DESC LIMIT ?", limit);
+      return rows4.map(mapDecision);
     } catch (err) {
       if (isMissingSchemaError(err)) return [];
       throw err;
@@ -1727,8 +1727,8 @@ var AiAnalyticsStore = class {
     await this.init();
     const limit = Math.min(asInt(options.limit, 100), 500);
     try {
-      const rows3 = options.status ? await this.#readAll("SELECT * FROM ai_approvals WHERE status = ? ORDER BY created_at DESC LIMIT ?", String(options.status), limit) : await this.#readAll("SELECT * FROM ai_approvals ORDER BY created_at DESC LIMIT ?", limit);
-      return rows3.map(mapApproval);
+      const rows4 = options.status ? await this.#readAll("SELECT * FROM ai_approvals WHERE status = ? ORDER BY created_at DESC LIMIT ?", String(options.status), limit) : await this.#readAll("SELECT * FROM ai_approvals ORDER BY created_at DESC LIMIT ?", limit);
+      return rows4.map(mapApproval);
     } catch (err) {
       if (isMissingSchemaError(err)) return [];
       throw err;
@@ -1763,7 +1763,7 @@ var AiAnalyticsStore = class {
     if (!this.#d1) return [];
     await this.init();
     try {
-      const rows3 = await this.#readAll(
+      const rows4 = await this.#readAll(
         `SELECT variant,
                 COUNT(*) AS shown,
                 SUM(CASE WHEN opened_at IS NOT NULL THEN 1 ELSE 0 END) AS opened,
@@ -1772,7 +1772,7 @@ var AiAnalyticsStore = class {
          FROM ai_experiments WHERE experiment = ? GROUP BY variant`,
         String(experiment)
       );
-      return rows3.map((r) => ({
+      return rows4.map((r) => ({
         variant: r.variant,
         shown: asInt(r.shown),
         opened: asInt(r.opened),
@@ -1796,10 +1796,10 @@ var AiAnalyticsStore = class {
   async analyticsEventsFor(userId, sinceMs, limit = 2e3) {
     if (!this.#d1) return [];
     try {
-      const rows3 = await this.#d1.prepare(
+      const rows4 = await this.#d1.prepare(
         "SELECT at FROM analytics_events WHERE user_id = ? AND at >= ? ORDER BY at ASC LIMIT ?"
       ).bind(String(userId), asInt(sinceMs), Math.min(asInt(limit, 2e3), 5e3)).all();
-      return (rows3?.results || []).map((r) => ({ at: asInt(r.at) }));
+      return (rows4?.results || []).map((r) => ({ at: asInt(r.at) }));
     } catch (err) {
       if (isMissingSchemaError(err)) return [];
       throw err;
@@ -2264,7 +2264,7 @@ function capStats(stats) {
   if (stats.mistakes != null) s.mistakes = num5(stats.mistakes, 0, 1e5);
   const name = (v, max) => String(v == null ? "" : v).replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, max);
   const pii = (v) => /[\w.+-]+@[\w-]+\.[\w.]+|(?:\+?880|0)1[3-9]\d{8}|\b\d{10,}\b/.test(v);
-  const rows3 = (input, limit) => {
+  const rows4 = (input, limit) => {
     if (!Array.isArray(input)) return null;
     const seen = /* @__PURE__ */ new Set();
     const out = [];
@@ -2278,9 +2278,9 @@ function capStats(stats) {
     }
     return out.length ? out : null;
   };
-  const weak = rows3(stats.weakTopics, 4);
+  const weak = rows4(stats.weakTopics, 4);
   if (weak) s.weakTopics = weak;
-  const subs = rows3(stats.subjects, 6);
+  const subs = rows4(stats.subjects, 6);
   if (subs) s.subjects = subs;
   const period = (input) => {
     if (!input || typeof input !== "object") return null;
@@ -3731,7 +3731,7 @@ async function createSnapshot(env, { now } = {}) {
   const body = JSON.stringify(snapshot);
   await bucket.put(key, body, { httpMetadata: { contentType: "application/json" } });
   const kvCount = Object.values(snapshot.kv).reduce((n, m) => n + Object.keys(m || {}).length, 0);
-  const d1Count = Object.values(snapshot.d1).reduce((n, rows3) => n + (Array.isArray(rows3) ? rows3.length : 0), 0);
+  const d1Count = Object.values(snapshot.d1).reduce((n, rows4) => n + (Array.isArray(rows4) ? rows4.length : 0), 0);
   const entry = makeIndexEntry({ key, at: snapshot.at, kvCount, d1Count, bytes: body.length });
   try {
     const raw = env.PUB_KV ? await env.PUB_KV.get(BACKUP_INDEX_KEY) : null;
@@ -3783,7 +3783,7 @@ var JSONH = {
   "Access-Control-Allow-Methods": "GET,POST,OPTIONS"
 };
 var json2 = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: JSONH });
-var onlyRows = (rows3) => (Array.isArray(rows3) ? rows3 : []).filter((row) => row && row.id).map((row) => {
+var onlyRows = (rows4) => (Array.isArray(rows4) ? rows4 : []).filter((row) => row && row.id).map((row) => {
   const clean2 = { ...row };
   for (const key of ["imageDataUrl", "image", "thumbnail"]) {
     if (typeof clean2[key] === "string" && clean2[key].startsWith("data:") && clean2[key].length > 9e5) delete clean2[key];
@@ -3977,15 +3977,15 @@ var publishGlobal = async (env, full) => {
     try {
       await env.PROFILE_DB.prepare("CREATE TABLE IF NOT EXISTS content_lists (kind TEXT NOT NULL, id TEXT NOT NULL, ord INTEGER NOT NULL DEFAULT 0, payload TEXT NOT NULL, PRIMARY KEY (kind, id))").run();
       const present = [["subjects", subjects], ["topics", topics], ["vocabulary", vocabulary], ["vocabularyMaster", vocabularyMaster], ["exams", exams]];
-      const gone = present.filter(([, rows3]) => !rows3.length).map(([kind]) => kind);
+      const gone = present.filter(([, rows4]) => !rows4.length).map(([kind]) => kind);
       if (gone.length) {
         await env.PROFILE_DB.prepare(`DELETE FROM content_lists WHERE kind IN (${gone.map(() => "?").join(",")})`).bind(...gone).run();
       }
-      for (const [kind, rows3] of present) {
-        if (!rows3.length) continue;
+      for (const [kind, rows4] of present) {
+        if (!rows4.length) continue;
         await env.PROFILE_DB.prepare("DELETE FROM content_lists WHERE kind = ?").bind(kind).run();
-        for (let i = 0; i < rows3.length; i += 25) {
-          const chunk = rows3.slice(i, i + 25);
+        for (let i = 0; i < rows4.length; i += 25) {
+          const chunk = rows4.slice(i, i + 25);
           await env.PROFILE_DB.prepare(
             `INSERT INTO content_lists (kind, id, ord, payload) VALUES ${chunk.map(() => "(?,?,?,?)").join(",")}`
           ).bind(...chunk.flatMap((row, j) => [kind, String(row.id), i + j, JSON.stringify(row)])).run();
@@ -6001,11 +6001,11 @@ var ProviderRegistry = class {
     const eligible = this.all().filter(
       (entry) => entry.enabled && Boolean(entry.policy.emergency) === emergency && !excluded.has(entry.id) && REQUIRED_CAPABILITIES.every((capability) => entry.policy.capabilities.includes(capability))
     );
-    const rows3 = await Promise.all(eligible.map(async (entry) => {
+    const rows4 = await Promise.all(eligible.map(async (entry) => {
       const [snapshot, remote] = await Promise.all([this.healthMonitor.snapshot(entry), this.remoteHealth(entry)]);
       return { entry, snapshot, remote };
     }));
-    const available = rows3.filter(
+    const available = rows4.filter(
       (row) => ![PROVIDER_HEALTH.DISABLED, PROVIDER_HEALTH.OFFLINE, PROVIDER_HEALTH.QUOTA_EXHAUSTED].includes(row.snapshot.health) && !["OFFLINE", "INELIGIBLE", "DISABLED"].includes(row.remote.status) && row.remote.senderVerified !== false && row.remote.transactionalReady !== false
     );
     const mode = this.config.router.mode;
@@ -8703,13 +8703,13 @@ var CloudflareNativeAuthEngine = class {
       emailRef: identity.refs.emailRef,
       now
     }));
-    const rows3 = errorFromRepository(await this.repository.recentSecurityHistory({
+    const rows4 = errorFromRepository(await this.repository.recentSecurityHistory({
       userId: session.user.id,
       now,
       limit: 10
     }));
     return Object.freeze({
-      entries: rows3.map((row) => Object.freeze({
+      entries: rows4.map((row) => Object.freeze({
         at: Number(row.at),
         method: row.method,
         browserClass: row.browserClass,
@@ -11834,6 +11834,13 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         const result = await callAuthority(env, "/internal/admin/students/get", { input: { userId } });
         return json4(request, result?.found ? 200 : 404, { ok: Boolean(result?.found), ...result }, { "X-Robots-Tag": "noindex, nofollow" });
       }
+      if (request.method === "POST" && url.pathname === `${AUTH_API_PREFIX}/admin/students/wipe`) {
+        if (!adminAuthorized(request, env)) return json4(request, 403, { ok: false, error: { code: "FORBIDDEN", message: "অনুমতি নেই।" } });
+        const body = await readJson(request);
+        const input = body?.dryRun === false ? { dryRun: false, confirm: String(body?.confirm || "").slice(0, 64) } : { dryRun: true };
+        const result = await callAuthority(env, "/internal/admin/students/wipe", { input });
+        return json4(request, 200, { ok: true, ...result }, { "X-Robots-Tag": "noindex, nofollow" });
+      }
       if (request.method === "GET" && url.pathname === `${AUTH_API_PREFIX}/admin/security/events`) {
         if (!adminAuthorized(request, env)) return json4(request, 403, { ok: false, error: { code: "FORBIDDEN", message: "অনুমতি নেই।" } });
         const limit = Math.min(Math.max(Number(url.searchParams.get("limit")) || 50, 1), 200);
@@ -11882,14 +11889,14 @@ var asInt2 = (v, fallback = 0) => {
   return Number.isFinite(n) ? n : fallback;
 };
 var pct = (part, whole) => whole > 0 ? Math.round(part / whole * 1e3) / 10 : 0;
-function computeAnalytics(rows3 = [], readCounts = {}, inactiveDevices = 0) {
+function computeAnalytics(rows4 = [], readCounts = {}, inactiveDevices = 0) {
   const items = [];
   let sent = 0;
   let delivered = 0;
   let failed = 0;
   let opened = 0;
   let clicked = 0;
-  for (const row of rows3) {
+  for (const row of rows4) {
     const status = String(row?.status || "");
     const wasSent = status === "sent";
     const didFail = status === "failed";
@@ -11919,7 +11926,7 @@ function computeAnalytics(rows3 = [], readCounts = {}, inactiveDevices = 0) {
   }
   return {
     totals: {
-      notifications: rows3.length,
+      notifications: rows4.length,
       sent,
       failed,
       delivered,
@@ -11934,8 +11941,8 @@ function computeAnalytics(rows3 = [], readCounts = {}, inactiveDevices = 0) {
     items
   };
 }
-function summarizeHistory(rows3 = [], readCounts = {}) {
-  return computeAnalytics(rows3, readCounts).items.map((item) => ({
+function summarizeHistory(rows4 = [], readCounts = {}) {
+  return computeAnalytics(rows4, readCounts).items.map((item) => ({
     id: item.id,
     title: item.title,
     status: item.status,
@@ -12583,11 +12590,11 @@ var FcmStore = class {
   }
   async activeDevices(userId) {
     await this.#ensureTables();
-    const rows3 = await this.#d1.prepare(
+    const rows4 = await this.#d1.prepare(
       `SELECT id, fcm_token, platform, browser, device_info, created_at, updated_at, last_seen
        FROM fcm_devices WHERE user_id=? AND is_active=1 ORDER BY updated_at DESC`
     ).bind(userId).all();
-    return (rows3?.results || []).map((row) => ({
+    return (rows4?.results || []).map((row) => ({
       id: row.id,
       token: `${String(row.fcm_token).slice(0, 10)}…`,
       platform: row.platform,
@@ -12599,10 +12606,10 @@ var FcmStore = class {
   }
   async activeTokens(userId) {
     await this.#ensureTables();
-    const rows3 = await this.#d1.prepare(
+    const rows4 = await this.#d1.prepare(
       `SELECT id, fcm_token FROM fcm_devices WHERE user_id=? AND is_active=1 ORDER BY updated_at DESC`
     ).bind(userId).all();
-    return (rows3?.results || []).map((row) => ({ id: row.id, token: row.fcm_token }));
+    return (rows4?.results || []).map((row) => ({ id: row.id, token: row.fcm_token }));
   }
   async getPrefs(userId) {
     await this.#ensureTables();
@@ -13445,8 +13452,8 @@ async function handleFcmNotificationRequest(request, env) {
       if (!body) return jsonResponse(request, { error: "invalid-json" }, 400);
       const id = String(body.id || "");
       if (!GN_ID_RE.test(id)) return jsonResponse(request, { error: "invalid-id" }, 400);
-      const rows3 = await store.recentGlobals(50);
-      const row = rows3.find((r) => r.id === id);
+      const rows4 = await store.recentGlobals(50);
+      const row = rows4.find((r) => r.id === id);
       if (!row) return jsonResponse(request, { error: "not-found" }, 404);
       if (row.status !== "scheduled") return jsonResponse(request, { error: "not-scheduled" }, 409);
       await store.updateGlobalStatus(id, { status: "cancelled" });
@@ -13977,14 +13984,14 @@ var UserDataStore = class {
     if (!table) return null;
     const after = clampInt(since, 0, Number.MAX_SAFE_INTEGER, 0);
     const max = clampInt(limit, 1, MAX_PULL_LIMIT, MAX_PULL_LIMIT);
-    const rows3 = await this.#d1.prepare(
+    const rows4 = await this.#d1.prepare(
       `SELECT ${shapedKey} AS id, payload_json, updated_at, deleted_at
        FROM ${table}
        WHERE user_id=? AND updated_at>? AND ${shapedKey}>?
        ORDER BY updated_at ASC, ${shapedKey} ASC LIMIT ?`
     ).bind(userId, after, String(cursor || ""), max + 1).all();
     const items = [];
-    for (const r of rows3?.results || []) {
+    for (const r of rows4?.results || []) {
       const id = String(r.id);
       let doc = null;
       if (r.deleted_at == null) {
@@ -14298,10 +14305,10 @@ var PersonalizedStore = class {
   /* Every student who currently has at least one active device. */
   async audience() {
     await this.init();
-    const rows3 = await this.#d1.prepare(
+    const rows4 = await this.#d1.prepare(
       "SELECT DISTINCT user_id FROM fcm_devices WHERE is_active=1"
     ).all();
-    return (rows3?.results || []).map((r) => String(r.user_id));
+    return (rows4?.results || []).map((r) => String(r.user_id));
   }
   async prefs(userId) {
     await this.init();
@@ -14935,12 +14942,12 @@ function attributeConversion(send = {}, learningEvents = [], windowMs = 6 * 3600
   return { converted: true, kind: candidates[0].kind, lagMs: candidates[0].at - sentAt };
 }
 var pct2 = (part, whole) => whole > 0 ? Math.round(part / whole * 1e3) / 10 : 0;
-function computePerformance(rows3 = []) {
+function computePerformance(rows4 = []) {
   const byKind = {};
   const byVariant = {};
   const byHour = {};
   let sent = 0, opened = 0, clicked = 0, converted = 0, failed = 0;
-  for (const r of rows3) {
+  for (const r of rows4) {
     const kind = String(r?.kind || "unknown");
     const variant = String(r?.variant || "A");
     const hour = Number.isFinite(Number(r?.hour)) ? Number(r.hour) : null;
@@ -14977,8 +14984,8 @@ function computePerformance(rows3 = []) {
     bestHour
   };
 }
-function computeFeedback(rows3 = [], opts = {}) {
-  const perf = computePerformance(rows3);
+function computeFeedback(rows4 = [], opts = {}) {
+  const perf = computePerformance(rows4);
   const minSample = asInt4(opts.minSample, 20);
   const variants = Object.entries(perf.byVariant).filter(([, b]) => b.sent >= minSample);
   let winner = null;
@@ -14991,13 +14998,13 @@ function computeFeedback(rows3 = [], opts = {}) {
   return { ...perf, winner, ready: perf.totals.sent >= minSample };
 }
 function computeDecisionStats(decisions = [], outcomes = []) {
-  const rows3 = Array.isArray(decisions) ? decisions : [];
+  const rows4 = Array.isArray(decisions) ? decisions : [];
   const out = Array.isArray(outcomes) ? outcomes : [];
   let sent = 0, skipped = 0;
   const byRule = {};
   const bySkipStage = {};
   const byReason = {};
-  for (const d of rows3) {
+  for (const d of rows4) {
     const decision = String(d?.decision || "");
     const rule = String(d?.rule || "unknown");
     if (decision === "send") sent += 1;
@@ -15032,7 +15039,7 @@ function computeDecisionStats(decisions = [], outcomes = []) {
   }
   const perfRanked = Object.entries(perfByRule).map(([kind, b]) => ({ kind, ...b, clickRate: pct2(b.clicked, b.sent), openRate: pct2(b.opened, b.sent) })).sort((a, b) => b.clickRate - a.clickRate || b.openRate - a.openRate || a.kind.localeCompare(b.kind));
   return {
-    eligible: rows3.length,
+    eligible: rows4.length,
     sent,
     skipped,
     /* CTR is over delivered sends, not decisions: a decision to send that FCM
@@ -15178,8 +15185,8 @@ var IntelligenceStore = class {
   }
   async audience() {
     await this.init();
-    const rows3 = await this.#d1.prepare("SELECT DISTINCT user_id FROM fcm_devices WHERE is_active=1").all();
-    return (rows3?.results || []).map((r) => String(r.user_id));
+    const rows4 = await this.#d1.prepare("SELECT DISTINCT user_id FROM fcm_devices WHERE is_active=1").all();
+    return (rows4?.results || []).map((r) => String(r.user_id));
   }
   async getState(userId) {
     await this.init();
@@ -15234,15 +15241,15 @@ var IntelligenceStore = class {
   }
   async seenKeys(userId) {
     await this.init();
-    const rows3 = await this.#d1.prepare("SELECT notification_key FROM notification_outcomes WHERE user_id=?").bind(userId).all();
-    return new Set((rows3?.results || []).map((r) => String(r.notification_key)));
+    const rows4 = await this.#d1.prepare("SELECT notification_key FROM notification_outcomes WHERE user_id=?").bind(userId).all();
+    return new Set((rows4?.results || []).map((r) => String(r.notification_key)));
   }
   async history(userId, limit = 200) {
     await this.init();
-    const rows3 = await this.#d1.prepare(
+    const rows4 = await this.#d1.prepare(
       "SELECT notification_key, kind, sent_at, opened_at, clicked_at FROM notification_outcomes WHERE user_id=? ORDER BY sent_at DESC LIMIT ?"
     ).bind(userId, limit).all();
-    return (rows3?.results || []).map((r) => ({
+    return (rows4?.results || []).map((r) => ({
       key: String(r.notification_key),
       kind: String(r.kind),
       sentAt: asInt4(r.sent_at),
@@ -15294,11 +15301,11 @@ var IntelligenceStore = class {
   }
   async decisionsForDay(dayKey4) {
     await this.init();
-    const rows3 = await this.#d1.prepare(
+    const rows4 = await this.#d1.prepare(
       `SELECT user_id, rule, kind, score, decision, stage, reason, day_key, created_at
        FROM notification_decisions WHERE day_key=? ORDER BY created_at DESC`
     ).bind(dayKey4).all();
-    return (rows3?.results || []).map((r) => ({
+    return (rows4?.results || []).map((r) => ({
       userId: String(r.user_id),
       rule: String(r.rule),
       kind: r.kind ? String(r.kind) : null,
@@ -15314,11 +15321,11 @@ var IntelligenceStore = class {
    * the dashboard can exclude them from the denominator itself. */
   async outcomesForDay(dayKey4) {
     await this.init();
-    const rows3 = await this.#d1.prepare(
+    const rows4 = await this.#d1.prepare(
       `SELECT kind, category, variant, sent_at, opened_at, clicked_at, status
        FROM notification_outcomes WHERE day_key=? ORDER BY sent_at DESC`
     ).bind(dayKey4).all();
-    return (rows3?.results || []).map((r) => ({
+    return (rows4?.results || []).map((r) => ({
       kind: String(r.kind),
       category: String(r.category),
       variant: String(r.variant),
@@ -15348,11 +15355,11 @@ var IntelligenceStore = class {
    * event can be credited to. */
   async convertibleSends(userId, sinceMs) {
     await this.init();
-    const rows3 = await this.#d1.prepare(
+    const rows4 = await this.#d1.prepare(
       `SELECT notification_key, kind, sent_at, opened_at, clicked_at FROM notification_outcomes
        WHERE user_id=? AND sent_at>=? AND learning_at IS NULL ORDER BY sent_at DESC LIMIT 10`
     ).bind(userId, sinceMs).all();
-    return (rows3?.results || []).map((r) => ({
+    return (rows4?.results || []).map((r) => ({
       key: String(r.notification_key),
       kind: String(r.kind),
       sentAt: asInt4(r.sent_at),
@@ -15384,11 +15391,11 @@ var IntelligenceStore = class {
   }
   async rowsForPerformance(limit = 2e3) {
     await this.init();
-    const rows3 = await this.#d1.prepare(
+    const rows4 = await this.#d1.prepare(
       `SELECT kind, category, variant, status, sent_at, opened_at, clicked_at, learning_at, learning_kind
        FROM notification_outcomes ORDER BY sent_at DESC LIMIT ?`
     ).bind(limit).all();
-    return (rows3?.results || []).map((r) => ({
+    return (rows4?.results || []).map((r) => ({
       kind: String(r.kind),
       category: String(r.category),
       variant: String(r.variant),
@@ -15406,11 +15413,11 @@ var IntelligenceStore = class {
    * tables other features already own — this engine never writes them. */
   async dailyStats(userId, limitDays = 60) {
     await this.init();
-    const rows3 = await this.#d1.prepare(
+    const rows4 = await this.#d1.prepare(
       `SELECT day, payload_json FROM user_daily_stats
        WHERE user_id=? AND deleted_at IS NULL ORDER BY day DESC LIMIT ?`
     ).bind(userId, limitDays).all();
-    return (rows3?.results || []).map((r) => {
+    return (rows4?.results || []).map((r) => {
       let doc = null;
       try {
         doc = JSON.parse(String(r.payload_json));
@@ -15427,11 +15434,11 @@ var IntelligenceStore = class {
   }
   async examScores(userId, limit = 20) {
     await this.init();
-    const rows3 = await this.#d1.prepare(
+    const rows4 = await this.#d1.prepare(
       `SELECT id, payload_json, updated_at FROM user_exam_results
        WHERE user_id=? AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT ?`
     ).bind(userId, limit).all();
-    return (rows3?.results || []).map((r) => {
+    return (rows4?.results || []).map((r) => {
       let doc = null;
       try {
         doc = JSON.parse(String(r.payload_json));
@@ -15445,13 +15452,13 @@ var IntelligenceStore = class {
    * weak-topic intelligence needs. */
   async mistakeState(userId) {
     await this.init();
-    const rows3 = await this.#d1.prepare(
+    const rows4 = await this.#d1.prepare(
       `SELECT topic_id, COUNT(*) AS misses FROM user_mistakes
        WHERE user_id=? AND deleted_at IS NULL AND COALESCE(mastered,0)=0
          AND (revision_status IS NULL OR revision_status<>'mastered')
        GROUP BY topic_id ORDER BY misses DESC LIMIT 10`
     ).bind(userId).all();
-    const topics = (rows3?.results || []).map((r) => ({ topic: String(r.topic_id || "general"), misses: asInt4(r.misses) }));
+    const topics = (rows4?.results || []).map((r) => ({ topic: String(r.topic_id || "general"), misses: asInt4(r.misses) }));
     const pending = topics.reduce((n, t) => n + t.misses, 0);
     const masteredRow = await this.#d1.prepare(
       `SELECT COUNT(*) AS n FROM user_mistakes
@@ -15778,8 +15785,8 @@ async function handleIntelligenceRequest(request, env, deps = {}) {
     return jsonResponse4(request, { ok: true, ...result });
   }
   if (path === `${ADMIN_PREFIX}performance` && request.method === "GET") {
-    const rows3 = await store.rowsForPerformance();
-    return jsonResponse4(request, { ok: true, ...computeFeedback(rows3), rows: rows3.length });
+    const rows4 = await store.rowsForPerformance();
+    return jsonResponse4(request, { ok: true, ...computeFeedback(rows4), rows: rows4.length });
   }
   if (path === `${ADMIN_PREFIX}fatigue` && request.method === "GET") {
     const userId = String(url.searchParams.get("user") || "").trim();
@@ -16003,8 +16010,8 @@ var EventStore = class {
   /* Everyone who currently has an active device. */
   async audience() {
     await this.init();
-    const rows3 = await this.#d1.prepare("SELECT DISTINCT user_id FROM fcm_devices WHERE is_active=1").all();
-    return (rows3?.results || []).map((r) => String(r.user_id));
+    const rows4 = await this.#d1.prepare("SELECT DISTINCT user_id FROM fcm_devices WHERE is_active=1").all();
+    return (rows4?.results || []).map((r) => String(r.user_id));
   }
   async prefs(userId) {
     await this.init();
@@ -16305,8 +16312,8 @@ var DigestStore = class {
   }
   async audience() {
     await this.init();
-    const rows3 = await this.#d1.prepare("SELECT DISTINCT user_id FROM fcm_devices WHERE is_active=1").all();
-    return (rows3?.results || []).map((r) => String(r.user_id));
+    const rows4 = await this.#d1.prepare("SELECT DISTINCT user_id FROM fcm_devices WHERE is_active=1").all();
+    return (rows4?.results || []).map((r) => String(r.user_id));
   }
   async prefs(userId) {
     await this.init();
@@ -16449,7 +16456,7 @@ var asNum = (v, fallback = 0) => {
 var pct3 = (part, whole, dp = 1) => whole > 0 ? Number((part / whole * 100).toFixed(dp)) : 0;
 var ratio2 = (part, whole, dp = 4) => whole > 0 ? Number((part / whole).toFixed(dp)) : 0;
 var round = (n, dp = 2) => Number.isFinite(Number(n)) ? Number(Number(n).toFixed(dp)) : 0;
-var sum = (rows3, pick) => rows3.reduce((n, r) => n + asNum(pick(r)), 0);
+var sum = (rows4, pick) => rows4.reduce((n, r) => n + asNum(pick(r)), 0);
 var parseDay = (day) => {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(day || ""));
   return m ? Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : NaN;
@@ -16600,22 +16607,22 @@ function compareValue(current, previous) {
   };
 }
 function splitPeriods(series = [], days = 7) {
-  const rows3 = Array.isArray(series) ? series : [];
-  const current = rows3.slice(-days);
-  const previous = rows3.slice(-days * 2, -days);
+  const rows4 = Array.isArray(series) ? series : [];
+  const current = rows4.slice(-days);
+  const previous = rows4.slice(-days * 2, -days);
   return { current, previous };
 }
 function comparePeriods(series = [], days = 7) {
   const { current, previous } = splitPeriods(series, days);
-  const active = (rows3) => rows3.filter((r) => r.active).length;
+  const active = (rows4) => rows4.filter((r) => r.active).length;
   const pick = {
-    practiceActivity: (rows3) => sum(rows3, (r) => r.questions),
-    lessonsCompleted: (rows3) => sum(rows3, (r) => r.lessons),
-    learningTimeMs: (rows3) => sum(rows3, (r) => r.timeMs),
+    practiceActivity: (rows4) => sum(rows4, (r) => r.questions),
+    lessonsCompleted: (rows4) => sum(rows4, (r) => r.lessons),
+    learningTimeMs: (rows4) => sum(rows4, (r) => r.timeMs),
     activeDays: active,
-    accuracy: (rows3) => {
-      const c = sum(rows3, (r) => r.correct);
-      const w = sum(rows3, (r) => r.wrong);
+    accuracy: (rows4) => {
+      const c = sum(rows4, (r) => r.correct);
+      const w = sum(rows4, (r) => r.wrong);
       return c + w > 0 ? pct3(c, c + w, 1) : 0;
     }
   };
@@ -16644,13 +16651,13 @@ function linearTrend(values = [], options = {}) {
 }
 var clamp01 = (n) => Math.min(1, Math.max(0, n));
 function detectTrends(series = [], options = {}) {
-  const rows3 = Array.isArray(series) ? series : [];
+  const rows4 = Array.isArray(series) ? series : [];
   const window = asInt5(options.window, 7);
   return {
-    practiceActivity: linearTrend(rows3.map((r) => r.questions), { window }),
-    lessonsCompleted: linearTrend(rows3.map((r) => r.lessons), { window }),
-    learningTime: linearTrend(rows3.map((r) => r.timeMs), { window }),
-    accuracy: linearTrend(rows3.map((r) => {
+    practiceActivity: linearTrend(rows4.map((r) => r.questions), { window }),
+    lessonsCompleted: linearTrend(rows4.map((r) => r.lessons), { window }),
+    learningTime: linearTrend(rows4.map((r) => r.timeMs), { window }),
+    accuracy: linearTrend(rows4.map((r) => {
       const c = asNum(r.correct);
       const w = asNum(r.wrong);
       return c + w > 0 ? pct3(c, c + w, 1) : 0;
@@ -16739,7 +16746,7 @@ function dropOffMessage(key, rate2) {
   };
   return `${labels[key] || key} — ${Math.round(asNum(rate2) * 100)}% এখানেই থেমে গেছে।`;
 }
-function buildCourseAnalytics(rows3 = [], events = []) {
+function buildCourseAnalytics(rows4 = [], events = []) {
   const byCourse = /* @__PURE__ */ new Map();
   const ensure = (id) => {
     if (!byCourse.has(id)) {
@@ -16760,7 +16767,7 @@ function buildCourseAnalytics(rows3 = [], events = []) {
     }
     return byCourse.get(id);
   };
-  for (const row of rows3) {
+  for (const row of rows4) {
     const id = String(row?.courseId || row?.id || "");
     if (!id) continue;
     const c = ensure(id);
@@ -16903,18 +16910,18 @@ function buildQuizAnalytics(events = []) {
 }
 function computeEngagement(students = [], options = {}) {
   const today = options.today || dayKey3(options.nowMs ?? Date.now(), options.tzOffsetMin);
-  const rows3 = (Array.isArray(students) ? students : []).filter((s) => s && s.userId);
+  const rows4 = (Array.isArray(students) ? students : []).filter((s) => s && s.userId);
   const within = (days) => {
     const cutoff = shiftDay(today, -(days - 1));
-    return rows3.filter((s) => (s.activeDays || []).some((d) => d >= cutoff && d <= today));
+    return rows4.filter((s) => (s.activeDays || []).some((d) => d >= cutoff && d <= today));
   };
   const dau = within(1).length;
   const wau = within(7).length;
   const mau = within(30).length;
-  const sessionRows = rows3.flatMap((s) => s.sessions || []);
+  const sessionRows = rows4.flatMap((s) => s.sessions || []);
   const totalMs = sum(sessionRows, (r) => r.timeMs);
   const sessionCount = sessionRows.length;
-  const returning = rows3.filter((s) => (s.activeDays || []).length > 1).length;
+  const returning = rows4.filter((s) => (s.activeDays || []).length > 1).length;
   return {
     dau,
     wau,
@@ -16925,20 +16932,20 @@ function computeEngagement(students = [], options = {}) {
     sessions: sessionCount,
     avgSessionMs: sessionCount ? Math.round(totalMs / sessionCount) : 0,
     activeStudents: mau,
-    totalStudents: rows3.length,
+    totalStudents: rows4.length,
     returningUsers: returning,
-    newUsers: rows3.length - returning,
-    returningRate: pct3(returning, rows3.length, 1),
-    learningActiveStudents: rows3.filter((s) => asInt5(s.learningActions) > 0).length
+    newUsers: rows4.length - returning,
+    returningRate: pct3(returning, rows4.length, 1),
+    learningActiveStudents: rows4.filter((s) => asInt5(s.learningActions) > 0).length
   };
 }
 var RETENTION_WINDOWS = Object.freeze([1, 7, 14, 30]);
 function computeRetention(students = [], options = {}) {
   const today = options.today || dayKey3(options.nowMs ?? Date.now(), options.tzOffsetMin);
-  const rows3 = (Array.isArray(students) ? students : []).filter((s) => s && s.userId && (s.activeDays || []).length);
+  const rows4 = (Array.isArray(students) ? students : []).filter((s) => s && s.userId && (s.activeDays || []).length);
   const cohorts = /* @__PURE__ */ new Map();
   const buckets = new Map(RETENTION_WINDOWS.map((w) => [w, { window: w, cohortSize: 0, retained: 0, matureCohortSize: 0, rate: 0 }]));
-  for (const s of rows3) {
+  for (const s of rows4) {
     const days = [...new Set(s.activeDays.filter(Boolean))].sort();
     if (!days.length) continue;
     const first = days[0];
@@ -16965,7 +16972,7 @@ function computeRetention(students = [], options = {}) {
   return {
     windows,
     byWindow: Object.fromEntries(windows.map((w) => [`d${w.window}`, w.rate])),
-    cohortSize: rows3.length,
+    cohortSize: rows4.length,
     cohortCount: cohorts.size,
     cohorts: [...cohorts.values()].map((c) => ({
       cohort: c.cohort,
@@ -16978,7 +16985,7 @@ function computeRetention(students = [], options = {}) {
   };
 }
 function computeNotificationAnalytics(outcomes = [], options = {}) {
-  const rows3 = (Array.isArray(outcomes) ? outcomes : []).filter((o) => o && o.notification_key);
+  const rows4 = (Array.isArray(outcomes) ? outcomes : []).filter((o) => o && o.notification_key);
   const bucket = (list2) => {
     const sent = list2.length;
     const opened = list2.filter((o) => asInt5(o.opened_at) > 0).length;
@@ -16998,10 +17005,10 @@ function computeNotificationAnalytics(outcomes = [], options = {}) {
       openToLearning: pct3(learning, opened, 1)
     };
   };
-  const overall = bucket(rows3);
+  const overall = bucket(rows4);
   const group = (keyOf) => {
     const map = /* @__PURE__ */ new Map();
-    for (const o of rows3) {
+    for (const o of rows4) {
       const key = String(keyOf(o) || "unknown");
       if (!map.has(key)) map.set(key, []);
       map.get(key).push(o);
@@ -17027,7 +17034,7 @@ function computeNotificationAnalytics(outcomes = [], options = {}) {
     /* Which part of the local day the student actually acted on. */
     byHour: (() => {
       const map = /* @__PURE__ */ new Map();
-      for (const o of rows3) {
+      for (const o of rows4) {
         const at = asInt5(o.learning_at) || asInt5(o.clicked_at);
         if (!at) continue;
         const hour = new Date(at).getUTCHours();
@@ -17368,8 +17375,8 @@ var AnalyticsStore2 = class {
    * so a wrong column or a bad query is never silently swallowed. */
   async #readAll(query) {
     try {
-      const rows3 = await query.all();
-      return rows3?.results || [];
+      const rows4 = await query.all();
+      return rows4?.results || [];
     } catch (err) {
       if (isMissingSchemaError2(err)) return [];
       throw err;
@@ -17413,9 +17420,9 @@ var AnalyticsStore2 = class {
    * is the whole reason the client is allowed to be at-least-once. */
   async ingestEvents(userId, events, now) {
     await this.init();
-    const rows3 = (Array.isArray(events) ? events : []).slice(0, 200);
+    const rows4 = (Array.isArray(events) ? events : []).slice(0, 200);
     let stored = 0;
-    for (const e of rows3) {
+    for (const e of rows4) {
       const id = String(e?.id || "").slice(0, 120);
       const name = String(e?.name || "").slice(0, 60);
       if (!id || !name) continue;
@@ -17427,10 +17434,10 @@ var AnalyticsStore2 = class {
       ).bind(userId, id, name, JSON.stringify(params).slice(0, 4e3), at, dayKey3(at), now).run();
       if (asInt5(res?.meta?.changes, 0) > 0) stored += 1;
     }
-    return { received: rows3.length, stored };
+    return { received: rows4.length, stored };
   }
-  #events(rows3) {
-    return (rows3?.results || []).map((r) => {
+  #events(rows4) {
+    return (rows4?.results || []).map((r) => {
       let params = {};
       try {
         params = JSON.parse(String(r.params_json || "{}")) || {};
@@ -17444,17 +17451,17 @@ var AnalyticsStore2 = class {
    * reachable without the admin token. */
   async eventsSince(sinceMs, limit = MAX_EVENT_ROWS) {
     await this.init();
-    const rows3 = await this.#d1.prepare(
+    const rows4 = await this.#d1.prepare(
       "SELECT id, name, params_json, at FROM analytics_events WHERE at>=? ORDER BY at ASC LIMIT ?"
     ).bind(sinceMs, limit).all();
-    return this.#events(rows3);
+    return this.#events(rows4);
   }
   async userEvents(userId, sinceMs, limit = MAX_EVENT_ROWS) {
     await this.init();
-    const rows3 = await this.#d1.prepare(
+    const rows4 = await this.#d1.prepare(
       "SELECT id, name, params_json, at FROM analytics_events WHERE user_id=? AND at>=? ORDER BY at ASC LIMIT ?"
     ).bind(userId, sinceMs, limit).all();
-    return this.#events(rows3);
+    return this.#events(rows4);
   }
   /* Every student's learning picture, one row per student, for the platform
    * metrics. `activeDays` is a comma-joined day list — D1 has no array type and
@@ -17471,8 +17478,8 @@ var AnalyticsStore2 = class {
        WHERE s.deleted_at IS NULL AND s.day>=?
        GROUP BY s.user_id`
     ).bind(dayKey3(sinceMs));
-    const rows3 = await this.#readAll(query);
-    return rows3.map((r) => ({
+    const rows4 = await this.#readAll(query);
+    return rows4.map((r) => ({
       userId: String(r.user_id),
       activeDays: String(r.days || "").split(",").filter(Boolean).sort(),
       questions: asInt5(r.questions),
@@ -17487,8 +17494,8 @@ var AnalyticsStore2 = class {
     const query = this.#d1.prepare(
       "SELECT day, payload_json FROM user_daily_stats WHERE user_id=? AND deleted_at IS NULL ORDER BY day DESC LIMIT ?"
     ).bind(userId, limitDays);
-    const rows3 = await this.#readAll(query);
-    return rows3.map((r) => {
+    const rows4 = await this.#readAll(query);
+    return rows4.map((r) => {
       let doc = {};
       try {
         doc = JSON.parse(String(r.payload_json)) || {};
@@ -17511,8 +17518,8 @@ var AnalyticsStore2 = class {
     const query = this.#d1.prepare(
       "SELECT id, payload_json, updated_at FROM user_exam_results WHERE user_id=? AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT ?"
     ).bind(userId, limit);
-    const rows3 = await this.#readAll(query);
-    return rows3.map((r) => {
+    const rows4 = await this.#readAll(query);
+    return rows4.map((r) => {
       let doc = {};
       try {
         doc = JSON.parse(String(r.payload_json)) || {};
@@ -17530,8 +17537,8 @@ var AnalyticsStore2 = class {
          AND (revision_status IS NULL OR revision_status<>'mastered')
        GROUP BY topic ORDER BY misses DESC LIMIT 10`
     ).bind(userId);
-    const rows3 = await this.#readAll(query);
-    return rows3.map((r) => ({ topic: String(r.topic), misses: asInt5(r.misses) }));
+    const rows4 = await this.#readAll(query);
+    return rows4.map((r) => ({ topic: String(r.topic), misses: asInt5(r.misses) }));
   }
   /* Course progress lives in the student's own settings blob (same read Phase 3
    * uses). A malformed or absent blob means "no course data" — never a guess. */
@@ -17563,9 +17570,9 @@ var AnalyticsStore2 = class {
     const query = this.#d1.prepare(
       "SELECT user_id, payload_json, updated_at FROM user_settings WHERE id='settings' AND deleted_at IS NULL AND updated_at>=?"
     ).bind(sinceMs);
-    const rows3 = await this.#readAll(query);
+    const rows4 = await this.#readAll(query);
     const out = [];
-    for (const r of rows3) {
+    for (const r of rows4) {
       let doc = {};
       try {
         doc = JSON.parse(String(r.payload_json)) || {};
@@ -17588,8 +17595,8 @@ var AnalyticsStore2 = class {
       `SELECT notification_key, kind, category, variant, day_key, sent_at, opened_at, clicked_at, learning_at, learning_kind
        FROM notification_outcomes WHERE sent_at>=? ORDER BY sent_at DESC LIMIT 5000`
     ).bind(sinceMs);
-    const rows3 = await this.#readAll(query);
-    return rows3.map((r) => ({
+    const rows4 = await this.#readAll(query);
+    return rows4.map((r) => ({
       notification_key: String(r.notification_key),
       kind: String(r.kind || ""),
       category: String(r.category || ""),
@@ -17608,8 +17615,8 @@ var AnalyticsStore2 = class {
       `SELECT notification_key, kind, category, variant, day_key, sent_at, opened_at, clicked_at, learning_at, learning_kind
        FROM notification_outcomes WHERE user_id=? AND sent_at>=? ORDER BY sent_at DESC LIMIT 500`
     ).bind(userId, sinceMs);
-    const rows3 = await this.#readAll(query);
-    return rows3.map((r) => ({
+    const rows4 = await this.#readAll(query);
+    return rows4.map((r) => ({
       notification_key: String(r.notification_key),
       kind: String(r.kind || ""),
       category: String(r.category || ""),
@@ -17628,8 +17635,8 @@ var AnalyticsStore2 = class {
       `SELECT id, type, audience, topic, status, sent_at, scheduled_at, COALESCE(delivered,0) AS delivered
        FROM global_notifications WHERE COALESCE(sent_at, scheduled_at, 0)>=? ORDER BY COALESCE(sent_at, scheduled_at, 0) DESC LIMIT 500`
     ).bind(sinceMs);
-    const rows3 = await this.#readAll(query);
-    return rows3.map((r) => ({
+    const rows4 = await this.#readAll(query);
+    return rows4.map((r) => ({
       id: String(r.id),
       type: String(r.type || ""),
       audience: String(r.audience || ""),
@@ -17645,9 +17652,9 @@ var AnalyticsStore2 = class {
     const query = this.#d1.prepare(
       "SELECT notification_id, COUNT(*) AS n FROM notification_reads GROUP BY notification_id"
     );
-    const rows3 = await this.#readAll(query);
+    const rows4 = await this.#readAll(query);
     const out = {};
-    for (const r of rows3) out[String(r.notification_id)] = asInt5(r.n);
+    for (const r of rows4) out[String(r.notification_id)] = asInt5(r.n);
     return out;
   }
   /* How many students have a device registered — the honest denominator for a
@@ -17838,13 +17845,13 @@ async function buildAdminDashboard(store, filters, options = {}) {
   const dropOff = detectFunnelDropOff(funnel);
   const trends = detectTrends(
     dayRange(filters.today || dayKey3(Date.now(), filters.tzOffsetMin), 14).map((day) => {
-      const rows3 = filtered.events.filter((e) => dayKey3(e.at, filters.tzOffsetMin) === day);
+      const rows4 = filtered.events.filter((e) => dayKey3(e.at, filters.tzOffsetMin) === day);
       return {
         day,
-        questions: rows3.filter((e) => e.name === "question_attempt").length,
-        lessons: rows3.filter((e) => e.name === "lesson_complete").length,
-        correct: rows3.filter((e) => e.name === "question_attempt" && (e.params?.correct === true || e.params?.correct === "true")).length,
-        wrong: rows3.filter((e) => e.name === "question_attempt" && !(e.params?.correct === true || e.params?.correct === "true")).length,
+        questions: rows4.filter((e) => e.name === "question_attempt").length,
+        lessons: rows4.filter((e) => e.name === "lesson_complete").length,
+        correct: rows4.filter((e) => e.name === "question_attempt" && (e.params?.correct === true || e.params?.correct === "true")).length,
+        wrong: rows4.filter((e) => e.name === "question_attempt" && !(e.params?.correct === true || e.params?.correct === "true")).length,
         timeMs: 0
       };
     }),
@@ -18003,7 +18010,7 @@ var stddev = (values = []) => {
   const m = mean(values);
   return Math.sqrt(values.reduce((a, b) => a + (asNum2(b) - m) ** 2, 0) / (values.length - 1));
 };
-var sumOf = (rows3 = [], pick = (r) => r) => rows3.reduce((n, r) => n + asNum2(pick(r)), 0);
+var sumOf = (rows4 = [], pick = (r) => r) => rows4.reduce((n, r) => n + asNum2(pick(r)), 0);
 var CONFIDENCE_TARGETS = Object.freeze({
   profile: 10,
   // active days
@@ -18987,23 +18994,23 @@ function buildCourseIntelligence(input = {}, options = {}) {
   };
 }
 function evaluateAiPerformance(decisions = [], options = {}) {
-  const rows3 = Array.isArray(decisions) ? decisions : [];
-  const withOutcome = rows3.filter((d) => d && d.outcome);
-  const accepted = rows3.filter((d) => d.actionTaken === "accepted" || d.outcome?.accepted === true);
+  const rows4 = Array.isArray(decisions) ? decisions : [];
+  const withOutcome = rows4.filter((d) => d && d.outcome);
+  const accepted = rows4.filter((d) => d.actionTaken === "accepted" || d.outcome?.accepted === true);
   const converted = withOutcome.filter((d) => d.outcome?.learned === true);
-  const rejected = rows3.filter((d) => d.actionTaken === "rejected");
-  const confidences = rows3.map((d) => asNum2(d.confidence)).filter((c) => c > 0);
-  const latencies = rows3.map((d) => asNum2(d.latencyMs)).filter((l) => l > 0);
-  const costs = rows3.map((d) => d.costUsd).filter((c) => Number.isFinite(Number(c)));
+  const rejected = rows4.filter((d) => d.actionTaken === "rejected");
+  const confidences = rows4.map((d) => asNum2(d.confidence)).filter((c) => c > 0);
+  const latencies = rows4.map((d) => asNum2(d.latencyMs)).filter((l) => l > 0);
+  const costs = rows4.map((d) => d.costUsd).filter((c) => Number.isFinite(Number(c)));
   const falsePositive = withOutcome.filter((d) => asNum2(d.confidence) >= 0.6 && d.outcome?.learned === false).length;
   const falseNegative = withOutcome.filter((d) => asNum2(d.confidence) < 0.4 && d.outcome?.learned === true).length;
   return {
     version: AI_INTELLIGENCE_VERSION,
-    total: rows3.length,
+    total: rows4.length,
     scored: withOutcome.length,
-    acceptanceRate: rows3.length ? round2(accepted.length / rows3.length, 3) : 0,
+    acceptanceRate: rows4.length ? round2(accepted.length / rows4.length, 3) : 0,
     learningConversion: withOutcome.length ? round2(converted.length / withOutcome.length, 3) : 0,
-    rejectionRate: rows3.length ? round2(rejected.length / rows3.length, 3) : 0,
+    rejectionRate: rows4.length ? round2(rejected.length / rows4.length, 3) : 0,
     falsePositive,
     falseNegative,
     falsePositiveRate: withOutcome.length ? round2(falsePositive / withOutcome.length, 3) : 0,
@@ -19741,16 +19748,16 @@ async function writeNotification(kind, params = {}, options = {}) {
     };
   }
 }
-function optimiseExperiment(rows3 = [], options = {}) {
+function optimiseExperiment(rows4 = [], options = {}) {
   const minSample = asInt8(options.minSample, 30);
-  const usable = rows3.filter((r) => asInt8(r.shown) >= minSample);
+  const usable = rows4.filter((r) => asInt8(r.shown) >= minSample);
   if (!usable.length) {
     return {
       version: AI_INTELLIGENCE_VERSION,
       ready: false,
       reason: "insufficient-sample",
       minSample,
-      variants: rows3.map((r) => ({ variant: r.variant, shown: asInt8(r.shown), meetsSample: asInt8(r.shown) >= minSample }))
+      variants: rows4.map((r) => ({ variant: r.variant, shown: asInt8(r.shown), meetsSample: asInt8(r.shown) >= minSample }))
     };
   }
   const ranked = usable.slice().sort(
@@ -19954,26 +19961,26 @@ async function handleAiAnalyticsRequest(request, env, ctx, deps = {}) {
     });
   }
   if (route === "decisions" && request.method === "GET") {
-    const rows3 = await store.listDecisions({ limit: Number(url.searchParams.get("limit")) || 100 });
+    const rows4 = await store.listDecisions({ limit: Number(url.searchParams.get("limit")) || 100 });
     return json6(request, {
       version: AI_INTELLIGENCE_VERSION,
-      decisions: rows3,
-      performance: evaluateAiPerformance(rows3)
+      decisions: rows4,
+      performance: evaluateAiPerformance(rows4)
     });
   }
   if (route === "experiments" && request.method === "GET") {
     const name = String(url.searchParams.get("experiment") || "notification-copy");
-    const rows3 = await store.experimentResults(name);
-    return json6(request, { version: AI_INTELLIGENCE_VERSION, experiment: name, variants: rows3, optimisation: optimiseExperiment(rows3) });
+    const rows4 = await store.experimentResults(name);
+    return json6(request, { version: AI_INTELLIGENCE_VERSION, experiment: name, variants: rows4, optimisation: optimiseExperiment(rows4) });
   }
   if (route === "approvals" && request.method === "GET") {
     const status = url.searchParams.get("status") || void 0;
-    const rows3 = await store.listApprovals({ status, limit: 100 });
+    const rows4 = await store.listApprovals({ status, limit: 100 });
     return json6(request, {
       version: AI_INTELLIGENCE_VERSION,
       policyVersion: AI_POLICY_VERSION,
-      approvals: rows3,
-      pending: rows3.filter((r) => r.status === "pending").length,
+      approvals: rows4,
+      pending: rows4.filter((r) => r.status === "pending").length,
       /* The contract the UI reads: these kinds cannot be actioned without a human. */
       requiresApprovalFor: ["content_change", "course_restructure", "policy_change", "mass_notification", "platform_decision"]
     });
@@ -20130,11 +20137,11 @@ function examples() {
 }
 async function aiCounters(store, trigger) {
   const since = Date.now() - 3600 * 1e3;
-  const rows3 = await store.listDecisions({ sinceMs: since, limit: 1e3 }).catch(() => []);
+  const rows4 = await store.listDecisions({ sinceMs: since, limit: 1e3 }).catch(() => []);
   const day = await store.listDecisions({ sinceMs: Date.now() - DAY_MS6, limit: 1e3 }).catch(() => []);
   const prefix = trigger === "copilot-question" ? "copilot:" : trigger === "notification-wording" ? "notify:" : trigger;
   return {
-    hour: rows3.filter((r) => String(r.signal).startsWith(prefix)).length,
+    hour: rows4.filter((r) => String(r.signal).startsWith(prefix)).length,
     day: day.filter((r) => String(r.signal).startsWith(prefix)).length
   };
 }
@@ -21249,21 +21256,21 @@ var SqliteAuthRepository = class _SqliteAuthRepository {
     return this.#transaction(() => {
       const user = this.#one("SELECT user_id AS id FROM auth_users WHERE user_id=?", userId);
       if (!user) return { error: AUTH_ERROR_CODES.ACCOUNT_NOT_FOUND };
-      const rows3 = deviceRef ? this.#rows("SELECT device_ref AS deviceRef FROM auth_trusted_devices WHERE user_id=? AND device_ref=? AND revoked_at IS NULL", userId, deviceRef) : this.#rows("SELECT device_ref AS deviceRef FROM auth_trusted_devices WHERE user_id=? AND revoked_at IS NULL", userId);
-      if (!rows3.length) return Object.freeze({ revoked: 0 });
+      const rows4 = deviceRef ? this.#rows("SELECT device_ref AS deviceRef FROM auth_trusted_devices WHERE user_id=? AND device_ref=? AND revoked_at IS NULL", userId, deviceRef) : this.#rows("SELECT device_ref AS deviceRef FROM auth_trusted_devices WHERE user_id=? AND revoked_at IS NULL", userId);
+      if (!rows4.length) return Object.freeze({ revoked: 0 });
       if (deviceRef) this.sql.exec("UPDATE auth_trusted_devices SET revoked_at=? WHERE user_id=? AND device_ref=? AND revoked_at IS NULL", now, userId, deviceRef);
       else this.sql.exec("UPDATE auth_trusted_devices SET revoked_at=? WHERE user_id=? AND revoked_at IS NULL", now, userId);
       this.#event("device-revoked", null, userId, now, { deviceRef: deviceRef || null, policyVersion });
-      return Object.freeze({ revoked: rows3.length });
+      return Object.freeze({ revoked: rows4.length });
     });
   }
   async listTrustedDevices({ userId, now }) {
-    const rows3 = this.#rows(
+    const rows4 = this.#rows(
       "SELECT device_ref AS deviceRef,browser_class AS browserClass,trusted_at AS trustedAt,expires_at AS expiresAt FROM auth_trusted_devices WHERE user_id=? AND revoked_at IS NULL AND expires_at>? ORDER BY trusted_at DESC",
       userId,
       now
     );
-    return Object.freeze(rows3.map((row) => Object.freeze({
+    return Object.freeze(rows4.map((row) => Object.freeze({
       deviceRef: String(row.deviceRef),
       browserClass: String(row.browserClass || "unknown"),
       trustedAt: Number(row.trustedAt),
@@ -21360,7 +21367,7 @@ var SqliteAuthRepository = class _SqliteAuthRepository {
     return row || null;
   }
   listSecurityChallenges({ userId, now }) {
-    const rows3 = this.#rows(
+    const rows4 = this.#rows(
       `SELECT purpose,method,status,attempts AS attempts,created_at AS createdAt,expires_at AS expiresAt,
         verified_at AS verifiedAt,consumed_at AS consumedAt,policy_version AS policyVersion
        FROM auth_security_challenges WHERE user_id=? AND created_at>?
@@ -21368,7 +21375,7 @@ var SqliteAuthRepository = class _SqliteAuthRepository {
       userId,
       now - EVENT_RETENTION_MS
     );
-    return Object.freeze(rows3.map((row) => Object.freeze({
+    return Object.freeze(rows4.map((row) => Object.freeze({
       purpose: String(row.purpose),
       method: String(row.method),
       status: String(row.status),
@@ -21435,7 +21442,7 @@ var SqliteAuthRepository = class _SqliteAuthRepository {
   // Phase 6 Chunk 4 — paged ledger view for admins: refs only, no PII
   // (subject/user/device are opaque HMAC refs; there is no raw column here).
   listSecurityEvents({ limit, before }) {
-    const rows3 = before ? this.#rows(
+    const rows4 = before ? this.#rows(
       `SELECT event_type AS eventType,subject_ref AS subjectRef,user_id AS userId,occurred_at AS occurredAt,
           device_ref AS deviceRef,purpose,policy_version AS policyVersion
          FROM auth_security_events WHERE occurred_at<?
@@ -21449,7 +21456,7 @@ var SqliteAuthRepository = class _SqliteAuthRepository {
          ORDER BY occurred_at DESC, rowid DESC LIMIT ?`,
       limit
     );
-    return Object.freeze({ entries: rows3 });
+    return Object.freeze({ entries: rows4 });
   }
   // Risk signals for the login decision (§3-§4), derived from auth_rate_limits
   // state only — no new table, no raw identifiers leave the DO.
@@ -21474,11 +21481,11 @@ var SqliteAuthRepository = class _SqliteAuthRepository {
   }
   // Linked identities for a user: provider + verification facts only.
   async listLinkedIdentities({ userId }) {
-    const rows3 = this.#rows(
+    const rows4 = this.#rows(
       "SELECT provider, last_verified_at AS lastVerifiedAt, created_at AS createdAt FROM auth_external_identities WHERE user_id=? ORDER BY provider",
       userId
     );
-    return Object.freeze(rows3.map((row) => Object.freeze({
+    return Object.freeze(rows4.map((row) => Object.freeze({
       provider: String(row.provider),
       linked: true,
       verified: Boolean(row.lastVerifiedAt),
@@ -22862,7 +22869,7 @@ var VerificationOrchestrator = class {
   }
   async #candidateRows(identity, destinations, now) {
     const eligible = this.config.enabled ? this.config.providers.filter((entry) => entry.enabled && destinations[entry.channel]) : [];
-    const rows3 = await Promise.all(eligible.map(async (entry) => {
+    const rows4 = await Promise.all(eligible.map(async (entry) => {
       const provider = this.providers.get(entry.id);
       const started = Date.now();
       try {
@@ -22908,7 +22915,7 @@ var VerificationOrchestrator = class {
         return null;
       }
     }));
-    return rows3.filter(Boolean).sort((left, right) => left.score - right.score || Number(right.probe) - Number(left.probe) || left.health - right.health || left.entry.priority - right.entry.priority);
+    return rows4.filter(Boolean).sort((left, right) => left.score - right.score || Number(right.probe) - Number(left.probe) || left.health - right.health || left.entry.priority - right.entry.priority);
   }
   async requestVerification(input = {}, requestContext = {}) {
     const identity = await this.#identity(input, requestContext);
@@ -23282,17 +23289,17 @@ var VerificationOrchestrator = class {
     const now = Number(this.now());
     if (this.capabilityCache?.expiresAt > now) return this.capabilityCache.value || this.capabilityCache.promise;
     const promise = (async () => {
-      const rows3 = await this.#candidateRows(
+      const rows4 = await this.#candidateRows(
         { purpose: "account-backup", attemptId: "", userId: "", subjectRef: "" },
         { otp: "configured", whatsapp: "configured", telegram: "user-initiated-link" },
         now
       );
-      const channels = new Set(rows3.map((row) => row.entry.channel));
+      const channels = new Set(rows4.map((row) => row.entry.channel));
       const phoneMode = channels.has("whatsapp") ? channels.has("otp") || channels.has("telegram") ? "optional" : "required" : "none";
       return Object.freeze({
-        available: rows3.length > 0,
+        available: rows4.length > 0,
         telegramAvailable: channels.has("telegram"),
-        availabilityCode: rows3.length ? "READY" : this.config.enabled ? "NO_HEALTHY_PROVIDER" : "NOT_ACTIVATED",
+        availabilityCode: rows4.length ? "READY" : this.config.enabled ? "NO_HEALTHY_PROVIDER" : "NOT_ACTIVATED",
         genericFlow: true,
         providerNamesExposed: false,
         contactInput: phoneMode,
@@ -24078,14 +24085,14 @@ var MailjetOtpVerificationProvider = class {
   }
   async #probeSender() {
     const payload = await fetchJson(this.fetch, `${this.apiBase}/v3/REST/sender?SenderEmail=${encodeURIComponent(this.fromAddress)}`, { method: "GET", headers: this.#headers() });
-    const rows3 = Array.isArray(payload?.Data) ? payload.Data : [];
-    const sender = rows3.find((item) => String(item?.Email || item?.SenderEmail || "").toLowerCase() === this.fromAddress.toLowerCase());
+    const rows4 = Array.isArray(payload?.Data) ? payload.Data : [];
+    const sender = rows4.find((item) => String(item?.Email || item?.SenderEmail || "").toLowerCase() === this.fromAddress.toLowerCase());
     return Boolean(sender && ["active", "validated"].includes(String(sender?.Status || "").toLowerCase()));
   }
   async #probeMetaSender() {
     const payload = await fetchJson(this.fetch, `${this.apiBase}/v3/REST/metasender?Limit=100`, { method: "GET", headers: this.#headers() });
-    const rows3 = Array.isArray(payload?.Data) ? payload.Data : [];
-    const sender = rows3.find((item) => String(item?.Email || "").toLowerCase() === this.fromAddress.toLowerCase());
+    const rows4 = Array.isArray(payload?.Data) ? payload.Data : [];
+    const sender = rows4.find((item) => String(item?.Email || "").toLowerCase() === this.fromAddress.toLowerCase());
     return Boolean(sender && (sender?.IsEnabled === true || sender?.IsEnabled === 1 || String(sender?.IsEnabled || "").toLowerCase() === "true"));
   }
   async getRemainingQuota() {
@@ -24365,8 +24372,8 @@ function logtoSlotFromConfig(raw) {
     if (!text || text.length > 16384) return null;
     const config = JSON.parse(text);
     if (config?.enabled !== true) return null;
-    const rows3 = config.providers;
-    const row = Array.isArray(rows3) ? rows3.find((item) => item?.id === "otp-h") : null;
+    const rows4 = config.providers;
+    const row = Array.isArray(rows4) ? rows4.find((item) => item?.id === "otp-h") : null;
     return row && row.enabled === true ? row : null;
   } catch {
     return null;
@@ -24540,8 +24547,8 @@ function slotFromConfig(raw, id) {
     if (!text || text.length > 16384) return null;
     const config = JSON.parse(text);
     if (config?.enabled !== true) return null;
-    const rows3 = config.providers;
-    const row = Array.isArray(rows3) ? rows3.find((item) => item?.id === id) : null;
+    const rows4 = config.providers;
+    const row = Array.isArray(rows4) ? rows4.find((item) => item?.id === id) : null;
     return row && row.enabled === true ? row : null;
   } catch {
     return null;
@@ -26773,6 +26780,58 @@ function studentProfile(sql, userId, { now = Date.now() } = {}) {
   };
 }
 
+// auth-native/storage/student-wipe.mjs
+var WIPE_KEEP_TABLES = Object.freeze([
+  "auth_verification_runtime_config",
+  "auth_verification_provider_state",
+  "auth_verification_daily_quota",
+  "auth_meta",
+  "schema_migrations"
+]);
+var INTERNAL_TABLE = /^(sqlite_|_cf_)/;
+var SAFE_NAME = /^[A-Za-z0-9_]+$/;
+var rows3 = (result) => Array.isArray(result) ? result : typeof result?.toArray === "function" ? result.toArray() : [...result || []];
+function listWipeTables(sql) {
+  return rows3(sql.exec("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")).map((row) => String(row.name)).filter((name) => SAFE_NAME.test(name) && !INTERNAL_TABLE.test(name) && !WIPE_KEEP_TABLES.includes(name));
+}
+var countOf = (sql, table) => Number(rows3(sql.exec(`SELECT COUNT(*) AS n FROM "${table}"`))[0]?.n || 0);
+function wipeCounts(sql) {
+  const tables = {};
+  let rowsTotal = 0;
+  for (const table of listWipeTables(sql)) {
+    const n = countOf(sql, table);
+    tables[table] = n;
+    rowsTotal += n;
+  }
+  const users = Object.hasOwn(tables, "auth_users") ? tables.auth_users : 0;
+  return { users, rows: rowsTotal, tables, kept: [...WIPE_KEEP_TABLES] };
+}
+var wipeConfirmPhrase = (users) => `WIPE-ALL-${Number(users) || 0}`;
+function wipeAll(sql) {
+  const tables = listWipeTables(sql);
+  const deleted = Object.fromEntries(tables.map((table) => [table, countOf(sql, table)]));
+  let pending = tables.filter((table) => deleted[table] > 0);
+  let passes = 0;
+  const failures = {};
+  while (pending.length && passes < tables.length + 1) {
+    passes += 1;
+    const next = [];
+    for (const table of pending) {
+      try {
+        sql.exec(`DELETE FROM "${table}"`);
+        delete failures[table];
+      } catch (error) {
+        failures[table] = String(error?.message || error).slice(0, 160);
+        next.push(table);
+      }
+    }
+    if (next.length === pending.length) break;
+    pending = next;
+  }
+  const remaining = Object.fromEntries(tables.map((table) => [table, countOf(sql, table)]).filter(([, n]) => n > 0));
+  return { passes, deleted, remaining, failures, complete: Object.keys(remaining).length === 0 };
+}
+
 // auth-native/worker/auth-authority-do.mjs
 var JSON_HEADERS2 = Object.freeze({
   "Content-Type": "application/json; charset=utf-8",
@@ -27211,6 +27270,18 @@ var AdmissionAuthAuthority = class {
       if (url.pathname === "/internal/admin/students/get") {
         const profile = studentProfile(this.state.storage.sql, String(body.input?.userId || ""), { now: Date.now() });
         return response2(200, { ok: true, result: profile ? { found: true, student: profile } : { found: false } });
+      }
+      if (url.pathname === "/internal/admin/students/wipe") {
+        const input = body.input || {};
+        const sql = this.state.storage.sql;
+        const before = wipeCounts(sql);
+        const expected = wipeConfirmPhrase(before.users);
+        if (input.dryRun !== false) return response2(200, { ok: true, result: { dryRun: true, confirmPhrase: expected, ...before } });
+        if (String(input.confirm || "") !== expected) {
+          return response2(409, { ok: false, error: { code: "WIPE_CONFIRM_MISMATCH", message: "Confirm phrase does not match the current user count.", users: before.users } });
+        }
+        const outcome = wipeAll(sql);
+        return response2(200, { ok: true, result: { dryRun: false, before, outcome, after: wipeCounts(sql) } });
       }
       if (url.pathname === "/internal/admin/security/events") {
         const result = await this.engine.securityEventsPage(body.input || {});
