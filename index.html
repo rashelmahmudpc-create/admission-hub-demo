@@ -871,8 +871,8 @@ textarea{min-height:96px}
      the download during head parse instead. The versioned URLs must match
      app-seed.js's `version` constant; scripts/build-welcome-pages.mjs rewrites
      both and fails loudly if they drift. -->
-<link rel="preload" as="style" href="./sky-onboarding.css?v=sky-flow-20261017-v8">
-<link rel="preload" as="script" href="./sky-onboarding.js?v=sky-flow-20261017-v8">
+<link rel="preload" as="style" href="./sky-onboarding.css?v=sky-flow-20261017-v9">
+<link rel="preload" as="script" href="./sky-onboarding.js?v=sky-flow-20261017-v9">
 <link rel="stylesheet" href="./question-bank-clean.css?v=qbc1">
 </head>
 <body class="app-booting">
@@ -981,8 +981,8 @@ textarea{min-height:96px}
 <script>window.ADMISSION_HUB_TURNSTILE_SITEKEY='0x4AAAAAAFYX5IGYQ0F-3DU9';</script>
 <script defer src="./account-access.js?v=20261016-disposable-email-v1&startup=fast1"></script>
 <script defer src="./email-policy-client.js?v=20261016-disposable-email-v1"></script>
-<script src="./app-seed.js?v=sky-flow-20261017-v8" defer></script>
-<script defer src="./ios-chrome.js?v=7"></script>
+<script src="./app-seed.js?v=sky-flow-20261017-v9" defer></script>
+<script defer src="./ios-chrome.js?v=8"></script>
 <script>
 (function installAdmissionSafety(){
   'use strict';
@@ -5468,7 +5468,7 @@ window.__admissionBootPromise.catch(error => console.error('[Admission Hub] boot
       // this, and sw.js already purges every shell whose name is not its own
       // current build. A stale value here deletes the live offline shell on
       // every launch, so the iOS instant-startup cache never survives.
-      const expectedSwVersion = 'v351-sky-keyboard';
+      const expectedSwVersion = 'v352-sky-kb-fix';
       // register() on the same scope performs an in-place update. Never unregister
       // the active iOS worker first: that discards the instant offline shell.
       const registration=await navigator.serviceWorker.register('./sw.js',{scope:'./',updateViaCache:'none'});
@@ -5477,7 +5477,7 @@ window.__admissionBootPromise.catch(error => console.error('[Admission Hub] boot
       // stale pre-retirement application shells can never be served from cache again.
       try {
 
-        const cur = 'admission-hub-shell-v351-sky-keyboard';
+        const cur = 'admission-hub-shell-v352-sky-kb-fix';
         const names = await caches.keys();
         for (const name of names) {
           if (name.startsWith('admission-hub-shell-') && name !== cur) await caches.delete(name).catch(()=>{});
@@ -5633,7 +5633,7 @@ window.__admissionBootPromise.catch(error => console.error('[Admission Hub] boot
 <script defer src="./academic-catalog.js?v=acad-cat-v2"></script>
 <script defer src="./profile-ui.js?v=profile-v18-avatar-cache"></script>
 <script defer src="./profile-v2-mount.js?v=profile-v2-3"></script>
-<script defer src="./sky-smalltalk.js?v=st2"></script>
+<script defer src="./sky-smalltalk.js?v=st1"></script>
 <script defer src="./sky-faq.js?v=faq1"></script>
 <script defer src="./sky-faq-bn.js?v=faq1"></script>
 <script defer src="./sky-faq-en.js?v=faq1"></script>
