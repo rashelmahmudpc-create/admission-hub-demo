@@ -35,9 +35,17 @@ patch(DO,
       "        this.studentDirectorySchema = migrateStudentDirectory(state.storage);\n"
       "      } catch (error) {\n"
       "        this.studentDirectorySchema = { version: 0, applied: [], error: String(error?.message || error).slice(0, 200) };\n"
-      "        console.error('student directory migration failed', error);\n"
       "      }\n",
       "this.studentDirectorySchema = migrateStudentDirectory(state.storage);")
+
+# The auth runtime must not log (native-auth-protection.test.mjs): the failure
+# is kept on this.studentDirectorySchema.error instead.
+_do = root / DO
+_s = _do.read_text(encoding='utf-8')
+_line = "        console.error('student directory migration failed', error);\n"
+if _line in _s:
+    _do.write_text(_s.replace(_line, ''), encoding='utf-8')
+    print(f'{DO}: logging line removed')
 
 patch('package.json',
       "signup-autosave.test.mjs passkey-once.test.mjs",
