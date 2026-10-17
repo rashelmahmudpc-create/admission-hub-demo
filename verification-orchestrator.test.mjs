@@ -749,3 +749,48 @@ test('wrangler.toml timeoutMs matches each slot speed (owner 2026-10-16)', async
     'otp-d': 8000, 'otp-e': 8000, 'otp-f': 8000, 'otp-g': 8000, 'otp-c': 8000, telegram: 20000
   });
 });
+
+// Owner 2026-10-17 (screenshots): Logto code "already used", Logto before Brevo on Gmail.
+test('owner 2026-10-17: a correct Logto code proves email ownership on the first try', async () => {
+  const logto = new MockProvider({ id: 'otp-h', verificationMode: VERIFICATION_MODES.PROVIDER_EVIDENCE });
+  const app = setup({ providers: [logto], config: allowConfig([logto], ['gmail.com']) });
+  const who = ownershipIdentity('student@gmail.com');
+  const sent = await app.orchestrator.requestVerification(who, context);
+  const verified = await app.orchestrator.verify({ ...who, attemptId: sent.attemptId, code: '325916' }, context);
+  assert.equal(verified.verified, true);
+  assert.equal(verified.emailOwnershipProven, true, 'the worker gate needs this flag');
+  const proven = await app.repository.isEmailOwnershipProven({ userId: who.trustedIdentity.userId, subjectRef: who.trustedIdentity.subjectRef });
+  assert.equal(proven.proven, true);
+});
+
+test('owner 2026-10-17: Brevo goes before a fresh Logto on Gmail even with a latency and failure history', async () => {
+  const brevo = new MockProvider({ id: 'otp-a' });
+  const logto = new MockProvider({ id: 'otp-h', verificationMode: VERIFICATION_MODES.PROVIDER_EVIDENCE });
+  const base = allowConfig([brevo, logto], ['gmail.com']);
+  const config = { ...base, providers: base.providers.map(row => ({ ...row, priority: row.id === 'otp-a' ? 10 : 15 })) };
+  const app = setup({ providers: [brevo, logto], config });
+  for (let i = 0; i < 13; i += 1) {
+    await app.repository.recordProviderResult({ providerId: 'otp-a', channel: 'otp', success: false, failureClass: VERIFICATION_FAILURE_CLASS.TEMPORARY, reason: 'TIMEOUT', latencyMs: 5000, failureThreshold: 100, cooldownMs: 1000, now: app.now() });
+  }
+  await app.repository.recordProviderResult({ providerId: 'otp-a', channel: 'otp', success: true, reason: 'ACCEPTED', latencyMs: 2800, failureThreshold: 100, cooldownMs: 1000, now: app.now() });
+  await app.orchestrator.requestVerification(ownershipIdentity('student@gmail.com'), context);
+  assert.equal(brevo.sends.length, 1, 'Brevo carries the Gmail send');
+  assert.equal(logto.sends.length, 0);
+});
+
+test('owner 2026-10-17: an admin save without timeoutMs keeps each slot timeout', async () => {
+  const brevo = new MockProvider({ id: 'otp-a' });
+  const logto = new MockProvider({ id: 'otp-h', verificationMode: VERIFICATION_MODES.PROVIDER_EVIDENCE });
+  const base = rawConfig([brevo, logto]);
+  const config = { ...base, allowedDomains: ['gmail.com', 'example.com'], providers: base.providers.map(row => ({ ...row, timeoutMs: row.id === 'otp-h' ? 12000 : 8000 })) };
+  const app = setup({ providers: [brevo, logto], config });
+  const status = await app.orchestrator.updateConfig({
+    enabled: true,
+    policy: { codeTtlSeconds: 600 },
+    providers: [{ id: 'otp-a', enabled: true, priority: 10, dailyQuota: 300 }, { id: 'otp-h', enabled: true, priority: 15, dailyQuota: 5000 }]
+  });
+  assert.equal(status.providers.find(row => row.id === 'otp-h').timeoutMs, 12000);
+  assert.equal(status.providers.find(row => row.id === 'otp-a').timeoutMs, 8000);
+  assert.equal(status.policy.codeTtlSeconds, 600);
+  assert.deepEqual([...app.orchestrator.config.allowedDomains], ['gmail.com', 'example.com']);
+});
