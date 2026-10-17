@@ -691,6 +691,8 @@
 #app.sky .acts{display:flex;gap:2px;margin-top:10px}
 #app.sky .faqm{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-top:10px;font-size:12.5px;color:var(--mute)}
 #app.sky .faqm button{padding:7px 12px;border-radius:999px;background:var(--soft);color:var(--pri);font-weight:600;font-size:13px}
+#app.sky .cta{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+#app.sky .cta a{display:inline-flex;align-items:center;gap:6px;padding:9px 14px;border-radius:999px;background:var(--soft);color:var(--pri);font-weight:600;font-size:13.5px;text-decoration:none}
 #app.sky .acts button{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;color:var(--mute);transition:.15s}
 #app.sky .acts button:active{background:var(--soft);color:var(--pri)}
 #app.sky .acts svg{width:19px;height:19px}
@@ -1016,6 +1018,14 @@ const ACT_ACTIONS = { 'prefs.write': { bn: 'তোমার AI পছন্দ �
     const more = String(m.q || '').slice(0, 120) + ' — আরো বিস্তারিত বুঝিয়ে বলো';
     return '<div class="faqm"><span>📌 সবার জন্য জমানো উত্তর</span><button data-q="' + esc(more) + '">আরো বিস্তারিত →</button></div>';
   }
+  /* Owner 2026-10-17: support replies get two buttons instead of a printed
+     number / address. The Worker reads both from PUB_KV ('sky:contact') and
+     redirects, so they are never in the app or in the public repo. */
+  function contactNote(m) {
+    if (!m.contact || m.pending) return '';
+    return '<div class="cta"><a href="/api/go/whatsapp" target="_blank" rel="noopener">💬 WhatsApp-এ লিখো</a>' +
+      '<a href="/api/go/email" target="_blank" rel="noopener">📧 ইমেল করো</a></div>';
+  }
   /* Agent phase 1: open_page button. */
   function goNote(m) {
     if (!m.go || m.pending || !/^[a-z0-9-]{2,40}$/.test(String(m.go))) return '';
@@ -1041,7 +1051,7 @@ const ACT_ACTIONS = { 'prefs.write': { bn: 'তোমার AI পছন্দ �
       '<button data-r="' + idx + '" aria-label="' + T.regen + '">' + ic('redo') + '</button>' +
       '<button data-g="' + idx + '" aria-label="' + T.good + '">' + ic('up') + '</button>' +
       '</div>' : '';
-    return '<div class="ai" data-i="' + idx + '"><div class="who">' + av('xs') + 'Sky</div>' + procHtml(m) + '<div class="bw">' + inner + '</div>' + goNote(m) + faqNote(m) + acts + '</div>';
+    return '<div class="ai" data-i="' + idx + '"><div class="who">' + av('xs') + 'Sky</div>' + procHtml(m) + '<div class="bw">' + inner + '</div>' + goNote(m) + faqNote(m) + contactNote(m) + acts + '</div>';
   }
   function procStage(node, holder, next) {
     if (holder.stage) (holder.steps = holder.steps || []).push(holder.stage);
@@ -1080,9 +1090,15 @@ const ACT_ACTIONS = { 'prefs.write': { bn: 'তোমার AI পছন্দ �
     if (!sessions[cur].name) sessions[cur].name = t.slice(0, 40);
     /* PR-2 (owner 2026-10-17): hi / ধন্যবাদ / তুমি কে … are answered here from the
        in-app bank (sky-smalltalk.js): instant, no server call, no AI limit used. */
-    const quick = window.SkySmallTalk ? window.SkySmallTalk.reply(t, (profilePayload() || {}).firstName) : null;
+    /* The big reply bank (sky-replies.json) loads once on first use; wait at most 0.8 s. */
+    const ST = window.SkySmallTalk;
+    if (ST && ST.ready) { try { await ST.ready(800); } catch (_) {} }
+    const fname = (profilePayload() || {}).firstName;
+    let quick = null;
+    if (ST && ST.replyMsg) quick = ST.replyMsg(t, fname);
+    else if (ST) { const r0 = ST.reply(t, fname); quick = r0 ? { text: r0 } : null; }
     if (quick) {
-      sessions[cur].msgs.push({ role: 'ai', text: quick, ts: Date.now(), local: true });
+      sessions[cur].msgs.push({ role: 'ai', text: quick.text, ts: Date.now(), local: true, contact: !!quick.contact });
       save(); renderMsgs(); mood('happy', 1200);
       return;
     }
@@ -1342,6 +1358,7 @@ const ACT_ACTIONS = { 'prefs.write': { bn: 'তোমার AI পছন্দ �
     const navBar = document.querySelector('.bottomnav'); if (navBar) navBar.style.display = 'none';
 
     msgsEl = document.getElementById('msgs');
+    try { if (window.SkySmallTalk && window.SkySmallTalk.ready) window.SkySmallTalk.ready(); } catch (_) {}
     mainEl = document.getElementById('chat');
     inpEl = document.getElementById('inp');
     actEl = document.getElementById('actB');
