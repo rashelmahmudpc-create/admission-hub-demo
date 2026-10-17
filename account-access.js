@@ -1782,12 +1782,48 @@
   const OAUTH_REDIRECT_FLAG = 'ah-oauth-redirect';
   const GOOGLE_REDIRECT_FLAG = 'ah-google-redirect';
 
+  /* Owner 2026-10-17: after Google the Welcome screen came back with no error.
+   * Tab storage (our flag + Firebase's pendingRedirect) is empty when the
+   * return lands in another browsing context (installed app, tab handover), so
+   * the return was never noticed. A marker on the URL Firebase returns to
+   * survives that; finishOAuthRedirect() uses it as a fallback. Non-secret. */
+  const OAUTH_RETURN_PARAM = 'ahAuthReturn';
+  const stripOAuthReturnParam = () => {
+    let marker = '';
+    try {
+      const here = new URL(location.href);
+      marker = String(here.searchParams.get(OAUTH_RETURN_PARAM) || '');
+      if (marker) {
+        here.searchParams.delete(OAUTH_RETURN_PARAM);
+        history.replaceState(history.state, '', here.pathname + here.search + here.hash);
+      }
+    } catch (_) {}
+    return marker;
+  };
+  /* Firebase only asks for a redirect result when its own pending mark is in
+   * tab storage; put that fixed, non-secret mark back after a lost tab. */
+  const restoreFirebasePendingRedirect = appName => {
+    const pendingKey = `firebase:pendingRedirect:${GOOGLE_AUTH_API_KEY}:${appName}`;
+    try {
+      if (!sessionStorage.getItem(pendingKey)) sessionStorage.setItem(pendingKey, '"true"');
+    } catch (_) {}
+  };
   const beginOAuthRedirect = async (auth, provider, google = false) => {
     try {
       if (google) sessionStorage.setItem(GOOGLE_REDIRECT_FLAG, '1');
       else sessionStorage.setItem(OAUTH_REDIRECT_FLAG, '1');
     } catch (_) {}
-    await auth.signInWithRedirect(provider);
+    try {
+      const here = new URL(location.href);
+      here.searchParams.set(OAUTH_RETURN_PARAM, google ? 'g' : 'f');
+      history.replaceState(history.state, '', here.pathname + here.search + here.hash);
+    } catch (_) {}
+    try {
+      await auth.signInWithRedirect(provider);
+    } catch (error) {
+      stripOAuthReturnParam();
+      throw error;
+    }
     return OAUTH_REDIRECT;
   };
 
@@ -1920,7 +1956,17 @@
       if (facebookPending) sessionStorage.removeItem(OAUTH_REDIRECT_FLAG);
       if (googlePending) sessionStorage.removeItem(GOOGLE_REDIRECT_FLAG);
     } catch (_) {}
+    // Fallback when tab storage was lost on the way back (see OAUTH_RETURN_PARAM).
+    const returnMarker = stripOAuthReturnParam();
+    let recovered = false;
+    if (!facebookPending && !googlePending) {
+      if (returnMarker === 'g') googlePending = true;
+      else if (returnMarker === 'f') facebookPending = true;
+      recovered = googlePending || facebookPending;
+    }
     if (!facebookPending && !googlePending) return;
+    // Must happen before the auth instance starts (it reads the mark at init).
+    if (recovered) restoreFirebasePendingRedirect(googlePending ? GOOGLE_SKY_APP : 'ah-google');
     const auth = await (googlePending ? loadGoogleAuth() : loadFirebaseAuth()).catch(() => null);
     if (!auth || typeof auth.getRedirectResult !== 'function') {
       if (googlePending) {
@@ -1940,7 +1986,7 @@
        * leaving them on the same page. */
       open();
       showView('login');
-      const code = String(redirectError?.code || '');
+      const code = String(redirectError?.code || (recovered ? 'storage-lost' : ''));
       const text = code === 'auth/account-exists-with-different-credential'
         ? 'এই Email অন্য পদ্ধতিতে খোলা আছে—আগের পদ্ধতি দিয়ে ঢুকো।'
         : 'লগইন সম্পন্ন হয়নি—আবার চেষ্টা করো। বারবার হলে Chrome/Safari-এ সাইটটি খুলে চেষ্টা করো বা Email দিয়ে ঢুকো।';

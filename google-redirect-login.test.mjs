@@ -112,7 +112,8 @@ test('any other host hands Google off to admissionsky.pages.dev with the start f
 test('?ahGoogle=1 on admissionsky.pages.dev starts the Google redirect and cleans the URL', async () => {
   const app = setup({ url: `${SKY}?ahGoogle=1` });
   await waitFor(() => app.record.redirect === 1, 2500);
-  assert.equal(app.w.location.search, '');
+  assert.equal(new URL(app.w.location.href).searchParams.get('ahGoogle'), null);
+  assert.equal(new URL(app.w.location.href).searchParams.get('ahAuthReturn'), 'g', 'return marker rides on the redirect URL');
   assert.equal(app.record.providers[0].app, 'ah-google-sky');
   app.dom.window.close();
 });

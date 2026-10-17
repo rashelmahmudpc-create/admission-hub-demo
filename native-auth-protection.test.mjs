@@ -279,11 +279,14 @@ test('credentials remain in server-managed HttpOnly cookies and are never return
   const storageCalls = [...client.matchAll(/sessionStorage\.(setItem|getItem|removeItem)\(([^)]*)\)/g)];
   assert.equal((client.match(/sessionStorage/g) || []).length, storageCalls.length,
     'all tab storage use must be an explicitly checked direct method call');
-  assert.equal(storageCalls.length, 6, 'only the six OAuth boolean flag accesses (Facebook + Google redirect) are permitted');
+  // +2: the fixed Firebase pendingRedirect mark restored after a lost tab
+  // (apply-google-return-recovery-20261017). Still never a token or profile.
+  assert.equal(storageCalls.length, 8, 'only the six OAuth boolean flag accesses plus the two Firebase pending-mark calls are permitted');
+  assert.match(client, /const pendingKey = `firebase:pendingRedirect:\$\{GOOGLE_AUTH_API_KEY\}:\$\{appName\}`;/);
   for (const [, method, args] of storageCalls) {
     const permitted = method === 'setItem'
-      ? /^(?:OAUTH_REDIRECT_FLAG|GOOGLE_REDIRECT_FLAG),\s*'1'$/
-      : /^(?:OAUTH_REDIRECT_FLAG|GOOGLE_REDIRECT_FLAG)$/;
+      ? /^(?:(?:OAUTH_REDIRECT_FLAG|GOOGLE_REDIRECT_FLAG),\s*'1'|pendingKey,\s*'"true"')$/
+      : /^(?:OAUTH_REDIRECT_FLAG|GOOGLE_REDIRECT_FLAG|pendingKey)$/;
     assert.match(args.trim(), permitted, 'tab storage must never hold a token, profile or session');
   }
   assert.match(client, /ENTRY_COOKIE = 'ah_entry_v1'/);
