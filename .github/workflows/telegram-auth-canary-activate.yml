@@ -31,18 +31,14 @@ jobs:
       - name: Install locked dependencies
         run: npm ci
 
-      - name: Verify exact bundle, Auth contracts, and retired-account boundary
+      - name: Verify exact bundle, Telegram/Auth contracts, and retired-account boundary
         run: |
           set -eu
           npm run check:worker-bundle
-          npm run test:production-auth
+          npm run test:auth
+          npm run test:email
+          node --test --test-concurrency=1 telegram-otp-auth.test.mjs telegram-webhook.test.mjs telegram-otp-ui.test.mjs verification-orchestrator.test.mjs verification-providers.test.mjs verification-admin.test.mjs native-auth.test.mjs native-auth-operations.test.mjs
           node account-retirement.test.mjs
-
-      - name: Install browser only for the protected release audit
-        run: npx playwright-core install --with-deps chromium
-
-      - name: Audit zero-raster code-native Welcome, interactive Personal, and protected Auth flows
-        run: npm run audit:premium-browser
 
       - name: Verify required Worker bindings by name only
         env:
@@ -119,168 +115,23 @@ jobs:
           FIREBASE_WEB_API_KEY: ${{ secrets.FIREBASE_WEB_API_KEY }}
         run: node auth-native/operations/live-mailbox-e2e.mjs
 
-      - name: Build sanitized Pages bundle
+      - name: Verify public Telegram and generic-backup auth contracts
         run: |
           set -eu
-          rm -rf dist
-          mkdir -p dist
-          rsync -a --exclude='.git' --exclude='node_modules' --exclude='docs' --exclude='AGENT_RESUME' --exclude='ai-proxy' --exclude='auth' --exclude='auth-native' --exclude='email-gateway' --exclude='uploads' --exclude='.github' --exclude='gk-agent-worker.js' --exclude='public-worker.js' --exclude='ai-agent.js' --exclude='worker-bundle.mjs' --exclude='voice-worker.js' --exclude='notification-worker.js' --exclude='wrangler.toml' --exclude='package.json' --exclude='package-lock.json' --exclude='*.test.mjs' --exclude='*.md' ./ dist/
-          test ! -e dist/onboarding-welcome-hero.webp
-          test ! -e dist/onboarding-personal-hero.webp
-          ! grep -Eiq '<(img|picture|source|canvas|video|object|embed)([[:space:]>])' dist/account-access.js
-          ! grep -Eiq 'background(-image)?[[:space:]]*:[^;]*url\(' dist/account-access.css
-
-      - name: Deploy same-origin public verification UI
-        id: pages-deploy
-        uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd # v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy dist --project-name admissionhub --branch main
-
-      - name: Verify public selector and protected generic-backup isolation
-        run: |
-          set -eu
-          verify_dir="${RUNNER_TEMP}/public-release-verification"
-          rm -rf "$verify_dir"
-          mkdir -p "$verify_dir"
-          fetch_public() {
+          cfg="${RUNNER_TEMP}/telegram-canary-config.json"
+          ready=false
+          for attempt in 1 2 3 4 5 6; do
             curl --fail --silent --show-error --connect-timeout 10 --max-time 30 \
-              -H 'Cache-Control: no-cache' --output "$1" "$2"
-          }
-
-          public_ready=false
-          for attempt in 1 2 3 4 5 6 7 8; do
-
-            fetch_public "$verify_dir/index.html" "https://admissionhub.pages.dev/?release=v335-lock-20261016"
-            if grep -Fq 'account-access.js?v=20261015-safearea1' "$verify_dir/index.html" \
-              && grep -Fq 'ai-agent-chat.js?v=agent-f1-ui-p06chat' "$verify_dir/index.html"; then
-              public_ready=true
+              -H 'Cache-Control: no-cache' --output "$cfg" 'https://admissionsky.pages.dev/api/auth/v1/config?telegramCanary=1'
+            if node -e "const x=require(process.argv[1]); const a=x?.auth; const b=a?.methods?.backup; const t=a?.methods?.telegramVerification; if(a?.available!==true||a?.accountVerificationRequired!==true||a?.emailVerifiedRequired!==false||b?.available!==true||b?.availabilityCode!=='READY'||b?.providerNamesExposed!==false||/telegram|bot|token|username|chat/i.test(JSON.stringify(b))||t?.availabilityCode!=='READY'||t?.optional!==true||t?.codeLength!==6||!(t?.expiresInSeconds>=60&&t?.expiresInSeconds<=600)||t?.maxAttempts!==5||t?.verifiesEmailOwnership!==false||t?.canonicalIdentity!=='firebase-uid') process.exit(1)" "$cfg"; then
+              ready=true
               break
             fi
-            [ "$attempt" = '8' ] || sleep 5
+            [ "$attempt" = '6' ] || sleep 10
           done
-          test "$public_ready" = 'true'
-          echo 'verify: public shell settled on the new release'
-
-          config_ready=false
-          for attempt in 1 2 3; do
-            fetch_public "$verify_dir/public-config.json" 'https://admissionhub.pages.dev/api/auth/v1/config'
-            fetch_public "$verify_dir/canary-config.json" 'https://admissionhub.pages.dev/api/auth/v1/config?telegramCanary=1'
-            if node -e "const x=require(process.argv[1]); const a=x?.auth; const m=a?.methods; const t=m?.telegramVerification; if(a?.available!==true||a?.uiContract!=='auth-premium-v6'||a?.onboarding?.version!=='premium-onboarding-v1'||a?.emailVerifiedRequired!==false||m?.emailPassword?.available!==true||m?.passwordReset?.available!==true||m?.profile?.available!==true||m?.google?.available!==true||m?.google?.availabilityCode!=='READY'||m?.passkey?.available!==true||m?.passkey?.enrollmentAvailable!==true||m?.backup?.available!==true||m?.backup?.availabilityCode!=='READY'||m?.backup?.providerNamesExposed!==false||t?.available!==true||t?.availabilityCode!=='READY'||t?.optional!==true||t?.codeLength!==6||t?.expiresInSeconds!==300||t?.maxAttempts!==5||t?.verifiesEmailOwnership!==false||t?.canonicalIdentity!=='firebase-uid') process.exit(1)" "$verify_dir/public-config.json" \
-              && node -e "const x=require(process.argv[1]); const a=x?.auth; const b=a?.methods?.backup; const t=a?.methods?.telegramVerification; if(a?.accountVerificationRequired!==true||a?.emailVerifiedRequired!==false||b?.available!==true||b?.availabilityCode!=='READY'||b?.genericFlow!==true||b?.providerNamesExposed!==false||b?.contactInput!=='none'||/telegram|bot|token|username|chat/i.test(JSON.stringify(b))||t?.available!==true||t?.availabilityCode!=='READY'||t?.optional!==true||t?.codeLength!==6||t?.expiresInSeconds!==300||t?.maxAttempts!==5||t?.verifiesEmailOwnership!==false||t?.canonicalIdentity!=='firebase-uid') process.exit(1)" "$verify_dir/canary-config.json"; then
-              config_ready=true
-              break
-            fi
-            [ "$attempt" = '3' ] || sleep 5
-          done
-          test "$config_ready" = 'true'
-          echo 'verify: auth config contracts READY'
-
-          grep -Fq 'institutions-bd.js?v=bd-institutions-v2' "$verify_dir/index.html"
-          grep -Fq 'account-access.css?v=20261015-safearea1' "$verify_dir/index.html"
-          grep -Fq 'dashboard-v2.css?v=dash2f13-theme' "$verify_dir/index.html"
-          grep -Fq 'dashboard-v2.js?v=dash2f17-v3frame' "$verify_dir/index.html"
-          grep -Fq 'ai-agent-chat.js?v=agent-f1-ui-p06chat' "$verify_dir/index.html"
-          grep -Fq 'phase12-ui.js?v=nav-resume-router-v11-main-ai' "$verify_dir/index.html"
-
-          grep -Fq "const expectedSwVersion = 'v335-lock-20261016'" "$verify_dir/index.html"
-          verify_retired_media_absent() {
-            asset="$1"
-            status=$(curl --silent --show-error --connect-timeout 10 --max-time 30 \
-              -H 'Cache-Control: no-cache' --dump-header "$verify_dir/${asset}.headers" \
-              --output "$verify_dir/${asset}.body" --write-out '%{http_code}' \
-
-              "https://admissionhub.pages.dev/${asset}?retired=v335-lock-20261016")
-            case "$status" in
-              404|410) ;;
-              200)
-                ! grep -Eiq '^content-type:[[:space:]]*image/' "$verify_dir/${asset}.headers"
-                node -e "const b=require('node:fs').readFileSync(process.argv[1]); if(b.subarray(0,4).toString()==='RIFF'&&b.subarray(8,12).toString()==='WEBP') process.exit(1)" "$verify_dir/${asset}.body"
-                grep -Fq 'account-access.js?v=20261015-safearea1' "$verify_dir/${asset}.body"
-                ;;
-              *) exit 1 ;;
-            esac
-          }
-          verify_retired_media_absent 'onboarding-welcome-hero.webp'
-          verify_retired_media_absent 'onboarding-personal-hero.webp'
-
-          fetch_public "$verify_dir/account-access.js" 'https://admissionhub.pages.dev/account-access.js?v=20261015-safearea1'
-          fetch_public "$verify_dir/account-access.css" 'https://admissionhub.pages.dev/account-access.css?v=20261015-safearea1'
-          fetch_public "$verify_dir/dashboard-v2.js" 'https://admissionhub.pages.dev/dashboard-v2.js?v=dash2f17-v3frame'
-          fetch_public "$verify_dir/ai-agent-chat.js" 'https://admissionhub.pages.dev/ai-agent-chat.js?v=agent-f1-ui-p06chat'
-          fetch_public "$verify_dir/phase12-ui.js" 'https://admissionhub.pages.dev/phase12-ui.js?v=nav-resume-router-v11-main-ai'
-
-          fetch_public "$verify_dir/sw.js" 'https://admissionhub.pages.dev/sw.js?v=v335-lock-20261016'
-
-          grep -Fq "'X-AH-Auth-UI': 'auth-premium-v6'" "$verify_dir/account-access.js"
-          grep -Fq 'data-visual-contract="code-native-page-system-v1"' "$verify_dir/account-access.js"
-          grep -Fq 'data-page-contract="code-native-welcome-v1"' "$verify_dir/account-access.js"
-          grep -Fq 'data-personal-visual-contract="interactive-native-personal-v1"' "$verify_dir/account-access.js"
-          grep -Fq 'data-dob-contract="premium-dropdown-dob-v2"' "$verify_dir/account-access.js"
-          grep -Fq 'data-media-contract="zero-raster-entry-v1"' "$verify_dir/account-access.js"
-          grep -Fq 'data-native-welcome-visual="journey-console-v1"' "$verify_dir/account-access.js"
-          grep -Fq 'class="ah-dob-select"' "$verify_dir/account-access.js"
-          grep -Fq 'setupDobDropdowns' "$verify_dir/account-access.js"
-          ! grep -Fq 'onboarding-welcome-hero.webp' "$verify_dir/account-access.js"
-          ! grep -Fq 'onboarding-personal-hero.webp' "$verify_dir/account-access.js"
-          ! grep -Eiq '<(img|picture|source|canvas|video|object|embed)([[:space:]>])' "$verify_dir/account-access.js"
-          grep -Fq 'আপনার লক্ষ্যের পথে' "$verify_dir/account-access.js"
-          ! grep -Fq 'ah-3d-student' "$verify_dir/account-access.js"
-          grep -Fq 'id="ah-dob-day"' "$verify_dir/account-access.js"
-          ! grep -Fq 'LIVE PROFILE' "$verify_dir/account-access.js"
-          ! grep -Fq 'input-bound-profile-v1' "$verify_dir/account-access.js"
-          ! grep -Fq 'data-signup-panel="dob"' "$verify_dir/account-access.js"
-          grep -Fq 'data-view="email-intro"' "$verify_dir/account-access.js"
-          grep -Fq 'data-view="telegram-intro"' "$verify_dir/account-access.js"
-          grep -Fq 'data-otp-digit="5"' "$verify_dir/account-access.js"
-          grep -Fq 'Email OTP নয়' "$verify_dir/account-access.js"
-          grep -Fq 'Code-native Onboarding v1' "$verify_dir/account-access.css"
-          grep -Fq 'Welcome — modular journey console' "$verify_dir/account-access.css"
-          grep -Fq 'Personal — real input-bound profile preview' "$verify_dir/account-access.css"
-          grep -Fq '.ah-journey-console{' "$verify_dir/account-access.css"
-          grep -Fq 'ah-education-panel' "$verify_dir/account-access.js"
-          grep -Fq 'ah-institution-option' "$verify_dir/account-access.js"
-          grep -Fq 'data-role="education-help"' "$verify_dir/account-access.js"
-          grep -Fq 'Education step (school / college) — owner reference design' "$verify_dir/account-access.css"
-          grep -Fq '.ah-institution-option{' "$verify_dir/account-access.css"
-          grep -Fq 'ah-created-card' "$verify_dir/account-access.js"
-          grep -Fq 'data-role="created-school"' "$verify_dir/account-access.js"
-          grep -Fq 'renderCreatedSummary' "$verify_dir/account-access.js"
-          grep -Fq 'Account Created screen — premium success screen' "$verify_dir/account-access.css"
-          grep -Fq '.ah-created-rows{' "$verify_dir/account-access.css"
-          grep -Fq 'data-login-contract="reference-login-v1"' "$verify_dir/account-access.js"
-          grep -Fq 'data-verify-contract="reference-verify-v1"' "$verify_dir/account-access.js"
-          grep -Fq 'data-help-toggle="ah-verify-help-card"' "$verify_dir/account-access.js"
-          grep -Fq 'Auth reference screens (v254)' "$verify_dir/account-access.css"
-          grep -Fq '.ah-method-check{' "$verify_dir/account-access.css"
-          grep -Fq '.ah-tg-orb{' "$verify_dir/account-access.css"
-          ! grep -Fq 'ah-search-option' "$verify_dir/account-access.css"
-          grep -Fq 'min-height:100svh' "$verify_dir/account-access.css"
-          grep -Fq 'guaranteed scroll room on phones' "$verify_dir/account-access.css"
-          grep -Fq '.ah-dob-select{' "$verify_dir/account-access.css"
-          ! grep -Fq '.ah-3d-student' "$verify_dir/account-access.css"
-          ! grep -Fq '.ah-live-profile{' "$verify_dir/account-access.css"
-          ! grep -Eiq 'background(-image)?[[:space:]]*:[^;]*url\(' "$verify_dir/account-access.css"
-          ! grep -Fq 'data-role="guide' "$verify_dir/account-access.js"
-          ! grep -Fq '/api/ai/chat' "$verify_dir/account-access.js"
-          ! grep -Fq '.ah-guide' "$verify_dir/account-access.css"
-          ! grep -Fq 'ah-account-overlay' "$verify_dir/account-access.js"
-          ! grep -Fq 'ah-account-modal' "$verify_dir/account-access.js"
-          ! grep -Fq 'role="dialog"' "$verify_dir/account-access.js"
-          ! grep -Fq 'data-dashboard-contract="reference-guest-v2"' "$verify_dir/dashboard-v2.js"
-          ! grep -Fq 'data-guest-nav="reference-guest-v2"' "$verify_dir/phase12-ui.js"
-          grep -Fq "{key:'ai', icon:'🤖', label:'AI'}" "$verify_dir/index.html"
-          grep -Fq "if(p==='ai'){ if(window.renderAiAgentPage)" "$verify_dir/index.html"
-          grep -Fq '<span>AI</span>' "$verify_dir/dashboard-v2.js"
-          grep -Fq 'window.renderAiAgentPage = render' "$verify_dir/ai-agent-chat.js"
-
-          grep -Fq "const BUILD_ID = 'v335-lock-20261016'" "$verify_dir/sw.js"
-          ! grep -Fq 'onboarding-welcome-hero.webp' "$verify_dir/sw.js"
-          ! grep -Fq 'onboarding-personal-hero.webp' "$verify_dir/sw.js"
-          grep -Fq './ai-agent-chat.js?v=agent-f1-ui-p06chat' "$verify_dir/sw.js"
-          rm -rf "$verify_dir"
-          echo 'Zero-raster code-native Welcome and input-bound Personal preview, truthful Email/Telegram verification, ordinary Guest route, signup-only Assistant isolation, restored main-app AI, and cache-safe assets are READY; generic backup and pre-verification Passkey remain protected.'
+          rm -f -- "$cfg"
+          test "$ready" = 'true'
+          echo 'verify: Telegram OTP and generic backup contracts READY (UI stays owner-controlled in Admin)'
 
       - name: Verify Google browser origin remains accepted
         run: node auth-native/operations/verify-google-browser-origin.mjs

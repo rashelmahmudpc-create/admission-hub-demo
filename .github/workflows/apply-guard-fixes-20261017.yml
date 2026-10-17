@@ -1,0 +1,60 @@
+name: Apply guard test fixes 2026-10-17
+
+# Guards red since #73: tests pinned stale shell/asset versions (v350 vs live
+# v351), a 5-minute Telegram expiry assumption (policy default is 10 minutes,
+# see verification-orchestrator.test.mjs), a precache ceiling that predates the
+# Sky AI files, and a wrangler.toml comment containing a secret-like name.
+# Downloads the reviewed patch (sha256 pinned), applies it, runs the guards and
+# commits back to THIS branch. Never touches main, never deploys.
+
+on:
+  push:
+    branches: [fix/telegram-publish-guards]
+    paths:
+      - '.github/workflows/apply-guard-fixes-20261017.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.ref_name == 'fix/telegram-publish-guards'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: fix/telegram-publish-guards
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Apply the patch (idempotent)
+        run: |
+          set -eu
+          if grep -q "advance(600_001)" telegram-otp-auth.test.mjs; then echo 'Already applied.'; exit 0; fi
+          curl -fsSL https://backend.composio.dev/api/v3/sl/CdmOidoiRP -o /tmp/fixes.patch
+          echo '7342c573a3387be39b72b5d2381c815f10f296925f3f7f71ab25dda539c822ef  /tmp/fixes.patch' | sha256sum -c -
+          git apply /tmp/fixes.patch
+          git diff --stat
+      - name: Guards (must pass)
+        run: |
+          set -eu
+          npm ci
+          npm run check:worker-bundle
+          npm run test:email
+          npm run test:auth
+          npm run test:shell-guards
+          node account-retirement.test.mjs
+          node --test --test-concurrency=1 telegram-otp-auth.test.mjs telegram-webhook.test.mjs telegram-otp-ui.test.mjs verification-orchestrator.test.mjs verification-providers.test.mjs verification-admin.test.mjs native-auth.test.mjs native-auth-operations.test.mjs
+      - name: Commit and push to the fix branch
+        run: |
+          set -eu
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -u -- . ':!.github'
+          if git diff --cached --quiet; then echo 'Nothing to commit.'; else
+            git commit -m 'test: re-pin guards to live v351 shell, 10-minute Telegram OTP expiry, Sky AI precache ceiling' -m 'Applied by apply-guard-fixes-20261017.yml. No deploy.'
+            git push origin HEAD:fix/telegram-publish-guards
+          fi
