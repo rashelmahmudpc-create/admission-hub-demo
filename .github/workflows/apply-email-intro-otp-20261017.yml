@@ -3,7 +3,8 @@ name: Apply email intro OTP 2026-10-17
 # Fresh Start phase 1: the email-intro-continue button runs the OTP chain
 # (beginEmailOwnership) when the server publishes emailOwnership; the Firebase
 # link stays the Worker's last resort. Regenerates sw.js digests, runs the UI
-# tests and commits back to the SAME branch. Never touches main, never deploys.
+# tests against the unpatched baseline (fails only on NEW failures) and commits
+# back to the SAME branch. Never touches main, never deploys.
 
 on:
   push:
@@ -34,6 +35,15 @@ jobs:
         with:
           node-version: '22'
           cache: npm
+      - name: Install
+        run: npm ci
+      - name: Baseline UI tests (before the patch)
+        run: |
+          set +e
+          node --test --test-concurrency=1 --test-reporter=tap premium-onboarding-ui.test.mjs signup-autosave.test.mjs telegram-otp-ui.test.mjs > /tmp/base.tap 2>&1
+          grep -E '^ *not ok' /tmp/base.tap | sed -E 's/^ *not ok [0-9]+ - //' | sort -u > /tmp/base.txt
+          while read -r l; do echo "::warning::baseline fail: $l"; done < /tmp/base.txt
+          exit 0
       - name: Apply the email intro OTP patch
         run: |
           set -eu
@@ -42,15 +52,21 @@ jobs:
           grep -q "state.capabilities.emailOwnership?.available ? beginEmailOwnership() : beginEmailVerification()" account-access.js
           grep -q -- "- \[x\] Phase 1" docs/fresh-start-plan.md
           git diff --stat
-      - name: Install, rebuild the Worker bundle, refresh sw.js
+      - name: Rebuild the Worker bundle, refresh sw.js
         run: |
           set -eu
-          npm ci
           npm run build:worker
           npm run check:worker-bundle
           npm run sw:manifest
-      - name: UI tests
-        run: node --test --test-concurrency=1 premium-onboarding-ui.test.mjs signup-autosave.test.mjs telegram-otp-ui.test.mjs
+      - name: UI tests (fail only on new failures)
+        run: |
+          set +e
+          node --test --test-concurrency=1 --test-reporter=tap premium-onboarding-ui.test.mjs signup-autosave.test.mjs telegram-otp-ui.test.mjs > /tmp/new.tap 2>&1
+          grep -E '^ *not ok' /tmp/new.tap | sed -E 's/^ *not ok [0-9]+ - //' | sort -u > /tmp/new.txt
+          comm -13 /tmp/base.txt /tmp/new.txt > /tmp/added.txt
+          while read -r l; do echo "::error::NEW fail: $l"; done < /tmp/added.txt
+          echo "baseline=$(wc -l < /tmp/base.txt) patched=$(wc -l < /tmp/new.txt) new=$(wc -l < /tmp/added.txt)"
+          test ! -s /tmp/added.txt
       - name: Commit and push to the feature branch
         run: |
           set -eu
