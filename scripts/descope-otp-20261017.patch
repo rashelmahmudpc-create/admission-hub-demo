@@ -1,0 +1,200 @@
+diff --git a/auth-native/verification/config.mjs b/auth-native/verification/config.mjs
+--- a/auth-native/verification/config.mjs
++++ b/auth-native/verification/config.mjs
+@@ -6,6 +6,7 @@
+   'otp-i': Object.freeze({ channel: VERIFICATION_CHANNELS.OTP, verificationMode: VERIFICATION_MODES.PROVIDER_EVIDENCE, priority: 38 }),
+   'otp-j': Object.freeze({ channel: VERIFICATION_CHANNELS.OTP, verificationMode: VERIFICATION_MODES.PROVIDER_EVIDENCE, priority: 38 }),
+   'otp-k': Object.freeze({ channel: VERIFICATION_CHANNELS.OTP, verificationMode: VERIFICATION_MODES.PROVIDER_EVIDENCE, priority: 38 }),
++  'otp-l': Object.freeze({ channel: VERIFICATION_CHANNELS.OTP, verificationMode: VERIFICATION_MODES.PROVIDER_EVIDENCE, priority: 38 }),
+   'otp-b': Object.freeze({ channel: VERIFICATION_CHANNELS.OTP, verificationMode: VERIFICATION_MODES.LOCAL_CODE, priority: 20 }),
+   'otp-c': Object.freeze({ channel: VERIFICATION_CHANNELS.OTP, verificationMode: VERIFICATION_MODES.LOCAL_CODE, priority: 30 }),
+   'otp-d': Object.freeze({ channel: VERIFICATION_CHANNELS.OTP, verificationMode: VERIFICATION_MODES.LOCAL_CODE, priority: 35 }),
+diff --git a/auth-native/verification/providers.mjs b/auth-native/verification/providers.mjs
+--- a/auth-native/verification/providers.mjs
++++ b/auth-native/verification/providers.mjs
+@@ -1953,6 +1953,107 @@
+ 
+   async getProviderStatus() {
+     return { status: this.configured ? 'configured' : 'disabled', configured: this.configured, identityKind: 'telegram-account', phoneOwnership: false };
++  }
++}
++
++
++// Descope is a verifier, not a generic mail transport. The existing Durable
++// Object owns challenge expiry, attempt limits, identity binding and single-use
++// consumption. Only a server-resolved destination reaches verifyCode; no raw
++// address, OTP, Descope JWT or second browser session is persisted here.
++export class DescopeOtpVerificationProvider {
++  constructor({ id = 'otp-l', projectId, declaredDailyQuota, fetchImpl = globalThis.fetch, now = Date.now } = {}) {
++    this.id = String(id || '');
++    this.channel = VERIFICATION_CHANNELS.OTP;
++    this.verificationMode = VERIFICATION_MODES.PROVIDER_EVIDENCE;
++    this.projectId = /^P[A-Za-z0-9]{20,63}$/.test(String(projectId || '')) ? String(projectId) : '';
++    this.declaredDailyQuota = safeInteger(declaredDailyQuota, 1, 1000);
++    this.fetch = typeof fetchImpl === 'function' ? fetchImpl : null;
++    this.now = typeof now === 'function' ? now : Date.now;
++    this.configured = Boolean(this.projectId && this.declaredDailyQuota && this.fetch);
++  }
++
++  async checkAvailability() {
++    // Configuration readiness only: this MUST NOT send a probe email or claim
++    // that the project/connector has passed a live delivery test.
++    return { available: this.configured, code: this.configured ? 'READY' : 'NOT_CONFIGURED' };
++  }
++
++  async getRemainingQuota() {
++    if (!this.configured) return { remaining: 0, limit: 0, resetAt: 0, source: 'not-configured' };
++    return { remaining: this.declaredDailyQuota, limit: this.declaredDailyQuota, resetAt: nextUtcMidnight(this.now()), source: 'declared' };
++  }
++
++  async #request(action, body, verify = false) {
++    if (!this.configured) throw new VerificationProviderError('NOT_CONFIGURED', VERIFICATION_FAILURE_CLASS.HARD);
++    let response;
++    try {
++      response = await this.fetch(`https://api.descope.com/v1/auth/otp/${action}/email`, {
++        method: 'POST',
++        redirect: 'manual',
++        credentials: 'omit',
++        headers: {
++          Authorization: `Bearer ${this.projectId}`,
++          Accept: 'application/json',
++          'Content-Type': 'application/json',
++          'Cache-Control': 'no-store'
++        },
++        body: JSON.stringify(body),
++        signal: AbortSignal.timeout(8000)
++      });
++    } catch {
++      throw new VerificationProviderError('NETWORK_ERROR', VERIFICATION_FAILURE_CLASS.TEMPORARY, { retryAfter: 60 });
++    }
++    // Don't propagate provider messages, response bodies, JWTs or Set-Cookie.
++    if (!response.ok) {
++      if (response.body) { try { await response.body.cancel(); } catch {} }
++      throw httpFailure(response, null, { userStatuses: verify ? [400, 404, 422] : [] });
++    }
++    let payload;
++    try { payload = await boundedJson(response); }
++    catch (error) {
++      if (error instanceof VerificationProviderError) throw error;
++      throw new VerificationProviderError('INVALID_PROVIDER_RESPONSE', VERIFICATION_FAILURE_CLASS.HARD);
++    }
++    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
++      throw new VerificationProviderError('INVALID_PROVIDER_RESPONSE', VERIFICATION_FAILURE_CLASS.HARD);
++    }
++    return payload;
++  }
++
++  async sendVerification(input = {}) {
++    if (!this.configured) throw new VerificationProviderError('NOT_CONFIGURED', VERIFICATION_FAILURE_CLASS.HARD);
++    const destination = String(input.destination || '').trim().toLowerCase();
++    if (!validEmailAddress(destination)) throw new VerificationProviderError('INVALID_DESTINATION', VERIFICATION_FAILURE_CLASS.USER);
++    // Descope generates its own OTP. Never transmit the app's local OTP.
++    await this.#request('signup-in', { loginId: destination });
++    return { accepted: true };
++  }
++
++  async verifyCode(input = {}) {
++    if (!this.configured) throw new VerificationProviderError('NOT_CONFIGURED', VERIFICATION_FAILURE_CLASS.HARD);
++    const destination = String(input.destination || '').trim().toLowerCase();
++    const code = String(input.evidence || '').trim();
++    if (!validEmailAddress(destination) || !/^\d{6}$/.test(code)) return { verified: false };
++    let payload;
++    try { payload = await this.#request('verify', { loginId: destination, code }, true); }
++    catch (error) {
++      if (error?.failureClass === VERIFICATION_FAILURE_CLASS.USER) return { verified: false };
++      throw error;
++    }
++    // Trust only the direct TLS response from the fixed Descope API, not a
++    // browser-supplied token. Require verified ownership of the exact address.
++    if (payload.user?.verifiedEmail !== true ||
++        String(payload.user?.email || '').trim().toLowerCase() !== destination ||
++        typeof payload.user?.userId !== 'string' || !payload.user.userId ||
++        typeof payload.sessionJwt !== 'string' || !payload.sessionJwt) {
++      throw new VerificationProviderError('INVALID_PROVIDER_RESPONSE', VERIFICATION_FAILURE_CLASS.HARD);
++    }
++    return { verified: true };
++  }
++
++  async getProviderStatus() {
++    return { status: this.configured ? 'configured' : 'disabled', configured: this.configured, officialApi: true, mailer: 'descope', liveDeliveryVerified: false };
+   }
+ }
+ 
+@@ -2074,6 +2175,13 @@
+     kv: env.GK_KV || null,
+     fetchImpl
+   });
++  const descopeSlot = slotFromConfig(env.VERIFICATION_ORCHESTRATOR_CONFIG, 'otp-l');
++  const descopeOtpL = new DescopeOtpVerificationProvider({
++    id: 'otp-l',
++    projectId: descopeSlot ? descopeSlot.projectId : '',
++    declaredDailyQuota: descopeSlot ? descopeSlot.dailyQuota : '',
++    fetchImpl
++  });
+   return [
+     brevoOtpA.configured ? brevoOtpA : bridgeOtpA,
+     appsScriptOtpB.configured ? appsScriptOtpB : bridgeOtpB,
+@@ -2086,6 +2194,7 @@
+     appwriteOtpI,
+     oryOtpJ,
+     hankoOtpK,
++    descopeOtpL,
+     new OfficialWhatsAppVerificationProvider({
+       graphVersion: env.WHATSAPP_GRAPH_VERSION,
+       phoneNumberId: env.WHATSAPP_PHONE_NUMBER_ID,
+diff --git a/auth-native/verification/orchestrator.mjs b/auth-native/verification/orchestrator.mjs
+--- a/auth-native/verification/orchestrator.mjs
++++ b/auth-native/verification/orchestrator.mjs
+@@ -499,6 +499,9 @@
+         const result = await bounded(() => provider.verifyCode({
+           attemptId,
+           evidence,
++          // Only this adapter needs the address at verification time. Resolve it
++          // from the identity already bound to the challenge, never client input.
++          ...(entry.id === 'otp-l' ? { destination: identity.destinations[entry.channel] } : {}),
+           purpose: identity.purpose,
+           serverConfirmed: Boolean(selected.providerConfirmed)
+         }), entry.timeoutMs);
+diff --git a/verification-providers.test.mjs b/verification-providers.test.mjs
+--- a/verification-providers.test.mjs
++++ b/verification-providers.test.mjs
+@@ -25,7 +25,7 @@
+ 
+ test('six OTP slots implement the shared contract and fail closed when not securely configured', async () => {
+   const providers = createConfiguredVerificationProviders({});
+-  assert.deepEqual(providers.map(row => row.id), ['otp-a', 'otp-b', 'otp-c', 'otp-d', 'otp-e', 'otp-f', 'otp-g', 'otp-h', 'otp-i', 'otp-j', 'otp-k', 'whatsapp', 'telegram']);
++  assert.deepEqual(providers.map(row => row.id), ['otp-a', 'otp-b', 'otp-c', 'otp-d', 'otp-e', 'otp-f', 'otp-g', 'otp-h', 'otp-i', 'otp-j', 'otp-k', 'otp-l', 'whatsapp', 'telegram']);
+   for (const provider of providers) {
+     assert.equal((await provider.checkAvailability()).available, false);
+     assert.equal((await provider.getRemainingQuota()).remaining, 0);
+@@ -664,7 +664,7 @@
+   assert.equal(bridged[1].constructor.name, 'BridgeOtpVerificationProvider');
+ 
+   const empty = createConfiguredVerificationProviders({});
+-  assert.deepEqual(empty.map(row => row.id), ['otp-a', 'otp-b', 'otp-c', 'otp-d', 'otp-e', 'otp-f', 'otp-g', 'otp-h', 'otp-i', 'otp-j', 'otp-k', 'whatsapp', 'telegram']);
++  assert.deepEqual(empty.map(row => row.id), ['otp-a', 'otp-b', 'otp-c', 'otp-d', 'otp-e', 'otp-f', 'otp-g', 'otp-h', 'otp-i', 'otp-j', 'otp-k', 'otp-l', 'whatsapp', 'telegram']);
+   for (const provider of empty) assert.equal((await provider.getProviderStatus()).configured, false);
+ });
+ 
+diff --git a/package.json b/package.json
+--- a/package.json
++++ b/package.json
+@@ -9,7 +9,7 @@
+     "notify:telegram": "node email-gateway/operations/notify-telegram.mjs",
+     "test:auth": "node --test --experimental-test-coverage auth-foundation.test.mjs auth-foundation-chaos.test.mjs auth-protection.test.mjs",
+     "test:email": "node --test --experimental-test-coverage email-gateway.test.mjs email-gateway-failover.test.mjs email-gateway-security.test.mjs email-gateway-load.test.mjs email-gateway-infisical-bootstrap.test.mjs email-gateway-cloudflare-inventory.test.mjs email-gateway-provider-account-audit.test.mjs telegram-notifier.test.mjs && node --test email-gateway-integration.test.mjs",
+-    "test:native-auth": "node --test --test-concurrency=1 native-auth.test.mjs native-auth-operations.test.mjs native-auth-protection.test.mjs firebase-auth-ui.test.mjs facebook-login-guard.test.mjs google-redirect-login.test.mjs firebase-google-auth.test.mjs passkey-auth.test.mjs verification-orchestrator.test.mjs verification-providers.test.mjs free-tier-failover.test.mjs email-branding.test.mjs verification-admin.test.mjs telegram-webhook.test.mjs telegram-otp-auth.test.mjs telegram-otp-ui.test.mjs backup-public-handler.test.mjs multimethod-auth-ui.test.mjs premium-onboarding-ui.test.mjs code-native-welcome-v1.test.mjs interactive-native-personal-v1.test.mjs account-data-isolation.test.mjs sqlite-auth-runtime.test.mjs identity-lifecycle.test.mjs account-state-runtime.test.mjs account-state-api.test.mjs session-recovery-api.test.mjs session-recovery-chaos.test.mjs security-policy.test.mjs security-device-trust.test.mjs security-challenge.test.mjs security-challenge-ui.test.mjs relogin-device-challenge-ui.test.mjs security-history-admin.test.mjs security-chaos.test.mjs profile-core.test.mjs profile-ui.test.mjs theme-tokens.test.mjs language-engine.test.mjs language-coverage-runtime.test.mjs profile-prefs-reconcile.test.mjs signup-autosave.test.mjs student-directory-schema.test.mjs student-admin-view.test.mjs student-wipe.test.mjs passkey-once.test.mjs logout-data-safety.test.mjs profile-uni-suggest.test.mjs theme-coverage-scan.test.mjs && node analytics-service.test.mjs && node source-course-lessons.test.mjs && node ai-agent-f1.test.mjs && node ai-duplicate-turn.test.mjs && node p06-personal-tutor.test.mjs && node question-engine.test.mjs && node ai-provider-adapters.test.mjs && node phase9-m4-context-engine.test.mjs && node phase9-m5-prompt-registry.test.mjs && node phase9-m6-tool-registry.test.mjs && node phase9-m7-memory-engine.test.mjs && node phase9-m8-response-validation.test.mjs && node phase9-m9-action-engine.test.mjs && node phase9-m9-action-ui.test.mjs && node phase9-m10-observability.test.mjs",
++    "test:native-auth": "node --test --test-concurrency=1 native-auth.test.mjs native-auth-operations.test.mjs native-auth-protection.test.mjs firebase-auth-ui.test.mjs facebook-login-guard.test.mjs google-redirect-login.test.mjs firebase-google-auth.test.mjs passkey-auth.test.mjs verification-orchestrator.test.mjs verification-providers.test.mjs descope-otp.test.mjs free-tier-failover.test.mjs email-branding.test.mjs verification-admin.test.mjs telegram-webhook.test.mjs telegram-otp-auth.test.mjs telegram-otp-ui.test.mjs backup-public-handler.test.mjs multimethod-auth-ui.test.mjs premium-onboarding-ui.test.mjs code-native-welcome-v1.test.mjs interactive-native-personal-v1.test.mjs account-data-isolation.test.mjs sqlite-auth-runtime.test.mjs identity-lifecycle.test.mjs account-state-runtime.test.mjs account-state-api.test.mjs session-recovery-api.test.mjs session-recovery-chaos.test.mjs security-policy.test.mjs security-device-trust.test.mjs security-challenge.test.mjs security-challenge-ui.test.mjs relogin-device-challenge-ui.test.mjs security-history-admin.test.mjs security-chaos.test.mjs profile-core.test.mjs profile-ui.test.mjs theme-tokens.test.mjs language-engine.test.mjs language-coverage-runtime.test.mjs profile-prefs-reconcile.test.mjs signup-autosave.test.mjs student-directory-schema.test.mjs student-admin-view.test.mjs student-wipe.test.mjs passkey-once.test.mjs logout-data-safety.test.mjs profile-uni-suggest.test.mjs theme-coverage-scan.test.mjs && node analytics-service.test.mjs && node source-course-lessons.test.mjs && node ai-agent-f1.test.mjs && node ai-duplicate-turn.test.mjs && node p06-personal-tutor.test.mjs && node question-engine.test.mjs && node ai-provider-adapters.test.mjs && node phase9-m4-context-engine.test.mjs && node phase9-m5-prompt-registry.test.mjs && node phase9-m6-tool-registry.test.mjs && node phase9-m7-memory-engine.test.mjs && node phase9-m8-response-validation.test.mjs && node phase9-m9-action-engine.test.mjs && node phase9-m9-action-ui.test.mjs && node phase9-m10-observability.test.mjs",
+     "test:identity": "node --test --test-concurrency=1 identity-lifecycle.test.mjs account-state-runtime.test.mjs account-state-api.test.mjs",
+     "test:session": "node --test --test-concurrency=1 session-recovery-api.test.mjs session-recovery-chaos.test.mjs",
+     "test:phase2": "npm run test:auth && npm run test:email",
+@@ -33,7 +33,8 @@
+     "test:p18": "node --test --test-concurrency=1 admission-intel-engine.test.mjs question-pattern.test.mjs p18-admission-intel.test.mjs",
+     "test:p23": "node voice-agent-core.test.mjs && node voice-agent.test.mjs && node voice-agent-client-core.test.mjs",
+     "test:p19": "node --test --test-concurrency=1 p19-error-monitor.test.mjs p19-backup.test.mjs p19-backup-routes-worker.test.mjs p19-perf-budget.test.mjs p19-staging-isolation.test.mjs",
+-    "check:staging-isolation": "node scripts/check-staging-isolation.mjs wrangler.staging.toml"
++    "check:staging-isolation": "node scripts/check-staging-isolation.mjs wrangler.staging.toml",
++    "test:descope": "node --test --test-concurrency=1 descope-otp.test.mjs"
+   },
+   "dependencies": {
+     "jsdom": "^29.1.1"
