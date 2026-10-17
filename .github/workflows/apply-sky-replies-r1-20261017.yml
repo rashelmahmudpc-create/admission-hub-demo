@@ -4,8 +4,8 @@ name: Apply Sky reply bank r1 2026-10-17
 # phone number / email removed from every reply; support replies get two buttons that open
 # /api/go/whatsapp and /api/go/email (sky-contact.mjs reads PUB_KV 'sky:contact').
 # The prepared change set is a tarball checked by SHA-256 before use. It is applied only if
-# none of its files changed since base de23a4a. Rebuilds the worker bundle + sw.js, runs the
-# AI tests and commits back to the SAME branch. Never deploys.
+# none of its files changed since base de23a4a. Checks the worker bundle + sw.js digests, runs
+# the AI tests and commits back to the SAME branch. Never deploys.
 
 on:
   push:
@@ -60,13 +60,15 @@ jobs:
           node -e "JSON.parse(require('fs').readFileSync('sky-replies.json','utf8'))"
           if grep -REn '01[3-9][0-9]{8}|inflowsky|@gmail\.com' sky-replies.json sky-smalltalk.js ai-agent-chat.js sky-contact.mjs; then echo 'contact leaked'; exit 1; fi
           git status --short
-      - name: Install, check the Worker bundle and the SW manifest
+      - name: Install, check the Worker bundle and the SW digests
         if: steps.done.outputs.already != '1'
         run: |
           set -eu
           npm ci --ignore-scripts
           npm run check:worker-bundle
-          npm run check:sw-manifest
+          cp sw.js /tmp/sw.packaged.js
+          npm run sw:manifest
+          cmp sw.js /tmp/sw.packaged.js || { echo 'sw.js digests in the change set are stale'; exit 1; }
       - name: AI tests
         if: steps.done.outputs.already != '1'
         run: |
