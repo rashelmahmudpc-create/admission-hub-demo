@@ -64,6 +64,19 @@ const REGISTRY = Object.freeze({
     // Phase 9 permits. Enabled ≠ wired: the chat path does not call it yet, so
     // this grants no runtime capability. WRITE/EXECUTE stay disabled until M9.
     enabled: true
+  }),
+  /* owner 2026-10-18: live web search (Tavily). READ-only; it reads no user data
+     at all — only the cleaned question text leaves the server — so it is
+     owner-scoped by construction. Daily cap + kill switch live in sky-tools.mjs. */
+  'web.search': Object.freeze({
+    name: 'web.search',
+    description: 'Search the live web for news or recent facts; returns titles, snippets and source links.',
+    permission: PERMISSION.READ,
+    inputSchema: schema('object', { query: { type: 'string' } }, ['query']),
+    outputSchema: schema('object', { results: { type: 'array' } }, ['results']),
+    riskLevel: RISK.LOW,
+    ownerScoped: true,
+    enabled: true
   })
 });
 
