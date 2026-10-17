@@ -1,0 +1,39 @@
+name: Fresh Start phase 4 wipe (manual, owner-authorised)
+# mode=list (default) is read-only. mode=wipe deletes ALL users and needs the
+# exact confirm phrase printed by a list run (WIPE-FB<n>-CF<m>).
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'list (read-only) or wipe'
+        required: true
+        default: list
+        type: choice
+        options: [list, wipe]
+      confirm:
+        description: 'Only for wipe: the exact phrase from the list run'
+        required: false
+        default: ''
+permissions:
+  contents: read
+concurrency:
+  group: fresh-start-wipe
+  cancel-in-progress: false
+jobs:
+  wipe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: ${{ inputs.mode == 'wipe' && 'Wipe all users' || 'List users (read-only)' }}
+        env:
+          MODE: ${{ inputs.mode }}
+          CONFIRM: ${{ inputs.confirm }}
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+          ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: node scripts/fresh-start-wipe.mjs

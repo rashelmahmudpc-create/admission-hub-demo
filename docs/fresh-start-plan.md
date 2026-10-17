@@ -54,3 +54,11 @@ Rule: "ধাপ X শুরু করো" = permission to merge + deploy that p
 - `counts.total` = the Cloudflare-side user count for Phase 4.
 - Not done on purpose: the Phase 2 directory tables still get no writes. Writing them needs a decision: store plaintext email (needed for `students.email`) or keep only refs/masks like the auth tables. Decide before/with Phase 4.
 
+
+## Phase 4 wipe (prepared 2026-10-17)
+- Code: `auth-native/storage/student-wipe.mjs` (+ `student-wipe.test.mjs`), admin route `POST /api/auth/v1/admin/students/wipe` (admin token + Origin; dry run by default; real wipe needs `WIPE-ALL-<users>`).
+- Workflow: `.github/workflows/fresh-start-wipe-20261017.yml` -> `scripts/fresh-start-wipe.mjs`.
+  - `mode=list`: read-only, exact counts + masked Firebase list (repo is public, so no full emails in logs) + confirm phrase `WIPE-FB<n>-CF<m>`.
+  - `mode=wipe`: only if `confirm` equals the phrase for the counts measured in the same run.
+- Deletes: Firebase Auth users of admissionsky-997d2 (batchDelete, force); AUTH_AUTHORITY tables except the kept ones; D1 tables that have a user column (content tables kept); KV user prefixes (tok, user, sess, pkid, ustate, profile, chatmem, achat, mem, aiprefs, act, actaudit); R2 user files `<folder>/<user>/<date>/<file>` (not `notify/`).
+- Keeps: auth_verification_runtime_config, auth_verification_provider_state, auth_verification_daily_quota, auth_meta, schema_migrations; D1 questions/content_*/global_notifications/ai_cache/ai_experiments; system KV keys (secret:, admin:, backup:, pubContent, ...); R2 backups and notify/ images.

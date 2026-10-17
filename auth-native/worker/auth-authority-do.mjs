@@ -9,6 +9,7 @@ import { SqliteVerificationRepository } from '../verification/sqlite-verificatio
 import { D1ProfileStore } from '../storage/d1-profile-repository.mjs';
 import { migrateStudentDirectory } from '../storage/student-directory-schema.mjs';
 import { listStudents, studentProfile } from '../storage/student-admin-view.mjs';
+import { wipeAll, wipeConfirmPhrase, wipeCounts } from '../storage/student-wipe.mjs';
 import { normalizeAuthEmail } from '../core/crypto.mjs';
 
 const JSON_HEADERS = Object.freeze({
@@ -486,6 +487,21 @@ export class AdmissionAuthAuthority {
       if (url.pathname === '/internal/admin/students/get') {
         const profile = studentProfile(this.state.storage.sql, String(body.input?.userId || ''), { now: Date.now() });
         return response(200, { ok: true, result: profile ? { found: true, student: profile } : { found: false } });
+      }
+      // Fresh Start phase 4 — wipe all users (token-gated in the public
+      // handler). Dry run by default; the real wipe needs the exact phrase
+      // WIPE-ALL-<users> for the count the dry run just returned.
+      if (url.pathname === '/internal/admin/students/wipe') {
+        const input = body.input || {};
+        const sql = this.state.storage.sql;
+        const before = wipeCounts(sql);
+        const expected = wipeConfirmPhrase(before.users);
+        if (input.dryRun !== false) return response(200, { ok: true, result: { dryRun: true, confirmPhrase: expected, ...before } });
+        if (String(input.confirm || '') !== expected) {
+          return response(409, { ok: false, error: { code: 'WIPE_CONFIRM_MISMATCH', message: 'Confirm phrase does not match the current user count.', users: before.users } });
+        }
+        const outcome = wipeAll(sql);
+        return response(200, { ok: true, result: { dryRun: false, before, outcome, after: wipeCounts(sql) } });
       }
       if (url.pathname === '/internal/admin/security/events') {
         const result = await this.engine.securityEventsPage(body.input || {});

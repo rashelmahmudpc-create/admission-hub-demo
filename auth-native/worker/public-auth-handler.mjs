@@ -2014,6 +2014,18 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         const result = await callAuthority(env, '/internal/admin/students/get', { input: { userId } });
         return json(request, result?.found ? 200 : 404, { ok: Boolean(result?.found), ...result }, { 'X-Robots-Tag': 'noindex, nofollow' });
       }
+      // Fresh Start phase 4 — wipe all users (admin token + allowed Origin).
+      // { dryRun: true } (default) returns counts; { dryRun: false, confirm:
+      // 'WIPE-ALL-<users>' } deletes. OTP config/quota tables are kept.
+      if (request.method === 'POST' && url.pathname === `${AUTH_API_PREFIX}/admin/students/wipe`) {
+        if (!adminAuthorized(request, env)) return json(request, 403, { ok: false, error: { code: 'FORBIDDEN', message: 'অনুমতি নেই।' } });
+        const body = await readJson(request);
+        const input = body?.dryRun === false
+          ? { dryRun: false, confirm: String(body?.confirm || '').slice(0, 64) }
+          : { dryRun: true };
+        const result = await callAuthority(env, '/internal/admin/students/wipe', { input });
+        return json(request, 200, { ok: true, ...result }, { 'X-Robots-Tag': 'noindex, nofollow' });
+      }
       if (request.method === 'GET' && url.pathname === `${AUTH_API_PREFIX}/admin/security/events`) {
         if (!adminAuthorized(request, env)) return json(request, 403, { ok: false, error: { code: 'FORBIDDEN', message: 'অনুমতি নেই।' } });
         const limit = Math.min(Math.max(Number(url.searchParams.get('limit')) || 50, 1), 200);
