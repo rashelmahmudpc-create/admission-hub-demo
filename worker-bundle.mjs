@@ -77,8 +77,8 @@ function normalizeRow(row) {
     ...payload
   };
 }
-function toPage(rows2, limit) {
-  const list2 = (rows2 || []).map(normalizeRow).filter(Boolean);
+function toPage(rows3, limit) {
+  const list2 = (rows3 || []).map(normalizeRow).filter(Boolean);
   const hasMore = list2.length >= num3(limit, DEFAULT_LIMIT);
   return { items: list2, nextCursor: hasMore ? encodeCursor({ sort_key: list2[list2.length - 1].sortKey, id: list2[list2.length - 1].id }) : null, count: list2.length };
 }
@@ -1644,8 +1644,8 @@ var AiAnalyticsStore = class {
     const limit = Math.min(asInt(options.limit, 200), 1e3);
     try {
       const since = asInt(options.sinceMs);
-      const rows2 = since > 0 ? await this.#readAll("SELECT * FROM ai_decisions WHERE created_at >= ? ORDER BY created_at DESC LIMIT ?", since, limit) : await this.#readAll("SELECT * FROM ai_decisions ORDER BY created_at DESC LIMIT ?", limit);
-      return rows2.map(mapDecision);
+      const rows3 = since > 0 ? await this.#readAll("SELECT * FROM ai_decisions WHERE created_at >= ? ORDER BY created_at DESC LIMIT ?", since, limit) : await this.#readAll("SELECT * FROM ai_decisions ORDER BY created_at DESC LIMIT ?", limit);
+      return rows3.map(mapDecision);
     } catch (err) {
       if (isMissingSchemaError(err)) return [];
       throw err;
@@ -1727,8 +1727,8 @@ var AiAnalyticsStore = class {
     await this.init();
     const limit = Math.min(asInt(options.limit, 100), 500);
     try {
-      const rows2 = options.status ? await this.#readAll("SELECT * FROM ai_approvals WHERE status = ? ORDER BY created_at DESC LIMIT ?", String(options.status), limit) : await this.#readAll("SELECT * FROM ai_approvals ORDER BY created_at DESC LIMIT ?", limit);
-      return rows2.map(mapApproval);
+      const rows3 = options.status ? await this.#readAll("SELECT * FROM ai_approvals WHERE status = ? ORDER BY created_at DESC LIMIT ?", String(options.status), limit) : await this.#readAll("SELECT * FROM ai_approvals ORDER BY created_at DESC LIMIT ?", limit);
+      return rows3.map(mapApproval);
     } catch (err) {
       if (isMissingSchemaError(err)) return [];
       throw err;
@@ -1763,7 +1763,7 @@ var AiAnalyticsStore = class {
     if (!this.#d1) return [];
     await this.init();
     try {
-      const rows2 = await this.#readAll(
+      const rows3 = await this.#readAll(
         `SELECT variant,
                 COUNT(*) AS shown,
                 SUM(CASE WHEN opened_at IS NOT NULL THEN 1 ELSE 0 END) AS opened,
@@ -1772,7 +1772,7 @@ var AiAnalyticsStore = class {
          FROM ai_experiments WHERE experiment = ? GROUP BY variant`,
         String(experiment)
       );
-      return rows2.map((r) => ({
+      return rows3.map((r) => ({
         variant: r.variant,
         shown: asInt(r.shown),
         opened: asInt(r.opened),
@@ -1796,10 +1796,10 @@ var AiAnalyticsStore = class {
   async analyticsEventsFor(userId, sinceMs, limit = 2e3) {
     if (!this.#d1) return [];
     try {
-      const rows2 = await this.#d1.prepare(
+      const rows3 = await this.#d1.prepare(
         "SELECT at FROM analytics_events WHERE user_id = ? AND at >= ? ORDER BY at ASC LIMIT ?"
       ).bind(String(userId), asInt(sinceMs), Math.min(asInt(limit, 2e3), 5e3)).all();
-      return (rows2?.results || []).map((r) => ({ at: asInt(r.at) }));
+      return (rows3?.results || []).map((r) => ({ at: asInt(r.at) }));
     } catch (err) {
       if (isMissingSchemaError(err)) return [];
       throw err;
@@ -2251,20 +2251,20 @@ function sanitizeOnboardingContext(value) {
 }
 function capStats(stats) {
   if (!stats || typeof stats !== "object") return null;
-  const num4 = (v, min, max) => {
+  const num5 = (v, min, max) => {
     const n = Number(v);
     if (!isFinite(n) || n < 0) return 0;
     return Math.min(max, Math.round(n));
   };
   const s = {};
-  if (stats.exams != null) s.exams = num4(stats.exams, 0, 1e5);
-  if (stats.questions != null) s.questions = num4(stats.questions, 0, 1e6);
-  if (stats.accuracy != null) s.accuracy = num4(stats.accuracy, 0, 100);
-  if (stats.streak != null) s.streak = num4(stats.streak, 0, 3650);
-  if (stats.mistakes != null) s.mistakes = num4(stats.mistakes, 0, 1e5);
+  if (stats.exams != null) s.exams = num5(stats.exams, 0, 1e5);
+  if (stats.questions != null) s.questions = num5(stats.questions, 0, 1e6);
+  if (stats.accuracy != null) s.accuracy = num5(stats.accuracy, 0, 100);
+  if (stats.streak != null) s.streak = num5(stats.streak, 0, 3650);
+  if (stats.mistakes != null) s.mistakes = num5(stats.mistakes, 0, 1e5);
   const name = (v, max) => String(v == null ? "" : v).replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, max);
   const pii = (v) => /[\w.+-]+@[\w-]+\.[\w.]+|(?:\+?880|0)1[3-9]\d{8}|\b\d{10,}\b/.test(v);
-  const rows2 = (input, limit) => {
+  const rows3 = (input, limit) => {
     if (!Array.isArray(input)) return null;
     const seen = /* @__PURE__ */ new Set();
     const out = [];
@@ -2273,18 +2273,18 @@ function capStats(stats) {
       const n = name(row.name, 60);
       if (!n || seen.has(n) || pii(n)) continue;
       seen.add(n);
-      out.push({ name: n, attempts: num4(row.attempts, 0, 1e5), accuracy: num4(row.accuracy, 0, 100) });
+      out.push({ name: n, attempts: num5(row.attempts, 0, 1e5), accuracy: num5(row.accuracy, 0, 100) });
       if (out.length >= limit) break;
     }
     return out.length ? out : null;
   };
-  const weak = rows2(stats.weakTopics, 4);
+  const weak = rows3(stats.weakTopics, 4);
   if (weak) s.weakTopics = weak;
-  const subs = rows2(stats.subjects, 6);
+  const subs = rows3(stats.subjects, 6);
   if (subs) s.subjects = subs;
   const period = (input) => {
     if (!input || typeof input !== "object") return null;
-    return { exams: num4(input.exams, 0, 1e3), accuracy: num4(input.accuracy, 0, 100) };
+    return { exams: num5(input.exams, 0, 1e3), accuracy: num5(input.accuracy, 0, 100) };
   };
   const weekly = period(stats.weekly);
   if (weekly) s.weekly = weekly;
@@ -3731,7 +3731,7 @@ async function createSnapshot(env, { now } = {}) {
   const body = JSON.stringify(snapshot);
   await bucket.put(key, body, { httpMetadata: { contentType: "application/json" } });
   const kvCount = Object.values(snapshot.kv).reduce((n, m) => n + Object.keys(m || {}).length, 0);
-  const d1Count = Object.values(snapshot.d1).reduce((n, rows2) => n + (Array.isArray(rows2) ? rows2.length : 0), 0);
+  const d1Count = Object.values(snapshot.d1).reduce((n, rows3) => n + (Array.isArray(rows3) ? rows3.length : 0), 0);
   const entry = makeIndexEntry({ key, at: snapshot.at, kvCount, d1Count, bytes: body.length });
   try {
     const raw = env.PUB_KV ? await env.PUB_KV.get(BACKUP_INDEX_KEY) : null;
@@ -3783,7 +3783,7 @@ var JSONH = {
   "Access-Control-Allow-Methods": "GET,POST,OPTIONS"
 };
 var json2 = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: JSONH });
-var onlyRows = (rows2) => (Array.isArray(rows2) ? rows2 : []).filter((row) => row && row.id).map((row) => {
+var onlyRows = (rows3) => (Array.isArray(rows3) ? rows3 : []).filter((row) => row && row.id).map((row) => {
   const clean2 = { ...row };
   for (const key of ["imageDataUrl", "image", "thumbnail"]) {
     if (typeof clean2[key] === "string" && clean2[key].startsWith("data:") && clean2[key].length > 9e5) delete clean2[key];
@@ -3977,15 +3977,15 @@ var publishGlobal = async (env, full) => {
     try {
       await env.PROFILE_DB.prepare("CREATE TABLE IF NOT EXISTS content_lists (kind TEXT NOT NULL, id TEXT NOT NULL, ord INTEGER NOT NULL DEFAULT 0, payload TEXT NOT NULL, PRIMARY KEY (kind, id))").run();
       const present = [["subjects", subjects], ["topics", topics], ["vocabulary", vocabulary], ["vocabularyMaster", vocabularyMaster], ["exams", exams]];
-      const gone = present.filter(([, rows2]) => !rows2.length).map(([kind]) => kind);
+      const gone = present.filter(([, rows3]) => !rows3.length).map(([kind]) => kind);
       if (gone.length) {
         await env.PROFILE_DB.prepare(`DELETE FROM content_lists WHERE kind IN (${gone.map(() => "?").join(",")})`).bind(...gone).run();
       }
-      for (const [kind, rows2] of present) {
-        if (!rows2.length) continue;
+      for (const [kind, rows3] of present) {
+        if (!rows3.length) continue;
         await env.PROFILE_DB.prepare("DELETE FROM content_lists WHERE kind = ?").bind(kind).run();
-        for (let i = 0; i < rows2.length; i += 25) {
-          const chunk = rows2.slice(i, i + 25);
+        for (let i = 0; i < rows3.length; i += 25) {
+          const chunk = rows3.slice(i, i + 25);
           await env.PROFILE_DB.prepare(
             `INSERT INTO content_lists (kind, id, ord, payload) VALUES ${chunk.map(() => "(?,?,?,?)").join(",")}`
           ).bind(...chunk.flatMap((row, j) => [kind, String(row.id), i + j, JSON.stringify(row)])).run();
@@ -6001,11 +6001,11 @@ var ProviderRegistry = class {
     const eligible = this.all().filter(
       (entry) => entry.enabled && Boolean(entry.policy.emergency) === emergency && !excluded.has(entry.id) && REQUIRED_CAPABILITIES.every((capability) => entry.policy.capabilities.includes(capability))
     );
-    const rows2 = await Promise.all(eligible.map(async (entry) => {
+    const rows3 = await Promise.all(eligible.map(async (entry) => {
       const [snapshot, remote] = await Promise.all([this.healthMonitor.snapshot(entry), this.remoteHealth(entry)]);
       return { entry, snapshot, remote };
     }));
-    const available = rows2.filter(
+    const available = rows3.filter(
       (row) => ![PROVIDER_HEALTH.DISABLED, PROVIDER_HEALTH.OFFLINE, PROVIDER_HEALTH.QUOTA_EXHAUSTED].includes(row.snapshot.health) && !["OFFLINE", "INELIGIBLE", "DISABLED"].includes(row.remote.status) && row.remote.senderVerified !== false && row.remote.transactionalReady !== false
     );
     const mode = this.config.router.mode;
@@ -8265,11 +8265,11 @@ var CloudflareNativeAuthEngine = class {
   // High-dynamic blueprint §01/§04/§05/§13/§14 — deterministic rule table.
   // No AI, no behavioral inference; only real account/profile state.
   profileContext({ profile = null, completion = 0, lastLoginAt = null, now = Date.now() }) {
-    const DAY_MS10 = 864e5;
+    const DAY_MS11 = 864e5;
     const createdAt = profile?.createdAt ? Number(profile.createdAt) : null;
     const hasTarget = Array.isArray(profile?.targets) && profile.targets.length > 0 && Boolean(profile.targets[0]?.name);
-    const ageDays = createdAt ? (now - createdAt) / DAY_MS10 : Number.POSITIVE_INFINITY;
-    const gapDays = lastLoginAt ? (now - Number(lastLoginAt)) / DAY_MS10 : Number.POSITIVE_INFINITY;
+    const ageDays = createdAt ? (now - createdAt) / DAY_MS11 : Number.POSITIVE_INFINITY;
+    const gapDays = lastLoginAt ? (now - Number(lastLoginAt)) / DAY_MS11 : Number.POSITIVE_INFINITY;
     let context = "DEFAULT";
     let greeting = "আগে থেকেই চলো";
     if (!profile || Number(completion) < 60) {
@@ -8703,13 +8703,13 @@ var CloudflareNativeAuthEngine = class {
       emailRef: identity.refs.emailRef,
       now
     }));
-    const rows2 = errorFromRepository(await this.repository.recentSecurityHistory({
+    const rows3 = errorFromRepository(await this.repository.recentSecurityHistory({
       userId: session.user.id,
       now,
       limit: 10
     }));
     return Object.freeze({
-      entries: rows2.map((row) => Object.freeze({
+      entries: rows3.map((row) => Object.freeze({
         at: Number(row.at),
         method: row.method,
         browserClass: row.browserClass,
@@ -11820,6 +11820,20 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         const result = await callAuthority(env, "/internal/admin/security/health", {});
         return json4(request, 200, { ok: true, result });
       }
+      if (request.method === "GET" && url.pathname === `${AUTH_API_PREFIX}/admin/students`) {
+        if (!adminAuthorized(request, env)) return json4(request, 403, { ok: false, error: { code: "FORBIDDEN", message: "অনুমতি নেই।" } });
+        const limit = Math.min(Math.max(Number(url.searchParams.get("limit")) || 50, 1), 100);
+        const before = url.searchParams.get("before") ? Number(url.searchParams.get("before")) : null;
+        const q = String(url.searchParams.get("q") || "").slice(0, 254);
+        const result = await callAuthority(env, "/internal/admin/students/list", { input: { limit, before, q } });
+        return json4(request, 200, { ok: true, ...result }, { "X-Robots-Tag": "noindex, nofollow" });
+      }
+      if (request.method === "GET" && url.pathname === `${AUTH_API_PREFIX}/admin/students/profile`) {
+        if (!adminAuthorized(request, env)) return json4(request, 403, { ok: false, error: { code: "FORBIDDEN", message: "অনুমতি নেই।" } });
+        const userId = String(url.searchParams.get("id") || "").slice(0, 128);
+        const result = await callAuthority(env, "/internal/admin/students/get", { input: { userId } });
+        return json4(request, result?.found ? 200 : 404, { ok: Boolean(result?.found), ...result }, { "X-Robots-Tag": "noindex, nofollow" });
+      }
       if (request.method === "GET" && url.pathname === `${AUTH_API_PREFIX}/admin/security/events`) {
         if (!adminAuthorized(request, env)) return json4(request, 403, { ok: false, error: { code: "FORBIDDEN", message: "অনুমতি নেই।" } });
         const limit = Math.min(Math.max(Number(url.searchParams.get("limit")) || 50, 1), 200);
@@ -11868,14 +11882,14 @@ var asInt2 = (v, fallback = 0) => {
   return Number.isFinite(n) ? n : fallback;
 };
 var pct = (part, whole) => whole > 0 ? Math.round(part / whole * 1e3) / 10 : 0;
-function computeAnalytics(rows2 = [], readCounts = {}, inactiveDevices = 0) {
+function computeAnalytics(rows3 = [], readCounts = {}, inactiveDevices = 0) {
   const items = [];
   let sent = 0;
   let delivered = 0;
   let failed = 0;
   let opened = 0;
   let clicked = 0;
-  for (const row of rows2) {
+  for (const row of rows3) {
     const status = String(row?.status || "");
     const wasSent = status === "sent";
     const didFail = status === "failed";
@@ -11905,7 +11919,7 @@ function computeAnalytics(rows2 = [], readCounts = {}, inactiveDevices = 0) {
   }
   return {
     totals: {
-      notifications: rows2.length,
+      notifications: rows3.length,
       sent,
       failed,
       delivered,
@@ -11920,8 +11934,8 @@ function computeAnalytics(rows2 = [], readCounts = {}, inactiveDevices = 0) {
     items
   };
 }
-function summarizeHistory(rows2 = [], readCounts = {}) {
-  return computeAnalytics(rows2, readCounts).items.map((item) => ({
+function summarizeHistory(rows3 = [], readCounts = {}) {
+  return computeAnalytics(rows3, readCounts).items.map((item) => ({
     id: item.id,
     title: item.title,
     status: item.status,
@@ -12569,11 +12583,11 @@ var FcmStore = class {
   }
   async activeDevices(userId) {
     await this.#ensureTables();
-    const rows2 = await this.#d1.prepare(
+    const rows3 = await this.#d1.prepare(
       `SELECT id, fcm_token, platform, browser, device_info, created_at, updated_at, last_seen
        FROM fcm_devices WHERE user_id=? AND is_active=1 ORDER BY updated_at DESC`
     ).bind(userId).all();
-    return (rows2?.results || []).map((row) => ({
+    return (rows3?.results || []).map((row) => ({
       id: row.id,
       token: `${String(row.fcm_token).slice(0, 10)}…`,
       platform: row.platform,
@@ -12585,10 +12599,10 @@ var FcmStore = class {
   }
   async activeTokens(userId) {
     await this.#ensureTables();
-    const rows2 = await this.#d1.prepare(
+    const rows3 = await this.#d1.prepare(
       `SELECT id, fcm_token FROM fcm_devices WHERE user_id=? AND is_active=1 ORDER BY updated_at DESC`
     ).bind(userId).all();
-    return (rows2?.results || []).map((row) => ({ id: row.id, token: row.fcm_token }));
+    return (rows3?.results || []).map((row) => ({ id: row.id, token: row.fcm_token }));
   }
   async getPrefs(userId) {
     await this.#ensureTables();
@@ -13431,8 +13445,8 @@ async function handleFcmNotificationRequest(request, env) {
       if (!body) return jsonResponse(request, { error: "invalid-json" }, 400);
       const id = String(body.id || "");
       if (!GN_ID_RE.test(id)) return jsonResponse(request, { error: "invalid-id" }, 400);
-      const rows2 = await store.recentGlobals(50);
-      const row = rows2.find((r) => r.id === id);
+      const rows3 = await store.recentGlobals(50);
+      const row = rows3.find((r) => r.id === id);
       if (!row) return jsonResponse(request, { error: "not-found" }, 404);
       if (row.status !== "scheduled") return jsonResponse(request, { error: "not-scheduled" }, 409);
       await store.updateGlobalStatus(id, { status: "cancelled" });
@@ -13963,14 +13977,14 @@ var UserDataStore = class {
     if (!table) return null;
     const after = clampInt(since, 0, Number.MAX_SAFE_INTEGER, 0);
     const max = clampInt(limit, 1, MAX_PULL_LIMIT, MAX_PULL_LIMIT);
-    const rows2 = await this.#d1.prepare(
+    const rows3 = await this.#d1.prepare(
       `SELECT ${shapedKey} AS id, payload_json, updated_at, deleted_at
        FROM ${table}
        WHERE user_id=? AND updated_at>? AND ${shapedKey}>?
        ORDER BY updated_at ASC, ${shapedKey} ASC LIMIT ?`
     ).bind(userId, after, String(cursor || ""), max + 1).all();
     const items = [];
-    for (const r of rows2?.results || []) {
+    for (const r of rows3?.results || []) {
       const id = String(r.id);
       let doc = null;
       if (r.deleted_at == null) {
@@ -14284,10 +14298,10 @@ var PersonalizedStore = class {
   /* Every student who currently has at least one active device. */
   async audience() {
     await this.init();
-    const rows2 = await this.#d1.prepare(
+    const rows3 = await this.#d1.prepare(
       "SELECT DISTINCT user_id FROM fcm_devices WHERE is_active=1"
     ).all();
-    return (rows2?.results || []).map((r) => String(r.user_id));
+    return (rows3?.results || []).map((r) => String(r.user_id));
   }
   async prefs(userId) {
     await this.init();
@@ -14921,12 +14935,12 @@ function attributeConversion(send = {}, learningEvents = [], windowMs = 6 * 3600
   return { converted: true, kind: candidates[0].kind, lagMs: candidates[0].at - sentAt };
 }
 var pct2 = (part, whole) => whole > 0 ? Math.round(part / whole * 1e3) / 10 : 0;
-function computePerformance(rows2 = []) {
+function computePerformance(rows3 = []) {
   const byKind = {};
   const byVariant = {};
   const byHour = {};
   let sent = 0, opened = 0, clicked = 0, converted = 0, failed = 0;
-  for (const r of rows2) {
+  for (const r of rows3) {
     const kind = String(r?.kind || "unknown");
     const variant = String(r?.variant || "A");
     const hour = Number.isFinite(Number(r?.hour)) ? Number(r.hour) : null;
@@ -14963,8 +14977,8 @@ function computePerformance(rows2 = []) {
     bestHour
   };
 }
-function computeFeedback(rows2 = [], opts = {}) {
-  const perf = computePerformance(rows2);
+function computeFeedback(rows3 = [], opts = {}) {
+  const perf = computePerformance(rows3);
   const minSample = asInt4(opts.minSample, 20);
   const variants = Object.entries(perf.byVariant).filter(([, b]) => b.sent >= minSample);
   let winner = null;
@@ -14977,13 +14991,13 @@ function computeFeedback(rows2 = [], opts = {}) {
   return { ...perf, winner, ready: perf.totals.sent >= minSample };
 }
 function computeDecisionStats(decisions = [], outcomes = []) {
-  const rows2 = Array.isArray(decisions) ? decisions : [];
+  const rows3 = Array.isArray(decisions) ? decisions : [];
   const out = Array.isArray(outcomes) ? outcomes : [];
   let sent = 0, skipped = 0;
   const byRule = {};
   const bySkipStage = {};
   const byReason = {};
-  for (const d of rows2) {
+  for (const d of rows3) {
     const decision = String(d?.decision || "");
     const rule = String(d?.rule || "unknown");
     if (decision === "send") sent += 1;
@@ -15018,7 +15032,7 @@ function computeDecisionStats(decisions = [], outcomes = []) {
   }
   const perfRanked = Object.entries(perfByRule).map(([kind, b]) => ({ kind, ...b, clickRate: pct2(b.clicked, b.sent), openRate: pct2(b.opened, b.sent) })).sort((a, b) => b.clickRate - a.clickRate || b.openRate - a.openRate || a.kind.localeCompare(b.kind));
   return {
-    eligible: rows2.length,
+    eligible: rows3.length,
     sent,
     skipped,
     /* CTR is over delivered sends, not decisions: a decision to send that FCM
@@ -15164,8 +15178,8 @@ var IntelligenceStore = class {
   }
   async audience() {
     await this.init();
-    const rows2 = await this.#d1.prepare("SELECT DISTINCT user_id FROM fcm_devices WHERE is_active=1").all();
-    return (rows2?.results || []).map((r) => String(r.user_id));
+    const rows3 = await this.#d1.prepare("SELECT DISTINCT user_id FROM fcm_devices WHERE is_active=1").all();
+    return (rows3?.results || []).map((r) => String(r.user_id));
   }
   async getState(userId) {
     await this.init();
@@ -15220,15 +15234,15 @@ var IntelligenceStore = class {
   }
   async seenKeys(userId) {
     await this.init();
-    const rows2 = await this.#d1.prepare("SELECT notification_key FROM notification_outcomes WHERE user_id=?").bind(userId).all();
-    return new Set((rows2?.results || []).map((r) => String(r.notification_key)));
+    const rows3 = await this.#d1.prepare("SELECT notification_key FROM notification_outcomes WHERE user_id=?").bind(userId).all();
+    return new Set((rows3?.results || []).map((r) => String(r.notification_key)));
   }
   async history(userId, limit = 200) {
     await this.init();
-    const rows2 = await this.#d1.prepare(
+    const rows3 = await this.#d1.prepare(
       "SELECT notification_key, kind, sent_at, opened_at, clicked_at FROM notification_outcomes WHERE user_id=? ORDER BY sent_at DESC LIMIT ?"
     ).bind(userId, limit).all();
-    return (rows2?.results || []).map((r) => ({
+    return (rows3?.results || []).map((r) => ({
       key: String(r.notification_key),
       kind: String(r.kind),
       sentAt: asInt4(r.sent_at),
@@ -15280,11 +15294,11 @@ var IntelligenceStore = class {
   }
   async decisionsForDay(dayKey4) {
     await this.init();
-    const rows2 = await this.#d1.prepare(
+    const rows3 = await this.#d1.prepare(
       `SELECT user_id, rule, kind, score, decision, stage, reason, day_key, created_at
        FROM notification_decisions WHERE day_key=? ORDER BY created_at DESC`
     ).bind(dayKey4).all();
-    return (rows2?.results || []).map((r) => ({
+    return (rows3?.results || []).map((r) => ({
       userId: String(r.user_id),
       rule: String(r.rule),
       kind: r.kind ? String(r.kind) : null,
@@ -15300,11 +15314,11 @@ var IntelligenceStore = class {
    * the dashboard can exclude them from the denominator itself. */
   async outcomesForDay(dayKey4) {
     await this.init();
-    const rows2 = await this.#d1.prepare(
+    const rows3 = await this.#d1.prepare(
       `SELECT kind, category, variant, sent_at, opened_at, clicked_at, status
        FROM notification_outcomes WHERE day_key=? ORDER BY sent_at DESC`
     ).bind(dayKey4).all();
-    return (rows2?.results || []).map((r) => ({
+    return (rows3?.results || []).map((r) => ({
       kind: String(r.kind),
       category: String(r.category),
       variant: String(r.variant),
@@ -15334,11 +15348,11 @@ var IntelligenceStore = class {
    * event can be credited to. */
   async convertibleSends(userId, sinceMs) {
     await this.init();
-    const rows2 = await this.#d1.prepare(
+    const rows3 = await this.#d1.prepare(
       `SELECT notification_key, kind, sent_at, opened_at, clicked_at FROM notification_outcomes
        WHERE user_id=? AND sent_at>=? AND learning_at IS NULL ORDER BY sent_at DESC LIMIT 10`
     ).bind(userId, sinceMs).all();
-    return (rows2?.results || []).map((r) => ({
+    return (rows3?.results || []).map((r) => ({
       key: String(r.notification_key),
       kind: String(r.kind),
       sentAt: asInt4(r.sent_at),
@@ -15370,11 +15384,11 @@ var IntelligenceStore = class {
   }
   async rowsForPerformance(limit = 2e3) {
     await this.init();
-    const rows2 = await this.#d1.prepare(
+    const rows3 = await this.#d1.prepare(
       `SELECT kind, category, variant, status, sent_at, opened_at, clicked_at, learning_at, learning_kind
        FROM notification_outcomes ORDER BY sent_at DESC LIMIT ?`
     ).bind(limit).all();
-    return (rows2?.results || []).map((r) => ({
+    return (rows3?.results || []).map((r) => ({
       kind: String(r.kind),
       category: String(r.category),
       variant: String(r.variant),
@@ -15392,11 +15406,11 @@ var IntelligenceStore = class {
    * tables other features already own — this engine never writes them. */
   async dailyStats(userId, limitDays = 60) {
     await this.init();
-    const rows2 = await this.#d1.prepare(
+    const rows3 = await this.#d1.prepare(
       `SELECT day, payload_json FROM user_daily_stats
        WHERE user_id=? AND deleted_at IS NULL ORDER BY day DESC LIMIT ?`
     ).bind(userId, limitDays).all();
-    return (rows2?.results || []).map((r) => {
+    return (rows3?.results || []).map((r) => {
       let doc = null;
       try {
         doc = JSON.parse(String(r.payload_json));
@@ -15413,11 +15427,11 @@ var IntelligenceStore = class {
   }
   async examScores(userId, limit = 20) {
     await this.init();
-    const rows2 = await this.#d1.prepare(
+    const rows3 = await this.#d1.prepare(
       `SELECT id, payload_json, updated_at FROM user_exam_results
        WHERE user_id=? AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT ?`
     ).bind(userId, limit).all();
-    return (rows2?.results || []).map((r) => {
+    return (rows3?.results || []).map((r) => {
       let doc = null;
       try {
         doc = JSON.parse(String(r.payload_json));
@@ -15431,13 +15445,13 @@ var IntelligenceStore = class {
    * weak-topic intelligence needs. */
   async mistakeState(userId) {
     await this.init();
-    const rows2 = await this.#d1.prepare(
+    const rows3 = await this.#d1.prepare(
       `SELECT topic_id, COUNT(*) AS misses FROM user_mistakes
        WHERE user_id=? AND deleted_at IS NULL AND COALESCE(mastered,0)=0
          AND (revision_status IS NULL OR revision_status<>'mastered')
        GROUP BY topic_id ORDER BY misses DESC LIMIT 10`
     ).bind(userId).all();
-    const topics = (rows2?.results || []).map((r) => ({ topic: String(r.topic_id || "general"), misses: asInt4(r.misses) }));
+    const topics = (rows3?.results || []).map((r) => ({ topic: String(r.topic_id || "general"), misses: asInt4(r.misses) }));
     const pending = topics.reduce((n, t) => n + t.misses, 0);
     const masteredRow = await this.#d1.prepare(
       `SELECT COUNT(*) AS n FROM user_mistakes
@@ -15764,8 +15778,8 @@ async function handleIntelligenceRequest(request, env, deps = {}) {
     return jsonResponse4(request, { ok: true, ...result });
   }
   if (path === `${ADMIN_PREFIX}performance` && request.method === "GET") {
-    const rows2 = await store.rowsForPerformance();
-    return jsonResponse4(request, { ok: true, ...computeFeedback(rows2), rows: rows2.length });
+    const rows3 = await store.rowsForPerformance();
+    return jsonResponse4(request, { ok: true, ...computeFeedback(rows3), rows: rows3.length });
   }
   if (path === `${ADMIN_PREFIX}fatigue` && request.method === "GET") {
     const userId = String(url.searchParams.get("user") || "").trim();
@@ -15989,8 +16003,8 @@ var EventStore = class {
   /* Everyone who currently has an active device. */
   async audience() {
     await this.init();
-    const rows2 = await this.#d1.prepare("SELECT DISTINCT user_id FROM fcm_devices WHERE is_active=1").all();
-    return (rows2?.results || []).map((r) => String(r.user_id));
+    const rows3 = await this.#d1.prepare("SELECT DISTINCT user_id FROM fcm_devices WHERE is_active=1").all();
+    return (rows3?.results || []).map((r) => String(r.user_id));
   }
   async prefs(userId) {
     await this.init();
@@ -16291,8 +16305,8 @@ var DigestStore = class {
   }
   async audience() {
     await this.init();
-    const rows2 = await this.#d1.prepare("SELECT DISTINCT user_id FROM fcm_devices WHERE is_active=1").all();
-    return (rows2?.results || []).map((r) => String(r.user_id));
+    const rows3 = await this.#d1.prepare("SELECT DISTINCT user_id FROM fcm_devices WHERE is_active=1").all();
+    return (rows3?.results || []).map((r) => String(r.user_id));
   }
   async prefs(userId) {
     await this.init();
@@ -16435,7 +16449,7 @@ var asNum = (v, fallback = 0) => {
 var pct3 = (part, whole, dp = 1) => whole > 0 ? Number((part / whole * 100).toFixed(dp)) : 0;
 var ratio2 = (part, whole, dp = 4) => whole > 0 ? Number((part / whole).toFixed(dp)) : 0;
 var round = (n, dp = 2) => Number.isFinite(Number(n)) ? Number(Number(n).toFixed(dp)) : 0;
-var sum = (rows2, pick) => rows2.reduce((n, r) => n + asNum(pick(r)), 0);
+var sum = (rows3, pick) => rows3.reduce((n, r) => n + asNum(pick(r)), 0);
 var parseDay = (day) => {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(day || ""));
   return m ? Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : NaN;
@@ -16586,22 +16600,22 @@ function compareValue(current, previous) {
   };
 }
 function splitPeriods(series = [], days = 7) {
-  const rows2 = Array.isArray(series) ? series : [];
-  const current = rows2.slice(-days);
-  const previous = rows2.slice(-days * 2, -days);
+  const rows3 = Array.isArray(series) ? series : [];
+  const current = rows3.slice(-days);
+  const previous = rows3.slice(-days * 2, -days);
   return { current, previous };
 }
 function comparePeriods(series = [], days = 7) {
   const { current, previous } = splitPeriods(series, days);
-  const active = (rows2) => rows2.filter((r) => r.active).length;
+  const active = (rows3) => rows3.filter((r) => r.active).length;
   const pick = {
-    practiceActivity: (rows2) => sum(rows2, (r) => r.questions),
-    lessonsCompleted: (rows2) => sum(rows2, (r) => r.lessons),
-    learningTimeMs: (rows2) => sum(rows2, (r) => r.timeMs),
+    practiceActivity: (rows3) => sum(rows3, (r) => r.questions),
+    lessonsCompleted: (rows3) => sum(rows3, (r) => r.lessons),
+    learningTimeMs: (rows3) => sum(rows3, (r) => r.timeMs),
     activeDays: active,
-    accuracy: (rows2) => {
-      const c = sum(rows2, (r) => r.correct);
-      const w = sum(rows2, (r) => r.wrong);
+    accuracy: (rows3) => {
+      const c = sum(rows3, (r) => r.correct);
+      const w = sum(rows3, (r) => r.wrong);
       return c + w > 0 ? pct3(c, c + w, 1) : 0;
     }
   };
@@ -16617,26 +16631,26 @@ function linearTrend(values = [], options = {}) {
   const n = slice.length;
   const meanX = (n - 1) / 2;
   const meanY = sum(slice, (v) => v) / n;
-  let num4 = 0;
+  let num5 = 0;
   let den = 0;
   for (let i = 0; i < n; i += 1) {
-    num4 += (i - meanX) * (slice[i] - meanY);
+    num5 += (i - meanX) * (slice[i] - meanY);
     den += (i - meanX) ** 2;
   }
-  const slope = den > 0 ? num4 / den : 0;
+  const slope = den > 0 ? num5 / den : 0;
   const strength = meanY > 0 ? clamp01(Math.abs(slope) / meanY) : 0;
   const direction = strength < (options.minStrength ?? 0.05) ? "flat" : slope > 0 ? "up" : "down";
   return { slope: round(slope, 3), direction, strength: round(strength, 3), mean: round(meanY, 2) };
 }
 var clamp01 = (n) => Math.min(1, Math.max(0, n));
 function detectTrends(series = [], options = {}) {
-  const rows2 = Array.isArray(series) ? series : [];
+  const rows3 = Array.isArray(series) ? series : [];
   const window = asInt5(options.window, 7);
   return {
-    practiceActivity: linearTrend(rows2.map((r) => r.questions), { window }),
-    lessonsCompleted: linearTrend(rows2.map((r) => r.lessons), { window }),
-    learningTime: linearTrend(rows2.map((r) => r.timeMs), { window }),
-    accuracy: linearTrend(rows2.map((r) => {
+    practiceActivity: linearTrend(rows3.map((r) => r.questions), { window }),
+    lessonsCompleted: linearTrend(rows3.map((r) => r.lessons), { window }),
+    learningTime: linearTrend(rows3.map((r) => r.timeMs), { window }),
+    accuracy: linearTrend(rows3.map((r) => {
       const c = asNum(r.correct);
       const w = asNum(r.wrong);
       return c + w > 0 ? pct3(c, c + w, 1) : 0;
@@ -16725,7 +16739,7 @@ function dropOffMessage(key, rate2) {
   };
   return `${labels[key] || key} — ${Math.round(asNum(rate2) * 100)}% এখানেই থেমে গেছে।`;
 }
-function buildCourseAnalytics(rows2 = [], events = []) {
+function buildCourseAnalytics(rows3 = [], events = []) {
   const byCourse = /* @__PURE__ */ new Map();
   const ensure = (id) => {
     if (!byCourse.has(id)) {
@@ -16746,7 +16760,7 @@ function buildCourseAnalytics(rows2 = [], events = []) {
     }
     return byCourse.get(id);
   };
-  for (const row of rows2) {
+  for (const row of rows3) {
     const id = String(row?.courseId || row?.id || "");
     if (!id) continue;
     const c = ensure(id);
@@ -16889,18 +16903,18 @@ function buildQuizAnalytics(events = []) {
 }
 function computeEngagement(students = [], options = {}) {
   const today = options.today || dayKey3(options.nowMs ?? Date.now(), options.tzOffsetMin);
-  const rows2 = (Array.isArray(students) ? students : []).filter((s) => s && s.userId);
+  const rows3 = (Array.isArray(students) ? students : []).filter((s) => s && s.userId);
   const within = (days) => {
     const cutoff = shiftDay(today, -(days - 1));
-    return rows2.filter((s) => (s.activeDays || []).some((d) => d >= cutoff && d <= today));
+    return rows3.filter((s) => (s.activeDays || []).some((d) => d >= cutoff && d <= today));
   };
   const dau = within(1).length;
   const wau = within(7).length;
   const mau = within(30).length;
-  const sessionRows = rows2.flatMap((s) => s.sessions || []);
+  const sessionRows = rows3.flatMap((s) => s.sessions || []);
   const totalMs = sum(sessionRows, (r) => r.timeMs);
   const sessionCount = sessionRows.length;
-  const returning = rows2.filter((s) => (s.activeDays || []).length > 1).length;
+  const returning = rows3.filter((s) => (s.activeDays || []).length > 1).length;
   return {
     dau,
     wau,
@@ -16911,20 +16925,20 @@ function computeEngagement(students = [], options = {}) {
     sessions: sessionCount,
     avgSessionMs: sessionCount ? Math.round(totalMs / sessionCount) : 0,
     activeStudents: mau,
-    totalStudents: rows2.length,
+    totalStudents: rows3.length,
     returningUsers: returning,
-    newUsers: rows2.length - returning,
-    returningRate: pct3(returning, rows2.length, 1),
-    learningActiveStudents: rows2.filter((s) => asInt5(s.learningActions) > 0).length
+    newUsers: rows3.length - returning,
+    returningRate: pct3(returning, rows3.length, 1),
+    learningActiveStudents: rows3.filter((s) => asInt5(s.learningActions) > 0).length
   };
 }
 var RETENTION_WINDOWS = Object.freeze([1, 7, 14, 30]);
 function computeRetention(students = [], options = {}) {
   const today = options.today || dayKey3(options.nowMs ?? Date.now(), options.tzOffsetMin);
-  const rows2 = (Array.isArray(students) ? students : []).filter((s) => s && s.userId && (s.activeDays || []).length);
+  const rows3 = (Array.isArray(students) ? students : []).filter((s) => s && s.userId && (s.activeDays || []).length);
   const cohorts = /* @__PURE__ */ new Map();
   const buckets = new Map(RETENTION_WINDOWS.map((w) => [w, { window: w, cohortSize: 0, retained: 0, matureCohortSize: 0, rate: 0 }]));
-  for (const s of rows2) {
+  for (const s of rows3) {
     const days = [...new Set(s.activeDays.filter(Boolean))].sort();
     if (!days.length) continue;
     const first = days[0];
@@ -16951,7 +16965,7 @@ function computeRetention(students = [], options = {}) {
   return {
     windows,
     byWindow: Object.fromEntries(windows.map((w) => [`d${w.window}`, w.rate])),
-    cohortSize: rows2.length,
+    cohortSize: rows3.length,
     cohortCount: cohorts.size,
     cohorts: [...cohorts.values()].map((c) => ({
       cohort: c.cohort,
@@ -16964,7 +16978,7 @@ function computeRetention(students = [], options = {}) {
   };
 }
 function computeNotificationAnalytics(outcomes = [], options = {}) {
-  const rows2 = (Array.isArray(outcomes) ? outcomes : []).filter((o) => o && o.notification_key);
+  const rows3 = (Array.isArray(outcomes) ? outcomes : []).filter((o) => o && o.notification_key);
   const bucket = (list2) => {
     const sent = list2.length;
     const opened = list2.filter((o) => asInt5(o.opened_at) > 0).length;
@@ -16984,10 +16998,10 @@ function computeNotificationAnalytics(outcomes = [], options = {}) {
       openToLearning: pct3(learning, opened, 1)
     };
   };
-  const overall = bucket(rows2);
+  const overall = bucket(rows3);
   const group = (keyOf) => {
     const map = /* @__PURE__ */ new Map();
-    for (const o of rows2) {
+    for (const o of rows3) {
       const key = String(keyOf(o) || "unknown");
       if (!map.has(key)) map.set(key, []);
       map.get(key).push(o);
@@ -17013,7 +17027,7 @@ function computeNotificationAnalytics(outcomes = [], options = {}) {
     /* Which part of the local day the student actually acted on. */
     byHour: (() => {
       const map = /* @__PURE__ */ new Map();
-      for (const o of rows2) {
+      for (const o of rows3) {
         const at = asInt5(o.learning_at) || asInt5(o.clicked_at);
         if (!at) continue;
         const hour = new Date(at).getUTCHours();
@@ -17354,8 +17368,8 @@ var AnalyticsStore2 = class {
    * so a wrong column or a bad query is never silently swallowed. */
   async #readAll(query) {
     try {
-      const rows2 = await query.all();
-      return rows2?.results || [];
+      const rows3 = await query.all();
+      return rows3?.results || [];
     } catch (err) {
       if (isMissingSchemaError2(err)) return [];
       throw err;
@@ -17399,9 +17413,9 @@ var AnalyticsStore2 = class {
    * is the whole reason the client is allowed to be at-least-once. */
   async ingestEvents(userId, events, now) {
     await this.init();
-    const rows2 = (Array.isArray(events) ? events : []).slice(0, 200);
+    const rows3 = (Array.isArray(events) ? events : []).slice(0, 200);
     let stored = 0;
-    for (const e of rows2) {
+    for (const e of rows3) {
       const id = String(e?.id || "").slice(0, 120);
       const name = String(e?.name || "").slice(0, 60);
       if (!id || !name) continue;
@@ -17413,10 +17427,10 @@ var AnalyticsStore2 = class {
       ).bind(userId, id, name, JSON.stringify(params).slice(0, 4e3), at, dayKey3(at), now).run();
       if (asInt5(res?.meta?.changes, 0) > 0) stored += 1;
     }
-    return { received: rows2.length, stored };
+    return { received: rows3.length, stored };
   }
-  #events(rows2) {
-    return (rows2?.results || []).map((r) => {
+  #events(rows3) {
+    return (rows3?.results || []).map((r) => {
       let params = {};
       try {
         params = JSON.parse(String(r.params_json || "{}")) || {};
@@ -17430,17 +17444,17 @@ var AnalyticsStore2 = class {
    * reachable without the admin token. */
   async eventsSince(sinceMs, limit = MAX_EVENT_ROWS) {
     await this.init();
-    const rows2 = await this.#d1.prepare(
+    const rows3 = await this.#d1.prepare(
       "SELECT id, name, params_json, at FROM analytics_events WHERE at>=? ORDER BY at ASC LIMIT ?"
     ).bind(sinceMs, limit).all();
-    return this.#events(rows2);
+    return this.#events(rows3);
   }
   async userEvents(userId, sinceMs, limit = MAX_EVENT_ROWS) {
     await this.init();
-    const rows2 = await this.#d1.prepare(
+    const rows3 = await this.#d1.prepare(
       "SELECT id, name, params_json, at FROM analytics_events WHERE user_id=? AND at>=? ORDER BY at ASC LIMIT ?"
     ).bind(userId, sinceMs, limit).all();
-    return this.#events(rows2);
+    return this.#events(rows3);
   }
   /* Every student's learning picture, one row per student, for the platform
    * metrics. `activeDays` is a comma-joined day list — D1 has no array type and
@@ -17457,8 +17471,8 @@ var AnalyticsStore2 = class {
        WHERE s.deleted_at IS NULL AND s.day>=?
        GROUP BY s.user_id`
     ).bind(dayKey3(sinceMs));
-    const rows2 = await this.#readAll(query);
-    return rows2.map((r) => ({
+    const rows3 = await this.#readAll(query);
+    return rows3.map((r) => ({
       userId: String(r.user_id),
       activeDays: String(r.days || "").split(",").filter(Boolean).sort(),
       questions: asInt5(r.questions),
@@ -17473,8 +17487,8 @@ var AnalyticsStore2 = class {
     const query = this.#d1.prepare(
       "SELECT day, payload_json FROM user_daily_stats WHERE user_id=? AND deleted_at IS NULL ORDER BY day DESC LIMIT ?"
     ).bind(userId, limitDays);
-    const rows2 = await this.#readAll(query);
-    return rows2.map((r) => {
+    const rows3 = await this.#readAll(query);
+    return rows3.map((r) => {
       let doc = {};
       try {
         doc = JSON.parse(String(r.payload_json)) || {};
@@ -17497,8 +17511,8 @@ var AnalyticsStore2 = class {
     const query = this.#d1.prepare(
       "SELECT id, payload_json, updated_at FROM user_exam_results WHERE user_id=? AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT ?"
     ).bind(userId, limit);
-    const rows2 = await this.#readAll(query);
-    return rows2.map((r) => {
+    const rows3 = await this.#readAll(query);
+    return rows3.map((r) => {
       let doc = {};
       try {
         doc = JSON.parse(String(r.payload_json)) || {};
@@ -17516,8 +17530,8 @@ var AnalyticsStore2 = class {
          AND (revision_status IS NULL OR revision_status<>'mastered')
        GROUP BY topic ORDER BY misses DESC LIMIT 10`
     ).bind(userId);
-    const rows2 = await this.#readAll(query);
-    return rows2.map((r) => ({ topic: String(r.topic), misses: asInt5(r.misses) }));
+    const rows3 = await this.#readAll(query);
+    return rows3.map((r) => ({ topic: String(r.topic), misses: asInt5(r.misses) }));
   }
   /* Course progress lives in the student's own settings blob (same read Phase 3
    * uses). A malformed or absent blob means "no course data" — never a guess. */
@@ -17549,9 +17563,9 @@ var AnalyticsStore2 = class {
     const query = this.#d1.prepare(
       "SELECT user_id, payload_json, updated_at FROM user_settings WHERE id='settings' AND deleted_at IS NULL AND updated_at>=?"
     ).bind(sinceMs);
-    const rows2 = await this.#readAll(query);
+    const rows3 = await this.#readAll(query);
     const out = [];
-    for (const r of rows2) {
+    for (const r of rows3) {
       let doc = {};
       try {
         doc = JSON.parse(String(r.payload_json)) || {};
@@ -17574,8 +17588,8 @@ var AnalyticsStore2 = class {
       `SELECT notification_key, kind, category, variant, day_key, sent_at, opened_at, clicked_at, learning_at, learning_kind
        FROM notification_outcomes WHERE sent_at>=? ORDER BY sent_at DESC LIMIT 5000`
     ).bind(sinceMs);
-    const rows2 = await this.#readAll(query);
-    return rows2.map((r) => ({
+    const rows3 = await this.#readAll(query);
+    return rows3.map((r) => ({
       notification_key: String(r.notification_key),
       kind: String(r.kind || ""),
       category: String(r.category || ""),
@@ -17594,8 +17608,8 @@ var AnalyticsStore2 = class {
       `SELECT notification_key, kind, category, variant, day_key, sent_at, opened_at, clicked_at, learning_at, learning_kind
        FROM notification_outcomes WHERE user_id=? AND sent_at>=? ORDER BY sent_at DESC LIMIT 500`
     ).bind(userId, sinceMs);
-    const rows2 = await this.#readAll(query);
-    return rows2.map((r) => ({
+    const rows3 = await this.#readAll(query);
+    return rows3.map((r) => ({
       notification_key: String(r.notification_key),
       kind: String(r.kind || ""),
       category: String(r.category || ""),
@@ -17614,8 +17628,8 @@ var AnalyticsStore2 = class {
       `SELECT id, type, audience, topic, status, sent_at, scheduled_at, COALESCE(delivered,0) AS delivered
        FROM global_notifications WHERE COALESCE(sent_at, scheduled_at, 0)>=? ORDER BY COALESCE(sent_at, scheduled_at, 0) DESC LIMIT 500`
     ).bind(sinceMs);
-    const rows2 = await this.#readAll(query);
-    return rows2.map((r) => ({
+    const rows3 = await this.#readAll(query);
+    return rows3.map((r) => ({
       id: String(r.id),
       type: String(r.type || ""),
       audience: String(r.audience || ""),
@@ -17631,9 +17645,9 @@ var AnalyticsStore2 = class {
     const query = this.#d1.prepare(
       "SELECT notification_id, COUNT(*) AS n FROM notification_reads GROUP BY notification_id"
     );
-    const rows2 = await this.#readAll(query);
+    const rows3 = await this.#readAll(query);
     const out = {};
-    for (const r of rows2) out[String(r.notification_id)] = asInt5(r.n);
+    for (const r of rows3) out[String(r.notification_id)] = asInt5(r.n);
     return out;
   }
   /* How many students have a device registered — the honest denominator for a
@@ -17824,13 +17838,13 @@ async function buildAdminDashboard(store, filters, options = {}) {
   const dropOff = detectFunnelDropOff(funnel);
   const trends = detectTrends(
     dayRange(filters.today || dayKey3(Date.now(), filters.tzOffsetMin), 14).map((day) => {
-      const rows2 = filtered.events.filter((e) => dayKey3(e.at, filters.tzOffsetMin) === day);
+      const rows3 = filtered.events.filter((e) => dayKey3(e.at, filters.tzOffsetMin) === day);
       return {
         day,
-        questions: rows2.filter((e) => e.name === "question_attempt").length,
-        lessons: rows2.filter((e) => e.name === "lesson_complete").length,
-        correct: rows2.filter((e) => e.name === "question_attempt" && (e.params?.correct === true || e.params?.correct === "true")).length,
-        wrong: rows2.filter((e) => e.name === "question_attempt" && !(e.params?.correct === true || e.params?.correct === "true")).length,
+        questions: rows3.filter((e) => e.name === "question_attempt").length,
+        lessons: rows3.filter((e) => e.name === "lesson_complete").length,
+        correct: rows3.filter((e) => e.name === "question_attempt" && (e.params?.correct === true || e.params?.correct === "true")).length,
+        wrong: rows3.filter((e) => e.name === "question_attempt" && !(e.params?.correct === true || e.params?.correct === "true")).length,
         timeMs: 0
       };
     }),
@@ -17989,7 +18003,7 @@ var stddev = (values = []) => {
   const m = mean(values);
   return Math.sqrt(values.reduce((a, b) => a + (asNum2(b) - m) ** 2, 0) / (values.length - 1));
 };
-var sumOf = (rows2 = [], pick = (r) => r) => rows2.reduce((n, r) => n + asNum2(pick(r)), 0);
+var sumOf = (rows3 = [], pick = (r) => r) => rows3.reduce((n, r) => n + asNum2(pick(r)), 0);
 var CONFIDENCE_TARGETS = Object.freeze({
   profile: 10,
   // active days
@@ -18973,23 +18987,23 @@ function buildCourseIntelligence(input = {}, options = {}) {
   };
 }
 function evaluateAiPerformance(decisions = [], options = {}) {
-  const rows2 = Array.isArray(decisions) ? decisions : [];
-  const withOutcome = rows2.filter((d) => d && d.outcome);
-  const accepted = rows2.filter((d) => d.actionTaken === "accepted" || d.outcome?.accepted === true);
+  const rows3 = Array.isArray(decisions) ? decisions : [];
+  const withOutcome = rows3.filter((d) => d && d.outcome);
+  const accepted = rows3.filter((d) => d.actionTaken === "accepted" || d.outcome?.accepted === true);
   const converted = withOutcome.filter((d) => d.outcome?.learned === true);
-  const rejected = rows2.filter((d) => d.actionTaken === "rejected");
-  const confidences = rows2.map((d) => asNum2(d.confidence)).filter((c) => c > 0);
-  const latencies = rows2.map((d) => asNum2(d.latencyMs)).filter((l) => l > 0);
-  const costs = rows2.map((d) => d.costUsd).filter((c) => Number.isFinite(Number(c)));
+  const rejected = rows3.filter((d) => d.actionTaken === "rejected");
+  const confidences = rows3.map((d) => asNum2(d.confidence)).filter((c) => c > 0);
+  const latencies = rows3.map((d) => asNum2(d.latencyMs)).filter((l) => l > 0);
+  const costs = rows3.map((d) => d.costUsd).filter((c) => Number.isFinite(Number(c)));
   const falsePositive = withOutcome.filter((d) => asNum2(d.confidence) >= 0.6 && d.outcome?.learned === false).length;
   const falseNegative = withOutcome.filter((d) => asNum2(d.confidence) < 0.4 && d.outcome?.learned === true).length;
   return {
     version: AI_INTELLIGENCE_VERSION,
-    total: rows2.length,
+    total: rows3.length,
     scored: withOutcome.length,
-    acceptanceRate: rows2.length ? round2(accepted.length / rows2.length, 3) : 0,
+    acceptanceRate: rows3.length ? round2(accepted.length / rows3.length, 3) : 0,
     learningConversion: withOutcome.length ? round2(converted.length / withOutcome.length, 3) : 0,
-    rejectionRate: rows2.length ? round2(rejected.length / rows2.length, 3) : 0,
+    rejectionRate: rows3.length ? round2(rejected.length / rows3.length, 3) : 0,
     falsePositive,
     falseNegative,
     falsePositiveRate: withOutcome.length ? round2(falsePositive / withOutcome.length, 3) : 0,
@@ -19727,16 +19741,16 @@ async function writeNotification(kind, params = {}, options = {}) {
     };
   }
 }
-function optimiseExperiment(rows2 = [], options = {}) {
+function optimiseExperiment(rows3 = [], options = {}) {
   const minSample = asInt8(options.minSample, 30);
-  const usable = rows2.filter((r) => asInt8(r.shown) >= minSample);
+  const usable = rows3.filter((r) => asInt8(r.shown) >= minSample);
   if (!usable.length) {
     return {
       version: AI_INTELLIGENCE_VERSION,
       ready: false,
       reason: "insufficient-sample",
       minSample,
-      variants: rows2.map((r) => ({ variant: r.variant, shown: asInt8(r.shown), meetsSample: asInt8(r.shown) >= minSample }))
+      variants: rows3.map((r) => ({ variant: r.variant, shown: asInt8(r.shown), meetsSample: asInt8(r.shown) >= minSample }))
     };
   }
   const ranked = usable.slice().sort(
@@ -19940,26 +19954,26 @@ async function handleAiAnalyticsRequest(request, env, ctx, deps = {}) {
     });
   }
   if (route === "decisions" && request.method === "GET") {
-    const rows2 = await store.listDecisions({ limit: Number(url.searchParams.get("limit")) || 100 });
+    const rows3 = await store.listDecisions({ limit: Number(url.searchParams.get("limit")) || 100 });
     return json6(request, {
       version: AI_INTELLIGENCE_VERSION,
-      decisions: rows2,
-      performance: evaluateAiPerformance(rows2)
+      decisions: rows3,
+      performance: evaluateAiPerformance(rows3)
     });
   }
   if (route === "experiments" && request.method === "GET") {
     const name = String(url.searchParams.get("experiment") || "notification-copy");
-    const rows2 = await store.experimentResults(name);
-    return json6(request, { version: AI_INTELLIGENCE_VERSION, experiment: name, variants: rows2, optimisation: optimiseExperiment(rows2) });
+    const rows3 = await store.experimentResults(name);
+    return json6(request, { version: AI_INTELLIGENCE_VERSION, experiment: name, variants: rows3, optimisation: optimiseExperiment(rows3) });
   }
   if (route === "approvals" && request.method === "GET") {
     const status = url.searchParams.get("status") || void 0;
-    const rows2 = await store.listApprovals({ status, limit: 100 });
+    const rows3 = await store.listApprovals({ status, limit: 100 });
     return json6(request, {
       version: AI_INTELLIGENCE_VERSION,
       policyVersion: AI_POLICY_VERSION,
-      approvals: rows2,
-      pending: rows2.filter((r) => r.status === "pending").length,
+      approvals: rows3,
+      pending: rows3.filter((r) => r.status === "pending").length,
       /* The contract the UI reads: these kinds cannot be actioned without a human. */
       requiresApprovalFor: ["content_change", "course_restructure", "policy_change", "mass_notification", "platform_decision"]
     });
@@ -20116,11 +20130,11 @@ function examples() {
 }
 async function aiCounters(store, trigger) {
   const since = Date.now() - 3600 * 1e3;
-  const rows2 = await store.listDecisions({ sinceMs: since, limit: 1e3 }).catch(() => []);
+  const rows3 = await store.listDecisions({ sinceMs: since, limit: 1e3 }).catch(() => []);
   const day = await store.listDecisions({ sinceMs: Date.now() - DAY_MS6, limit: 1e3 }).catch(() => []);
   const prefix = trigger === "copilot-question" ? "copilot:" : trigger === "notification-wording" ? "notify:" : trigger;
   return {
-    hour: rows2.filter((r) => String(r.signal).startsWith(prefix)).length,
+    hour: rows3.filter((r) => String(r.signal).startsWith(prefix)).length,
     day: day.filter((r) => String(r.signal).startsWith(prefix)).length
   };
 }
@@ -21235,21 +21249,21 @@ var SqliteAuthRepository = class _SqliteAuthRepository {
     return this.#transaction(() => {
       const user = this.#one("SELECT user_id AS id FROM auth_users WHERE user_id=?", userId);
       if (!user) return { error: AUTH_ERROR_CODES.ACCOUNT_NOT_FOUND };
-      const rows2 = deviceRef ? this.#rows("SELECT device_ref AS deviceRef FROM auth_trusted_devices WHERE user_id=? AND device_ref=? AND revoked_at IS NULL", userId, deviceRef) : this.#rows("SELECT device_ref AS deviceRef FROM auth_trusted_devices WHERE user_id=? AND revoked_at IS NULL", userId);
-      if (!rows2.length) return Object.freeze({ revoked: 0 });
+      const rows3 = deviceRef ? this.#rows("SELECT device_ref AS deviceRef FROM auth_trusted_devices WHERE user_id=? AND device_ref=? AND revoked_at IS NULL", userId, deviceRef) : this.#rows("SELECT device_ref AS deviceRef FROM auth_trusted_devices WHERE user_id=? AND revoked_at IS NULL", userId);
+      if (!rows3.length) return Object.freeze({ revoked: 0 });
       if (deviceRef) this.sql.exec("UPDATE auth_trusted_devices SET revoked_at=? WHERE user_id=? AND device_ref=? AND revoked_at IS NULL", now, userId, deviceRef);
       else this.sql.exec("UPDATE auth_trusted_devices SET revoked_at=? WHERE user_id=? AND revoked_at IS NULL", now, userId);
       this.#event("device-revoked", null, userId, now, { deviceRef: deviceRef || null, policyVersion });
-      return Object.freeze({ revoked: rows2.length });
+      return Object.freeze({ revoked: rows3.length });
     });
   }
   async listTrustedDevices({ userId, now }) {
-    const rows2 = this.#rows(
+    const rows3 = this.#rows(
       "SELECT device_ref AS deviceRef,browser_class AS browserClass,trusted_at AS trustedAt,expires_at AS expiresAt FROM auth_trusted_devices WHERE user_id=? AND revoked_at IS NULL AND expires_at>? ORDER BY trusted_at DESC",
       userId,
       now
     );
-    return Object.freeze(rows2.map((row) => Object.freeze({
+    return Object.freeze(rows3.map((row) => Object.freeze({
       deviceRef: String(row.deviceRef),
       browserClass: String(row.browserClass || "unknown"),
       trustedAt: Number(row.trustedAt),
@@ -21346,7 +21360,7 @@ var SqliteAuthRepository = class _SqliteAuthRepository {
     return row || null;
   }
   listSecurityChallenges({ userId, now }) {
-    const rows2 = this.#rows(
+    const rows3 = this.#rows(
       `SELECT purpose,method,status,attempts AS attempts,created_at AS createdAt,expires_at AS expiresAt,
         verified_at AS verifiedAt,consumed_at AS consumedAt,policy_version AS policyVersion
        FROM auth_security_challenges WHERE user_id=? AND created_at>?
@@ -21354,7 +21368,7 @@ var SqliteAuthRepository = class _SqliteAuthRepository {
       userId,
       now - EVENT_RETENTION_MS
     );
-    return Object.freeze(rows2.map((row) => Object.freeze({
+    return Object.freeze(rows3.map((row) => Object.freeze({
       purpose: String(row.purpose),
       method: String(row.method),
       status: String(row.status),
@@ -21421,7 +21435,7 @@ var SqliteAuthRepository = class _SqliteAuthRepository {
   // Phase 6 Chunk 4 — paged ledger view for admins: refs only, no PII
   // (subject/user/device are opaque HMAC refs; there is no raw column here).
   listSecurityEvents({ limit, before }) {
-    const rows2 = before ? this.#rows(
+    const rows3 = before ? this.#rows(
       `SELECT event_type AS eventType,subject_ref AS subjectRef,user_id AS userId,occurred_at AS occurredAt,
           device_ref AS deviceRef,purpose,policy_version AS policyVersion
          FROM auth_security_events WHERE occurred_at<?
@@ -21435,7 +21449,7 @@ var SqliteAuthRepository = class _SqliteAuthRepository {
          ORDER BY occurred_at DESC, rowid DESC LIMIT ?`,
       limit
     );
-    return Object.freeze({ entries: rows2 });
+    return Object.freeze({ entries: rows3 });
   }
   // Risk signals for the login decision (§3-§4), derived from auth_rate_limits
   // state only — no new table, no raw identifiers leave the DO.
@@ -21460,11 +21474,11 @@ var SqliteAuthRepository = class _SqliteAuthRepository {
   }
   // Linked identities for a user: provider + verification facts only.
   async listLinkedIdentities({ userId }) {
-    const rows2 = this.#rows(
+    const rows3 = this.#rows(
       "SELECT provider, last_verified_at AS lastVerifiedAt, created_at AS createdAt FROM auth_external_identities WHERE user_id=? ORDER BY provider",
       userId
     );
-    return Object.freeze(rows2.map((row) => Object.freeze({
+    return Object.freeze(rows3.map((row) => Object.freeze({
       provider: String(row.provider),
       linked: true,
       verified: Boolean(row.lastVerifiedAt),
@@ -22848,7 +22862,7 @@ var VerificationOrchestrator = class {
   }
   async #candidateRows(identity, destinations, now) {
     const eligible = this.config.enabled ? this.config.providers.filter((entry) => entry.enabled && destinations[entry.channel]) : [];
-    const rows2 = await Promise.all(eligible.map(async (entry) => {
+    const rows3 = await Promise.all(eligible.map(async (entry) => {
       const provider = this.providers.get(entry.id);
       const started = Date.now();
       try {
@@ -22894,7 +22908,7 @@ var VerificationOrchestrator = class {
         return null;
       }
     }));
-    return rows2.filter(Boolean).sort((left, right) => left.score - right.score || Number(right.probe) - Number(left.probe) || left.health - right.health || left.entry.priority - right.entry.priority);
+    return rows3.filter(Boolean).sort((left, right) => left.score - right.score || Number(right.probe) - Number(left.probe) || left.health - right.health || left.entry.priority - right.entry.priority);
   }
   async requestVerification(input = {}, requestContext = {}) {
     const identity = await this.#identity(input, requestContext);
@@ -23268,17 +23282,17 @@ var VerificationOrchestrator = class {
     const now = Number(this.now());
     if (this.capabilityCache?.expiresAt > now) return this.capabilityCache.value || this.capabilityCache.promise;
     const promise = (async () => {
-      const rows2 = await this.#candidateRows(
+      const rows3 = await this.#candidateRows(
         { purpose: "account-backup", attemptId: "", userId: "", subjectRef: "" },
         { otp: "configured", whatsapp: "configured", telegram: "user-initiated-link" },
         now
       );
-      const channels = new Set(rows2.map((row) => row.entry.channel));
+      const channels = new Set(rows3.map((row) => row.entry.channel));
       const phoneMode = channels.has("whatsapp") ? channels.has("otp") || channels.has("telegram") ? "optional" : "required" : "none";
       return Object.freeze({
-        available: rows2.length > 0,
+        available: rows3.length > 0,
         telegramAvailable: channels.has("telegram"),
-        availabilityCode: rows2.length ? "READY" : this.config.enabled ? "NO_HEALTHY_PROVIDER" : "NOT_ACTIVATED",
+        availabilityCode: rows3.length ? "READY" : this.config.enabled ? "NO_HEALTHY_PROVIDER" : "NOT_ACTIVATED",
         genericFlow: true,
         providerNamesExposed: false,
         contactInput: phoneMode,
@@ -24064,14 +24078,14 @@ var MailjetOtpVerificationProvider = class {
   }
   async #probeSender() {
     const payload = await fetchJson(this.fetch, `${this.apiBase}/v3/REST/sender?SenderEmail=${encodeURIComponent(this.fromAddress)}`, { method: "GET", headers: this.#headers() });
-    const rows2 = Array.isArray(payload?.Data) ? payload.Data : [];
-    const sender = rows2.find((item) => String(item?.Email || item?.SenderEmail || "").toLowerCase() === this.fromAddress.toLowerCase());
+    const rows3 = Array.isArray(payload?.Data) ? payload.Data : [];
+    const sender = rows3.find((item) => String(item?.Email || item?.SenderEmail || "").toLowerCase() === this.fromAddress.toLowerCase());
     return Boolean(sender && ["active", "validated"].includes(String(sender?.Status || "").toLowerCase()));
   }
   async #probeMetaSender() {
     const payload = await fetchJson(this.fetch, `${this.apiBase}/v3/REST/metasender?Limit=100`, { method: "GET", headers: this.#headers() });
-    const rows2 = Array.isArray(payload?.Data) ? payload.Data : [];
-    const sender = rows2.find((item) => String(item?.Email || "").toLowerCase() === this.fromAddress.toLowerCase());
+    const rows3 = Array.isArray(payload?.Data) ? payload.Data : [];
+    const sender = rows3.find((item) => String(item?.Email || "").toLowerCase() === this.fromAddress.toLowerCase());
     return Boolean(sender && (sender?.IsEnabled === true || sender?.IsEnabled === 1 || String(sender?.IsEnabled || "").toLowerCase() === "true"));
   }
   async getRemainingQuota() {
@@ -24351,8 +24365,8 @@ function logtoSlotFromConfig(raw) {
     if (!text || text.length > 16384) return null;
     const config = JSON.parse(text);
     if (config?.enabled !== true) return null;
-    const rows2 = config.providers;
-    const row = Array.isArray(rows2) ? rows2.find((item) => item?.id === "otp-h") : null;
+    const rows3 = config.providers;
+    const row = Array.isArray(rows3) ? rows3.find((item) => item?.id === "otp-h") : null;
     return row && row.enabled === true ? row : null;
   } catch {
     return null;
@@ -24526,8 +24540,8 @@ function slotFromConfig(raw, id) {
     if (!text || text.length > 16384) return null;
     const config = JSON.parse(text);
     if (config?.enabled !== true) return null;
-    const rows2 = config.providers;
-    const row = Array.isArray(rows2) ? rows2.find((item) => item?.id === id) : null;
+    const rows3 = config.providers;
+    const row = Array.isArray(rows3) ? rows3.find((item) => item?.id === id) : null;
     return row && row.enabled === true ? row : null;
   } catch {
     return null;
@@ -26536,6 +26550,229 @@ function migrateStudentDirectory(storage, { now = Date.now(), migrations = STUDE
   return { version: currentStudentDirectoryVersion(storage), applied: ran };
 }
 
+// auth-native/storage/student-admin-view.mjs
+var STUDENT_LIST_MAX = 100;
+var DAY_MS10 = 24 * 60 * 60 * 1e3;
+var rows2 = (sql, statement, ...bindings) => {
+  const result = sql.exec(statement, ...bindings);
+  if (Array.isArray(result)) return result;
+  return typeof result?.toArray === "function" ? result.toArray() : [];
+};
+var one = (sql, statement, ...bindings) => rows2(sql, statement, ...bindings)[0] || null;
+var has = (sql, table) => Boolean(one(sql, "SELECT name FROM sqlite_master WHERE type='table' AND name=?", table));
+var num4 = (value) => value === null || value === void 0 ? null : Number(value);
+var short = (value) => value ? String(value).slice(0, 8) : null;
+var clampLimit = (value) => Math.min(Math.max(Math.trunc(Number(value) || 50), 1), STUDENT_LIST_MAX);
+var likeEscape = (value) => String(value).replace(/[\\%_]/g, (char) => "\\" + char);
+var parseList = (raw) => {
+  try {
+    const value = JSON.parse(raw || "[]");
+    return Array.isArray(value) ? value.slice(0, 20).map(String) : [];
+  } catch {
+    return [];
+  }
+};
+var maskMobile = (raw) => {
+  const digits = String(raw || "").replace(/\D/g, "");
+  return digits.length >= 4 ? "•••" + digits.slice(-3) : null;
+};
+function studentCounts(sql, { now = Date.now() } = {}) {
+  if (!has(sql, "auth_users")) return { total: 0, active: 0, disabled: 0, suspended: 0, last24h: 0, last7d: 0 };
+  const stateJoin = has(sql, "auth_account_state") ? "LEFT JOIN auth_account_state st ON st.user_id=u.user_id" : "";
+  const effective = stateJoin ? "CASE WHEN u.status<>'active' THEN u.status ELSE COALESCE(st.status,'active') END" : "u.status";
+  const row = one(sql, `SELECT COUNT(*) AS total,
+      SUM(CASE WHEN ${effective}='active' THEN 1 ELSE 0 END) AS active,
+      SUM(CASE WHEN u.status='disabled' THEN 1 ELSE 0 END) AS disabled,
+      SUM(CASE WHEN u.status='suspended' THEN 1 ELSE 0 END) AS suspended,
+      SUM(CASE WHEN u.created_at>=? THEN 1 ELSE 0 END) AS last24h,
+      SUM(CASE WHEN u.created_at>=? THEN 1 ELSE 0 END) AS last7d
+    FROM auth_users u ${stateJoin}`, Number(now) - DAY_MS10, Number(now) - 7 * DAY_MS10) || {};
+  return {
+    total: Number(row.total || 0),
+    active: Number(row.active || 0),
+    disabled: Number(row.disabled || 0),
+    suspended: Number(row.suspended || 0),
+    last24h: Number(row.last24h || 0),
+    last7d: Number(row.last7d || 0)
+  };
+}
+function listStudents(sql, { limit, before = null, emailRef = null, text = null, now = Date.now() } = {}) {
+  const size = clampLimit(limit);
+  const counts = studentCounts(sql, { now });
+  if (!has(sql, "auth_users")) return { counts, entries: [], nextBefore: null };
+  const where = [];
+  const bindings = [];
+  if (before !== null && before !== void 0 && before !== "") {
+    const cursor = Number(before);
+    if (Number.isFinite(cursor) && cursor > 0) {
+      where.push("u.created_at<?");
+      bindings.push(cursor);
+    }
+  }
+  if (emailRef) {
+    where.push("u.email_ref=?");
+    bindings.push(String(emailRef));
+  }
+  const hasProfiles = has(sql, "auth_profiles");
+  if (text) {
+    const pattern = likeEscape(String(text).trim().slice(0, 80));
+    if (hasProfiles) {
+      where.push("(u.user_id LIKE ? ESCAPE '\\' OR p.full_name LIKE ? ESCAPE '\\')");
+      bindings.push(pattern + "%", "%" + pattern + "%");
+    } else {
+      where.push("u.user_id LIKE ? ESCAPE '\\'");
+      bindings.push(pattern + "%");
+    }
+  }
+  const select = [
+    "u.user_id AS userId",
+    "u.email_mask AS emailMask",
+    "u.status AS status",
+    "u.created_at AS createdAt",
+    "u.last_login_at AS lastLoginAt",
+    hasProfiles ? "p.full_name AS fullName" : "NULL AS fullName",
+    hasProfiles ? "p.admission_session AS admissionSession" : "NULL AS admissionSession",
+    has(sql, "auth_account_state") ? "st.status AS lifecycle" : "NULL AS lifecycle",
+    has(sql, "auth_passkey_credentials") ? "(SELECT COUNT(*) FROM auth_passkey_credentials c WHERE c.user_id=u.user_id AND c.status='active') AS passkeys" : "0 AS passkeys",
+    has(sql, "auth_telegram_identity_links") ? "(SELECT COUNT(*) FROM auth_telegram_identity_links t WHERE t.user_id=u.user_id AND t.status='active') AS telegram" : "0 AS telegram",
+    has(sql, "auth_email_ownership_links") ? "(SELECT COUNT(*) FROM auth_email_ownership_links e WHERE e.user_id=u.user_id AND e.status='active') AS emailOwned" : "0 AS emailOwned",
+    has(sql, "auth_external_identities") ? "(SELECT GROUP_CONCAT(x.provider) FROM auth_external_identities x WHERE x.user_id=u.user_id) AS providers" : "NULL AS providers"
+  ];
+  const joins = [
+    hasProfiles ? "LEFT JOIN auth_profiles p ON p.user_id=u.user_id" : "",
+    has(sql, "auth_account_state") ? "LEFT JOIN auth_account_state st ON st.user_id=u.user_id" : ""
+  ].join(" ");
+  const list2 = rows2(sql, `SELECT ${select.join(", ")} FROM auth_users u ${joins}
+    ${where.length ? "WHERE " + where.join(" AND ") : ""}
+    ORDER BY u.created_at DESC, u.user_id DESC LIMIT ?`, ...bindings, size);
+  const entries = list2.map((row) => ({
+    userId: String(row.userId),
+    emailMask: row.emailMask || null,
+    status: row.status !== "active" ? row.status : row.lifecycle || "active",
+    fullName: row.fullName || null,
+    admissionSession: row.admissionSession || null,
+    createdAt: num4(row.createdAt),
+    lastLoginAt: num4(row.lastLoginAt),
+    methods: loginMethodLabels(row)
+  }));
+  return { counts, entries, nextBefore: entries.length === size ? entries[entries.length - 1].createdAt : null };
+}
+function loginMethodLabels(row) {
+  const labels = [];
+  for (const provider of String(row.providers || "").split(",").filter(Boolean)) labels.push(provider === "firebase" ? "firebase" : provider);
+  if (Number(row.passkeys) > 0) labels.push("passkey");
+  if (Number(row.telegram) > 0) labels.push("telegram");
+  if (Number(row.emailOwned) > 0) labels.push("email-otp");
+  return [...new Set(labels)];
+}
+function studentProfile(sql, userId, { now = Date.now() } = {}) {
+  const id = String(userId || "").trim();
+  if (!id || id.length > 128 || !has(sql, "auth_users")) return null;
+  const user = one(sql, "SELECT user_id AS userId, email_mask AS emailMask, status, created_at AS createdAt, last_login_at AS lastLoginAt FROM auth_users WHERE user_id=?", id);
+  if (!user) return null;
+  const lifecycle = has(sql, "auth_account_state") ? one(sql, "SELECT status, updated_at AS updatedAt FROM auth_account_state WHERE user_id=?", id) : null;
+  const publicId = has(sql, "auth_public_identities") ? one(sql, "SELECT public_id AS publicId FROM auth_public_identities WHERE user_id=?", id) : null;
+  const p = has(sql, "auth_profiles") ? one(sql, "SELECT * FROM auth_profiles WHERE user_id=?", id) : null;
+  const profile = p ? {
+    fullName: p.full_name || null,
+    dateOfBirth: p.date_of_birth || null,
+    school: p.school_name ? { name: p.school_name, district: p.school_district || null } : null,
+    higher: p.higher_name ? { name: p.higher_name, district: p.higher_district || null } : null,
+    admissionSession: p.admission_session || null,
+    academicGoal: p.academic_goal || null,
+    subjects: parseList(p.subjects),
+    targets: parseList(p.targets),
+    visibility: p.visibility || "private",
+    mobileMasked: maskMobile(p.mobile),
+    createdAt: num4(p.created_at),
+    updatedAt: num4(p.updated_at)
+  } : null;
+  const loginMethods = [];
+  if (has(sql, "auth_external_identities")) {
+    for (const row of rows2(sql, "SELECT provider, created_at AS createdAt, last_verified_at AS lastVerifiedAt FROM auth_external_identities WHERE user_id=? ORDER BY created_at", id)) {
+      loginMethods.push({ method: row.provider, note: row.provider === "firebase" ? "password বা Google (Firebase Auth)" : null, since: num4(row.createdAt), lastUsedAt: num4(row.lastVerifiedAt), status: "active" });
+    }
+  }
+  if (has(sql, "auth_passkey_credentials")) {
+    for (const row of rows2(sql, "SELECT status, created_at AS createdAt, last_used_at AS lastUsedAt, revoked_at AS revokedAt FROM auth_passkey_credentials WHERE user_id=? ORDER BY created_at", id)) {
+      loginMethods.push({ method: "passkey", note: null, since: num4(row.createdAt), lastUsedAt: num4(row.lastUsedAt), status: row.status, revokedAt: num4(row.revokedAt) });
+    }
+  }
+  if (has(sql, "auth_telegram_identity_links")) {
+    const row = one(sql, "SELECT status, linked_at AS linkedAt, last_verified_at AS lastVerifiedAt, revoked_at AS revokedAt FROM auth_telegram_identity_links WHERE user_id=?", id);
+    if (row) loginMethods.push({ method: "telegram", note: null, since: num4(row.linkedAt), lastUsedAt: num4(row.lastVerifiedAt), status: row.status, revokedAt: num4(row.revokedAt) });
+  }
+  const ownership = has(sql, "auth_email_ownership_links") ? one(sql, "SELECT provider_id AS providerId, method, status, proven_at AS provenAt, last_verified_at AS lastVerifiedAt, revoked_at AS revokedAt FROM auth_email_ownership_links WHERE user_id=?", id) : null;
+  const firebaseLinks = has(sql, "auth_account_verification_tickets") ? rows2(sql, "SELECT state, purpose, created_at AS createdAt, consumed_at AS consumedAt FROM auth_account_verification_tickets WHERE user_id=? ORDER BY created_at DESC LIMIT 20", id).map((row) => ({ state: row.state, purpose: row.purpose || null, createdAt: num4(row.createdAt), consumedAt: num4(row.consumedAt) })) : [];
+  const emailVerification = {
+    otpOwnership: ownership ? { ...ownership, provenAt: num4(ownership.provenAt), lastVerifiedAt: num4(ownership.lastVerifiedAt), revokedAt: num4(ownership.revokedAt) } : null,
+    firebaseLinks
+  };
+  const otpChallenges = has(sql, "auth_verification_challenges") ? rows2(sql, `SELECT attempt_id AS attemptId, purpose, provider_id AS providerId, channel, verification_mode AS mode, state, attempts, max_attempts AS maxAttempts,
+        created_at AS createdAt, sent_at AS sentAt, verified_at AS verifiedAt
+        FROM auth_verification_challenges WHERE user_id=? ORDER BY created_at DESC LIMIT 50`, id).map((row) => ({
+    attempt: short(row.attemptId),
+    purpose: row.purpose,
+    providerId: row.providerId || null,
+    channel: row.channel || null,
+    mode: row.mode || null,
+    state: row.state,
+    attempts: Number(row.attempts || 0),
+    maxAttempts: Number(row.maxAttempts || 0),
+    createdAt: num4(row.createdAt),
+    sentAt: num4(row.sentAt),
+    verifiedAt: num4(row.verifiedAt)
+  })) : [];
+  const otpEvents = has(sql, "auth_verification_events") ? rows2(sql, `SELECT attempt_id AS attemptId, provider_id AS providerId, channel, outcome, reason, latency_ms AS latencyMs, occurred_at AS occurredAt
+        FROM auth_verification_events WHERE user_id=? ORDER BY occurred_at DESC LIMIT 100`, id).map((row) => ({ attempt: short(row.attemptId), providerId: row.providerId || null, channel: row.channel || null, outcome: row.outcome, reason: row.reason, latencyMs: Number(row.latencyMs || 0), occurredAt: num4(row.occurredAt) })) : [];
+  const devices = has(sql, "auth_trusted_devices") ? rows2(sql, "SELECT device_ref AS deviceRef, browser_class AS browserClass, trusted_at AS trustedAt, expires_at AS expiresAt, revoked_at AS revokedAt FROM auth_trusted_devices WHERE user_id=? ORDER BY trusted_at DESC LIMIT 50", id).map((row) => ({
+    device: short(row.deviceRef),
+    browser: row.browserClass || null,
+    trustedAt: num4(row.trustedAt),
+    expiresAt: num4(row.expiresAt),
+    revokedAt: num4(row.revokedAt),
+    active: !row.revokedAt && Number(row.expiresAt) > Number(now)
+  })) : [];
+  let sessions = { total: 0, active: 0, recent: [] };
+  if (has(sql, "auth_sessions")) {
+    const counts = one(sql, "SELECT COUNT(*) AS total, SUM(CASE WHEN revoked_at IS NULL AND expires_at>? THEN 1 ELSE 0 END) AS active FROM auth_sessions WHERE user_id=?", Number(now), id) || {};
+    const recent = rows2(sql, "SELECT device_ref AS deviceRef, user_agent AS userAgent, created_at AS createdAt, last_seen_at AS lastSeenAt, expires_at AS expiresAt, revoked_at AS revokedAt FROM auth_sessions WHERE user_id=? ORDER BY created_at DESC LIMIT 20", id).map((row) => ({
+      device: short(row.deviceRef),
+      browser: coarseUserAgent(row.userAgent || ""),
+      createdAt: num4(row.createdAt),
+      lastSeenAt: num4(row.lastSeenAt),
+      expiresAt: num4(row.expiresAt),
+      revokedAt: num4(row.revokedAt),
+      active: !row.revokedAt && Number(row.expiresAt) > Number(now)
+    }));
+    sessions = { total: Number(counts.total || 0), active: Number(counts.active || 0), recent };
+  }
+  const security = has(sql, "auth_security_events") ? rows2(sql, "SELECT event_type AS eventType, occurred_at AS occurredAt, purpose, device_ref AS deviceRef FROM auth_security_events WHERE user_id=? ORDER BY occurred_at DESC LIMIT 200", id) : [];
+  const timeline = [
+    { at: num4(user.createdAt), kind: "account-created", detail: null },
+    ...security.map((row) => ({ at: num4(row.occurredAt), kind: row.eventType, detail: row.purpose || null, device: short(row.deviceRef) })),
+    ...otpEvents.map((row) => ({ at: row.occurredAt, kind: "otp-" + row.outcome, detail: [row.providerId, row.reason].filter(Boolean).join(" · ") || null })),
+    ...ownership ? [{ at: num4(ownership.provenAt), kind: "email-verified-otp", detail: ownership.providerId }] : []
+  ].filter((entry) => Number.isFinite(entry.at)).sort((a, b) => b.at - a.at).slice(0, 300);
+  return {
+    account: {
+      userId: user.userId,
+      publicId: publicId?.publicId || null,
+      emailMask: user.emailMask || null,
+      status: user.status !== "active" ? user.status : lifecycle?.status || "active",
+      createdAt: num4(user.createdAt),
+      lastLoginAt: num4(user.lastLoginAt)
+    },
+    profile,
+    loginMethods,
+    emailVerification,
+    otp: { challenges: otpChallenges, events: otpEvents },
+    devices,
+    sessions,
+    timeline
+  };
+}
+
 // auth-native/worker/auth-authority-do.mjs
 var JSON_HEADERS2 = Object.freeze({
   "Content-Type": "application/json; charset=utf-8",
@@ -26953,6 +27190,27 @@ var AdmissionAuthAuthority = class {
       if (url.pathname === "/internal/admin/security/health") {
         const result = await this.engine.securityHealth();
         return response2(200, { ok: true, result });
+      }
+      if (url.pathname === "/internal/admin/students/list") {
+        const input = body.input || {};
+        const q = String(input.q || "").trim().slice(0, 254);
+        let emailRef = null;
+        let text = null;
+        if (q.includes("@")) {
+          try {
+            emailRef = await this.engine.hmac.hex("email-ref-v1", normalizeAuthEmail(q));
+          } catch {
+            emailRef = "no-match";
+          }
+        } else if (q) {
+          text = q;
+        }
+        const result = listStudents(this.state.storage.sql, { limit: input.limit, before: input.before, emailRef, text, now: Date.now() });
+        return response2(200, { ok: true, result });
+      }
+      if (url.pathname === "/internal/admin/students/get") {
+        const profile = studentProfile(this.state.storage.sql, String(body.input?.userId || ""), { now: Date.now() });
+        return response2(200, { ok: true, result: profile ? { found: true, student: profile } : { found: false } });
       }
       if (url.pathname === "/internal/admin/security/events") {
         const result = await this.engine.securityEventsPage(body.input || {});

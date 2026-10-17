@@ -9,7 +9,7 @@ Rule: "ধাপ X শুরু করো" = permission to merge + deploy that p
 - [x] Phase 0: inventory (this file, 2026-10-17)
 - [x] Phase 1 (2026-10-17): `email-intro-continue` button -> `beginEmailOwnership` (OTP chain first, Firebase link fallback). sw:manifest. merge + deploy
 - [x] Phase 2 (2026-10-17): new versioned schema + migrations + tests (students, login_methods, email_verifications, otp_attempts, sessions, devices, profiles, activity_log; normalized unique email)
-- [ ] Phase 3: Control Center Students section (list/search, profile, timeline; admin token only, noindex, no secrets)
+- [x] Phase 3 (2026-10-17): Control Center Students section (list/search, profile, timeline; admin token only, noindex, no secrets)
 - [ ] Phase 4: wipe all users (Firebase Auth of admissionsky-997d2 + Cloudflare user data; keep OTP config) -- final yes with counts
 - [ ] Phase 5: owner deletes old Firebase project in console
 - [ ] Phase 6: end-to-end test (signup -> otp-a Brevo SENT/VERIFIED, Google login, student visible in Control Center)
@@ -43,4 +43,14 @@ Rule: "ধাপ X শুরু করো" = permission to merge + deploy that p
 - Versioning: `schema_migrations(version, name, applied_at)`. v1 = `student_directory_v1`. New change = new version; never edit an applied one. Each version runs in one transaction.
 - Tables (v1): students (email + email_normalized UNIQUE, trim+NFKC+lowercase, plus-aliases kept; status pending/active/disabled; auth_user_id UNIQUE), login_methods (password/google/facebook/telegram/passkey; one identity -> one student), email_verifications (otp/firebase-link/telegram/oauth), otp_attempts (provider, outcome, latency; no codes), devices, sessions (opaque id, no tokens), profiles, activity_log (json_valid). All children ON DELETE CASCADE -> deleting a student removes everything.
 - Purely additive: no auth_* table touched, old data not migrated, new tables start empty. Writes/reads come in Phase 3 (Control Center) -- nothing writes into them yet.
+
+## Phase 3 Students (Control Center)
+- Page: `/students-control-center` (noindex, no-store, CSP with script/style hashes, network-only in sw.js, robots Disallow). Token is typed each time and kept only in memory.
+- API (GET, `X-AH-Admin-Token` required, read-only): `/api/auth/v1/admin/students?q=&limit=&before=` (counts + newest-first list) and `/api/auth/v1/admin/students/profile?id=<userId>`.
+- Source: the live auth tables of `AUTH_AUTHORITY` (`auth-native/storage/student-admin-view.mjs`), so existing accounts show up too. Test: `student-admin-view.test.mjs`.
+- Shows: account (created, last login, status), profile, login methods (firebase = password or Google, Firebase does not tell the Worker which; passkey; telegram), email verification (OTP ownership + Firebase links), OTP history (challenges + provider events), trusted devices, sessions, timeline.
+- Never shows: plaintext email (none is stored; mask only), codes, MACs, ciphers, tokens, public keys, IP refs, full user agents; device/session refs cut to 8 chars; mobile masked.
+- Search: full email (hashed with the same `email-ref-v1` HMAC, exact match), name substring or user id prefix.
+- `counts.total` = the Cloudflare-side user count for Phase 4.
+- Not done on purpose: the Phase 2 directory tables still get no writes. Writing them needs a decision: store plaintext email (needed for `students.email`) or keep only refs/masks like the auth tables. Decide before/with Phase 4.
 

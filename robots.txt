@@ -3,6 +3,8 @@ Allow: /
 
 # Internal tooling, previews and server-side sources: never index.
 Disallow: /verification-control-center
+Disallow: /students-control-center
+Disallow: /students-control-center.html
 Disallow: /verification-control-center.html
 Disallow: /splash-preview
 Disallow: /splash-preview.html

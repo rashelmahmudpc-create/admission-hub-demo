@@ -295,7 +295,8 @@ self.addEventListener('fetch', event => {
 
   // The privileged control page is network-only and must never be replaced by or
   // written into the offline application shell.
-  if (requestUrl.pathname === '/verification-control-center' || requestUrl.pathname === '/verification-control-center.html') {
+  if (requestUrl.pathname === '/verification-control-center' || requestUrl.pathname === '/verification-control-center.html'
+    || requestUrl.pathname === '/students-control-center' || requestUrl.pathname === '/students-control-center.html') {
     event.respondWith(fetch(request, { cache: 'no-store' }).catch(() => new Response('Control Center requires an internet connection.', {
       status: 503,
       headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' }
