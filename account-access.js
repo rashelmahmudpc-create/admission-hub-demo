@@ -3282,7 +3282,11 @@
       } finally { setBusy(false); }
     });
     $('[data-role="email-verification-start"]').addEventListener('click', () => showView('email-intro'));
-    $('[data-role="email-intro-continue"]').addEventListener('click', beginEmailVerification);
+    // Fresh Start phase 1: the OTP chain (Brevo first) owns the email button; the
+    // Worker falls back to the Firebase link itself when every slot fails.
+    $('[data-role="email-intro-continue"]').addEventListener('click', () => (
+      state.capabilities.emailOwnership?.available ? beginEmailOwnership() : beginEmailVerification()
+    ));
     $('[data-role="email-intro-back"]').addEventListener('click', () => showView('verify'));
     $('[data-role="whatsapp-info"]').addEventListener('click', () => showView('whatsapp-info'));
     $('[data-role="whatsapp-info-back"]').addEventListener('click', () => showView('verify'));
