@@ -2,7 +2,7 @@ name: Descope project OTP settings 2026-10-17
 
 # MODE=inspect only exports the project snapshot and prints OTP-related
 # settings (file names + otp/auth method files). It changes nothing.
-# MODE=enable turns on email OTP in the exported snapshot, validates and imports it.
+# run: 2
 
 on:
   push:
@@ -30,7 +30,9 @@ jobs:
       - name: Export snapshot and show OTP settings
         run: |
           set -eu
+          MK=$(printf '%s' "$MK" | tr -d '[:space:]')
           test -n "$MK" || { echo 'missing secret'; exit 1; }
+          echo "key length=${#MK}"
           code=$(curl -sS -o snap.json -w '%{http_code}' -X POST https://api.descope.com/v1/mgmt/project/snapshot/export -H "Authorization: Bearer $PID:$MK" -H 'Content-Type: application/json' -d '{}')
           echo "export http=$code"
           if [ "$code" != 200 ]; then jq -c '{errorCode,errorDescription,message}' snap.json || true; exit 1; fi
