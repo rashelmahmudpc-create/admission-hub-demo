@@ -20,7 +20,9 @@
        .bottomnav with !important; this wrapper neutralises them so only the dock shows. */
     'html body #navRoot .bottomnav.ahd-host{position:fixed!important;left:0!important;right:0!important;top:auto!important;bottom:0!important;width:100%!important;max-width:none!important;height:calc(74px + var(--safe-b,0px))!important;margin:0!important;padding:0!important;transform:none!important;border:0!important;border-radius:0!important;background:transparent!important;box-shadow:none!important;opacity:1!important;display:block!important;overflow:visible!important;pointer-events:none!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}',
     'html body #navRoot .bottomnav.ahd-host:hover{transform:none!important}',
-    'html body #app:not(.no-nav){padding-bottom:calc(112px + var(--safe-b,0px))!important}',
+    /* AI chat is full screen (owner 2026-10-17): no dock there. ai-agent-chat.js hides .bottomnav with an inline style, which the !important rule above would beat. */
+    'html.ai-chat-open body #navRoot .bottomnav.ahd-host{display:none!important}',
+    'html:not(.ai-chat-open) body #app:not(.no-nav){padding-bottom:calc(112px + var(--safe-b,0px))!important}',
     /* sticky action rows that sat on top of the old 74px bar: lift them above the dock + orb */
     'body.ahd-on .setup-footer,body.ahd-on #app [style*="bottom:calc(74px"]{bottom:calc(112px + var(--safe-b,0px))!important}',
     /* Profile V2 frame ends above the dock + orb. Set the HEIGHT, not bottom:
