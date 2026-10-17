@@ -142,14 +142,14 @@ test('custom Guest Dashboard is absent and Guest returns to the ordinary app rou
 });
 
 test('code-native assets and service-worker release markers are synchronized', () => {
-  for (const asset of [`account-access.css?v=${UI_VERSION}`, `account-access.js?v=${UI_VERSION}`, 'dashboard-v2.css?v=dash2f13-theme', 'dashboard-v2.js?v=dash2f17-v3frame']) {
+  for (const asset of [`account-access.css?v=${UI_VERSION}`, `account-access.js?v=${UI_VERSION}`, 'dashboard-v2.css?v=dash2f13-theme', 'dashboard-v2.js?v=dash2f18-chrome']) {
     assert.ok(HTML.includes(asset), asset);
     assert.ok(SW.includes(asset), asset);
   }
   assert.match(SW, new RegExp(`const BUILD_ID = '${SHELL_VERSION}'`));
   assert.match(HTML, new RegExp(`expectedSwVersion = '${SHELL_VERSION}'`));
   assert.ok(HTML.indexOf('institutions-bd.js?v=bd-institutions-v2') < HTML.indexOf(`account-access.js?v=${UI_VERSION}`));
-  assert.ok(HTML.indexOf(`account-access.js?v=${UI_VERSION}`) < HTML.indexOf('dashboard-v2.js?v=dash2f17-v3frame'));
+  assert.ok(HTML.indexOf(`account-access.js?v=${UI_VERSION}`) < HTML.indexOf('dashboard-v2.js?v=dash2f18-chrome'));
 });
 
 test('the welcome screen is the entry point, not the Sky flow directly', () => {

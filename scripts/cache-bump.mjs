@@ -20,8 +20,8 @@ const LANG_VERSION_TO = 'lang-v5-single-email-button';
 // NOTE: SW_BUILD_TO must always equal the BUILD_ID in sw.js. Without a bump the
 // deploy ships new files under old ?v= tokens; browsers then serve them
 // immutable for a year, so students keep the old app and every fix misses them.
-const SW_BUILD_FROM = 'v350-turnstile';
-const SW_BUILD_TO = 'v350-email-policy';
+const SW_BUILD_FROM = 'v350-email-policy';
+const SW_BUILD_TO = 'v351-sky-keyboard';
 
 const targets = [
   'index.html',
@@ -72,7 +72,12 @@ const replacements = [
   ['dashboard-v2.js?v=dash2f16-avatar-cache', 'dashboard-v2.js?v=dash2f17-v3frame'],
   // sky-onboarding.js gained the disposable-email hint at the field, so its
   // token must move or a cached copy keeps the old flow.
-  ['sky-flow-20261016-v6', 'sky-flow-20261016-v7']
+  ['sky-flow-20261016-v6', 'sky-flow-20261016-v7'],
+  // sky-onboarding.{js,css} gained the keyboard-aware compact layout.
+  ['sky-flow-20261016-v7', 'sky-flow-20261017-v8'],
+  // dashboard-v2.js changed (status-strip declaration, safe-area header) and is immutable-cached,
+  // so its token must move or phones keep the previous bytes for a year.
+  ['dashboard-v2.js?v=dash2f17-v3frame', 'dashboard-v2.js?v=dash2f18-chrome']
 ];
 
 let changed = 0;

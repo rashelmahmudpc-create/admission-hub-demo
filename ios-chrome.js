@@ -327,4 +327,25 @@
       later();
     }
   } catch (_) {}
+
+  /* ---- 5. keyboard closed => full height again ----
+   * iOS sometimes never reports the keyboard going away, so the page keeps its shrunken
+   * visual-viewport height (the Next button stays high, the bottom stays empty). Called by
+   * the sign-up/sign-in flow when its last field loses focus: if nothing editable is focused
+   * a moment later, the full height is restored. */
+  window.AhViewport = {
+    settle() {
+      [150, 500, 1100].forEach(ms => setTimeout(() => {
+        try {
+          const a = document.activeElement;
+          if (a && a.matches && a.matches('input,textarea,select,[contenteditable]')) return;
+          document.body.classList.remove('keyboard-open');
+          const rootStyle = document.documentElement.style;
+          rootStyle.setProperty('--visual-viewport-height', window.innerHeight + 'px');
+          rootStyle.setProperty('--visual-viewport-offset-top', '0px');
+          rootStyle.setProperty('--keyboard-inset', '0px');
+        } catch (_) {}
+      }, ms));
+    }
+  };
 })();
