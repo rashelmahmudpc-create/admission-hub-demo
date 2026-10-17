@@ -615,6 +615,312 @@ function renderAppFeatures(data) {
   return ["APP FEATURES (live, " + clean(d.version, 40) + ") — the only source of truth for AdmissionSky features:"].concat(d.items.map((it) => "- " + clean(it.name, 80) + ": " + clean(it.what, 240))).concat(["Mention only what helps the student now; never add a feature that is not listed."]).join("\n");
 }
 
+// sky-tools.mjs
+var SKY_TOOLS_VERSION = "sky-tools-v1";
+var TOOLS_KV_SWITCH = "sky:agent-tools";
+var LIMITS = Object.freeze({ maxTools: 5, maxSteps: 3, budgetMs: 2e4, perToolMs: 3e3 });
+var TOOL_NAMES = Object.freeze([
+  "get_exam_history",
+  "analyze_weak_topics",
+  "search_question_bank",
+  "make_quiz",
+  "grade_quiz",
+  "get_app_features",
+  "knowledge_lookup",
+  "calculate",
+  "open_page"
+]);
+var CLIENT_TOOLS = Object.freeze(["search_question_bank", "make_quiz", "grade_quiz", "knowledge_lookup", "open_page"]);
+var TOOL_LABELS = Object.freeze({
+  get_exam_history: "তোমার পরীক্ষার ইতিহাস দেখছি",
+  analyze_weak_topics: "তোমার দুর্বল টপিক খুঁজছি",
+  get_app_features: "অ্যাপের ফিচার তালিকা দেখছি",
+  calculate: "হিসাব করছি",
+  search_question_bank: "প্রশ্নব্যাংকে খুঁজছি",
+  make_quiz: "কুইজ বানাচ্ছি",
+  grade_quiz: "তোমার উত্তর মিলিয়ে দেখছি",
+  knowledge_lookup: "জমানো জ্ঞানভান্ডারে খুঁজছি",
+  open_page: "পেজের পথ বের করছি"
+});
+var BAD_ARG_KEYS = ["uid", "owneruid", "owner", "userid", "accountid", "user", "account", "deviceid"];
+var BN_DIGITS = "০১২৩৪৫৬৭৮৯";
+var toEnDigits = (s) => String(s == null ? "" : s).replace(/[০-৯]/g, (d) => String(BN_DIGITS.indexOf(d)));
+var toBnDigits = (s) => String(s == null ? "" : s).replace(/\d/g, (d) => BN_DIGITS[+d]);
+function calculate(expr) {
+  let src = toEnDigits(expr).replace(/[×xX✕]/g, "*").replace(/[÷]/g, "/").replace(/−/g, "-").replace(/√/g, "r").replace(/\s+/g, "");
+  if (!src || src.length > 120 || /[^0-9.+\-*/^%()r]/.test(src)) return { ok: false, error: "bad-expression" };
+  let i = 0;
+  const peek = () => src[i];
+  const num5 = () => {
+    const m = /^\d+(\.\d+)?|^\.\d+/.exec(src.slice(i));
+    if (!m) throw new Error("num");
+    i += m[0].length;
+    return parseFloat(m[0]);
+  };
+  const atom = () => {
+    if (peek() === "-") {
+      i++;
+      return -atom();
+    }
+    if (peek() === "+") {
+      i++;
+      return atom();
+    }
+    if (peek() === "r") {
+      i++;
+      const v2 = atom();
+      if (v2 < 0) throw new Error("neg-root");
+      return Math.sqrt(v2);
+    }
+    if (peek() === "(") {
+      i++;
+      const v2 = add();
+      if (peek() !== ")") throw new Error("paren");
+      i++;
+      return v2;
+    }
+    let v = num5();
+    if (peek() === "%") {
+      i++;
+      v = v / 100;
+    }
+    return v;
+  };
+  const pow = () => {
+    const b = atom();
+    if (peek() === "^") {
+      i++;
+      const e = pow();
+      if (Math.abs(e) > 64) throw new Error("big");
+      return Math.pow(b, e);
+    }
+    return b;
+  };
+  const mul = () => {
+    let v = pow();
+    while (peek() === "*" || peek() === "/") {
+      const op = src[i++];
+      const r = pow();
+      if (op === "/" && r === 0) throw new Error("div0");
+      v = op === "*" ? v * r : v / r;
+    }
+    return v;
+  };
+  const add = () => {
+    let v = mul();
+    while (peek() === "+" || peek() === "-") {
+      const op = src[i++];
+      const r = mul();
+      v = op === "+" ? v + r : v - r;
+    }
+    return v;
+  };
+  try {
+    const v = add();
+    if (i !== src.length || !isFinite(v)) return { ok: false, error: "bad-expression" };
+    const value = Math.round(v * 1e10) / 1e10;
+    return { ok: true, expression: toEnDigits(expr).trim().slice(0, 120), value };
+  } catch (e) {
+    return { ok: false, error: e && e.message === "div0" ? "divide-by-zero" : "bad-expression" };
+  }
+}
+var RE_CALC_WORDS = /(কত|হয়|হবে|সমান|হিসাব কর[োো]?|calculate|what\s+is|=|\?|？)/gi;
+function extractCalculation(text) {
+  const t = String(text || "").slice(0, 200);
+  const rest = t.replace(RE_CALC_WORDS, " ").trim();
+  if (!rest || !/[0-9০-৯]/.test(rest) || !/[+\-*/×÷^%√−xX]/.test(rest)) return null;
+  if (/[^\s0-9০-৯.+\-*/×÷^%()√−xX✕]/.test(rest)) return null;
+  if (/^\s*[0-9০-৯]{1,2}\s*[/-]\s*[0-9০-৯]{1,2}\s*[/-]\s*[0-9০-৯]{2,4}\s*$/.test(rest)) return null;
+  return rest;
+}
+function getExamHistory(stats) {
+  if (!stats || typeof stats !== "object" || !Number(stats.exams)) return { ok: true, empty: true };
+  const out = { ok: true, exams: stats.exams | 0, questions: stats.questions | 0, accuracy: stats.accuracy | 0, streak: stats.streak | 0, mistakes: stats.mistakes | 0 };
+  if (stats.weekly) out.weekly = stats.weekly;
+  if (stats.prevWeekly) out.prevWeekly = stats.prevWeekly;
+  return out;
+}
+function analyzeWeakTopics(stats) {
+  const rows4 = stats && Array.isArray(stats.weakTopics) ? stats.weakTopics : [];
+  if (!rows4.length) return { ok: true, empty: true };
+  const weak = rows4.slice(0, 4).map((r) => ({ name: r.name, accuracy: r.accuracy | 0, attempts: r.attempts | 0 })).sort((a, b) => a.accuracy - b.accuracy);
+  return { ok: true, weak };
+}
+var RE_HISTORY = /(আমার\s*(পরীক্ষা|রেজাল্ট|ফলাফল|ফল|স্কোর|নম্বর|অগ্রগতি|প্রোগ্রেস|পারফরম্যান্স)|কয়টা পরীক্ষা|কতগুলো পরীক্ষা|কেমন করছি|কেমন চলছে|my\s*(exam|result|score|progress|performance))/i;
+var RE_WEAK = /(আমার\s*(দুর্বল|কম পারা)\s*(টপিক|জায়গা|অধ্যায়|বিষয়|দিক)|দুর্বল\s*(টপিক|জায়গা|অধ্যায়|বিষয়)\s*(কোন|কী|কি|বলো|দেখাও)|কোন\s*(টপিকে|অধ্যায়ে|বিষয়ে)\s*(বেশি\s*)?(ভুল|দুর্বল|কম)|my\s*weak\s*(topic|area|point)s?|which\s*topics?\s*am\s*i\s*weak)/i;
+var RE_REMEMBER = /(মনে\s*রাখ|মনে\s*রেখ|remember|ভুলে যেও না)/i;
+function planServerTools(text, ctx = {}) {
+  const t = String(text || "").slice(0, 600);
+  const plan = [];
+  if (RE_REMEMBER.test(t)) return plan;
+  const expr = extractCalculation(t);
+  if (expr) plan.push({ name: "calculate", args: { expression: expr } });
+  if (RE_HISTORY.test(t)) plan.push({ name: "get_exam_history", args: {} });
+  if (RE_WEAK.test(t)) plan.push({ name: "analyze_weak_topics", args: {} });
+  if (!ctx.quizMode && !ctx.hasImage && isAppFeatureQuestion(t)) plan.push({ name: "get_app_features", args: {} });
+  return plan.slice(0, LIMITS.maxTools);
+}
+function isSimplePlan(plan, text) {
+  if (!plan.length || plan.length > 2) return false;
+  if (RE_REMEMBER.test(String(text || ""))) return false;
+  const names = plan.map((p) => p.name);
+  if (names.length === 1 && names[0] === "calculate") return true;
+  const short2 = String(text || "").trim().length <= 60;
+  return short2 && names.every((n) => n === "get_exam_history" || n === "analyze_weak_topics");
+}
+var withTimeout = (p, ms) => Promise.race([p, new Promise((r) => setTimeout(() => r({ ok: false, error: "timeout" }), ms))]);
+async function execOne(call, ctx) {
+  switch (call.name) {
+    case "calculate":
+      return calculate(call.args && call.args.expression);
+    case "get_exam_history":
+      return getExamHistory(ctx.stats);
+    case "analyze_weak_topics":
+      return analyzeWeakTopics(ctx.stats);
+    case "get_app_features":
+      return { ok: true, data: await loadAppFeatures(ctx.kv) };
+    default:
+      return { ok: false, error: CLIENT_TOOLS.includes(call.name) ? "client-tool" : "unknown-tool" };
+  }
+}
+async function runTools(steps, ctx = {}) {
+  const startedAt = Date.now();
+  const lim = Object.assign({}, LIMITS, ctx.limits || {});
+  const list2 = (Array.isArray(steps) && Array.isArray(steps[0]) ? steps : [steps || []]).slice(0, lim.maxSteps);
+  const results = [];
+  let used = 0;
+  for (const step of list2) {
+    const calls = [];
+    for (const c of step) {
+      if (used >= lim.maxTools) break;
+      if (!c || !TOOL_NAMES.includes(c.name)) {
+        results.push({ name: String(c && c.name || ""), ok: false, error: "unknown-tool" });
+        continue;
+      }
+      const args = c.args && typeof c.args === "object" ? c.args : {};
+      if (Object.keys(args).some((k) => BAD_ARG_KEYS.includes(String(k).toLowerCase()))) {
+        results.push({ name: c.name, ok: false, error: "owner-from-args-rejected" });
+        continue;
+      }
+      used++;
+      calls.push({ name: c.name, args });
+    }
+    const left = lim.budgetMs - (Date.now() - startedAt);
+    if (left <= 0) {
+      for (const c of calls) results.push({ name: c.name, ok: false, error: "budget" });
+      break;
+    }
+    const done = await Promise.all(calls.map((c) => {
+      try {
+        if (ctx.onStage) ctx.onStage("tool-" + c.name, "টুল চালাচ্ছি — " + TOOL_LABELS[c.name]);
+      } catch (_) {
+      }
+      return withTimeout(Promise.resolve().then(() => execOne(c, ctx)).catch(() => ({ ok: false, error: "failed" })), Math.min(lim.perToolMs, left)).then((r) => Object.assign({ name: c.name }, r));
+    }));
+    results.push(...done);
+  }
+  return { results, ms: Date.now() - startedAt, version: SKY_TOOLS_VERSION };
+}
+var pct = (n) => toBnDigits(n) + "%";
+function fmtNumber(v) {
+  const s = String(v);
+  return /e/i.test(s) ? s : toBnDigits(s);
+}
+function renderSimpleAnswer(results, firstName) {
+  const hi = firstName ? String(firstName).slice(0, 30) + ", " : "";
+  const parts = [];
+  for (const r of results) {
+    if (r.name === "calculate") {
+      if (r.ok) parts.push("🧮 **" + toBnDigits(r.expression) + " = " + fmtNumber(r.value) + "**");
+      else parts.push(r.error === "divide-by-zero" ? "⚠️ শূন্য দিয়ে ভাগ করা যায় না।" : "⚠️ হিসাবটা বুঝতে পারিনি — সংখ্যা আর চিহ্ন (+ − × ÷) দিয়ে আবার লেখো।");
+    } else if (r.name === "get_exam_history") {
+      if (!r.ok) continue;
+      if (r.empty) {
+        parts.push("📊 " + hi + "এখনো কোনো পরীক্ষার ফল জমা নেই। একটা মক টেস্ট দাও, তারপর আমি তোমার অগ্রগতি দেখাতে পারব।");
+        continue;
+      }
+      const lines = [
+        "📊 **" + hi + "তোমার পরীক্ষার হিসাব**",
+        "",
+        "- পরীক্ষা দিয়েছ: **" + toBnDigits(r.exams) + "টা**",
+        "- প্রশ্ন: **" + toBnDigits(r.questions) + "টা**",
+        "- সঠিকতা: **" + pct(r.accuracy) + "**",
+        "- টানা পড়া: **" + toBnDigits(r.streak) + " দিন**",
+        "- ভুল-তালিকায়: **" + toBnDigits(r.mistakes) + "টা**"
+      ];
+      if (r.weekly && r.prevWeekly) {
+        const d = (r.weekly.accuracy | 0) - (r.prevWeekly.accuracy | 0);
+        lines.push("", d >= 0 ? "✅ গত সপ্তাহের চেয়ে সঠিকতা " + pct(d) + " বেড়েছে।" : "📌 গত সপ্তাহের চেয়ে সঠিকতা " + pct(-d) + " কমেছে — ভুল-তালিকা থেকে রিভিশন দাও।");
+      }
+      parts.push(lines.join("\n"));
+    } else if (r.name === "analyze_weak_topics") {
+      if (!r.ok) continue;
+      if (r.empty) {
+        parts.push("🧠 এখনো কোনো টপিকে যথেষ্ট প্রশ্ন দাওনি, তাই দুর্বল টপিক বলা যাচ্ছে না। কয়েকটা পরীক্ষা দিলে আমি বলে দেব।");
+        continue;
+      }
+      parts.push(["🧠 **যেসব টপিকে আরো পড়া দরকার**", ""].concat(r.weak.map((w, i) => toBnDigits(i + 1) + ". " + w.name + " — সঠিকতা " + pct(w.accuracy))).concat(["", '💡 সবচেয়ে কম যেটায়, সেটা দিয়ে শুরু করো। চাইলে বলো "' + r.weak[0].name + ' থেকে কুইজ দাও"।']).join("\n"));
+    }
+  }
+  return parts.join("\n\n") || null;
+}
+function renderToolContext(results) {
+  const out = [];
+  for (const r of results) {
+    if (!r.ok) continue;
+    if (r.name === "get_app_features") out.push(renderAppFeatures(r.data));
+    else if (r.name === "calculate") out.push("TOOL calculate: " + r.expression + " = " + r.value + " (exact; use this number).");
+    else if (r.name === "get_exam_history" && !r.empty) out.push("TOOL get_exam_history (this student only): exams " + r.exams + ", questions " + r.questions + ", accuracy " + r.accuracy + "%, streak " + r.streak + ", mistakes " + r.mistakes + ".");
+    else if (r.name === "analyze_weak_topics" && !r.empty) out.push("TOOL analyze_weak_topics (this student only): " + r.weak.map((w) => w.name + " " + w.accuracy + "%").join(", ") + ".");
+  }
+  return out.length ? out.join("\n") : "";
+}
+async function toolsEnabled(kv2) {
+  if (!kv2 || typeof kv2.get !== "function") return true;
+  try {
+    const v = await Promise.race([kv2.get(TOOLS_KV_SWITCH), new Promise((r) => setTimeout(() => r(null), 300))]);
+    return String(v || "").trim().toLowerCase() !== "off";
+  } catch (_) {
+    return true;
+  }
+}
+async function simpleToolResponse(plan, stream, meta = {}) {
+  const startedAt = Date.now();
+  const stages = [];
+  const run = await runTools([plan], { stats: meta.stats, kv: meta.kv, onStage: (id, label) => stages.push({ stage: id, label }) });
+  const text = renderSimpleAnswer(run.results, meta.firstName);
+  if (!text) return null;
+  const tools = run.results.map((r) => ({ name: r.name, ok: !!r.ok }));
+  const done = { intent: meta.intent || "GENERAL_CHAT", pv: meta.pv, agent: meta.agent, provider: "tools", tools, toolsVersion: SKY_TOOLS_VERSION, latencyMs: Date.now() - startedAt, quotaUsed: false };
+  if (!stream) return new Response(JSON.stringify(Object.assign({ text }, done)), { status: 200, headers: { "Content-Type": "application/json; charset=utf-8", "Access-Control-Allow-Origin": "*" } });
+  const enc = new TextEncoder();
+  return new Response(new ReadableStream({
+    start(c) {
+      const push = (s) => {
+        try {
+          c.enqueue(enc.encode(s));
+        } catch (_) {
+        }
+      };
+      for (const s of stages) push(`event: stage
+data: ${JSON.stringify(s)}
+
+`);
+      push(`data: ${JSON.stringify({ text })}
+
+`);
+      push(`event: done
+data: ${JSON.stringify(done)}
+
+`);
+      try {
+        c.close();
+      } catch (_) {
+      }
+    }
+  }), { status: 200, headers: { "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-cache, no-transform", "Access-Control-Allow-Origin": "*" } });
+}
+
 // memory-engine.js
 var MEMORY_VERSION = "mem-v1";
 var KIND = Object.freeze({
@@ -1888,7 +2194,7 @@ function safeParse(text) {
 var __aiStoreTest = Object.freeze({ makeId, mapDecision, mapApproval, isMissingSchemaError, nowIso });
 
 // ai-chat-cache.mjs
-var BN_DIGITS = { "০": "0", "১": "1", "২": "2", "৩": "3", "৪": "4", "৫": "5", "৬": "6", "৭": "7", "৮": "8", "৯": "9" };
+var BN_DIGITS2 = { "০": "0", "১": "1", "২": "2", "৩": "3", "৪": "4", "৫": "5", "৬": "6", "৭": "7", "৮": "8", "৯": "9" };
 var CACHEABLE_INTENTS = Object.freeze(["ACADEMIC_EXPLAIN", "GENERAL_CHAT", "SEARCH_REQUEST"]);
 var CHAT_CACHE_VERSION = "chat-cache-v2";
 var CHAT_CACHE_TTL_MS = Object.freeze({
@@ -1901,7 +2207,7 @@ function chatCacheEnabled(env) {
   return v !== "off" && v !== "disabled" && v !== "false" && v !== "0";
 }
 function normaliseQuestion(text) {
-  return String(text == null ? "" : text).replace(/[০-৯]/g, (d) => BN_DIGITS[d] || d).replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().toLowerCase();
+  return String(text == null ? "" : text).replace(/[০-৯]/g, (d) => BN_DIGITS2[d] || d).replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().toLowerCase();
 }
 function isCacheableRequest(input = {}) {
   const {
@@ -1965,7 +2271,7 @@ async function digest(text) {
 function chatCacheTtl(intent) {
   return CHAT_CACHE_TTL_MS[String(intent || "")] ?? CHAT_CACHE_TTL_MS.GENERAL_CHAT;
 }
-var __chatCacheTest = Object.freeze({ digest, BN_DIGITS });
+var __chatCacheTest = Object.freeze({ digest, BN_DIGITS: BN_DIGITS2 });
 
 // ai-tier-router.mjs
 var DIFFICULTY = Object.freeze({ SIMPLE: "simple", COMPLEX: "complex" });
@@ -2959,6 +3265,18 @@ async function agentChat(request, env, uid, opts = {}) {
     }
     return putKv(env.PUB_KV, key, val, ttlMs ? Math.round(ttlMs / 1e3) : void 0);
   };
+  const toolText = String((v.messages[v.messages.length - 1] || {}).content || "");
+  let toolPlan = examMode ? [] : planServerTools(toolText, { quizMode, hasImage: v.messages.some((m) => m.image) });
+  if (toolPlan.length && !await toolsEnabled(env && env.PUB_KV)) toolPlan = [];
+  if (toolPlan.length && isSimplePlan(toolPlan, toolText)) {
+    const prof = sanitizeProfileContext(body && body.context && body.context.profile) || {};
+    const tr = await simpleToolResponse(toolPlan, stream, { intent, pv: SYSTEM_PROMPT_V, agent: AGENT_VERSION, firstName: prof.firstName, stats, kv: env && env.PUB_KV }).catch(() => null);
+    if (tr) {
+      mark("tools");
+      emitTiming({ tools: toolPlan.length, quota: false });
+      return tr;
+    }
+  }
   const cap = Math.max(1, Math.min(500, Number(env && env.AGENT_DAILY_CAP || 10)));
   const now = Date.now();
   let quota = null;
@@ -3100,7 +3418,21 @@ data: ${JSON.stringify({ stage: id, label })}
     const hasImage = msgs.some((m) => m.image);
     mark("context");
     if (appFeatureHit) sys = sys + "\n\n" + renderAppFeatures(await appFeaturesP);
-    const chatCacheOn = chatCacheEnabled(env) && env && env.PROFILE_DB && !appFeatureHit;
+    const extraTools = toolPlan.filter((p) => p.name !== "get_app_features");
+    let toolCtxUsed = false;
+    if (extraTools.length) {
+      try {
+        const tr = await runTools([extraTools], { stats, kv: env && env.PUB_KV, onStage: prepStage });
+        const block = renderToolContext(tr.results);
+        if (block) {
+          sys = sys + "\n\n" + block;
+          toolCtxUsed = true;
+        }
+        mark("tools");
+      } catch (_) {
+      }
+    }
+    const chatCacheOn = chatCacheEnabled(env) && env && env.PROFILE_DB && !toolCtxUsed && !appFeatureHit;
     const cacheQuestion = (v.messages[v.messages.length - 1] || {}).content;
     const cacheable = chatCacheOn && isCacheableRequest({
       messages: v.messages,
@@ -11960,7 +12292,7 @@ var asInt2 = (v, fallback = 0) => {
   const n = Number(v);
   return Number.isFinite(n) ? n : fallback;
 };
-var pct = (part, whole) => whole > 0 ? Math.round(part / whole * 1e3) / 10 : 0;
+var pct2 = (part, whole) => whole > 0 ? Math.round(part / whole * 1e3) / 10 : 0;
 function computeAnalytics(rows4 = [], readCounts = {}, inactiveDevices = 0) {
   const items = [];
   let sent = 0;
@@ -11991,8 +12323,8 @@ function computeAnalytics(rows4 = [], readCounts = {}, inactiveDevices = 0) {
       delivered: reach,
       opened: reads,
       clicked: clicks,
-      openRate: pct(reads, reach),
-      ctr: pct(clicks, reach),
+      openRate: pct2(reads, reach),
+      ctr: pct2(clicks, reach),
       error: row?.error ? String(row.error).slice(0, 200) : null
     });
   }
@@ -12007,8 +12339,8 @@ function computeAnalytics(rows4 = [], readCounts = {}, inactiveDevices = 0) {
       /* Dead tokens are a health signal, not a send failure: they are the
        * registrations FCM rejected and the worker already deactivated. */
       invalidTokens: Math.max(0, asInt2(inactiveDevices, 0)),
-      ctr: pct(clicked, delivered),
-      engagement: pct(opened, delivered)
+      ctr: pct2(clicked, delivered),
+      engagement: pct2(opened, delivered)
     },
     items
   };
@@ -12074,7 +12406,7 @@ var AnalyticsStore = class {
     return asInt2(row?.n, 0);
   }
 };
-var __analyticsTest = Object.freeze({ computeAnalytics, summarizeHistory, pct });
+var __analyticsTest = Object.freeze({ computeAnalytics, summarizeHistory, pct: pct2 });
 
 // send-planner.mjs
 var clamp3 = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
@@ -15013,7 +15345,7 @@ function attributeConversion(send = {}, learningEvents = [], windowMs = 6 * 3600
   if (!candidates.length) return { converted: false, kind: null, lagMs: null };
   return { converted: true, kind: candidates[0].kind, lagMs: candidates[0].at - sentAt };
 }
-var pct2 = (part, whole) => whole > 0 ? Math.round(part / whole * 1e3) / 10 : 0;
+var pct3 = (part, whole) => whole > 0 ? Math.round(part / whole * 1e3) / 10 : 0;
 function computePerformance(rows4 = []) {
   const byKind = {};
   const byVariant = {};
@@ -15041,15 +15373,15 @@ function computePerformance(rows4 = []) {
   }
   for (const bucket of [byKind, byVariant, byHour]) {
     for (const b of Object.values(bucket)) {
-      b.openRate = pct2(b.opened, b.sent);
-      b.clickRate = pct2(b.clicked, b.sent);
-      b.conversion = pct2(b.converted, b.sent);
+      b.openRate = pct3(b.opened, b.sent);
+      b.clickRate = pct3(b.clicked, b.sent);
+      b.conversion = pct3(b.converted, b.sent);
     }
   }
   const hours = Object.entries(byHour).filter(([h]) => h !== "unknown").map(([h, b]) => ({ hour: Number(h), ...b })).filter((b) => b.sent >= 3).sort((a, b) => b.conversion - a.conversion || b.openRate - a.openRate);
   const bestHour = hours.length ? hours[0].hour : null;
   return {
-    totals: { sent, opened, clicked, converted, failed, openRate: pct2(opened, sent), clickRate: pct2(clicked, sent), conversion: pct2(converted, sent) },
+    totals: { sent, opened, clicked, converted, failed, openRate: pct3(opened, sent), clickRate: pct3(clicked, sent), conversion: pct3(converted, sent) },
     byKind,
     byVariant,
     byHour,
@@ -15109,14 +15441,14 @@ function computeDecisionStats(decisions = [], outcomes = []) {
       b.clicked += 1;
     }
   }
-  const perfRanked = Object.entries(perfByRule).map(([kind, b]) => ({ kind, ...b, clickRate: pct2(b.clicked, b.sent), openRate: pct2(b.opened, b.sent) })).sort((a, b) => b.clickRate - a.clickRate || b.openRate - a.openRate || a.kind.localeCompare(b.kind));
+  const perfRanked = Object.entries(perfByRule).map(([kind, b]) => ({ kind, ...b, clickRate: pct3(b.clicked, b.sent), openRate: pct3(b.opened, b.sent) })).sort((a, b) => b.clickRate - a.clickRate || b.openRate - a.openRate || a.kind.localeCompare(b.kind));
   return {
     eligible: rows4.length,
     sent,
     skipped,
     /* CTR is over delivered sends, not decisions: a decision to send that FCM
      * then rejected must not sit in the denominator. */
-    totals: { sent: delivered, opened, clicked, clickRate: pct2(clicked, delivered), openRate: pct2(opened, delivered) },
+    totals: { sent: delivered, opened, clicked, clickRate: pct3(clicked, delivered), openRate: pct3(opened, delivered) },
     byRule,
     bySkipStage,
     topSkipStage: rank2(bySkipStage)[0] || null,
@@ -16525,7 +16857,7 @@ var asNum = (v, fallback = 0) => {
   const n = Number(v);
   return Number.isFinite(n) ? n : fallback;
 };
-var pct3 = (part, whole, dp = 1) => whole > 0 ? Number((part / whole * 100).toFixed(dp)) : 0;
+var pct4 = (part, whole, dp = 1) => whole > 0 ? Number((part / whole * 100).toFixed(dp)) : 0;
 var ratio2 = (part, whole, dp = 4) => whole > 0 ? Number((part / whole).toFixed(dp)) : 0;
 var round = (n, dp = 2) => Number.isFinite(Number(n)) ? Number(Number(n).toFixed(dp)) : 0;
 var sum = (rows4, pick) => rows4.reduce((n, r) => n + asNum(pick(r)), 0);
@@ -16610,7 +16942,7 @@ function computeLearningMetrics(input = {}, options = {}) {
   const correct = sum(dailyStats, (d) => d.correct);
   const wrong = sum(dailyStats, (d) => d.wrong);
   const answered = correct + wrong;
-  const accuracy = answered > 0 ? pct3(correct, answered, 1) : exams.length ? round(sum(exams, (e) => e.score) / exams.length, 1) : 0;
+  const accuracy = answered > 0 ? pct4(correct, answered, 1) : exams.length ? round(sum(exams, (e) => e.score) / exams.length, 1) : 0;
   const lessonsCompleted = sum(dailyStats, (d) => d.lessons);
   const learningTimeMs = sum(dailyStats, (d) => d.timeMs);
   const coursesStarted = courses.filter((c) => c.lessonsDone > 0).length;
@@ -16656,7 +16988,7 @@ function computeLearningMetrics(input = {}, options = {}) {
       completed: coursesCompleted,
       lessonsTotal,
       lessonsDone,
-      percent: pct3(lessonsDone, lessonsTotal, 1)
+      percent: pct4(lessonsDone, lessonsTotal, 1)
     },
     mistakes: {
       pending: sum(mistakes, (m) => m.misses),
@@ -16695,7 +17027,7 @@ function comparePeriods(series = [], days = 7) {
     accuracy: (rows4) => {
       const c = sum(rows4, (r) => r.correct);
       const w = sum(rows4, (r) => r.wrong);
-      return c + w > 0 ? pct3(c, c + w, 1) : 0;
+      return c + w > 0 ? pct4(c, c + w, 1) : 0;
     }
   };
   const out = {};
@@ -16732,7 +17064,7 @@ function detectTrends(series = [], options = {}) {
     accuracy: linearTrend(rows4.map((r) => {
       const c = asNum(r.correct);
       const w = asNum(r.wrong);
-      return c + w > 0 ? pct3(c, c + w, 1) : 0;
+      return c + w > 0 ? pct4(c, c + w, 1) : 0;
     }), { window })
   };
 }
@@ -16863,10 +17195,10 @@ function buildCourseAnalytics(rows4 = [], events = []) {
   }
   return [...byCourse.values()].map((c) => ({
     ...c,
-    progressPercent: pct3(c.lessonsDone, c.lessonsTotal, 1),
-    completionRate: pct3(c.completed, c.learners, 1),
-    startRate: pct3(c.started, c.learners, 1),
-    lessonCompletionRate: pct3(c.lessonCompletes, c.lessonStarts, 1)
+    progressPercent: pct4(c.lessonsDone, c.lessonsTotal, 1),
+    completionRate: pct4(c.completed, c.learners, 1),
+    startRate: pct4(c.started, c.learners, 1),
+    lessonCompletionRate: pct4(c.lessonCompletes, c.lessonStarts, 1)
   })).sort((a, b) => b.learners - a.learners);
 }
 function buildLessonAnalytics(events = []) {
@@ -16927,7 +17259,7 @@ function buildLessonAnalytics(events = []) {
     completionRate: ratio2(l.completes, l.starts),
     avgTimeMs: l.timeSamples ? Math.round(l.timeMs / l.timeSamples) : 0,
     retryRate: ratio2(l.retries, l.starts),
-    quizAccuracy: pct3(l.quizCorrect, l.quizAttempts, 1)
+    quizAccuracy: pct4(l.quizCorrect, l.quizAttempts, 1)
   })).sort((a, b) => a.completionRate - b.completionRate);
 }
 function buildQuizAnalytics(events = []) {
@@ -16973,11 +17305,11 @@ function buildQuizAnalytics(events = []) {
     wrong: q.wrong,
     skipped: q.skipped,
     completed: q.completed,
-    accuracy: pct3(q.correct, q.attempts, 1),
+    accuracy: pct4(q.correct, q.attempts, 1),
     avgTimeMs: q.timeSamples ? Math.round(q.timeMs / q.timeSamples) : 0,
     completionRate: ratio2(q.completed, q.started),
     retryRate: ratio2(Math.max(0, q.attempts - 1), q.attempts),
-    hardestTopics: [...q.byTopic.values()].map((t) => ({ topic: t.topic, attempts: t.attempts, accuracy: pct3(t.correct, t.attempts, 1) })).filter((t) => t.attempts >= DROPOFF_MIN_SAMPLE).sort((a, b) => a.accuracy - b.accuracy).slice(0, 5)
+    hardestTopics: [...q.byTopic.values()].map((t) => ({ topic: t.topic, attempts: t.attempts, accuracy: pct4(t.correct, t.attempts, 1) })).filter((t) => t.attempts >= DROPOFF_MIN_SAMPLE).sort((a, b) => a.accuracy - b.accuracy).slice(0, 5)
   })).sort((a, b) => a.accuracy - b.accuracy);
 }
 function computeEngagement(students = [], options = {}) {
@@ -17000,14 +17332,14 @@ function computeEngagement(students = [], options = {}) {
     mau,
     dauWauRatio: ratio2(dau, wau),
     wauMauRatio: ratio2(wau, mau),
-    stickiness: pct3(dau, mau, 1),
+    stickiness: pct4(dau, mau, 1),
     sessions: sessionCount,
     avgSessionMs: sessionCount ? Math.round(totalMs / sessionCount) : 0,
     activeStudents: mau,
     totalStudents: rows4.length,
     returningUsers: returning,
     newUsers: rows4.length - returning,
-    returningRate: pct3(returning, rows4.length, 1),
+    returningRate: pct4(returning, rows4.length, 1),
     learningActiveStudents: rows4.filter((s) => asInt5(s.learningActions) > 0).length
   };
 }
@@ -17040,7 +17372,7 @@ function computeRetention(students = [], options = {}) {
       }
     }
   }
-  const windows = [...buckets.values()].map((b) => ({ ...b, rate: pct3(b.retained, b.matureCohortSize, 1) })).sort((a, b) => a.window - b.window);
+  const windows = [...buckets.values()].map((b) => ({ ...b, rate: pct4(b.retained, b.matureCohortSize, 1) })).sort((a, b) => a.window - b.window);
   return {
     windows,
     byWindow: Object.fromEntries(windows.map((w) => [`d${w.window}`, w.rate])),
@@ -17049,10 +17381,10 @@ function computeRetention(students = [], options = {}) {
     cohorts: [...cohorts.values()].map((c) => ({
       cohort: c.cohort,
       size: c.size,
-      d1: pct3(c.retained[1] || 0, c.matureSize[1] || 0, 1),
-      d7: pct3(c.retained[7] || 0, c.matureSize[7] || 0, 1),
-      d14: pct3(c.retained[14] || 0, c.matureSize[14] || 0, 1),
-      d30: pct3(c.retained[30] || 0, c.matureSize[30] || 0, 1)
+      d1: pct4(c.retained[1] || 0, c.matureSize[1] || 0, 1),
+      d7: pct4(c.retained[7] || 0, c.matureSize[7] || 0, 1),
+      d14: pct4(c.retained[14] || 0, c.matureSize[14] || 0, 1),
+      d30: pct4(c.retained[30] || 0, c.matureSize[30] || 0, 1)
     })).sort((a, b) => a.cohort < b.cohort ? 1 : -1).slice(0, 12)
   };
 }
@@ -17068,13 +17400,13 @@ function computeNotificationAnalytics(outcomes = [], options = {}) {
       opened,
       clicked,
       learning,
-      openRate: pct3(opened, sent, 1),
-      clickRate: pct3(clicked, sent, 1),
-      learningConversion: pct3(learning, sent, 1),
+      openRate: pct4(opened, sent, 1),
+      clickRate: pct4(clicked, sent, 1),
+      learningConversion: pct4(learning, sent, 1),
       /* Of the students who engaged, how many actually studied — separates a
        * good subject line from a good nudge. */
-      clickToLearning: pct3(learning, clicked, 1),
-      openToLearning: pct3(learning, opened, 1)
+      clickToLearning: pct4(learning, clicked, 1),
+      openToLearning: pct4(learning, opened, 1)
     };
   };
   const overall = bucket(rows4);
@@ -17133,7 +17465,7 @@ function computeCampaignAnalytics(globals = [], readCounts = {}) {
       delivered,
       opened: readers,
       failed: status === "failed",
-      openRate: pct3(readers, delivered, 1),
+      openRate: pct4(readers, delivered, 1),
       /* A campaign is only judged once it has actually gone out. */
       isLive: status === "sent" && delivered > 0
     };
@@ -17241,8 +17573,8 @@ function buildStudentInsights(metrics = {}, context = {}) {
   }
   const courses = Array.isArray(context.courses) ? context.courses : [];
   if (courses.length) {
-    const top = [...courses].sort((a, b) => pct3(b.lessonsDone, b.lessonsTotal, 1) - pct3(a.lessonsDone, a.lessonsTotal, 1))[0];
-    const percent = pct3(top.lessonsDone, top.lessonsTotal, 1);
+    const top = [...courses].sort((a, b) => pct4(b.lessonsDone, b.lessonsTotal, 1) - pct4(a.lessonsDone, a.lessonsTotal, 1))[0];
+    const percent = pct4(top.lessonsDone, top.lessonsTotal, 1);
     if (percent > 0) {
       out.push(insight(
         "neutral",
@@ -17320,7 +17652,7 @@ function buildAdminInsights(input = {}) {
       out.push(insight(
         "attention",
         "weakest-course",
-        `⚠️ ${weakest.courseId}-এ lesson completion সবচেয়ে কম (${pct3(weakest.lessonCompletionRate * 100, 100, 1)}%)।`,
+        `⚠️ ${weakest.courseId}-এ lesson completion সবচেয়ে কম (${pct4(weakest.lessonCompletionRate * 100, 100, 1)}%)।`,
         { courseId: weakest.courseId }
       ));
     }
@@ -17332,7 +17664,7 @@ function buildAdminInsights(input = {}) {
     out.push(insight(
       "attention",
       "lesson-dropoff",
-      `⚠️ Lesson ${worstLesson.lessonId}-এর completion rate অন্যান্য lesson-এর তুলনায় উল্লেখযোগ্যভাবে কম (${pct3(worstLesson.completionRate * 100, 100, 1)}%${avg !== null ? `, গড় ${pct3(avg * 100, 100, 1)}%` : ""})।`,
+      `⚠️ Lesson ${worstLesson.lessonId}-এর completion rate অন্যান্য lesson-এর তুলনায় উল্লেখযোগ্যভাবে কম (${pct4(worstLesson.completionRate * 100, 100, 1)}%${avg !== null ? `, গড় ${pct4(avg * 100, 100, 1)}%` : ""})।`,
       { courseId: worstLesson.courseId, lessonId: worstLesson.lessonId, completionRate: worstLesson.completionRate }
     ));
   }
@@ -19251,9 +19583,9 @@ function collectNumbers(value, out = []) {
   }
   return out;
 }
-var BN_DIGITS2 = "০১২৩৪৫৬৭৮৯";
+var BN_DIGITS3 = "০১২৩৪৫৬৭৮৯";
 function normaliseBengaliDigits(text) {
-  return String(text || "").replace(/[০-৯]/g, (d) => String(BN_DIGITS2.indexOf(d)));
+  return String(text || "").replace(/[০-৯]/g, (d) => String(BN_DIGITS3.indexOf(d)));
 }
 var AI_CALL_TRIGGERS = Object.freeze(["copilot-question", "notification-wording", "admin-summary"]);
 function shouldCallModel(trigger, context = {}) {
@@ -19320,10 +19652,10 @@ var asNum3 = (v, fallback = 0) => {
   const n = Number(v);
   return Number.isFinite(n) ? n : fallback;
 };
-var BN_DIGITS3 = "০১২৩৪৫৬৭৮৯";
+var BN_DIGITS4 = "০১২৩৪৫৬৭৮৯";
 function bn(value) {
   if (value === null || value === void 0 || value === "") return "—";
-  return String(value).replace(/[0-9]/g, (d) => BN_DIGITS3[Number(d)]);
+  return String(value).replace(/[0-9]/g, (d) => BN_DIGITS4[Number(d)]);
 }
 function sp(value) {
   return value === null || value === void 0 || value === "" ? "—" : String(value);

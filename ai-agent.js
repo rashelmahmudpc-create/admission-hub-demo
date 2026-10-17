@@ -19,6 +19,7 @@ import { buildContext, renderContext, describeContext, CONTEXT_VERSION } from '.
 import { getPromptText, BASE_PROMPT_ID } from './prompt-registry.js';
 import { listTools, TOOL_REGISTRY_VERSION } from './tool-registry.js';
 import { isAppFeatureQuestion, loadAppFeatures, renderAppFeatures } from './sky-app-features.mjs';
+import { planServerTools, isSimplePlan, simpleToolResponse, runTools, renderToolContext, toolsEnabled } from './sky-tools.mjs';
 import { extractMemoryCandidates, makeMemory, upsertMemory, parseMemory, renderMemory, resolveMemoryOwner, isPiiFree, KIND, SOURCE, MEMORY_VERSION } from './memory-engine.js';
 import { validateResponse, describeResponseValidation, RESPONSE_VALIDATION_VERSION } from './response-validator.js';
 import { describeActions, ACTION_VERSION } from './action-engine.js';
@@ -1021,6 +1022,19 @@ export async function agentChat(request, env, uid, opts = {}) {
     return putKv(env.PUB_KV, key, val, ttlMs ? Math.round(ttlMs / 1000) : undefined);
   };
 
+  /* Agent phase 1 (owner 2026-10-17): server tools. The plan is pure (no I/O).
+     A simple plan (pure arithmetic, a short "how am I doing") is answered here
+     by the tools alone: no model call and no AI limit used. Never during a
+     running mock exam. Kill switch: PUB_KV 'sky:agent-tools' = "off". */
+  const toolText = String((v.messages[v.messages.length - 1] || {}).content || '');
+  let toolPlan = examMode ? [] : planServerTools(toolText, { quizMode, hasImage: v.messages.some(m => m.image) });
+  if (toolPlan.length && !(await toolsEnabled(env && env.PUB_KV))) toolPlan = [];
+  if (toolPlan.length && isSimplePlan(toolPlan, toolText)) {
+    const prof = sanitizeProfileContext(body && body.context && body.context.profile) || {};
+    const tr = await simpleToolResponse(toolPlan, stream, { intent, pv: SYSTEM_PROMPT_V, agent: AGENT_VERSION, firstName: prof.firstName, stats, kv: env && env.PUB_KV }).catch(() => null);
+    if (tr) { mark('tools'); emitTiming({ tools: toolPlan.length, quota: false }); return tr; }
+  }
+
   /* rate limit: প্রতি-user rolling 24h window-এ cap */
   const cap = Math.max(1, Math.min(500, Number((env && env.AGENT_DAILY_CAP) || 10)));
   const now = Date.now();
@@ -1213,7 +1227,19 @@ export async function agentChat(request, env, uid, opts = {}) {
   /* get_app_features (owner 2026-10-17): only a question about the app pays for
      the feature list; such answers are never cached, so a list edit shows at once. */
   if (appFeatureHit) sys = sys + '\n\n' + renderAppFeatures(await appFeaturesP);
-  const chatCacheOn = chatCacheEnabled(env) && env && env.PROFILE_DB && !appFeatureHit;
+  /* Agent phase 1: the other planned server tools (≤5 tools, ≤3 steps, 20 s).
+     Each sends its own live stage; results are personal, so never cached. */
+  const extraTools = toolPlan.filter(p => p.name !== 'get_app_features');
+  let toolCtxUsed = false;
+  if (extraTools.length) {
+    try {
+      const tr = await runTools([extraTools], { stats, kv: env && env.PUB_KV, onStage: prepStage });
+      const block = renderToolContext(tr.results);
+      if (block) { sys = sys + '\n\n' + block; toolCtxUsed = true; }
+      mark('tools');
+    } catch (_) { /* answer without tools */ }
+  }
+  const chatCacheOn = chatCacheEnabled(env) && env && env.PROFILE_DB && !toolCtxUsed && !appFeatureHit;
   const cacheQuestion = (v.messages[v.messages.length - 1] || {}).content;
   const cacheable = chatCacheOn && isCacheableRequest({
     messages: v.messages, hasImage, quizMode, onboarding,
