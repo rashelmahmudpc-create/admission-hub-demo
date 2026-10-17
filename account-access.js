@@ -1950,16 +1950,16 @@
     const providerId = googlePending ? 'google.com' : String(result.credential?.providerId || result.user.providerId || '');
     try {
       if (providerId === 'facebook.com') {
-        open();
         const r = await api('/facebook', { method: 'POST', body: { accessToken } });
         await establishSession(r, 'Facebook \u09a6\u09bf\u09af\u09bc\u09c7 \u09a4\u09cb\u09ae\u09be\u09b0 account-\u098f \u09aa\u09cd\u09b0\u09ac\u09c7\u09b6 \u09b9\u09af\u09bc\u09c7\u099b\u09c7\u0964');
       } else if (providerId === 'google.com') {
-        open();
         state.googleLinkToken = '';
         const r = await api('/google', { method: 'POST', body: { accessToken } });
         await establishSession(r, 'Google \u09a6\u09bf\u09af\u09bc\u09c7 \u09a4\u09cb\u09ae\u09be\u09b0 account-\u098f \u09aa\u09cd\u09b0\u09ac\u09c7\u09b6 \u09b9\u09af\u09bc\u09c7\u099b\u09c7\u0964');
       }
+      landOnDashboard();
     } catch (error) {
+      open();
       if (providerId === 'google.com') {
         /* Keep the fresh Google token in memory only, so the "link to your
          * existing account" form can finish without a second trip to Google. */
@@ -2605,6 +2605,22 @@
     setAccountPageActive(false);
     message();
     try { launcher.focus(); } catch (_) {}
+  };
+  /* Owner 2026-10-17: a finished Google/Facebook redirect sign-in must land on
+   * the Dashboard, not stay on the Sky signup flow. Cancels a Sky launch still
+   * waiting for its script, hides the flow, ends a pending signup journey and
+   * closes the account page; reveal() ignores a late Sky open afterwards. */
+  const landOnDashboard = () => {
+    if (!accountVerified(state.session)) return;
+    state.oauthLanded = true;
+    skyWaitToken += 1;
+    state.signupJourney = false;
+    rememberPendingSignup(false);
+    const mount = document.getElementById('ah-sky-flow');
+    if (mount) mount.hidden = true;
+    delete pageHost.dataset.skyFlow;
+    close();
+    try { notify(); } catch (_) {}
   };
   const dismiss = () => {
     if (state.busy) return message('কাজটি শেষ হতে একটু সময় দাও।', 'info');
@@ -3578,6 +3594,7 @@
     takeNotice() { const pending = state.skyPendingNotice; state.skyPendingNotice = null; return pending || null; },
     mount: skyMount,
     reveal(node) {
+      if (state.oauthLanded && accountVerified(state.session)) return;
       const mount = skyMount();
       if (node && node !== mount) mount.append(node);
       mount.hidden = false;
