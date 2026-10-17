@@ -8,6 +8,8 @@ import { dispatchSecurityNotifications } from '../core/security-notifications.mj
 import { SqliteVerificationRepository } from '../verification/sqlite-verification-repository.mjs';
 import { D1ProfileStore } from '../storage/d1-profile-repository.mjs';
 import { migrateStudentDirectory } from '../storage/student-directory-schema.mjs';
+import { listStudents, studentProfile } from '../storage/student-admin-view.mjs';
+import { normalizeAuthEmail } from '../core/crypto.mjs';
 
 const JSON_HEADERS = Object.freeze({
   'Content-Type': 'application/json; charset=utf-8',
@@ -465,6 +467,25 @@ export class AdmissionAuthAuthority {
       if (url.pathname === '/internal/admin/security/health') {
         const result = await this.engine.securityHealth();
         return response(200, { ok: true, result });
+      }
+      // Fresh Start phase 3 — Control Center Students (read-only; token-gated
+      // in the public handler; masked email, short refs, no secrets).
+      if (url.pathname === '/internal/admin/students/list') {
+        const input = body.input || {};
+        const q = String(input.q || '').trim().slice(0, 254);
+        let emailRef = null;
+        let text = null;
+        if (q.includes('@')) {
+          try { emailRef = await this.engine.hmac.hex('email-ref-v1', normalizeAuthEmail(q)); } catch { emailRef = 'no-match'; }
+        } else if (q) {
+          text = q;
+        }
+        const result = listStudents(this.state.storage.sql, { limit: input.limit, before: input.before, emailRef, text, now: Date.now() });
+        return response(200, { ok: true, result });
+      }
+      if (url.pathname === '/internal/admin/students/get') {
+        const profile = studentProfile(this.state.storage.sql, String(body.input?.userId || ''), { now: Date.now() });
+        return response(200, { ok: true, result: profile ? { found: true, student: profile } : { found: false } });
       }
       if (url.pathname === '/internal/admin/security/events') {
         const result = await this.engine.securityEventsPage(body.input || {});
