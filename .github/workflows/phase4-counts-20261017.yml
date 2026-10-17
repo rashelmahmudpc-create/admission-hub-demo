@@ -1,0 +1,49 @@
+name: Phase 4 counts (read-only) 2026-10-17
+
+# Fresh Start phase 4 pre-check. READ ONLY: SELECT COUNT(*) on D1 and key
+# listing on KV. Never deletes, never deploys. Branch-only trigger.
+
+on:
+  push:
+    branches: [chore/phase4-counts]
+    paths:
+      - '.github/workflows/phase4-counts-20261017.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  count:
+    if: github.ref_name == 'chore/phase4-counts'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - name: D1 admission-profile row counts
+        continue-on-error: true
+        run: |
+          set -u
+          W="npx --yes wrangler@4.35.0"
+          $W d1 execute admission-profile --remote --json --command "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%' ORDER BY name" > /tmp/tables.json
+          node -e 'const j=require("/tmp/tables.json");const r=(Array.isArray(j)?j[0]:j).results||[];console.log(r.map(x=>x.name).join("\n"))' > /tmp/tables.txt
+          echo "PHASE4 D1 tables: $(wc -l < /tmp/tables.txt)"
+          while read -r t; do
+            [ -z "$t" ] && continue
+            n=$($W d1 execute admission-profile --remote --json --command "SELECT COUNT(*) AS n FROM \"$t\"" 2>/dev/null | node -e 'let s="";process.stdin.on("data",c=>s+=c).on("end",()=>{try{const j=JSON.parse(s);console.log((Array.isArray(j)?j[0]:j).results[0].n)}catch{console.log("ERR")}})')
+            echo "PHASE4 D1 $t = $n"
+          done < /tmp/tables.txt
+      - name: KV key counts (by first key segment)
+        continue-on-error: true
+        run: |
+          set -u
+          W="npx --yes wrangler@4.35.0"
+          for ns in b9353515b098427687afcfb8654ed359:GK_KV+PUB_KV 942828aa82e546d4af11796ef92ab134:OLD_KV; do
+            id=${ns%%:*}; name=${ns#*:}
+            $W kv key list --namespace-id "$id" --remote > /tmp/kv.json 2>/tmp/kv.err || { echo "PHASE4 KV $name ERROR"; tail -3 /tmp/kv.err; continue; }
+            node -e 'const k=require("/tmp/kv.json");const m={};for(const x of k){const p=String(x.name).split(/[:\/]/)[0];m[p]=(m[p]||0)+1}console.log("PHASE4 KV '"$name"' total =",k.length);for(const [p,n] of Object.entries(m).sort((a,b)=>b[1]-a[1]))console.log("PHASE4 KV '"$name"' prefix",p,"=",n)'
+          done
