@@ -1,0 +1,63 @@
+name: Apply email intro OTP 2026-10-17
+
+# Fresh Start phase 1: the email-intro-continue button runs the OTP chain
+# (beginEmailOwnership) when the server publishes emailOwnership; the Firebase
+# link stays the Worker's last resort. Regenerates sw.js digests, runs the UI
+# tests and commits back to the SAME branch. Never touches main, never deploys.
+
+on:
+  push:
+    branches: [fix/email-intro-otp]
+    paths:
+      - '.github/workflows/apply-email-intro-otp-20261017.yml'
+      - 'scripts/apply-email-intro-otp-20261017.py'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-email-intro-otp-20261017
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: github.ref_name == 'fix/email-intro-otp'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: fix/email-intro-otp
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Apply the email intro OTP patch
+        run: |
+          set -eu
+          python3 scripts/apply-email-intro-otp-20261017.py
+          python3 scripts/apply-email-intro-otp-20261017.py >/dev/null
+          grep -q "state.capabilities.emailOwnership?.available ? beginEmailOwnership() : beginEmailVerification()" account-access.js
+          grep -q -- "- \[x\] Phase 1" docs/fresh-start-plan.md
+          git diff --stat
+      - name: Install, rebuild the Worker bundle, refresh sw.js
+        run: |
+          set -eu
+          npm ci
+          npm run build:worker
+          npm run check:worker-bundle
+          npm run sw:manifest
+      - name: UI tests
+        run: node --test --test-concurrency=1 premium-onboarding-ui.test.mjs signup-autosave.test.mjs telegram-otp-ui.test.mjs
+      - name: Commit and push to the feature branch
+        run: |
+          set -eu
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add account-access.js docs/fresh-start-plan.md sw.js
+          if git diff --cached --quiet; then echo 'Nothing to commit (already applied).'; else
+            git commit -m 'fix(auth): email button runs the OTP chain first (Brevo), Firebase link only as last resort; refresh sw.js' -m 'Applied by apply-email-intro-otp-20261017.yml. No deploy.'
+            git push origin HEAD:fix/email-intro-otp
+          fi
