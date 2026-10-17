@@ -2005,6 +2005,11 @@
       }
       landOnDashboard();
     } catch (error) {
+      if (EXISTING_ACCOUNT_CODES.has(String(error?.code || ''))) {
+        showExistingAccountLogin(String(result.user?.email || ''),
+          providerId === 'google.com' && error.code === 'ACCOUNT_LINK_REQUIRED' ? accessToken : '');
+        return;
+      }
       open();
       if (providerId === 'google.com') {
         /* Keep the fresh Google token in memory only, so the "link to your
@@ -2018,6 +2023,23 @@
       }
       message(error?.code ? friendlyError(error) : '\u09b2\u0997\u0987\u09a8 \u09b8\u09ae\u09cd\u09aa\u09a8\u09cd\u09a8 \u09b9\u09af\u09bc\u09a8\u09bf\u2014\u0986\u09ac\u09be\u09b0 \u099a\u09c7\u09b7\u09cd\u099f\u09be \u0995\u09b0\u09cb\u0964', 'error');
     }
+  };
+
+  /* Owner 2026-10-17: Google/Facebook for an email that already has an
+   * Email+Password account lands on the Login page with the email filled in
+   * and one short official line -- never the Welcome screen. The Google token
+   * stays in memory only, so the next password login also links Google. */
+  const EXISTING_ACCOUNT_CODES = new Set(['ACCOUNT_LINK_REQUIRED', 'ACCOUNT_CONFLICT']);
+  const EXISTING_ACCOUNT_TEXT = 'এই ইমেইল দিয়ে আগেই একটি অ্যাকাউন্ট খোলা আছে। অনুগ্রহ করে ইমেইল ও পাসওয়ার্ড দিয়ে লগ ইন করুন।';
+  const showExistingAccountLogin = (email, linkToken = '') => {
+    state.googleLinkToken = linkToken;
+    state.oauthLoginEmail = email;
+    state.signupJourney = false;
+    rememberPendingSignup(false);
+    open();
+    showView('login');
+    prefillLogin(email);
+    message(EXISTING_ACCOUNT_TEXT, 'error');
   };
 
   const signInWithGoogle = async () => {
@@ -2618,7 +2640,7 @@
     if (!skyScriptLinked()) return false;
     const mode = name === 'signup' ? 'signup' : 'login';
     const resume = ['verify', 'telegram', 'email-ownership', 'email-intro', 'telegram-intro', 'created'].includes(name) ? 'verify' : '';
-    state.skyEntry = { resume, email: String(state.verification?.email || '') };
+    state.skyEntry = { resume, email: String(state.verification?.email || state.oauthLoginEmail || '') };
     // Owner 2026-10-17: after logout the previous screen (signed-in card, old
     // login form or the last Sky screen) stayed painted for 1-2s while the flow
     // loaded its data. Hide it now; the page shows the Sky colour + a spinner
@@ -3723,6 +3745,17 @@
       return result;
     },
     login: async (email, password) => {
+      if (String(state.googleLinkToken || '').length >= 20) {
+        try {
+          const linked = await linkGoogle(email, password);
+          state.oauthLoginEmail = '';
+          await establishSession(linked, 'তোমার account-এ প্রবেশ হয়েছে। এখন থেকে Google দিয়েও লগ ইন করা যাবে।');
+          return linked;
+        } catch (error) {
+          if (['INVALID_CREDENTIALS', 'RATE_LIMITED', 'ACCOUNT_DISABLED'].includes(String(error?.code || ''))) throw error;
+          state.googleLinkToken = '';
+        }
+      }
       const result = await skyApi('/login', { method: 'POST', body: { email, password, remember: true } });
       if (result.authenticated === true) {
         await establishSession(result, 'তোমার account-এ প্রবেশ হয়েছে।');

@@ -55,7 +55,7 @@ class AuthorityMock {
   }
 }
 
-function googleFetch({ isNewUser = false, deleted = [], deleteFails = false, includeGoogle = true, displayName = undefined, photoUrl = undefined } = {}) {
+function googleFetch({ isNewUser = false, deleted = [], deleteFails = false, includeGoogle = true, displayName = undefined, photoUrl = undefined, createdAt = undefined } = {}) {
   return async (url, init = {}) => {
     const path = new URL(url).pathname;
     const body = init.body ? JSON.parse(String(init.body)) : {};
@@ -91,6 +91,7 @@ function googleFetch({ isNewUser = false, deleted = [], deleteFails = false, inc
         disabled: false,
         displayName,
         photoUrl,
+        createdAt,
         providerUserInfo: includeGoogle ? [{ providerId: 'google.com', rawId: 'google-subject' }] : []
       }] });
     }
@@ -200,6 +201,30 @@ test('new duplicate Google identity is deleted and requires explicit Firebase ac
   assert.match(deleted[0], /^firebase-id/);
 });
 
+
+test('a duplicate the browser already created (isNewUser false, created just now) is deleted and requires linking', async () => {
+  const deleted = [];
+  const authority = new AuthorityMock({ conflict: true });
+  const handler = createNativeAuthHandler({ fetchImpl: googleFetch({ isNewUser: false, deleted, createdAt: String(Date.now() - 5000) }) });
+  const result = await handler(request(`${AUTH_API_PREFIX}/google`, { idToken: TOKEN('google-id') }), {
+    AUTH_AUTHORITY: authority, FIREBASE_WEB_API_KEY: API_KEY, GOOGLE_AUTH_ACTIVATION: 'enabled'
+  });
+  assert.equal(result.status, 409);
+  assert.equal((await result.json()).error.code, AUTH_ERROR_CODES.ACCOUNT_LINK_REQUIRED);
+  assert.equal(deleted.length, 1);
+});
+
+test('an older Google-only account is never deleted and stays a hard conflict', async () => {
+  const deleted = [];
+  const authority = new AuthorityMock({ conflict: true });
+  const handler = createNativeAuthHandler({ fetchImpl: googleFetch({ isNewUser: false, deleted, createdAt: String(Date.now() - 60 * 60 * 1000) }) });
+  const result = await handler(request(`${AUTH_API_PREFIX}/google`, { idToken: TOKEN('google-id') }), {
+    AUTH_AUTHORITY: authority, FIREBASE_WEB_API_KEY: API_KEY, GOOGLE_AUTH_ACTIVATION: 'enabled'
+  });
+  assert.equal(result.status, 409);
+  assert.equal((await result.json()).error.code, AUTH_ERROR_CODES.ACCOUNT_CONFLICT);
+  assert.equal(deleted.length, 0);
+});
 
 test('duplicate Google cleanup failure stays a hard conflict instead of claiming linking is safe', async () => {
   const deleted = [];

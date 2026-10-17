@@ -403,6 +403,17 @@ const authSuccess = (request, established, refreshToken, context, verification =
   }, { 'Set-Cookie': [...sessionCookies(established, refreshToken, context), ...extraCookies] });
 };
 
+// Owner 2026-10-17: the browser's redirect sign-in creates the Firebase user
+// before POST /google (or /facebook) runs, so signed.isNewUser is false here.
+// A single-social-provider account created in the last 15 minutes that our
+// account store refuses is that same throwaway duplicate.
+const FRESH_DUPLICATE_MS = 15 * 60 * 1000;
+const freshSocialDuplicate = (user, now = Date.now()) => {
+  const providers = Array.isArray(user?.providers) ? user.providers : [];
+  const age = now - Number(user?.createdAt || 0);
+  return providers.length === 1 && ['google.com', 'facebook.com'].includes(providers[0])
+    && Number(user?.createdAt) > 0 && age > -60_000 && age < FRESH_DUPLICATE_MS;
+};
 const googleEndpointReady = env => ['canary', 'enabled'].includes(String(env?.GOOGLE_AUTH_ACTIVATION || ''));
 const googlePublished = env => env?.GOOGLE_AUTH_ACTIVATION === 'enabled';
 const googleCanaryRequested = (env, url) =>
@@ -983,7 +994,7 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         try {
           established = await callAuthority(env, '/internal/firebase/session/create', { input: { email: user.email, subject: user.subject }, context });
         } catch (cause) {
-          if (cause?.code === AUTH_ERROR_CODES.ACCOUNT_CONFLICT && signed.isNewUser) {
+          if (cause?.code === AUTH_ERROR_CODES.ACCOUNT_CONFLICT && (signed.isNewUser || freshSocialDuplicate(user))) {
             let deleted = false;
             try { deleted = (await provider.deleteAccount(signed.idToken))?.deleted === true; } catch {}
             if (!deleted) throw new NativeAuthError(AUTH_ERROR_CODES.ACCOUNT_CONFLICT);
@@ -1070,7 +1081,7 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         try {
           established = await callAuthority(env, '/internal/firebase/session/create', { input: { email: user.email, subject: user.subject }, context });
         } catch (cause) {
-          if (cause?.code === AUTH_ERROR_CODES.ACCOUNT_CONFLICT && signed.isNewUser) {
+          if (cause?.code === AUTH_ERROR_CODES.ACCOUNT_CONFLICT && (signed.isNewUser || freshSocialDuplicate(user))) {
             let deleted = false;
             try { deleted = (await provider.deleteAccount(signed.idToken))?.deleted === true; } catch {}
             if (!deleted) throw new NativeAuthError(AUTH_ERROR_CODES.ACCOUNT_CONFLICT);

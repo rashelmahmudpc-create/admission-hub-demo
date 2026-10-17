@@ -9406,6 +9406,7 @@ var FirebaseEmailPasswordProvider = class {
       email: user.email,
       emailVerified: user.emailVerified === true,
       disabled: user.disabled === true,
+      createdAt: Number(user.createdAt) || 0,
       displayName: typeof user.displayName === "string" && user.displayName ? user.displayName : null,
       photoUrl: typeof user.photoUrl === "string" && user.photoUrl ? user.photoUrl : null,
       providers: Object.freeze(providerRows.map((row) => String(row?.providerId || "")).filter(Boolean)),
@@ -10051,6 +10052,12 @@ var authSuccess = (request, established, refreshToken, context, verification = {
     session: { expiresAt: established.sessionExpiresAt, security: established.security || null }
   }, { "Set-Cookie": [...sessionCookies(established, refreshToken, context), ...extraCookies] });
 };
+var FRESH_DUPLICATE_MS = 15 * 60 * 1e3;
+var freshSocialDuplicate = (user, now = Date.now()) => {
+  const providers = Array.isArray(user?.providers) ? user.providers : [];
+  const age = now - Number(user?.createdAt || 0);
+  return providers.length === 1 && ["google.com", "facebook.com"].includes(providers[0]) && Number(user?.createdAt) > 0 && age > -6e4 && age < FRESH_DUPLICATE_MS;
+};
 var googleEndpointReady = (env) => ["canary", "enabled"].includes(String(env?.GOOGLE_AUTH_ACTIVATION || ""));
 var googlePublished = (env) => env?.GOOGLE_AUTH_ACTIVATION === "enabled";
 var googleCanaryRequested = (env, url) => env?.GOOGLE_AUTH_ACTIVATION === "canary" && url.searchParams.get("googleCanary") === "1";
@@ -10615,7 +10622,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         try {
           established = await callAuthority(env, "/internal/firebase/session/create", { input: { email: user.email, subject: user.subject }, context });
         } catch (cause) {
-          if (cause?.code === AUTH_ERROR_CODES.ACCOUNT_CONFLICT && signed.isNewUser) {
+          if (cause?.code === AUTH_ERROR_CODES.ACCOUNT_CONFLICT && (signed.isNewUser || freshSocialDuplicate(user))) {
             let deleted = false;
             try {
               deleted = (await provider.deleteAccount(signed.idToken))?.deleted === true;
@@ -10729,7 +10736,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         try {
           established = await callAuthority(env, "/internal/firebase/session/create", { input: { email: user.email, subject: user.subject }, context });
         } catch (cause) {
-          if (cause?.code === AUTH_ERROR_CODES.ACCOUNT_CONFLICT && signed.isNewUser) {
+          if (cause?.code === AUTH_ERROR_CODES.ACCOUNT_CONFLICT && (signed.isNewUser || freshSocialDuplicate(user))) {
             let deleted = false;
             try {
               deleted = (await provider.deleteAccount(signed.idToken))?.deleted === true;

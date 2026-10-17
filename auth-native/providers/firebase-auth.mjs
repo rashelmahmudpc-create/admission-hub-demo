@@ -404,6 +404,7 @@ export class FirebaseEmailPasswordProvider {
       email: user.email,
       emailVerified: user.emailVerified === true,
       disabled: user.disabled === true,
+      createdAt: Number(user.createdAt) || 0,
       displayName: typeof user.displayName === 'string' && user.displayName ? user.displayName : null,
       photoUrl: typeof user.photoUrl === 'string' && user.photoUrl ? user.photoUrl : null,
       providers: Object.freeze(providerRows.map(row => String(row?.providerId || '')).filter(Boolean)),

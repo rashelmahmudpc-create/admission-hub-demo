@@ -161,22 +161,36 @@ test('coming back from Google signs in through POST /google and clears the flag'
   app.dom.window.close();
 });
 
-test('ACCOUNT_LINK_REQUIRED after the redirect opens google-link and reuses the same token', async () => {
+test('an existing Email+Password account: Login page, email filled, official message, password login links Google', async () => {
   const app = setup({
     redirectFlag: true,
-    redirectResult: { user: { uid: 'g' }, credential: { providerId: 'google.com', accessToken: TOKEN } },
+    redirectResult: { user: { uid: 'g', email: 'student@example.com' }, credential: { providerId: 'google.com', accessToken: TOKEN } },
     googleReply: () => reply(409, { error: { code: 'ACCOUNT_LINK_REQUIRED', message: 'link' } })
   });
-  await waitFor(() => app.document.querySelector('[data-view="google-link"]')?.hidden === false, 2500);
-  assert.match(app.messageText(), /\[ACCOUNT_LINK_REQUIRED\]/);
-  app.document.querySelector('#ah-link-email').value = 'student@example.com';
-  app.document.querySelector('#ah-link-password').value = 'password-123';
-  app.document.querySelector('[data-view="google-link"]').dispatchEvent(new app.w.Event('submit', { cancelable: true }));
-  await waitFor(() => app.record.calls.some(call => call.path.endsWith('/google/link')));
+  await waitFor(() => app.document.querySelector('[data-view="login"]')?.hidden === false, 2500);
+  assert.equal(app.document.body.classList.contains('ah-account-page-active'), true);
+  assert.equal(app.document.querySelector('[data-view="welcome"]')?.hidden !== false, true, 'never the Welcome screen');
+  assert.equal(app.messageText(), 'এই ইমেইল দিয়ে আগেই একটি অ্যাকাউন্ট খোলা আছে। অনুগ্রহ করে ইমেইল ও পাসওয়ার্ড দিয়ে লগ ইন করুন।');
+  assert.doesNotMatch(app.messageText(), /\[|ACCOUNT_/);
+  assert.equal(app.document.querySelector('#ah-login-email').value, 'student@example.com');
+  await app.w.AdmissionSkyBridge.login('student@example.com', 'password-123');
   const link = app.record.calls.find(item => item.path.endsWith('/google/link'));
   assert.deepEqual(link.body, { email: 'student@example.com', password: 'password-123', accessToken: TOKEN });
   assert.equal(app.record.redirect, 0, 'linking must not need a second trip to Google');
   await waitFor(() => app.w.AdmissionAccount.isVerified() === true);
+  await sleep(100);
+  app.dom.window.close();
+});
+
+test('ACCOUNT_CONFLICT after the redirect also lands on the Login page with the same message', async () => {
+  const app = setup({
+    redirectFlag: true,
+    redirectResult: { user: { uid: 'g', email: 'student@example.com' }, credential: { providerId: 'google.com', accessToken: TOKEN } },
+    googleReply: () => reply(409, { error: { code: 'ACCOUNT_CONFLICT', message: 'conflict' } })
+  });
+  await waitFor(() => app.document.querySelector('[data-view="login"]')?.hidden === false, 2500);
+  assert.match(app.messageText(), /^এই ইমেইল দিয়ে আগেই একটি অ্যাকাউন্ট খোলা আছে।/);
+  assert.equal(app.document.querySelector('#ah-login-email').value, 'student@example.com');
   await sleep(100);
   app.dom.window.close();
 });
