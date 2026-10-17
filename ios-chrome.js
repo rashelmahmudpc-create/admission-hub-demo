@@ -9,12 +9,15 @@
   'use strict';
   const css = document.createElement('style');
   css.id = 'ah-ios-chrome';
-  css.textContent = 'html{touch-action:manipulation;overflow-x:hidden;overscroll-behavior:none}'
+  css.textContent = 'html{touch-action:manipulation;overflow-x:hidden;overscroll-behavior:none;-webkit-text-size-adjust:100%;text-size-adjust:100%}'
+    // iOS zooms the whole page when a field under 16px is focused, which shifts the layout
+    // differently on every phone; 16px minimum on iOS only keeps every device the same.
+    + '@supports (-webkit-touch-callout:none){input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]):not([type=color]),select,textarea{font-size:max(16px,1em)}}'
     + 'body{touch-action:manipulation;overflow-x:clip;overscroll-behavior:none;max-width:100%}'
     // android-runtime-fix.js forces `html, body{overscroll-behavior-y:auto!important}` on every
     // platform, which re-enabled the iPhone rubber-band. :root raises specificity above it.
     + ':root,:root>body{overscroll-behavior:none!important}'
-    + '#ah-status-scrim{position:fixed;top:0;left:0;right:0;height:env(safe-area-inset-top,0px);z-index:1150;pointer-events:none;transition:background-color .2s}'
+    + '#ah-status-scrim{position:fixed;top:0;left:0;right:0;height:env(safe-area-inset-top,0px);z-index:1150;pointer-events:none;transition:none}'
     + 'body.ah-account-page-active #ah-status-scrim{display:none}';
   document.head.append(css);
 
@@ -69,54 +72,96 @@
   }, { passive: false });
 
   /* ---- 1. status-bar colour ---- */
-  const opaque = colour => colour && colour !== 'transparent' && !/rgba\([^)]*,\s*0(\.0+)?\)$/.test(colour);
-  const hex = colour => {
-    const parts = String(colour).match(/[\d.]+/g);
-    if (!parts || parts.length < 3) return '';
-    return '#' + parts.slice(0, 3).map(v => Math.max(0, Math.min(255, Math.round(+v))).toString(16).padStart(2, '0')).join('');
-  };
-  // A gradient-only element has a transparent background-color; its top colour is
-  // the first stop, which is what the eye sees under the notch.
-  const firstStop = image => {
-    if (!image || image === 'none') return '';
-    const m = String(image).match(/rgba?\([^)]*\)|#[0-9a-f]{3,8}\b/i);
-    return m && opaque(m[0]) ? m[0] : '';
-  };
-  // Same-origin iframes are looked into, so a screen drawn inside one is never mistaken
-  // for the page behind it.
-  const colourAt = (y, doc, x, depth) => {
-    doc = doc || document; depth = depth || 0;
-    if (x === undefined) x = Math.round(innerWidth / 2);
-    let el = doc.elementFromPoint(x, Math.max(0, Math.round(y)));
-    if (el && el.tagName === 'IFRAME' && depth < 3) {
-      try {
-        const inner = el.contentDocument;
-        if (inner && inner.documentElement) {
-          const r = el.getBoundingClientRect();
-          const got = colourAt(y - r.top, inner, x - r.left, depth + 1);
-          if (got) return got;
-        }
-      } catch (_) {}
-    }
-    while (el && el !== doc.documentElement) {
-      const style = getComputedStyle(el);
-      if (opaque(style.backgroundColor)) return style.backgroundColor;
-      const stop = firstStop(style.backgroundImage);
-      if (stop) return stop;
-      el = el.parentElement;
-    }
-    return doc.body ? getComputedStyle(doc.body).backgroundColor : '';
-  };
   // THE RULE (owner 2026-10-17): the strip under the clock always shows exactly what is
-  // directly below it. A screen that cannot be sampled (a full-screen iframe) declares its
-  // top colour with data-ah-chrome="#rrggbb"; the top-most visible declarer wins. With no
-  // declarer the real colour under the strip is read. Nothing else may colour the strip.
-  const norm = colour => {
+  // directly below it, on every screen, in light and dark, within a second.
+  //  - Translucent layers are blended (a dark sheet at 60% over a white page is dark grey,
+  //    not white); gradient-only layers contribute their top stop; opacity is honoured.
+  //  - Same-origin iframes are looked into; a screen that cannot be sampled declares its top
+  //    colour with data-ah-chrome="#rrggbb" and the top-most visible declarer wins.
+  //  - Nothing is remembered between screens: every change (DOM, class, theme, tap,
+  //    transition end, OS theme) triggers a re-read and a short settle burst.
+  const clamp = v => Math.max(0, Math.min(255, Math.round(v)));
+  const toHex = (r, g, b) => '#' + [r, g, b].map(v => clamp(v).toString(16).padStart(2, '0')).join('');
+  const toRgba = colour => {
     const s = String(colour || '').trim();
-    let m = /^#([0-9a-f]{3})$/i.exec(s);
-    if (m) return '#' + m[1].split('').map(ch => ch + ch).join('').toLowerCase();
-    m = /^#([0-9a-f]{6})$/i.exec(s);
-    return m ? s.toLowerCase() : hex(s);
+    if (!s || s === 'transparent') return null;
+    let m = /^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:\s*[,/]\s*([\d.]+%?))?\s*\)$/i.exec(s);
+    if (m) {
+      const a = m[4] === undefined ? 1 : (m[4].slice(-1) === '%' ? parseFloat(m[4]) / 100 : parseFloat(m[4]));
+      return [+m[1], +m[2], +m[3], a];
+    }
+    m = /^color\(\s*(?:srgb|display-p3)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*([\d.]+%?))?\s*\)$/i.exec(s);
+    if (m) {
+      const a = m[4] === undefined ? 1 : (m[4].slice(-1) === '%' ? parseFloat(m[4]) / 100 : parseFloat(m[4]));
+      return [m[1] * 255, m[2] * 255, m[3] * 255, a];
+    }
+    m = /^#([0-9a-f]{3,8})$/i.exec(s);
+    if (m) {
+      let h = m[1];
+      if (h.length === 3 || h.length === 4) h = h.split('').map(ch => ch + ch).join('');
+      if (h.length === 6 || h.length === 8) {
+        return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16), h.length === 8 ? parseInt(h.slice(6, 8), 16) / 255 : 1];
+      }
+    }
+    return null;
+  };
+  const norm = colour => {
+    const c = toRgba(colour);
+    return c ? toHex(c[0], c[1], c[2]) : '';
+  };
+  // The colour one element adds to what is behind it, or null when it adds none.
+  const layerOf = el => {
+    const cs = getComputedStyle(el);
+    if (cs.visibility === 'hidden') return null;
+    const op = parseFloat(cs.opacity);
+    if (!(op > 0)) return null;
+    let c = toRgba(cs.backgroundColor);
+    if (!c || c[3] <= 0.01) {
+      const image = cs.backgroundImage;
+      c = null;
+      if (image && image !== 'none' && /gradient/.test(image)) {
+        const m = image.match(/rgba?\([^)]*\)|color\([^)]*\)|#[0-9a-f]{3,8}\b/i);
+        c = m ? toRgba(m[0]) : null;
+      }
+    }
+    if (!c || c[3] <= 0.01) return null;
+    return [c[0], c[1], c[2], Math.min(1, c[3] * Math.min(1, op))];
+  };
+  // Every layer under one point, top to bottom, looking inside same-origin iframes.
+  const stackAt = (x, y, doc, depth, out) => {
+    const els = doc.elementsFromPoint(x, Math.max(0, Math.round(y)));
+    for (const el of els) {
+      if (el.id === 'ah-status-scrim') continue;
+      if (el.tagName === 'IFRAME' && depth < 3) {
+        try {
+          const inner = el.contentDocument;
+          if (inner && inner.documentElement) {
+            const r = el.getBoundingClientRect();
+            stackAt(x - r.left, y - r.top, inner, depth + 1, out);
+          }
+        } catch (_) {}
+      }
+      const layer = layerOf(el);
+      if (layer) { out.push(layer); if (layer[3] >= 0.995) break; }
+    }
+    // A document's canvas takes the root/body colour even where neither element is hit
+    // (an empty or short body); without it such a screen would read as transparent.
+    if (!out.length || out[out.length - 1][3] < 0.995) {
+      const base = layerOf(doc.documentElement) || (doc.body && layerOf(doc.body));
+      if (base) out.push(base);
+    }
+    return out;
+  };
+  const colourAt = y => {
+    const layers = stackAt(4, y, document, 0, []);
+    let i = layers.findIndex(l => l[3] >= 0.995);
+    const above = i < 0 ? layers : layers.slice(0, i);
+    let [r, g, b] = i < 0 ? [255, 255, 255] : layers[i];
+    for (let k = above.length - 1; k >= 0; k--) {
+      const [lr, lg, lb, la] = above[k];
+      r = lr * la + r * (1 - la); g = lg * la + g * (1 - la); b = lb * la + b * (1 - la);
+    }
+    return toHex(r, g, b);
   };
   const declared = () => {
     const list = document.querySelectorAll('[data-ah-chrome]');
@@ -142,7 +187,8 @@
     return scrim;
   };
   let last = '';
-  let restColour = '';
+  let epoch = 0;
+  let frozen = null;
   let hadDeclared = false;
   const sync = () => {
     try {
@@ -154,9 +200,15 @@
       const forced = accountUp ? '' : declared();
       if (hadDeclared && !forced) { try { window.AhAppearance && window.AhAppearance.apply(); } catch (_) {} }
       hadDeclared = Boolean(forced);
-      const value = forced || (scrolled && restColour ? restColour : hex(colourAt(accountUp ? 2 : inset + 2)));
+      let value = forced;
+      if (!value) {
+        // While the document itself is scrolled, content slides under the strip; hold the
+        // colour read at rest, but only within the same screen (any change bumps epoch).
+        if (scrolled && frozen && frozen.epoch === epoch) value = frozen.value;
+        else value = colourAt(accountUp ? 2 : (inset ? inset + 2 : 2));
+        if (!scrolled) frozen = { epoch, value };
+      }
       if (!value) return;
-      if (!accountUp && !scrolled) restColour = value;
       if (strip && !accountUp && strip.style.getPropertyValue('background-color') !== value) {
         strip.style.setProperty('background-color', value, 'important');
       }
@@ -178,11 +230,101 @@
       if (document.body) document.body.style.backgroundColor = canvas;
     } catch (_) {}
   };
-  addEventListener('hashchange', () => { restColour = ''; });
-  ['load', 'resize', 'hashchange', 'popstate', 'pageshow', 'orientationchange'].forEach(type => addEventListener(type, () => setTimeout(sync, 60)));
+  // --- change detection: a screen change is noticed in well under a second ---
+  let burst = [];
+  let lastKick = 0;
+  const kick = () => {
+    epoch++;
+    const now = Date.now();
+    if (now - lastKick < 120) return;
+    lastKick = now;
+    burst.forEach(clearTimeout);
+    burst = [0, 60, 150, 300, 550, 900].map(ms => setTimeout(sync, ms));
+  };
+  let soon = 0;
+  const syncSoon = () => {
+    epoch++;
+    if (soon) return;
+    soon = setTimeout(() => { soon = 0; sync(); }, 120);
+  };
+  try {
+    const watch = (target, options, handler) => new MutationObserver(handler).observe(target, options);
+    watch(document.documentElement, { attributes: true, attributeFilter: ['class', 'data-theme', 'style'] }, kick);
+    const attach = () => {
+      if (!document.body) return;
+      watch(document.body, { attributes: true, attributeFilter: ['class', 'style'] }, kick);
+      watch(document.body, { attributes: true, childList: true, subtree: true, attributeFilter: ['class', 'style', 'hidden', 'data-theme', 'data-ah-chrome', 'aria-hidden'] }, syncSoon);
+    };
+    if (document.body) attach(); else document.addEventListener('DOMContentLoaded', attach);
+    watch(document.head, { attributes: true, childList: true, subtree: true }, syncSoon);
+  } catch (_) {}
+  ['load', 'resize', 'hashchange', 'popstate', 'pageshow', 'orientationchange', 'ah:appearance', 'focus'].forEach(type => addEventListener(type, kick));
+  ['transitionend', 'animationend', 'transitioncancel'].forEach(type => document.addEventListener(type, syncSoon, true));
+  ['pointerup', 'touchend', 'click', 'keyup', 'focusin', 'focusout'].forEach(type => document.addEventListener(type, () => setTimeout(kick, 80), true));
+  try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', kick); } catch (_) {}
+  try { if (window.visualViewport) window.visualViewport.addEventListener('resize', kick); } catch (_) {}
   addEventListener('scroll', () => requestAnimationFrame(sync), { passive: true });
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) sync(); });
-  window.AhChrome = { sync };
-  setInterval(sync, 400);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) kick(); });
+  window.AhChrome = { sync, kick };
+  setInterval(sync, 250);
   if (document.body) sync(); else document.addEventListener('DOMContentLoaded', sync);
+
+  /* ---- 4. one viewport everywhere ----
+   * `vh` is the viewport with the browser bars hidden, so a sheet sized in vh is taller
+   * than the visible screen on iPhone Safari and runs under the bar - and it differs from
+   * phone to phone. Every vh length in every stylesheet gets a dvh (dynamic viewport) twin,
+   * appended after the originals so it wins at equal specificity. Same selectors, same
+   * media conditions; !important is preserved; nothing else is touched. */
+  try {
+    if (window.CSS && CSS.supports && CSS.supports('height', '1dvh')) {
+      const VH = /(-?\d*\.?\d+)vh\b/g;
+      const LAYOUT = /^(height|min-height|max-height|top|bottom|inset|inset-block|margin|margin-top|margin-bottom|padding|padding-top|padding-bottom|gap|row-gap|flex-basis)$/;
+      const seen = new WeakSet();
+      let twin = null;
+      const twinsOf = list => {
+        let out = '';
+        for (const rule of Array.from(list)) {
+          try {
+            if (rule.type === 1) {
+              let body = '';
+              for (let i = 0; i < rule.style.length; i++) {
+                const name = rule.style[i];
+                if (!LAYOUT.test(name)) continue;
+                const value = rule.style.getPropertyValue(name);
+                if (!/vh\b/.test(value) || /dvh\b/.test(value)) continue;
+                body += name + ':' + value.replace(VH, '$1dvh') + (rule.style.getPropertyPriority(name) ? '!important' : '') + ';';
+              }
+              if (body) out += rule.selectorText + '{' + body + '}';
+            } else if (rule.type === 4 || rule.type === 12) {
+              const inner = twinsOf(rule.cssRules);
+              if (inner) out += (rule.type === 4 ? '@media ' : '@supports ') + rule.conditionText + '{' + inner + '}';
+            }
+          } catch (_) {}
+        }
+        return out;
+      };
+      const build = () => {
+        let add = '';
+        for (const sheet of Array.from(document.styleSheets)) {
+          if (seen.has(sheet) || (sheet.ownerNode && sheet.ownerNode.id === 'ah-dvh-twins')) continue;
+          let rules;
+          try { rules = sheet.cssRules; } catch (_) { continue; }   // cross-origin sheet
+          if (!rules) continue;
+          seen.add(sheet);
+          add += twinsOf(rules);
+        }
+        if (!add) return;
+        if (!twin) { twin = document.createElement('style'); twin.id = 'ah-dvh-twins'; }
+        twin.textContent += add;
+        document.head.append(twin);      // always last, so it keeps winning
+      };
+      let timer = 0;
+      const later = () => { clearTimeout(timer); timer = setTimeout(build, 250); };
+      addEventListener('load', later);
+      document.addEventListener('DOMContentLoaded', later);
+      new MutationObserver(later).observe(document.head, { childList: true });
+      window.AhDvh = { build };
+      later();
+    }
+  } catch (_) {}
 })();
