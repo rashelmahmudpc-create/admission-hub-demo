@@ -7,6 +7,7 @@ import { createConfiguredVerificationProviders } from '../verification/providers
 import { dispatchSecurityNotifications } from '../core/security-notifications.mjs';
 import { SqliteVerificationRepository } from '../verification/sqlite-verification-repository.mjs';
 import { D1ProfileStore } from '../storage/d1-profile-repository.mjs';
+import { migrateStudentDirectory } from '../storage/student-directory-schema.mjs';
 
 const JSON_HEADERS = Object.freeze({
   'Content-Type': 'application/json; charset=utf-8',
@@ -35,6 +36,13 @@ export class AdmissionAuthAuthority {
       this.repository.migrate();
       this.verificationRepository = new SqliteVerificationRepository(state.storage);
       this.verificationRepository.migrate();
+      // Fresh Start phase 2: additive, versioned student-directory schema.
+      // Isolated so a problem here can never take sign-in down.
+      try {
+        this.studentDirectorySchema = migrateStudentDirectory(state.storage);
+      } catch (error) {
+        this.studentDirectorySchema = { version: 0, applied: [], error: String(error?.message || error).slice(0, 200) };
+      }
       this.engine = new CloudflareNativeAuthEngine({
         repository: this.repository,
         hmacSecret: env.AUTH_HMAC_SECRET,
