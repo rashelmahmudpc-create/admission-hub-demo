@@ -689,6 +689,8 @@
 #app.sky .bar i b{display:block;height:100%;border-radius:9px;background:var(--grad);transition:width .8s .2s;width:0}
 #app.sky .bars small{color:var(--mute);font-size:12px}
 #app.sky .acts{display:flex;gap:2px;margin-top:10px}
+#app.sky .faqm{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-top:10px;font-size:12.5px;color:var(--mute)}
+#app.sky .faqm button{padding:7px 12px;border-radius:999px;background:var(--soft);color:var(--pri);font-weight:600;font-size:13px}
 #app.sky .acts button{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;color:var(--mute);transition:.15s}
 #app.sky .acts button:active{background:var(--soft);color:var(--pri)}
 #app.sky .acts svg{width:19px;height:19px}
@@ -1008,6 +1010,12 @@ const ACT_ACTIONS = { 'prefs.write': { bn: 'তোমার AI পছন্দ �
     }
     return '';
   }
+  /* PR-3: shared-answer note + "আরো বিস্তারিত" chip (data-q sends it to the AI). */
+  function faqNote(m) {
+    if (!m.faq || m.pending) return '';
+    const more = String(m.q || '').slice(0, 120) + ' — আরো বিস্তারিত বুঝিয়ে বলো';
+    return '<div class="faqm"><span>📌 সবার জন্য জমানো উত্তর</span><button data-q="' + esc(more) + '">আরো বিস্তারিত →</button></div>';
+  }
   function bubble(m, idx) {
     if (m.role === 'user') return '<div class="u"><span>' + esc(m.text) + '</span></div>';
     let inner;
@@ -1028,7 +1036,7 @@ const ACT_ACTIONS = { 'prefs.write': { bn: 'তোমার AI পছন্দ �
       '<button data-r="' + idx + '" aria-label="' + T.regen + '">' + ic('redo') + '</button>' +
       '<button data-g="' + idx + '" aria-label="' + T.good + '">' + ic('up') + '</button>' +
       '</div>' : '';
-    return '<div class="ai" data-i="' + idx + '"><div class="who">' + av('xs') + 'Sky</div>' + procHtml(m) + '<div class="bw">' + inner + '</div>' + acts + '</div>';
+    return '<div class="ai" data-i="' + idx + '"><div class="who">' + av('xs') + 'Sky</div>' + procHtml(m) + '<div class="bw">' + inner + '</div>' + faqNote(m) + acts + '</div>';
   }
   function procStage(node, holder, next) {
     if (holder.stage) (holder.steps = holder.steps || []).push(holder.stage);
@@ -1070,6 +1078,15 @@ const ACT_ACTIONS = { 'prefs.write': { bn: 'তোমার AI পছন্দ �
     const quick = window.SkySmallTalk ? window.SkySmallTalk.reply(t, (profilePayload() || {}).firstName) : null;
     if (quick) {
       sessions[cur].msgs.push({ role: 'ai', text: quick, ts: Date.now(), local: true });
+      save(); renderMsgs(); mood('happy', 1200);
+      return;
+    }
+    /* PR-3 (owner 2026-10-17): common textbook questions (সমাস কী …) get the same
+       reviewed answer for everyone from the in-app bank (sky-faq*.js): instant, no
+       server call, no AI limit. "আরো বিস্তারিত" sends the question to the AI. */
+    const faq = window.SkyFAQ ? window.SkyFAQ.match(t) : null;
+    if (faq) {
+      sessions[cur].msgs.push({ role: 'ai', text: faq.a, ts: Date.now(), local: true, faq: faq.id, q: faq.q });
       save(); renderMsgs(); mood('happy', 1200);
       return;
     }
