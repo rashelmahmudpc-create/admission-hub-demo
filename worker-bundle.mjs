@@ -28209,6 +28209,58 @@ var maybeStart = async (request, env, ctx) => {
     return json7(request, { error: "run-failed" }, 500);
   }
 };
+var ALERT_KV_TTL = 60 * 60 * 24 * 30;
+var ALERT_MAX_PER_HOUR = 20;
+var ALERT_FIELD = 400;
+var alertField = (value, max = ALERT_FIELD) => typeof value === "string" ? value.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "").trim().slice(0, max) : "";
+async function sendTelegramAlert(env, text) {
+  if (!env.TG_BOT_TOKEN || !env.TG_CHAT_ID) return false;
+  try {
+    const resp = await fetch(`https://api.telegram.org/bot${env.TG_BOT_TOKEN}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: env.TG_CHAT_ID, text, disable_web_page_preview: true })
+    });
+    return resp.ok;
+  } catch (_) {
+    return false;
+  }
+}
+async function handleErrorReport(request, env) {
+  const proxied = request.headers.get("x-ah-pages-proxy") === "1";
+  const sameOrigin = request.headers.get("Origin") === "https://admissionhub.pages.dev";
+  if (!proxied && !sameOrigin) return json7(request, { error: "forbidden" }, 403);
+  let body = {};
+  try {
+    body = await request.json();
+  } catch (_) {
+  }
+  const message = alertField(body.message, 500);
+  if (!message) return json7(request, { error: "empty" }, 400);
+  const path = alertField(body.path, 120) || "(unknown)";
+  const signature = alertField(body.signature, 120) || path;
+  const release = alertField(body.release, 60);
+  const source = alertField(body.source, 40);
+  if (!env.TG_BOT_TOKEN || !env.TG_CHAT_ID) return json7(request, { skipped: "telegram-not-configured" });
+  if (!env.GK_KV) return json7(request, { skipped: "no-kv" });
+  const now = Date.now();
+  const hourBucket = `alertHour:${Math.floor(now / 36e5)}`;
+  try {
+    if (await env.GK_KV.get(`alert:${signature}`)) return json7(request, { skipped: "duplicate" });
+    const used = Number(await env.GK_KV.get(hourBucket)) || 0;
+    if (used >= ALERT_MAX_PER_HOUR) return json7(request, { skipped: "hourly-cap" });
+    const lines = ["🚨 AdmissionSky — নতুন সমস্যা", "", message, "", `📄 পেজ: ${path}`];
+    if (source) lines.push(`📍 সূত্র: ${source}`);
+    if (release) lines.push(`🏷️ ভার্সন: ${release}`);
+    lines.push(`🕒 ${new Date(now + 6 * 36e5).toISOString().slice(0, 16).replace("T", " ")} (ঢাকা)`);
+    if (!await sendTelegramAlert(env, lines.join("\n"))) return json7(request, { error: "telegram-failed" }, 502);
+    await env.GK_KV.put(`alert:${signature}`, String(now), { expirationTtl: ALERT_KV_TTL });
+    await env.GK_KV.put(hourBucket, String(used + 1), { expirationTtl: 3600 });
+    return json7(request, { sent: true });
+  } catch (_) {
+    return json7(request, { error: "alert-failed" }, 500);
+  }
+}
 var gk_agent_worker_default = {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
@@ -28242,6 +28294,7 @@ var gk_agent_worker_default = {
     const filesResponse = await handleFilesStorageRequest(request, env, ctx);
     if (filesResponse) return filesResponse;
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors(request) });
+    if (request.method === "POST" && url.pathname === "/api/report-error") return await handleErrorReport(request, env);
     if (url.pathname.startsWith("/pub/") || url.pathname.startsWith("/api/")) {
       const gatedApi = url.pathname === "/api/ask" || url.pathname.startsWith("/api/ask/") || url.pathname === "/api/bank" || url.pathname.startsWith("/api/gk/") || url.pathname === "/api/cloud/publish";
       const u2p = new URL(request.url);

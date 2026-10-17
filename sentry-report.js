@@ -205,11 +205,44 @@ export function post(dsn, event, fetchImpl) {
 }
 
 /**
- * Wire the two browser seams. Called once from the module body in a browser.
- * `transport` is injectable so a test can watch what would be sent without a
- * real request leaving the process. Returns the quota for inspection.
+ * P27 — the owner's phone alert (owner order 2026-10-17).
+ *
+ * This goes to our own Worker, not to Telegram: the bot token stays server-side
+ * (a token in the browser can be read by anyone), and the request stays
+ * same-origin so `connect-src 'self'` still covers it. Never throws, for the
+ * same reason `post` never throws.
  */
-export function install(win = globalThis, transport = post) {
+export const ALERT_URL = '/api/report-error';
+
+export function postAlert(url, event, fetchImpl) {
+  try {
+    if (!url) return false;
+    const body = JSON.stringify(event);
+    const nav = globalThis.navigator;
+    if (nav && typeof nav.sendBeacon === 'function' && !fetchImpl) {
+      if (nav.sendBeacon(url, new Blob([body], { type: 'application/json' }))) return true;
+    }
+    const f = fetchImpl || globalThis.fetch;
+    if (typeof f !== 'function') return false;
+    const p = f.call(globalThis, url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+      keepalive: true,
+    });
+    if (p && typeof p.catch === 'function') p.catch(() => {});
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Wire the two browser seams. Called once from the module body in a browser.
+ * `transport` and `alert` are injectable so a test can watch what would be sent
+ * without a real request leaving the process. Returns the quota for inspection.
+ */
+export function install(win = globalThis, transport = post, alert = null) {
   const quota = makeQuota();
   if (!win || typeof win.addEventListener !== 'function') return quota;
 
@@ -217,15 +250,21 @@ export function install(win = globalThis, transport = post) {
     try {
       if (!isReportable(message, filename)) return;
       const path = safePath(win.location && win.location.href);
-      if (!quota.take(signatureOf(message, path))) return;
-      transport(SENTRY_DSN, buildEvent({
+      const signature = signatureOf(message, path);
+      if (!quota.take(signature)) return;
+      const event = buildEvent({
         message,
         path,
         source,
         at: Date.now(),
         userAgent: win.navigator && win.navigator.userAgent,
         release: win.AH_BUILD || win.AH_PAGE_VERSION,
-      }));
+      });
+      transport(SENTRY_DSN, event);
+      /* The alert carries the same event plus its signature, which is what the
+       * Worker dedupes on. Kept off the Sentry payload so the verified event
+       * shape does not change. */
+      if (typeof alert === 'function') alert({ ...event, signature });
     } catch { /* never let reporting throw */ }
   };
 
@@ -251,5 +290,5 @@ export function install(win = globalThis, transport = post) {
 }
 
 if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
-  install(window);
+  install(window, post, (event) => postAlert(ALERT_URL, event));
 }

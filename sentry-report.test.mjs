@@ -11,6 +11,7 @@ import {
   SENTRY_DSN, MAX_EVENTS, MAX_MESSAGE, SENTRY_VERSION,
   sanitizeText, parseDsn, safePath, isReportable, signatureOf,
   buildEvent, randomHex32, makeQuota, post, install,
+  ALERT_URL, postAlert,
 } from './sentry-report.js';
 
 const SOURCE = readFileSync('sentry-report.js', 'utf8');
@@ -216,7 +217,9 @@ test('১৫. কোনো third-party স্ক্রিপ্ট ট্যা�
 
 test('১৬. মডিউলটি নিজে থেকে ইনস্টল হয় শুধু ব্রাউজারে (window থাকলে)', () => {
   assert.match(SOURCE, /typeof window !== 'undefined'/);
-  assert.match(SOURCE, /install\(window\)/);
+  // P27: the browser install also passes the alert transport, so the match is
+  // on the call, not on a bare `install(window)`.
+  assert.match(SOURCE, /install\(window, post, /);
 });
 
 test('১৭. privacy: buildEvent-এ যে ফিল্ডগুলো আছে তা-ই — নতুন ফিল্ড যোগ হলে টেস্ট ভাঙবে', () => {
@@ -239,4 +242,54 @@ test('১৮. DSN ছাড়া মডিউল কিছুই পাঠা�
 test('১৯. MAX_EVENTS যুক্তিসঙ্গত (এক পাতা থেকে বন্যা হবে না)', () => {
   assert.ok(MAX_EVENTS > 0 && MAX_EVENTS <= 100);
   assert.equal(MAX_EVENTS, 20);
+});
+
+test('২০. P27: alert-পথ same-origin আর চাবি-মুক্ত (ব্রাউজারে টোকেন নেই)', () => {
+  assert.equal(ALERT_URL, '/api/report-error', 'same-origin path keeps connect-src self intact');
+  assert.ok(ALERT_URL.startsWith('/'), 'never an absolute third-party URL');
+  assert.ok(!/api\.telegram\.org/.test(SOURCE), 'the bot token must never reach the browser');
+  assert.ok(!/bot[0-9]{6,}:/i.test(SOURCE), 'no bot token pattern may be embedded');
+  assert.match(SOURCE, /postAlert\(ALERT_URL/);
+});
+
+test('২১. P27: postAlert কখনো throw করে না', () => {
+  const calls = [];
+  const fakeFetch = (url, opts) => { calls.push({ url, opts }); return Promise.resolve({}); };
+  assert.equal(postAlert(ALERT_URL, { message: 'x' }, fakeFetch), true);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, '/api/report-error');
+  assert.equal(calls[0].opts.keepalive, true);
+  assert.equal(postAlert('', { message: 'x' }, fakeFetch), false);
+  assert.equal(postAlert(ALERT_URL, { message: 'x' }, () => { throw new Error('blocked'); }), false);
+});
+
+test('২২. P27: install alert-ফাংশন পেলে সেটাও পাঠায়, আর না পেলে চুপ থাকে', () => {
+  const handlers = {};
+  const win = {
+    addEventListener(type, fn) { handlers[type] = fn; },
+    location: { href: 'https://a.example/study?token=SECRET' },
+    navigator: { userAgent: 'test-agent' },
+  };
+  const alerts = [];
+  const sent = [];
+  install(win, (dsn, ev) => { sent.push(ev); return true; }, (ev) => { alerts.push(ev); return true; });
+  handlers.error({ error: { message: 'boom' }, filename: 'app.js' });
+  assert.equal(sent.length, 1);
+  assert.equal(alerts.length, 1, 'the alert rides along with the Sentry event');
+  assert.equal(alerts[0].signature, signatureOf('boom', '/study'), 'the worker dedupes on this');
+  assert.equal(alerts[0].message, sent[0].message);
+
+  const handlers2 = {};
+  const win2 = { addEventListener(t, f) { handlers2[t] = f; }, location: { href: 'https://a.example/x' }, navigator: {} };
+  const sent2 = [];
+  install(win2, (d, ev) => { sent2.push(ev); return true; });
+  handlers2.error({ error: { message: 'boom2' }, filename: 'a.js' });
+  assert.equal(sent2.length, 1, 'no alert argument must not break reporting');
+});
+
+test('২৩. P27: alert ফিল্ড privacy-তালিকা ভাঙে না', () => {
+  const ev = buildEvent({ message: 'boom', path: '/study' });
+  assert.ok(!('email' in ev) && !('user' in ev) && !('phone' in ev));
+  const alert = { ...ev, signature: 'sig' };
+  assert.deepEqual(Object.keys(alert).filter(k => !(k in ev)), ['signature']);
 });

@@ -452,6 +452,79 @@ const maybeStart = async (request, env, ctx) => {
   }
 };
 
+/* P27 — the owner's phone alert (owner order 2026-10-17).
+ *
+ * The client reporter posts here and this Worker forwards to Telegram, so the
+ * bot token never reaches the browser. Same-origin only (the Pages proxy adds
+ * `x-ah-pages-proxy`), because an open endpoint here would let anyone make the
+ * owner's phone buzz. The chat is fixed server-side: a caller cannot choose who
+ * receives the message.
+ *
+ * Dedupe is the point of `signature`. A render loop fires the same error
+ * hundreds of times, and the client quota cannot see other visitors, so the KV
+ * guard here is what actually protects the phone.
+ */
+const ALERT_KV_TTL = 60 * 60 * 24 * 30;
+const ALERT_MAX_PER_HOUR = 20;
+const ALERT_FIELD = 400;
+
+const alertField = (value, max = ALERT_FIELD) =>
+  typeof value === 'string' ? value.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '').trim().slice(0, max) : '';
+
+async function sendTelegramAlert(env, text) {
+  if (!env.TG_BOT_TOKEN || !env.TG_CHAT_ID) return false;
+  try {
+    const resp = await fetch(`https://api.telegram.org/bot${env.TG_BOT_TOKEN}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: env.TG_CHAT_ID, text, disable_web_page_preview: true })
+    });
+    return resp.ok;
+  } catch (_) {
+    return false;
+  }
+}
+
+async function handleErrorReport(request, env) {
+  const proxied = request.headers.get('x-ah-pages-proxy') === '1';
+  const sameOrigin = request.headers.get('Origin') === 'https://admissionhub.pages.dev';
+  if (!proxied && !sameOrigin) return json(request, { error: 'forbidden' }, 403);
+
+  let body = {};
+  try { body = await request.json(); } catch (_) {}
+  const message = alertField(body.message, 500);
+  if (!message) return json(request, { error: 'empty' }, 400);
+  const path = alertField(body.path, 120) || '(unknown)';
+  const signature = alertField(body.signature, 120) || path;
+  const release = alertField(body.release, 60);
+  const source = alertField(body.source, 40);
+
+  if (!env.TG_BOT_TOKEN || !env.TG_CHAT_ID) return json(request, { skipped: 'telegram-not-configured' });
+  if (!env.GK_KV) return json(request, { skipped: 'no-kv' });
+
+  const now = Date.now();
+  const hourBucket = `alertHour:${Math.floor(now / 3600000)}`;
+  try {
+    if (await env.GK_KV.get(`alert:${signature}`)) return json(request, { skipped: 'duplicate' });
+    const used = Number(await env.GK_KV.get(hourBucket)) || 0;
+    if (used >= ALERT_MAX_PER_HOUR) return json(request, { skipped: 'hourly-cap' });
+
+    const lines = ['🚨 AdmissionSky — নতুন সমস্যা', '', message, '', `📄 পেজ: ${path}`];
+    if (source) lines.push(`📍 সূত্র: ${source}`);
+    if (release) lines.push(`🏷️ ভার্সন: ${release}`);
+    lines.push(`🕒 ${new Date(now + 6 * 3600000).toISOString().slice(0, 16).replace('T', ' ')} (ঢাকা)`);
+
+    if (!await sendTelegramAlert(env, lines.join('\n'))) return json(request, { error: 'telegram-failed' }, 502);
+    /* Written only after a successful send: a failed alert must stay retryable
+     * rather than be silenced by its own marker. */
+    await env.GK_KV.put(`alert:${signature}`, String(now), { expirationTtl: ALERT_KV_TTL });
+    await env.GK_KV.put(hourBucket, String(used + 1), { expirationTtl: 3600 });
+    return json(request, { sent: true });
+  } catch (_) {
+    return json(request, { error: 'alert-failed' }, 500);
+  }
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
@@ -509,6 +582,11 @@ export default {
     const filesResponse = await handleFilesStorageRequest(request, env, ctx);
     if (filesResponse) return filesResponse;
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors(request) });
+
+    /* P27 — must run before the /api/* pub forward and the X-AH-App gate below:
+     * the reporter is an unauthenticated same-origin browser request, so neither
+     * gate would let it through. */
+    if (request.method === 'POST' && url.pathname === '/api/report-error') return await handleErrorReport(request, env);
 
     // Public product API: content, Firebase-session-aware or ephemeral-guest AI,
     // and content admin only. Retired legacy identity routes are not forwarded.

@@ -71,7 +71,7 @@ const APP_SHELL = [
   './student-data-sync.js?v=student-sync-v1',
   './install-guide.css?v=install-v4',
   './install-guide.js?v=install-v4',
-  './sentry-report.js?v=sentry-v1',
+  './sentry-report.js?v=sentry-v2',
   './a11y-core.css?v=a11y-v1',
   './a11y-core.js?v=a11y-v1',
   './offline-status.css?v=offline-v2',
@@ -84,7 +84,7 @@ const APP_SHELL = [
 // A truncated/corrupt download is NEVER written to the shell cache.
 const ASSET_DIGESTS = {
 /* sw-manifest:start */
-  "./index.html": "947b42f3c32b32d93ded7783eac914907fc590120fa249b7b5824753ff929ed9",
+  "./index.html": "a04edd774df7a16225ca7e8e6dc0ba2e4090a93f5a8e5dbd98cf18577eff1058",
   "./manifest.json": "6dcf0e0c6f7671750549e53558ba8b9f0c2c83b0c6759072a6b5e2276331f491",
   "./manifest.webmanifest": "abcd26174710f6df3e183889a5a9da182f73ee8cdcc543b43db8fb4070cad54f",
   "./dashboard-v2.css?v=dash2f13-theme": "4541bc1e65fd158c593443562975400d128b8f1d3b636595df3c235b99e8cced",
@@ -129,7 +129,7 @@ const ASSET_DIGESTS = {
   "./student-data-sync.js?v=student-sync-v1": "f81ed126b0c8104c29fc0838a8f373c6c444ac45f17c2050850805285ce479c1",
   "./install-guide.css?v=install-v4": "0eb58c7551f8d973390fb7b19fd98e4dd63ea2070f9f6cbe9429962098c3635c",
   "./install-guide.js?v=install-v4": "138c750972a6a08cca27ac64234086f9d30ab09305031442afdc2956441cbf72",
-  "./sentry-report.js?v=sentry-v1": "48e2660a5734561b1163b2ec7752721b7add624e68e7730b0c4f50d795bfe03b",
+  "./sentry-report.js?v=sentry-v2": "22cca4702b3844fbfbbaddb00964fed898baa2a89530ac46cb349d22da4af52f",
   "./a11y-core.css?v=a11y-v1": "c3829667c87b46bbe7effd4ca4e9732f02b58ed849c4ac481f9be7ef02026aac",
   "./a11y-core.js?v=a11y-v1": "633500e94e202d7035bccb5868f64d273c67324f1962e4c8b2e2df741ca5c6c5",
   "./offline-status.css?v=offline-v2": "da9bd572435484b98efc921273e7f244fb68ea18b9a926f6a5e928e6dcd87d58",
