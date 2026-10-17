@@ -36,6 +36,8 @@ const PUBLIC_ROUTES = new Set([
      stay reachable so the owner can open the designs on their own. */
   '/splash-preview', '/splash-preview.html',
   '/verification-control-center', '/verification-control-center.html',
+  /* Fresh Start phase 3: admin-token Students page (noindex, network-only in sw.js). */
+  '/students-control-center', '/students-control-center.html',
   '/ai-performance-analysis-live', '/ai-performance-analysis-live.html',
   '/notification-command-center', '/notification-command-center.html',
   /* Profile V2 — the design is fetched as a document and injected into an

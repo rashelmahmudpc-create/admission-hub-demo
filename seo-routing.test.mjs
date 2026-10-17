@@ -10,6 +10,7 @@ const REAL_FILES = new Map([
   ['/index.html', 'text/html; charset=utf-8'],
   ['/splash-preview.html', 'text/html; charset=utf-8'],
   ['/verification-control-center.html', 'text/html; charset=utf-8'],
+  ['/students-control-center.html', 'text/html; charset=utf-8'],
   ['/ai-performance-analysis-live.html', 'text/html; charset=utf-8'],
   ['/notification-command-center.html', 'text/html; charset=utf-8'],
   ['/welcome-onboarding.html', 'text/html; charset=utf-8'],
@@ -139,6 +140,8 @@ test('retired and server-only paths keep their original status codes', async () 
 test('preview surfaces are reachable but marked noindex', async () => {
   for (const path of ['/splash-preview.html', '/ai-performance-analysis-live.html',
     '/verification-control-center.html', '/notification-command-center.html',
+    /* Fresh Start phase 3: shipped in #73 but missing here, so it answered 404. */
+    '/students-control-center.html', '/students-control-center',
     /* The profile-v2 mount fetches this document into an iframe's srcdoc. The
        page is never navigated to, so it is easy to forget it must still be
        reachable — a 404 here leaves the profile screen blank (2026-10-16). */
