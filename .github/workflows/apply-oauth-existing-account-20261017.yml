@@ -1,0 +1,73 @@
+name: Apply OAuth existing-account fix 2026-10-17
+
+# Applies scripts/apply-oauth-existing-account-20261017.py on the feature branch:
+# Google/Facebook for an email that already has an Email+Password account lands
+# on the Login page (email filled, one official message) and the fresh duplicate
+# Firebase user is cleaned up. Regenerates sw.js digests and worker-bundle.mjs,
+# runs the tests and commits back to the SAME branch. Never touches main, never
+# deploys.
+
+on:
+  push:
+    branches: [fix/oauth-existing-account]
+    paths:
+      - '.github/workflows/apply-oauth-existing-account-20261017.yml'
+      - 'scripts/apply-oauth-existing-account-20261017.py'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-oauth-existing-account-20261017
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: github.ref_name == 'fix/oauth-existing-account'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: fix/oauth-existing-account
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Apply the existing-account patch
+        run: |
+          set -eu
+          python3 scripts/apply-oauth-existing-account-20261017.py
+          python3 scripts/apply-oauth-existing-account-20261017.py >/dev/null
+          grep -q "const showExistingAccountLogin = (email, linkToken = '') => {" account-access.js
+          grep -q "state.oauthLoginEmail || ''" account-access.js
+          grep -q "const freshSocialDuplicate = (user, now = Date.now()) => {" auth-native/worker/public-auth-handler.mjs
+          test "$(grep -c 'signed.isNewUser || freshSocialDuplicate(user)' auth-native/worker/public-auth-handler.mjs)" = 2
+          grep -q "createdAt: Number(user.createdAt) || 0," auth-native/providers/firebase-auth.mjs
+          node --check account-access.js
+          git diff --stat
+      - name: Install, refresh the service-worker digests and rebuild the Worker bundle
+        run: |
+          set -eu
+          npm ci
+          npm run sw:manifest
+          npm run build:worker
+          npm run check:worker-bundle
+      - name: Google and Facebook login tests (must pass)
+        run: node --test --test-concurrency=1 google-redirect-login.test.mjs facebook-login-guard.test.mjs firebase-auth-ui.test.mjs firebase-google-auth.test.mjs google-login-completion.test.mjs
+      - name: Wider UI tests (informational; some fail on main too)
+        continue-on-error: true
+        run: node --test --test-concurrency=1 multimethod-auth-ui.test.mjs native-auth-protection.test.mjs premium-onboarding-ui.test.mjs profile-ui.test.mjs code-native-welcome-v1.test.mjs sky-onboarding.test.mjs
+      - name: Commit and push to the feature branch
+        run: |
+          set -eu
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add account-access.js sw.js worker-bundle.mjs auth-native/providers/firebase-auth.mjs auth-native/worker/public-auth-handler.mjs google-redirect-login.test.mjs firebase-google-auth.test.mjs
+          if git diff --cached --quiet; then echo 'Nothing to commit (already applied).'; else
+            git commit -m 'fix(oauth): existing Email+Password account opens the Login page with an official message; clean up the fresh duplicate Firebase user; password login links Google' -m 'Applied by apply-oauth-existing-account-20261017.yml. No deploy.'
+            git push origin HEAD:fix/oauth-existing-account
+          fi
+          npm run check:sw-manifest
