@@ -1890,7 +1890,7 @@ var __aiStoreTest = Object.freeze({ makeId, mapDecision, mapApproval, isMissingS
 // ai-chat-cache.mjs
 var BN_DIGITS = { "০": "0", "১": "1", "২": "2", "৩": "3", "৪": "4", "৫": "5", "৬": "6", "৭": "7", "৮": "8", "৯": "9" };
 var CACHEABLE_INTENTS = Object.freeze(["ACADEMIC_EXPLAIN", "GENERAL_CHAT", "SEARCH_REQUEST"]);
-var CHAT_CACHE_VERSION = "chat-cache-v1";
+var CHAT_CACHE_VERSION = "chat-cache-v2";
 var CHAT_CACHE_TTL_MS = Object.freeze({
   ACADEMIC_EXPLAIN: 24 * 3600 * 1e3,
   GENERAL_CHAT: 24 * 3600 * 1e3,
@@ -20671,6 +20671,56 @@ var __filesStorageTest = Object.freeze({
   MAX_UPLOADS_PER_HOUR
 });
 
+// sky-contact.mjs
+var SKY_CONTACT_KV_KEY = "sky:contact";
+var SKY_CONTACT_PATHS = Object.freeze(["/api/go/whatsapp", "/api/go/email"]);
+var WA_TEXT = "আসসালামু আলাইকুম, AdmissionSky অ্যাপ থেকে সাহায্য চাই।";
+var MAIL_SUBJECT = "AdmissionSky সাহায্য";
+function normalizeWhatsapp(v) {
+  let d = String(v == null ? "" : v).replace(/[^\d]/g, "");
+  if (/^01\d{9}$/.test(d)) d = "88" + d;
+  return /^\d{10,15}$/.test(d) ? d : "";
+}
+function normalizeEmail2(v) {
+  const e = String(v == null ? "" : v).trim();
+  return e.length <= 120 && /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/.test(e) ? e : "";
+}
+async function readSkyContact(env) {
+  try {
+    const raw = env && env.PUB_KV ? await env.PUB_KV.get(SKY_CONTACT_KV_KEY) : null;
+    const j = raw ? JSON.parse(raw) : {};
+    return { whatsapp: normalizeWhatsapp(j && j.whatsapp), email: normalizeEmail2(j && j.email) };
+  } catch (_) {
+    return { whatsapp: "", email: "" };
+  }
+}
+var BASE_HEADERS = {
+  "Cache-Control": "no-store",
+  "X-Robots-Tag": "noindex, nofollow",
+  "Referrer-Policy": "no-referrer",
+  "X-Content-Type-Options": "nosniff"
+};
+function unavailable() {
+  const html = '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AdmissionSky</title><p style="font:16px system-ui;padding:24px">যোগাযোগের এই পথটা এখন চালু নেই। একটু পরে আবার চেষ্টা করো।</p>';
+  return new Response(html, { status: 503, headers: { ...BASE_HEADERS, "Content-Type": "text/html; charset=utf-8" } });
+}
+async function handleSkyContactRequest(request, env) {
+  const url = new URL(request.url);
+  if (!SKY_CONTACT_PATHS.includes(url.pathname)) return null;
+  if (request.method !== "GET" && request.method !== "HEAD") {
+    return new Response("Method not allowed", { status: 405, headers: { ...BASE_HEADERS, Allow: "GET, HEAD" } });
+  }
+  const c = await readSkyContact(env);
+  let target = "";
+  if (url.pathname === "/api/go/whatsapp" && c.whatsapp) {
+    target = "https://wa.me/" + c.whatsapp + "?text=" + encodeURIComponent(WA_TEXT);
+  } else if (url.pathname === "/api/go/email" && c.email) {
+    target = "mailto:" + c.email + "?subject=" + encodeURIComponent(MAIL_SUBJECT);
+  }
+  if (!target) return unavailable();
+  return new Response(null, { status: 302, headers: { ...BASE_HEADERS, Location: target } });
+}
+
 // p13-api-compression.mjs
 var MIN_COMPRESS_BYTES = 1024;
 function shouldCompress({ acceptEncoding = "", method = "GET", length = 0, status = 200 } = {}) {
@@ -28984,6 +29034,8 @@ var gk_agent_worker_default = {
     if (filesResponse) return filesResponse;
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors(request) });
     if (request.method === "POST" && url.pathname === "/api/report-error") return await handleErrorReport(request, env);
+    const contactResponse = await handleSkyContactRequest(request, env);
+    if (contactResponse) return contactResponse;
     if (url.pathname.startsWith("/pub/") || url.pathname.startsWith("/api/")) {
       const gatedApi = url.pathname === "/api/ask" || url.pathname.startsWith("/api/ask/") || url.pathname === "/api/bank" || url.pathname.startsWith("/api/gk/") || url.pathname === "/api/cloud/publish";
       const u2p = new URL(request.url);

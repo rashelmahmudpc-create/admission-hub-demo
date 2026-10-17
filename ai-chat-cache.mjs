@@ -36,7 +36,7 @@ const BN_DIGITS = { '০': '0', '১': '1', '২': '2', '৩': '3', '৪': '4', 
 /** Intents whose answer does not depend on who is asking. */
 export const CACHEABLE_INTENTS = Object.freeze(['ACADEMIC_EXPLAIN', 'GENERAL_CHAT', 'SEARCH_REQUEST']);
 
-export const CHAT_CACHE_VERSION = 'chat-cache-v1';
+export const CHAT_CACHE_VERSION = 'chat-cache-v2';
 
 /** Study answers stay valid for a day; anything time-sensitive for six hours. */
 export const CHAT_CACHE_TTL_MS = Object.freeze({
