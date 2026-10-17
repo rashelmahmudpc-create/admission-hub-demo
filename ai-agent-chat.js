@@ -1018,7 +1018,8 @@ const ACT_ACTIONS = { 'prefs.write': { bn: 'তোমার AI পছন্দ �
         .filter(Boolean)
         .map((ln) => '<p>' + esc(ln) + '</p>')
         .join('');
-      inner = '<div class="cal ' + (login ? 'key' : 'warn') + '"><b>' + (login ? '🔒' : '⚠️') + '</b> ' + body + '</div>';
+      const limit = m.errorKind === 'limit';
+      inner = '<div class="cal ' + (login || limit ? 'key' : 'warn') + '"><b>' + (login ? '🔒' : (limit ? '🌙' : '⚠️')) + '</b> ' + body + '</div>';
     }
     else if (m.pending && !m.text) inner = '';
     else inner = mdRich(m.text);
@@ -1105,12 +1106,39 @@ const ACT_ACTIONS = { 'prefs.write': { bn: 'তোমার AI পছন্দ �
       mood('happy', 1200);
     } else {
       const needLogin = res.status === 401 || (res.meta && /sign_in_required/.test(String(res.meta.error || '')));
+      const limited = !needLogin && (res.status === 429 || (res.meta && res.meta.error === 'rate_limited'));
       holder.pending = false;
-      holder.error = needLogin ? T.needLoginLong : (res.code === 'offline' ? T.offline : T.failed);
+      holder.error = needLogin ? T.needLoginLong : (limited ? limitText(res.meta) : (res.code === 'offline' ? T.offline : T.failed));
       if (needLogin) holder.errorKind = 'login';
+      else if (limited) holder.errorKind = 'limit';
       mood('sad', 1400);
     }
     save(); renderMsgs();
+  }
+
+  /* Owner 2026-10-17: the daily-limit card. The reset time is the server's
+     resetAt (window start + 24 h); nothing here is guessed. */
+  function limitText(meta) {
+    const bn = (s) => String(s).replace(/[0-9]/g, (d) => '০১২৩৪৫৬৭৮৯'[d]);
+    const cap = meta && Number(meta.cap) > 0 ? Number(meta.cap) : 10;
+    const at = meta && Number(meta.resetAt) > Date.now() ? Number(meta.resetAt) : 0;
+    const lines = [
+      'আজকের জন্য তোমার ' + bn(cap) + 'টি AI প্রশ্নের সুযোগ ব্যবহার করা হয়ে গেছে।',
+      'প্রতিটি শিক্ষার্থী যেন নিয়মিত ও মানসম্মত সহায়তা পায়, সেজন্য AdmissionSky-তে প্রতিদিন একটি নির্দিষ্ট সীমা রাখা হয়েছে।'
+    ];
+    if (at) {
+      const left = Math.max(1, Math.round((at - Date.now()) / 60000));
+      const h = Math.floor(left / 60), mi = left % 60;
+      let clock = '';
+      try { clock = new Date(at).toLocaleTimeString('bn-BD', { hour: 'numeric', minute: '2-digit' }); } catch (_) { clock = ''; }
+      const day = new Date(at).toDateString() === new Date().toDateString() ? 'আজ' : 'আগামীকাল';
+      const span = ((h ? bn(h) + ' ঘণ্টা ' : '') + (mi ? bn(mi) + ' মিনিট' : '')).trim();
+      lines.push('তোমার পরবর্তী সুযোগ চালু হবে ' + (clock ? day + ' ' + clock + '-এ' : 'শিগগিরই') + ' (আর প্রায় ' + span + ' পর)। তখন আমি আবার তোমার প্রশ্নের উত্তর দেবো।');
+    } else {
+      lines.push('পরবর্তী সুযোগ ২৪ ঘণ্টার মধ্যে আবার চালু হবে। তখন আমি আবার তোমার প্রশ্নের উত্তর দেবো।');
+    }
+    lines.push('ততক্ষণে কোর্স, প্রশ্নব্যাংক বা মক টেস্ট দিয়ে প্রস্তুতি চালিয়ে যাও। 💙');
+    return lines.join('\n');
   }
 
   function stop() { try { if (activeReq) activeReq.abort(); } catch (_) {} setBusy(false); say(T.stopped, 1600); }
