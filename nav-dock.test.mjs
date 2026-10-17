@@ -82,7 +82,7 @@ test('dock art and size match the Dashboard frame exactly (drift guard)', () => 
 });
 
 test('Profile V2 frame ends above the dock, not behind it', () => {
-  assert.ok(SRC.includes('body.ahd-on iframe.pv2-frame{bottom:calc(112px + var(--safe-b,0px))!important}'));
+  assert.ok(SRC.includes('body.ahd-on iframe.pv2-frame{height:calc(100dvh - 112px - var(--safe-b,0px))!important}'));
 });
 
 test('screens that hide the bar stay hidden (renderShell decides, dock adds nothing)', () => {

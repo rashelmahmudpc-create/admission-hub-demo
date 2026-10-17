@@ -107,7 +107,15 @@ test('the frame clears the app bottom nav and carries the app theme', async () =
   assert.match(doc, /window\.__AH_THEME__="dark"/);
   // The frame must end above the app's nav: a full-height frame put the save
   // bar and every sheet's action button behind the nav (owner report).
-  assert.match(frame.getAttribute('style') || frame.outerHTML, /bottom:calc\(74px \+ var\(--safe-b,0px\)\)/);
+  const frameStyle = frame.getAttribute('style') || frame.outerHTML;
+  assert.ok(
+    frameStyle.includes('height:calc(100dvh - 74px + var(--safe-b,0px))'),
+    'the frame must reserve the nav with an explicit height'
+  );
+  // An iframe is a replaced element: height:auto ignores top/bottom and falls
+  // back to the intrinsic 150px, which collapsed the profile to a blank strip
+  // (owner report, 2026-10-17). Never let that come back.
+  assert.ok(!/height:\s*auto/.test(frameStyle), 'height:auto collapses the frame to 150px');
   assert.match(doc, /data-profile-v2-bridge="1"/);
   dom.window.close();
 });

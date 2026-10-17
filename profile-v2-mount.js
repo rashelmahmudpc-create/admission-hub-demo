@@ -13,14 +13,19 @@
   'use strict';
 
   var FRAME_TITLE = 'প্রোফাইল';
-  /* The app's bottom nav is fixed at 74px plus the home indicator. The frame
-     ends above it (see frameMarkup) so nothing the design pins to the bottom of
-     its own viewport can land behind the nav. */
-  var NAV_HEIGHT = 'calc(74px + var(--safe-b,0px))';
-  /* Bump this whenever profile-v2.html changes. The page URL carries the token,
-     so a new build fetches a new URL and the service worker can never serve the
-     previous page from its shell cache. */
-  var PAGE_VERSION = 'profile-v2-2';
+  /* The app's bottom chrome is not one height. The legacy bar is 74px, but the
+     Dashboard dock (nav-dock.js) reserves 112px so the AI orb clears it, and
+     nav-dock marks the dock with body.ahd-on. Reserve the same space the app
+     does, or the frame's bottom sits behind whichever bar is showing. */
+  function navOffset() {
+    var docked = false;
+    try { docked = document.body.classList.contains('ahd-on'); } catch (_) {}
+    return (docked ? 112 : 74) + 'px + var(--safe-b,0px)';
+  }
+  /* Bump this whenever profile-v2.html OR this file changes. The URL carries the
+     token, so a new build fetches a new URL and the service worker can never
+     serve the previous copy from its shell cache. */
+  var PAGE_VERSION = 'profile-v2-3';
   var PAGE_URL = './profile-v2.html?v=' + PAGE_VERSION;
   /* A marker that exists only in the design's own page. If the fetched body
      lacks it we were handed something else (the service worker answers document
@@ -65,12 +70,18 @@
        save bar, and every sheet's action button. Ending the frame above the
        nav clears all of them at once instead of patching each one, and the
        design's own bottom:0 means the bottom of the VISIBLE area.
+
+       The height must be explicit. An iframe is a replaced element, so
+       height:auto ignores top/bottom and falls back to the intrinsic 150px —
+       that collapsed the frame to a blank strip (owner report, 2026-10-17).
+       100dvh, not 100%: the frame is fixed to the viewport, and dvh tracks the
+       URL bar as it hides on a phone.
        --safe-b comes from the parent's :root, so the home indicator is
        accounted for here rather than inside the frame, where env() resolves
        to 0. */
     return '<iframe class="pv2-frame" title="' + FRAME_TITLE + '" ' +
       'style="position:fixed;left:0;right:0;top:0;width:100%;' +
-      'bottom:' + NAV_HEIGHT + ';height:auto;border:0;display:block;z-index:5;' +
+      'height:calc(100dvh - ' + navOffset() + ');border:0;display:block;z-index:5;' +
       'background:var(--ah-chrome,#F4F6FD)"></iframe>';
   }
 

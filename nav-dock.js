@@ -23,8 +23,10 @@
     'html body #app:not(.no-nav){padding-bottom:calc(112px + var(--safe-b,0px))!important}',
     /* sticky action rows that sat on top of the old 74px bar: lift them above the dock + orb */
     'body.ahd-on .setup-footer,body.ahd-on #app [style*="bottom:calc(74px"]{bottom:calc(112px + var(--safe-b,0px))!important}',
-    /* Profile V2 frame ends at the old 74px bar; end it above the dock + orb instead */
-    'body.ahd-on iframe.pv2-frame{bottom:calc(112px + var(--safe-b,0px))!important}',
+    /* Profile V2 frame ends above the dock + orb. Set the HEIGHT, not bottom:
+       an iframe is a replaced element, so a bottom offset without an explicit
+       height is ignored and the frame collapses to its intrinsic 150px. */
+    'body.ahd-on iframe.pv2-frame{height:calc(100dvh - 112px - var(--safe-b,0px))!important}',
     '.ahd-host{--ahd-bg:#F4F6FD;--ahd-line:rgba(30,42,94,.08);--ahd-fg:#111B4B;--ahd-fg3:#8B94BC;--ahd-violet:#7A5AF0;--ahd-tint2:rgba(59,111,232,.15);--ahd-nav:rgba(255,255,255,.92);font-family:\'Noto Sans Bengali\',\'Hind Siliguri\',\'Inter\',system-ui,-apple-system,\'Segoe UI\',sans-serif;line-height:1.5;-webkit-font-smoothing:antialiased}',
     'html[data-theme="dark"] .ahd-host{--ahd-bg:#080D29;--ahd-line:rgba(150,175,255,.13);--ahd-fg:#EEF2FF;--ahd-fg3:#7E8BC6;--ahd-violet:#A58BFF;--ahd-tint2:rgba(108,149,255,.2);--ahd-nav:rgba(18,26,72,.92)}',
     '.ahd-nav{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(14px + env(safe-area-inset-bottom,0px));width:min(440px,calc(100% - 32px));z-index:50;box-sizing:border-box;display:grid;grid-template-columns:repeat(5,1fr);align-items:center;height:70px;border-radius:30px;background:var(--ahd-nav);border:1px solid var(--ahd-line);box-shadow:0 18px 40px rgba(16,26,90,.24);backdrop-filter:blur(24px) saturate(1.6);-webkit-backdrop-filter:blur(24px) saturate(1.6);pointer-events:auto}',
