@@ -1,5 +1,6 @@
 // v133b: public-product module
 import pubHandler, { publishGlobal } from './public-worker.js';
+import { runDailyReport } from './sky-daily-report.mjs';
 import { handleInternalEmailRequest } from './email-gateway/worker/handler.mjs';
 import { createNativeAuthHandler } from './auth-native/worker/public-auth-handler.mjs';
 import { handleFcmNotificationRequest, runScheduledGlobalNotifications } from './fcm-notification.mjs';
@@ -690,6 +691,9 @@ export default {
      * cron tick is harmless. */
     try { await runScheduledEventNotifications(env); } catch (_) {}
     try { await runScheduledDigests(env); } catch (_) {}
+    /* Anonymous daily AI report (owner 2026-10-17): built once at Bangladesh
+       midnight (UTC 18:00) from counts only; read in the Control Center. */
+    try { await runDailyReport(env); } catch (_) {}
     /* P19 — a daily restorable snapshot, taken once per Dhaka day. Guarded by
        the same day key the GK run uses, so the per-minute cron does not produce
        a snapshot every minute; best-effort, since a failed backup must not stop

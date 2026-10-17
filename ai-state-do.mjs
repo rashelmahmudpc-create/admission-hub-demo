@@ -15,6 +15,8 @@
  * EmailGatewayCoordinator store, so it is unit-testable with a fake ctx.
  */
 
+import { cleanInc } from './sky-daily-report.mjs';
+
 export const AI_STATE_VERSION = 'ai-state-v1';
 
 /* Matches the KV default in ai-agent.js so behaviour does not shift when the
@@ -100,6 +102,26 @@ export class AiStateObject {
     return { allowed: true, limit: lim, windowMs: win, remaining: lim - count - 1 };
   }
 
+  /* Anonymous daily AI counters (sky-daily-report.mjs). Only whitelisted
+     numeric fields are kept; a day expires after 40 days. Single-threaded, so
+     the read-modify-write needs no lock. */
+  async bumpStats({ day, inc }) {
+    const d = String(day || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return { ok: false };
+    const clean = cleanInc(inc);
+    const key = 'stats:' + d;
+    const cur = (await this.#entry(key)) || { v: {} };
+    const v = Object.assign({}, cur.v || {});
+    for (const k of Object.keys(clean)) v[k] = num(v[k]) + clean[k];
+    await this.ctx.storage.put(key, { v, exp: Date.now() + 40 * 86400000 });
+    return { ok: true };
+  }
+
+  async getStats({ day }) {
+    const entry = await this.#entry('stats:' + String(day || '').slice(0, 10));
+    return { stats: entry ? cleanInc(entry.v) : {} };
+  }
+
   async fetch(request) {
     const path = new URL(request.url).pathname;
     let body = {};
@@ -110,6 +132,8 @@ export class AiStateObject {
         case '/state/get': return json(await this.getState(body));
         case '/state/put': return json(await this.putState(body));
         case '/rate/consume': return json(await this.consumeRate(body));
+        case '/stats/bump': return json(await this.bumpStats(body));
+        case '/stats/get': return json(await this.getStats(body));
         default: return json({ error: 'not_found' }, 404);
       }
     } catch (error) {
