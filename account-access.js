@@ -2802,6 +2802,16 @@
     finally { setBusy(false); }
   };
 
+  // The email-intro button used to call beginEmailVerification directly, which
+  // sent the Firebase link and skipped every OTP provider. Route it through the
+  // OTP chain like created-continue does; the Worker itself falls back to the
+  // Firebase link when every provider is exhausted. Only when the OTP family is
+  // unavailable does the button still request the link directly.
+  const beginEmailIntro = async () => {
+    if (state.capabilities?.emailOwnership?.available) { await beginEmailOwnership(); return; }
+    await beginEmailVerification();
+  };
+
   const openEmailInbox = () => {
     const email = String(state.verification?.email || '').toLowerCase();
     const domain = email.split('@')[1] || '';
@@ -3282,7 +3292,7 @@
       } finally { setBusy(false); }
     });
     $('[data-role="email-verification-start"]').addEventListener('click', () => showView('email-intro'));
-    $('[data-role="email-intro-continue"]').addEventListener('click', beginEmailVerification);
+    $('[data-role="email-intro-continue"]').addEventListener('click', beginEmailIntro);
     $('[data-role="email-intro-back"]').addEventListener('click', () => showView('verify'));
     $('[data-role="whatsapp-info"]').addEventListener('click', () => showView('whatsapp-info'));
     $('[data-role="whatsapp-info-back"]').addEventListener('click', () => showView('verify'));

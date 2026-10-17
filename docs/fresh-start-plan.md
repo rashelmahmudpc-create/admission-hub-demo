@@ -7,7 +7,7 @@ Rule: "ধাপ X শুরু করো" = permission to merge + deploy that p
 
 ## Progress
 - [x] Phase 0: inventory (this file, 2026-10-17)
-- [ ] Phase 1: `email-intro-continue` button -> `beginEmailOwnership` (OTP chain first, Firebase link fallback). sw:manifest. merge + deploy
+- [x] Phase 1 (2026-10-17): `email-intro-continue` button -> `beginEmailOwnership` (OTP chain first, Firebase link fallback). sw:manifest. merge + deploy
 - [ ] Phase 2: new versioned schema + migrations + tests (students, login_methods, email_verifications, otp_attempts, sessions, devices, profiles, activity_log; normalized unique email)
 - [ ] Phase 3: Control Center Students section (list/search, profile, timeline; admin token only, noindex, no secrets)
 - [ ] Phase 4: wipe all users (Firebase Auth of admissionsky-997d2 + Cloudflare user data; keep OTP config) -- final yes with counts
