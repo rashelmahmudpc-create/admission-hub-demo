@@ -77,10 +77,10 @@ function normalizeRow(row) {
     ...payload
   };
 }
-function toPage(rows, limit) {
-  const list = (rows || []).map(normalizeRow).filter(Boolean);
-  const hasMore = list.length >= num3(limit, DEFAULT_LIMIT);
-  return { items: list, nextCursor: hasMore ? encodeCursor({ sort_key: list[list.length - 1].sortKey, id: list[list.length - 1].id }) : null, count: list.length };
+function toPage(rows2, limit) {
+  const list2 = (rows2 || []).map(normalizeRow).filter(Boolean);
+  const hasMore = list2.length >= num3(limit, DEFAULT_LIMIT);
+  return { items: list2, nextCursor: hasMore ? encodeCursor({ sort_key: list2[list2.length - 1].sortKey, id: list2[list2.length - 1].id }) : null, count: list2.length };
 }
 function createD1Reader(db) {
   const available = !!db && typeof db.prepare === "function";
@@ -327,7 +327,7 @@ function renderContext(bundle) {
     if (s.streak != null) bits.push(`streak=${s.streak}d`);
     if (s.mistakes != null) bits.push(`mistakes=${s.mistakes}`);
     if (bits.length) lines.push(`- performance: ${bits.join(" ")}`);
-    const pill = (list) => list.filter(Boolean).slice(0, 4).map((x) => `${x.name} ${x.accuracy}%`).join(", ");
+    const pill = (list2) => list2.filter(Boolean).slice(0, 4).map((x) => `${x.name} ${x.accuracy}%`).join(", ");
     if (Array.isArray(s.weakTopics) && s.weakTopics.length) {
       lines.push(`- weak topics: ${pill(s.weakTopics)}`);
     }
@@ -564,9 +564,9 @@ function makeMemory(input = {}, ownerUid) {
   const ts = Number.isFinite(rawTs) && rawTs > 0 ? rawTs : Date.now();
   return Object.freeze({ kind, key, value, source, confidence, reason: reason2, ts, ownerUid: owner });
 }
-function upsertMemory(list, record, ownerUid) {
+function upsertMemory(list2, record, ownerUid) {
   const owner = resolveMemoryOwner(ownerUid);
-  const items = Array.isArray(list) ? list.filter((r) => r && r.ownerUid === owner) : [];
+  const items = Array.isArray(list2) ? list2.filter((r) => r && r.ownerUid === owner) : [];
   if (!record || record.ownerUid !== owner) return items.map((r) => Object.freeze({ ...r })).slice(0, MAX_RECORDS);
   const rest = items.filter((r) => !(r.kind === record.kind && r.key === record.key));
   const next = [record, ...rest].sort((a, b) => (b.ts || 0) - (a.ts || 0));
@@ -1019,18 +1019,18 @@ function makeAuditRecord({ proposal, status, uid, at = Date.now(), detail = "" }
 function parseAudit(raw, callerUid) {
   const owner = resolveActionOwner(callerUid);
   if (!owner) return [];
-  let list = [];
+  let list2 = [];
   try {
     const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
-    if (Array.isArray(parsed)) list = parsed;
+    if (Array.isArray(parsed)) list2 = parsed;
   } catch (_) {
-    list = [];
+    list2 = [];
   }
-  return list.filter((r) => r && String(r.ownerUid || "") === owner).slice(0, MAX_AUDIT).map((r) => Object.freeze({ ...r, ownerUid: owner }));
+  return list2.filter((r) => r && String(r.ownerUid || "") === owner).slice(0, MAX_AUDIT).map((r) => Object.freeze({ ...r, ownerUid: owner }));
 }
-function appendAudit(list, record, callerUid) {
+function appendAudit(list2, record, callerUid) {
   const owner = resolveActionOwner(callerUid);
-  const base = parseAudit(list, callerUid);
+  const base = parseAudit(list2, callerUid);
   if (!record || record.ownerUid !== owner) return base;
   return [Object.freeze({ ...record }), ...base].slice(0, MAX_AUDIT);
 }
@@ -1526,8 +1526,8 @@ var AiAnalyticsStore = class {
     const limit = Math.min(asInt(options.limit, 200), 1e3);
     try {
       const since = asInt(options.sinceMs);
-      const rows = since > 0 ? await this.#readAll("SELECT * FROM ai_decisions WHERE created_at >= ? ORDER BY created_at DESC LIMIT ?", since, limit) : await this.#readAll("SELECT * FROM ai_decisions ORDER BY created_at DESC LIMIT ?", limit);
-      return rows.map(mapDecision);
+      const rows2 = since > 0 ? await this.#readAll("SELECT * FROM ai_decisions WHERE created_at >= ? ORDER BY created_at DESC LIMIT ?", since, limit) : await this.#readAll("SELECT * FROM ai_decisions ORDER BY created_at DESC LIMIT ?", limit);
+      return rows2.map(mapDecision);
     } catch (err) {
       if (isMissingSchemaError(err)) return [];
       throw err;
@@ -1609,8 +1609,8 @@ var AiAnalyticsStore = class {
     await this.init();
     const limit = Math.min(asInt(options.limit, 100), 500);
     try {
-      const rows = options.status ? await this.#readAll("SELECT * FROM ai_approvals WHERE status = ? ORDER BY created_at DESC LIMIT ?", String(options.status), limit) : await this.#readAll("SELECT * FROM ai_approvals ORDER BY created_at DESC LIMIT ?", limit);
-      return rows.map(mapApproval);
+      const rows2 = options.status ? await this.#readAll("SELECT * FROM ai_approvals WHERE status = ? ORDER BY created_at DESC LIMIT ?", String(options.status), limit) : await this.#readAll("SELECT * FROM ai_approvals ORDER BY created_at DESC LIMIT ?", limit);
+      return rows2.map(mapApproval);
     } catch (err) {
       if (isMissingSchemaError(err)) return [];
       throw err;
@@ -1645,7 +1645,7 @@ var AiAnalyticsStore = class {
     if (!this.#d1) return [];
     await this.init();
     try {
-      const rows = await this.#readAll(
+      const rows2 = await this.#readAll(
         `SELECT variant,
                 COUNT(*) AS shown,
                 SUM(CASE WHEN opened_at IS NOT NULL THEN 1 ELSE 0 END) AS opened,
@@ -1654,7 +1654,7 @@ var AiAnalyticsStore = class {
          FROM ai_experiments WHERE experiment = ? GROUP BY variant`,
         String(experiment)
       );
-      return rows.map((r) => ({
+      return rows2.map((r) => ({
         variant: r.variant,
         shown: asInt(r.shown),
         opened: asInt(r.opened),
@@ -1678,10 +1678,10 @@ var AiAnalyticsStore = class {
   async analyticsEventsFor(userId, sinceMs, limit = 2e3) {
     if (!this.#d1) return [];
     try {
-      const rows = await this.#d1.prepare(
+      const rows2 = await this.#d1.prepare(
         "SELECT at FROM analytics_events WHERE user_id = ? AND at >= ? ORDER BY at ASC LIMIT ?"
       ).bind(String(userId), asInt(sinceMs), Math.min(asInt(limit, 2e3), 5e3)).all();
-      return (rows?.results || []).map((r) => ({ at: asInt(r.at) }));
+      return (rows2?.results || []).map((r) => ({ at: asInt(r.at) }));
     } catch (err) {
       if (isMissingSchemaError(err)) return [];
       throw err;
@@ -1940,8 +1940,8 @@ function selectHistory(messages, opts = {}) {
   };
 }
 function capRecalledTurns(mem, max = 4) {
-  const list = Array.isArray(mem) ? mem.filter(Boolean) : [];
-  return list.length <= max ? list.slice() : list.slice(list.length - max);
+  const list2 = Array.isArray(mem) ? mem.filter(Boolean) : [];
+  return list2.length <= max ? list2.slice() : list2.slice(list2.length - max);
 }
 
 // ai-provider-health.mjs
@@ -1980,10 +1980,10 @@ function isEntryHealthy(marker, now) {
   return until <= now;
 }
 function healthyChain(entries, badMap, now) {
-  const list = Array.isArray(entries) ? entries : [];
-  const fresh = list.filter((e) => isEntryHealthy(badMap[e.sig], now));
+  const list2 = Array.isArray(entries) ? entries : [];
+  const fresh = list2.filter((e) => isEntryHealthy(badMap[e.sig], now));
   if (fresh.length) return fresh;
-  return list.slice();
+  return list2.slice();
 }
 function failureMarker(status, now) {
   const cooldown = cooldownForStatus(status);
@@ -1991,10 +1991,10 @@ function failureMarker(status, now) {
   return JSON.stringify({ until: now + cooldown * 1e3, status: Number(status) });
 }
 function rankChainByModelHealth(entries, badMap, now) {
-  const list = Array.isArray(entries) ? entries : [];
-  if (!list.length) return list;
+  const list2 = Array.isArray(entries) ? entries : [];
+  if (!list2.length) return list2;
   const byModel = /* @__PURE__ */ new Map();
-  for (const e of list) {
+  for (const e of list2) {
     const m = byModel.get(e.model) || { total: 0, failing: 0 };
     m.total += 1;
     if (!isEntryHealthy(badMap[e.sig], now)) m.failing += 1;
@@ -2004,7 +2004,7 @@ function rankChainByModelHealth(entries, badMap, now) {
     const m = byModel.get(e.model);
     return Boolean(m) && m.total > 0 && m.failing === m.total;
   };
-  return list.filter((e) => !dead(e)).concat(list.filter(dead));
+  return list2.filter((e) => !dead(e)).concat(list2.filter(dead));
 }
 
 // ai-agent.js
@@ -2146,7 +2146,7 @@ function capStats(stats) {
   if (stats.mistakes != null) s.mistakes = num4(stats.mistakes, 0, 1e5);
   const name = (v, max) => String(v == null ? "" : v).replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, max);
   const pii = (v) => /[\w.+-]+@[\w-]+\.[\w.]+|(?:\+?880|0)1[3-9]\d{8}|\b\d{10,}\b/.test(v);
-  const rows = (input, limit) => {
+  const rows2 = (input, limit) => {
     if (!Array.isArray(input)) return null;
     const seen = /* @__PURE__ */ new Set();
     const out = [];
@@ -2160,9 +2160,9 @@ function capStats(stats) {
     }
     return out.length ? out : null;
   };
-  const weak = rows(stats.weakTopics, 4);
+  const weak = rows2(stats.weakTopics, 4);
   if (weak) s.weakTopics = weak;
-  const subs = rows(stats.subjects, 6);
+  const subs = rows2(stats.subjects, 6);
   if (subs) s.subjects = subs;
   const period = (input) => {
     if (!input || typeof input !== "object") return null;
@@ -2279,7 +2279,7 @@ STUDENT PREFERENCES (এই ব্যবহারকারীর নিজস্
     if (bits.length) p += `
 
 USER STATS (শুধু এই প্রদত্ত সংখ্যা ব্যবহার করো — এগুলোর বাইরে কোনো সংখ্যা বানাবে না): ${bits.join(" · ")}.`;
-    const fmtRows = (list) => list.filter(Boolean).map((x) => `${x.name} (${x.accuracy}%, ${x.attempts}টা)`);
+    const fmtRows = (list2) => list2.filter(Boolean).map((x) => `${x.name} (${x.accuracy}%, ${x.attempts}টা)`);
     if (Array.isArray(stats.weakTopics) && stats.weakTopics.length) {
       p += `
 
@@ -2304,8 +2304,8 @@ function buildStudyRecommendation(stats, opts = {}) {
   const en = opts.langStyle === "en";
   const improvement = buildImprovementLine(s, { langStyle: opts.langStyle });
   if (!s || !Array.isArray(s.weakTopics) || !s.weakTopics.length) return improvement || null;
-  const list = s.weakTopics.slice(0, 3).map((t) => `${t.name} (${t.accuracy}%)`).join(", ");
-  const lead = en ? `Your revision priority right now: ${list}.` : `এখন রিভিশনে সবচেয়ে জরুরি: ${list}।`;
+  const list2 = s.weakTopics.slice(0, 3).map((t) => `${t.name} (${t.accuracy}%)`).join(", ");
+  const lead = en ? `Your revision priority right now: ${list2}.` : `এখন রিভিশনে সবচেয়ে জরুরি: ${list2}।`;
   const tip = en ? "Practise these with a few MCQs daily, then re-test after a day to confirm the gap is closing." : "প্রতিদিন অল্প কিছু MCQ দিয়ে এগুলোর অনুশীলন করো, এক দিন পর আবার পরীক্ষা দিয়ে দেখো দুর্বলতা কমছে কি না।";
   return [improvement, `${lead} ${tip}`].filter(Boolean).join(" ");
 }
@@ -2657,8 +2657,8 @@ function routerChain(env, tier, badSet = /* @__PURE__ */ new Set(), kv2 = {}) {
   const cfKey = pickKey(env, kv2, "CLOUDFLARE_AI_API_KEY");
   if (cfAccount && cfKey) {
     const cfModels = String(env && env.AGENT_CLOUDFLARE_MODELS || kv2.AGENT_CLOUDFLARE_MODELS || "").split(",").map((s) => s.trim()).filter(Boolean);
-    const list = cfModels.length ? cfModels : ["@cf/meta/llama-3.3-70b-instruct-fp8-fast"];
-    for (const m of list) chain.push({ provider: "cloudflare", key: cfKey, model: m });
+    const list2 = cfModels.length ? cfModels : ["@cf/meta/llama-3.3-70b-instruct-fp8-fast"];
+    for (const m of list2) chain.push({ provider: "cloudflare", key: cfKey, model: m });
   }
   for (const p of COMPAT_PROVIDERS) {
     const keys2 = String(pickKey(env, kv2, p.key) || "").split(",").map((s) => s.trim()).filter(Boolean);
@@ -3061,15 +3061,15 @@ async function agentChat(request, env, uid, opts = {}) {
       const candidates = extractMemoryCandidates(latest);
       if (candidates.length) {
         const key = "mem:" + MEMORY_VERSION + ":" + sendCtx.uid;
-        let list = parseMemory(await stateGet(key), sendCtx.uid);
+        let list2 = parseMemory(await stateGet(key), sendCtx.uid);
         let changed = false;
         for (const candidate of candidates) {
           const record = makeMemory(candidate, sendCtx.uid);
           if (!record) continue;
-          list = upsertMemory(list, record, sendCtx.uid);
+          list2 = upsertMemory(list2, record, sendCtx.uid);
           changed = true;
         }
-        if (changed) await statePut(key, JSON.stringify(list));
+        if (changed) await statePut(key, JSON.stringify(list2));
       }
     } catch (_) {
     }
@@ -3418,12 +3418,12 @@ function makeErrorEntry({ path, method, status, message, at }) {
   };
 }
 function appendError(log, entry) {
-  const list = Array.isArray(log) ? log.slice() : [];
+  const list2 = Array.isArray(log) ? log.slice() : [];
   const sig = errorSignature(entry.path, entry.message);
-  const idx = list.findIndex((e) => e && e.sig === sig);
+  const idx = list2.findIndex((e) => e && e.sig === sig);
   if (idx >= 0) {
-    const seen = list[idx];
-    list[idx] = {
+    const seen = list2[idx];
+    list2[idx] = {
       ...seen,
       count: (Number(seen.count) || 1) + 1,
       lastAt: entry.at,
@@ -3431,21 +3431,21 @@ function appendError(log, entry) {
       status: entry.status,
       message: entry.message
     };
-    return list.slice(0, MAX_KINDS);
+    return list2.slice(0, MAX_KINDS);
   }
-  list.unshift({ sig, count: 1, firstAt: entry.at, lastAt: entry.at, ...entry });
-  return list.slice(0, MAX_KINDS);
+  list2.unshift({ sig, count: 1, firstAt: entry.at, lastAt: entry.at, ...entry });
+  return list2.slice(0, MAX_KINDS);
 }
 function totalErrors(log) {
   return (Array.isArray(log) ? log : []).reduce((n, e) => n + (Number(e?.count) || 0), 0);
 }
 function summarizeErrors(log) {
-  const list = Array.isArray(log) ? log : [];
+  const list2 = Array.isArray(log) ? log : [];
   return {
     ok: true,
-    kinds: list.length,
-    total: totalErrors(list),
-    errors: list.map((e) => ({
+    kinds: list2.length,
+    total: totalErrors(list2),
+    errors: list2.map((e) => ({
       path: e.path,
       method: e.method,
       status: e.status,
@@ -3516,8 +3516,8 @@ function makeIndexEntry({ key, at, kvCount, d1Count, bytes }) {
   };
 }
 function appendIndex(index, entry) {
-  const list = Array.isArray(index) ? index.slice() : [];
-  const without = list.filter((e) => e && e.key !== entry.key);
+  const list2 = Array.isArray(index) ? index.slice() : [];
+  const without = list2.filter((e) => e && e.key !== entry.key);
   return [entry, ...without].sort((a, b) => (b.at || 0) - (a.at || 0)).slice(0, MAX_INDEX);
 }
 function planRestore(snapshot) {
@@ -3594,7 +3594,7 @@ async function createSnapshot(env, { now } = {}) {
   const body = JSON.stringify(snapshot);
   await bucket.put(key, body, { httpMetadata: { contentType: "application/json" } });
   const kvCount = Object.values(snapshot.kv).reduce((n, m) => n + Object.keys(m || {}).length, 0);
-  const d1Count = Object.values(snapshot.d1).reduce((n, rows) => n + (Array.isArray(rows) ? rows.length : 0), 0);
+  const d1Count = Object.values(snapshot.d1).reduce((n, rows2) => n + (Array.isArray(rows2) ? rows2.length : 0), 0);
   const entry = makeIndexEntry({ key, at: snapshot.at, kvCount, d1Count, bytes: body.length });
   try {
     const raw = env.PUB_KV ? await env.PUB_KV.get(BACKUP_INDEX_KEY) : null;
@@ -3646,7 +3646,7 @@ var JSONH = {
   "Access-Control-Allow-Methods": "GET,POST,OPTIONS"
 };
 var json2 = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: JSONH });
-var onlyRows = (rows) => (Array.isArray(rows) ? rows : []).filter((row) => row && row.id).map((row) => {
+var onlyRows = (rows2) => (Array.isArray(rows2) ? rows2 : []).filter((row) => row && row.id).map((row) => {
   const clean = { ...row };
   for (const key of ["imageDataUrl", "image", "thumbnail"]) {
     if (typeof clean[key] === "string" && clean[key].startsWith("data:") && clean[key].length > 9e5) delete clean[key];
@@ -3840,15 +3840,15 @@ var publishGlobal = async (env, full) => {
     try {
       await env.PROFILE_DB.prepare("CREATE TABLE IF NOT EXISTS content_lists (kind TEXT NOT NULL, id TEXT NOT NULL, ord INTEGER NOT NULL DEFAULT 0, payload TEXT NOT NULL, PRIMARY KEY (kind, id))").run();
       const present = [["subjects", subjects], ["topics", topics], ["vocabulary", vocabulary], ["vocabularyMaster", vocabularyMaster], ["exams", exams]];
-      const gone = present.filter(([, rows]) => !rows.length).map(([kind]) => kind);
+      const gone = present.filter(([, rows2]) => !rows2.length).map(([kind]) => kind);
       if (gone.length) {
         await env.PROFILE_DB.prepare(`DELETE FROM content_lists WHERE kind IN (${gone.map(() => "?").join(",")})`).bind(...gone).run();
       }
-      for (const [kind, rows] of present) {
-        if (!rows.length) continue;
+      for (const [kind, rows2] of present) {
+        if (!rows2.length) continue;
         await env.PROFILE_DB.prepare("DELETE FROM content_lists WHERE kind = ?").bind(kind).run();
-        for (let i = 0; i < rows.length; i += 25) {
-          const chunk = rows.slice(i, i + 25);
+        for (let i = 0; i < rows2.length; i += 25) {
+          const chunk = rows2.slice(i, i + 25);
           await env.PROFILE_DB.prepare(
             `INSERT INTO content_lists (kind, id, ord, payload) VALUES ${chunk.map(() => "(?,?,?,?)").join(",")}`
           ).bind(...chunk.flatMap((row, j) => [kind, String(row.id), i + j, JSON.stringify(row)])).run();
@@ -5864,11 +5864,11 @@ var ProviderRegistry = class {
     const eligible = this.all().filter(
       (entry) => entry.enabled && Boolean(entry.policy.emergency) === emergency && !excluded.has(entry.id) && REQUIRED_CAPABILITIES.every((capability) => entry.policy.capabilities.includes(capability))
     );
-    const rows = await Promise.all(eligible.map(async (entry) => {
+    const rows2 = await Promise.all(eligible.map(async (entry) => {
       const [snapshot, remote] = await Promise.all([this.healthMonitor.snapshot(entry), this.remoteHealth(entry)]);
       return { entry, snapshot, remote };
     }));
-    const available = rows.filter(
+    const available = rows2.filter(
       (row) => ![PROVIDER_HEALTH.DISABLED, PROVIDER_HEALTH.OFFLINE, PROVIDER_HEALTH.QUOTA_EXHAUSTED].includes(row.snapshot.health) && !["OFFLINE", "INELIGIBLE", "DISABLED"].includes(row.remote.status) && row.remote.senderVerified !== false && row.remote.transactionalReady !== false
     );
     const mode = this.config.router.mode;
@@ -7635,14 +7635,14 @@ function normalizeProfilePatch(value = {}, now = Date.now()) {
       }
       if (!Array.isArray(raw)) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
       if (raw.length > 8) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
-      const list = [];
+      const list2 = [];
       for (const item of raw) {
         const sv = cleanProfileText(item, 40);
         if (!sv || /[\r\n\u0000<>]/.test(sv)) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
-        if (!list.includes(sv)) list.push(sv);
+        if (!list2.includes(sv)) list2.push(sv);
       }
-      if (list.length > 8) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
-      fields.subjects = list;
+      if (list2.length > 8) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
+      fields.subjects = list2;
     } else if (key === "targets") {
       if (raw === null) {
         fields.targets = [];
@@ -7650,7 +7650,7 @@ function normalizeProfilePatch(value = {}, now = Date.now()) {
       }
       if (!Array.isArray(raw)) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
       if (raw.length > 5) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
-      const list = [];
+      const list2 = [];
       for (const t of raw) {
         if (!t || typeof t !== "object" || Array.isArray(t)) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
         const name = cleanProfileText(t.name, 120);
@@ -7659,9 +7659,9 @@ function normalizeProfilePatch(value = {}, now = Date.now()) {
         if (name.length < 2 || name.length > 120 || unit.length > 20 || year.length > 10 || /[\r\n\u0000<>]/.test(name) || /[\r\n\u0000<>]/.test(unit) || /[\r\n\u0000<>]/.test(year)) {
           failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
         }
-        list.push(Object.freeze({ name, unit, year }));
+        list2.push(Object.freeze({ name, unit, year }));
       }
-      fields.targets = list;
+      fields.targets = list2;
     } else {
       failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
     }
@@ -8566,13 +8566,13 @@ var CloudflareNativeAuthEngine = class {
       emailRef: identity.refs.emailRef,
       now
     }));
-    const rows = errorFromRepository(await this.repository.recentSecurityHistory({
+    const rows2 = errorFromRepository(await this.repository.recentSecurityHistory({
       userId: session.user.id,
       now,
       limit: 10
     }));
     return Object.freeze({
-      entries: rows.map((row) => Object.freeze({
+      entries: rows2.map((row) => Object.freeze({
         at: Number(row.at),
         method: row.method,
         browserClass: row.browserClass,
@@ -11731,14 +11731,14 @@ var asInt2 = (v, fallback = 0) => {
   return Number.isFinite(n) ? n : fallback;
 };
 var pct = (part, whole) => whole > 0 ? Math.round(part / whole * 1e3) / 10 : 0;
-function computeAnalytics(rows = [], readCounts = {}, inactiveDevices = 0) {
+function computeAnalytics(rows2 = [], readCounts = {}, inactiveDevices = 0) {
   const items = [];
   let sent = 0;
   let delivered = 0;
   let failed = 0;
   let opened = 0;
   let clicked = 0;
-  for (const row of rows) {
+  for (const row of rows2) {
     const status = String(row?.status || "");
     const wasSent = status === "sent";
     const didFail = status === "failed";
@@ -11768,7 +11768,7 @@ function computeAnalytics(rows = [], readCounts = {}, inactiveDevices = 0) {
   }
   return {
     totals: {
-      notifications: rows.length,
+      notifications: rows2.length,
       sent,
       failed,
       delivered,
@@ -11783,8 +11783,8 @@ function computeAnalytics(rows = [], readCounts = {}, inactiveDevices = 0) {
     items
   };
 }
-function summarizeHistory(rows = [], readCounts = {}) {
-  return computeAnalytics(rows, readCounts).items.map((item) => ({
+function summarizeHistory(rows2 = [], readCounts = {}) {
+  return computeAnalytics(rows2, readCounts).items.map((item) => ({
     id: item.id,
     title: item.title,
     status: item.status,
@@ -12432,11 +12432,11 @@ var FcmStore = class {
   }
   async activeDevices(userId) {
     await this.#ensureTables();
-    const rows = await this.#d1.prepare(
+    const rows2 = await this.#d1.prepare(
       `SELECT id, fcm_token, platform, browser, device_info, created_at, updated_at, last_seen
        FROM fcm_devices WHERE user_id=? AND is_active=1 ORDER BY updated_at DESC`
     ).bind(userId).all();
-    return (rows?.results || []).map((row) => ({
+    return (rows2?.results || []).map((row) => ({
       id: row.id,
       token: `${String(row.fcm_token).slice(0, 10)}…`,
       platform: row.platform,
@@ -12448,10 +12448,10 @@ var FcmStore = class {
   }
   async activeTokens(userId) {
     await this.#ensureTables();
-    const rows = await this.#d1.prepare(
+    const rows2 = await this.#d1.prepare(
       `SELECT id, fcm_token FROM fcm_devices WHERE user_id=? AND is_active=1 ORDER BY updated_at DESC`
     ).bind(userId).all();
-    return (rows?.results || []).map((row) => ({ id: row.id, token: row.fcm_token }));
+    return (rows2?.results || []).map((row) => ({ id: row.id, token: row.fcm_token }));
   }
   async getPrefs(userId) {
     await this.#ensureTables();
@@ -13294,8 +13294,8 @@ async function handleFcmNotificationRequest(request, env) {
       if (!body) return jsonResponse(request, { error: "invalid-json" }, 400);
       const id = String(body.id || "");
       if (!GN_ID_RE.test(id)) return jsonResponse(request, { error: "invalid-id" }, 400);
-      const rows = await store.recentGlobals(50);
-      const row = rows.find((r) => r.id === id);
+      const rows2 = await store.recentGlobals(50);
+      const row = rows2.find((r) => r.id === id);
       if (!row) return jsonResponse(request, { error: "not-found" }, 404);
       if (row.status !== "scheduled") return jsonResponse(request, { error: "not-scheduled" }, 409);
       await store.updateGlobalStatus(id, { status: "cancelled" });
@@ -13826,14 +13826,14 @@ var UserDataStore = class {
     if (!table) return null;
     const after = clampInt(since, 0, Number.MAX_SAFE_INTEGER, 0);
     const max = clampInt(limit, 1, MAX_PULL_LIMIT, MAX_PULL_LIMIT);
-    const rows = await this.#d1.prepare(
+    const rows2 = await this.#d1.prepare(
       `SELECT ${shapedKey} AS id, payload_json, updated_at, deleted_at
        FROM ${table}
        WHERE user_id=? AND updated_at>? AND ${shapedKey}>?
        ORDER BY updated_at ASC, ${shapedKey} ASC LIMIT ?`
     ).bind(userId, after, String(cursor || ""), max + 1).all();
     const items = [];
-    for (const r of rows?.results || []) {
+    for (const r of rows2?.results || []) {
       const id = String(r.id);
       let doc = null;
       if (r.deleted_at == null) {
@@ -14147,10 +14147,10 @@ var PersonalizedStore = class {
   /* Every student who currently has at least one active device. */
   async audience() {
     await this.init();
-    const rows = await this.#d1.prepare(
+    const rows2 = await this.#d1.prepare(
       "SELECT DISTINCT user_id FROM fcm_devices WHERE is_active=1"
     ).all();
-    return (rows?.results || []).map((r) => String(r.user_id));
+    return (rows2?.results || []).map((r) => String(r.user_id));
   }
   async prefs(userId) {
     await this.init();
@@ -14760,8 +14760,8 @@ function hashToInt(str2) {
   return h >>> 0;
 }
 function assignVariant(userId, kind, variants = AB_VARIANTS) {
-  const list = Array.isArray(variants) && variants.length ? variants : AB_VARIANTS;
-  return list[hashToInt(`${userId}|${kind}`) % list.length];
+  const list2 = Array.isArray(variants) && variants.length ? variants : AB_VARIANTS;
+  return list2[hashToInt(`${userId}|${kind}`) % list2.length];
 }
 function buildMessage2(kind, params = {}, lang = "bn", variant = "A") {
   const meta = KIND_META[kind];
@@ -14784,12 +14784,12 @@ function attributeConversion(send = {}, learningEvents = [], windowMs = 6 * 3600
   return { converted: true, kind: candidates[0].kind, lagMs: candidates[0].at - sentAt };
 }
 var pct2 = (part, whole) => whole > 0 ? Math.round(part / whole * 1e3) / 10 : 0;
-function computePerformance(rows = []) {
+function computePerformance(rows2 = []) {
   const byKind = {};
   const byVariant = {};
   const byHour = {};
   let sent = 0, opened = 0, clicked = 0, converted = 0, failed = 0;
-  for (const r of rows) {
+  for (const r of rows2) {
     const kind = String(r?.kind || "unknown");
     const variant = String(r?.variant || "A");
     const hour = Number.isFinite(Number(r?.hour)) ? Number(r.hour) : null;
@@ -14826,8 +14826,8 @@ function computePerformance(rows = []) {
     bestHour
   };
 }
-function computeFeedback(rows = [], opts = {}) {
-  const perf = computePerformance(rows);
+function computeFeedback(rows2 = [], opts = {}) {
+  const perf = computePerformance(rows2);
   const minSample = asInt4(opts.minSample, 20);
   const variants = Object.entries(perf.byVariant).filter(([, b]) => b.sent >= minSample);
   let winner = null;
@@ -14840,13 +14840,13 @@ function computeFeedback(rows = [], opts = {}) {
   return { ...perf, winner, ready: perf.totals.sent >= minSample };
 }
 function computeDecisionStats(decisions = [], outcomes = []) {
-  const rows = Array.isArray(decisions) ? decisions : [];
+  const rows2 = Array.isArray(decisions) ? decisions : [];
   const out = Array.isArray(outcomes) ? outcomes : [];
   let sent = 0, skipped = 0;
   const byRule = {};
   const bySkipStage = {};
   const byReason = {};
-  for (const d of rows) {
+  for (const d of rows2) {
     const decision = String(d?.decision || "");
     const rule = String(d?.rule || "unknown");
     if (decision === "send") sent += 1;
@@ -14881,7 +14881,7 @@ function computeDecisionStats(decisions = [], outcomes = []) {
   }
   const perfRanked = Object.entries(perfByRule).map(([kind, b]) => ({ kind, ...b, clickRate: pct2(b.clicked, b.sent), openRate: pct2(b.opened, b.sent) })).sort((a, b) => b.clickRate - a.clickRate || b.openRate - a.openRate || a.kind.localeCompare(b.kind));
   return {
-    eligible: rows.length,
+    eligible: rows2.length,
     sent,
     skipped,
     /* CTR is over delivered sends, not decisions: a decision to send that FCM
@@ -15027,8 +15027,8 @@ var IntelligenceStore = class {
   }
   async audience() {
     await this.init();
-    const rows = await this.#d1.prepare("SELECT DISTINCT user_id FROM fcm_devices WHERE is_active=1").all();
-    return (rows?.results || []).map((r) => String(r.user_id));
+    const rows2 = await this.#d1.prepare("SELECT DISTINCT user_id FROM fcm_devices WHERE is_active=1").all();
+    return (rows2?.results || []).map((r) => String(r.user_id));
   }
   async getState(userId) {
     await this.init();
@@ -15083,15 +15083,15 @@ var IntelligenceStore = class {
   }
   async seenKeys(userId) {
     await this.init();
-    const rows = await this.#d1.prepare("SELECT notification_key FROM notification_outcomes WHERE user_id=?").bind(userId).all();
-    return new Set((rows?.results || []).map((r) => String(r.notification_key)));
+    const rows2 = await this.#d1.prepare("SELECT notification_key FROM notification_outcomes WHERE user_id=?").bind(userId).all();
+    return new Set((rows2?.results || []).map((r) => String(r.notification_key)));
   }
   async history(userId, limit = 200) {
     await this.init();
-    const rows = await this.#d1.prepare(
+    const rows2 = await this.#d1.prepare(
       "SELECT notification_key, kind, sent_at, opened_at, clicked_at FROM notification_outcomes WHERE user_id=? ORDER BY sent_at DESC LIMIT ?"
     ).bind(userId, limit).all();
-    return (rows?.results || []).map((r) => ({
+    return (rows2?.results || []).map((r) => ({
       key: String(r.notification_key),
       kind: String(r.kind),
       sentAt: asInt4(r.sent_at),
@@ -15143,11 +15143,11 @@ var IntelligenceStore = class {
   }
   async decisionsForDay(dayKey4) {
     await this.init();
-    const rows = await this.#d1.prepare(
+    const rows2 = await this.#d1.prepare(
       `SELECT user_id, rule, kind, score, decision, stage, reason, day_key, created_at
        FROM notification_decisions WHERE day_key=? ORDER BY created_at DESC`
     ).bind(dayKey4).all();
-    return (rows?.results || []).map((r) => ({
+    return (rows2?.results || []).map((r) => ({
       userId: String(r.user_id),
       rule: String(r.rule),
       kind: r.kind ? String(r.kind) : null,
@@ -15163,11 +15163,11 @@ var IntelligenceStore = class {
    * the dashboard can exclude them from the denominator itself. */
   async outcomesForDay(dayKey4) {
     await this.init();
-    const rows = await this.#d1.prepare(
+    const rows2 = await this.#d1.prepare(
       `SELECT kind, category, variant, sent_at, opened_at, clicked_at, status
        FROM notification_outcomes WHERE day_key=? ORDER BY sent_at DESC`
     ).bind(dayKey4).all();
-    return (rows?.results || []).map((r) => ({
+    return (rows2?.results || []).map((r) => ({
       kind: String(r.kind),
       category: String(r.category),
       variant: String(r.variant),
@@ -15197,11 +15197,11 @@ var IntelligenceStore = class {
    * event can be credited to. */
   async convertibleSends(userId, sinceMs) {
     await this.init();
-    const rows = await this.#d1.prepare(
+    const rows2 = await this.#d1.prepare(
       `SELECT notification_key, kind, sent_at, opened_at, clicked_at FROM notification_outcomes
        WHERE user_id=? AND sent_at>=? AND learning_at IS NULL ORDER BY sent_at DESC LIMIT 10`
     ).bind(userId, sinceMs).all();
-    return (rows?.results || []).map((r) => ({
+    return (rows2?.results || []).map((r) => ({
       key: String(r.notification_key),
       kind: String(r.kind),
       sentAt: asInt4(r.sent_at),
@@ -15233,11 +15233,11 @@ var IntelligenceStore = class {
   }
   async rowsForPerformance(limit = 2e3) {
     await this.init();
-    const rows = await this.#d1.prepare(
+    const rows2 = await this.#d1.prepare(
       `SELECT kind, category, variant, status, sent_at, opened_at, clicked_at, learning_at, learning_kind
        FROM notification_outcomes ORDER BY sent_at DESC LIMIT ?`
     ).bind(limit).all();
-    return (rows?.results || []).map((r) => ({
+    return (rows2?.results || []).map((r) => ({
       kind: String(r.kind),
       category: String(r.category),
       variant: String(r.variant),
@@ -15255,11 +15255,11 @@ var IntelligenceStore = class {
    * tables other features already own — this engine never writes them. */
   async dailyStats(userId, limitDays = 60) {
     await this.init();
-    const rows = await this.#d1.prepare(
+    const rows2 = await this.#d1.prepare(
       `SELECT day, payload_json FROM user_daily_stats
        WHERE user_id=? AND deleted_at IS NULL ORDER BY day DESC LIMIT ?`
     ).bind(userId, limitDays).all();
-    return (rows?.results || []).map((r) => {
+    return (rows2?.results || []).map((r) => {
       let doc = null;
       try {
         doc = JSON.parse(String(r.payload_json));
@@ -15276,11 +15276,11 @@ var IntelligenceStore = class {
   }
   async examScores(userId, limit = 20) {
     await this.init();
-    const rows = await this.#d1.prepare(
+    const rows2 = await this.#d1.prepare(
       `SELECT id, payload_json, updated_at FROM user_exam_results
        WHERE user_id=? AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT ?`
     ).bind(userId, limit).all();
-    return (rows?.results || []).map((r) => {
+    return (rows2?.results || []).map((r) => {
       let doc = null;
       try {
         doc = JSON.parse(String(r.payload_json));
@@ -15294,13 +15294,13 @@ var IntelligenceStore = class {
    * weak-topic intelligence needs. */
   async mistakeState(userId) {
     await this.init();
-    const rows = await this.#d1.prepare(
+    const rows2 = await this.#d1.prepare(
       `SELECT topic_id, COUNT(*) AS misses FROM user_mistakes
        WHERE user_id=? AND deleted_at IS NULL AND COALESCE(mastered,0)=0
          AND (revision_status IS NULL OR revision_status<>'mastered')
        GROUP BY topic_id ORDER BY misses DESC LIMIT 10`
     ).bind(userId).all();
-    const topics = (rows?.results || []).map((r) => ({ topic: String(r.topic_id || "general"), misses: asInt4(r.misses) }));
+    const topics = (rows2?.results || []).map((r) => ({ topic: String(r.topic_id || "general"), misses: asInt4(r.misses) }));
     const pending = topics.reduce((n, t) => n + t.misses, 0);
     const masteredRow = await this.#d1.prepare(
       `SELECT COUNT(*) AS n FROM user_mistakes
@@ -15627,8 +15627,8 @@ async function handleIntelligenceRequest(request, env, deps = {}) {
     return jsonResponse4(request, { ok: true, ...result });
   }
   if (path === `${ADMIN_PREFIX}performance` && request.method === "GET") {
-    const rows = await store.rowsForPerformance();
-    return jsonResponse4(request, { ok: true, ...computeFeedback(rows), rows: rows.length });
+    const rows2 = await store.rowsForPerformance();
+    return jsonResponse4(request, { ok: true, ...computeFeedback(rows2), rows: rows2.length });
   }
   if (path === `${ADMIN_PREFIX}fatigue` && request.method === "GET") {
     const userId = String(url.searchParams.get("user") || "").trim();
@@ -15743,7 +15743,7 @@ var reachedMilestone = (value, table) => {
 function emptySnapshot() {
   return { streak: 0, bestScore: null, mastered: 0, pending: 0, exams: [] };
 }
-var examIds = (list) => (Array.isArray(list) ? list : []).map((e) => e && typeof e === "object" ? e.id : e).filter((v) => v !== void 0 && v !== null && String(v) !== "").map(String);
+var examIds = (list2) => (Array.isArray(list2) ? list2 : []).map((e) => e && typeof e === "object" ? e.id : e).filter((v) => v !== void 0 && v !== null && String(v) !== "").map(String);
 function detectEvents(prev, curr, nowMs = Date.now()) {
   if (!prev) return { events: [], baseline: true };
   const events = [];
@@ -15852,8 +15852,8 @@ var EventStore = class {
   /* Everyone who currently has an active device. */
   async audience() {
     await this.init();
-    const rows = await this.#d1.prepare("SELECT DISTINCT user_id FROM fcm_devices WHERE is_active=1").all();
-    return (rows?.results || []).map((r) => String(r.user_id));
+    const rows2 = await this.#d1.prepare("SELECT DISTINCT user_id FROM fcm_devices WHERE is_active=1").all();
+    return (rows2?.results || []).map((r) => String(r.user_id));
   }
   async prefs(userId) {
     await this.init();
@@ -16154,8 +16154,8 @@ var DigestStore = class {
   }
   async audience() {
     await this.init();
-    const rows = await this.#d1.prepare("SELECT DISTINCT user_id FROM fcm_devices WHERE is_active=1").all();
-    return (rows?.results || []).map((r) => String(r.user_id));
+    const rows2 = await this.#d1.prepare("SELECT DISTINCT user_id FROM fcm_devices WHERE is_active=1").all();
+    return (rows2?.results || []).map((r) => String(r.user_id));
   }
   async prefs(userId) {
     await this.init();
@@ -16298,7 +16298,7 @@ var asNum = (v, fallback = 0) => {
 var pct3 = (part, whole, dp = 1) => whole > 0 ? Number((part / whole * 100).toFixed(dp)) : 0;
 var ratio2 = (part, whole, dp = 4) => whole > 0 ? Number((part / whole).toFixed(dp)) : 0;
 var round = (n, dp = 2) => Number.isFinite(Number(n)) ? Number(Number(n).toFixed(dp)) : 0;
-var sum = (rows, pick) => rows.reduce((n, r) => n + asNum(pick(r)), 0);
+var sum = (rows2, pick) => rows2.reduce((n, r) => n + asNum(pick(r)), 0);
 var parseDay = (day) => {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(day || ""));
   return m ? Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : NaN;
@@ -16449,22 +16449,22 @@ function compareValue(current, previous) {
   };
 }
 function splitPeriods(series = [], days = 7) {
-  const rows = Array.isArray(series) ? series : [];
-  const current = rows.slice(-days);
-  const previous = rows.slice(-days * 2, -days);
+  const rows2 = Array.isArray(series) ? series : [];
+  const current = rows2.slice(-days);
+  const previous = rows2.slice(-days * 2, -days);
   return { current, previous };
 }
 function comparePeriods(series = [], days = 7) {
   const { current, previous } = splitPeriods(series, days);
-  const active = (rows) => rows.filter((r) => r.active).length;
+  const active = (rows2) => rows2.filter((r) => r.active).length;
   const pick = {
-    practiceActivity: (rows) => sum(rows, (r) => r.questions),
-    lessonsCompleted: (rows) => sum(rows, (r) => r.lessons),
-    learningTimeMs: (rows) => sum(rows, (r) => r.timeMs),
+    practiceActivity: (rows2) => sum(rows2, (r) => r.questions),
+    lessonsCompleted: (rows2) => sum(rows2, (r) => r.lessons),
+    learningTimeMs: (rows2) => sum(rows2, (r) => r.timeMs),
     activeDays: active,
-    accuracy: (rows) => {
-      const c = sum(rows, (r) => r.correct);
-      const w = sum(rows, (r) => r.wrong);
+    accuracy: (rows2) => {
+      const c = sum(rows2, (r) => r.correct);
+      const w = sum(rows2, (r) => r.wrong);
       return c + w > 0 ? pct3(c, c + w, 1) : 0;
     }
   };
@@ -16493,13 +16493,13 @@ function linearTrend(values = [], options = {}) {
 }
 var clamp01 = (n) => Math.min(1, Math.max(0, n));
 function detectTrends(series = [], options = {}) {
-  const rows = Array.isArray(series) ? series : [];
+  const rows2 = Array.isArray(series) ? series : [];
   const window = asInt5(options.window, 7);
   return {
-    practiceActivity: linearTrend(rows.map((r) => r.questions), { window }),
-    lessonsCompleted: linearTrend(rows.map((r) => r.lessons), { window }),
-    learningTime: linearTrend(rows.map((r) => r.timeMs), { window }),
-    accuracy: linearTrend(rows.map((r) => {
+    practiceActivity: linearTrend(rows2.map((r) => r.questions), { window }),
+    lessonsCompleted: linearTrend(rows2.map((r) => r.lessons), { window }),
+    learningTime: linearTrend(rows2.map((r) => r.timeMs), { window }),
+    accuracy: linearTrend(rows2.map((r) => {
       const c = asNum(r.correct);
       const w = asNum(r.wrong);
       return c + w > 0 ? pct3(c, c + w, 1) : 0;
@@ -16588,7 +16588,7 @@ function dropOffMessage(key, rate2) {
   };
   return `${labels[key] || key} — ${Math.round(asNum(rate2) * 100)}% এখানেই থেমে গেছে।`;
 }
-function buildCourseAnalytics(rows = [], events = []) {
+function buildCourseAnalytics(rows2 = [], events = []) {
   const byCourse = /* @__PURE__ */ new Map();
   const ensure = (id) => {
     if (!byCourse.has(id)) {
@@ -16609,7 +16609,7 @@ function buildCourseAnalytics(rows = [], events = []) {
     }
     return byCourse.get(id);
   };
-  for (const row of rows) {
+  for (const row of rows2) {
     const id = String(row?.courseId || row?.id || "");
     if (!id) continue;
     const c = ensure(id);
@@ -16752,18 +16752,18 @@ function buildQuizAnalytics(events = []) {
 }
 function computeEngagement(students = [], options = {}) {
   const today = options.today || dayKey3(options.nowMs ?? Date.now(), options.tzOffsetMin);
-  const rows = (Array.isArray(students) ? students : []).filter((s) => s && s.userId);
+  const rows2 = (Array.isArray(students) ? students : []).filter((s) => s && s.userId);
   const within = (days) => {
     const cutoff = shiftDay(today, -(days - 1));
-    return rows.filter((s) => (s.activeDays || []).some((d) => d >= cutoff && d <= today));
+    return rows2.filter((s) => (s.activeDays || []).some((d) => d >= cutoff && d <= today));
   };
   const dau = within(1).length;
   const wau = within(7).length;
   const mau = within(30).length;
-  const sessionRows = rows.flatMap((s) => s.sessions || []);
+  const sessionRows = rows2.flatMap((s) => s.sessions || []);
   const totalMs = sum(sessionRows, (r) => r.timeMs);
   const sessionCount = sessionRows.length;
-  const returning = rows.filter((s) => (s.activeDays || []).length > 1).length;
+  const returning = rows2.filter((s) => (s.activeDays || []).length > 1).length;
   return {
     dau,
     wau,
@@ -16774,20 +16774,20 @@ function computeEngagement(students = [], options = {}) {
     sessions: sessionCount,
     avgSessionMs: sessionCount ? Math.round(totalMs / sessionCount) : 0,
     activeStudents: mau,
-    totalStudents: rows.length,
+    totalStudents: rows2.length,
     returningUsers: returning,
-    newUsers: rows.length - returning,
-    returningRate: pct3(returning, rows.length, 1),
-    learningActiveStudents: rows.filter((s) => asInt5(s.learningActions) > 0).length
+    newUsers: rows2.length - returning,
+    returningRate: pct3(returning, rows2.length, 1),
+    learningActiveStudents: rows2.filter((s) => asInt5(s.learningActions) > 0).length
   };
 }
 var RETENTION_WINDOWS = Object.freeze([1, 7, 14, 30]);
 function computeRetention(students = [], options = {}) {
   const today = options.today || dayKey3(options.nowMs ?? Date.now(), options.tzOffsetMin);
-  const rows = (Array.isArray(students) ? students : []).filter((s) => s && s.userId && (s.activeDays || []).length);
+  const rows2 = (Array.isArray(students) ? students : []).filter((s) => s && s.userId && (s.activeDays || []).length);
   const cohorts = /* @__PURE__ */ new Map();
   const buckets = new Map(RETENTION_WINDOWS.map((w) => [w, { window: w, cohortSize: 0, retained: 0, matureCohortSize: 0, rate: 0 }]));
-  for (const s of rows) {
+  for (const s of rows2) {
     const days = [...new Set(s.activeDays.filter(Boolean))].sort();
     if (!days.length) continue;
     const first = days[0];
@@ -16814,7 +16814,7 @@ function computeRetention(students = [], options = {}) {
   return {
     windows,
     byWindow: Object.fromEntries(windows.map((w) => [`d${w.window}`, w.rate])),
-    cohortSize: rows.length,
+    cohortSize: rows2.length,
     cohortCount: cohorts.size,
     cohorts: [...cohorts.values()].map((c) => ({
       cohort: c.cohort,
@@ -16827,12 +16827,12 @@ function computeRetention(students = [], options = {}) {
   };
 }
 function computeNotificationAnalytics(outcomes = [], options = {}) {
-  const rows = (Array.isArray(outcomes) ? outcomes : []).filter((o) => o && o.notification_key);
-  const bucket = (list) => {
-    const sent = list.length;
-    const opened = list.filter((o) => asInt5(o.opened_at) > 0).length;
-    const clicked = list.filter((o) => asInt5(o.clicked_at) > 0).length;
-    const learning = list.filter((o) => asInt5(o.learning_at) > 0 && LEARNING_KINDS.includes(String(o.learning_kind || ""))).length;
+  const rows2 = (Array.isArray(outcomes) ? outcomes : []).filter((o) => o && o.notification_key);
+  const bucket = (list2) => {
+    const sent = list2.length;
+    const opened = list2.filter((o) => asInt5(o.opened_at) > 0).length;
+    const clicked = list2.filter((o) => asInt5(o.clicked_at) > 0).length;
+    const learning = list2.filter((o) => asInt5(o.learning_at) > 0 && LEARNING_KINDS.includes(String(o.learning_kind || ""))).length;
     return {
       sent,
       opened,
@@ -16847,22 +16847,22 @@ function computeNotificationAnalytics(outcomes = [], options = {}) {
       openToLearning: pct3(learning, opened, 1)
     };
   };
-  const overall = bucket(rows);
+  const overall = bucket(rows2);
   const group = (keyOf) => {
     const map = /* @__PURE__ */ new Map();
-    for (const o of rows) {
+    for (const o of rows2) {
       const key = String(keyOf(o) || "unknown");
       if (!map.has(key)) map.set(key, []);
       map.get(key).push(o);
     }
-    return [...map.entries()].map(([key, list]) => ({ key, ...bucket(list) })).sort((a, b) => b.sent - a.sent);
+    return [...map.entries()].map(([key, list2]) => ({ key, ...bucket(list2) })).sort((a, b) => b.sent - a.sent);
   };
   const categories = group((o) => o.category);
   const kinds = group((o) => o.kind);
   const variants = group((o) => o.variant);
   const campaigns = group((o) => o.campaign || o.day_key);
-  const best = (list) => list.length ? list.reduce((w, x) => x.learningConversion > w.learningConversion ? x : w, list[0]) : null;
-  const worst = (list) => list.length ? list.reduce((w, x) => x.learningConversion < w.learningConversion ? x : w, list[0]) : null;
+  const best = (list2) => list2.length ? list2.reduce((w, x) => x.learningConversion > w.learningConversion ? x : w, list2[0]) : null;
+  const worst = (list2) => list2.length ? list2.reduce((w, x) => x.learningConversion < w.learningConversion ? x : w, list2[0]) : null;
   return {
     overall,
     categories,
@@ -16876,7 +16876,7 @@ function computeNotificationAnalytics(outcomes = [], options = {}) {
     /* Which part of the local day the student actually acted on. */
     byHour: (() => {
       const map = /* @__PURE__ */ new Map();
-      for (const o of rows) {
+      for (const o of rows2) {
         const at = asInt5(o.learning_at) || asInt5(o.clicked_at);
         if (!at) continue;
         const hour = new Date(at).getUTCHours();
@@ -17217,8 +17217,8 @@ var AnalyticsStore2 = class {
    * so a wrong column or a bad query is never silently swallowed. */
   async #readAll(query) {
     try {
-      const rows = await query.all();
-      return rows?.results || [];
+      const rows2 = await query.all();
+      return rows2?.results || [];
     } catch (err) {
       if (isMissingSchemaError2(err)) return [];
       throw err;
@@ -17262,9 +17262,9 @@ var AnalyticsStore2 = class {
    * is the whole reason the client is allowed to be at-least-once. */
   async ingestEvents(userId, events, now) {
     await this.init();
-    const rows = (Array.isArray(events) ? events : []).slice(0, 200);
+    const rows2 = (Array.isArray(events) ? events : []).slice(0, 200);
     let stored = 0;
-    for (const e of rows) {
+    for (const e of rows2) {
       const id = String(e?.id || "").slice(0, 120);
       const name = String(e?.name || "").slice(0, 60);
       if (!id || !name) continue;
@@ -17276,10 +17276,10 @@ var AnalyticsStore2 = class {
       ).bind(userId, id, name, JSON.stringify(params).slice(0, 4e3), at, dayKey3(at), now).run();
       if (asInt5(res?.meta?.changes, 0) > 0) stored += 1;
     }
-    return { received: rows.length, stored };
+    return { received: rows2.length, stored };
   }
-  #events(rows) {
-    return (rows?.results || []).map((r) => {
+  #events(rows2) {
+    return (rows2?.results || []).map((r) => {
       let params = {};
       try {
         params = JSON.parse(String(r.params_json || "{}")) || {};
@@ -17293,17 +17293,17 @@ var AnalyticsStore2 = class {
    * reachable without the admin token. */
   async eventsSince(sinceMs, limit = MAX_EVENT_ROWS) {
     await this.init();
-    const rows = await this.#d1.prepare(
+    const rows2 = await this.#d1.prepare(
       "SELECT id, name, params_json, at FROM analytics_events WHERE at>=? ORDER BY at ASC LIMIT ?"
     ).bind(sinceMs, limit).all();
-    return this.#events(rows);
+    return this.#events(rows2);
   }
   async userEvents(userId, sinceMs, limit = MAX_EVENT_ROWS) {
     await this.init();
-    const rows = await this.#d1.prepare(
+    const rows2 = await this.#d1.prepare(
       "SELECT id, name, params_json, at FROM analytics_events WHERE user_id=? AND at>=? ORDER BY at ASC LIMIT ?"
     ).bind(userId, sinceMs, limit).all();
-    return this.#events(rows);
+    return this.#events(rows2);
   }
   /* Every student's learning picture, one row per student, for the platform
    * metrics. `activeDays` is a comma-joined day list — D1 has no array type and
@@ -17320,8 +17320,8 @@ var AnalyticsStore2 = class {
        WHERE s.deleted_at IS NULL AND s.day>=?
        GROUP BY s.user_id`
     ).bind(dayKey3(sinceMs));
-    const rows = await this.#readAll(query);
-    return rows.map((r) => ({
+    const rows2 = await this.#readAll(query);
+    return rows2.map((r) => ({
       userId: String(r.user_id),
       activeDays: String(r.days || "").split(",").filter(Boolean).sort(),
       questions: asInt5(r.questions),
@@ -17336,8 +17336,8 @@ var AnalyticsStore2 = class {
     const query = this.#d1.prepare(
       "SELECT day, payload_json FROM user_daily_stats WHERE user_id=? AND deleted_at IS NULL ORDER BY day DESC LIMIT ?"
     ).bind(userId, limitDays);
-    const rows = await this.#readAll(query);
-    return rows.map((r) => {
+    const rows2 = await this.#readAll(query);
+    return rows2.map((r) => {
       let doc = {};
       try {
         doc = JSON.parse(String(r.payload_json)) || {};
@@ -17360,8 +17360,8 @@ var AnalyticsStore2 = class {
     const query = this.#d1.prepare(
       "SELECT id, payload_json, updated_at FROM user_exam_results WHERE user_id=? AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT ?"
     ).bind(userId, limit);
-    const rows = await this.#readAll(query);
-    return rows.map((r) => {
+    const rows2 = await this.#readAll(query);
+    return rows2.map((r) => {
       let doc = {};
       try {
         doc = JSON.parse(String(r.payload_json)) || {};
@@ -17379,8 +17379,8 @@ var AnalyticsStore2 = class {
          AND (revision_status IS NULL OR revision_status<>'mastered')
        GROUP BY topic ORDER BY misses DESC LIMIT 10`
     ).bind(userId);
-    const rows = await this.#readAll(query);
-    return rows.map((r) => ({ topic: String(r.topic), misses: asInt5(r.misses) }));
+    const rows2 = await this.#readAll(query);
+    return rows2.map((r) => ({ topic: String(r.topic), misses: asInt5(r.misses) }));
   }
   /* Course progress lives in the student's own settings blob (same read Phase 3
    * uses). A malformed or absent blob means "no course data" — never a guess. */
@@ -17412,9 +17412,9 @@ var AnalyticsStore2 = class {
     const query = this.#d1.prepare(
       "SELECT user_id, payload_json, updated_at FROM user_settings WHERE id='settings' AND deleted_at IS NULL AND updated_at>=?"
     ).bind(sinceMs);
-    const rows = await this.#readAll(query);
+    const rows2 = await this.#readAll(query);
     const out = [];
-    for (const r of rows) {
+    for (const r of rows2) {
       let doc = {};
       try {
         doc = JSON.parse(String(r.payload_json)) || {};
@@ -17437,8 +17437,8 @@ var AnalyticsStore2 = class {
       `SELECT notification_key, kind, category, variant, day_key, sent_at, opened_at, clicked_at, learning_at, learning_kind
        FROM notification_outcomes WHERE sent_at>=? ORDER BY sent_at DESC LIMIT 5000`
     ).bind(sinceMs);
-    const rows = await this.#readAll(query);
-    return rows.map((r) => ({
+    const rows2 = await this.#readAll(query);
+    return rows2.map((r) => ({
       notification_key: String(r.notification_key),
       kind: String(r.kind || ""),
       category: String(r.category || ""),
@@ -17457,8 +17457,8 @@ var AnalyticsStore2 = class {
       `SELECT notification_key, kind, category, variant, day_key, sent_at, opened_at, clicked_at, learning_at, learning_kind
        FROM notification_outcomes WHERE user_id=? AND sent_at>=? ORDER BY sent_at DESC LIMIT 500`
     ).bind(userId, sinceMs);
-    const rows = await this.#readAll(query);
-    return rows.map((r) => ({
+    const rows2 = await this.#readAll(query);
+    return rows2.map((r) => ({
       notification_key: String(r.notification_key),
       kind: String(r.kind || ""),
       category: String(r.category || ""),
@@ -17477,8 +17477,8 @@ var AnalyticsStore2 = class {
       `SELECT id, type, audience, topic, status, sent_at, scheduled_at, COALESCE(delivered,0) AS delivered
        FROM global_notifications WHERE COALESCE(sent_at, scheduled_at, 0)>=? ORDER BY COALESCE(sent_at, scheduled_at, 0) DESC LIMIT 500`
     ).bind(sinceMs);
-    const rows = await this.#readAll(query);
-    return rows.map((r) => ({
+    const rows2 = await this.#readAll(query);
+    return rows2.map((r) => ({
       id: String(r.id),
       type: String(r.type || ""),
       audience: String(r.audience || ""),
@@ -17494,9 +17494,9 @@ var AnalyticsStore2 = class {
     const query = this.#d1.prepare(
       "SELECT notification_id, COUNT(*) AS n FROM notification_reads GROUP BY notification_id"
     );
-    const rows = await this.#readAll(query);
+    const rows2 = await this.#readAll(query);
     const out = {};
-    for (const r of rows) out[String(r.notification_id)] = asInt5(r.n);
+    for (const r of rows2) out[String(r.notification_id)] = asInt5(r.n);
     return out;
   }
   /* How many students have a device registered — the honest denominator for a
@@ -17687,13 +17687,13 @@ async function buildAdminDashboard(store, filters, options = {}) {
   const dropOff = detectFunnelDropOff(funnel);
   const trends = detectTrends(
     dayRange(filters.today || dayKey3(Date.now(), filters.tzOffsetMin), 14).map((day) => {
-      const rows = filtered.events.filter((e) => dayKey3(e.at, filters.tzOffsetMin) === day);
+      const rows2 = filtered.events.filter((e) => dayKey3(e.at, filters.tzOffsetMin) === day);
       return {
         day,
-        questions: rows.filter((e) => e.name === "question_attempt").length,
-        lessons: rows.filter((e) => e.name === "lesson_complete").length,
-        correct: rows.filter((e) => e.name === "question_attempt" && (e.params?.correct === true || e.params?.correct === "true")).length,
-        wrong: rows.filter((e) => e.name === "question_attempt" && !(e.params?.correct === true || e.params?.correct === "true")).length,
+        questions: rows2.filter((e) => e.name === "question_attempt").length,
+        lessons: rows2.filter((e) => e.name === "lesson_complete").length,
+        correct: rows2.filter((e) => e.name === "question_attempt" && (e.params?.correct === true || e.params?.correct === "true")).length,
+        wrong: rows2.filter((e) => e.name === "question_attempt" && !(e.params?.correct === true || e.params?.correct === "true")).length,
         timeMs: 0
       };
     }),
@@ -17852,7 +17852,7 @@ var stddev = (values = []) => {
   const m = mean(values);
   return Math.sqrt(values.reduce((a, b) => a + (asNum2(b) - m) ** 2, 0) / (values.length - 1));
 };
-var sumOf = (rows = [], pick = (r) => r) => rows.reduce((n, r) => n + asNum2(pick(r)), 0);
+var sumOf = (rows2 = [], pick = (r) => r) => rows2.reduce((n, r) => n + asNum2(pick(r)), 0);
 var CONFIDENCE_TARGETS = Object.freeze({
   profile: 10,
   // active days
@@ -18836,23 +18836,23 @@ function buildCourseIntelligence(input = {}, options = {}) {
   };
 }
 function evaluateAiPerformance(decisions = [], options = {}) {
-  const rows = Array.isArray(decisions) ? decisions : [];
-  const withOutcome = rows.filter((d) => d && d.outcome);
-  const accepted = rows.filter((d) => d.actionTaken === "accepted" || d.outcome?.accepted === true);
+  const rows2 = Array.isArray(decisions) ? decisions : [];
+  const withOutcome = rows2.filter((d) => d && d.outcome);
+  const accepted = rows2.filter((d) => d.actionTaken === "accepted" || d.outcome?.accepted === true);
   const converted = withOutcome.filter((d) => d.outcome?.learned === true);
-  const rejected = rows.filter((d) => d.actionTaken === "rejected");
-  const confidences = rows.map((d) => asNum2(d.confidence)).filter((c) => c > 0);
-  const latencies = rows.map((d) => asNum2(d.latencyMs)).filter((l) => l > 0);
-  const costs = rows.map((d) => d.costUsd).filter((c) => Number.isFinite(Number(c)));
+  const rejected = rows2.filter((d) => d.actionTaken === "rejected");
+  const confidences = rows2.map((d) => asNum2(d.confidence)).filter((c) => c > 0);
+  const latencies = rows2.map((d) => asNum2(d.latencyMs)).filter((l) => l > 0);
+  const costs = rows2.map((d) => d.costUsd).filter((c) => Number.isFinite(Number(c)));
   const falsePositive = withOutcome.filter((d) => asNum2(d.confidence) >= 0.6 && d.outcome?.learned === false).length;
   const falseNegative = withOutcome.filter((d) => asNum2(d.confidence) < 0.4 && d.outcome?.learned === true).length;
   return {
     version: AI_INTELLIGENCE_VERSION,
-    total: rows.length,
+    total: rows2.length,
     scored: withOutcome.length,
-    acceptanceRate: rows.length ? round2(accepted.length / rows.length, 3) : 0,
+    acceptanceRate: rows2.length ? round2(accepted.length / rows2.length, 3) : 0,
     learningConversion: withOutcome.length ? round2(converted.length / withOutcome.length, 3) : 0,
-    rejectionRate: rows.length ? round2(rejected.length / rows.length, 3) : 0,
+    rejectionRate: rows2.length ? round2(rejected.length / rows2.length, 3) : 0,
     falsePositive,
     falseNegative,
     falsePositiveRate: withOutcome.length ? round2(falsePositive / withOutcome.length, 3) : 0,
@@ -19590,16 +19590,16 @@ async function writeNotification(kind, params = {}, options = {}) {
     };
   }
 }
-function optimiseExperiment(rows = [], options = {}) {
+function optimiseExperiment(rows2 = [], options = {}) {
   const minSample = asInt8(options.minSample, 30);
-  const usable = rows.filter((r) => asInt8(r.shown) >= minSample);
+  const usable = rows2.filter((r) => asInt8(r.shown) >= minSample);
   if (!usable.length) {
     return {
       version: AI_INTELLIGENCE_VERSION,
       ready: false,
       reason: "insufficient-sample",
       minSample,
-      variants: rows.map((r) => ({ variant: r.variant, shown: asInt8(r.shown), meetsSample: asInt8(r.shown) >= minSample }))
+      variants: rows2.map((r) => ({ variant: r.variant, shown: asInt8(r.shown), meetsSample: asInt8(r.shown) >= minSample }))
     };
   }
   const ranked = usable.slice().sort(
@@ -19803,26 +19803,26 @@ async function handleAiAnalyticsRequest(request, env, ctx, deps = {}) {
     });
   }
   if (route === "decisions" && request.method === "GET") {
-    const rows = await store.listDecisions({ limit: Number(url.searchParams.get("limit")) || 100 });
+    const rows2 = await store.listDecisions({ limit: Number(url.searchParams.get("limit")) || 100 });
     return json6(request, {
       version: AI_INTELLIGENCE_VERSION,
-      decisions: rows,
-      performance: evaluateAiPerformance(rows)
+      decisions: rows2,
+      performance: evaluateAiPerformance(rows2)
     });
   }
   if (route === "experiments" && request.method === "GET") {
     const name = String(url.searchParams.get("experiment") || "notification-copy");
-    const rows = await store.experimentResults(name);
-    return json6(request, { version: AI_INTELLIGENCE_VERSION, experiment: name, variants: rows, optimisation: optimiseExperiment(rows) });
+    const rows2 = await store.experimentResults(name);
+    return json6(request, { version: AI_INTELLIGENCE_VERSION, experiment: name, variants: rows2, optimisation: optimiseExperiment(rows2) });
   }
   if (route === "approvals" && request.method === "GET") {
     const status = url.searchParams.get("status") || void 0;
-    const rows = await store.listApprovals({ status, limit: 100 });
+    const rows2 = await store.listApprovals({ status, limit: 100 });
     return json6(request, {
       version: AI_INTELLIGENCE_VERSION,
       policyVersion: AI_POLICY_VERSION,
-      approvals: rows,
-      pending: rows.filter((r) => r.status === "pending").length,
+      approvals: rows2,
+      pending: rows2.filter((r) => r.status === "pending").length,
       /* The contract the UI reads: these kinds cannot be actioned without a human. */
       requiresApprovalFor: ["content_change", "course_restructure", "policy_change", "mass_notification", "platform_decision"]
     });
@@ -19979,11 +19979,11 @@ function examples() {
 }
 async function aiCounters(store, trigger) {
   const since = Date.now() - 3600 * 1e3;
-  const rows = await store.listDecisions({ sinceMs: since, limit: 1e3 }).catch(() => []);
+  const rows2 = await store.listDecisions({ sinceMs: since, limit: 1e3 }).catch(() => []);
   const day = await store.listDecisions({ sinceMs: Date.now() - DAY_MS6, limit: 1e3 }).catch(() => []);
   const prefix = trigger === "copilot-question" ? "copilot:" : trigger === "notification-wording" ? "notify:" : trigger;
   return {
-    hour: rows.filter((r) => String(r.signal).startsWith(prefix)).length,
+    hour: rows2.filter((r) => String(r.signal).startsWith(prefix)).length,
     day: day.filter((r) => String(r.signal).startsWith(prefix)).length
   };
 }
@@ -21098,21 +21098,21 @@ var SqliteAuthRepository = class _SqliteAuthRepository {
     return this.#transaction(() => {
       const user = this.#one("SELECT user_id AS id FROM auth_users WHERE user_id=?", userId);
       if (!user) return { error: AUTH_ERROR_CODES.ACCOUNT_NOT_FOUND };
-      const rows = deviceRef ? this.#rows("SELECT device_ref AS deviceRef FROM auth_trusted_devices WHERE user_id=? AND device_ref=? AND revoked_at IS NULL", userId, deviceRef) : this.#rows("SELECT device_ref AS deviceRef FROM auth_trusted_devices WHERE user_id=? AND revoked_at IS NULL", userId);
-      if (!rows.length) return Object.freeze({ revoked: 0 });
+      const rows2 = deviceRef ? this.#rows("SELECT device_ref AS deviceRef FROM auth_trusted_devices WHERE user_id=? AND device_ref=? AND revoked_at IS NULL", userId, deviceRef) : this.#rows("SELECT device_ref AS deviceRef FROM auth_trusted_devices WHERE user_id=? AND revoked_at IS NULL", userId);
+      if (!rows2.length) return Object.freeze({ revoked: 0 });
       if (deviceRef) this.sql.exec("UPDATE auth_trusted_devices SET revoked_at=? WHERE user_id=? AND device_ref=? AND revoked_at IS NULL", now, userId, deviceRef);
       else this.sql.exec("UPDATE auth_trusted_devices SET revoked_at=? WHERE user_id=? AND revoked_at IS NULL", now, userId);
       this.#event("device-revoked", null, userId, now, { deviceRef: deviceRef || null, policyVersion });
-      return Object.freeze({ revoked: rows.length });
+      return Object.freeze({ revoked: rows2.length });
     });
   }
   async listTrustedDevices({ userId, now }) {
-    const rows = this.#rows(
+    const rows2 = this.#rows(
       "SELECT device_ref AS deviceRef,browser_class AS browserClass,trusted_at AS trustedAt,expires_at AS expiresAt FROM auth_trusted_devices WHERE user_id=? AND revoked_at IS NULL AND expires_at>? ORDER BY trusted_at DESC",
       userId,
       now
     );
-    return Object.freeze(rows.map((row) => Object.freeze({
+    return Object.freeze(rows2.map((row) => Object.freeze({
       deviceRef: String(row.deviceRef),
       browserClass: String(row.browserClass || "unknown"),
       trustedAt: Number(row.trustedAt),
@@ -21209,7 +21209,7 @@ var SqliteAuthRepository = class _SqliteAuthRepository {
     return row || null;
   }
   listSecurityChallenges({ userId, now }) {
-    const rows = this.#rows(
+    const rows2 = this.#rows(
       `SELECT purpose,method,status,attempts AS attempts,created_at AS createdAt,expires_at AS expiresAt,
         verified_at AS verifiedAt,consumed_at AS consumedAt,policy_version AS policyVersion
        FROM auth_security_challenges WHERE user_id=? AND created_at>?
@@ -21217,7 +21217,7 @@ var SqliteAuthRepository = class _SqliteAuthRepository {
       userId,
       now - EVENT_RETENTION_MS
     );
-    return Object.freeze(rows.map((row) => Object.freeze({
+    return Object.freeze(rows2.map((row) => Object.freeze({
       purpose: String(row.purpose),
       method: String(row.method),
       status: String(row.status),
@@ -21284,7 +21284,7 @@ var SqliteAuthRepository = class _SqliteAuthRepository {
   // Phase 6 Chunk 4 — paged ledger view for admins: refs only, no PII
   // (subject/user/device are opaque HMAC refs; there is no raw column here).
   listSecurityEvents({ limit, before }) {
-    const rows = before ? this.#rows(
+    const rows2 = before ? this.#rows(
       `SELECT event_type AS eventType,subject_ref AS subjectRef,user_id AS userId,occurred_at AS occurredAt,
           device_ref AS deviceRef,purpose,policy_version AS policyVersion
          FROM auth_security_events WHERE occurred_at<?
@@ -21298,7 +21298,7 @@ var SqliteAuthRepository = class _SqliteAuthRepository {
          ORDER BY occurred_at DESC, rowid DESC LIMIT ?`,
       limit
     );
-    return Object.freeze({ entries: rows });
+    return Object.freeze({ entries: rows2 });
   }
   // Risk signals for the login decision (§3-§4), derived from auth_rate_limits
   // state only — no new table, no raw identifiers leave the DO.
@@ -21323,11 +21323,11 @@ var SqliteAuthRepository = class _SqliteAuthRepository {
   }
   // Linked identities for a user: provider + verification facts only.
   async listLinkedIdentities({ userId }) {
-    const rows = this.#rows(
+    const rows2 = this.#rows(
       "SELECT provider, last_verified_at AS lastVerifiedAt, created_at AS createdAt FROM auth_external_identities WHERE user_id=? ORDER BY provider",
       userId
     );
-    return Object.freeze(rows.map((row) => Object.freeze({
+    return Object.freeze(rows2.map((row) => Object.freeze({
       provider: String(row.provider),
       linked: true,
       verified: Boolean(row.lastVerifiedAt),
@@ -22540,7 +22540,7 @@ function recipientBias(providerId, email) {
   return NON_GMAIL_FREEMAIL.has(domain) ? NON_GMAIL_PREFERENCE[providerId] || 0 : 0;
 }
 var INSTITUTIONAL_SUFFIXES = Object.freeze([".ac.bd", ".edu.bd"]);
-var matchesDomain = (domain, list) => list.some((entry) => domain === entry || entry.startsWith(".") && domain.endsWith(entry));
+var matchesDomain = (domain, list2) => list2.some((entry) => domain === entry || entry.startsWith(".") && domain.endsWith(entry));
 async function bounded(action, milliseconds) {
   let timer;
   try {
@@ -22711,7 +22711,7 @@ var VerificationOrchestrator = class {
   }
   async #candidateRows(identity, destinations, now) {
     const eligible = this.config.enabled ? this.config.providers.filter((entry) => entry.enabled && destinations[entry.channel]) : [];
-    const rows = await Promise.all(eligible.map(async (entry) => {
+    const rows2 = await Promise.all(eligible.map(async (entry) => {
       const provider = this.providers.get(entry.id);
       const started = Date.now();
       try {
@@ -22757,7 +22757,7 @@ var VerificationOrchestrator = class {
         return null;
       }
     }));
-    return rows.filter(Boolean).sort((left, right) => left.score - right.score || Number(right.probe) - Number(left.probe) || left.health - right.health || left.entry.priority - right.entry.priority);
+    return rows2.filter(Boolean).sort((left, right) => left.score - right.score || Number(right.probe) - Number(left.probe) || left.health - right.health || left.entry.priority - right.entry.priority);
   }
   async requestVerification(input = {}, requestContext = {}) {
     const identity = await this.#identity(input, requestContext);
@@ -23131,17 +23131,17 @@ var VerificationOrchestrator = class {
     const now = Number(this.now());
     if (this.capabilityCache?.expiresAt > now) return this.capabilityCache.value || this.capabilityCache.promise;
     const promise = (async () => {
-      const rows = await this.#candidateRows(
+      const rows2 = await this.#candidateRows(
         { purpose: "account-backup", attemptId: "", userId: "", subjectRef: "" },
         { otp: "configured", whatsapp: "configured", telegram: "user-initiated-link" },
         now
       );
-      const channels = new Set(rows.map((row) => row.entry.channel));
+      const channels = new Set(rows2.map((row) => row.entry.channel));
       const phoneMode = channels.has("whatsapp") ? channels.has("otp") || channels.has("telegram") ? "optional" : "required" : "none";
       return Object.freeze({
-        available: rows.length > 0,
+        available: rows2.length > 0,
         telegramAvailable: channels.has("telegram"),
-        availabilityCode: rows.length ? "READY" : this.config.enabled ? "NO_HEALTHY_PROVIDER" : "NOT_ACTIVATED",
+        availabilityCode: rows2.length ? "READY" : this.config.enabled ? "NO_HEALTHY_PROVIDER" : "NOT_ACTIVATED",
         genericFlow: true,
         providerNamesExposed: false,
         contactInput: phoneMode,
@@ -23927,14 +23927,14 @@ var MailjetOtpVerificationProvider = class {
   }
   async #probeSender() {
     const payload = await fetchJson(this.fetch, `${this.apiBase}/v3/REST/sender?SenderEmail=${encodeURIComponent(this.fromAddress)}`, { method: "GET", headers: this.#headers() });
-    const rows = Array.isArray(payload?.Data) ? payload.Data : [];
-    const sender = rows.find((item) => String(item?.Email || item?.SenderEmail || "").toLowerCase() === this.fromAddress.toLowerCase());
+    const rows2 = Array.isArray(payload?.Data) ? payload.Data : [];
+    const sender = rows2.find((item) => String(item?.Email || item?.SenderEmail || "").toLowerCase() === this.fromAddress.toLowerCase());
     return Boolean(sender && ["active", "validated"].includes(String(sender?.Status || "").toLowerCase()));
   }
   async #probeMetaSender() {
     const payload = await fetchJson(this.fetch, `${this.apiBase}/v3/REST/metasender?Limit=100`, { method: "GET", headers: this.#headers() });
-    const rows = Array.isArray(payload?.Data) ? payload.Data : [];
-    const sender = rows.find((item) => String(item?.Email || "").toLowerCase() === this.fromAddress.toLowerCase());
+    const rows2 = Array.isArray(payload?.Data) ? payload.Data : [];
+    const sender = rows2.find((item) => String(item?.Email || "").toLowerCase() === this.fromAddress.toLowerCase());
     return Boolean(sender && (sender?.IsEnabled === true || sender?.IsEnabled === 1 || String(sender?.IsEnabled || "").toLowerCase() === "true"));
   }
   async getRemainingQuota() {
@@ -24214,8 +24214,8 @@ function logtoSlotFromConfig(raw) {
     if (!text || text.length > 16384) return null;
     const config = JSON.parse(text);
     if (config?.enabled !== true) return null;
-    const rows = config.providers;
-    const row = Array.isArray(rows) ? rows.find((item) => item?.id === "otp-h") : null;
+    const rows2 = config.providers;
+    const row = Array.isArray(rows2) ? rows2.find((item) => item?.id === "otp-h") : null;
     return row && row.enabled === true ? row : null;
   } catch {
     return null;
@@ -24231,8 +24231,8 @@ function logtoRedirect(value) {
   }
 }
 function cookiePairs(response3, jar) {
-  const list = typeof response3?.headers?.getSetCookie === "function" ? response3.headers.getSetCookie() : [];
-  for (const line of list) {
+  const list2 = typeof response3?.headers?.getSetCookie === "function" ? response3.headers.getSetCookie() : [];
+  for (const line of list2) {
     const pair = String(line || "").split(";", 1)[0];
     const at = pair.indexOf("=");
     if (at > 0) jar[pair.slice(0, at).trim()] = pair.slice(at + 1).trim();
@@ -24389,8 +24389,8 @@ function slotFromConfig(raw, id) {
     if (!text || text.length > 16384) return null;
     const config = JSON.parse(text);
     if (config?.enabled !== true) return null;
-    const rows = config.providers;
-    const row = Array.isArray(rows) ? rows.find((item) => item?.id === id) : null;
+    const rows2 = config.providers;
+    const row = Array.isArray(rows2) ? rows2.find((item) => item?.id === id) : null;
     return row && row.enabled === true ? row : null;
   } catch {
     return null;
@@ -26253,6 +26253,152 @@ var D1ProfileStore = class {
   }
 };
 
+// auth-native/storage/student-directory-schema.mjs
+var STUDENT_LOGIN_METHODS = Object.freeze(["password", "google", "facebook", "telegram", "passkey"]);
+var EMAIL_VERIFICATION_CHANNELS = Object.freeze(["otp", "firebase-link", "telegram", "oauth"]);
+var OTP_OUTCOMES = Object.freeze(["sent", "failed", "timeout", "verified", "wrong_code", "expired", "skipped"]);
+var list = (values) => values.map((value) => `'${value}'`).join(", ");
+var STUDENT_DIRECTORY_MIGRATIONS = Object.freeze([
+  Object.freeze({
+    version: 1,
+    name: "student_directory_v1",
+    statements: Object.freeze([
+      `CREATE TABLE IF NOT EXISTS students (
+        id TEXT PRIMARY KEY,
+        email TEXT NOT NULL,
+        email_normalized TEXT NOT NULL UNIQUE
+          CHECK (email_normalized = lower(trim(email_normalized))
+            AND length(email_normalized) BETWEEN 3 AND 254
+            AND instr(email_normalized, '@') > 1),
+        auth_user_id TEXT UNIQUE,
+        status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'active', 'disabled')),
+        email_verified_at INTEGER,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        last_login_at INTEGER
+      )`,
+      "CREATE INDEX IF NOT EXISTS idx_students_created ON students (created_at)",
+      "CREATE INDEX IF NOT EXISTS idx_students_status ON students (status, created_at)",
+      `CREATE TABLE IF NOT EXISTS login_methods (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        student_id TEXT NOT NULL REFERENCES students (id) ON DELETE CASCADE,
+        method TEXT NOT NULL CHECK (method IN (${list(STUDENT_LOGIN_METHODS)})),
+        provider_subject TEXT NOT NULL DEFAULT '',
+        label TEXT,
+        created_at INTEGER NOT NULL,
+        last_used_at INTEGER,
+        UNIQUE (student_id, method, provider_subject)
+      )`,
+      // One Google/Facebook/Telegram/passkey identity belongs to one student.
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_login_methods_subject
+        ON login_methods (method, provider_subject) WHERE provider_subject <> ''`,
+      `CREATE TABLE IF NOT EXISTS email_verifications (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        student_id TEXT NOT NULL REFERENCES students (id) ON DELETE CASCADE,
+        email_normalized TEXT NOT NULL,
+        channel TEXT NOT NULL CHECK (channel IN (${list(EMAIL_VERIFICATION_CHANNELS)})),
+        provider_id TEXT,
+        status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'verified', 'failed', 'expired')),
+        created_at INTEGER NOT NULL,
+        verified_at INTEGER
+      )`,
+      "CREATE INDEX IF NOT EXISTS idx_email_verifications_student ON email_verifications (student_id, created_at)",
+      `CREATE TABLE IF NOT EXISTS otp_attempts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        student_id TEXT NOT NULL REFERENCES students (id) ON DELETE CASCADE,
+        email_verification_id INTEGER REFERENCES email_verifications (id) ON DELETE SET NULL,
+        provider_id TEXT NOT NULL,
+        outcome TEXT NOT NULL CHECK (outcome IN (${list(OTP_OUTCOMES)})),
+        error_code TEXT,
+        latency_ms INTEGER CHECK (latency_ms IS NULL OR latency_ms >= 0),
+        created_at INTEGER NOT NULL
+      )`,
+      "CREATE INDEX IF NOT EXISTS idx_otp_attempts_student ON otp_attempts (student_id, created_at)",
+      "CREATE INDEX IF NOT EXISTS idx_otp_attempts_provider ON otp_attempts (provider_id, created_at)",
+      `CREATE TABLE IF NOT EXISTS devices (
+        id TEXT PRIMARY KEY,
+        student_id TEXT NOT NULL REFERENCES students (id) ON DELETE CASCADE,
+        device_hash TEXT NOT NULL,
+        label TEXT,
+        platform TEXT,
+        browser TEXT,
+        trusted INTEGER NOT NULL DEFAULT 0 CHECK (trusted IN (0, 1)),
+        first_seen_at INTEGER NOT NULL,
+        last_seen_at INTEGER NOT NULL,
+        UNIQUE (student_id, device_hash)
+      )`,
+      // id is an opaque reference (e.g. a hash of the auth session id), never
+      // the bearer token itself.
+      `CREATE TABLE IF NOT EXISTS sessions (
+        id TEXT PRIMARY KEY,
+        student_id TEXT NOT NULL REFERENCES students (id) ON DELETE CASCADE,
+        device_id TEXT REFERENCES devices (id) ON DELETE SET NULL,
+        login_method TEXT CHECK (login_method IS NULL OR login_method IN (${list(STUDENT_LOGIN_METHODS)})),
+        created_at INTEGER NOT NULL,
+        last_seen_at INTEGER NOT NULL,
+        expires_at INTEGER,
+        revoked_at INTEGER
+      )`,
+      "CREATE INDEX IF NOT EXISTS idx_sessions_student ON sessions (student_id, created_at)",
+      `CREATE TABLE IF NOT EXISTS profiles (
+        student_id TEXT PRIMARY KEY REFERENCES students (id) ON DELETE CASCADE,
+        full_name TEXT,
+        dob TEXT,
+        school TEXT,
+        college TEXT,
+        hsc_year INTEGER,
+        avatar_key TEXT,
+        updated_at INTEGER NOT NULL
+      )`,
+      `CREATE TABLE IF NOT EXISTS activity_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        student_id TEXT NOT NULL REFERENCES students (id) ON DELETE CASCADE,
+        kind TEXT NOT NULL CHECK (length(kind) BETWEEN 1 AND 64),
+        detail_json TEXT CHECK (detail_json IS NULL OR json_valid(detail_json)),
+        created_at INTEGER NOT NULL
+      )`,
+      "CREATE INDEX IF NOT EXISTS idx_activity_log_student ON activity_log (student_id, created_at)"
+    ])
+  })
+]);
+var STUDENT_DIRECTORY_LATEST_VERSION = STUDENT_DIRECTORY_MIGRATIONS.at(-1).version;
+var rows = (sql, statement, ...bindings) => {
+  const result = sql.exec(statement, ...bindings);
+  if (Array.isArray(result)) return result;
+  return typeof result?.toArray === "function" ? result.toArray() : [];
+};
+var transaction = (storage, work) => typeof storage.transactionSync === "function" ? storage.transactionSync(work) : work();
+function currentStudentDirectoryVersion(storage) {
+  const sql = storage.sql;
+  const table = rows(sql, "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'schema_migrations'");
+  if (!table.length) return 0;
+  const [row] = rows(sql, "SELECT COALESCE(MAX(version), 0) AS version FROM schema_migrations");
+  return Number(row?.version || 0);
+}
+function migrateStudentDirectory(storage, { now = Date.now(), migrations = STUDENT_DIRECTORY_MIGRATIONS } = {}) {
+  if (!storage?.sql || typeof storage.sql.exec !== "function") throw new TypeError("SQLite Durable Object storage is required.");
+  const sql = storage.sql;
+  sql.exec(`CREATE TABLE IF NOT EXISTS schema_migrations (
+    version INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    applied_at INTEGER NOT NULL
+  )`);
+  const applied = new Set(rows(sql, "SELECT version FROM schema_migrations").map((row) => Number(row.version)));
+  const ran = [];
+  let previous = 0;
+  for (const migration of migrations) {
+    if (!Number.isInteger(migration.version) || migration.version <= previous) throw new Error("student directory migrations must have strictly increasing integer versions");
+    previous = migration.version;
+    if (applied.has(migration.version)) continue;
+    transaction(storage, () => {
+      for (const statement of migration.statements) sql.exec(statement);
+      sql.exec("INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)", migration.version, migration.name, Number(now));
+    });
+    ran.push(migration.version);
+  }
+  return { version: currentStudentDirectoryVersion(storage), applied: ran };
+}
+
 // auth-native/worker/auth-authority-do.mjs
 var JSON_HEADERS2 = Object.freeze({
   "Content-Type": "application/json; charset=utf-8",
@@ -26282,6 +26428,12 @@ var AdmissionAuthAuthority = class {
       this.repository.migrate();
       this.verificationRepository = new SqliteVerificationRepository(state.storage);
       this.verificationRepository.migrate();
+      try {
+        this.studentDirectorySchema = migrateStudentDirectory(state.storage);
+      } catch (error) {
+        this.studentDirectorySchema = { version: 0, applied: [], error: String(error?.message || error).slice(0, 200) };
+        console.error("student directory migration failed", error);
+      }
       this.engine = new CloudflareNativeAuthEngine({
         repository: this.repository,
         hmacSecret: env.AUTH_HMAC_SECRET,
@@ -26733,20 +26885,20 @@ function sanitizeSecret(text) {
   return out;
 }
 function parsePool(raw, kind) {
-  let list = raw;
+  let list2 = raw;
   if (typeof raw === "string") {
     const trimmed = raw.trim();
     if (!trimmed) return [];
     try {
-      list = JSON.parse(trimmed);
+      list2 = JSON.parse(trimmed);
     } catch (_) {
       return [];
     }
   }
-  if (!Array.isArray(list)) return [];
+  if (!Array.isArray(list2)) return [];
   const seen = /* @__PURE__ */ new Set();
   const out = [];
-  for (const entry of list) {
+  for (const entry of list2) {
     if (!entry || typeof entry !== "object") continue;
     const id = typeof entry.id === "string" ? entry.id.trim() : "";
     const spec = PROVIDERS[id];
@@ -27001,8 +27153,8 @@ function makeTicket(nowMs, rand) {
   return { id: String(id), exp: nowMs + TICKET_TTL_MS };
 }
 function pruneTickets(tickets, nowMs) {
-  const list = Array.isArray(tickets) ? tickets : [];
-  return list.filter((t) => t && typeof t.id === "string" && Number.isFinite(t.exp) && t.exp > nowMs);
+  const list2 = Array.isArray(tickets) ? tickets : [];
+  return list2.filter((t) => t && typeof t.id === "string" && Number.isFinite(t.exp) && t.exp > nowMs);
 }
 function consumeTicket(tickets, presented, nowMs) {
   const live = pruneTickets(tickets, nowMs);
@@ -27374,8 +27526,8 @@ function readKeys(env, names) {
   for (const name of names) {
     const raw = env[name];
     if (typeof raw !== "string" || !raw.trim()) continue;
-    const list = raw.split(",").map((k) => k.trim()).filter(Boolean);
-    if (list.length) return list;
+    const list2 = raw.split(",").map((k) => k.trim()).filter(Boolean);
+    if (list2.length) return list2;
   }
   return [];
 }

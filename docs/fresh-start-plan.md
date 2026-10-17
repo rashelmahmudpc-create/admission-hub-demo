@@ -8,7 +8,7 @@ Rule: "ধাপ X শুরু করো" = permission to merge + deploy that p
 ## Progress
 - [x] Phase 0: inventory (this file, 2026-10-17)
 - [x] Phase 1 (2026-10-17): `email-intro-continue` button -> `beginEmailOwnership` (OTP chain first, Firebase link fallback). sw:manifest. merge + deploy
-- [ ] Phase 2: new versioned schema + migrations + tests (students, login_methods, email_verifications, otp_attempts, sessions, devices, profiles, activity_log; normalized unique email)
+- [x] Phase 2 (2026-10-17): new versioned schema + migrations + tests (students, login_methods, email_verifications, otp_attempts, sessions, devices, profiles, activity_log; normalized unique email)
 - [ ] Phase 3: Control Center Students section (list/search, profile, timeline; admin token only, noindex, no secrets)
 - [ ] Phase 4: wipe all users (Firebase Auth of admissionsky-997d2 + Cloudflare user data; keep OTP config) -- final yes with counts
 - [ ] Phase 5: owner deletes old Firebase project in console
@@ -36,3 +36,11 @@ Rule: "ধাপ X শুরু করো" = permission to merge + deploy that p
 - Public auth API needs headers `X-AH-Auth-UI: auth-premium-v6` + `Origin`; admin POST needs `Origin: https://admissionsky.pages.dev`.
 - `/email-ownership/start` needs Turnstile (cannot be curl-tested). `/account-verification/email/start` = Firebase link directly (used by `email-intro-continue`, Phase 1 fixes).
 - Test account created 2026-10-17: rashelmahmudpc+otptest1017@gmail.com (wiped in Phase 4).
+
+## Phase 2 schema
+- Code: `auth-native/storage/student-directory-schema.mjs`, test `student-directory-schema.test.mjs` (in `test:native-auth`).
+- Where: same Durable Object SQLite as auth (`AUTH_AUTHORITY`). Runs on every DO start, after the auth_* migrations, inside try/catch (never blocks sign-in).
+- Versioning: `schema_migrations(version, name, applied_at)`. v1 = `student_directory_v1`. New change = new version; never edit an applied one. Each version runs in one transaction.
+- Tables (v1): students (email + email_normalized UNIQUE, trim+NFKC+lowercase, plus-aliases kept; status pending/active/disabled; auth_user_id UNIQUE), login_methods (password/google/facebook/telegram/passkey; one identity -> one student), email_verifications (otp/firebase-link/telegram/oauth), otp_attempts (provider, outcome, latency; no codes), devices, sessions (opaque id, no tokens), profiles, activity_log (json_valid). All children ON DELETE CASCADE -> deleting a student removes everything.
+- Purely additive: no auth_* table touched, old data not migrated, new tables start empty. Writes/reads come in Phase 3 (Control Center) -- nothing writes into them yet.
+
