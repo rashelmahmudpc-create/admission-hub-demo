@@ -1,0 +1,39 @@
+name: Descope project OTP settings 2026-10-17
+
+# MODE=inspect only exports the project snapshot and prints OTP-related
+# settings (file names + otp/auth method files). It changes nothing.
+# MODE=enable turns on email OTP in the exported snapshot, validates and imports it.
+
+on:
+  push:
+    branches: [feat/descope-otp]
+    paths:
+      - '.github/workflows/descope-project-otp-20261017.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: descope-project-otp
+  cancel-in-progress: false
+
+jobs:
+  run:
+    if: github.ref_name == 'feat/descope-otp'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      MODE: inspect
+      PID: P3Km4McYmZUg8ZzIJfEnf9ZCDkFD
+      MK: ${{ secrets.DESCOPE_MANAGEMENT_KEY }}
+    steps:
+      - name: Export snapshot and show OTP settings
+        run: |
+          set -eu
+          test -n "$MK" || { echo 'missing secret'; exit 1; }
+          code=$(curl -sS -o snap.json -w '%{http_code}' -X POST https://api.descope.com/v1/mgmt/project/snapshot/export -H "Authorization: Bearer $PID:$MK" -H 'Content-Type: application/json' -d '{}')
+          echo "export http=$code"
+          if [ "$code" != 200 ]; then jq -c '{errorCode,errorDescription,message}' snap.json || true; exit 1; fi
+          echo '== files'; jq -r '.files | keys[]' snap.json
+          echo '== otp/auth files'
+          jq -c '.files | to_entries[] | select(.key|test("otp|authentication|auth-methods|settings";"i")) | {key, value: (.value|tostring|.[0:1500])}' snap.json
