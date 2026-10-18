@@ -109,6 +109,8 @@ const INSTITUTIONAL_SUFFIXES = Object.freeze(['.ac.bd', '.edu.bd']);
 const matchesDomain = (domain, list) =>
   list.some(entry => domain === entry || (entry.startsWith('.') && domain.endsWith(entry)));
 
+const MAGIC_LINK_PROVIDER_ID = 'otp-m';
+
 async function bounded(action, milliseconds) {
   let timer;
   try {
@@ -262,8 +264,11 @@ export class VerificationOrchestrator {
   }
 
   async #candidateRows(identity, destinations, now) {
+    // otp-m (magic link) is never part of the code failover, and a magic-link
+    // request never falls back to a code provider the student is not expecting.
+    const magicLink = identity.deliveryMethod === 'magic-link';
     const eligible = this.config.enabled
-      ? this.config.providers.filter(entry => entry.enabled && destinations[entry.channel])
+      ? this.config.providers.filter(entry => entry.enabled && destinations[entry.channel] && ((entry.id === MAGIC_LINK_PROVIDER_ID) === magicLink))
       : [];
     const rows = await Promise.all(eligible.map(async entry => {
       const provider = this.providers.get(entry.id);
@@ -373,7 +378,8 @@ export class VerificationOrchestrator {
       previousProviderId = String(prior?.challenge?.providerId || '');
     } catch {}
     const destinations = identity.destinations;
-    const candidates = await this.#candidateRows({ ...identity, attemptId, previousProviderId }, destinations, now);
+    const deliveryMethod = input?.deliveryMethod === 'magic-link' && identity.purpose === 'email-ownership' ? 'magic-link' : '';
+    const candidates = await this.#candidateRows({ ...identity, attemptId, previousProviderId, deliveryMethod }, destinations, now);
     for (const candidate of candidates) {
       const { entry, provider } = candidate;
       const maxTries = 1 + policy.maxProviderRetries;
@@ -501,7 +507,7 @@ export class VerificationOrchestrator {
           evidence,
           // Only this adapter needs the address at verification time. Resolve it
           // from the identity already bound to the challenge, never client input.
-          ...(entry.id === 'otp-l' ? { destination: identity.destinations[entry.channel] } : {}),
+          ...(entry.id === 'otp-l' || entry.id === MAGIC_LINK_PROVIDER_ID ? { destination: identity.destinations[entry.channel] } : {}),
           purpose: identity.purpose,
           serverConfirmed: Boolean(selected.providerConfirmed)
         }), entry.timeoutMs);

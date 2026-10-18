@@ -745,7 +745,7 @@ test('wrangler.toml timeoutMs matches each slot speed (owner 2026-10-16)', async
   const rows = JSON.parse(toml.match(/VERIFICATION_ORCHESTRATOR_CONFIG = '(.*)'/)[1]).providers;
   const got = Object.fromEntries(rows.map(row => [row.id, row.timeoutMs]));
   assert.deepEqual(got, {
-    'otp-a': 8000, 'otp-h': 12000, 'otp-i': 12000, 'otp-j': 12000, 'otp-k': 12000, 'otp-l': 12000, 'otp-b': 20000,
+    'otp-a': 8000, 'otp-h': 12000, 'otp-i': 12000, 'otp-j': 12000, 'otp-k': 12000, 'otp-l': 12000, 'otp-m': 12000, 'otp-b': 20000,
     'otp-d': 8000, 'otp-e': 8000, 'otp-f': 8000, 'otp-g': 8000, 'otp-c': 8000, telegram: 20000
   });
 });

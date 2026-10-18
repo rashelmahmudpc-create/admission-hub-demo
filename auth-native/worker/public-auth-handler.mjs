@@ -1200,6 +1200,7 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         const verificationTicket = jar[AUTH_VERIFICATION_COOKIE];
         if (!verificationTicket) throw new NativeAuthError(AUTH_ERROR_CODES.TELEGRAM_VERIFICATION_INVALID);
         const startBody = await readJson(request);
+        const magicLink = startBody?.method === 'magic-link';
         await verifyTurnstile({ env, token: startBody?.turnstileToken, ip: context.ip, fetchImpl });
         const material = await callAuthority(env, '/internal/firebase/account-verification/material', {
           verificationTicket,
@@ -1220,11 +1221,14 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
             input: {
               verificationTicket,
               email: user.email,
-              subject: user.subject
+              subject: user.subject,
+              ...(magicLink ? { deliveryMethod: 'magic-link' } : {})
             },
             context
           });
         } catch (cause) {
+          // A magic-link request never silently becomes a Firebase link or code.
+          if (magicLink) throw cause;
           // Every OTP provider is out of quota or unreachable. The Firebase
           // measurement link is the documented last resort and needs no
           // third-party quota, so fall back rather than stranding the account.
@@ -1247,7 +1251,7 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         return json(request, 202, {
           ok: true,
           authenticated: false,
-          delivery: { method: 'email-otp', sent: result?.sent !== false, fallback: false },
+          delivery: { method: magicLink ? 'email-magic-link' : 'email-otp', sent: result?.sent !== false, fallback: false },
           ownership: {
             sent: result?.sent !== false,
             attemptId: result?.attemptId || '',
@@ -1264,9 +1268,12 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         const verificationTicket = jar[AUTH_VERIFICATION_COOKIE];
         if (!verificationTicket) throw new NativeAuthError(AUTH_ERROR_CODES.TELEGRAM_VERIFICATION_INVALID);
         const body = await readJson(request);
-        const code = String(body.code || '').trim();
+        // A magic-link token arrives in `token`; it is forwarded once and never logged.
+        const magicToken = typeof body.token === 'string' ? body.token.trim() : '';
+        const code = magicToken || String(body.code || '').trim();
         const attemptId = String(body.attemptId || '').trim();
-        if (!/^\d{6}$/.test(code) || !/^[A-Za-z0-9_-]{24,96}$/.test(attemptId)) {
+        const codeOk = magicToken ? /^[A-Za-z0-9._~-]{16,2048}$/.test(magicToken) : /^\d{6}$/.test(code);
+        if (!codeOk || !/^[A-Za-z0-9_-]{24,96}$/.test(attemptId)) {
           throw new NativeAuthError(AUTH_ERROR_CODES.INVALID_INPUT);
         }
         const material = await callAuthority(env, '/internal/firebase/account-verification/material', {

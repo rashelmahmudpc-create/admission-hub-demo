@@ -25,7 +25,7 @@ const KEY = `provider-key-${'k'.repeat(32)}`;
 
 test('six OTP slots implement the shared contract and fail closed when not securely configured', async () => {
   const providers = createConfiguredVerificationProviders({});
-  assert.deepEqual(providers.map(row => row.id), ['otp-a', 'otp-b', 'otp-c', 'otp-d', 'otp-e', 'otp-f', 'otp-g', 'otp-h', 'otp-i', 'otp-j', 'otp-k', 'otp-l', 'whatsapp', 'telegram']);
+  assert.deepEqual(providers.map(row => row.id), ['otp-a', 'otp-b', 'otp-c', 'otp-d', 'otp-e', 'otp-f', 'otp-g', 'otp-h', 'otp-i', 'otp-j', 'otp-k', 'otp-l', 'otp-m', 'whatsapp', 'telegram']);
   for (const provider of providers) {
     assert.equal((await provider.checkAvailability()).available, false);
     assert.equal((await provider.getRemainingQuota()).remaining, 0);
@@ -664,7 +664,7 @@ test('OTP slots prefer Brevo and Apps Script and fall back to bridge bindings', 
   assert.equal(bridged[1].constructor.name, 'BridgeOtpVerificationProvider');
 
   const empty = createConfiguredVerificationProviders({});
-  assert.deepEqual(empty.map(row => row.id), ['otp-a', 'otp-b', 'otp-c', 'otp-d', 'otp-e', 'otp-f', 'otp-g', 'otp-h', 'otp-i', 'otp-j', 'otp-k', 'otp-l', 'whatsapp', 'telegram']);
+  assert.deepEqual(empty.map(row => row.id), ['otp-a', 'otp-b', 'otp-c', 'otp-d', 'otp-e', 'otp-f', 'otp-g', 'otp-h', 'otp-i', 'otp-j', 'otp-k', 'otp-l', 'otp-m', 'whatsapp', 'telegram']);
   for (const provider of empty) assert.equal((await provider.getProviderStatus()).configured, false);
 });
 
@@ -1181,5 +1181,5 @@ test('wrangler.toml enables otp-j and otp-k at 38 without new vars, ahead of the
   assert.match(toml, /\{"id":"otp-k","enabled":true,"priority":38,"dailyQuota":300/);
   const rows = JSON.parse(toml.match(/VERIFICATION_ORCHESTRATOR_CONFIG = '(.*)'/)[1]).providers;
   const order = rows.slice().sort((a, b) => a.priority - b.priority || a.id.localeCompare(b.id)).map(row => row.id);
-  assert.deepEqual(order.slice(order.indexOf('otp-f')), ['otp-f', 'otp-i', 'otp-j', 'otp-k', 'otp-l', 'otp-g', 'otp-c', 'telegram']);
+  assert.deepEqual(order.slice(order.indexOf('otp-f')), ['otp-f', 'otp-i', 'otp-j', 'otp-k', 'otp-l', 'otp-m', 'otp-g', 'otp-c', 'telegram']);
 });
