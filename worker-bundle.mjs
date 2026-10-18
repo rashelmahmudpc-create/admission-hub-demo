@@ -29788,6 +29788,10 @@ var gk_agent_worker_default = {
           AGENT_DAILY_CAP: env.AGENT_DAILY_CAP,
           AGENT_PUBLIC_DAILY_CAP: env.AGENT_PUBLIC_DAILY_CAP,
           AGENT_GEMINI_MODELS: env.AGENT_GEMINI_MODELS,
+          /* web_search (owner 2026-10-18): Tavily key + optional daily cap. Left out of
+             this whitelist, the chat never saw the key and never searched. */
+          TAVILY_API_KEY: env.TAVILY_API_KEY,
+          TAVILY_DAILY_CAP: env.TAVILY_DAILY_CAP,
           /* P13 — D1 read path (public question/content lists). Absent binding
              leaves the KV path in place, so this is additive. */
           PROFILE_DB: env.PROFILE_DB,

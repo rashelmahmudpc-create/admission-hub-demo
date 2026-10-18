@@ -57,6 +57,14 @@ await t('W10. admission date / schedule questions search; history and study ques
   return ['ঢাবি ভর্তি পরীক্ষা কবে?', 'ঢাকা বিশ্ববিদ্যালয়ের ভর্তি পরীক্ষার তারিখ কবে', 'ঢাবি ভর্তি পরীক্ষার সময়সূচী', 'গুচ্ছ আবেদন কবে শুরু', 'when is the DU admission exam'].every(on)
     && !['পলাশীর যুদ্ধ কবে হয়েছিল?', 'কবে আমার পরীক্ষা ছিল', 'সমাস কাকে বলে', 'বাংলাদেশের রাজধানী কোথায়'].some(on);
 });
+await t('W11. the outer worker passes the Tavily key to the chat handler (envPub whitelist)', async () => {
+  const { readFileSync } = await import('fs');
+  const src = readFileSync('gk-agent-worker.js', 'utf8');
+  const i = src.indexOf('const envPub = {'); const j = src.indexOf('};', i);
+  const block = src.slice(i, j);
+  return /TAVILY_API_KEY:\s*env\.TAVILY_API_KEY/.test(block) && /TAVILY_DAILY_CAP:\s*env\.TAVILY_DAILY_CAP/.test(block)
+    && readFileSync('worker-bundle.mjs', 'utf8').includes('TAVILY_API_KEY: env.TAVILY_API_KEY');
+});
 await t('W9. web_search is never a no-model simple plan', () => !T.isSimplePlan([{ name: 'web_search', args: { query: 'x' } }], 'সর্বশেষ খবর'));
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
