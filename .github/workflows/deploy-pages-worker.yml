@@ -145,7 +145,7 @@ jobs:
       - name: Minify the Pages bundle (dist only — source stays readable)
         run: |
           set -eu
-          npm install --no-save --no-audit --no-fund esbuild@0.25.9
+          npm install --no-save --no-audit --no-fund esbuild@0.25.9 acorn@8.15.0
           node scripts/minify-dist.mjs dist
           # Every minified script must still parse; a single bad file stops the deploy.
           find dist \( -name '*.js' -o -name '*.mjs' \) -print0 | xargs -0 -n1 node --check

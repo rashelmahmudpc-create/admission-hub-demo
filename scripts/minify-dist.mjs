@@ -8,8 +8,15 @@
      (CI greps dist/index.html for SEO/meta strings).
    - No output format is set, so esbuild does NOT rename top-level names —
      classic <script> files that share globals keep working.
-   - keepNames keeps fn.name / class names, charset=utf8 keeps Bangla text
-     as real characters (no \uXXXX bloat).
+   - keepNames is deliberately OFF: in transform mode it injects a helper
+     (`var o=(e,t)=>a(e,"name",...)`) at the TOP of every file, and in a classic
+     <script> those minified helper names become shared globals that clobber
+     each other across files (seen live: experience-studio-hooks.js threw
+     "Property description must be an object"). No shipped code reads fn.name.
+   - charset=utf8 keeps Bangla text as real characters (no \uXXXX bloat).
+   - Guard: a minified file must not introduce a new top-level `var`/`let`/
+     `const`/`function`/`class` name, or drop one (checked with acorn, classic
+     scripts only); if it would, the original file is kept.
    - sw.js and firebase-messaging-sw.js are skipped (sw.js carries the
      sw-manifest markers). After minifying, the ASSET_DIGESTS block in
      dist/sw.js is regenerated from the minified files, so the SW precache
@@ -18,6 +25,7 @@
 
    Usage: node scripts/minify-dist.mjs [distDir]   (default: dist) */
 import { transform } from 'esbuild';
+import { parse } from 'acorn';
 import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { join, relative, extname, basename } from 'node:path';
@@ -27,6 +35,37 @@ if (!existsSync(join(dist, 'index.html'))) throw new Error(`${dist}/index.html m
 
 const SKIP = new Set(['sw.js', 'firebase-messaging-sw.js']);
 const LOADER = { '.js': 'js', '.mjs': 'js', '.css': 'css' };
+
+/* Top-level names a CLASSIC script puts on the global object. ES modules
+   (import/export) have their own scope, so renaming inside them is safe and
+   they are not checked. Parsed with acorn, not a regex. */
+const topLevelNames = code => {
+  const names = new Set();
+  const ast = parse(code, { ecmaVersion: 'latest', sourceType: 'script', allowHashBang: true });
+  const addPattern = p => {
+    if (!p) return;
+    if (p.type === 'Identifier') names.add(p.name);
+    else if (p.type === 'ObjectPattern') p.properties.forEach(q => addPattern(q.value || q.argument));
+    else if (p.type === 'ArrayPattern') p.elements.forEach(addPattern);
+    else if (p.type === 'AssignmentPattern') addPattern(p.left);
+    else if (p.type === 'RestElement') addPattern(p.argument);
+  };
+  for (const node of ast.body) {
+    if (node.type === 'VariableDeclaration') node.declarations.forEach(d => addPattern(d.id));
+    else if ((node.type === 'FunctionDeclaration' || node.type === 'ClassDeclaration') && node.id) names.add(node.id.name);
+  }
+  return names;
+};
+const isModule = code => {
+  try { parse(code, { ecmaVersion: 'latest', sourceType: 'script', allowHashBang: true }); return false; }
+  catch { parse(code, { ecmaVersion: 'latest', sourceType: 'module', allowHashBang: true }); return true; }
+};
+const newTopLevelNames = (before, after) => {
+  if (isModule(before)) return [];
+  const a = topLevelNames(before);
+  const b = topLevelNames(after);
+  return [...new Set([...a, ...b])].filter(n => a.has(n) !== b.has(n));
+};
 
 const files = [];
 const walk = dir => {
@@ -47,12 +86,14 @@ for (const file of files) {
     const { code } = await transform(src, {
       loader: LOADER[extname(file)],
       minify: true,
-      keepNames: true,
       charset: 'utf8',
       legalComments: 'inline',
       sourcefile: relative(dist, file),
     });
-    if (Buffer.byteLength(code) < Buffer.byteLength(src)) {
+    const drift = LOADER[extname(file)] === 'js' ? newTopLevelNames(src, code) : [];
+    if (drift.length) {
+      kept.push(`${relative(dist, file)} (global names would change: ${drift.slice(0, 8).join(', ')})`);
+    } else if (Buffer.byteLength(code) < Buffer.byteLength(src)) {
       writeFileSync(file, code);
       after += Buffer.byteLength(code);
       changed += 1;
@@ -86,4 +127,4 @@ if (existsSync(swPath)) {
 
 const kb = n => (n / 1024).toFixed(0) + ' KB';
 console.log(`minify-dist: ${changed}/${files.length} files minified, ${kb(before)} -> ${kb(after)} (${(100 - after / before * 100).toFixed(1)}% smaller)`);
-if (kept.length) console.log('minify-dist: kept unchanged (parse error):\n  ' + kept.join('\n  '));
+if (kept.length) console.log('minify-dist: kept unchanged:\n  ' + kept.join('\n  '));
