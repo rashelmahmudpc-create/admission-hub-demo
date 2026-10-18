@@ -3,6 +3,17 @@ main = "worker-bundle.mjs"
 compatibility_date = "2024-11-01"
 workers_dev = true
 
+# Phase 0 (2026-10-18): keep Workers Logs on permanently. Without this block every
+# `wrangler deploy` resets observability to off and auth/OTP failures become invisible.
+# Not a variable: does not count toward the 64-variable ceiling.
+[observability]
+enabled = true
+head_sampling_rate = 1
+
+[observability.logs]
+enabled = true
+invocation_logs = true
+
 [vars]
 FIREBASE_CONTINUE_URL = "https://admissionsky.pages.dev/?firebaseVerified=1"
 GOOGLE_AUTH_ACTIVATION = "enabled"
