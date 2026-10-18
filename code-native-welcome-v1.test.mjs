@@ -13,8 +13,9 @@ const SW = read('sw.js');
 const PAGES_GUARD = read('.github/workflows/cf-pages.yml');
 const RELEASE_WORKFLOW = read('.github/workflows/telegram-auth-canary-activate.yml');
 const UI_VERSION = '20261018-allowlist-v1';
+const UI_JS_VERSION = '20261018-logout-otp-v1';
 
-const SHELL_VERSION = 'v350-notes-screen-v2';
+const SHELL_VERSION = 'v364-sky-goal';
 
 const between = (source, start, end) => {
   const from = source.indexOf(start);
@@ -118,8 +119,8 @@ test('unsupported verification methods remain truthful and fail closed', () => {
 test('Signup Assistant is removed while the ordinary app AI remains available', () => {
   assert.doesNotMatch(JS, /ASSISTANT_ENABLED|data-role="guide|ah-guide|AI Assistant|context:\s*\{\s*onboarding/);
   assert.doesNotMatch(CSS, /\.ah-guide|\.ah-assistant-hint/);
-  assert.match(HTML, /ai-agent-chat\.js\?v=agent-f1-ui-skyv3/);
-  assert.match(SW, /ai-agent-chat\.js\?v=agent-f1-ui-skyv3/);
+  assert.match(HTML, /ai-agent-chat\.js\?v=agent-f1-ui-skyv13/);
+  assert.match(SW, /ai-agent-chat\.js\?v=agent-f1-ui-skyv13/);
   // bottom-nav AI tab সরানো হয়েছে — AI এখন dashboard-এর Command Center + সরাসরি /ai রুট।
   assert.doesNotMatch(HTML, /\{key:'ai'/);
   assert.doesNotMatch(HTML, /juju-floating\.js/);
@@ -142,14 +143,14 @@ test('custom Guest Dashboard is absent and Guest returns to the ordinary app rou
 });
 
 test('code-native assets and service-worker release markers are synchronized', () => {
-  for (const asset of [`account-access.css?v=${UI_VERSION}`, `account-access.js?v=${UI_VERSION}`, 'dashboard-v2.css?v=dash2f13-theme', 'dashboard-v2.js?v=dash2f18-chrome']) {
+  for (const asset of [`account-access.css?v=${UI_VERSION}`, `account-access.js?v=${UI_JS_VERSION}`, 'dashboard-v2.css?v=dash2f13-theme', 'dashboard-v2.js?v=dash2f18-chrome']) {
     assert.ok(HTML.includes(asset), asset);
     assert.ok(SW.includes(asset), asset);
   }
   assert.match(SW, new RegExp(`const BUILD_ID = '${SHELL_VERSION}'`));
   assert.match(HTML, new RegExp(`expectedSwVersion = '${SHELL_VERSION}'`));
-  assert.ok(HTML.indexOf('institutions-bd.js?v=bd-institutions-v2') < HTML.indexOf(`account-access.js?v=${UI_VERSION}`));
-  assert.ok(HTML.indexOf(`account-access.js?v=${UI_VERSION}`) < HTML.indexOf('dashboard-v2.js?v=dash2f18-chrome'));
+  assert.ok(HTML.indexOf('institutions-bd.js?v=bd-institutions-v2') < HTML.indexOf(`account-access.js?v=${UI_JS_VERSION}`));
+  assert.ok(HTML.indexOf(`account-access.js?v=${UI_JS_VERSION}`) < HTML.indexOf('dashboard-v2.js?v=dash2f18-chrome'));
 });
 
 test('the welcome screen is the entry point, not the Sky flow directly', () => {
