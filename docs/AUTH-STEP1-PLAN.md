@@ -1,17 +1,37 @@
-# ধাপ ১ এর পরিকল্পনা: OTP যাচাইয়ের পরে account তৈরি (১৮ অক্টোবর ২০২৬)
+# ধাপ ১ এর পরিকল্পনা: OTP যাচাইয়ের পরে account তৈরি (হালনাগাদ: ১৮ অক্টোবর ২০২৬, ৭ম session)
 
-অবস্থা: code এর জায়গা খোঁজা হয়েছে, code এ কোনো পরিবর্তন হয়নি। Token শেষ হয়ে আসছিল, আর অর্ধেক কাজ deploy করলে signup ভাঙতে পারত, তাই deploy করা হয়নি।
+অবস্থা: 🟡 code পড়া শেষ, নকশা ঠিক হয়েছে। Code এ কোনো পরিবর্তন বা deploy হয়নি।
 
-## এখনকার ধারা
-- `auth-native/worker/public-auth-handler.mjs` লাইন ~722: `POST /api/auth/v1/signup` করলে সাথে সাথে `provider.signUp()` চলে, অর্থাৎ Firebase এ account তৈরি হয়ে যায় (লাইন ~735)। লাইন ~1090 এও আরেকটা `signUp` আছে।
-- এরপর session নিয়ে `/email-ownership/start` আর `/verify` চলে (লাইন ~1243, এখানে Turnstile যাচাই হয় ~1251)। লাইন ~367 এ `emailOwnershipProven` না হলে login এ `EMAIL_NOT_VERIFIED` আসে।
-- Frontend `account-access.js`: OTP start/verify হয় ৩ জায়গায়, লাইন ~2940/3007 (সাধারণ আর magic-link ~2988), ~3397/3423, আর ~3747/3763 (Sky onboarding)।
+## এখনকার ধারা (যাচাই করা)
+- `public-auth-handler.mjs` ~722 `POST /signup`: সাথে সাথে `provider.signUp()` (~735) → `/internal/firebase/account-verification/begin` দিয়ে ticket (refreshToken encrypt করে) → `__Host-ah_verification` cookie → 202 `{accountCreated:true, verification:{selectionRequired:true, options:{email, telegram}}}`।
+- Frontend (`account-access.js` ~3266 আর Sky ~3852) এরপর `/profile/pending` (~1484, ticket দিয়ে profile রাখে) → `/email-ownership/start` (~1243, Turnstile ~1251) → `/email-ownership/verify` (~1311) → `account-verification/complete` → session cookie।
+- DO: `auth-authority-do.mjs` `#preverificationIdentity` ticket থেকে `userId/subjectRef/emailRef` নিয়ে orchestrator এর `trustedIdentity` বানায়। Alarm ~521: `engine.cleanup()` + `verification.cleanup()`।
 
-## পরিকল্পনা
-1. নতুন `POST /signup/start`: Turnstile যাচাই করবে → email আর password যাচাই (আগের `prepared` logic) → নাম, জন্ম তারিখ, স্কুল আর password `AUTH_AUTHORITY` DO তে ১০ মিনিটের জন্য রাখবে (password রাখার আগে secret-vault দিয়ে encrypt করতে হবে) → orchestrator এর `requestVerification` কে `userId` ছাড়াই ডাকবে, subjectRef হবে email এর HMAC (আগে দেখতে হবে `#identity` এ userId লাগে কিনা)।
-2. নতুন `POST /signup/verify`: OTP যাচাই → তবেই `provider.signUp()` → emailVerified/ownership চিহ্ন দেওয়া → session cookie → dashboard। কাজ শেষে pending row মুছে ফেলা।
-3. DO alarm বা cron দিয়ে ১০ মিনিট পুরোনো pending row মুছে ফেলা।
-4. পুরোনো `/signup` কিছুদিন রেখে দেওয়া, যাতে cache এ থাকা পুরোনো frontend না ভাঙে। Frontend এর তিনটা জায়গা নতুন API তে নেওয়া, আর `sw.js` এ BUILD_ID বাড়ানো।
-5. Test: নতুন unit test লিখতে হবে, আর `test:native-auth` এ আগের মতোই শুধু ২টা পুরোনো ব্যর্থ test থাকবে। Bundle CI তে build করতে হবে (আগের self-removing workflow এর নিয়মে)। Deploy এর পরে মালিক একটা signup করে দেখবেন।
+## কেন পুরোনো পরিকল্পনা চলবে না
+- `auth_verification_challenges` আর `auth_email_ownership_links` (`verification/sqlite-verification-repository.mjs`) এ `FOREIGN KEY(user_id) REFERENCES auth_users`। DO SQLite এ FK চালু, তাই ভুয়া userId দিয়ে OTP challenge লেখা যাবে না।
+- `auth_users.status` শুধু `active/disabled/suspended` — "pending" user রাখার জায়গা নেই, আর রাখলে admin student list এ দেখা যাবে।
 
-মালিকের অনুমতি (১৮ অক্টোবর): অপেক্ষা না করে merge আর deploy করা যাবে।
+## নতুন নকশা (frontend API একই থাকবে, শুধু server বদলাবে)
+Frontend আগের মতোই `/signup` → `/profile/pending` → `/email-ownership/start` → `/verify` ডাকবে। Server ভেতরে ticket এর ধরন দেখে ঠিক করবে আগের ধারা না নতুন ধারা।
+
+## করণীয় (ক্রম অনুযায়ী)
+1. **নতুন ফাইল `auth-native/worker/pending-signup.mjs`** (handler ছোট রাখতে সব logic এখানে):
+   - DO তে নতুন table `auth_pending_signups(ticket_ref PK, email_ref UNIQUE, email_cipher, password_cipher, email_mask, profile_json, device_ref, ip_ref, created_at, expires_at)` — FK নেই। Email আর password `AuthSecretVault.seal(..., 'pending-signup:<ticketRef>')` দিয়ে encrypt।
+   - TTL ১০ মিনিট। একই email এ আবার signup করলে পুরোনো row বদলে যাবে।
+2. **OTP এর জন্য আলাদা challenge** (FK সমস্যা এড়াতে): `auth_pending_signup_challenges(attempt_id PK, ticket_ref, code_mac, attempts, expires_at, provider_id)`। Code পাঠাতে orchestrator এর provider delivery আর rate limit (destination/IP/device) ব্যবহার, কিন্তু `#record`/challenge লেখা এই নতুন table এ। সহজ উপায়: orchestrator এ ছোট `deliverOnly({email, recipientName, code, context})` method যোগ (provider loop + `onDeliveryEvent` log একই থাকবে, purpose `signup`)।
+3. **DO route** (`auth-authority-do.mjs`): `/internal/signup/pending/begin`, `/pending/profile`, `/pending/request`, `/pending/verify`, `/pending/consume`। `alarm()` আর `#scheduleExpiry()` এ মেয়াদ শেষ row মুছে ফেলা যোগ।
+4. **Handler** (`public-auth-handler.mjs`, শুধু কয়েক লাইন):
+   - `/signup` ~735: `signUp()` এর বদলে `pending/begin`; response একই আকারের, কিন্তু `accountCreated:false`, `telegram.available:false`। Cookie এ ticket এর আগে `p.` prefix (যেমন `p.<token>`) যাতে ধরন বোঝা যায়।
+   - `/profile/pending`, `/email-ownership/start`, `/verify`: ticket `p.` দিয়ে শুরু হলে নতুন ধারা।
+   - `/verify` সফল হলে: `provider.signUp(email, password)` → `account-verification/begin` (আসল ticket) → pending profile কে `save-pending` এ সরানো → ownership link আসল userId তে লেখা (verification repo তে `recordEmailOwnership` method যোগ, sqlite + memory দুটোতেই) → `account-verification/complete` → `authSuccess` → pending row মুছে ফেলা।
+   - `EMAIL_EXISTS` হলে পরিষ্কার message: "এই ইমেইলে আগেই অ্যাকাউন্ট আছে, লগইন করুন"। সম্ভব হলে `/signup` এই `emailRef` দিয়ে `auth_users` এ খুঁজে আগেই জানিয়ে দেবে।
+   - সব OTP provider ব্যর্থ হলে (`BACKUP_UNAVAILABLE`): তখনই account বানিয়ে আগের মতো Firebase link পাঠানো (শেষ ভরসা, ধাপ ৪ এর নিয়ম)।
+5. **Test**: নতুন `pending-signup.test.mjs` (signup এ Firebase ডাকা হয় না; ভুল OTP তে account হয় না; সঠিক OTP তে একবারই `signUp`; ১০ মিনিট পরে row মুছে যায়; password log/response এ আসে না)। `package.json` এর `test:native-auth` এ যোগ। পুরোনো test যেগুলো `/signup` এ `accountCreated:true` ধরে নেয়, সেগুলো হালনাগাদ।
+6. **Bundle**: branch এ self-removing workflow দিয়ে `npm run build:worker` (PR #106 এর নিয়মে), CI তে `check:worker-bundle` pass।
+7. **Deploy**: `deploy-staging.yml` → (staging এ secret নেই, তাই শুধু unit test + `/api/auth/v1` health) → merge → `deploy-pages-worker.yml` (`confirmation=DEPLOY`)। এরপর মালিক site থেকে একটা নতুন signup করে দেখবেন; telemetry তে `otp_delivery` purpose `signup`।
+8. পুরোনো ধারা (`accountCreated:true` ticket) কিছুদিন চালু থাকবে, যাতে cache এ থাকা পুরোনো frontend বা মাঝপথের signup না ভাঙে।
+
+## খেয়াল রাখো
+- `auth-native/` এ `console.*` নিষেধ; log শুধু `observability/` sink দিয়ে।
+- নতুন env var যোগ করা যাবে না (৬৪ সীমা); TTL ইত্যাদি code default।
+- Temp-mail blocking আর allowed-domain list বদলাবে না।
