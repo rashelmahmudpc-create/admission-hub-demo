@@ -23,6 +23,6 @@ Branch: `auth/step1-pending-signup` (PR খোলা)। এই branch এই �
 - Deploy: `deploy-staging.yml` → `deploy-pages-worker.yml` (`confirmation=DEPLOY`), শুধু পুরো ধাপ test pass হলে।
 
 ## শেষ অবস্থা (৩ লাইন)
-1. Session ৮: pending signup store + account ছাড়া OTP পাঠানো/যাচাই লেখা হলো, test সহ। এখনো signup বোতামের সাথে যুক্ত না।
-2. Test: 134/136 pass (পুরোনো ২টা fail বাদে সব ঠিক)। Deploy হয়নি।
-3. পরের কাজ: উপরের "এই session এর কাজ" ১–৪।
+1. Session ৯: করণীয় ৩–৪ হলো — DO route `/internal/signup/pending/*` (+ownership), handler এ `p.` ticket ধারা (`pending-signup-public.mjs`), শুধু `X-AH-Signup-Flow: pending-v1` header এ চালু; bundle হালনাগাদ।
+2. Test: 139/141 pass (পুরোনো ২টা fail বাদে), `pending-signup-wire.test.mjs` নতুন, `check:worker-bundle` pass। Deploy হয়নি, PR #113 খোলা।
+3. পরের কাজ: frontend signup এ header পাঠানো, পুরোনো `accountCreated:true` test হালনাগাদ, তারপর staging → production।
