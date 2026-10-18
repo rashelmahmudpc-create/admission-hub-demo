@@ -1678,7 +1678,7 @@ function render(){
   if(p.startsWith('question-bank/subject/')) return renderSubjectDetail(p.split('/')[2]);
   if(p.startsWith('question-bank/topic/')) return renderTopicDetail(p.split('/')[2]);
   if(p.startsWith('question/')) return renderQuestionDetail(p.split('/')[1]);
-  if(p==='exam') return renderExamCenterSky();
+  if(p==='exam') return renderExamCenter();
   if(p==='exam/setup') return renderExamSetup();
   if(p==='exam/running') return renderExamRunning();
   if(p==='exam/flash-summary') return renderFlashSummary();
@@ -3206,33 +3206,6 @@ function freshSetup(){
   };
 }
 
-/* The owner's Exam Center (ported from his design file, 2026-10-18). The look is
-   his; exam-center-sky.js carries the screens and reads the real bank from CACHE.
-   If its files have not loaded yet we render the previous grid so the route is
-   never blank, and a missing bundle can never hide the screen. */
-function renderExamCenterSky(){
-  /* The exam screens are full-screen, so this shell carries the one control they
-     do not: a way back to the app. Without it the route would trap the user. */
-  renderShell(`<div class="exam-sky-backwrap">
-      <button class="btn ghost sm btn-press" onclick="navigate('dashboard')" aria-label="Back">← App</button>
-    </div><div id="examCenterSky"></div>`, {topbar:false, hideNav:true});
-  const host=document.getElementById('examCenterSky');
-  if(typeof window.mountExamCenterSky==='function'){
-    try{ window.mountExamCenterSky(host); }catch(e){ renderExamCenter(); }
-    return;
-  }
-  /* This file is deferred, so on a cold load of #exam the bundle can still be on
-     its way. Wait for it briefly rather than showing the older grid, and only
-     fall back if it never arrives — the route must never end up blank. */
-  let tries=0;
-  const wait=setInterval(()=>{
-    if(typeof window.mountExamCenterSky==='function'){
-      clearInterval(wait);
-      try{ window.mountExamCenterSky(document.getElementById('examCenterSky')||host); }
-      catch(e){ renderExamCenter(); }
-    } else if(++tries>25){ clearInterval(wait); renderExamCenter(); }
-  },80);
-}
 function renderExamCenter(){
   if(!ExamSetup) ExamSetup=freshSetup();
   const modes = [
@@ -5807,12 +5780,7 @@ setTimeout(() => { if (location.hash.replace(/^#/, '').split('?')[0] === 'dictio
     if (p === 'progress') return typeof window.renderProgress === 'function' ? window.renderProgress() : window.render?.();
     if (p === 'deleted-questions') return typeof window.renderDeletedQuestions === 'function' ? window.renderDeletedQuestions() : window.render?.();
     if (p === 'source-courses' || p.startsWith('source-courses/')) return typeof window.renderSourceCourseTool === 'function' ? window.renderSourceCourseTool() : window.render?.();
-    if (p === 'exam') {
-      /* Owner's ported Exam Center. Fall back to the older grid only if its
-         bundle is missing, so the route is never blank. */
-      if (typeof window.renderExamCenterSky === 'function') return window.renderExamCenterSky();
-      return typeof window.renderExamCenter === 'function' ? window.renderExamCenter() : window.render?.();
-    }
+    if (p === 'exam') return typeof window.renderExamCenter === 'function' ? window.renderExamCenter() : window.render?.();
     return typeof window.render === 'function' ? window.render() : undefined;
   };
   window.__admissionRenderRoute = renderFinalRoute;
@@ -6027,8 +5995,6 @@ window.admissionLoadPack = function admissionLoadPack(name) {
 <script type="application/x-ah-idle" data-ah-src="./cloud-content-sync.js?v=vm-erase-v223"></script>
 <script defer src="./student-data-sync.js?v=student-sync-v1"></script>
 
-<link rel="stylesheet" href="./exam-center-sky.css?v=exam-sky-v2">
-<script src="./exam-center-sky.js?v=exam-sky-v2" defer></script>
 <script src="./a11y-core.js?v=a11y-v1" defer></script>
 <script src="./offline-status.js?v=offline-v2" defer></script>
 <script src="./install-guide.js?v=install-v4" defer></script>
