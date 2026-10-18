@@ -1,7 +1,7 @@
 // Admission Hub — Public Product Worker (account system retired, v221)
 // Active routes: public content · Firebase-account/ephemeral-guest AI · content admin.
 // The former login/profile/onboarding/session/state APIs are intentionally absent.
-import { agentChat, agentStatus, sanitizeAiPrefs, AI_PREFS_DEFAULT, clearAiMemory } from './ai-agent.js';
+import { agentChat, agentStatus, agentRecall, sanitizeAiPrefs, AI_PREFS_DEFAULT, clearAiMemory } from './ai-agent.js';
 import {
   authorizeAction, makeProposal, confirmProposal, proposalSummary,
   makeAuditRecord, parseAudit, appendAudit, STATUS, actionsEnabled
@@ -583,6 +583,13 @@ export default {
         const identity = await aiRequestIdentity(request, env, false);
         if (!identity.authenticated) return json({ error: 'sign_in_required', message: 'AI action ব্যবহার করতে লগইন করো।' }, 401);
         return json({ ok: true, actionsEnabled: actionsEnabled(env), audit: await readAudit(env, identity.uid) });
+      }
+      /* Sky recall (owner plan step 2): the reminder shown when the chat opens.
+         Signed-in only; a guest or a no-memory session simply gets nothing. */
+      if (path === '/api/ai/recall' && request.method === 'POST') {
+        const identity = await aiRequestIdentity(request, env, false);
+        if (!identity.authenticated || identity.persistMemory === false) return json({ ok: true, recall: null });
+        return await agentRecall(request, env, identity.uid);
       }
       if (path === '/api/ai/chat' && request.method === 'POST') {
         const identity = await aiRequestIdentity(request, env, false);

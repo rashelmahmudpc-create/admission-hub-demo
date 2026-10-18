@@ -21,6 +21,8 @@ import { listTools, TOOL_REGISTRY_VERSION } from './tool-registry.js';
 import { isAppFeatureQuestion, loadAppFeatures, renderAppFeatures } from './sky-app-features.mjs';
 import { planServerTools, isSimplePlan, simpleToolResponse, runTools, renderToolContext, toolsEnabled, nowLine } from './sky-tools.mjs';
 import { bumpDailyStats, statsFromTiming } from './sky-daily-report.mjs';
+/* Sky recall (owner plan step 2): the chat-open reminder. Pure, no model call. */
+import { buildRecall, sanitizeRecent, RECALL_VERSION } from './sky-recall.mjs';
 import { extractMemoryCandidates, makeMemory, upsertMemory, parseMemory, renderMemory, resolveMemoryOwner, isPiiFree, statedWeakTopics, KIND, SOURCE, MEMORY_VERSION } from './memory-engine.js';
 import { validateResponse, describeResponseValidation, RESPONSE_VALIDATION_VERSION } from './response-validator.js';
 import { describeActions, ACTION_VERSION } from './action-engine.js';
@@ -1636,6 +1638,32 @@ function openEarly(run, early, first) {
       'Access-Control-Allow-Origin': '*'
     }
   });
+}
+
+/* ── POST /api/ai/recall ---------------------------------------------------- */
+/* Sky recall (owner plan step 2, 2026-10-18): when a signed-in student opens the
+   chat, Sky reminds them of recent mistakes and their weak topic by itself.
+   One memory read, no write, no model call and no AI limit used. Only the
+   caller's own memory is read (parseMemory re-checks the owner). Guests get
+   nothing. Kill switch: PUB_KV 'sky:recall' = "off". */
+export async function agentRecall(request, env, uid) {
+  const id = String(uid || '');
+  if (!id.startsWith('account-')) return jsonResp({ ok: true, recall: null });
+  let off = false;
+  try { off = String((await getKv(env && env.PUB_KV, 'sky:recall')) || '').trim().toLowerCase() === 'off'; } catch (_) { off = false; }
+  if (off) return jsonResp({ ok: true, recall: null, off: true });
+  const body = (await request.json().catch(() => null)) || {};
+  const stats = capStats(body && body.stats) || {};
+  const recent = sanitizeRecent(body && body.recent);
+  const key = 'mem:' + MEMORY_VERSION + ':' + id;
+  let raw = null;
+  const aiState = aiStateStore(env);
+  let fromState = false;
+  if (aiState) { try { raw = await aiState.get(id, key); fromState = true; } catch (_) { fromState = false; } }
+  if (!fromState) raw = await getKv(env && env.PUB_KV, key);
+  let recall = null;
+  try { recall = buildRecall({ records: parseMemory(raw, id), stats, recent, now: Date.now() }); } catch (_) { recall = null; }
+  return jsonResp({ ok: true, recall, version: RECALL_VERSION });
 }
 
 /* ── GET /api/ai/status ---------------------------------------------------- */

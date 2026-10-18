@@ -1612,6 +1612,80 @@ ${lines.join("\n")}
 এই তথ্য শুধু এই শিক্ষার্থীর নিজেরই। স্বাভাবিকভাবে কাজে লাগাও; কখনো বলো না তুমি আলাদা করে কিছু মনে রেখেছ।` + weakRule;
 }
 
+// sky-recall.mjs
+var RECALL_VERSION = "recall-v1";
+var DAY = 24 * 60 * 60 * 1e3;
+var LAST_TOPIC_MAX_AGE = 7 * DAY;
+var BN2 = ["০", "১", "২", "৩", "৪", "৫", "৬", "৭", "৮", "৯"];
+var bn2 = (n) => String(n).replace(/[0-9]/g, (d) => BN2[d]);
+function cleanName(v, max = 40) {
+  const s = sanitizeMemoryText(v, max);
+  return s && isPiiFree(s) ? s : "";
+}
+function whenWord(ts, now) {
+  const d = Math.floor((now - ts) / DAY);
+  if (!(ts > 0) || d < 0) return "";
+  if (d === 0) return "আজ";
+  if (d === 1) return "গতকাল";
+  return bn2(d) + " দিন আগে";
+}
+function buildRecall(input = {}) {
+  const now = Number(input.now) || Date.now();
+  const records = Array.isArray(input.records) ? input.records : [];
+  const stats = input.stats && typeof input.stats === "object" ? input.stats : {};
+  const recent = input.recent && typeof input.recent === "object" ? input.recent : {};
+  const parts = [];
+  const chips = [];
+  const kinds = [];
+  const wrong = Math.max(0, Math.min(999, Number(recent.mistakes) | 0));
+  if (wrong > 0) {
+    const when = whenWord(Number(recent.since) || 0, now);
+    const lead = when === "আজ" ? "আজ" : when === "গতকাল" ? "গতকাল থেকে" : "সম্প্রতি";
+    parts.push(lead + " " + bn2(wrong) + "টা প্রশ্নে ভুল হয়েছে — আগে ওগুলো একবার ঝালিয়ে নেবে?");
+    chips.push({ label: "🔁 ভুলগুলো ঝালাই", go: "mistake-bank" });
+    kinds.push("mistakes");
+  }
+  const measured = Array.isArray(stats.weakTopics) ? stats.weakTopics.filter((t) => t && t.name) : [];
+  const said = statedWeakTopics(records, 1);
+  if (measured.length) {
+    const worst = measured.slice().sort((a, b) => (a.accuracy | 0) - (b.accuracy | 0))[0];
+    const name = cleanName(worst.name);
+    if (name) {
+      parts.push(name + "-এ সঠিকতা এখন " + bn2(worst.accuracy | 0) + "% — আজ একটু " + name + " চর্চা করি?");
+      chips.push({ label: "🎯 " + name + " কুইজ", q: name + " থেকে ৫টা প্রশ্নে কুইজ দাও" });
+      kinds.push("weak-measured");
+    }
+  } else if (said.length) {
+    const name = cleanName(said[0]);
+    const base = topicBase(name);
+    if (name) {
+      parts.push("আগে বলেছিলে " + name + " দুর্বল — আজ " + base + " দিয়ে শুরু করি?");
+      chips.push({ label: "🎯 " + base + " কুইজ", q: base + " থেকে ৫টা প্রশ্নে কুইজ দাও" });
+      kinds.push("weak-stated");
+    }
+  }
+  if (!parts.length) {
+    const last = records.find((r) => r && r.kind === KIND.STUDIES && r.key === "last-topic");
+    if (last && now - (Number(last.ts) || 0) <= LAST_TOPIC_MAX_AGE) {
+      const topic = cleanName(last.value, 60);
+      if (topic) {
+        const when = whenWord(Number(last.ts), now);
+        parts.push((when ? when + " " : "") + "আমরা “" + topic + "” নিয়ে কথা বলছিলাম — সেখান থেকে চালিয়ে যাবে?");
+        chips.push({ label: "↩️ আগের আলোচনা", q: "আগের আলোচনাটা চালিয়ে যাও: " + topic });
+        kinds.push("last-topic");
+      }
+    }
+  }
+  if (!parts.length) return null;
+  return { line: parts.slice(0, 2).join(" "), chips: chips.slice(0, 2), kinds, version: RECALL_VERSION };
+}
+function sanitizeRecent(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const mistakes = Math.max(0, Math.min(999, Number(raw.mistakes) | 0));
+  const since = Number(raw.since);
+  return { mistakes, since: Number.isFinite(since) && since > 0 ? since : 0 };
+}
+
 // response-validator.js
 var RESPONSE_VALIDATION_VERSION = "rv-v1";
 var ENFORCE = true;
@@ -3688,17 +3762,17 @@ function routerChain(env, tier, badSet = /* @__PURE__ */ new Set(), kv2 = {}) {
 var dayKey2 = () => (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
 var RL_WINDOW_MS2 = 24 * 60 * 60 * 1e3;
 function limitMessage(cap, resetAt, now) {
-  const bn3 = (s) => String(s).replace(/[0-9]/g, (d) => "০১২৩৪৫৬৭৮৯"[d]);
+  const bn4 = (s) => String(s).replace(/[0-9]/g, (d) => "০১২৩৪৫৬৭৮৯"[d]);
   const left = Math.max(1, Math.round((Number(resetAt) - Number(now)) / 6e4));
   const h = Math.floor(left / 60), m = left % 60;
-  const span = ((h ? bn3(h) + " ঘণ্টা " : "") + (m ? bn3(m) + " মিনিট" : "")).trim();
+  const span = ((h ? bn4(h) + " ঘণ্টা " : "") + (m ? bn4(m) + " মিনিট" : "")).trim();
   let clock = "";
   try {
     clock = new Date(Number(resetAt)).toLocaleTimeString("bn-BD", { timeZone: "Asia/Dhaka", hour: "numeric", minute: "2-digit" });
   } catch (_) {
     clock = "";
   }
-  return "আজকের জন্য তোমার " + bn3(cap) + "টি AI প্রশ্নের সুযোগ ব্যবহার করা হয়ে গেছে। পরবর্তী সুযোগ চালু হবে " + (clock ? "বাংলাদেশ সময় " + clock + "-এ, " : "") + "আর প্রায় " + span + " পর। তখন আমি আবার তোমার প্রশ্নের উত্তর দেবো।";
+  return "আজকের জন্য তোমার " + bn4(cap) + "টি AI প্রশ্নের সুযোগ ব্যবহার করা হয়ে গেছে। পরবর্তী সুযোগ চালু হবে " + (clock ? "বাংলাদেশ সময় " + clock + "-এ, " : "") + "আর প্রায় " + span + " পর। তখন আমি আবার তোমার প্রশ্নের উত্তর দেবো।";
 }
 var CHAT_MEMORY_TTL_MS = 180 * 24 * 60 * 60 * 1e3;
 function readQuota(raw, now) {
@@ -4403,6 +4477,40 @@ data: ${JSON.stringify({ error: "stream_failed", message: "যুক্তি-�
       "Access-Control-Allow-Origin": "*"
     }
   });
+}
+async function agentRecall(request, env, uid) {
+  const id = String(uid || "");
+  if (!id.startsWith("account-")) return jsonResp({ ok: true, recall: null });
+  let off = false;
+  try {
+    off = String(await getKv(env && env.PUB_KV, "sky:recall") || "").trim().toLowerCase() === "off";
+  } catch (_) {
+    off = false;
+  }
+  if (off) return jsonResp({ ok: true, recall: null, off: true });
+  const body = await request.json().catch(() => null) || {};
+  const stats = capStats(body && body.stats) || {};
+  const recent = sanitizeRecent(body && body.recent);
+  const key = "mem:" + MEMORY_VERSION + ":" + id;
+  let raw = null;
+  const aiState = aiStateStore(env);
+  let fromState = false;
+  if (aiState) {
+    try {
+      raw = await aiState.get(id, key);
+      fromState = true;
+    } catch (_) {
+      fromState = false;
+    }
+  }
+  if (!fromState) raw = await getKv(env && env.PUB_KV, key);
+  let recall = null;
+  try {
+    recall = buildRecall({ records: parseMemory(raw, id), stats, recent, now: Date.now() });
+  } catch (_) {
+    recall = null;
+  }
+  return jsonResp({ ok: true, recall, version: RECALL_VERSION });
 }
 async function clearAiMemory(env, uid) {
   const id = String(uid || "");
@@ -5345,6 +5453,11 @@ var public_worker_default = {
         const identity = await aiRequestIdentity(request, env, false);
         if (!identity.authenticated) return json2({ error: "sign_in_required", message: "AI action ব্যবহার করতে লগইন করো।" }, 401);
         return json2({ ok: true, actionsEnabled: actionsEnabled(env), audit: await readAudit(env, identity.uid) });
+      }
+      if (path === "/api/ai/recall" && request.method === "POST") {
+        const identity = await aiRequestIdentity(request, env, false);
+        if (!identity.authenticated || identity.persistMemory === false) return json2({ ok: true, recall: null });
+        return await agentRecall(request, env, identity.uid);
       }
       if (path === "/api/ai/chat" && request.method === "POST") {
         const identity = await aiRequestIdentity(request, env, false);
@@ -20484,7 +20597,7 @@ var asNum3 = (v, fallback = 0) => {
   return Number.isFinite(n) ? n : fallback;
 };
 var BN_DIGITS4 = "০১২৩৪৫৬৭৮৯";
-function bn2(value) {
+function bn3(value) {
   if (value === null || value === void 0 || value === "") return "—";
   return String(value).replace(/[0-9]/g, (d) => BN_DIGITS4[Number(d)]);
 }
@@ -20710,17 +20823,17 @@ function composeAnswer(intent, queryResult, filters = {}) {
   switch (intent) {
     case "engagement":
       lines.push([
-        `গত ${filters.days || 30} দিনে দৈনিক সক্রিয় student (DAU) ${bn2(d.dau)}, সাপ্তাহিক ${bn2(d.wau)}, মাসিক ${bn2(d.mau)}।`,
+        `গত ${filters.days || 30} দিনে দৈনিক সক্রিয় student (DAU) ${bn3(d.dau)}, সাপ্তাহিক ${bn3(d.wau)}, মাসিক ${bn3(d.mau)}।`,
         `Over the last ${filters.days || 30} days, DAU was ${sp(d.dau)}, WAU ${sp(d.wau)}, MAU ${sp(d.mau)}.`
       ]);
       lines.push([
-        `মোট ${bn2(d.totalStudents)} জন student-এর মধ্যে ${bn2(d.activeStudents)} জন সক্রিয়; stickiness ${bn2(d.stickiness)}।`,
+        `মোট ${bn3(d.totalStudents)} জন student-এর মধ্যে ${bn3(d.activeStudents)} জন সক্রিয়; stickiness ${bn3(d.stickiness)}।`,
         `${sp(d.activeStudents)} of ${sp(d.totalStudents)} students were active; stickiness ${sp(d.stickiness)}.`
       ]);
       break;
     case "dropoff":
       lines.push([
-        `সবচেয়ে কম completion rate: ${d.worst?.map((c) => `${c.courseId} (${bn2(c.completionRate)}%)`).join(", ") || "কোনো data নেই"}।`,
+        `সবচেয়ে কম completion rate: ${d.worst?.map((c) => `${c.courseId} (${bn3(c.completionRate)}%)`).join(", ") || "কোনো data নেই"}।`,
         `Lowest completion: ${d.worst?.map((c) => `${c.courseId} (${sp(c.completionRate)}%)`).join(", ") || "no data"}.`
       ]);
       if (d.withZeroCompletions?.length) {
@@ -20732,45 +20845,45 @@ function composeAnswer(intent, queryResult, filters = {}) {
       break;
     case "notifications":
       lines.push([
-        `গত ${filters.days || 30} দিনে ${bn2(d.sent)}টি নোটিফিকেশন পাঠানো হয়েছে; open rate ${bn2(d.openRate)}%, click rate ${bn2(d.clickRate)}%, learning conversion ${bn2(d.learningConversion)}%।`,
+        `গত ${filters.days || 30} দিনে ${bn3(d.sent)}টি নোটিফিকেশন পাঠানো হয়েছে; open rate ${bn3(d.openRate)}%, click rate ${bn3(d.clickRate)}%, learning conversion ${bn3(d.learningConversion)}%।`,
         `${sp(d.sent)} notifications sent in the last ${filters.days || 30} days; open rate ${sp(d.openRate)}%, click rate ${sp(d.clickRate)}%, learning conversion ${sp(d.learningConversion)}%.`
       ]);
       if (d.bestCategory) lines.push([`সবচেয়ে ভালো category: ${d.bestCategory}।`, `Best category: ${d.bestCategory}.`]);
       break;
     case "lessons":
       lines.push([
-        `review দরকার এমন lesson: ${d.needsReview?.map((l) => `${l.lessonId || l.courseId} (completion ${bn2(l.completionRate)}%, quiz ${bn2(l.quizAccuracy)}%)`).join("; ") || "কোনো lesson-এ পর্যাপ্ত data নেই"}।`,
+        `review দরকার এমন lesson: ${d.needsReview?.map((l) => `${l.lessonId || l.courseId} (completion ${bn3(l.completionRate)}%, quiz ${bn3(l.quizAccuracy)}%)`).join("; ") || "কোনো lesson-এ পর্যাপ্ত data নেই"}।`,
         `Lessons worth review: ${d.needsReview?.map((l) => `${l.lessonId || l.courseId} (completion ${sp(l.completionRate)}%, quiz ${sp(l.quizAccuracy)}%)`).join("; ") || "no lesson has enough data"}.`
       ]);
       break;
     case "quizzes":
       lines.push([
-        `সবচেয়ে কঠিন quiz: ${d.hardest?.map((q) => `${q.quizId} (accuracy ${bn2(q.accuracy)}%, ${bn2(q.attempts)} attempt)`).join("; ") || "পর্যাপ্ত data নেই"}।`,
+        `সবচেয়ে কঠিন quiz: ${d.hardest?.map((q) => `${q.quizId} (accuracy ${bn3(q.accuracy)}%, ${bn3(q.attempts)} attempt)`).join("; ") || "পর্যাপ্ত data নেই"}।`,
         `Hardest quizzes: ${d.hardest?.map((q) => `${q.quizId} (accuracy ${sp(q.accuracy)}%, ${sp(q.attempts)} attempts)`).join("; ") || "not enough data"}.`
       ]);
       break;
     case "retention":
       lines.push([
-        `Retention: day-1 ${bn2(d.d1)}%, day-7 ${bn2(d.d7)}%, day-14 ${bn2(d.d14)}%, day-30 ${bn2(d.d30)}% (cohort ${bn2(d.cohortSize)})।`,
+        `Retention: day-1 ${bn3(d.d1)}%, day-7 ${bn3(d.d7)}%, day-14 ${bn3(d.d14)}%, day-30 ${bn3(d.d30)}% (cohort ${bn3(d.cohortSize)})।`,
         `Retention: day-1 ${sp(d.d1)}%, day-7 ${sp(d.d7)}%, day-14 ${sp(d.d14)}%, day-30 ${sp(d.d30)}% (cohort ${sp(d.cohortSize)}).`
       ]);
       break;
     case "segments":
       lines.push([
-        `Segment বণ্টন: ${Object.entries(d.counts || {}).map(([k, v]) => `${k} ${bn2(v)}`).join(", ") || "কোনো data নেই"} (মোট ${bn2(d.total)})।`,
+        `Segment বণ্টন: ${Object.entries(d.counts || {}).map(([k, v]) => `${k} ${bn3(v)}`).join(", ") || "কোনো data নেই"} (মোট ${bn3(d.total)})।`,
         `Segment split: ${Object.entries(d.counts || {}).map(([k, v]) => `${k} ${sp(v)}`).join(", ") || "no data"} (total ${sp(d.total)}).`
       ]);
       break;
     case "funnel":
       lines.push([
-        `Funnel: ${d.steps?.map((s) => `${s.key} ${bn2(s.count)}`).join(" → ") || "কোনো data নেই"}।`,
+        `Funnel: ${d.steps?.map((s) => `${s.key} ${bn3(s.count)}`).join(" → ") || "কোনো data নেই"}।`,
         `Funnel: ${d.steps?.map((s) => `${s.key} ${sp(s.count)}`).join(" → ") || "no data"}.`
       ]);
-      if (d.hasAlert) lines.push([`সবচেয়ে বেশি drop: ${d.steepest} (${bn2(d.dropRate)}%)।`, `Steepest drop: ${d.steepest} (${sp(d.dropRate)}%).`]);
+      if (d.hasAlert) lines.push([`সবচেয়ে বেশি drop: ${d.steepest} (${bn3(d.dropRate)}%)।`, `Steepest drop: ${d.steepest} (${sp(d.dropRate)}%).`]);
       break;
     case "risk":
       lines.push([
-        `ঝুঁকিতে ${bn2(d.atRisk)} জন, নিষ্ক্রিয় ${bn2(d.inactive)} জন — মোট ${bn2(d.total)} জনের মধ্যে।`,
+        `ঝুঁকিতে ${bn3(d.atRisk)} জন, নিষ্ক্রিয় ${bn3(d.inactive)} জন — মোট ${bn3(d.total)} জনের মধ্যে।`,
         `${sp(d.atRisk)} at risk and ${sp(d.inactive)} inactive out of ${sp(d.total)}.`
       ]);
       break;
@@ -21018,7 +21131,7 @@ function optimiseExperiment(rows4 = [], options = {}) {
     noteEn: "Ranked on learning conversion, not on short-term clicks."
   };
 }
-var __copilotTest = Object.freeze({ nd, sp, bn: bn2, compactParams, isBangla, normaliseQuestion: normaliseQuestion2 });
+var __copilotTest = Object.freeze({ nd, sp, bn: bn3, compactParams, isBangla, normaliseQuestion: normaliseQuestion2 });
 
 // ai-analytics-routes.mjs
 var AI_ANALYTICS_PREFIX = "/api/analytics/ai/";
