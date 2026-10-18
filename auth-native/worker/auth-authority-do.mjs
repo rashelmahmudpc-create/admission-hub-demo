@@ -319,7 +319,8 @@ export class AdmissionAuthAuthority {
       // The only difference from the Telegram pair is the purpose and the address.
       if (url.pathname === '/internal/verification/ownership/request') {
         const prepared = await this.#preverificationIdentity(body.input, body.context, 'email-ownership');
-        const result = await this.verification.requestVerification(prepared.verificationInput, body.context);
+        const deliveryMethod = body.input?.deliveryMethod === 'magic-link' ? { deliveryMethod: 'magic-link' } : {};
+        const result = await this.verification.requestVerification({ ...prepared.verificationInput, ...deliveryMethod }, body.context);
         await this.#scheduleExpiry();
         return response(200, { ok: true, result });
       }

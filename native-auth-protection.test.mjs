@@ -291,7 +291,9 @@ test('credentials remain in server-managed HttpOnly cookies and are never return
   }
   assert.match(client, /ENTRY_COOKIE = 'ah_entry_v1'/);
   assert.match(client, /PENDING_SIGNUP_COOKIE = 'ah_signup_pending_v1'/);
-  assert.equal((client.match(/document\.cookie\s*=/g) || []).length, 2);
+  // +1: the non-secret magic-link attemptId (10 min, useless without the HttpOnly ticket).
+  assert.match(client, /MAGIC_COOKIE = 'ah_magic_v1'/);
+  assert.equal((client.match(/document\.cookie\s*=/g) || []).length, 3);
   assert.doesNotMatch(client, /document\.cookie\s*=.*(?:password|email|session|token|secret)/i);
   assert.match(client, /credentials:\s*'same-origin'/);
   assert.doesNotMatch(client, /firebase(?:Refresh|Id)?Token/i);

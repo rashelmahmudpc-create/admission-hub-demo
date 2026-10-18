@@ -2057,6 +2057,104 @@ export class DescopeOtpVerificationProvider {
   }
 }
 
+// Descope Magic Link (otp-m). Same trust model as otp-l: the Durable Object owns
+// the challenge; Descope only proves that the owner of the bound address clicked
+// the link. The link token is single-use at Descope; sessionJwt/refreshJwt are
+// checked for presence and dropped — never logged, returned or stored.
+export const DESCOPE_MAGIC_LINK_URI = 'https://admissionsky.pages.dev/?magic=1';
+export class DescopeMagicLinkVerificationProvider {
+  constructor({ id = 'otp-m', projectId, declaredDailyQuota, redirectUri = DESCOPE_MAGIC_LINK_URI, fetchImpl = globalThis.fetch, now = Date.now } = {}) {
+    this.id = String(id || '');
+    this.channel = VERIFICATION_CHANNELS.OTP;
+    this.verificationMode = VERIFICATION_MODES.PROVIDER_EVIDENCE;
+    this.deliveryMethod = 'magic-link';
+    this.projectId = /^P[A-Za-z0-9]{20,63}$/.test(String(projectId || '')) ? String(projectId) : '';
+    this.declaredDailyQuota = safeInteger(declaredDailyQuota, 1, 1000);
+    this.redirectUri = redirectUri === DESCOPE_MAGIC_LINK_URI ? redirectUri : '';
+    this.fetch = typeof fetchImpl === 'function' ? fetchImpl : null;
+    this.now = typeof now === 'function' ? now : Date.now;
+    this.configured = Boolean(this.projectId && this.declaredDailyQuota && this.redirectUri && this.fetch);
+  }
+
+  async checkAvailability() {
+    return { available: this.configured, code: this.configured ? 'READY' : 'NOT_CONFIGURED' };
+  }
+
+  async getRemainingQuota() {
+    if (!this.configured) return { remaining: 0, limit: 0, resetAt: 0, source: 'not-configured' };
+    return { remaining: this.declaredDailyQuota, limit: this.declaredDailyQuota, resetAt: nextUtcMidnight(this.now()), source: 'declared' };
+  }
+
+  async #request(path, body, verify = false) {
+    if (!this.configured) throw new VerificationProviderError('NOT_CONFIGURED', VERIFICATION_FAILURE_CLASS.HARD);
+    let response;
+    try {
+      response = await this.fetch(`https://api.descope.com/v1/auth/magiclink/${path}`, {
+        method: 'POST',
+        redirect: 'manual',
+        credentials: 'omit',
+        headers: {
+          Authorization: `Bearer ${this.projectId}`,
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-store'
+        },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(8000)
+      });
+    } catch {
+      throw new VerificationProviderError('NETWORK_ERROR', VERIFICATION_FAILURE_CLASS.TEMPORARY, { retryAfter: 60 });
+    }
+    if (!response.ok) {
+      if (response.body) { try { await response.body.cancel(); } catch {} }
+      throw httpFailure(response, null, { userStatuses: verify ? [400, 401, 404, 422] : [] });
+    }
+    let payload;
+    try { payload = await boundedJson(response); }
+    catch (error) {
+      if (error instanceof VerificationProviderError) throw error;
+      throw new VerificationProviderError('INVALID_PROVIDER_RESPONSE', VERIFICATION_FAILURE_CLASS.HARD);
+    }
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+      throw new VerificationProviderError('INVALID_PROVIDER_RESPONSE', VERIFICATION_FAILURE_CLASS.HARD);
+    }
+    return payload;
+  }
+
+  async sendVerification(input = {}) {
+    if (!this.configured) throw new VerificationProviderError('NOT_CONFIGURED', VERIFICATION_FAILURE_CLASS.HARD);
+    const destination = String(input.destination || '').trim().toLowerCase();
+    if (!validEmailAddress(destination)) throw new VerificationProviderError('INVALID_DESTINATION', VERIFICATION_FAILURE_CLASS.USER);
+    // Fixed redirect only; Descope appends &t=<token>. Local OTP/link token are never sent.
+    await this.#request('signup-in/email', { loginId: destination, URI: this.redirectUri });
+    return { accepted: true };
+  }
+
+  async verifyCode(input = {}) {
+    if (!this.configured) throw new VerificationProviderError('NOT_CONFIGURED', VERIFICATION_FAILURE_CLASS.HARD);
+    const destination = String(input.destination || '').trim().toLowerCase();
+    const token = String(input.evidence || '').trim();
+    if (!validEmailAddress(destination) || !/^[A-Za-z0-9._~-]{16,2048}$/.test(token)) return { verified: false };
+    let payload;
+    try { payload = await this.#request('verify', { token }, true); }
+    catch (error) {
+      if (error?.failureClass === VERIFICATION_FAILURE_CLASS.USER) return { verified: false };
+      throw error;
+    }
+    if (payload.user?.verifiedEmail !== true ||
+        String(payload.user?.email || '').trim().toLowerCase() !== destination ||
+        typeof payload.user?.userId !== 'string' || !payload.user.userId ||
+        typeof payload.sessionJwt !== 'string' || !payload.sessionJwt) {
+      throw new VerificationProviderError('INVALID_PROVIDER_RESPONSE', VERIFICATION_FAILURE_CLASS.HARD);
+    }
+    return { verified: true };
+  }
+
+  async getProviderStatus() {
+    return { status: this.configured ? 'configured' : 'disabled', configured: this.configured, officialApi: true, mailer: 'descope', deliveryMethod: 'magic-link', liveDeliveryVerified: false };
+  }
+}
+
 export function createConfiguredVerificationProviders(env = {}, { fetchImpl = globalThis.fetch } = {}) {
   // Slot `otp-a` prefers the direct Brevo API and falls back to the external OTP
   // bridge when Brevo is not bound. Slot `otp-b` prefers the free Google Apps
@@ -2182,6 +2280,13 @@ export function createConfiguredVerificationProviders(env = {}, { fetchImpl = gl
     declaredDailyQuota: descopeSlot ? descopeSlot.dailyQuota : '',
     fetchImpl
   });
+  const descopeMagicSlot = slotFromConfig(env.VERIFICATION_ORCHESTRATOR_CONFIG, 'otp-m');
+  const descopeMagicM = new DescopeMagicLinkVerificationProvider({
+    id: 'otp-m',
+    projectId: descopeMagicSlot ? descopeMagicSlot.projectId : '',
+    declaredDailyQuota: descopeMagicSlot ? descopeMagicSlot.dailyQuota : '',
+    fetchImpl
+  });
   return [
     brevoOtpA.configured ? brevoOtpA : bridgeOtpA,
     appsScriptOtpB.configured ? appsScriptOtpB : bridgeOtpB,
@@ -2195,6 +2300,7 @@ export function createConfiguredVerificationProviders(env = {}, { fetchImpl = gl
     oryOtpJ,
     hankoOtpK,
     descopeOtpL,
+    descopeMagicM,
     new OfficialWhatsAppVerificationProvider({
       graphVersion: env.WHATSAPP_GRAPH_VERSION,
       phoneNumberId: env.WHATSAPP_PHONE_NUMBER_ID,

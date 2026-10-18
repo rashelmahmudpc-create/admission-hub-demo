@@ -10344,6 +10344,9 @@ var SLOT_DEFINITIONS = Object.freeze({
   "otp-j": Object.freeze({ channel: VERIFICATION_CHANNELS.OTP, verificationMode: VERIFICATION_MODES.PROVIDER_EVIDENCE, priority: 38 }),
   "otp-k": Object.freeze({ channel: VERIFICATION_CHANNELS.OTP, verificationMode: VERIFICATION_MODES.PROVIDER_EVIDENCE, priority: 38 }),
   "otp-l": Object.freeze({ channel: VERIFICATION_CHANNELS.OTP, verificationMode: VERIFICATION_MODES.PROVIDER_EVIDENCE, priority: 38 }),
+  // otp-m is the Descope magic link. It never joins the code failover: only an
+  // explicit 'magic-link' email-ownership request may select it.
+  "otp-m": Object.freeze({ channel: VERIFICATION_CHANNELS.OTP, verificationMode: VERIFICATION_MODES.PROVIDER_EVIDENCE, priority: 38 }),
   "otp-b": Object.freeze({ channel: VERIFICATION_CHANNELS.OTP, verificationMode: VERIFICATION_MODES.LOCAL_CODE, priority: 20 }),
   "otp-c": Object.freeze({ channel: VERIFICATION_CHANNELS.OTP, verificationMode: VERIFICATION_MODES.LOCAL_CODE, priority: 30 }),
   "otp-d": Object.freeze({ channel: VERIFICATION_CHANNELS.OTP, verificationMode: VERIFICATION_MODES.LOCAL_CODE, priority: 35 }),
@@ -11698,6 +11701,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         const verificationTicket = jar[AUTH_VERIFICATION_COOKIE];
         if (!verificationTicket) throw new NativeAuthError(AUTH_ERROR_CODES.TELEGRAM_VERIFICATION_INVALID);
         const startBody = await readJson(request);
+        const magicLink = startBody?.method === "magic-link";
         await verifyTurnstile({ env, token: startBody?.turnstileToken, ip: context.ip, fetchImpl });
         const material = await callAuthority(env, "/internal/firebase/account-verification/material", {
           verificationTicket,
@@ -11726,11 +11730,13 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
             input: {
               verificationTicket,
               email: user.email,
-              subject: user.subject
+              subject: user.subject,
+              ...magicLink ? { deliveryMethod: "magic-link" } : {}
             },
             context
           });
         } catch (cause) {
+          if (magicLink) throw cause;
           if (!(cause instanceof NativeAuthError) || cause.code !== AUTH_ERROR_CODES.BACKUP_UNAVAILABLE) throw cause;
           try {
             await provider.sendVerificationEmail(refreshed.idToken, user.email);
@@ -11752,7 +11758,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         return json4(request, 202, {
           ok: true,
           authenticated: false,
-          delivery: { method: "email-otp", sent: result?.sent !== false, fallback: false },
+          delivery: { method: magicLink ? "email-magic-link" : "email-otp", sent: result?.sent !== false, fallback: false },
           ownership: {
             sent: result?.sent !== false,
             attemptId: result?.attemptId || "",
@@ -11768,9 +11774,11 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         const verificationTicket = jar[AUTH_VERIFICATION_COOKIE];
         if (!verificationTicket) throw new NativeAuthError(AUTH_ERROR_CODES.TELEGRAM_VERIFICATION_INVALID);
         const body = await readJson(request);
-        const code = String(body.code || "").trim();
+        const magicToken = typeof body.token === "string" ? body.token.trim() : "";
+        const code = magicToken || String(body.code || "").trim();
         const attemptId = String(body.attemptId || "").trim();
-        if (!/^\d{6}$/.test(code) || !/^[A-Za-z0-9_-]{24,96}$/.test(attemptId)) {
+        const codeOk = magicToken ? /^[A-Za-z0-9._~-]{16,2048}$/.test(magicToken) : /^\d{6}$/.test(code);
+        if (!codeOk || !/^[A-Za-z0-9_-]{24,96}$/.test(attemptId)) {
           throw new NativeAuthError(AUTH_ERROR_CODES.INVALID_INPUT);
         }
         const material = await callAuthority(env, "/internal/firebase/account-verification/material", {
@@ -23451,6 +23459,7 @@ function recipientBias(providerId, email) {
 }
 var INSTITUTIONAL_SUFFIXES = Object.freeze([".ac.bd", ".edu.bd"]);
 var matchesDomain = (domain, list2) => list2.some((entry) => domain === entry || entry.startsWith(".") && domain.endsWith(entry));
+var MAGIC_LINK_PROVIDER_ID = "otp-m";
 async function bounded(action, milliseconds) {
   let timer;
   try {
@@ -23620,7 +23629,8 @@ var VerificationOrchestrator = class {
     });
   }
   async #candidateRows(identity, destinations, now) {
-    const eligible = this.config.enabled ? this.config.providers.filter((entry) => entry.enabled && destinations[entry.channel]) : [];
+    const magicLink = identity.deliveryMethod === "magic-link";
+    const eligible = this.config.enabled ? this.config.providers.filter((entry) => entry.enabled && destinations[entry.channel] && entry.id === MAGIC_LINK_PROVIDER_ID === magicLink) : [];
     const rows4 = await Promise.all(eligible.map(async (entry) => {
       const provider = this.providers.get(entry.id);
       const started = Date.now();
@@ -23722,7 +23732,8 @@ var VerificationOrchestrator = class {
     } catch {
     }
     const destinations = identity.destinations;
-    const candidates = await this.#candidateRows({ ...identity, attemptId, previousProviderId }, destinations, now);
+    const deliveryMethod = input?.deliveryMethod === "magic-link" && identity.purpose === "email-ownership" ? "magic-link" : "";
+    const candidates = await this.#candidateRows({ ...identity, attemptId, previousProviderId, deliveryMethod }, destinations, now);
     for (const candidate of candidates) {
       const { entry, provider } = candidate;
       const maxTries = 1 + policy.maxProviderRetries;
@@ -23851,7 +23862,7 @@ var VerificationOrchestrator = class {
           evidence: evidence2,
           // Only this adapter needs the address at verification time. Resolve it
           // from the identity already bound to the challenge, never client input.
-          ...entry.id === "otp-l" ? { destination: identity.destinations[entry.channel] } : {},
+          ...entry.id === "otp-l" || entry.id === MAGIC_LINK_PROVIDER_ID ? { destination: identity.destinations[entry.channel] } : {},
           purpose: identity.purpose,
           serverConfirmed: Boolean(selected.providerConfirmed)
         }), entry.timeoutMs);
@@ -26072,6 +26083,96 @@ var DescopeOtpVerificationProvider = class {
     return { status: this.configured ? "configured" : "disabled", configured: this.configured, officialApi: true, mailer: "descope", liveDeliveryVerified: false };
   }
 };
+var DESCOPE_MAGIC_LINK_URI = "https://admissionsky.pages.dev/?magic=1";
+var DescopeMagicLinkVerificationProvider = class {
+  constructor({ id = "otp-m", projectId, declaredDailyQuota, redirectUri = DESCOPE_MAGIC_LINK_URI, fetchImpl = globalThis.fetch, now = Date.now } = {}) {
+    this.id = String(id || "");
+    this.channel = VERIFICATION_CHANNELS.OTP;
+    this.verificationMode = VERIFICATION_MODES.PROVIDER_EVIDENCE;
+    this.deliveryMethod = "magic-link";
+    this.projectId = /^P[A-Za-z0-9]{20,63}$/.test(String(projectId || "")) ? String(projectId) : "";
+    this.declaredDailyQuota = safeInteger(declaredDailyQuota, 1, 1e3);
+    this.redirectUri = redirectUri === DESCOPE_MAGIC_LINK_URI ? redirectUri : "";
+    this.fetch = typeof fetchImpl === "function" ? fetchImpl : null;
+    this.now = typeof now === "function" ? now : Date.now;
+    this.configured = Boolean(this.projectId && this.declaredDailyQuota && this.redirectUri && this.fetch);
+  }
+  async checkAvailability() {
+    return { available: this.configured, code: this.configured ? "READY" : "NOT_CONFIGURED" };
+  }
+  async getRemainingQuota() {
+    if (!this.configured) return { remaining: 0, limit: 0, resetAt: 0, source: "not-configured" };
+    return { remaining: this.declaredDailyQuota, limit: this.declaredDailyQuota, resetAt: nextUtcMidnight(this.now()), source: "declared" };
+  }
+  async #request(path, body, verify = false) {
+    if (!this.configured) throw new VerificationProviderError("NOT_CONFIGURED", VERIFICATION_FAILURE_CLASS.HARD);
+    let response3;
+    try {
+      response3 = await this.fetch(`https://api.descope.com/v1/auth/magiclink/${path}`, {
+        method: "POST",
+        redirect: "manual",
+        credentials: "omit",
+        headers: {
+          Authorization: `Bearer ${this.projectId}`,
+          Accept: "application/json",
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(8e3)
+      });
+    } catch {
+      throw new VerificationProviderError("NETWORK_ERROR", VERIFICATION_FAILURE_CLASS.TEMPORARY, { retryAfter: 60 });
+    }
+    if (!response3.ok) {
+      if (response3.body) {
+        try {
+          await response3.body.cancel();
+        } catch {
+        }
+      }
+      throw httpFailure(response3, null, { userStatuses: verify ? [400, 401, 404, 422] : [] });
+    }
+    let payload;
+    try {
+      payload = await boundedJson(response3);
+    } catch (error) {
+      if (error instanceof VerificationProviderError) throw error;
+      throw new VerificationProviderError("INVALID_PROVIDER_RESPONSE", VERIFICATION_FAILURE_CLASS.HARD);
+    }
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+      throw new VerificationProviderError("INVALID_PROVIDER_RESPONSE", VERIFICATION_FAILURE_CLASS.HARD);
+    }
+    return payload;
+  }
+  async sendVerification(input = {}) {
+    if (!this.configured) throw new VerificationProviderError("NOT_CONFIGURED", VERIFICATION_FAILURE_CLASS.HARD);
+    const destination = String(input.destination || "").trim().toLowerCase();
+    if (!validEmailAddress(destination)) throw new VerificationProviderError("INVALID_DESTINATION", VERIFICATION_FAILURE_CLASS.USER);
+    await this.#request("signup-in/email", { loginId: destination, URI: this.redirectUri });
+    return { accepted: true };
+  }
+  async verifyCode(input = {}) {
+    if (!this.configured) throw new VerificationProviderError("NOT_CONFIGURED", VERIFICATION_FAILURE_CLASS.HARD);
+    const destination = String(input.destination || "").trim().toLowerCase();
+    const token = String(input.evidence || "").trim();
+    if (!validEmailAddress(destination) || !/^[A-Za-z0-9._~-]{16,2048}$/.test(token)) return { verified: false };
+    let payload;
+    try {
+      payload = await this.#request("verify", { token }, true);
+    } catch (error) {
+      if (error?.failureClass === VERIFICATION_FAILURE_CLASS.USER) return { verified: false };
+      throw error;
+    }
+    if (payload.user?.verifiedEmail !== true || String(payload.user?.email || "").trim().toLowerCase() !== destination || typeof payload.user?.userId !== "string" || !payload.user.userId || typeof payload.sessionJwt !== "string" || !payload.sessionJwt) {
+      throw new VerificationProviderError("INVALID_PROVIDER_RESPONSE", VERIFICATION_FAILURE_CLASS.HARD);
+    }
+    return { verified: true };
+  }
+  async getProviderStatus() {
+    return { status: this.configured ? "configured" : "disabled", configured: this.configured, officialApi: true, mailer: "descope", deliveryMethod: "magic-link", liveDeliveryVerified: false };
+  }
+};
 function createConfiguredVerificationProviders(env = {}, { fetchImpl = globalThis.fetch } = {}) {
   const brevoOtpA = new BrevoOtpVerificationProvider({
     id: "otp-a",
@@ -26180,6 +26281,13 @@ function createConfiguredVerificationProviders(env = {}, { fetchImpl = globalThi
     declaredDailyQuota: descopeSlot ? descopeSlot.dailyQuota : "",
     fetchImpl
   });
+  const descopeMagicSlot = slotFromConfig(env.VERIFICATION_ORCHESTRATOR_CONFIG, "otp-m");
+  const descopeMagicM = new DescopeMagicLinkVerificationProvider({
+    id: "otp-m",
+    projectId: descopeMagicSlot ? descopeMagicSlot.projectId : "",
+    declaredDailyQuota: descopeMagicSlot ? descopeMagicSlot.dailyQuota : "",
+    fetchImpl
+  });
   return [
     brevoOtpA.configured ? brevoOtpA : bridgeOtpA,
     appsScriptOtpB.configured ? appsScriptOtpB : bridgeOtpB,
@@ -26193,6 +26301,7 @@ function createConfiguredVerificationProviders(env = {}, { fetchImpl = globalThi
     oryOtpJ,
     hankoOtpK,
     descopeOtpL,
+    descopeMagicM,
     new OfficialWhatsAppVerificationProvider({
       graphVersion: env.WHATSAPP_GRAPH_VERSION,
       phoneNumberId: env.WHATSAPP_PHONE_NUMBER_ID,
@@ -27965,7 +28074,8 @@ var AdmissionAuthAuthority = class {
       }
       if (url.pathname === "/internal/verification/ownership/request") {
         const prepared = await this.#preverificationIdentity(body.input, body.context, "email-ownership");
-        const result = await this.verification.requestVerification(prepared.verificationInput, body.context);
+        const deliveryMethod = body.input?.deliveryMethod === "magic-link" ? { deliveryMethod: "magic-link" } : {};
+        const result = await this.verification.requestVerification({ ...prepared.verificationInput, ...deliveryMethod }, body.context);
         await this.#scheduleExpiry();
         return response2(200, { ok: true, result });
       }

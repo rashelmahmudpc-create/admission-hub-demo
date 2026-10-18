@@ -321,6 +321,7 @@
             <p class="ah-account-mask">তোমার account নিরাপদ রাখতে নিচের যেকোনো একটি পদ্ধতি ব্যবহার করো।</p>
             <div class="ah-method-stack">
               <button class="ah-method-card recommended is-selected" type="button" data-role="email-ownership-start"><span class="ah-method-icon email" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><rect x="3.2" y="5.6" width="17.6" height="12.8" rx="3.2"/><path d="m4.6 8.2 7.4 5 7.4-5"/></svg></span><span><strong>Email OTP</strong><small>Email-এ আসা ৬ সংখ্যার code · Email মালিকানার প্রমাণ</small><em>✦ Recommended</em></span><span class="ah-method-trail"><span class="ah-method-check" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="m6.5 12.4 4 4L17.6 8.6"/></svg></span><b aria-hidden="true">›</b></span></button>
+              <button class="ah-method-card" type="button" data-role="email-magiclink-start"><span class="ah-method-icon email" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><rect x="3.2" y="5.6" width="17.6" height="12.8" rx="3.2"/><path d="m4.6 8.2 7.4 5 7.4-5"/></svg></span><span><strong>Email-এ login link পাঠাও</strong><small>Email-এ আসা link চাপলেই যাচাই · code লাগবে না</small></span><span class="ah-method-trail"><b aria-hidden="true">›</b></span></button>
               <button class="ah-method-card telegram" type="button" data-role="telegram-verification-start"><span class="ah-method-icon telegram" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M20.4 4.6 3.9 11.1l4.9 1.7 1.6 5.1 2.7-3.4 4.3 2.9 3-12.8Z"/><path d="m8.8 12.8 7.6-5.3-5.4 6.7"/></svg></span><span><strong>Telegram</strong><small>Telegram দিয়ে verify · Official bot-এর real ৬ সংখ্যার code</small></span><span class="ah-method-trail"><b aria-hidden="true">›</b></span></button>
               <button class="ah-method-card unavailable" type="button" disabled aria-disabled="true"><span class="ah-method-icon passkey" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><circle cx="9" cy="14.5" r="4.5"/><path d="m12.5 11 8-8"/><path d="M16 6.5h4.5V11"/></svg></span><span><strong>Passkey</strong><small>দ্রুত ও নিরাপদ · Verification শেষে optional</small></span><span class="ah-method-trail"><b class="ah-method-lock" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><rect x="5" y="10" width="14" height="10.5" rx="3.2"/><path d="M8.2 10V7.6a3.8 3.8 0 0 1 7.6 0V10"/></svg></b></span></button>
               <button class="ah-method-card whatsapp unavailable" type="button" data-role="whatsapp-info" aria-describedby="ah-whatsapp-unavailable"><span class="ah-method-icon whatsapp" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3.8c-4.5 0-8.2 3.6-8.2 8 0 1.5.4 2.9 1.2 4.2L3.8 20l4.1-1.1a8 8 0 0 0 4.1 1.1c4.5 0 8.2-3.6 8.2-8s-3.7-8.2-8.2-8.2Z"/><path d="M9 9.2c.5 2.3 2.5 4.3 4.8 4.8l1-1.2 1.9 1c-.3 1-.9 1.5-1.9 1.4-3.1-.4-5.8-3.1-6.2-6.2-.1-1 .4-1.6 1.4-1.9l1 1.9-1 1.2Z"/></svg></span><span><strong>WhatsApp</strong><small>WhatsApp দিয়ে verify</small><small class="ah-method-status" id="ah-whatsapp-unavailable">এখন verification পাওয়া যাচ্ছে না</small></span><span class="ah-method-trail"><b aria-hidden="true">›</b></span></button>
@@ -1275,6 +1276,8 @@
       $('[data-role="verification-email-panel"]').hidden = selecting;
       $('[data-role="telegram-verification-start"]').hidden = !state.capabilities.telegram.available;
       $('[data-role="email-ownership-start"]').hidden = !state.capabilities.emailOwnership.available;
+      const magicStart = $('[data-role="email-magiclink-start"]');
+      if (magicStart) magicStart.hidden = !state.capabilities.emailOwnership.available;
       const copy = $('[data-role="verification-email-copy"]');
       if (copy) copy.innerHTML = sent
         ? 'Verification link পাঠানো হয়েছে <strong data-role="mask"></strong>। Email app-এ link-এ tap করে এখানে ফিরে আসো।'
@@ -2870,6 +2873,54 @@
     finally { setBusy(false); }
   };
 
+  // Descope magic link (otp-m). Only the attemptId is kept locally (10 min);
+  // the link token itself is never stored — it is read once from the URL.
+  // The attemptId rides in a 10-minute first-party cookie (no Web Storage); it is
+  // useless without the HttpOnly verification ticket the Worker already holds.
+  const MAGIC_COOKIE = 'ah_magic_v1';
+  const MAGIC_ATTEMPT = /^[A-Za-z0-9_-]{24,96}$/;
+  const writeMagicAttempt = attemptId => {
+    const ok = MAGIC_ATTEMPT.test(String(attemptId || ''));
+    const secure = location.protocol === 'https:' ? '; Secure' : '';
+    document.cookie = `${MAGIC_COOKIE}=${ok ? attemptId : ''}; Path=/; Max-Age=${ok ? 600 : 0}; SameSite=Lax${secure}`;
+  };
+  const readMagicAttempt = () => {
+    const row = String(document.cookie || '').split(';').map(part => part.trim()).find(part => part.startsWith(`${MAGIC_COOKIE}=`));
+    const attemptId = row ? row.slice(row.indexOf('=') + 1) : '';
+    return MAGIC_ATTEMPT.test(attemptId) ? { attemptId } : null;
+  };
+  const beginEmailMagicLink = async () => {
+    if (state.busy || !state.verification || !state.capabilities.emailOwnership.available) return;
+    setBusy(true);
+    try {
+      if (state.pendingProfile && state.profileBound && !state.profileSynced) await syncPendingProfile({ pending: true });
+      const result = await api('/email-ownership/start', { method: 'POST', body: { turnstileToken: await humanToken(), method: 'magic-link' } });
+      if (result.alreadyVerified) { setBusy(false); await checkEmailVerification(); return; }
+      if (result.delivery?.method !== 'email-magic-link' || !result.ownership?.attemptId) throw new Error('Login link এখন পাঠানো যাচ্ছে না। Email OTP ব্যবহার করো।');
+      if (state.signupJourney || pendingSignup()) rememberPendingSignup(true, 'select');
+      writeMagicAttempt(result.ownership.attemptId);
+      message(`Login link পাঠানো হয়েছে ${result.ownership.emailMasked || 'তোমার Email-এ'}। Email খুলে link চাপো (Spam-ও দেখো)।`, 'success');
+    } catch (error) { message(friendlyError(error), 'error'); }
+    finally { setBusy(false); }
+  };
+  const consumeMagicLink = async token => {
+    const saved = readMagicAttempt();
+    writeMagicAttempt('');
+    open();
+    if (!saved?.attemptId) {
+      message('Login link মেয়াদোত্তীর্ণ বা অন্য browser-এ খোলা হয়েছে। যে browser থেকে link চেয়েছিলে সেখানে খোলো, অথবা নতুন link নাও।', 'error');
+      return;
+    }
+    setBusy(true);
+    try {
+      const result = await api('/email-ownership/verify', { method: 'POST', body: { attemptId: saved.attemptId, token } });
+      state.verificationLabel = 'Email';
+      state.ownership = null;
+      await establishSession(result, 'তোমার Email মালিকানা যাচাই হয়েছে।');
+    } catch (error) { message(friendlyError(error), 'error'); }
+    finally { setBusy(false); }
+  };
+
   const setOwnershipChallenge = info => {
     if (!info?.attemptId) return false;
     state.ownership = {
@@ -3246,6 +3297,7 @@
       showView('verify');
     });
     $('[data-role="email-ownership-start"]').addEventListener('click', beginEmailOwnership);
+    $('[data-role="email-magiclink-start"]')?.addEventListener('click', beginEmailMagicLink);
     $('[data-role="ownership-back"]').addEventListener('click', () => showView('verify'));
     $('[data-role="ownership-resend"]').addEventListener('click', async () => {
       if (state.busy || Date.now() < Number(state.ownership?.resendUntil || 0)) return;
@@ -3504,8 +3556,18 @@
     let returnedFromEmail = false;
     let returnedFromPasswordReset = false;
     let googleHandoff = false;
+    let magicToken = '';
     try {
       const current = new URL(location.href);
+      // ?magic=1&t=…: Descope login link. Take the token, then strip it from the
+      // address bar/history at once so it is never bookmarked, shared or logged.
+      if (current.searchParams.get('magic') === '1') {
+        const t = String(current.searchParams.get('t') || '');
+        magicToken = /^[A-Za-z0-9._~-]{16,2048}$/.test(t) ? t : '';
+        current.searchParams.delete('magic');
+        current.searchParams.delete('t');
+        history.replaceState(null, '', current.pathname + current.search + current.hash);
+      }
       // ?ahGoogle=1: another host (or Chrome opened from an in-app browser)
       // handed the Google sign-in over to admissionsky.pages.dev.
       googleHandoff = current.searchParams.get('ahGoogle') === '1';
@@ -3553,6 +3615,7 @@
     Promise.allSettled([configReady, sessionReady]).then(async () => {
       await finishOAuthRedirect();
       if (accountVerified(state.session)) return;
+      if (magicToken) { const t = magicToken; magicToken = ''; await consumeMagicLink(t); return; }
       if (googleHandoff) { signInWithGoogle(); return; }
       if (returnedFromPasswordReset) {
         open();

@@ -37,7 +37,7 @@ const APP_SHELL = [
   './sky-onboarding.css?v=sky-flow-20261017-v9',
   './institutions-bd.js?v=bd-institutions-v2',
   './language-engine.js?v=lang-v5-single-email-button',
-  './account-access.js?v=20261016-disposable-email-v1&startup=fast1',
+  './account-access.js?v=20261018-magiclink-v1&startup=fast1',
   './sky-onboarding.js?v=sky-flow-20261017-v9',
   './email-policy-client.js?v=20261016-disposable-email-v1',
   './welcome-story.css?v=welcome-story-20261016-v2',
@@ -92,7 +92,7 @@ const APP_SHELL = [
 // A truncated/corrupt download is NEVER written to the shell cache.
 const ASSET_DIGESTS = {
 /* sw-manifest:start */
-  "./index.html": "9e368e9247d1e19d23b7140a416cbd600cd042682d439d883b92b41ef09283cb",
+  "./index.html": "21830501d93ed7d01539691a44f43768a38e9438cb61a12dd138365c1c0d27f7",
   "./manifest.json": "6dcf0e0c6f7671750549e53558ba8b9f0c2c83b0c6759072a6b5e2276331f491",
   "./manifest.webmanifest": "abcd26174710f6df3e183889a5a9da182f73ee8cdcc543b43db8fb4070cad54f",
   "./dashboard-v2.css?v=dash2f13-theme": "4541bc1e65fd158c593443562975400d128b8f1d3b636595df3c235b99e8cced",
@@ -103,7 +103,7 @@ const ASSET_DIGESTS = {
   "./sky-onboarding.css?v=sky-flow-20261017-v9": "9e2ae99a84f654c8ca25ed62ec5a29760f14472141f7177d25493d30fe348d7f",
   "./institutions-bd.js?v=bd-institutions-v2": "602c5549515e8207ad152b948ca9b8fe3ad0fbe429afb56380e4e21b662f779d",
   "./language-engine.js?v=lang-v5-single-email-button": "52aaa5d77b3030721ccbc1c777801a3787c1d1061391b0f4b80841b6a9ddd054",
-  "./account-access.js?v=20261016-disposable-email-v1&startup=fast1": "a89cdce2ef33c855e91150d0305df691c8e7d8174f16d800add981fb571e7346",
+  "./account-access.js?v=20261018-magiclink-v1&startup=fast1": "0a92f896e8208eb01cf8ee3797e2229e14e3202f235a946665ac7bdcc6fa4c28",
   "./sky-onboarding.js?v=sky-flow-20261017-v9": "94713027829d0d49f1d8c5443471bc642b75e9dc8ff7207b80b44e1c1b71a5f8",
   "./email-policy-client.js?v=20261016-disposable-email-v1": "a43771bf5a4649a57a5b4a5066bb3fc29c78d16a3df8740a835f8237939af23b",
   "./welcome-story.css?v=welcome-story-20261016-v2": "21a22c43f68c7a07d3ba0d2ff57b5eec76ea56a7fe31984eba3ca5db5398c195",
