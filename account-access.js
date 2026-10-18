@@ -2875,7 +2875,20 @@
 
   // Descope magic link (otp-m). Only the attemptId is kept locally (10 min);
   // the link token itself is never stored — it is read once from the URL.
-  const MAGIC_KEY = 'ah-magic-attempt-v1';
+  // The attemptId rides in a 10-minute first-party cookie (no Web Storage); it is
+  // useless without the HttpOnly verification ticket the Worker already holds.
+  const MAGIC_COOKIE = 'ah_magic_v1';
+  const MAGIC_ATTEMPT = /^[A-Za-z0-9_-]{24,96}$/;
+  const writeMagicAttempt = attemptId => {
+    const ok = MAGIC_ATTEMPT.test(String(attemptId || ''));
+    const secure = location.protocol === 'https:' ? '; Secure' : '';
+    document.cookie = `${MAGIC_COOKIE}=${ok ? attemptId : ''}; Path=/; Max-Age=${ok ? 600 : 0}; SameSite=Lax${secure}`;
+  };
+  const readMagicAttempt = () => {
+    const row = String(document.cookie || '').split(';').map(part => part.trim()).find(part => part.startsWith(`${MAGIC_COOKIE}=`));
+    const attemptId = row ? row.slice(row.indexOf('=') + 1) : '';
+    return MAGIC_ATTEMPT.test(attemptId) ? { attemptId } : null;
+  };
   const beginEmailMagicLink = async () => {
     if (state.busy || !state.verification || !state.capabilities.emailOwnership.available) return;
     setBusy(true);
@@ -2885,17 +2898,16 @@
       if (result.alreadyVerified) { setBusy(false); await checkEmailVerification(); return; }
       if (result.delivery?.method !== 'email-magic-link' || !result.ownership?.attemptId) throw new Error('Login link এখন পাঠানো যাচ্ছে না। Email OTP ব্যবহার করো।');
       if (state.signupJourney || pendingSignup()) rememberPendingSignup(true, 'select');
-      try { localStorage.setItem(MAGIC_KEY, JSON.stringify({ attemptId: result.ownership.attemptId, exp: Date.now() + 10 * 60 * 1000 })); } catch (_) {}
+      writeMagicAttempt(result.ownership.attemptId);
       message(`Login link পাঠানো হয়েছে ${result.ownership.emailMasked || 'তোমার Email-এ'}। Email খুলে link চাপো (Spam-ও দেখো)।`, 'success');
     } catch (error) { message(friendlyError(error), 'error'); }
     finally { setBusy(false); }
   };
   const consumeMagicLink = async token => {
-    let saved = null;
-    try { saved = JSON.parse(localStorage.getItem(MAGIC_KEY) || 'null'); } catch (_) {}
-    try { localStorage.removeItem(MAGIC_KEY); } catch (_) {}
+    const saved = readMagicAttempt();
+    writeMagicAttempt('');
     open();
-    if (!saved?.attemptId || Number(saved.exp || 0) < Date.now()) {
+    if (!saved?.attemptId) {
       message('Login link মেয়াদোত্তীর্ণ বা অন্য browser-এ খোলা হয়েছে। যে browser থেকে link চেয়েছিলে সেখানে খোলো, অথবা নতুন link নাও।', 'error');
       return;
     }

@@ -95,7 +95,7 @@ test('Welcome is fluid edge-to-edge on mobile and premium responsive on desktop'
 
 test('unsupported verification methods remain truthful and fail closed', () => {
   const methods = between(JS, '<div class="ah-method-stack">', '</div>\n            <p class="ah-account-note">শুধু available');
-  assert.equal((methods.match(/<button class="ah-method-card/g) || []).length, 5);
+  assert.equal((methods.match(/<button class="ah-method-card/g) || []).length, 6);
   assert.match(methods, /disabled aria-disabled="true"[\s\S]*?<strong>Passkey<\/strong>/);
   assert.match(methods, /WhatsApp[\s\S]*এখন verification পাওয়া যাচ্ছে না/);
   assert.match(methods, /Telegram[\s\S]*real ৬ সংখ্যার code/);
@@ -103,7 +103,7 @@ test('unsupported verification methods remain truthful and fail closed', () => {
   assert.match(methods, /Email OTP[\s\S]*Email মালিকানার প্রমাণ/);
   const cardOrder = [...methods.matchAll(/data-role="([a-z-]+)"/g)].map(match => match[1]);
   assert.deepEqual(cardOrder, [
-    'email-ownership-start', 'telegram-verification-start', 'whatsapp-info', 'email-verification-start'
+    'email-ownership-start', 'email-magiclink-start', 'telegram-verification-start', 'whatsapp-info', 'email-verification-start'
   ]);
   assert.ok(methods.indexOf('email-ownership-start') < methods.indexOf('email-verification-start'));
   assert.ok(methods.indexOf('telegram-verification-start') < methods.indexOf('email-verification-start'));
