@@ -1,0 +1,70 @@
+name: Apply OTP delivery log 2026-10-18 (branch only)
+
+# AUTH-ROADMAP step 0 (2/3). Runs ONLY on branch auth/step0-otp-log:
+# applies scripts/fix-otp-delivery-log-20261018.py, rebuilds worker-bundle.mjs,
+# runs the verification/auth guard tests, commits the result back to the same
+# branch (removing the script and this workflow), then deploys the branch build to
+# the isolated staging Worker. It never touches main or production.
+
+on:
+  push:
+    branches: [auth/step0-otp-log]
+    paths:
+      - '.github/workflows/apply-otp-delivery-log-20261018.yml'
+      - 'scripts/fix-otp-delivery-log-20261018.py'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-otp-delivery-log-20261018
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: github.ref_name == 'auth/step0-otp-log'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: auth/step0-otp-log
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Apply patch and rebuild bundle
+        run: |
+          set -eu
+          python3 scripts/fix-otp-delivery-log-20261018.py
+          node --check auth-native/verification/orchestrator.mjs
+          npm ci
+          npm run build:worker
+          npm run check:worker-bundle
+          git diff --stat
+      - name: Guard tests
+        run: |
+          set -eu
+          node --test --test-concurrency=1 verification-orchestrator.test.mjs
+          npm run test:descope
+          npm run test:native-auth
+      - name: Commit back to branch
+        run: |
+          set -eu
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm -q scripts/fix-otp-delivery-log-20261018.py .github/workflows/apply-otp-delivery-log-20261018.yml
+          git add -A
+          git status --short
+          git commit -m 'auth step 0 (2/3): log provider, latency and outcome for every OTP send' -m 'Applied by apply-otp-delivery-log-20261018.yml on auth/step0-otp-log.'
+          git push origin HEAD:auth/step0-otp-log
+      - name: Refuse an unisolated staging config
+        run: node scripts/check-staging-isolation.mjs wrangler.staging.toml
+      - name: Deploy branch build to staging
+        uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd # v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: '4.35.0'
+          command: deploy --config wrangler.staging.toml
