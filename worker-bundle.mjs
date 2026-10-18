@@ -6494,11 +6494,11 @@ function shouldApplyDeliveryTransition(current, next) {
 // email-gateway/storage/memory-store.mjs
 var copy = (value) => value == null ? value : structuredClone(value);
 var MemoryEmailStore = class {
-  constructor({ now = () => Date.now(), eventRetention = 500, consistency = "strong", fail: fail6 = null } = {}) {
+  constructor({ now = () => Date.now(), eventRetention = 500, consistency = "strong", fail: fail8 = null } = {}) {
     this.consistency = consistency;
     this.now = now;
     this.eventRetention = eventRetention;
-    this.fail = fail6;
+    this.fail = fail8;
     this.requests = /* @__PURE__ */ new Map();
     this.nonces = /* @__PURE__ */ new Map();
     this.rateCounters = /* @__PURE__ */ new Map();
@@ -11237,6 +11237,482 @@ async function isTelegramLoginEmail(email, env, cryptoImpl = globalThis.crypto) 
   }
 }
 
+// auth-native/worker/pending-signup.mjs
+var PENDING_SIGNUP_TTL_MS = 10 * 60 * 1e3;
+var PENDING_SIGNUP_TICKET_PREFIX = "p.";
+var HOUR_MS = 60 * 60 * 1e3;
+var RECORD_PREFIX = "psu:rec:";
+var EMAIL_PREFIX = "psu:email:";
+var RATE_PREFIX = "psu:rate:";
+var MAGIC_LINK_PROVIDER_ID = "otp-m";
+var PROBE_TIMEOUT_MS = 5e3;
+var PASSWORD_MIN = 8;
+var PASSWORD_MAX = 128;
+var BEGIN_LIMITS = Object.freeze([
+  Object.freeze({ scope: "email", limit: 5, windowMs: HOUR_MS }),
+  Object.freeze({ scope: "device", limit: 10, windowMs: HOUR_MS }),
+  Object.freeze({ scope: "ip", limit: 30, windowMs: HOUR_MS })
+]);
+var fail6 = (code, details) => {
+  throw new NativeAuthError(code, details);
+};
+var TICKET_PATTERN = /^p\.[A-Za-z0-9_-]{40,96}$/;
+var isPendingSignupTicket = (value) => typeof value === "string" && TICKET_PATTERN.test(value);
+async function bounded(action, milliseconds) {
+  let timer;
+  try {
+    return await Promise.race([
+      Promise.resolve().then(action),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new VerificationProviderError("PROVIDER_TIMEOUT", VERIFICATION_FAILURE_CLASS.TEMPORARY)), milliseconds);
+      })
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+var providerFailure = (cause) => cause instanceof VerificationProviderError ? { code: String(cause.code || "PROVIDER_ERROR"), failureClass: cause.failureClass, retryAfter: Number(cause.retryAfter || 0) } : { code: "PROVIDER_ERROR", failureClass: VERIFICATION_FAILURE_CLASS.TEMPORARY, retryAfter: 0 };
+var PendingSignupStore = class {
+  constructor({ storage, hmacSecret, now = () => Date.now(), cryptoImpl = globalThis.crypto } = {}) {
+    if (!storage || ["get", "put", "delete", "list"].some((method) => typeof storage[method] !== "function")) {
+      fail6(AUTH_ERROR_CODES.STORAGE_UNAVAILABLE);
+    }
+    this.storage = storage;
+    this.hmac = new AuthHmac(hmacSecret, cryptoImpl);
+    this.vault = new AuthSecretVault(hmacSecret, cryptoImpl);
+    this.now = now;
+    this.crypto = cryptoImpl;
+  }
+  async #ticketRef(ticket) {
+    if (!isPendingSignupTicket(ticket)) fail6(AUTH_ERROR_CODES.TELEGRAM_VERIFICATION_INVALID);
+    return this.hmac.hex("pending-signup-ticket-v1", ticket.slice(PENDING_SIGNUP_TICKET_PREFIX.length));
+  }
+  async #deviceRef(context = {}) {
+    return this.hmac.hex("device-ref-v1", String(context.deviceId || ""));
+  }
+  async #consumeLimits(refs, now) {
+    for (const limit of BEGIN_LIMITS) {
+      const windowStart = Math.floor(now / limit.windowMs) * limit.windowMs;
+      const key = `${RATE_PREFIX}${limit.scope}:${refs[limit.scope]}:${windowStart}`;
+      const count = Number((await this.storage.get(key))?.count || 0) + 1;
+      await this.storage.put(key, { count, expiresAt: windowStart + limit.windowMs });
+      if (count > limit.limit) {
+        fail6(AUTH_ERROR_CODES.RATE_LIMITED, { retryAfter: Math.max(1, Math.ceil((windowStart + limit.windowMs - now) / 1e3)) });
+      }
+    }
+  }
+  async begin({ email, password, profile = null, context = {} } = {}) {
+    const normalized = normalizeAuthEmail(email);
+    const secret = typeof password === "string" ? password : "";
+    if (secret.length < PASSWORD_MIN || secret.length > PASSWORD_MAX) fail6(AUTH_ERROR_CODES.WEAK_PASSWORD);
+    const now = Number(this.now());
+    const [emailRef, deviceRef, ipRef] = await Promise.all([
+      this.hmac.hex("email-ref-v1", normalized),
+      this.#deviceRef(context),
+      this.hmac.hex("network-ref-v1", String(context.ip || ""))
+    ]);
+    await this.#consumeLimits({ email: emailRef, device: deviceRef, ip: ipRef }, now);
+    const token = randomToken(32, this.crypto);
+    const ticket = `${PENDING_SIGNUP_TICKET_PREFIX}${token}`;
+    const ticketRef = await this.#ticketRef(ticket);
+    const previous = await this.storage.get(`${EMAIL_PREFIX}${emailRef}`);
+    if (previous?.ticketRef) await this.storage.delete(`${RECORD_PREFIX}${previous.ticketRef}`);
+    const cipher = await this.vault.seal(JSON.stringify({ email: normalized, password: secret }), `pending-signup:${ticketRef}`);
+    const expiresAt = now + PENDING_SIGNUP_TTL_MS;
+    const emailMask = maskAuthEmail(normalized);
+    await this.storage.put(`${RECORD_PREFIX}${ticketRef}`, {
+      v: 1,
+      ticketRef,
+      emailRef,
+      emailMask,
+      cipher,
+      deviceRef,
+      profile: profile && typeof profile === "object" ? profile : null,
+      challenge: null,
+      verified: false,
+      createdAt: now,
+      expiresAt
+    });
+    await this.storage.put(`${EMAIL_PREFIX}${emailRef}`, { ticketRef, expiresAt });
+    return Object.freeze({ verificationTicket: ticket, expiresAt, emailMask });
+  }
+  async #load(ticket, context) {
+    const ticketRef = await this.#ticketRef(ticket);
+    const record = await this.storage.get(`${RECORD_PREFIX}${ticketRef}`);
+    const now = Number(this.now());
+    if (!record) fail6(AUTH_ERROR_CODES.TELEGRAM_VERIFICATION_INVALID);
+    if (Number(record.expiresAt) <= now) {
+      await this.#remove(record);
+      fail6(AUTH_ERROR_CODES.TELEGRAM_VERIFICATION_INVALID);
+    }
+    if (record.deviceRef !== await this.#deviceRef(context)) fail6(AUTH_ERROR_CODES.TELEGRAM_VERIFICATION_INVALID);
+    return record;
+  }
+  async #remove(record) {
+    await this.storage.delete(`${RECORD_PREFIX}${record.ticketRef}`);
+    const index = await this.storage.get(`${EMAIL_PREFIX}${record.emailRef}`);
+    if (index?.ticketRef === record.ticketRef) await this.storage.delete(`${EMAIL_PREFIX}${record.emailRef}`);
+  }
+  async #save(record) {
+    await this.storage.put(`${RECORD_PREFIX}${record.ticketRef}`, record);
+  }
+  async saveProfile(ticket, profile, context = {}) {
+    const record = await this.#load(ticket, context);
+    record.profile = profile && typeof profile === "object" ? profile : null;
+    await this.#save(record);
+    return Object.freeze({ saved: true, profile: record.profile });
+  }
+  // Server-side only: the decrypted address and password never leave the worker.
+  async material(ticket, context = {}) {
+    const record = await this.#load(ticket, context);
+    let opened;
+    try {
+      opened = JSON.parse(await this.vault.open(record.cipher, `pending-signup:${record.ticketRef}`));
+    } catch {
+      fail6(AUTH_ERROR_CODES.STORAGE_UNAVAILABLE);
+    }
+    return Object.freeze({
+      email: opened.email,
+      password: opened.password,
+      emailRef: record.emailRef,
+      emailMask: record.emailMask,
+      profile: record.profile,
+      challenge: record.challenge ? Object.freeze({ ...record.challenge }) : null,
+      verified: record.verified === true,
+      expiresAt: record.expiresAt
+    });
+  }
+  async setChallenge(ticket, context, challenge) {
+    const record = await this.#load(ticket, context);
+    record.challenge = { ...challenge, attempts: 0 };
+    record.verified = false;
+    await this.#save(record);
+  }
+  async recordAttempt(ticket, context, { verified }) {
+    const record = await this.#load(ticket, context);
+    if (!record.challenge) fail6(AUTH_ERROR_CODES.OTP_INVALID);
+    if (verified) {
+      record.verified = true;
+      record.challenge = { ...record.challenge, codeMac: "" };
+    } else {
+      record.challenge = { ...record.challenge, attempts: Number(record.challenge.attempts || 0) + 1 };
+    }
+    await this.#save(record);
+    return record.challenge.attempts;
+  }
+  async consume(ticket, context = {}) {
+    const record = await this.#load(ticket, context);
+    await this.#remove(record);
+    return Object.freeze({ consumed: true });
+  }
+  async cleanup(now = Number(this.now())) {
+    let removed = 0;
+    const records = await this.storage.list({ prefix: RECORD_PREFIX });
+    for (const record of records.values()) {
+      if (Number(record?.expiresAt || 0) <= now) {
+        await this.#remove(record);
+        removed += 1;
+      }
+    }
+    const rates = await this.storage.list({ prefix: RATE_PREFIX });
+    const stale = [...rates].filter(([, value]) => Number(value?.expiresAt || 0) <= now).map(([key]) => key);
+    if (stale.length) await this.storage.delete(stale);
+    return Object.freeze({ removed });
+  }
+  async nextExpiry(now = Number(this.now())) {
+    const records = await this.storage.list({ prefix: RECORD_PREFIX });
+    let next = null;
+    for (const record of records.values()) {
+      const at = Number(record?.expiresAt || 0);
+      if (at > now && (next === null || at < next)) next = at;
+    }
+    return next;
+  }
+};
+async function signupCandidates(orchestrator, now) {
+  const config = orchestrator?.config;
+  if (!config?.enabled) return [];
+  const eligible = config.providers.filter((entry) => entry.enabled && entry.channel === VERIFICATION_CHANNELS.OTP && entry.id !== MAGIC_LINK_PROVIDER_ID);
+  const rows4 = await Promise.all(eligible.map(async (entry) => {
+    const provider = orchestrator.providers.get(entry.id);
+    if (!provider) return null;
+    try {
+      const [availability, remoteQuota, localQuota, state] = await Promise.all([
+        bounded(() => provider.checkAvailability({ purpose: "email-ownership" }), Math.min(entry.timeoutMs, PROBE_TIMEOUT_MS)),
+        bounded(() => provider.getRemainingQuota({ now }), Math.min(entry.timeoutMs, PROBE_TIMEOUT_MS)),
+        orchestrator.repository.dailyQuotaSnapshot({ providerId: entry.id, dailyQuota: entry.dailyQuota, now }),
+        orchestrator.repository.providerSnapshot({ providerId: entry.id, now })
+      ]);
+      if (availability?.available !== true || state.circuit === "open" || Number(remoteQuota?.remaining || 0) <= 0 || localQuota.remaining <= 0) return null;
+      return { entry, provider, probe: state.circuit === "half-open" };
+    } catch {
+      return null;
+    }
+  }));
+  return rows4.filter(Boolean).sort((a, b) => a.entry.priority - b.entry.priority || Number(b.probe) - Number(a.probe));
+}
+var recordResult = (orchestrator, entry, fields) => orchestrator.repository.recordProviderResult({
+  providerId: entry.id,
+  attemptId: fields.attemptId,
+  userId: "",
+  subjectRef: "",
+  channel: entry.channel,
+  success: fields.success,
+  failureClass: fields.failureClass,
+  reason: String(fields.reason || "").slice(0, 64),
+  latencyMs: fields.latencyMs,
+  failureThreshold: orchestrator.config.policy.circuitFailureThreshold,
+  forceCooldown: Number(fields.retryAfter || 0) > 0,
+  cooldownMs: Math.max(orchestrator.config.policy.circuitCooldownSeconds * 1e3, Math.max(0, Number(fields.retryAfter || 0)) * 1e3),
+  now: fields.now
+});
+async function requestPendingSignupCode({ store, orchestrator, ticket, context = {}, recipientName = "" } = {}) {
+  const material = await store.material(ticket, context);
+  const now = Number(store.now());
+  const policy = orchestrator.config.policy;
+  if (material.challenge && Number(material.challenge.resendAt || 0) > now) {
+    fail6(AUTH_ERROR_CODES.RESEND_COOLDOWN, { retryAfter: Math.ceil((material.challenge.resendAt - now) / 1e3) });
+  }
+  const attemptId = randomToken(24, store.crypto);
+  const code = randomSixDigitOtp(store.crypto);
+  const codeTtlMs = Math.min(policy.codeTtlSeconds * 1e3, Math.max(1e3, material.expiresAt - now));
+  const candidates = await signupCandidates(orchestrator, now);
+  const emit = (evt, fields) => {
+    try {
+      orchestrator.onDeliveryEvent?.({ evt, ...fields });
+    } catch {
+    }
+  };
+  const logBase = { attempt: attemptId.slice(0, 8), purpose: "signup", method: "code", candidates: candidates.length };
+  const started = Date.now();
+  const tried = [];
+  let rank2 = 0;
+  for (const { entry, provider } of candidates) {
+    rank2 += 1;
+    for (let currentTry = 0; currentTry < 1 + policy.maxProviderRetries; currentTry += 1) {
+      const quota = await orchestrator.repository.reserveDailyQuota({ providerId: entry.id, dailyQuota: entry.dailyQuota, now });
+      if (quota.exhausted) {
+        tried.push(`${entry.id}:quota`);
+        emit("otp_delivery", { ...logBase, provider: entry.id, rank: rank2, try: currentTry + 1, outcome: "quota_exhausted" });
+        break;
+      }
+      const sendStarted = Date.now();
+      try {
+        const result = await bounded(() => provider.sendVerification({
+          attemptId,
+          purpose: "email-ownership",
+          destination: material.email,
+          code,
+          linkToken: randomToken(32, store.crypto),
+          recipientName,
+          expiresAt: now + codeTtlMs,
+          signalContext: { origin: String(context.origin || "") }
+        }), entry.timeoutMs);
+        if (result?.accepted !== true) throw new VerificationProviderError("INVALID_PROVIDER_RESPONSE", VERIFICATION_FAILURE_CLASS.HARD);
+        const latencyMs = Date.now() - sendStarted;
+        tried.push(`${entry.id}:ok`);
+        emit("otp_delivery", { ...logBase, provider: entry.id, label: entry.label, rank: rank2, try: currentTry + 1, outcome: "accepted", latencyMs });
+        emit("otp_request", { ...logBase, outcome: "sent", provider: entry.id, totalMs: Date.now() - started, tried: tried.join(",") });
+        try {
+          await recordResult(orchestrator, entry, { attemptId, success: true, reason: "accepted", latencyMs, now });
+        } catch {
+        }
+        const local = entry.verificationMode === VERIFICATION_MODES.LOCAL_CODE;
+        await store.setChallenge(ticket, context, {
+          attemptId,
+          providerId: entry.id,
+          verificationMode: entry.verificationMode,
+          codeMac: local ? await store.hmac.hex("pending-signup-code-v1", `${attemptId}:${code}`) : "",
+          expiresAt: now + codeTtlMs,
+          resendAt: now + policy.resendCooldownSeconds * 1e3
+        });
+        return Object.freeze({
+          accepted: true,
+          attemptId,
+          expiresAt: now + codeTtlMs,
+          resendAfter: policy.resendCooldownSeconds,
+          attemptsAllowed: policy.maxAttempts,
+          emailMasked: material.emailMask
+        });
+      } catch (cause) {
+        if (cause instanceof NativeAuthError) throw cause;
+        const failure = providerFailure(cause);
+        tried.push(`${entry.id}:${failure.code}`);
+        emit("otp_delivery", { ...logBase, provider: entry.id, label: entry.label, rank: rank2, try: currentTry + 1, outcome: "failed", reason: failure.code, failureClass: failure.failureClass, latencyMs: Date.now() - sendStarted });
+        let state = {};
+        try {
+          state = await recordResult(orchestrator, entry, { attemptId, success: false, failureClass: failure.failureClass, reason: failure.code, retryAfter: failure.retryAfter, latencyMs: Date.now() - sendStarted, now });
+        } catch {
+        }
+        if (failure.code === "INVALID_DESTINATION") {
+          emit("otp_request", { ...logBase, outcome: "invalid_destination", totalMs: Date.now() - started, tried: tried.join(",") });
+          fail6(AUTH_ERROR_CODES.INVALID_INPUT);
+        }
+        if (failure.failureClass !== VERIFICATION_FAILURE_CLASS.TEMPORARY || state?.circuit === "open" || failure.code === "PROVIDER_TIMEOUT") break;
+      }
+    }
+  }
+  emit("otp_request", { ...logBase, outcome: "all_failed", totalMs: Date.now() - started, tried: tried.join(",") });
+  fail6(AUTH_ERROR_CODES.BACKUP_UNAVAILABLE);
+}
+async function verifyPendingSignupCode({ store, orchestrator, ticket, context = {}, attemptId, code } = {}) {
+  const material = await store.material(ticket, context);
+  const challenge = material.challenge;
+  const now = Number(store.now());
+  const policy = orchestrator.config.policy;
+  const value = String(code || "").trim();
+  if (!/^\d{6}$/.test(value)) fail6(AUTH_ERROR_CODES.INVALID_INPUT);
+  if (!challenge || challenge.attemptId !== String(attemptId || "")) fail6(AUTH_ERROR_CODES.OTP_INVALID);
+  if (material.verified) return Object.freeze({ verified: true, email: material.email, password: material.password, profile: material.profile, emailMask: material.emailMask });
+  if (Number(challenge.expiresAt) <= now) fail6(AUTH_ERROR_CODES.OTP_EXPIRED);
+  if (Number(challenge.attempts || 0) >= policy.maxAttempts) fail6(AUTH_ERROR_CODES.OTP_LOCKED);
+  let verified = false;
+  if (challenge.verificationMode === VERIFICATION_MODES.LOCAL_CODE) {
+    const candidate = await store.hmac.hex("pending-signup-code-v1", `${challenge.attemptId}:${value}`);
+    verified = Boolean(challenge.codeMac) && constantTimeEqual(candidate, challenge.codeMac);
+  } else {
+    const entry = orchestrator.config.providers.find((row) => row.id === challenge.providerId && row.enabled);
+    const provider = entry ? orchestrator.providers.get(entry.id) : null;
+    if (!entry || !provider) fail6(AUTH_ERROR_CODES.BACKUP_UNAVAILABLE);
+    try {
+      const result = await bounded(() => provider.verifyCode({
+        attemptId: challenge.attemptId,
+        evidence: value,
+        ...entry.id === "otp-l" ? { destination: material.email } : {},
+        purpose: "email-ownership",
+        serverConfirmed: false
+      }), entry.timeoutMs);
+      verified = result?.verified === true;
+    } catch (cause) {
+      const failure = providerFailure(cause);
+      if (failure.failureClass !== VERIFICATION_FAILURE_CLASS.USER) fail6(AUTH_ERROR_CODES.BACKUP_UNAVAILABLE, { retryAfter: 3 });
+      verified = false;
+    }
+  }
+  const attempts = await store.recordAttempt(ticket, context, { verified });
+  if (!verified) fail6(attempts >= policy.maxAttempts ? AUTH_ERROR_CODES.OTP_LOCKED : AUTH_ERROR_CODES.OTP_INVALID);
+  return Object.freeze({ verified: true, email: material.email, password: material.password, profile: material.profile, emailMask: material.emailMask });
+}
+
+// auth-native/worker/pending-signup-public.mjs
+var PENDING = "/internal/signup/pending";
+var PENDING_SIGNUP_HEADER = "X-AH-Signup-Flow";
+var PENDING_SIGNUP_FLOW = "pending-v1";
+var pendingSignupRequested = (request) => request?.headers?.get(PENDING_SIGNUP_HEADER) === PENDING_SIGNUP_FLOW;
+var TICKET_SECONDS = Math.floor(PENDING_SIGNUP_TTL_MS / 1e3);
+var deviceHeaders = (context, deps, cookies2 = []) => {
+  const list2 = [...context.isNewDevice ? [deps.deviceCookie(context.deviceId)] : [], ...cookies2];
+  return list2.length ? { "Set-Cookie": list2 } : {};
+};
+async function beginPendingSignup({ request, env, context, prepared, password, deps }) {
+  const held = await deps.callAuthority(env, `${PENDING}/begin`, { input: { email: prepared.email, password }, context });
+  return deps.json(request, 202, {
+    ok: true,
+    accountCreated: false,
+    authenticated: false,
+    verification: {
+      sent: false,
+      selectionRequired: true,
+      emailMasked: held.emailMask || prepared.emailMask,
+      requiredBeforeLogin: true,
+      options: {
+        email: { available: true, verifiesEmailOwnership: true },
+        telegram: { available: false, verifiesEmailOwnership: false }
+      }
+    }
+  }, deviceHeaders(context, deps, [deps.verificationCookie(held.verificationTicket, TICKET_SECONDS)]));
+}
+async function savePendingSignupProfile({ request, env, context, ticket, profile, deps }) {
+  const result = await deps.callAuthority(env, `${PENDING}/profile`, { input: { ticket, profile }, context });
+  return deps.json(request, 200, { ok: true, saved: result?.saved === true }, deviceHeaders(context, deps));
+}
+async function createAccount({ env, provider, context, email, password, profile, deps }) {
+  let signed;
+  try {
+    signed = await provider.signUp(email, password);
+  } catch (cause) {
+    throw deps.providerError(cause, "signup");
+  }
+  try {
+    const real = await deps.callAuthority(env, "/internal/firebase/account-verification/begin", {
+      input: { email, subject: signed.subject, refreshToken: signed.refreshToken },
+      context
+    });
+    if (profile && typeof profile === "object") {
+      try {
+        await deps.callAuthority(env, "/internal/profile/save-pending", { verificationTicket: real.verificationTicket, input: profile, context });
+      } catch {
+      }
+    }
+    return { signed, verificationTicket: real.verificationTicket };
+  } catch (cause) {
+    try {
+      await provider.deleteAccount(signed.idToken);
+    } catch {
+    }
+    throw cause;
+  }
+}
+async function startPendingSignupCode({ request, env, provider, context, ticket, magicLink, deps }) {
+  if (magicLink) throw new NativeAuthError(AUTH_ERROR_CODES.BACKUP_UNAVAILABLE);
+  const result = await deps.callAuthority(env, `${PENDING}/request`, { input: { ticket }, context });
+  if (result?.fallback === true) {
+    const created = await createAccount({ env, provider, context, email: result.email, password: result.password, profile: result.profile, deps });
+    try {
+      await provider.sendVerificationEmail(created.signed.idToken, result.email);
+    } catch (cause) {
+      throw cause instanceof NativeAuthError ? cause : deps.providerError(cause, "verification");
+    }
+    try {
+      await deps.callAuthority(env, `${PENDING}/consume`, { input: { ticket }, context });
+    } catch {
+    }
+    return deps.json(request, 202, {
+      ok: true,
+      authenticated: false,
+      delivery: { method: "firebase-link", sent: true, fallback: true, emailMasked: result.emailMasked || "আপনার ইমেইলে", resendAfter: 60 }
+    }, deviceHeaders(context, deps, [deps.verificationCookie(created.verificationTicket)]));
+  }
+  return deps.json(request, 202, {
+    ok: true,
+    authenticated: false,
+    delivery: { method: "email-otp", sent: true, fallback: false },
+    ownership: {
+      sent: true,
+      attemptId: result?.attemptId || "",
+      emailMasked: result?.emailMasked || "আপনার ইমেইলে",
+      resendAfter: Number(result?.resendAfter || 60)
+    }
+  }, deviceHeaders(context, deps));
+}
+async function verifyPendingSignupCodeAndCreate({ request, env, provider, context, ticket, attemptId, code, deps }) {
+  const verified = await deps.callAuthority(env, `${PENDING}/verify`, { input: { ticket, attemptId, code }, context });
+  if (verified?.verified !== true || !verified.email || !verified.password) throw new NativeAuthError(AUTH_ERROR_CODES.OTP_INVALID);
+  const email = verified.email;
+  const created = await createAccount({ env, provider, context, email, password: verified.password, profile: verified.profile, deps });
+  const identity = { verificationTicket: created.verificationTicket, email, subject: created.signed.subject };
+  let established;
+  try {
+    await deps.callAuthority(env, `${PENDING}/ownership`, { input: { ticket, ...identity }, context });
+    established = await deps.callAuthority(env, "/internal/firebase/account-verification/complete", { input: identity, context });
+  } catch (cause) {
+    try {
+      await provider.deleteAccount(created.signed.idToken);
+    } catch {
+    }
+    throw cause;
+  }
+  const response3 = deps.authSuccess(request, established, created.signed.refreshToken, context, {
+    emailVerified: false,
+    emailOwnershipProven: true
+  }, [deps.verificationCookie("", 0)]);
+  try {
+    await deps.callAuthority(env, `${PENDING}/consume`, { input: { ticket }, context });
+  } catch {
+  }
+  return response3;
+}
+
 // auth-native/worker/public-auth-handler.mjs
 var AUTH_API_PREFIX = "/api/auth/v1";
 var PUBLIC_PROFILE_PREFIX = "/api/public/profile/";
@@ -11248,8 +11724,8 @@ var AUTHORITY_NAME = "admission-hub-global-auth-v1";
 var MAX_BODY_BYTES = 24 * 1024;
 var YEAR_SECONDS = 365 * 24 * 60 * 60;
 var SESSION_SECONDS = 30 * 24 * 60 * 60;
-var PASSWORD_MIN = 8;
-var PASSWORD_MAX = 128;
+var PASSWORD_MIN2 = 8;
+var PASSWORD_MAX2 = 128;
 var AUTH_UI_VERSION = "auth-premium-v6";
 var FIREBASE_VERIFICATION_RESEND_SECONDS = Math.floor(FIREBASE_VERIFICATION_RESEND_COOLDOWN_MS / 1e3);
 var JSON_HEADERS = Object.freeze({
@@ -11346,8 +11822,8 @@ var clientContext = (request, existingDeviceId = "") => {
 var credentials = (body) => {
   const email = String(body?.email || "").trim();
   const password = typeof body?.password === "string" ? body.password : "";
-  if (!email || password.length < PASSWORD_MIN || password.length > PASSWORD_MAX || /[\r\n\u0000]/.test(password)) {
-    throw new NativeAuthError(password && password.length < PASSWORD_MIN ? AUTH_ERROR_CODES.WEAK_PASSWORD : AUTH_ERROR_CODES.INVALID_INPUT);
+  if (!email || password.length < PASSWORD_MIN2 || password.length > PASSWORD_MAX2 || /[\r\n\u0000]/.test(password)) {
+    throw new NativeAuthError(password && password.length < PASSWORD_MIN2 ? AUTH_ERROR_CODES.WEAK_PASSWORD : AUTH_ERROR_CODES.INVALID_INPUT);
   }
   const remember = body?.remember !== false;
   return Object.freeze({ email, password, remember });
@@ -11682,6 +12158,7 @@ var adminAuthorized = (request, env) => {
 var passkeyEndpointReady = (env) => ["canary", "enabled"].includes(String(env?.PASSKEY_AUTH_ACTIVATION || ""));
 var passkeyPublished = (env) => env?.PASSKEY_AUTH_ACTIVATION === "enabled";
 var passkeyCanaryRequested = (env, url) => env?.PASSKEY_AUTH_ACTIVATION === "canary" && url.searchParams.get("passkeyCanary") === "1";
+var pendingDeps = () => ({ callAuthority, json: json4, authSuccess, verificationCookie, deviceCookie, providerError });
 function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
   const publicConfigCache = /* @__PURE__ */ new WeakMap();
   return async function handleNativeAuthRequest(request, env, executionContext) {
@@ -11705,7 +12182,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           ...JSON_HEADERS,
           ...corsHeaders(request),
           "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-          "Access-Control-Allow-Headers": "content-type, x-ah-admin-token, x-ah-auth-ui",
+          "Access-Control-Allow-Headers": "content-type, x-ah-admin-token, x-ah-auth-ui, x-ah-signup-flow",
           "Access-Control-Max-Age": "600"
         }
       });
@@ -11929,6 +12406,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         if (isDisposableEmail(input.email)) throw new NativeAuthError(AUTH_ERROR_CODES.DISPOSABLE_EMAIL);
         if (reservedTelegramLoginEmail(input.email)) throw new NativeAuthError(AUTH_ERROR_CODES.DISPOSABLE_EMAIL);
         const prepared = await callAuthority(env, "/internal/firebase/rate", { input: { operation: "signup", email: input.email }, context });
+        if (telegramRequested && pendingSignupRequested(request)) return beginPendingSignup({ request, env, context, prepared, password: input.password, deps: pendingDeps() });
         let signed;
         try {
           signed = await provider.signUp(prepared.email, input.password);
@@ -12502,6 +12980,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         const startBody = await readJson(request);
         const magicLink = startBody?.method === "magic-link";
         await verifyTurnstile({ env, token: startBody?.turnstileToken, ip: context.ip, fetchImpl });
+        if (isPendingSignupTicket(verificationTicket)) return startPendingSignupCode({ request, env, provider, context, ticket: verificationTicket, magicLink, deps: pendingDeps() });
         const material = await callAuthority(env, "/internal/firebase/account-verification/material", {
           verificationTicket,
           context
@@ -12579,6 +13058,10 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         const codeOk = magicToken ? /^[A-Za-z0-9._~-]{16,2048}$/.test(magicToken) : /^\d{6}$/.test(code);
         if (!codeOk || !/^[A-Za-z0-9_-]{24,96}$/.test(attemptId)) {
           throw new NativeAuthError(AUTH_ERROR_CODES.INVALID_INPUT);
+        }
+        if (isPendingSignupTicket(verificationTicket)) {
+          if (magicToken) throw new NativeAuthError(AUTH_ERROR_CODES.INVALID_INPUT);
+          return verifyPendingSignupCodeAndCreate({ request, env, provider, context, ticket: verificationTicket, attemptId, code, deps: pendingDeps() });
         }
         const material = await callAuthority(env, "/internal/firebase/account-verification/material", {
           verificationTicket,
@@ -12761,6 +13244,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         if (!verificationTicket) throw new NativeAuthError(AUTH_ERROR_CODES.TELEGRAM_VERIFICATION_INVALID);
         const profile = await readJson(request);
         await callAuthority(env, "/internal/firebase/rate", { input: { operation: "pending-profile-write" }, context });
+        if (isPendingSignupTicket(verificationTicket)) return savePendingSignupProfile({ request, env, context, ticket: verificationTicket, profile, deps: pendingDeps() });
         const result = await callAuthority(env, "/internal/profile/save-pending", {
           verificationTicket,
           input: profile,
@@ -24204,14 +24688,14 @@ var SqliteAuthRepository = class _SqliteAuthRepository {
 
 // auth-native/verification/orchestrator.mjs
 var PURPOSES = /* @__PURE__ */ new Set(["account-backup", "sensitive-action", "email-ownership"]);
-var HOUR_MS = 60 * 60 * 1e3;
+var HOUR_MS2 = 60 * 60 * 1e3;
 var SEND_LIMITS = Object.freeze([
-  Object.freeze({ scope: "backup-user-hour", source: "user", limit: 5, windowMs: HOUR_MS }),
-  Object.freeze({ scope: "backup-ip-hour", source: "ip", limit: 20, windowMs: HOUR_MS }),
-  Object.freeze({ scope: "backup-device-hour", source: "device", limit: 10, windowMs: HOUR_MS }),
+  Object.freeze({ scope: "backup-user-hour", source: "user", limit: 5, windowMs: HOUR_MS2 }),
+  Object.freeze({ scope: "backup-ip-hour", source: "ip", limit: 20, windowMs: HOUR_MS2 }),
+  Object.freeze({ scope: "backup-device-hour", source: "device", limit: 10, windowMs: HOUR_MS2 }),
   Object.freeze({ scope: "backup-global-minute", source: "global", limit: 120, windowMs: 6e4 })
 ]);
-var DAY_MS9 = 24 * HOUR_MS;
+var DAY_MS9 = 24 * HOUR_MS2;
 var EMAIL_DAILY_LIMIT = 3;
 var validText = (value, min, max) => typeof value === "string" && value.length >= min && value.length <= max && !/[\r\n\u0000]/.test(value);
 var cleanRecipientName = (value) => String(value ?? "").replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 60);
@@ -24242,11 +24726,11 @@ function contextOf(input = {}) {
     origin: String(input.origin || "").slice(0, 256)
   });
 }
-function providerFailure(error) {
+function providerFailure2(error) {
   if (error instanceof VerificationProviderError) return error;
   return new VerificationProviderError("UNEXPECTED_PROVIDER_FAILURE", VERIFICATION_FAILURE_CLASS.TEMPORARY);
 }
-var PROBE_TIMEOUT_MS = 5e3;
+var PROBE_TIMEOUT_MS2 = 5e3;
 var NON_GMAIL_FREEMAIL = /* @__PURE__ */ new Set(["icloud.com", "me.com", "mac.com", "yahoo.com", "yahoo.co.uk", "yahoo.co.in", "ymail.com", "rocketmail.com", "outlook.com", "hotmail.com", "live.com", "msn.com", "aol.com"]);
 var NON_GMAIL_PREFERENCE = Object.freeze({ "otp-h": -30, "otp-i": -40, "otp-b": -15, "otp-e": -30 });
 function mergeRuntimeConfig(input, current) {
@@ -24266,8 +24750,8 @@ function recipientBias(providerId, email) {
 }
 var INSTITUTIONAL_SUFFIXES = Object.freeze([]);
 var matchesDomain = (domain, list2) => list2.some((entry) => domain === entry || entry.startsWith(".") && domain.endsWith(entry));
-var MAGIC_LINK_PROVIDER_ID = "otp-m";
-async function bounded(action, milliseconds) {
+var MAGIC_LINK_PROVIDER_ID2 = "otp-m";
+async function bounded2(action, milliseconds) {
   let timer;
   try {
     return await Promise.race([
@@ -24439,7 +24923,7 @@ var VerificationOrchestrator = class {
   }
   async #candidateRows(identity, destinations, now) {
     const magicLink = identity.deliveryMethod === "magic-link";
-    const eligible = this.config.enabled ? this.config.providers.filter((entry) => entry.enabled && destinations[entry.channel] && entry.id === MAGIC_LINK_PROVIDER_ID === magicLink) : [];
+    const eligible = this.config.enabled ? this.config.providers.filter((entry) => entry.enabled && destinations[entry.channel] && entry.id === MAGIC_LINK_PROVIDER_ID2 === magicLink) : [];
     const rows4 = await Promise.all(eligible.map(async (entry) => {
       const provider = this.providers.get(entry.id);
       const started = Date.now();
@@ -24448,8 +24932,8 @@ var VerificationOrchestrator = class {
           // Readiness probes run for every slot before a single send, so a slow
           // probe delayed the whole OTP past the browser's patience. Probes get
           // a short ceiling; the send itself keeps the slot's full timeoutMs.
-          bounded(() => provider.checkAvailability({ purpose: identity.purpose }), Math.min(entry.timeoutMs, PROBE_TIMEOUT_MS)),
-          bounded(() => provider.getRemainingQuota({ now }), Math.min(entry.timeoutMs, PROBE_TIMEOUT_MS)),
+          bounded2(() => provider.checkAvailability({ purpose: identity.purpose }), Math.min(entry.timeoutMs, PROBE_TIMEOUT_MS2)),
+          bounded2(() => provider.getRemainingQuota({ now }), Math.min(entry.timeoutMs, PROBE_TIMEOUT_MS2)),
           this.repository.dailyQuotaSnapshot({ providerId: entry.id, dailyQuota: entry.dailyQuota, now }),
           this.repository.providerSnapshot({ providerId: entry.id, now })
         ]);
@@ -24471,7 +24955,7 @@ var VerificationOrchestrator = class {
           health: failurePenalty + latencyPenalty
         };
       } catch (cause) {
-        const failure = providerFailure(cause);
+        const failure = providerFailure2(cause);
         await this.#record(entry, {
           attemptId: identity.attemptId,
           userId: identity.userId,
@@ -24570,7 +25054,7 @@ var VerificationOrchestrator = class {
         const started = Date.now();
         let providerAccepted = false;
         try {
-          const result = await bounded(() => provider.sendVerification({
+          const result = await bounded2(() => provider.sendVerification({
             attemptId,
             purpose: identity.purpose,
             destination: destinations[entry.channel],
@@ -24615,7 +25099,7 @@ var VerificationOrchestrator = class {
             if (cause instanceof NativeAuthError) throw cause;
             throw new NativeAuthError(AUTH_ERROR_CODES.STORAGE_UNAVAILABLE);
           }
-          const failure = providerFailure(cause);
+          const failure = providerFailure2(cause);
           tried.push(`${entry.id}:${failure.code}`);
           logDelivery({
             ...logBase,
@@ -24701,12 +25185,12 @@ var VerificationOrchestrator = class {
       }
       const started = Date.now();
       try {
-        const result = await bounded(() => provider.verifyCode({
+        const result = await bounded2(() => provider.verifyCode({
           attemptId,
           evidence: evidence2,
           // Only this adapter needs the address at verification time. Resolve it
           // from the identity already bound to the challenge, never client input.
-          ...entry.id === "otp-l" || entry.id === MAGIC_LINK_PROVIDER_ID ? { destination: identity.destinations[entry.channel] } : {},
+          ...entry.id === "otp-l" || entry.id === MAGIC_LINK_PROVIDER_ID2 ? { destination: identity.destinations[entry.channel] } : {},
           purpose: identity.purpose,
           serverConfirmed: Boolean(selected.providerConfirmed)
         }), entry.timeoutMs);
@@ -24727,7 +25211,7 @@ var VerificationOrchestrator = class {
         await this.#record(entry, { attemptId, userId: identity.userId, subjectRef: identity.subjectRef, success: true, reason: "verified", latencyMs: Date.now() - started, now });
       } catch (cause) {
         if (cause instanceof NativeAuthError) throw cause;
-        const failure = providerFailure(cause);
+        const failure = providerFailure2(cause);
         await this.#record(entry, {
           attemptId,
           userId: identity.userId,
@@ -24832,7 +25316,7 @@ var VerificationOrchestrator = class {
     if (!this.config.enabled || !entry || !provider || typeof provider.sendTelegramCode !== "function") {
       throw new NativeAuthError(AUTH_ERROR_CODES.BACKUP_UNAVAILABLE);
     }
-    const status = await bounded(() => provider.getProviderStatus({ now: Number(this.now()) }), entry.timeoutMs);
+    const status = await bounded2(() => provider.getProviderStatus({ now: Number(this.now()) }), entry.timeoutMs);
     if (status?.configured !== true) throw new NativeAuthError(AUTH_ERROR_CODES.BACKUP_UNAVAILABLE);
     const now = Number(this.now());
     const [linkTokenMac, externalIdentityRef] = await Promise.all([
@@ -24848,7 +25332,7 @@ var VerificationOrchestrator = class {
       const packedCode = await this.vault.open(claimed.codeCipher, `telegram-verification-code:${claimed.attemptId}`);
       const code = /^telegram-otp-v1:(\d{6})$/.exec(packedCode)?.[1] || "";
       if (!code) throw new NativeAuthError(AUTH_ERROR_CODES.STORAGE_UNAVAILABLE);
-      const delivered = await bounded(() => provider.sendTelegramCode({
+      const delivered = await bounded2(() => provider.sendTelegramCode({
         chatId,
         code,
         expiresInSeconds: Math.max(1, Math.ceil((Number(claimed.expiresAt) - Number(this.now())) / 1e3))
@@ -24867,7 +25351,7 @@ var VerificationOrchestrator = class {
       throw new NativeAuthError(AUTH_ERROR_CODES.BACKUP_UNAVAILABLE);
     }
     try {
-      const result = await bounded(() => provider.configureWebhook(), entry.timeoutMs);
+      const result = await bounded2(() => provider.configureWebhook(), entry.timeoutMs);
       if (result?.ready !== true || result?.identityReady !== true || result?.webhookReady !== true || result?.endpointAccepted !== true) {
         throw new VerificationProviderError("WEBHOOK_NOT_READY", VERIFICATION_FAILURE_CLASS.HARD);
       }
@@ -24889,7 +25373,7 @@ var VerificationOrchestrator = class {
       throw new NativeAuthError(AUTH_ERROR_CODES.BACKUP_UNAVAILABLE);
     }
     try {
-      const result = await bounded(() => provider.removeConfiguredWebhook(), entry.timeoutMs);
+      const result = await bounded2(() => provider.removeConfiguredWebhook(), entry.timeoutMs);
       return Object.freeze({ removed: result?.removed === true });
     } catch {
       throw new NativeAuthError(AUTH_ERROR_CODES.BACKUP_UNAVAILABLE);
@@ -24933,12 +25417,12 @@ var VerificationOrchestrator = class {
       let remoteQuota = { remaining: 0, limit: 0, resetAt: 0 };
       let remoteStatus = { status: "unknown", configured: false };
       const probes = await Promise.allSettled([
-        bounded(() => provider.checkAvailability({ purpose: "status" }), entry.timeoutMs),
-        bounded(() => provider.getRemainingQuota({ now }), entry.timeoutMs),
-        bounded(() => provider.getProviderStatus({ now }), entry.timeoutMs)
+        bounded2(() => provider.checkAvailability({ purpose: "status" }), entry.timeoutMs),
+        bounded2(() => provider.getRemainingQuota({ now }), entry.timeoutMs),
+        bounded2(() => provider.getProviderStatus({ now }), entry.timeoutMs)
       ]);
       if (probes[0].status === "fulfilled") availability = probes[0].value;
-      else availability = { available: false, code: providerFailure(probes[0].reason).code };
+      else availability = { available: false, code: providerFailure2(probes[0].reason).code };
       if (probes[1].status === "fulfilled") remoteQuota = probes[1].value;
       if (probes[2].status === "fulfilled") remoteStatus = probes[2].value;
       const total = Number(state.successCount || 0) + Number(state.failureCount || 0);
@@ -24999,7 +25483,7 @@ var VerificationOrchestrator = class {
     return this.repository.nextExpiry(Number(this.now()));
   }
 };
-var __verificationOrchestratorTest = Object.freeze({ PURPOSES, SEND_LIMITS, providerFailure, ratio: ratio3 });
+var __verificationOrchestratorTest = Object.freeze({ PURPOSES, SEND_LIMITS, providerFailure: providerFailure2, ratio: ratio3 });
 
 // observability/otp-delivery-log.mjs
 var OTP_PROVIDER_NAMES = Object.freeze({
@@ -28831,6 +29315,95 @@ function wipeAll(sql) {
   return { passes, deleted, remaining, failures, complete: Object.keys(remaining).length === 0 };
 }
 
+// auth-native/verification/email-ownership-record.mjs
+var UPSERT = `INSERT INTO auth_email_ownership_links(
+  user_id,subject_ref,email_ref,provider_id,method,status,proven_at,last_verified_at,revoked_at
+) VALUES(?,?,?,?,'email-otp','active',?,?,NULL)
+ON CONFLICT(user_id) DO UPDATE SET
+  status='active',provider_id=excluded.provider_id,last_verified_at=excluded.last_verified_at,revoked_at=NULL`;
+async function recordEmailOwnership(repository, input = {}) {
+  const row = {
+    userId: String(input.userId || ""),
+    subjectRef: String(input.subjectRef || ""),
+    emailRef: String(input.emailRef || ""),
+    providerId: String(input.providerId || "otp").slice(0, 32),
+    now: Number(input.now || Date.now())
+  };
+  if (!row.userId || !row.subjectRef || !row.emailRef) return { error: AUTH_ERROR_CODES.INVALID_INPUT };
+  if (typeof repository?.recordEmailOwnership === "function") return repository.recordEmailOwnership(row);
+  const sql = repository?.sql;
+  if (!sql || typeof sql.exec !== "function") return { error: AUTH_ERROR_CODES.STORAGE_UNAVAILABLE };
+  const existing = Array.from(sql.exec(
+    "SELECT email_ref AS emailRef,subject_ref AS subjectRef FROM auth_email_ownership_links WHERE user_id=?",
+    row.userId
+  ))[0];
+  if (existing && (existing.subjectRef !== row.subjectRef || existing.emailRef !== row.emailRef)) {
+    return { error: AUTH_ERROR_CODES.ACCOUNT_CONFLICT };
+  }
+  sql.exec(UPSERT, row.userId, row.subjectRef, row.emailRef, row.providerId, row.now, row.now);
+  return { recorded: true, emailOwnershipProven: true };
+}
+
+// auth-native/worker/pending-signup-authority.mjs
+var PENDING_SIGNUP_ROUTE_PREFIX = "/internal/signup/pending/";
+var ACTIONS = /* @__PURE__ */ new Set(["begin", "profile", "request", "verify", "ownership", "consume"]);
+var fail7 = (code) => {
+  throw new NativeAuthError(code);
+};
+var plain = (value) => value && typeof value === "object" && !Array.isArray(value) ? value : {};
+var isPendingSignupRoute = (pathname) => typeof pathname === "string" && pathname.startsWith(PENDING_SIGNUP_ROUTE_PREFIX) && ACTIONS.has(pathname.slice(PENDING_SIGNUP_ROUTE_PREFIX.length));
+async function handlePendingSignupRoute(authority, pathname, body = {}) {
+  const store = authority.pendingSignups;
+  if (!store) fail7(AUTH_ERROR_CODES.STORAGE_UNAVAILABLE);
+  const action = pathname.slice(PENDING_SIGNUP_ROUTE_PREFIX.length);
+  const input = plain(body?.input);
+  const context = plain(body?.context);
+  const ticket = String(input.ticket || "");
+  if (action === "begin") {
+    return store.begin({ email: input.email, password: input.password, profile: input.profile || null, context });
+  }
+  if (action === "profile") return store.saveProfile(ticket, plain(input.profile), context);
+  if (action === "request") {
+    const held = await store.material(ticket, context);
+    const recipientName = String(held.profile?.fullName || "").slice(0, 80);
+    try {
+      return await requestPendingSignupCode({ store, orchestrator: authority.verification, ticket, context, recipientName });
+    } catch (cause) {
+      if (!(cause instanceof NativeAuthError) || cause.code !== AUTH_ERROR_CODES.BACKUP_UNAVAILABLE) throw cause;
+      return Object.freeze({ accepted: false, fallback: true, email: held.email, password: held.password, profile: held.profile, emailMasked: held.emailMask });
+    }
+  }
+  if (action === "verify") {
+    return verifyPendingSignupCode({
+      store,
+      orchestrator: authority.verification,
+      ticket,
+      context,
+      attemptId: input.attemptId,
+      code: input.code
+    });
+  }
+  if (action === "ownership") {
+    const held = await store.material(ticket, context);
+    if (!held.verified) fail7(AUTH_ERROR_CODES.OTP_INVALID);
+    if (normalizeAuthEmail(input.email) !== held.email) fail7(AUTH_ERROR_CODES.TELEGRAM_VERIFICATION_INVALID);
+    const account = await authority.engine.getFirebaseAccountVerification(
+      input.verificationTicket,
+      { email: input.email, subject: input.subject },
+      context
+    );
+    const result = await recordEmailOwnership(authority.verificationRepository, {
+      userId: account.userId,
+      subjectRef: account.subjectRef,
+      emailRef: account.emailRef,
+      providerId: held.challenge?.providerId || "otp"
+    });
+    if (result?.error) fail7(result.error);
+    return Object.freeze({ recorded: true, emailOwnershipProven: true });
+  }
+  return store.consume(ticket, context);
+}
+
 // auth-native/worker/auth-authority-do.mjs
 var JSON_HEADERS2 = Object.freeze({
   "Content-Type": "application/json; charset=utf-8",
@@ -28884,6 +29457,11 @@ var AdmissionAuthAuthority = class {
         onDeliveryEvent: createOtpDeliverySink({ env, waitUntil: typeof state.waitUntil === "function" ? (promise) => state.waitUntil(promise) : null })
       });
       this.engine.bindVerification(this.verification);
+      try {
+        this.pendingSignups = new PendingSignupStore({ storage: state.storage, hmacSecret: env.AUTH_HMAC_SECRET });
+      } catch {
+        this.pendingSignups = null;
+      }
       this.securityNotificationsDryRun = String(env.SECURITY_NOTIFICATIONS_ACTIVATION || "dry-run") !== "enabled";
       this.securityNotificationSender = null;
     });
@@ -28902,7 +29480,7 @@ var AdmissionAuthAuthority = class {
     }
   }
   async #scheduleExpiry() {
-    const expiries = await Promise.all([this.engine.nextExpiry(), this.verification.nextExpiry()]);
+    const expiries = await Promise.all([this.engine.nextExpiry(), this.verification.nextExpiry(), this.pendingSignups?.nextExpiry() ?? null]);
     const next = expiries.filter(Boolean).sort((left, right) => left - right)[0] || null;
     if (!next) return;
     const scheduled = await this.state.storage.getAlarm();
@@ -28949,6 +29527,11 @@ var AdmissionAuthAuthority = class {
       }
       if (request.method !== "POST") return response2(405, { ok: false, error: { code: "METHOD_NOT_ALLOWED" } }, { Allow: "POST" });
       const body = await readJson2(request, url.pathname === "/internal/avatar/save" ? 35e5 : 32768);
+      if (isPendingSignupRoute(url.pathname)) {
+        const result = await handlePendingSignupRoute(this, url.pathname, body);
+        await this.#scheduleExpiry();
+        return response2(200, { ok: true, result });
+      }
       if (url.pathname === "/internal/firebase/rate") {
         const result = await this.engine.consumeFirebaseOperation(body.input, body.context);
         await this.#scheduleExpiry();
@@ -29298,8 +29881,8 @@ var AdmissionAuthAuthority = class {
   async alarm() {
     try {
       await this.ready;
-      await Promise.all([this.engine.cleanup(), this.verification.cleanup()]);
-      const expiries = await Promise.all([this.engine.nextExpiry(), this.verification.nextExpiry()]);
+      await Promise.all([this.engine.cleanup(), this.verification.cleanup(), this.pendingSignups?.cleanup()]);
+      const expiries = await Promise.all([this.engine.nextExpiry(), this.verification.nextExpiry(), this.pendingSignups?.nextExpiry() ?? null]);
       const next = expiries.filter(Boolean).sort((left, right) => left - right)[0] || null;
       if (next) await this.state.storage.setAlarm(next);
     } catch {
