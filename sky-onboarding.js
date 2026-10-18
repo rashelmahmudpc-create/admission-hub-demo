@@ -51,7 +51,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 // email-policy-client.js, which email-policy.test.mjs pins to the server list.
 const disposableEmail = () => (typeof window.ADMISSION_HUB_isDisposableEmail === 'function'
   ? window.ADMISSION_HUB_isDisposableEmail
-  : () => false);
+  : value => !/@(gmail|yahoo|icloud|outlook)\.com$/i.test(String(value || '').trim()));
 const disposableMessage = () => window.ADMISSION_HUB_DISPOSABLE_EMAIL_MESSAGE
   || 'এই ইমেইল সেবাটি দিয়ে অ্যাকাউন্ট খোলা যায় না—একটি স্থায়ী ইমেইল ব্যবহার করুন।';
 const emailAcceptable = value => EMAIL_RE.test(value) && !disposableEmail()(value);

@@ -9832,10 +9832,11 @@ function emailDomain(email) {
   if (at < 0 || at === value.length - 1) return "";
   return value.slice(at + 1).replace(/\.+$/, "");
 }
+var ALLOWED_EMAIL_DOMAINS = Object.freeze(["gmail.com", "yahoo.com", "icloud.com", "outlook.com"]);
 function isDisposableEmail(email) {
   const domain = emailDomain(email);
   if (!domain) return false;
-  return DISPOSABLE_DOMAINS.some((blocked) => domain === blocked || domain.endsWith(`.${blocked}`));
+  return !ALLOWED_EMAIL_DOMAINS.includes(domain);
 }
 
 // auth-native/providers/firebase-auth.mjs
@@ -11248,6 +11249,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         if (!provider.configured) throw new NativeAuthError(AUTH_ERROR_CODES.NOT_CONFIGURED);
         const body = await readJson(request);
         const email = normalizeAuthEmail(body?.email);
+        if (isDisposableEmail(email)) throw new NativeAuthError(AUTH_ERROR_CODES.DISPOSABLE_EMAIL);
         const prepared = await callAuthority(env, "/internal/firebase/rate", {
           input: { operation: "password-reset", email },
           context
@@ -11298,6 +11300,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
       if (request.method === "POST" && url.pathname === `${AUTH_API_PREFIX}/login`) {
         if (!provider.configured) throw new NativeAuthError(AUTH_ERROR_CODES.NOT_CONFIGURED);
         const input = credentials(await readJson(request));
+        if (isDisposableEmail(input.email)) throw new NativeAuthError(AUTH_ERROR_CODES.DISPOSABLE_EMAIL);
         const prepared = await callAuthority(env, "/internal/firebase/rate", { input: { operation: "login", email: input.email }, context });
         if (Number(prepared?.retryAfter) > 0) {
           return json4(request, 429, { ok: false, error: { code: "RATE_LIMITED", message: "অনেকবার চেষ্টা হয়েছে—একটু পরে আবার চেষ্টা করুন।" } }, { "Retry-After": String(prepared.retryAfter) });
@@ -23593,7 +23596,7 @@ var VerificationOrchestrator = class {
     const allow = this.config.allowedDomains;
     if (!allow || allow.length === 0) return;
     const domain = email.slice(email.lastIndexOf("@") + 1);
-    if (matchesDomain(domain, allow) || matchesDomain(domain, INSTITUTIONAL_SUFFIXES)) return;
+    if (matchesDomain(domain, allow)) return;
     failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
   }
   #limits(identity) {
