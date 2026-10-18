@@ -1457,6 +1457,8 @@
         signal: controller.signal,  
         headers: {  
           'X-AH-Auth-UI': 'auth-premium-v6',  
+          // AUTH step 1: no account until the emailed code is proven.
+          ...(String(path || '').split('?')[0] === '/signup' ? { 'X-AH-Signup-Flow': 'pending-v1' } : {}),
           ...(options.body ? { 'Content-Type': 'application/json' } : {})  
         },  
         ...(options.body ? { body: JSON.stringify(options.body) } : {})  
