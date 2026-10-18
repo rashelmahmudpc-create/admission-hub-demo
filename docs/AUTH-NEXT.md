@@ -23,6 +23,6 @@ Branch: `auth/step1-pending-signup` (PR খোলা)। এই branch এই �
 - Deploy: `deploy-staging.yml` → `deploy-pages-worker.yml` (`confirmation=DEPLOY`), শুধু পুরো ধাপ test pass হলে।
 
 ## শেষ অবস্থা (৩ লাইন)
-1. Session ৯: করণীয় ৩–৪ হলো — DO route `/internal/signup/pending/*` (+ownership), handler এ `p.` ticket ধারা (`pending-signup-public.mjs`), শুধু `X-AH-Signup-Flow: pending-v1` header এ চালু; bundle হালনাগাদ।
-2. Test: 139/141 pass (পুরোনো ২টা fail বাদে), `pending-signup-wire.test.mjs` নতুন, `check:worker-bundle` pass। Deploy হয়নি, PR #113 খোলা।
-3. পরের কাজ: frontend signup এ header পাঠানো, পুরোনো `accountCreated:true` test হালনাগাদ, তারপর staging → production।
+1. Session ৯: করণীয় ৩–৪ হলো — DO route `/internal/signup/pending/*`, handler এ `p.` ticket ধারা (`pending-signup-public.mjs`), frontend `/signup` এ `X-AH-Signup-Flow: pending-v1` পাঠায় (cache token `20261018-pending-signup-v1`); bundle + sw digest হালনাগাদ।
+2. Test: session ফাইলগুলো 139/141 (পুরোনো ২টা fail বাদে); বড় guard suite এ নতুন কোনো fail নেই (একই fail `f79045d` এও আছে)। Deploy হয়নি, PR #113 খোলা।
+3. পরের কাজ: মালিকের সম্মতিতে `deploy-staging.yml` → merge → `deploy-pages-worker.yml` (`confirmation=DEPLOY`), তারপর site এ নতুন signup করে দেখা।
