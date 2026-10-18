@@ -81,7 +81,9 @@ const replacements = [
   // sky-onboarding.{js,css}: keyboard-aware (not just focus-aware) compact mode + seam fill.
   ['sky-flow-20261017-v8', 'sky-flow-20261017-v9'],
   // compact keyboard layout: the Next button follows the content (no empty middle).
-  ['sky-flow-20261017-v9', 'sky-flow-20261017-v10']
+  ['sky-flow-20261017-v9', 'sky-flow-20261017-v10'],
+  // keyboard layout v11: roomy bird, Next above the keyboard, no +140px page, no stale --vh.
+  ['sky-flow-20261017-v10', 'sky-flow-20261018-v11']
 ];
 
 let changed = 0;

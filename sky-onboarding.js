@@ -720,7 +720,17 @@ const build = () => {
   $('sky-stage').addEventListener('touchmove', hideKb, { passive: true });
   document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.tagName === 'INPUT') { e.preventDefault(); hideKb(); } });
   if (window.visualViewport) {
-    const fit = () => { host().style.setProperty('--vh', window.visualViewport.height + 'px'); window.scrollTo(0, 0); };
+    // --vh only follows the visual viewport while a flow field is focused and the keyboard is really
+    // up. Otherwise it is removed and the CSS falls back to 100dvh, so a stale (keyboard-sized) height
+    // can never leave the bottom third of the screen empty after the keyboard closes.
+    const fit = () => {
+      const h = host(); if (!h) return;
+      const vv = window.visualViewport, a = document.activeElement;
+      const typing = !!(a && a.tagName === 'INPUT' && h.contains(a));
+      if (typing && vv.height < window.innerHeight * 0.88) h.style.setProperty('--vh', vv.height + 'px');
+      else h.style.removeProperty('--vh');
+      window.scrollTo(0, 0);
+    };
     window.visualViewport.addEventListener('resize', fit); fit();
   }
 
@@ -747,22 +757,19 @@ const build = () => {
       else if (br.bottom > sr.bottom - 10) delta = br.bottom - sr.bottom + 14;
       if (Math.abs(delta) > 3) scr.scrollBy({ top: delta, behavior: reduce() ? 'auto' : 'smooth' });
     };
-    // Compact mode sizes the stage to the screen's own content so the Next button sits right under
-    // the fields/hint/suggestions instead of far below them (flex shrinks it when space runs out).
+    // Keyboard up: the stage fills the space between the bubble and the Next button (CSS), and the
+    // Next button sits just above the keyboard. The big bird stays ("roomy") whenever the active
+    // screen still fits with it; only when it would not fit does the bird shrink to the corner.
+    // Measured synchronously in one frame (try roomy -> check overflow), so nothing flickers.
     const fitStage = () => {
       const app = appEl(), stage = $('sky-stage');
-      if (!stage) return;
-      if (!app || app.dataset.kb !== '1') { stage.style.height = ''; return; }
-      const scr = stage.querySelector('.scr.on');
+      if (stage) stage.style.height = '';
+      if (!app) return;
+      if (app.dataset.kb !== '1') { delete app.dataset.kbroomy; return; }
+      const scr = stage && stage.querySelector('.scr.on');
       if (!scr) return;
-      const top = scr.getBoundingClientRect().top;
-      let bottom = 0;
-      for (const child of scr.children) {
-        const r = child.getBoundingClientRect();
-        if (r.height > 0) bottom = Math.max(bottom, r.bottom);
-      }
-      const pad = parseFloat(getComputedStyle(scr).paddingBottom) || 0;
-      stage.style.height = Math.max(96, Math.ceil(bottom - top + pad)) + 'px';
+      app.dataset.kbroomy = '1';
+      if (scr.scrollHeight > scr.clientHeight + 2 || scr.clientHeight < 96) delete app.dataset.kbroomy;
     };
     const placeLater = () => { placeTimers.forEach(clearTimeout); placeTimers = [60, 380, 800].map(ms => setTimeout(() => { fitStage(); place(); }, ms)); };
     const setKb = on => {
@@ -828,7 +835,26 @@ const build = () => {
       const watch = () => { const st = $('sky-stage'); if (st) new MutationObserver(refit).observe(st, { attributes: true, attributeFilter: ['class', 'hidden'], childList: true, subtree: true }); return !!st; };
       if (!watch()) { let tries = 0; const t = setInterval(() => { if (watch() || ++tries > 40) clearInterval(t); }, 250); }
     } catch (_) {}
-    if (window.visualViewport) window.visualViewport.addEventListener('resize', () => { if (editing()) { reeval(); placeLater(); } });
+    if (window.visualViewport) window.visualViewport.addEventListener('resize', () => {
+      if (editing()) { reeval(); placeLater(); return; }
+      const app = appEl();
+      if (app && app.dataset.kb === '1' && !kbVisible()) { setKb(false); settle(true); }
+    });
+    // Watchdog: iOS sometimes never fires the resize when the keyboard goes away. While compact mode
+    // or a keyboard height is still applied, re-check twice a second and restore the full layout.
+    // The state must hold for two ticks in a row (~1s), so a keyboard that is still sliding up is
+    // never mistaken for a missing one.
+    let stuckTicks = 0;
+    setInterval(() => {
+      const app = appEl(), h = host();
+      if (!app || !h) { stuckTicks = 0; return; }
+      const applied = app.dataset.kb === '1' || !!h.style.getPropertyValue('--vh');
+      if (!applied || (editing() && kbVisible())) { stuckTicks = 0; return; }
+      if (++stuckTicks < 2) return;
+      stuckTicks = 0;
+      if (app.dataset.kb === '1') setKb(false);
+      h.style.removeProperty('--vh');
+    }, 500);
   }
   wake();
 };

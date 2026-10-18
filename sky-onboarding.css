@@ -360,24 +360,22 @@
    field being typed in, its hint/suggestions and the Next button all fit above the keyboard.
    Closing the keyboard restores the big centred bird (the glide is done in JS with FLIP).
    Driven by [data-kb] on #sky-app, set by sky-onboarding.js while a field is focused. */
-#ah-sky-flow #sky-app[data-kb="1"] .petwrap{flex-direction:row;align-items:center;justify-content:flex-start;gap:12px;padding:8px 16px 0 66px}
-#ah-sky-flow #sky-app[data-kb="1"] .bird{width:62px;flex:none}
-#ah-sky-flow #sky-app[data-kb="1"] .bubble{margin:0;flex:1;min-width:0;min-height:0;max-width:none;display:block;text-align:left;font-size:14.5px;line-height:1.4;padding:9px 14px;border-radius:18px}
-#ah-sky-flow #sky-app[data-kb="1"] .bubble:before{top:50%;left:-7px;margin:-7px 0 0;width:14px;height:14px}
-#ah-sky-flow #sky-app[data-kb="1"] .stage{flex:0 1 auto;transition:height .22s ease;margin-top:4px;-webkit-mask-image:linear-gradient(#000 calc(100% - 16px),transparent);mask-image:linear-gradient(#000 calc(100% - 16px),transparent)}
+#ah-sky-flow #sky-app[data-kb="1"]:not([data-kbroomy="1"]) .petwrap{flex-direction:row;align-items:center;justify-content:flex-start;gap:12px;padding:8px 16px 0 66px}
+#ah-sky-flow #sky-app[data-kb="1"]:not([data-kbroomy="1"]) .bird{width:62px;flex:none}
+#ah-sky-flow #sky-app[data-kb="1"]:not([data-kbroomy="1"]) .bubble{margin:0;flex:1;min-width:0;min-height:0;max-width:none;display:block;text-align:left;font-size:14.5px;line-height:1.4;padding:9px 14px;border-radius:18px}
+#ah-sky-flow #sky-app[data-kb="1"]:not([data-kbroomy="1"]) .bubble:before{top:50%;left:-7px;margin:-7px 0 0;width:14px;height:14px}
+#ah-sky-flow #sky-app[data-kb="1"] .stage{flex:1 1 auto;margin-top:4px;-webkit-mask-image:linear-gradient(#000 calc(100% - 16px),transparent);mask-image:linear-gradient(#000 calc(100% - 16px),transparent)}
 #ah-sky-flow #sky-app[data-kb="1"] .scr{padding-top:6px;padding-bottom:18px}
-#ah-sky-flow #sky-app[data-kb="1"] .foot{padding:8px 20px 10px}
+#ah-sky-flow #sky-app[data-kb="1"] .foot{padding:8px 20px 12px}
 #ah-sky-flow #sky-app[data-kb="1"] .cta{height:52px}
 
-/* iOS leaves a strip between the bottom of the visible page and the keyboard bar / Safari's bottom
-   chrome. The page used to end exactly at the visible edge, so that strip showed the flat page tint
-   and a hard seam cut through the Next button's glow. While the keyboard is up the flow is built
-   140px taller than the visible area and its content is pushed back up by the same amount, so the
-   gradient, blobs and glow simply carry on underneath the system bar instead of being cut off. */
-/* repeated class = enough specificity to beat account-access.css's keyboard-open rule without naming html/body */
-.ah-account-page.ah-account-page.ah-account-page[data-sky-flow="on"][data-sky-kb="1"]{height:calc(var(--visual-viewport-height,100dvh) + 140px)!important}
-#ah-sky-flow[data-kb="1"]{height:calc(var(--vh,100dvh) + 140px)!important}
-#ah-sky-flow[data-kb="1"] #sky-app{box-sizing:border-box;padding-bottom:140px}
-
-/* Keyboard up: the Next button follows the content instead of sitting at the very bottom with a large
-   empty gap above it (the stage is sized to the screen's content by sky-onboarding.js). */
+/* Keyboard up (owner 2026-10-18): the flow is exactly the visible area (--vh = visualViewport) and
+   the Next button sits just above the keyboard. The old "+140px taller page" trick is gone - it
+   left a big empty band under the button. The strip iOS leaves behind its bar is covered by a
+   paint-only shadow of the live palette colour below the page (a box-shadow takes no layout space
+   and never scrolls, and the flow still never touches html/body). */
+.ah-account-page.ah-account-page[data-sky-flow="on"][data-sky-kb="1"]{box-shadow:0 240px 0 0 var(--ah-sky-blend,#E6F0FF)}
+/* Roomy keyboard mode: there is enough room, so the big bird stays and fills the space a little
+   smaller instead of shrinking to the corner (sky-onboarding.js sets data-kbroomy after measuring). */
+#ah-sky-flow #sky-app[data-kb="1"][data-kbroomy="1"] .petwrap{padding-top:8px}
+#ah-sky-flow #sky-app[data-kb="1"][data-kbroomy="1"] .bubble{font-size:16px;padding:10px 18px;min-height:0}
