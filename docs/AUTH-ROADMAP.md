@@ -29,6 +29,7 @@
 - Signup করলেই Firebase এ account তৈরি হয়, OTP যাচাইয়ের আগেই।
 - Forgot password এ শুধু Firebase link; Descope যুক্ত নেই।
 - OTP পাঠাতে server এর ~৪ সেকেন্ড; provider এর নাম আর সময় এখন log এ আসে (PR #104)।
+- Live OTP তে Brevo (`otp-a`, priority 10) বাদ পড়ে Logto আগে গেছে — quota বা availability check; ধাপ ৪ এ দেখতে হবে।
 - Temp mail আটকানো আর অনুমোদিত domain তালিকা ঠিক আছে — হাত দেবে না।
 - Worker Free এর ৬৪ variable সীমায় আছে — নতুন var যোগ করা যাবে না (secret বা code default ব্যবহার করো)।
 - `admission-gk-staging` এ একটাও secret নেই (provider key, TG_BOT_TOKEN কিছুই না) — staging এ আসল OTP বা Telegram alert test করা যায় না, শুধু unit test।
@@ -39,10 +40,10 @@
 
 ## 🧭 ধাপসমূহ
 
-### ধাপ ০: সব কিছু দেখতে পাওয়া 🟡
+### ধাপ ০: সব কিছু দেখতে পাওয়া ✅
 - [x] ✅ `wrangler.toml` এ log স্থায়ীভাবে চালু — `[observability] enabled = true` (PR #101), staging আর production দুটোতেই deploy হয়ে log আসা যাচাই করা হয়েছে
-- [x] ✅ প্রতিটা OTP আর email এর জন্য log: provider এর নাম, কত সময় লাগল, ফল কী — `otp_delivery` / `otp_request` (PR #104, staging + production এ deploy)। Deploy এর পরে এখনো কোনো OTP পাঠানো হয়নি, তাই live log প্রথম OTP এর পরে দেখা বাকি
-- [ ] 🟡 কোনো provider ব্যর্থ হলে বা ৩০ সেকেন্ডের বেশি দেরি হলে Telegram এ alert — `observability/otp-alert.mjs` (PR #106), merge করে staging + production এ deploy হয়েছে; শুধু একটা আসল OTP দিয়ে live যাচাই বাকি (Turnstile এর কারণে agent নিজে OTP পাঠাতে পারে না, মালিককে site থেকে একবার পাঠাতে হবে)
+- [x] ✅ প্রতিটা OTP আর email এর জন্য log: provider এর নাম, কত সময় লাগল, ফল কী — `otp_delivery` / `otp_request` (PR #104)। Live যাচাই ১৮ অক্টোবর 15:30 UTC: Logto (`otp-h`), accepted, 6711 ms, rank 1
+- [x] ✅ কোনো provider ব্যর্থ হলে বা ৩০ সেকেন্ডের বেশি দেরি হলে Telegram এ alert — `observability/otp-alert.mjs` (PR #106), production এ চালু; সফল OTP তে alert যায়নি (ঠিক আছে), ব্যর্থতার alert unit test দিয়ে প্রমাণিত
 
 ### ধাপ ১: OTP যাচাইয়ের পরে account তৈরি ⬜
 - [ ] Signup ক্রম: নাম → জন্ম তারিখ → স্কুল/কলেজ → email → password; শুধু সাময়িকভাবে রাখা (১০ মিনিট, DO বা KV)
@@ -95,8 +96,8 @@
 ---
 
 ## 📝 শেষ অবস্থা
-- **শেষ session:** ১৮ অক্টোবর ২০২৬ (৫ম)
-  1. মালিকের "হ্যাঁ" পেয়ে PR #106 merge (`260cb05`); `deploy-staging.yml` আর `deploy-pages-worker.yml` দুটোই সফল।
-  2. Deploy এর পরে production এ কোনো error নেই। OTP API তে Turnstile token লাগে, তাই agent নিজে OTP পাঠাতে পারেনি; এতে বোঝা যায় bot আটকানো কাজ করছে।
-  3. ধাপ ০ এর code আর deploy শেষ; শুধু একটা আসল OTP পাঠিয়ে live log (`otp_request`) দেখা বাকি।
-- **পরের কাজ:** মালিক site থেকে একটা OTP পাঠাবেন → agent telemetry তে `otp_request` দেখবে → ধাপ ০ ✅ → ধাপ ১ (OTP যাচাইয়ের পরে account তৈরি)।
+- **শেষ session:** ১৮ অক্টোবর ২০২৬ (৬ষ্ঠ)
+  1. মালিক site থেকে OTP পাঠালেন; telemetry তে `otp_delivery` এসেছে: Logto, accepted, 6.7 সেকেন্ড, কোনো error নেই।
+  2. Telegram alert production এ চালু; সফল OTP তে alert যায়নি, যা ঠিক। ধাপ ০ ✅।
+  3. নতুন তথ্য: Brevo প্রথম priority হলেও বাদ পড়েছে, ধাপ ৪ এ কারণ খুঁজতে হবে।
+- **পরের কাজ:** ধাপ ১ — signup তথ্য ১০ মিনিটের জন্য সাময়িক রাখা, OTP সঠিক হলে তবেই Firebase account → login → dashboard।
