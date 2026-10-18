@@ -1,4 +1,4 @@
-name: Apply test email fixtures (allowlist) 2026-10-18
+name: Sync email-allowlist with main 2026-10-18
 
 on:
   push:
@@ -10,7 +10,7 @@ permissions:
   contents: write
 
 jobs:
-  apply:
+  sync:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -22,23 +22,29 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-      - name: Swap fixture domains
+      - name: Merge main
         run: |
-          set -eu
-          if ! grep -q '@example.com' native-auth.test.mjs telegram-otp-auth.test.mjs; then echo 'Already applied.'; echo 'SKIP=1' >> "$GITHUB_ENV"; exit 0; fi
-          sed -i 's/@example\.com/@gmail.com/g' native-auth.test.mjs telegram-otp-auth.test.mjs
-          git diff --stat
-      - name: Run the two suites (report only)
-        if: env.SKIP != '1'
-        run: |
-          npm ci
-          node --test --test-concurrency=1 native-auth.test.mjs telegram-otp-auth.test.mjs 2>&1 | grep -E '^# (tests|pass|fail)|^not ok' || true
-      - name: Commit and push
-        if: env.SKIP != '1'
-        run: |
-          set -eu
+          set -u
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add native-auth.test.mjs telegram-otp-auth.test.mjs
-          git commit -m 'test(auth): use allowlisted gmail.com fixtures instead of example.com'
+          git fetch origin main
+          if git merge --no-commit --no-ff origin/main; then echo 'CLEAN=1' >> "$GITHUB_ENV"; exit 0; fi
+          echo '== CONFLICTS =='; git diff --name-only --diff-filter=U | tee /tmp/conf
+          BAD=$(grep -vE '(^|/)(worker-bundle\.mjs|sw\.js)$' /tmp/conf || true)
+          if [ -n "$BAD" ]; then echo "== NON-GENERATED CONFLICTS =="; echo "$BAD"; for f in $BAD; do echo "--- $f"; grep -n -A6 '^<<<<<<<' "$f" | head -40; done; git merge --abort; exit 1; fi
+          for f in $(cat /tmp/conf); do git checkout --theirs -- "$f"; git add "$f"; done
+      - name: Regenerate and verify
+        run: |
+          set -eu
+          npm ci
+          npm run build:worker
+          node scripts/sw-manifest.mjs
+          npm run check:worker-bundle
+          node --test --test-concurrency=1 email-policy.test.mjs verification-orchestrator.test.mjs 2>&1 | grep -E '^# (tests|pass|fail)'
+      - name: Commit and push
+        run: |
+          set -eu
+          git rm -q .github/workflows/apply-test-emails-20261018.yml
+          git add -A
+          git commit -m 'merge main into fix/email-allowlist; bundle + sw.js regenerated'
           git push origin HEAD:fix/email-allowlist
