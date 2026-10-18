@@ -1030,7 +1030,7 @@ export async function agentChat(request, env, uid, opts = {}) {
      by the tools alone: no model call and no AI limit used. Never during a
      running mock exam. Kill switch: PUB_KV 'sky:agent-tools' = "off". */
   const toolText = String((v.messages[v.messages.length - 1] || {}).content || '');
-  let toolPlan = examMode ? [] : planServerTools(toolText, { quizMode, hasImage: v.messages.some(m => m.image) });
+  let toolPlan = examMode ? [] : planServerTools(toolText, { quizMode, hasImage: v.messages.some(m => m.image), searchOn: !!(env && env.TAVILY_API_KEY) });
   if (toolPlan.length && !(await toolsEnabled(env && env.PUB_KV))) toolPlan = [];
   if (toolPlan.length && isSimplePlan(toolPlan, toolText)) {
     const prof = sanitizeProfileContext(body && body.context && body.context.profile) || {};
@@ -1237,7 +1237,7 @@ export async function agentChat(request, env, uid, opts = {}) {
   let toolCtxUsed = false;
   if (extraTools.length) {
     try {
-      const tr = await runTools([extraTools], { stats, kv: env && env.PUB_KV, onStage: prepStage });
+      const tr = await runTools([extraTools], { stats, env, kv: env && env.PUB_KV, onStage: prepStage });
       const block = renderToolContext(tr.results);
       if (block) { sys = sys + '\n\n' + block; toolCtxUsed = true; }
       mark('tools');

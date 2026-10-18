@@ -12,8 +12,15 @@
  * so they run in the app (sky-tools-client.js) without a server call.
  *
  * Kill switch without a deploy: PUB_KV 'sky:agent-tools' = "off".
+ *
+ * web_search (owner 2026-10-18): Tavily, server only. Runs only for a news /
+ * recent-facts question, has a daily cap (env.TAVILY_DAILY_CAP, default 50),
+ * sends only the cleaned question text (no name, stats, email, phone or id),
+ * and the answer must cite the source links. Off: PUB_KV 'sky:web-search' = "off".
  */
 import { loadAppFeatures, renderAppFeatures, isAppFeatureQuestion } from './sky-app-features.mjs';
+import { isNewsQuestion, cleanSearchQuery, webSearch, renderSearchContext } from './sky-web-search.mjs';
+export { isNewsQuestion, cleanSearchQuery, webSearch, renderSearchContext, takeSearchQuota, SEARCH_KV_SWITCH, SEARCH_DAILY_DEFAULT } from './sky-web-search.mjs';
 
 export const SKY_TOOLS_VERSION = 'sky-tools-v1';
 export const TOOLS_KV_SWITCH = 'sky:agent-tools';
@@ -21,7 +28,7 @@ export const LIMITS = Object.freeze({ maxTools: 5, maxSteps: 3, budgetMs: 20000,
 
 export const TOOL_NAMES = Object.freeze([
   'get_exam_history', 'analyze_weak_topics', 'search_question_bank', 'make_quiz', 'grade_quiz',
-  'get_app_features', 'knowledge_lookup', 'calculate', 'open_page'
+  'get_app_features', 'knowledge_lookup', 'calculate', 'open_page', 'web_search'
 ]);
 export const CLIENT_TOOLS = Object.freeze(['search_question_bank', 'make_quiz', 'grade_quiz', 'knowledge_lookup', 'open_page']);
 
@@ -34,8 +41,11 @@ export const TOOL_LABELS = Object.freeze({
   make_quiz: 'কুইজ বানাচ্ছি',
   grade_quiz: 'তোমার উত্তর মিলিয়ে দেখছি',
   knowledge_lookup: 'জমানো জ্ঞানভান্ডারে খুঁজছি',
-  open_page: 'পেজের পথ বের করছি'
+  open_page: 'পেজের পথ বের করছি',
+  web_search: 'ওয়েবে সর্বশেষ খবর খুঁজছি'
 });
+/* per-tool time cap override (a web call needs more than 3 s) */
+const TOOL_MS = Object.freeze({ web_search: 6000 });
 
 const BAD_ARG_KEYS = ['uid', 'owneruid', 'owner', 'userid', 'accountid', 'user', 'account', 'deviceid'];
 const BN_DIGITS = '০১২৩৪৫৬৭৮৯';
@@ -117,6 +127,10 @@ export function planServerTools(text, ctx = {}) {
   if (RE_HISTORY.test(t)) plan.push({ name: 'get_exam_history', args: {} });
   if (RE_WEAK.test(t)) plan.push({ name: 'analyze_weak_topics', args: {} });
   if (!ctx.quizMode && !ctx.hasImage && isAppFeatureQuestion(t)) plan.push({ name: 'get_app_features', args: {} });
+  if (ctx.searchOn && !ctx.quizMode && !ctx.hasImage && isNewsQuestion(t)) {
+    const query = cleanSearchQuery(t, ctx.firstName);
+    if (query) plan.push({ name: 'web_search', args: { query } });
+  }
   return plan.slice(0, LIMITS.maxTools);
 }
 
@@ -140,6 +154,7 @@ async function execOne(call, ctx) {
     case 'get_exam_history': return getExamHistory(ctx.stats);
     case 'analyze_weak_topics': return analyzeWeakTopics(ctx.stats);
     case 'get_app_features': return { ok: true, data: await loadAppFeatures(ctx.kv) };
+    case 'web_search': return webSearch(call.args && call.args.query, ctx);
     default: return { ok: false, error: CLIENT_TOOLS.includes(call.name) ? 'client-tool' : 'unknown-tool' };
   }
 }
@@ -168,7 +183,7 @@ export async function runTools(steps, ctx = {}) {
     if (left <= 0) { for (const c of calls) results.push({ name: c.name, ok: false, error: 'budget' }); break; }
     const done = await Promise.all(calls.map((c) => {
       try { if (ctx.onStage) ctx.onStage('tool-' + c.name, 'টুল চালাচ্ছি — ' + TOOL_LABELS[c.name]); } catch (_) {}
-      return withTimeout(Promise.resolve().then(() => execOne(c, ctx)).catch(() => ({ ok: false, error: 'failed' })), Math.min(lim.perToolMs, left))
+      return withTimeout(Promise.resolve().then(() => execOne(c, ctx)).catch(() => ({ ok: false, error: 'failed' })), Math.min(TOOL_MS[c.name] || lim.perToolMs, left))
         .then((r) => Object.assign({ name: c.name }, r));
     }));
     results.push(...done);
@@ -219,6 +234,7 @@ export function renderToolContext(results) {
     if (r.name === 'get_app_features') out.push(renderAppFeatures(r.data));
     else if (r.name === 'calculate') out.push('TOOL calculate: ' + r.expression + ' = ' + r.value + ' (exact; use this number).');
     else if (r.name === 'get_exam_history' && !r.empty) out.push('TOOL get_exam_history (this student only): exams ' + r.exams + ', questions ' + r.questions + ', accuracy ' + r.accuracy + '%, streak ' + r.streak + ', mistakes ' + r.mistakes + '.');
+    else if (r.name === 'web_search' && r.results && r.results.length) out.push(renderSearchContext(r));
     else if (r.name === 'analyze_weak_topics' && !r.empty) out.push('TOOL analyze_weak_topics (this student only): ' + r.weak.map((w) => w.name + ' ' + w.accuracy + '%').join(', ') + '.');
   }
   return out.length ? out.join('\n') : '';
@@ -259,3 +275,4 @@ export async function simpleToolResponse(plan, stream, meta = {}) {
     }
   }), { status: 200, headers: { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-cache, no-transform', 'Access-Control-Allow-Origin': '*' } });
 }
+

@@ -554,6 +554,19 @@ var REGISTRY2 = Object.freeze({
     // Phase 9 permits. Enabled ≠ wired: the chat path does not call it yet, so
     // this grants no runtime capability. WRITE/EXECUTE stay disabled until M9.
     enabled: true
+  }),
+  /* owner 2026-10-18: live web search (Tavily). READ-only; it reads no user data
+     at all — only the cleaned question text leaves the server — so it is
+     owner-scoped by construction. Daily cap + kill switch live in sky-tools.mjs. */
+  "web.search": Object.freeze({
+    name: "web.search",
+    description: "Search the live web for news or recent facts; returns titles, snippets and source links.",
+    permission: PERMISSION.READ,
+    inputSchema: schema("object", { query: { type: "string" } }, ["query"]),
+    outputSchema: schema("object", { results: { type: "array" } }, ["results"]),
+    riskLevel: RISK.LOW,
+    ownerScoped: true,
+    enabled: true
   })
 });
 var OWNER_ARG_KEYS = Object.freeze(["uid", "owneruid", "owner", "userid", "accountid", "user", "account", "deviceid"]);
@@ -615,6 +628,77 @@ function renderAppFeatures(data) {
   return ["APP FEATURES (live, " + clean(d.version, 40) + ") — the only source of truth for AdmissionSky features:"].concat(d.items.map((it) => "- " + clean(it.name, 80) + ": " + clean(it.what, 240))).concat(["Mention only what helps the student now; never add a feature that is not listed."]).join("\n");
 }
 
+// sky-web-search.mjs
+var SEARCH_KV_SWITCH = "sky:web-search";
+var SEARCH_DAILY_DEFAULT = 50;
+var RE_NEWS = /(খবর|সংবাদ|সর্বশেষ|সাম্প্রতিক|সদ্য|হালনাগাদ|আপডেট|আজকে?র|আজ\s*কী|এ\s*বছরের|এই\s*বছর|চলতি|বর্তমানে?\s*(কে|কী|কি|কত)|এখন\s*(কে|কী|কি|কত)|নতুন\s*(নিয়ম|সার্কুলার|বিজ্ঞপ্তি|নোটিশ)|সার্কুলার|বিজ্ঞপ্তি|ঘোষণা|২০২[৫-৯]|202[5-9]|\b(news|latest|recent(ly)?|current(ly)?|today'?s?|this\s+year|update[sd]?|announced?|circular|notice)\b)/i;
+var RE_NOT_WEB = /(আমার|\bmy\b|সমাস|সন্ধি|কারক|সমীকরণ|সূত্র|অনুবাদ|translate|formula|equation)/i;
+function isNewsQuestion(text) {
+  const t = String(text || "");
+  return RE_NEWS.test(t) && !RE_NOT_WEB.test(t);
+}
+function cleanSearchQuery(text, firstName) {
+  let q = String(text || "").slice(0, 300);
+  q = q.replace(/[\w.+-]+@[\w-]+(\.[\w-]+)+/g, " ").replace(/https?:\/\/\S+/gi, " ").replace(/[\d০-৯]{3,5}[\s-][\d০-৯]{3,4}[\s-][\d০-৯]{3,4}/g, " ").replace(/\+?[\d০-৯][\d০-৯-]{5,}[\d০-৯]/g, " ");
+  const n = String(firstName || "").trim();
+  if (n.length >= 2) q = q.split(n).join(" ");
+  q = q.replace(/\s+/g, " ").trim().slice(0, 200);
+  return q.length >= 3 ? q : "";
+}
+async function searchEnabled(kv2) {
+  if (!kv2 || typeof kv2.get !== "function") return true;
+  try {
+    const v = await kv2.get(SEARCH_KV_SWITCH);
+    return String(v || "").trim().toLowerCase() !== "off";
+  } catch (_) {
+    return true;
+  }
+}
+var dayKey = (now) => "sky:web-search:count:" + new Date(now || Date.now()).toISOString().slice(0, 10);
+async function takeSearchQuota(kv2, cap, now) {
+  if (!kv2 || typeof kv2.get !== "function" || typeof kv2.put !== "function") return false;
+  const key = dayKey(now);
+  const used = Number(await kv2.get(key)) || 0;
+  if (used >= cap) return false;
+  await kv2.put(key, String(used + 1), { expirationTtl: 172800 });
+  return true;
+}
+var safeUrl = (u) => {
+  try {
+    const x = new URL(String(u));
+    return x.protocol === "https:" || x.protocol === "http:" ? x.href : "";
+  } catch (_) {
+    return "";
+  }
+};
+async function webSearch(query, ctx = {}) {
+  const env = ctx.env || {};
+  const key = String(env.TAVILY_API_KEY || "").trim();
+  if (!key) return { ok: false, error: "no-key" };
+  const q = cleanSearchQuery(query, ctx.firstName);
+  if (!q) return { ok: false, error: "empty-query" };
+  if (!await searchEnabled(ctx.kv)) return { ok: false, error: "off" };
+  const cap = Math.max(0, Math.min(1e3, Number(env.TAVILY_DAILY_CAP) || SEARCH_DAILY_DEFAULT));
+  if (!await takeSearchQuota(ctx.kv, cap, ctx.now)) return { ok: false, error: "daily-limit" };
+  const res = await fetch("https://api.tavily.com/search", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: "Bearer " + key },
+    body: JSON.stringify({ query: q, topic: "general", search_depth: "basic", max_results: 4, include_answer: false, include_raw_content: false, include_images: false })
+  });
+  if (!res || !res.ok) return { ok: false, error: "http-" + (res && res.status) };
+  const j = await res.json().catch(() => null);
+  const results = (j && Array.isArray(j.results) ? j.results : []).map((r) => ({
+    title: String(r && r.title || "").slice(0, 160),
+    url: safeUrl(r && r.url),
+    snippet: String(r && r.content || "").replace(/\s+/g, " ").slice(0, 400)
+  })).filter((r) => r.url).slice(0, 4);
+  return { ok: true, query: q, results };
+}
+function renderSearchContext(r) {
+  const lines = r.results.map((x, i) => i + 1 + ". " + x.title + " — " + x.snippet + " (" + x.url + ")");
+  return "TOOL web_search (live web, " + (/* @__PURE__ */ new Date()).toISOString().slice(0, 10) + '): results for "' + r.query + '":\n' + lines.join("\n") + '\nUse only these results for recent facts; if they do not answer, say so. End the answer with a short "উৎস:" list of the links you used, as Markdown links [title](url).';
+}
+
 // sky-tools.mjs
 var SKY_TOOLS_VERSION = "sky-tools-v1";
 var TOOLS_KV_SWITCH = "sky:agent-tools";
@@ -628,7 +712,8 @@ var TOOL_NAMES = Object.freeze([
   "get_app_features",
   "knowledge_lookup",
   "calculate",
-  "open_page"
+  "open_page",
+  "web_search"
 ]);
 var CLIENT_TOOLS = Object.freeze(["search_question_bank", "make_quiz", "grade_quiz", "knowledge_lookup", "open_page"]);
 var TOOL_LABELS = Object.freeze({
@@ -640,8 +725,10 @@ var TOOL_LABELS = Object.freeze({
   make_quiz: "কুইজ বানাচ্ছি",
   grade_quiz: "তোমার উত্তর মিলিয়ে দেখছি",
   knowledge_lookup: "জমানো জ্ঞানভান্ডারে খুঁজছি",
-  open_page: "পেজের পথ বের করছি"
+  open_page: "পেজের পথ বের করছি",
+  web_search: "ওয়েবে সর্বশেষ খবর খুঁজছি"
 });
+var TOOL_MS = Object.freeze({ web_search: 6e3 });
 var BAD_ARG_KEYS = ["uid", "owneruid", "owner", "userid", "accountid", "user", "account", "deviceid"];
 var BN_DIGITS = "০১২৩৪৫৬৭৮৯";
 var toEnDigits = (s) => String(s == null ? "" : s).replace(/[০-৯]/g, (d) => String(BN_DIGITS.indexOf(d)));
@@ -758,6 +845,10 @@ function planServerTools(text, ctx = {}) {
   if (RE_HISTORY.test(t)) plan.push({ name: "get_exam_history", args: {} });
   if (RE_WEAK.test(t)) plan.push({ name: "analyze_weak_topics", args: {} });
   if (!ctx.quizMode && !ctx.hasImage && isAppFeatureQuestion(t)) plan.push({ name: "get_app_features", args: {} });
+  if (ctx.searchOn && !ctx.quizMode && !ctx.hasImage && isNewsQuestion(t)) {
+    const query = cleanSearchQuery(t, ctx.firstName);
+    if (query) plan.push({ name: "web_search", args: { query } });
+  }
   return plan.slice(0, LIMITS.maxTools);
 }
 function isSimplePlan(plan, text) {
@@ -779,6 +870,8 @@ async function execOne(call2, ctx) {
       return analyzeWeakTopics(ctx.stats);
     case "get_app_features":
       return { ok: true, data: await loadAppFeatures(ctx.kv) };
+    case "web_search":
+      return webSearch(call2.args && call2.args.query, ctx);
     default:
       return { ok: false, error: CLIENT_TOOLS.includes(call2.name) ? "client-tool" : "unknown-tool" };
   }
@@ -815,7 +908,7 @@ async function runTools(steps, ctx = {}) {
         if (ctx.onStage) ctx.onStage("tool-" + c.name, "টুল চালাচ্ছি — " + TOOL_LABELS[c.name]);
       } catch (_) {
       }
-      return withTimeout(Promise.resolve().then(() => execOne(c, ctx)).catch(() => ({ ok: false, error: "failed" })), Math.min(lim.perToolMs, left)).then((r) => Object.assign({ name: c.name }, r));
+      return withTimeout(Promise.resolve().then(() => execOne(c, ctx)).catch(() => ({ ok: false, error: "failed" })), Math.min(TOOL_MS[c.name] || lim.perToolMs, left)).then((r) => Object.assign({ name: c.name }, r));
     }));
     results.push(...done);
   }
@@ -871,6 +964,7 @@ function renderToolContext(results) {
     if (r.name === "get_app_features") out.push(renderAppFeatures(r.data));
     else if (r.name === "calculate") out.push("TOOL calculate: " + r.expression + " = " + r.value + " (exact; use this number).");
     else if (r.name === "get_exam_history" && !r.empty) out.push("TOOL get_exam_history (this student only): exams " + r.exams + ", questions " + r.questions + ", accuracy " + r.accuracy + "%, streak " + r.streak + ", mistakes " + r.mistakes + ".");
+    else if (r.name === "web_search" && r.results && r.results.length) out.push(renderSearchContext(r));
     else if (r.name === "analyze_weak_topics" && !r.empty) out.push("TOOL analyze_weak_topics (this student only): " + r.weak.map((w) => w.name + " " + w.accuracy + "%").join(", ") + ".");
   }
   return out.length ? out.join("\n") : "";
@@ -3282,7 +3376,7 @@ function routerChain(env, tier, badSet = /* @__PURE__ */ new Set(), kv2 = {}) {
   }
   return chain;
 }
-var dayKey = () => (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+var dayKey2 = () => (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
 var RL_WINDOW_MS2 = 24 * 60 * 60 * 1e3;
 function limitMessage(cap, resetAt, now) {
   const bn2 = (s) => String(s).replace(/[0-9]/g, (d) => "০১২৩৪৫৬৭৮৯"[d]);
@@ -3332,7 +3426,7 @@ var putKv = async (kv2, key, val, ttl) => {
   } catch (_) {
   }
 };
-var badKeyName = (key, model) => "aibad:" + String(key).slice(0, 12) + ":" + model + ":" + dayKey();
+var badKeyName = (key, model) => "aibad:" + String(key).slice(0, 12) + ":" + model + ":" + dayKey2();
 var markEntryFailed = async (kv2, key, model, status) => {
   const marker = failureMarker(status, Date.now());
   if (!marker) return;
@@ -3455,7 +3549,7 @@ async function agentChat(request, env, uid, opts = {}) {
     return putKv(env.PUB_KV, key, val, ttlMs ? Math.round(ttlMs / 1e3) : void 0);
   };
   const toolText = String((v.messages[v.messages.length - 1] || {}).content || "");
-  let toolPlan = examMode ? [] : planServerTools(toolText, { quizMode, hasImage: v.messages.some((m) => m.image) });
+  let toolPlan = examMode ? [] : planServerTools(toolText, { quizMode, hasImage: v.messages.some((m) => m.image), searchOn: !!(env && env.TAVILY_API_KEY) });
   if (toolPlan.length && !await toolsEnabled(env && env.PUB_KV)) toolPlan = [];
   if (toolPlan.length && isSimplePlan(toolPlan, toolText)) {
     const prof = sanitizeProfileContext(body && body.context && body.context.profile) || {};
@@ -3616,7 +3710,7 @@ data: ${JSON.stringify({ stage: id, label })}
     let toolCtxUsed = false;
     if (extraTools.length) {
       try {
-        const tr = await runTools([extraTools], { stats, kv: env && env.PUB_KV, onStage: prepStage });
+        const tr = await runTools([extraTools], { stats, env, kv: env && env.PUB_KV, onStage: prepStage });
         const block = renderToolContext(tr.results);
         if (block) {
           sys = sys + "\n\n" + block;
@@ -4453,7 +4547,7 @@ var sha256 = async (value) => {
   const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(String(value || "")));
   return [...new Uint8Array(bytes)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 };
-var dayKey2 = () => (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+var dayKey3 = () => (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
 var readGuestHeader = (request) => {
   const value = String(request.headers.get("X-AH-Guest") || "").trim();
   return /^[A-Za-z0-9_-]{16,96}$/.test(value) ? value : "";
@@ -4497,7 +4591,7 @@ async function anonymousAiIdentity(request, env, countUsage = true) {
   const deviceHash = await sha256(supplied || `${network}|${userAgent}`);
   const networkHash2 = await sha256(network === "unknown" ? `${network}|${userAgent}` : network);
   if (countUsage && env.PUB_KV) {
-    const key = `aipub:${networkHash2.slice(0, 24)}:${dayKey2()}`;
+    const key = `aipub:${networkHash2.slice(0, 24)}:${dayKey3()}`;
     let count = 0;
     try {
       count = Number(await env.PUB_KV.get(key) || 0);
@@ -14971,19 +15065,19 @@ var PersonalizedStore = class {
       lastActiveAt: Number(activity?.t || 0)
     };
   }
-  async nudgedToday(userId, dayKey4) {
+  async nudgedToday(userId, dayKey5) {
     await this.init();
     const row = await this.#d1.prepare(
       "SELECT COUNT(*) AS n FROM notification_sends WHERE user_id=? AND day_key=?"
-    ).bind(userId, dayKey4).first();
+    ).bind(userId, dayKey5).first();
     return Number(row?.n || 0);
   }
-  async recordSend(userId, kind, dayKey4, at) {
+  async recordSend(userId, kind, dayKey5, at) {
     await this.init();
     const res = await this.#d1.prepare(
       `INSERT INTO notification_sends(user_id, kind, day_key, sent_at) VALUES (?,?,?,?)
        ON CONFLICT(user_id, kind, day_key) DO NOTHING`
-    ).bind(userId, kind, dayKey4, at).run();
+    ).bind(userId, kind, dayKey5, at).run();
     return Number(res?.meta?.changes || 0) > 0;
   }
 };
@@ -15824,17 +15918,17 @@ var IntelligenceStore = class {
   }
   /* The daily cap is shared with the Phase G engine through notification_sends,
    * so turning this engine on cannot double a student's daily allowance. */
-  async sendsToday(userId, dayKey4) {
+  async sendsToday(userId, dayKey5) {
     await this.init();
-    const row = await this.#d1.prepare("SELECT COUNT(*) AS n FROM notification_sends WHERE user_id=? AND day_key=?").bind(userId, dayKey4).first();
+    const row = await this.#d1.prepare("SELECT COUNT(*) AS n FROM notification_sends WHERE user_id=? AND day_key=?").bind(userId, dayKey5).first();
     return asInt4(row?.n, 0);
   }
-  async categorySendsToday(userId, dayKey4, category) {
+  async categorySendsToday(userId, dayKey5, category) {
     await this.init();
     const row = await this.#d1.prepare(
       `SELECT COUNT(*) AS n FROM notification_outcomes
        WHERE user_id=? AND day_key=? AND category=? AND status<>'failed'`
-    ).bind(userId, dayKey4, category).first();
+    ).bind(userId, dayKey5, category).first();
     return asInt4(row?.n, 0);
   }
   async lastSentAt(userId) {
@@ -15862,27 +15956,27 @@ var IntelligenceStore = class {
   }
   /* Claim the day slot in the shared table AND write the outcome row. The claim
    * happens before the send so a crash cannot double-deliver. */
-  async claimSend({ userId, key, kind, category, variant, dayKey: dayKey4, at }) {
+  async claimSend({ userId, key, kind, category, variant, dayKey: dayKey5, at }) {
     await this.init();
     const claimed = await this.#d1.prepare(
       `INSERT INTO notification_sends(user_id, kind, day_key, sent_at) VALUES (?,?,?,?)
        ON CONFLICT(user_id, kind, day_key) DO NOTHING`
-    ).bind(userId, `intel:${kind}`, dayKey4, at).run();
+    ).bind(userId, `intel:${kind}`, dayKey5, at).run();
     if (!(asInt4(claimed?.meta?.changes, 0) > 0)) return false;
     await this.#d1.prepare(
       `INSERT INTO notification_outcomes(user_id, notification_key, kind, category, variant, day_key, sent_at, status)
        VALUES (?,?,?,?,?,?,?,?)
        ON CONFLICT(user_id, notification_key) DO NOTHING`
-    ).bind(userId, key, kind, category, variant, dayKey4, at, "sent").run();
+    ).bind(userId, key, kind, category, variant, dayKey5, at, "sent").run();
     return true;
   }
   /* Section 17 — why did we send (or not send)? One row per evaluated student
    * per run, keyed by user+day+rule so a cron tick that fires twice cannot grow
    * the log without bound. `decision` is 'send' or 'skip'; `stage`/`reason` come
    * from the pipeline trace so a skip is answerable after the fact. */
-  async logDecision({ userId, rule, kind, score, decision, stage, reason: reason2, dayKey: dayKey4, at }) {
+  async logDecision({ userId, rule, kind, score, decision, stage, reason: reason2, dayKey: dayKey5, at }) {
     await this.init();
-    const id = `${userId}|${dayKey4}|${rule}`;
+    const id = `${userId}|${dayKey5}|${rule}`;
     await this.#d1.prepare(
       `INSERT INTO notification_decisions(id, user_id, rule, kind, score, decision, stage, reason, day_key, created_at)
        VALUES (?,?,?,?,?,?,?,?,?,?)
@@ -15898,16 +15992,16 @@ var IntelligenceStore = class {
       String(decision),
       stage ? String(stage) : null,
       reason2 ? String(reason2) : null,
-      String(dayKey4),
+      String(dayKey5),
       at
     ).run();
   }
-  async decisionsForDay(dayKey4) {
+  async decisionsForDay(dayKey5) {
     await this.init();
     const rows4 = await this.#d1.prepare(
       `SELECT user_id, rule, kind, score, decision, stage, reason, day_key, created_at
        FROM notification_decisions WHERE day_key=? ORDER BY created_at DESC`
-    ).bind(dayKey4).all();
+    ).bind(dayKey5).all();
     return (rows4?.results || []).map((r) => ({
       userId: String(r.user_id),
       rule: String(r.rule),
@@ -15922,12 +16016,12 @@ var IntelligenceStore = class {
   }
   /* One day's outcomes, for the admin dashboard's CTR. Failed sends are kept so
    * the dashboard can exclude them from the denominator itself. */
-  async outcomesForDay(dayKey4) {
+  async outcomesForDay(dayKey5) {
     await this.init();
     const rows4 = await this.#d1.prepare(
       `SELECT kind, category, variant, sent_at, opened_at, clicked_at, status
        FROM notification_outcomes WHERE day_key=? ORDER BY sent_at DESC`
-    ).bind(dayKey4).all();
+    ).bind(dayKey5).all();
     return (rows4?.results || []).map((r) => ({
       kind: String(r.kind),
       category: String(r.category),
@@ -16220,7 +16314,7 @@ async function runScheduledIntelligenceNotifications(env, deps = {}) {
   }
   return { processed: users.length, sent, skipped, results };
 }
-async function defaultSignals(store, userId, dayKey4, nowMs, tzOffsetMin) {
+async function defaultSignals(store, userId, dayKey5, nowMs, tzOffsetMin) {
   const [dailyStats, examScores, mistakes, courses, history, activityAt] = await Promise.all([
     store.dailyStats(userId),
     store.examScores(userId),
@@ -17065,7 +17159,7 @@ var parseDay = (day) => {
   return m ? Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : NaN;
 };
 var formatDay = (ms) => new Date(ms).toISOString().slice(0, 10);
-function dayKey3(ts, tzOffsetMin = DEFAULT_TZ_OFFSET_MIN) {
+function dayKey4(ts, tzOffsetMin = DEFAULT_TZ_OFFSET_MIN) {
   const tz = Number.isFinite(Number(tzOffsetMin)) ? Number(tzOffsetMin) : DEFAULT_TZ_OFFSET_MIN;
   return formatDay(asInt5(ts, Date.now()) + tz * 6e4);
 }
@@ -17098,7 +17192,7 @@ function computeStreak(days = []) {
   }
   return best;
 }
-function liveStreak(days = [], today = dayKey3(Date.now())) {
+function liveStreak(days = [], today = dayKey4(Date.now())) {
   const set = new Set(days.filter(Boolean));
   if (!set.size) return 0;
   let cursor = set.has(today) ? today : shiftDay(today, -1);
@@ -17135,7 +17229,7 @@ function normalizeLearning(input = {}) {
 }
 function computeLearningMetrics(input = {}, options = {}) {
   const { dailyStats, exams, mistakes, courses } = normalizeLearning(input);
-  const today = options.today || dayKey3(options.nowMs ?? Date.now(), options.tzOffsetMin);
+  const today = options.today || dayKey4(options.nowMs ?? Date.now(), options.tzOffsetMin);
   const activeDays = [...new Set(dailyStats.filter((d) => d.questions > 0 || d.correct > 0 || d.wrong > 0 || d.lessons > 0 || d.timeMs > 0 || d.exams > 0).map((d) => d.day))].sort();
   const questions = sum(dailyStats, (d) => d.questions);
   const correct = sum(dailyStats, (d) => d.correct);
@@ -17269,7 +17363,7 @@ function detectTrends(series = [], options = {}) {
 }
 var SEGMENTS = Object.freeze(["new", "active", "highly_active", "returning", "at_risk", "inactive"]);
 function classifyBehaviourSegment(metrics = {}, options = {}) {
-  const today = options.today || dayKey3(options.nowMs ?? Date.now(), options.tzOffsetMin);
+  const today = options.today || dayKey4(options.nowMs ?? Date.now(), options.tzOffsetMin);
   const since = metrics.daysSinceActive;
   const activeDays = asInt5(metrics.activeDays);
   const streak = asInt5(metrics.streak);
@@ -17512,7 +17606,7 @@ function buildQuizAnalytics(events = []) {
   })).sort((a, b) => a.accuracy - b.accuracy);
 }
 function computeEngagement(students = [], options = {}) {
-  const today = options.today || dayKey3(options.nowMs ?? Date.now(), options.tzOffsetMin);
+  const today = options.today || dayKey4(options.nowMs ?? Date.now(), options.tzOffsetMin);
   const rows4 = (Array.isArray(students) ? students : []).filter((s) => s && s.userId);
   const within = (days) => {
     const cutoff = shiftDay(today, -(days - 1));
@@ -17544,7 +17638,7 @@ function computeEngagement(students = [], options = {}) {
 }
 var RETENTION_WINDOWS = Object.freeze([1, 7, 14, 30]);
 function computeRetention(students = [], options = {}) {
-  const today = options.today || dayKey3(options.nowMs ?? Date.now(), options.tzOffsetMin);
+  const today = options.today || dayKey4(options.nowMs ?? Date.now(), options.tzOffsetMin);
   const rows4 = (Array.isArray(students) ? students : []).filter((s) => s && s.userId && (s.activeDays || []).length);
   const cohorts = /* @__PURE__ */ new Map();
   const buckets = new Map(RETENTION_WINDOWS.map((w) => [w, { window: w, cohortSize: 0, retained: 0, matureCohortSize: 0, rate: 0 }]));
@@ -18034,7 +18128,7 @@ var AnalyticsStore2 = class {
       const res = await this.#d1.prepare(
         `INSERT INTO analytics_events(user_id, id, name, params_json, at, day_key, created_at)
          VALUES (?,?,?,?,?,?,?) ON CONFLICT(user_id, id) DO NOTHING`
-      ).bind(userId, id, name, JSON.stringify(params).slice(0, 4e3), at, dayKey3(at), now).run();
+      ).bind(userId, id, name, JSON.stringify(params).slice(0, 4e3), at, dayKey4(at), now).run();
       if (asInt5(res?.meta?.changes, 0) > 0) stored += 1;
     }
     return { received: rows4.length, stored };
@@ -18080,7 +18174,7 @@ var AnalyticsStore2 = class {
        FROM user_daily_stats s
        WHERE s.deleted_at IS NULL AND s.day>=?
        GROUP BY s.user_id`
-    ).bind(dayKey3(sinceMs));
+    ).bind(dayKey4(sinceMs));
     const rows4 = await this.#readAll(query);
     return rows4.map((r) => ({
       userId: String(r.user_id),
@@ -18277,8 +18371,8 @@ var AnalyticsStore2 = class {
       const metrics = computeLearningMetrics({
         dailyStats: (s.activeDays || []).map((day) => ({ day, questions: 0, lessons: 0 })),
         courses: []
-      }, { today: options.today || dayKey3(Date.now(), options.tzOffsetMin) });
-      const today = options.today || dayKey3(Date.now(), options.tzOffsetMin);
+      }, { today: options.today || dayKey4(Date.now(), options.tzOffsetMin) });
+      const today = options.today || dayKey4(Date.now(), options.tzOffsetMin);
       const last = s.activeDays[s.activeDays.length - 1] || null;
       const enriched = {
         ...metrics,
@@ -18365,7 +18459,7 @@ function applyFilters({ events = [], courses = [], lessons = [], quizzes = [], c
 }
 async function buildStudentDashboard(store, userId, options = {}) {
   const f = options.filters || { sinceMs: Date.now() - 30 * DAY_MS5, untilMs: Date.now(), tzOffsetMin: DEFAULT_TZ_OFFSET_MIN };
-  const today = options.today || dayKey3(Date.now(), f.tzOffsetMin);
+  const today = options.today || dayKey4(Date.now(), f.tzOffsetMin);
   const [dailyStats, examResults, mistakes, courses, events, outcomes] = await Promise.all([
     store.dailyStats(userId, options.limitDays ?? 90),
     store.examResults(userId, 50),
@@ -18432,7 +18526,7 @@ async function buildAdminDashboard(store, filters, options = {}) {
       lessonsCompleted: s.lessons,
       courseProgress: {},
       hadGap,
-      daysSinceActive: last ? Math.max(0, daysBetween(last, filters.today || dayKey3(Date.now(), filters.tzOffsetMin))) : null
+      daysSinceActive: last ? Math.max(0, daysBetween(last, filters.today || dayKey4(Date.now(), filters.tzOffsetMin))) : null
     };
     return { userId: s.userId, ...classifyBehaviourSegment(enriched, { today: filters.today }), stage: classifyLearningStage(enriched).stage };
   });
@@ -18447,8 +18541,8 @@ async function buildAdminDashboard(store, filters, options = {}) {
   const funnel = buildFunnel(countByEvent(filtered.events));
   const dropOff = detectFunnelDropOff(funnel);
   const trends = detectTrends(
-    dayRange(filters.today || dayKey3(Date.now(), filters.tzOffsetMin), 14).map((day) => {
-      const rows4 = filtered.events.filter((e) => dayKey3(e.at, filters.tzOffsetMin) === day);
+    dayRange(filters.today || dayKey4(Date.now(), filters.tzOffsetMin), 14).map((day) => {
+      const rows4 = filtered.events.filter((e) => dayKey4(e.at, filters.tzOffsetMin) === day);
       return {
         day,
         questions: rows4.filter((e) => e.name === "question_attempt").length,
