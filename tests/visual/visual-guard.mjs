@@ -119,6 +119,10 @@ try {
       const st = document.createElement('style'); st.textContent = css; document.head.appendChild(st);
     }), INJECT);
     const page = await ctx.newPage();
+    // Same start date/time on every run (greeting, dates, day counters follow the clock), then let it flow normally
+    // so splash timers still finish.
+    await page.clock.install({ time: new Date(process.env.VG_TIME || '2026-10-18T10:00:00+06:00') });
+    await page.clock.resume();
     const t0 = Date.now();
     try {
       await s.run(page, origin);
