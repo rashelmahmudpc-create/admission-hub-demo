@@ -211,6 +211,12 @@ function cleanCapture(text) {
   return sanitizeMemoryText(cleaned, 80);
 }
 
+const TOPIC_KEYS = Object.freeze(['weak-topic', 'strong-topic']);
+const QUESTION_WORD = /(?:^|\s)(?:কী|কি|কোন|কোনটা|কোনগুলো|কোথায়|কিসে|কীসে|কেন|কীভাবে|কিভাবে|what|which|where|am i)(?=\s|$)/iu;
+function isQuestionClause(clause) {
+  return QUESTION_WORD.test(String(clause || '')) || /দুর্বলতা/u.test(String(clause || ''));
+}
+
 /** Did the student explicitly ask the AI to remember something? */
 export function isRetentionRequest(text) {
   const value = String(text || '');
@@ -227,8 +233,15 @@ export function extractMemoryCandidates(text) {
   const out = [];
   const explicit = isRetentionRequest(value);
 
+  /* Sky memory fix 2026-10-18: a question ("আমি কোন বিষয়ে দুর্বল?") is not a
+     fact. Topic signals are matched only inside statement clauses, so asking
+     about a weakness never overwrites the weakness the student stated before. */
+  const statements = value.split(/[?？!।\n]|,\s*/).filter(c => c.trim() && !isQuestionClause(c)).join(' । ');
+
   for (const signal of SIGNALS) {
-    const match = value.match(signal.re);
+    const source = TOPIC_KEYS.includes(signal.key) ? statements : value;
+    if (!source) continue;
+    const match = source.match(signal.re);
     if (!match) continue;
     const captured = cleanCapture(match[1] || match[0]);
     if (!captured) continue;
@@ -240,6 +253,35 @@ export function extractMemoryCandidates(text) {
       confidence: explicit ? Math.min(1, signal.confidence + 0.1) : signal.confidence,
       reason: explicit ? 'ইউজার নিজে মনে রাখতে বলেছে' : 'কথার মধ্যে থেকে অনুমান করা হয়েছে'
     });
+  }
+  return out;
+}
+
+/* Each remembered fact is labelled by what it IS, so the model can tell a weak
+   topic from a goal or the last discussed subject. Without this every study
+   fact rendered as a bare "পড়াশোনা: সমাসে" and the tutor could not see that
+   the student had called it a weakness. */
+const KEY_LABEL = Object.freeze({
+  'weak-topic': 'দুর্বল বিষয় (শিক্ষার্থী নিজে বলেছে)',
+  'strong-topic': 'ভালো পারে (শিক্ষার্থী নিজে বলেছে)',
+  'goal': 'লক্ষ্য',
+  'last-topic': 'সর্বশেষ আলোচনার বিষয়',
+  'answer-style': 'উত্তরের ধরন',
+  'study-time': 'পড়ার অভ্যাস'
+});
+
+/** The weak topics the student stated in chat, newest first (values only). */
+export function statedWeakTopics(records, limit = 3) {
+  const items = Array.isArray(records) ? records : [];
+  const seen = new Set();
+  const out = [];
+  for (const r of items.slice().sort((a, b) => (b.ts || 0) - (a.ts || 0))) {
+    if (!r || r.kind !== KIND.STUDIES || r.key !== 'weak-topic') continue;
+    const value = sanitizeMemoryText(r.value, 80);
+    if (!value || !isPiiFree(value) || seen.has(value)) continue;
+    seen.add(value);
+    out.push(value);
+    if (out.length >= limit) break;
   }
   return out;
 }
@@ -261,8 +303,12 @@ export function renderMemory(records, viewVersion = '') {
   const ranked = items
     .sort((a, b) => (b.confidence - a.confidence) || ((b.ts || 0) - (a.ts || 0)))
     .slice(0, RENDER_LIMIT);
-  const lines = ranked.map(r => `- ${KIND_LABEL[r.kind] || r.kind}: ${r.value}`);
+  const lines = ranked.map(r => `- ${KIND_LABEL[r.kind] || r.kind} — ${KEY_LABEL[r.key] || r.key}: ${r.value}`);
   const v = viewVersion ? ' — ' + viewVersion : '';
+  const weakRule = ranked.some(r => r.kind === KIND.STUDIES && r.key === 'weak-topic')
+    ? '\nশিক্ষার্থী নিজের দুর্বলতা বা কী পড়বে জানতে চাইলে প্রথম উত্তরেই "দুর্বল বিষয় (শিক্ষার্থী নিজে বলেছে)" লাইনটি ব্যবহার করো — পরীক্ষার ফল না থাকলেও। '
+      + 'কখনো বলবে না "দুর্বলতার কোনো তথ্য নেই"। উদাহরণ: "তুমি এখনো পরীক্ষা দাওনি, তবে আগে বলেছিলে সমাসে দুর্বল। আজ সমাস দিয়ে শুরু করি?"'
+    : '';
   return `\n\nLONG-TERM MEMORY${v}:\n${lines.join('\n')}\n`
-    + 'এই তথ্য শুধু এই শিক্ষার্থীর নিজেরই। স্বাভাবিকভাবে কাজে লাগাও; কখনো বলো না তুমি আলাদা করে কিছু মনে রেখেছ।';
+    + 'এই তথ্য শুধু এই শিক্ষার্থীর নিজেরই। স্বাভাবিকভাবে কাজে লাগাও; কখনো বলো না তুমি আলাদা করে কিছু মনে রেখেছ।' + weakRule;
 }

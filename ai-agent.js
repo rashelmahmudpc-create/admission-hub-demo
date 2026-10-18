@@ -21,7 +21,7 @@ import { listTools, TOOL_REGISTRY_VERSION } from './tool-registry.js';
 import { isAppFeatureQuestion, loadAppFeatures, renderAppFeatures } from './sky-app-features.mjs';
 import { planServerTools, isSimplePlan, simpleToolResponse, runTools, renderToolContext, toolsEnabled, nowLine } from './sky-tools.mjs';
 import { bumpDailyStats, statsFromTiming } from './sky-daily-report.mjs';
-import { extractMemoryCandidates, makeMemory, upsertMemory, parseMemory, renderMemory, resolveMemoryOwner, isPiiFree, KIND, SOURCE, MEMORY_VERSION } from './memory-engine.js';
+import { extractMemoryCandidates, makeMemory, upsertMemory, parseMemory, renderMemory, resolveMemoryOwner, isPiiFree, statedWeakTopics, KIND, SOURCE, MEMORY_VERSION } from './memory-engine.js';
 import { validateResponse, describeResponseValidation, RESPONSE_VALIDATION_VERSION } from './response-validator.js';
 import { describeActions, ACTION_VERSION } from './action-engine.js';
 import { makeTrace, makeRequestId, callerRef, quotaState, renderTrace, estimateTokens, FALLBACK, OBSERVABILITY_VERSION, describeObservability, parseTraces, appendTrace, addUsage, emptyUsage, estimateCost, validateObservability } from './observability.js';
@@ -1041,9 +1041,19 @@ export async function agentChat(request, env, uid, opts = {}) {
   const prevUser = v.messages.slice(0, -1).reverse().find(m => m.role === 'user');
   let toolPlan = examMode ? [] : planServerTools(toolText, { prevText: prevUser ? String(prevUser.content || '') : '', firstName: (sanitizeProfileContext(body && body.context && body.context.profile) || {}).firstName, quizMode, hasImage: v.messages.some(m => m.image), searchOn: !!(env && env.TAVILY_API_KEY) });
   if (toolPlan.length && !(await toolsEnabled(env && env.PUB_KV))) toolPlan = [];
+  /* Sky memory fix 2026-10-18: a weakness question also needs what the student
+     SAID about their weak topics (long-term memory), not only exam stats — or an
+     empty exam record makes Sky answer "no information" on the first try. The
+     read happens only for such a question and is reused below (no second read). */
+  let earlyLongP = null;
+  let statedWeak = [];
+  if (persistMemory && toolPlan.some(p => p.name === 'analyze_weak_topics')) {
+    earlyLongP = Promise.resolve().then(() => stateGet('mem:' + MEMORY_VERSION + ':' + sendCtx.uid)).catch(() => null);
+    try { statedWeak = statedWeakTopics(parseMemory(await earlyLongP, sendCtx.uid)); } catch (_) { statedWeak = []; }
+  }
   if (toolPlan.length && isSimplePlan(toolPlan, toolText)) {
     const prof = sanitizeProfileContext(body && body.context && body.context.profile) || {};
-    const tr = await simpleToolResponse(toolPlan, stream, { intent, pv: SYSTEM_PROMPT_V, agent: AGENT_VERSION, firstName: prof.firstName, stats, kv: env && env.PUB_KV }).catch(() => null);
+    const tr = await simpleToolResponse(toolPlan, stream, { intent, pv: SYSTEM_PROMPT_V, agent: AGENT_VERSION, firstName: prof.firstName, stats, statedWeak, kv: env && env.PUB_KV }).catch(() => null);
     if (tr) { mark('tools'); emitTiming({ tools: toolPlan.length, quota: false }); return tr; }
   }
 
@@ -1119,7 +1129,7 @@ export async function agentChat(request, env, uid, opts = {}) {
   const prefsP = safeRead(() => getKv(env.PUB_KV, 'aiprefs:' + sendCtx.uid));
   const chatMemP = persistMemory ? safeRead(async () => await stateGet('chatmem:' + sendCtx.uid)) : Promise.resolve(null);
   const sumP = persistMemory && v.fresh !== true ? safeRead(() => stateGet('chatmemsum:' + sendCtx.uid)) : Promise.resolve('');
-  const longP = persistMemory ? safeRead(() => stateGet(memKeyEarly)) : Promise.resolve(null);
+  const longP = persistMemory ? (earlyLongP || safeRead(() => stateGet(memKeyEarly))) : Promise.resolve(null);
   let aiPrefs = null;
   try {
     const rawPrefs = await prefsP;
@@ -1258,7 +1268,7 @@ export async function agentChat(request, env, uid, opts = {}) {
   let toolCtxUsed = false;
   if (extraTools.length) {
     try {
-      const tr = await runTools([extraTools], { stats, env, kv: env && env.PUB_KV, onStage: prepStage });
+      const tr = await runTools([extraTools], { stats, statedWeak, env, kv: env && env.PUB_KV, onStage: prepStage });
       const block = renderToolContext(tr.results);
       if (block) { sys = sys + '\n\n' + block; toolCtxUsed = true; }
       mark('tools');
