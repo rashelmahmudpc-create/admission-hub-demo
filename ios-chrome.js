@@ -349,4 +349,40 @@
       }, ms));
     }
   };
+
+  /* ---- 6. on-device diagnostics (off by default) ----
+   * Open the site once with ?kbdebug=1 to show a small black badge with the numbers iOS really
+   * reports (visual viewport vs layout viewport, compact-mode flag, page and Next-button bottoms,
+   * which build is running). It stays on until ?kbdebug=0. Used to compare a phone with the
+   * simulated one when a layout looks different on the device. */
+  try {
+    const q = new URLSearchParams(location.search).get('kbdebug');
+    if (q === '0') localStorage.removeItem('ah-kbdebug');
+    else if (q !== null) localStorage.setItem('ah-kbdebug', '1');
+    if (localStorage.getItem('ah-kbdebug') === '1') {
+      const show = () => {
+        if (!document.body) return;
+        const badge = document.createElement('div');
+        badge.id = 'ah-kbdebug';
+        badge.style.cssText = 'position:fixed;top:calc(env(safe-area-inset-top,0px) + 2px);left:4px;right:4px;z-index:2147483600;font:10px/1.35 ui-monospace,Menlo,monospace;background:rgba(0,0,0,.78);color:#7CFF9B;padding:3px 6px;border-radius:7px;pointer-events:none;word-break:break-all';
+        document.body.append(badge);
+        const rect = el => (el ? Math.round(el.getBoundingClientRect().bottom) : '-');
+        const tick = () => {
+          const vv = window.visualViewport;
+          const app = document.getElementById('sky-app');
+          const page = document.querySelector('.ah-account-page[data-sky-flow="on"]');
+          const skyJs = ((document.querySelector('script[src*="sky-onboarding"]') || {}).src || '').split('?v=')[1] || '-';
+          const a = document.activeElement;
+          badge.textContent = 'dbg1 | vv ' + (vv ? Math.round(vv.height) : '-') + '/' + window.innerHeight
+            + ' off' + (vv ? Math.round(vv.offsetTop) : '-') + ' | compact ' + ((app && app.dataset.kb) || '-')
+            + ' | kbOpen ' + (document.body.classList.contains('keyboard-open') ? 1 : 0)
+            + ' | page.b ' + rect(page) + ' cta.b ' + rect(document.getElementById('sky-cta'))
+            + ' | focus ' + (a && a.tagName === 'INPUT' ? 'input' : '-') + ' | sky ' + skyJs;
+        };
+        tick();
+        setInterval(tick, 300);
+      };
+      if (document.body) show(); else document.addEventListener('DOMContentLoaded', show);
+    }
+  } catch (_) {}
 })();
