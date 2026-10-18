@@ -1,0 +1,48 @@
+name: Apply study-lock notice to AGENTS.md 2026-10-19
+
+# Prepends the STUDY LOCK block (from CLAUDE.md) to the top of AGENTS.md and
+# commits back to the SAME branch. Idempotent. Never touches main, no deploy.
+
+on:
+  push:
+    branches: [chore/study-lock]
+    paths:
+      - '.github/workflows/apply-study-lock-agents-20261019.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.ref_name == 'chore/study-lock'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: chore/study-lock
+      - name: Prepend block
+        run: |
+          set -eu
+          python3 - <<'PY'
+          import pathlib, re
+          src = pathlib.Path('CLAUDE.md').read_text()
+          block = re.search(r'<!-- STUDY-LOCK:START -->.*?<!-- STUDY-LOCK:END -->', src, re.S).group(0)
+          p = pathlib.Path('AGENTS.md'); t = p.read_text()
+          if '<!-- STUDY-LOCK:START -->' in t:
+              print('already present')
+          else:
+              p.write_text(block + '\n\n' + t); print('prepended')
+          PY
+          head -c 300 AGENTS.md
+      - name: Commit and push to the feature branch
+        run: |
+          set -eu
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add AGENTS.md
+          if git diff --cached --quiet; then echo 'Nothing to commit.'; else
+            git commit -m 'docs(agents): STUDY LOCK notice at top of AGENTS.md' -m 'Applied by apply-study-lock-agents-20261019.yml. No deploy.'
+            git push origin HEAD:chore/study-lock
+          fi
