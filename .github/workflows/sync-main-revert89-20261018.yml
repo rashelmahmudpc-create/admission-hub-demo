@@ -1,0 +1,57 @@
+name: Sync main + revert broken #89 2026-10-18
+
+on:
+  push:
+    branches: [fix/email-allowlist]
+    paths:
+      - '.github/workflows/sync-main-revert89-20261018.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: fix/email-allowlist
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Merge main (sw.js taken from main, regenerated below)
+        run: |
+          set -u
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch origin main
+          if ! git merge --no-ff --no-commit origin/main; then
+            git diff --name-only --diff-filter=U | tee /tmp/conf
+            BAD=$(grep -vE '(^|/)(worker-bundle\.mjs|sw\.js)$' /tmp/conf || true)
+            if [ -n "$BAD" ]; then echo "NON-GENERATED CONFLICTS: $BAD"; exit 1; fi
+            for f in $(cat /tmp/conf); do git checkout --theirs -- "$f"; git add "$f"; done
+          fi
+          git commit -q --no-edit -m 'merge main into fix/email-allowlist'
+      - name: Revert #89 (2de6d2c)
+        run: |
+          set -eu
+          git diff --name-only 2de6d2c^ 2de6d2c
+          if ! git revert --no-edit 2de6d2c; then echo 'REVERT CONFLICT:'; git diff --name-only --diff-filter=U; exit 1; fi
+          wc -c ai-agent.js prompt-registry.js
+      - name: Regenerate and verify
+        run: |
+          set -eu
+          npm ci
+          npm run build:worker
+          node scripts/sw-manifest.mjs
+          npm run check:worker-bundle
+          git add -A
+          git commit -q -m 'build: regenerate worker-bundle.mjs + sw.js after sync/revert' || echo 'nothing to regenerate'
+      - name: Quick suites (report only)
+        run: |
+          for t in email-policy.test.mjs verification-orchestrator.test.mjs native-auth.test.mjs telegram-otp-auth.test.mjs; do echo "== $t"; node --test --test-concurrency=1 $t 2>&1 | grep -E '^# (pass|fail)' || true; done
+      - name: Push
+        run: git push origin HEAD:fix/email-allowlist
