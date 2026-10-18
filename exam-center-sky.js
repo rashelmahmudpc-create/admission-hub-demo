@@ -31,7 +31,8 @@ function mapBank(){
     a:Number(q.answer!=null?q.answer:q.a),
     t:q.topicName||nameOf(q.topicId)||'',
     s:q.subjectName||nameOf(q.subjectId)||'',
-    e:q.explanation||q.e||''
+    e:q.explanation||q.e||'',
+    sid:q.subjectId||'', tid:q.topicId||''
   }));
   const cols=['#2E9BFF','#FFB23F','#8C7CFF','#12B886','#FF5C70','#2AA9F5','#3BA7FF','#7CCBFF'];
   const names=[];Q.forEach(r=>{if(r.s&&names.indexOf(r.s)<0)names.push(r.s)});
@@ -120,15 +121,85 @@ if(E.mock){$('#q'+Z.u).outerHTML=qcard(Z,Z.u,'m',false);const an=Object.keys(E.a
 const ok=Z.a==o;ok?E.streak++:E.streak=0;flashUI(false);
 if(ok){burst();const s=E.streak;s==3?say('৩টি টানা সঠিক! আমি তো নাচছি!','dance',4000):s==5?say('৫টি টানা! এবার আকাশে উড়ব!','fly',4500):say(happy[Math.random()*4|0],'happy',3000)}else say(sad[Math.random()*3|0],'sad',4000)}
 function finish(){go();const {mock,list,ans,tm,log,neg}=E;let c=0,w=0;list.forEach(Z=>{if(ans[Z.u]===undefined)return;seen.add(Z.bi);Z.a==ans[Z.u]?(c++,mis.delete(Z.bi)):(w++,mis.add(Z.bi))});
-const att={mock,mode:mock?'Mock Test':'Flash Test',bm:new Set(E.bm),list,ans,tm,log,neg,c,w,s:list.length-c-w,score:c-w*neg,dur:(Date.now()-E.t0)/1000,date:new Date().toLocaleDateString('bn-BD')};H.push(att);curA=att;S.f='all';S.lim=50;result(att)}
+const att={mock,mode:mock?'Mock Test':'Flash Test',bm:new Set(E.bm),list,ans,tm,log,neg,c,w,s:list.length-c-w,score:c-w*neg,dur:(Date.now()-E.t0)/1000,date:new Date().toLocaleDateString('bn-BD')};H.push(att);curA=att;S.f='all';S.lim=50;persist(att);result(att)}
+/* TODO 2 (done) — real persistence. The demo kept attempts only in `H`, so a
+   refresh lost them; this writes to the app's own stores, which the existing
+   Exam History screen and cloud sync already read. Guarded so the ported UI
+   still runs standalone if the stores are absent. */
+async function persist(a){
+  const db=(typeof dbPut==='function')?dbPut:null; if(!db)return;
+  const snap=a.list.map(Z=>{const u=a.ans[Z.u];return {questionId:Z.id||'',subjectId:Z.sid||'',topicId:Z.tid||'',status:u===undefined?'skipped':(u===Z.a?'correct':'wrong')}});
+  const now=Date.now(), used=Math.round(a.dur);
+  const correct=snap.filter(s=>s.status==='correct').length;
+  const wrong=snap.filter(s=>s.status==='wrong').length;
+  const skipped=snap.filter(s=>s.status==='skipped').length;
+  const rec={
+    id:(typeof uid==='function')?uid():('sky'+now),
+    examId:'sky-'+now, date:now, completedAt:now, startedAt:now-used*1000,
+    mode:a.mock?'mock':'flash', testType:a.mock?'mock':'flash',
+    subjects:[...new Set(snap.map(s=>s.subjectId).filter(Boolean))],
+    topics:[...new Set(snap.map(s=>s.topicId).filter(Boolean))],
+    questionCount:a.list.length, correct, wrong, skipped,
+    score:correct-wrong*(a.neg||0), positive:correct, negative:wrong*(a.neg||0), negativeMarks:a.neg,
+    accuracy:a.list.length?Math.round(correct/a.list.length*100):0,
+    attemptRate:a.list.length?Math.round((correct+wrong)/a.list.length*100):0,
+    timeUsed:used, totalTime:used, autoSubmit:false,
+    snapshot:snap, configuration:{source:'exam-center-sky'},
+    bookmarks:[...a.bm], flags:[]
+  };
+  try{ await db('examResults',rec); }catch(e){}
+  for(const s of snap){
+    if(s.status!=='wrong'||!s.questionId) continue;
+    try{
+      let m=(typeof CACHE!=='undefined'&&CACHE&&Array.isArray(CACHE.mistakes))?CACHE.mistakes.find(x=>x.questionId===s.questionId):null;
+      if(!m) m={id:(typeof uid==='function')?uid():('m'+now+s.questionId), questionId:s.questionId, wrongCount:0, revisionStatus:'pending'};
+      m.wrongCount=(m.wrongCount||0)+1; m.lastWrongAt=now; m.examId=rec.id; m.subjectId=s.subjectId; m.topicId=s.topicId;
+      await db('mistakes', m);
+      if(typeof CACHE!=='undefined'&&CACHE&&Array.isArray(CACHE.mistakes)&&CACHE.mistakes.indexOf(m)<0) CACHE.mistakes.push(m);
+    }catch(e){}
+  }
+}
 /* ---------- Result ---------- */
 const gr=p=>p>=80?['A+','অসাধারণ']:p>=70?['A','খুব ভালো']:p>=60?['B','ভালো']:p>=50?['C','মোটামুটি']:p>=40?['D','উন্নতি দরকার']:['F','আরও অনুশীলন দরকার'];
-function aiHTML(Z,a){const u=a.ans[Z.u],L='ABCD';return `<div class="aih"><span class="aiic">${I.spark}</span><b>Sky AI ব্যাখ্যা</b><em>ডেমো</em></div>
+function aiHTML(Z,a){const u=a.ans[Z.u],L='ABCD';return `<div class="aih"><span class="aiic">${I.spark}</span><b>Sky AI ব্যাখ্যা</b></div>
 <div class="ail"><b>সঠিক উত্তর</b><p>${L[Z.a]}. ${Z.o[Z.a]}</p></div>
 <div class="ail"><b>আপনার উত্তর</b><p>${u===undefined?'স্কিপ করেছেন':`${L[u]}. ${Z.o[u]} ${u==Z.a?'(সঠিক)':'(ভুল)'}`}</p></div>
-<div class="ail"><b>কেন সঠিক</b><p>${Z.e||'এই প্রশ্নের ব্যাখ্যা এখনো ডাটায় নেই। AI যুক্ত হলে এখানে ধাপে ধাপে ব্যাখ্যা আসবে।'}</p></div>
-<div class="aia"><button data-aix="1">আরও সহজ করে</button><button data-aix="1">উদাহরণ দিন</button><button data-aix="1">আরও জানুন</button></div>
-<span class="aid">এটি ডেমো প্যানেল। অ্যাপের ব্যাকএন্ড AI যুক্ত হলে এখানে আসল ব্যাখ্যা আসবে।</span>`}
+<div class="ail"><b>কেন সঠিক</b><p>${Z.e||'এই প্রশ্নের ব্যাখ্যা এখনো ডাটায় যোগ করা হয়নি। নিচের বোতাম চাপলে Sky বুঝিয়ে দেবে।'}</p></div>
+<div class="aia"><button data-aix="সহজ">আরও সহজ করে</button><button data-aix="উদাহরণ">উদাহরণ দিন</button><button data-aix="আরও">আরও জানুন</button></div>
+<div class="aio" id="aio"></div>`}
+/* TODO 3 (done) — real AI. The demo panel said "এটি ডেমো প্যানেল"; this calls the
+   app's own tutor endpoint POST /api/ai/chat (SSE), the same one ai-agent-chat.js
+   uses, so no client-side key and no demo copy remains. */
+async function askAI(Z,box){
+  const a=curA,u=a.ans[Z.u],L='ABCD';
+  const prompt='পরীক্ষার প্রশ্ন: '+Z.q+'\nসঠিক উত্তর: '+L[Z.a]+'. '+Z.o[Z.a]+
+    (u===undefined?'':'\nশিক্ষার্থীর উত্তর: '+L[u]+'. '+Z.o[u])+
+    (Z.e?'\nডাটার ব্যাখ্যা: '+Z.e:'')+
+    '\n\nবাংলায় ধাপে ধাপে বুঝিয়ে দাও কেন সঠিক উত্তরটি সঠিক, এবং অন্য অপশনগুলো কেন ভুল।';
+  if(typeof fetch!=='function'){box.textContent='সংযোগ নেই।';return}
+  let r;
+  try{ r=await fetch('/api/ai/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:[{role:'user',content:prompt}],fresh:true,context:{stats:null,profile:null,examMode:'exam'}})}) }
+  catch(e){ box.textContent='সংযোগ করা যায়নি, আবার চেষ্টা করুন।'; return }
+  if(!r.ok||!r.body){ box.textContent='এখন উত্তর দেওয়া যাচ্ছে না।'; return }
+  const rd=r.body.getReader(),dec=new TextDecoder();let buf='',full='';
+  while(true){ let step; try{ step=await rd.read() }catch(_){ break } if(step.done)break;
+    buf+=dec.decode(step.value,{stream:true});
+    const parts=buf.split('\n\n'); buf=parts.pop()||'';
+    for(const part of parts){
+      let evt='';
+      for(const line of part.split('\n')){ const t=line.trim();
+        if(t.startsWith('event:')){evt=t.slice(6).trim();continue}
+        if(!t.startsWith('data:'))continue;
+        let j=null; try{ j=JSON.parse(t.slice(5).trim()) }catch(_){ continue }
+        if(evt==='stage')continue;
+        if(evt==='replace'&&typeof j.text==='string'){ full=j.text; }
+        else if(j.text){ full+=j.text; }
+      }
+      box.textContent=full;
+    }
+  }
+  if(!full) box.textContent='এখন উত্তর দেওয়া যাচ্ছে না।';
+}
 function aiToggle(i){const a=curA,Z=a.list[i],box=$('#ai'+i),btn=$('#ab'+i);if(box.classList.contains('open')){box.classList.remove('open');btn.classList.remove('on');return}
 box.innerHTML='<div class="skl"><i></i><i></i><i style="width:60%"></i></div>';box.classList.add('open');btn.classList.add('on');setTimeout(()=>{if(box.classList.contains('open'))box.innerHTML=aiHTML(Z,a)},900)}
 function shareRes(){const a=curA,n=a.list.length,t=`${a.mode}: ${n}টির মধ্যে ${a.c}টি সঠিক, নির্ভুলতা ${Math.round(a.c/n*100)}%, স্কোর ${a.score.toFixed(2)} — Admission Hub`;try{if(navigator.share)navigator.share({text:t}).catch(()=>{});else navigator.clipboard.writeText(t).then(()=>toast('ফলাফল কপি হয়েছে'))}catch(e){toast('শেয়ার করা যায়নি')}}
@@ -167,7 +238,7 @@ function submit(){const n=E.list.length,an=Object.keys(E.ans).length;if(!S.c.con
 app.onclick=e=>{const t=e.target;let b;
 if(t.closest('.skyw')){return act()}
 if(b=t.closest('[data-ai]'))return aiToggle(+b.dataset.ai);
-if(b=t.closest('[data-aix]'))return toast('AI সংযোগ হলে এই অপশন কাজ করবে');
+if(b=t.closest('[data-aix]')){const box=$('#aio');if(!box)return;box.textContent='Sky লিখছে...';box.classList.add('on');const i=b.closest('.aih')?.parentElement?.querySelector('[data-ai]');const idx=i?(+i.dataset.ai):-1;const Z=idx>=0?curA.list[idx]:null;if(Z)return void askAI(Z,box);return}
 if(b=t.closest('[data-rbm]')){const i=+b.dataset.rbm,u=curA.list[i].u;curA.bm.has(u)?curA.bm.delete(u):curA.bm.add(u);b.classList.toggle('on');const c=$('#bmc');c&&(c.textContent=bn(curA.bm.size));return toast(curA.bm.has(u)?'বুকমার্ক করা হলো':'বুকমার্ক সরানো হলো')}
 if(t.closest('[data-share]'))return shareRes();
 if(b=t.closest('[data-k]')){const v=b.dataset.v;S.c[b.dataset.k]=isNaN(v)?v:+v;return cfg(false)}
