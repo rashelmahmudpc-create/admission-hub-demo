@@ -223,7 +223,7 @@ export class VerificationOrchestrator {
     const allow = this.config.allowedDomains;
     if (!allow || allow.length === 0) return;
     const domain = email.slice(email.lastIndexOf('@') + 1);
-    if (matchesDomain(domain, allow) || matchesDomain(domain, INSTITUTIONAL_SUFFIXES)) return;
+    if (matchesDomain(domain, allow)) return; // owner 2026-10-18: no institutional exception
     failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
   }
 

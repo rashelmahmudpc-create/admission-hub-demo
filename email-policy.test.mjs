@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { DISPOSABLE_DOMAINS_LIST, isDisposableEmail, emailDomain } from './email-policy.js';
+import { DISPOSABLE_DOMAINS_LIST, ALLOWED_EMAIL_DOMAINS_LIST, isDisposableEmail, emailDomain } from './email-policy.js';
 
 const root = new URL('.', import.meta.url).pathname;
 const clientSource = readFileSync(`${root}email-policy-client.js`, 'utf8');
@@ -16,15 +16,23 @@ test('the disposable-email list blocks the services the owner named', () => {
   }
 });
 
-test('a genuine address is never refused, including a school or work domain', () => {
-  for (const email of [
-    'student@gmail.com', 'student@yahoo.com', 'student@icloud.com',
-    'student@outlook.com', 'student@protonmail.com',
-    'student@school.edu.bd', 'student@university.ac.bd', 'student@college.gov.bd',
-    'student@notmailinator.com.evil.com'
-  ]) {
+test('owner 2026-10-18: only gmail, yahoo, icloud and outlook are accepted', () => {
+  for (const email of ['student@gmail.com', 'Student@Yahoo.com', 'student@icloud.com', 'student@outlook.com']) {
     assert.equal(isDisposableEmail(email), false, `${email} should be allowed`);
   }
+  for (const email of [
+    'student@protonmail.com', 'student@hotmail.com', 'student@school.edu.bd',
+    'student@university.ac.bd', 'student@random-temp.xyz', 'student@sub.gmail.com',
+    'student@gmail.com.evil.com'
+  ]) {
+    assert.equal(isDisposableEmail(email), true, `${email} should be refused`);
+  }
+});
+
+test('the browser mirror enforces the same four-domain allowlist', () => {
+  assert.deepEqual([...ALLOWED_EMAIL_DOMAINS_LIST].sort(), ['gmail.com', 'icloud.com', 'outlook.com', 'yahoo.com']);
+  for (const domain of ALLOWED_EMAIL_DOMAINS_LIST) assert.ok(clientSource.includes(`'${domain}'`));
+  assert.ok(clientSource.includes('ADMISSION_HUB_ALLOWED_EMAIL_DOMAINS.includes(domain)'));
 });
 
 test('a subdomain of a blocked provider is refused', () => {
