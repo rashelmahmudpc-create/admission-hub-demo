@@ -7,6 +7,8 @@ import { verificationConfig } from '../verification/config.mjs';
 import { verifyTurnstile } from '../verification/turnstile.mjs';
 import { resolveTelegramWebhookSecret, validTelegramWebhookSecret } from '../verification/telegram-security.mjs';
 import { isTelegramLoginEmail, reservedTelegramLoginEmail, telegramLoginBotId, telegramLoginCredentials, telegramLoginReady, verifyTelegramLogin } from '../verification/telegram-login.mjs';
+import { isPendingSignupTicket } from './pending-signup.mjs';
+import * as pendingSignup from './pending-signup-public.mjs';
 
 export const AUTH_API_PREFIX = '/api/auth/v1';
 // Phase 7 public-safe profile projection — deliberately unauthenticated and
@@ -467,6 +469,8 @@ const passkeyPublished = env => env?.PASSKEY_AUTH_ACTIVATION === 'enabled';
 const passkeyCanaryRequested = (env, url) =>
   env?.PASSKEY_AUTH_ACTIVATION === 'canary' && url.searchParams.get('passkeyCanary') === '1';
 
+const pendingDeps = () => ({ callAuthority, json, authSuccess, verificationCookie, deviceCookie, providerError });
+
 export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
   const publicConfigCache = new WeakMap();
   return async function handleNativeAuthRequest(request, env, executionContext) {
@@ -494,7 +498,7 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           ...JSON_HEADERS,
           ...corsHeaders(request),
           'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-          'Access-Control-Allow-Headers': 'content-type, x-ah-admin-token, x-ah-auth-ui',
+          'Access-Control-Allow-Headers': 'content-type, x-ah-admin-token, x-ah-auth-ui, x-ah-signup-flow',
           'Access-Control-Max-Age': '600'
         }
       });
@@ -731,6 +735,8 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         if (isDisposableEmail(input.email)) throw new NativeAuthError(AUTH_ERROR_CODES.DISPOSABLE_EMAIL);
         if (reservedTelegramLoginEmail(input.email)) throw new NativeAuthError(AUTH_ERROR_CODES.DISPOSABLE_EMAIL);
         const prepared = await callAuthority(env, '/internal/firebase/rate', { input: { operation: 'signup', email: input.email }, context });
+        // AUTH-ROADMAP step 1: an opted-in dual-choice signup holds the credentials; no account until the code is proven.
+        if (telegramRequested && pendingSignup.pendingSignupRequested(request)) return pendingSignup.beginPendingSignup({ request, env, context, prepared, password: input.password, deps: pendingDeps() });
         let signed;
         try { signed = await provider.signUp(prepared.email, input.password); } catch (cause) { throw providerError(cause, 'signup'); }
 
@@ -1249,6 +1255,7 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         const startBody = await readJson(request);
         const magicLink = startBody?.method === 'magic-link';
         await verifyTurnstile({ env, token: startBody?.turnstileToken, ip: context.ip, fetchImpl });
+        if (isPendingSignupTicket(verificationTicket)) return pendingSignup.startPendingSignupCode({ request, env, provider, context, ticket: verificationTicket, magicLink, deps: pendingDeps() });
         const material = await callAuthority(env, '/internal/firebase/account-verification/material', {
           verificationTicket,
           context
@@ -1322,6 +1329,10 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         const codeOk = magicToken ? /^[A-Za-z0-9._~-]{16,2048}$/.test(magicToken) : /^\d{6}$/.test(code);
         if (!codeOk || !/^[A-Za-z0-9_-]{24,96}$/.test(attemptId)) {
           throw new NativeAuthError(AUTH_ERROR_CODES.INVALID_INPUT);
+        }
+        if (isPendingSignupTicket(verificationTicket)) {
+          if (magicToken) throw new NativeAuthError(AUTH_ERROR_CODES.INVALID_INPUT);
+          return pendingSignup.verifyPendingSignupCodeAndCreate({ request, env, provider, context, ticket: verificationTicket, attemptId, code, deps: pendingDeps() });
         }
         const material = await callAuthority(env, '/internal/firebase/account-verification/material', {
           verificationTicket,
@@ -1486,6 +1497,7 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         if (!verificationTicket) throw new NativeAuthError(AUTH_ERROR_CODES.TELEGRAM_VERIFICATION_INVALID);
         const profile = await readJson(request);
         await callAuthority(env, '/internal/firebase/rate', { input: { operation: 'pending-profile-write' }, context });
+        if (isPendingSignupTicket(verificationTicket)) return pendingSignup.savePendingSignupProfile({ request, env, context, ticket: verificationTicket, profile, deps: pendingDeps() });
         const result = await callAuthority(env, '/internal/profile/save-pending', {
           verificationTicket,
           input: profile,

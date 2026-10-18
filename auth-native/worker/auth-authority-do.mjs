@@ -12,6 +12,8 @@ import { migrateStudentDirectory } from '../storage/student-directory-schema.mjs
 import { listStudents, studentProfile } from '../storage/student-admin-view.mjs';
 import { wipeAll, wipeConfirmPhrase, wipeCounts } from '../storage/student-wipe.mjs';
 import { normalizeAuthEmail } from '../core/crypto.mjs';
+import { PendingSignupStore } from './pending-signup.mjs';
+import { handlePendingSignupRoute, isPendingSignupRoute } from './pending-signup-authority.mjs';
 
 const JSON_HEADERS = Object.freeze({
   'Content-Type': 'application/json; charset=utf-8',
@@ -68,6 +70,8 @@ export class AdmissionAuthAuthority {
       // Phase 6 — the engine's security challenges reuse this orchestrator
       // for email/Telegram delivery.
       this.engine.bindVerification(this.verification);
+      // AUTH-ROADMAP step 1: account-less signup rows (DO KV, prefix psu:).
+      try { this.pendingSignups = new PendingSignupStore({ storage: state.storage, hmacSecret: env.AUTH_HMAC_SECRET }); } catch { this.pendingSignups = null; }
       // Phase 6 Chunk 4 — security notifications. Phase 6 ships DRY-RUN:
       // nothing is sent live unless the deployment explicitly enables it AND
       // a sender is configured (none is wired yet, so it stays inert).
@@ -91,7 +95,7 @@ export class AdmissionAuthAuthority {
   }
 
   async #scheduleExpiry() {
-    const expiries = await Promise.all([this.engine.nextExpiry(), this.verification.nextExpiry()]);
+    const expiries = await Promise.all([this.engine.nextExpiry(), this.verification.nextExpiry(), this.pendingSignups?.nextExpiry() ?? null]);
     const next = expiries.filter(Boolean).sort((left, right) => left - right)[0] || null;
     if (!next) return;
     const scheduled = await this.state.storage.getAlarm();
@@ -149,6 +153,11 @@ export class AdmissionAuthAuthority {
       if (request.method !== 'POST') return response(405, { ok: false, error: { code: 'METHOD_NOT_ALLOWED' } }, { Allow: 'POST' });
       // Phase 7 — avatar uploads are base64 JSON (≤ ~2.8 MB for 2 MB images).
       const body = await readJson(request, url.pathname === '/internal/avatar/save' ? 3_500_000 : 32_768);
+      if (isPendingSignupRoute(url.pathname)) {
+        const result = await handlePendingSignupRoute(this, url.pathname, body);
+        await this.#scheduleExpiry();
+        return response(200, { ok: true, result });
+      }
       if (url.pathname === '/internal/firebase/rate') {
         const result = await this.engine.consumeFirebaseOperation(body.input, body.context);
         await this.#scheduleExpiry();
@@ -521,8 +530,8 @@ export class AdmissionAuthAuthority {
   async alarm() {
     try {
       await this.ready;
-      await Promise.all([this.engine.cleanup(), this.verification.cleanup()]);
-      const expiries = await Promise.all([this.engine.nextExpiry(), this.verification.nextExpiry()]);
+      await Promise.all([this.engine.cleanup(), this.verification.cleanup(), this.pendingSignups?.cleanup()]);
+      const expiries = await Promise.all([this.engine.nextExpiry(), this.verification.nextExpiry(), this.pendingSignups?.nextExpiry() ?? null]);
       const next = expiries.filter(Boolean).sort((left, right) => left - right)[0] || null;
       if (next) await this.state.storage.setAlarm(next);
     } catch {
