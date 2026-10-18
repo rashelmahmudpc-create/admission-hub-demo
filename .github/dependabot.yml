@@ -1,0 +1,24 @@
+# Dependabot: weekly update PRs for npm packages and GitHub Actions (free).
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "friday"
+      time: "10:00"
+      timezone: "Asia/Dhaka"
+    open-pull-requests-limit: 5
+    labels: ["dependencies"]
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "friday"
+      time: "10:00"
+      timezone: "Asia/Dhaka"
+    open-pull-requests-limit: 5
+    labels: ["dependencies"]
+    groups:
+      actions:
+        patterns: ["*"]

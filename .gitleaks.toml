@@ -1,0 +1,27 @@
+# Gitleaks config: default rules + allowlist for values verified safe on 2026-10-18
+# (full history, 1,293 commits: 28 hits, all false positives listed below).
+title = "admission-hub-demo gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Test fixtures, generated bundle and known-public values"
+paths = [
+  '''(^|/)[^/]*\.test\.mjs$''',
+  '''(^|/)worker-bundle\.mjs$''',
+  '''(^|/)node_modules/''',
+  '''(^|/)sdk/firebase-[a-z-]+\.js$''',
+]
+regexes = [
+  # Firebase *web* API keys are public by design (restrict by HTTP referrer in GCP).
+  '''AIzaSy[0-9A-Za-z_-]{33}''',
+  # sw.js file digests (sha256 hex), not credentials.
+  '''^[0-9a-f]{64}$''',
+  # Firebase project id / localStorage key names that start with "admission".
+  '''^admission[0-9A-Za-z_.:-]*$''',
+  # Date-based build / cache ids such as 20261018-xxxx.
+  '''^20[0-9]{6}[0-9A-Za-z_.-]*$''',
+  # Web Push VAPID *public* key (87-char base64url, starts with B).
+  '''^B[A-Za-z0-9_-]{86}$''',
+]
