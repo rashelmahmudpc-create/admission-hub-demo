@@ -1,0 +1,101 @@
+name: Nightly Telegram Report
+
+# Every night at 23:00 Bangladesh time (17:00 UTC). GitHub cron can start a few
+# minutes late; the job is capped at 10 minutes so it always ends before midnight.
+on:
+  schedule:
+    - cron: "0 17 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+  security-events: read
+
+concurrency:
+  group: nightly-telegram-report
+  cancel-in-progress: false
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Build and send Bangla report
+        uses: actions/github-script@v7
+        env:
+          TG_TOKEN: ${{ secrets.DAILY_REPORT_TELEGRAM_BOT_TOKEN }}
+          TG_CHAT: ${{ secrets.DAILY_REPORT_TELEGRAM_CHAT_ID }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const now = Date.now();
+            const sinceISO = new Date(now - 24 * 3600 * 1000).toISOString();
+            const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            const link = (url, text) => `<a href="${url}">${esc(text)}</a>`;
+            const bn = n => Number(n).toLocaleString('bn-BD');
+            const days = d => Math.floor((now - new Date(d).getTime()) / 86400000);
+            const repoUrl = `https://github.com/${owner}/${repo}`;
+
+            const runs = await github.paginate(github.rest.actions.listWorkflowRunsForRepo,
+              { owner, repo, branch: 'main', created: `>=${sinceISO}`, per_page: 100 });
+            const latest = new Map();
+            for (const r of runs) if (r.status === 'completed' && !latest.has(r.name)) latest.set(r.name, r);
+            const red = [...latest.values()].filter(r => ['failure', 'timed_out', 'startup_failure'].includes(r.conclusion));
+            const failedRuns = runs.filter(r => r.conclusion === 'failure').length;
+
+            const prs = await github.paginate(github.rest.pulls.list, { owner, repo, state: 'open', per_page: 100 });
+            const stale = prs.filter(p => days(p.created_at) >= 7);
+
+            const commits = await github.paginate(github.rest.repos.listCommits, { owner, repo, sha: 'main', since: sinceISO, per_page: 100 });
+
+            let codeAlerts = null;
+            try {
+              const a = await github.paginate(github.rest.codeScanning.listAlertsForRepo, { owner, repo, state: 'open', per_page: 100 });
+              codeAlerts = a;
+            } catch (e) { core.info(`code scanning alerts unavailable: ${e.status || e.message}`); }
+
+            const dateBn = new Date().toLocaleDateString('bn-BD', { timeZone: 'Asia/Dhaka', day: 'numeric', month: 'long', year: 'numeric' });
+            const health = red.length === 0 ? '🟢 সব ঠিক আছে' : `🔴 ${bn(red.length)}টা চেক ব্যর্থ`;
+            const L = [];
+            L.push(`<b>📊 Admission Hub — রাতের রিপোর্ট</b>`);
+            L.push(`🗓 ${esc(dateBn)} · ${link(repoUrl, `${owner}/${repo}`)}`);
+            L.push('');
+            L.push(`<b>অবস্থা:</b> ${health}`);
+            L.push(`• গত ২৪ ঘণ্টায় main-এ রান: ${bn(runs.length)}টা (ব্যর্থ ${bn(failedRuns)}টা)`);
+            L.push(`• নতুন commit: ${bn(commits.length)}টা`);
+            L.push(`• খোলা PR: ${bn(prs.length)}টা (৭ দিনের বেশি পুরোনো ${bn(stale.length)}টা)`);
+            if (codeAlerts) L.push(`• CodeQL নিরাপত্তা সতর্কতা: ${bn(codeAlerts.length)}টা`);
+            if (red.length) {
+              L.push('', '<b>🔴 এখন ব্যর্থ অবস্থায় থাকা চেক:</b>');
+              for (const r of red.slice(0, 10)) L.push(`• ${link(r.html_url, r.name)}`);
+              if (red.length > 10) L.push(`• …আরও ${bn(red.length - 10)}টা`);
+            }
+            if (commits.length) {
+              L.push('', '<b>📝 আজকের commit:</b>');
+              for (const c of commits.slice(0, 8)) L.push(`• ${link(c.html_url, c.commit.message.split('\n')[0].slice(0, 80))}`);
+              if (commits.length > 8) L.push(`• …আরও ${bn(commits.length - 8)}টা`);
+            }
+            if (prs.length) {
+              L.push('', '<b>🔀 খোলা PR:</b>');
+              for (const p of prs.slice(0, 8)) L.push(`• ${link(p.html_url, `#${p.number} ${p.title.slice(0, 70)}`)} — ${bn(days(p.created_at))} দিন`);
+            }
+            if (codeAlerts && codeAlerts.length) {
+              L.push('', '<b>🛡 নিরাপত্তা সতর্কতা:</b>');
+              for (const a of codeAlerts.slice(0, 5)) L.push(`• ${link(a.html_url, `${a.rule?.severity || ''} ${a.rule?.description || a.rule?.id}`)}`);
+            }
+            L.push('', red.length ? '👉 আগে লাল চেকগুলো ঠিক করুন।' : '✅ আজ কোনো জরুরি কাজ নেই।');
+
+            let msg = L.join('\n');
+            if (msg.length > 4000) msg = L.slice(0, 25).join('\n') + '\n…';
+            await core.summary.addRaw(msg.replace(/\n/g, '<br>')).write();
+
+            const token = process.env.TG_TOKEN, chat = process.env.TG_CHAT;
+            if (!token || !chat) { core.warning('DAILY_REPORT_TELEGRAM_BOT_TOKEN / DAILY_REPORT_TELEGRAM_CHAT_ID not set — report written to job summary only.'); return; }
+            const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+              method: 'POST', headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ chat_id: chat, text: msg, parse_mode: 'HTML', disable_web_page_preview: true }),
+            });
+            if (!res.ok) core.setFailed(`Telegram send failed: HTTP ${res.status}`);
+            else core.info('Report sent to Telegram.');
