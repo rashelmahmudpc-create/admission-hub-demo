@@ -142,6 +142,13 @@ jobs:
           ! test -e dist/voice-agent-gate.mjs
           ! test -e dist/onboarding-welcome-hero.webp
           ! test -e dist/onboarding-personal-hero.webp
+      - name: Minify the Pages bundle (dist only — source stays readable)
+        run: |
+          set -eu
+          npm install --no-save --no-audit --no-fund esbuild@0.25.9
+          node scripts/minify-dist.mjs dist
+          # Every minified script must still parse; a single bad file stops the deploy.
+          find dist \( -name '*.js' -o -name '*.mjs' \) -print0 | xargs -0 -n1 node --check
       - name: Deploy Pages UI
         uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd # v3
         with:
