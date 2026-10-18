@@ -17,7 +17,7 @@ test('the core prompt is the AdmissionSky v2 memory', () => {
   assert.ok(p.includes('Always reply in Bengali'));
   assert.ok(!p.includes('You are Admission Hub AI'));
   assert.ok(p.length < 9000, 'memory stays inside the token budget');
-  assert.equal(SYSTEM_PROMPT_V, 'sys-sky-v3-live-tools');
+  assert.equal(SYSTEM_PROMPT_V, 'sys-sky-v3-1-live-tools');
 });
 
 test('the old v1 prompt is kept, deprecated, never deleted', () => {

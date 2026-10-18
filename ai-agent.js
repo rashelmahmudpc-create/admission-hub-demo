@@ -38,7 +38,7 @@ import { selectHistory, capRecalledTurns } from './ai-history-trim.mjs';
 import { healthyChain, failureMarker, isEntryHealthy, rankChainByModelHealth } from './ai-provider-health.mjs';
 
 export const AGENT_VERSION = 'agent-f1';
-export const SYSTEM_PROMPT_V = 'sys-sky-v3-live-tools';
+export const SYSTEM_PROMPT_V = 'sys-sky-v3-1-live-tools';
 
 /* ── M4 Context Engine feature flag (default off) ------------------------ */
 export function contextEngineEnabled(env) {
@@ -1030,7 +1030,9 @@ export async function agentChat(request, env, uid, opts = {}) {
      by the tools alone: no model call and no AI limit used. Never during a
      running mock exam. Kill switch: PUB_KV 'sky:agent-tools' = "off". */
   const toolText = String((v.messages[v.messages.length - 1] || {}).content || '');
-  let toolPlan = examMode ? [] : planServerTools(toolText, { quizMode, hasImage: v.messages.some(m => m.image), searchOn: !!(env && env.TAVILY_API_KEY) });
+  /* the student's previous turn, so a short follow-up keeps the search topic */
+  const prevUser = v.messages.slice(0, -1).reverse().find(m => m.role === 'user');
+  let toolPlan = examMode ? [] : planServerTools(toolText, { prevText: prevUser ? String(prevUser.content || '') : '', firstName: (sanitizeProfileContext(body && body.context && body.context.profile) || {}).firstName, quizMode, hasImage: v.messages.some(m => m.image), searchOn: !!(env && env.TAVILY_API_KEY) });
   if (toolPlan.length && !(await toolsEnabled(env && env.PUB_KV))) toolPlan = [];
   if (toolPlan.length && isSimplePlan(toolPlan, toolText)) {
     const prof = sanitizeProfileContext(body && body.context && body.context.profile) || {};

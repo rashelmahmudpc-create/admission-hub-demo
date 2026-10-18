@@ -20,6 +20,8 @@
  */
 import { loadAppFeatures, renderAppFeatures, isAppFeatureQuestion } from './sky-app-features.mjs';
 import { isNewsQuestion, cleanSearchQuery, webSearch, renderSearchContext } from './sky-web-search.mjs';
+import { searchQueryFor, renderSearchFailure } from './sky-web-search.mjs';
+export { searchQueryFor, renderSearchFailure } from './sky-web-search.mjs';
 export { isNewsQuestion, cleanSearchQuery, webSearch, renderSearchContext, takeSearchQuota, SEARCH_KV_SWITCH, SEARCH_DAILY_DEFAULT } from './sky-web-search.mjs';
 
 import { isTimeQuestion, getDateTime, renderDateTime } from './sky-time.mjs';
@@ -134,8 +136,8 @@ export function planServerTools(text, ctx = {}) {
      the live Dhaka clock and never goes to the web. */
   const timeQ = !ctx.quizMode && isTimeQuestion(t);
   if (timeQ) plan.push({ name: 'get_datetime', args: { text: t.slice(0, 200) } });
-  if (!timeQ && ctx.searchOn && !ctx.quizMode && !ctx.hasImage && isNewsQuestion(t)) {
-    const query = cleanSearchQuery(t, ctx.firstName);
+  if (!timeQ && ctx.searchOn && !ctx.quizMode && !ctx.hasImage) {
+    const query = searchQueryFor(t, ctx.prevText, ctx.firstName);
     if (query) plan.push({ name: 'web_search', args: { query } });
   }
   return plan.slice(0, LIMITS.maxTools);
@@ -241,12 +243,14 @@ export function renderSimpleAnswer(results, firstName) {
 export function renderToolContext(results) {
   const out = [];
   for (const r of results) {
+    if (!r.ok && r.name === 'web_search') { out.push(renderSearchFailure(r)); continue; }
     if (!r.ok) continue;
     if (r.name === 'get_app_features') out.push(renderAppFeatures(r.data));
     else if (r.name === 'calculate') out.push('TOOL calculate: ' + r.expression + ' = ' + r.value + ' (exact; use this number).');
     else if (r.name === 'get_exam_history' && !r.empty) out.push('TOOL get_exam_history (this student only): exams ' + r.exams + ', questions ' + r.questions + ', accuracy ' + r.accuracy + '%, streak ' + r.streak + ', mistakes ' + r.mistakes + '.');
     else if (r.name === 'get_datetime') out.push('TOOL get_datetime (live clock, Asia/Dhaka): ' + r.weekday + ', ' + r.date + ', ' + r.bangla + ', ' + r.time + (r.target ? '; ' + r.target + ' is ' + r.daysLeft + ' day(s) from today' : '') + '. Use exactly these values.');
     else if (r.name === 'web_search' && r.results && r.results.length) out.push(renderSearchContext(r));
+    else if (r.name === 'web_search') out.push(renderSearchFailure(r));
     else if (r.name === 'analyze_weak_topics' && !r.empty) out.push('TOOL analyze_weak_topics (this student only): ' + r.weak.map((w) => w.name + ' ' + w.accuracy + '%').join(', ') + '.');
   }
   return out.length ? out.join('\n') : '';
