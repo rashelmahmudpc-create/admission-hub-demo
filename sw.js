@@ -3,7 +3,7 @@ const CACHE_PREFIX = 'admission-hub-shell-';
 // hold user data; this one holds exactly one image and is trimmed on write.
 const AVATAR_CACHE = 'admission-hub-avatar-v1';
 
-const BUILD_ID = 'v361-sky-kb-layout';
+const BUILD_ID = 'v362-sky-instructions';
 const CACHE_NAME = `${CACHE_PREFIX}${BUILD_ID}`;
 const VERSION_HEADER = 'X-Admission-Hub-Build';
 const DOCUMENT_NETWORK_TIMEOUT_MS = 2500;
@@ -43,7 +43,7 @@ const APP_SHELL = [
   './welcome-story.css?v=welcome-story-20261018-v3',
   './welcome-story.js?v=welcome-story-20261018-v3',
   './academic-catalog.js?v=acad-cat-v2',
-  './profile-ui.js?v=profile-v19-avatar-cache',
+  './profile-ui.js?v=profile-v20-sky-instr',
   './profile-ui.css?v=profile-v15-uni-tap',
   './profile-v2.html?v=profile-v2-6',
   './profile-v2-mount.js?v=profile-v2-6',
@@ -57,7 +57,7 @@ const APP_SHELL = [
   './sky-faq-en.js?v=faq1',
   './sky-faq-sci.js?v=faq1',
   './sky-faq-gk.js?v=faq1',
-  './ai-agent-chat.js?v=agent-f1-ui-skyv11',
+  './ai-agent-chat.js?v=agent-f1-ui-skyv12',
   './question-engine.js?v=qe1',
   './question-engine-panel.js?v=qe1',
   './notification-fcm.js?v=fcm-p3-v15',
@@ -92,7 +92,7 @@ const APP_SHELL = [
 // A truncated/corrupt download is NEVER written to the shell cache.
 const ASSET_DIGESTS = {
 /* sw-manifest:start */
-  "./index.html": "8545c10658ae4e89039f21e53b2fea7ddf009c2b0168e8d2a46c26b7ffabb13b",
+  "./index.html": "2d51dc3adb6fcc86b976ad37259aa56dec42df218ba25f38f709daba7ebac0fd",
   "./manifest.json": "6dcf0e0c6f7671750549e53558ba8b9f0c2c83b0c6759072a6b5e2276331f491",
   "./manifest.webmanifest": "abcd26174710f6df3e183889a5a9da182f73ee8cdcc543b43db8fb4070cad54f",
   "./dashboard-v2.css?v=dash2f13-theme": "4541bc1e65fd158c593443562975400d128b8f1d3b636595df3c235b99e8cced",
@@ -109,7 +109,7 @@ const ASSET_DIGESTS = {
   "./welcome-story.css?v=welcome-story-20261018-v3": "4b589890fdf457149113e236320f94014b5cc2845c190b1bdf853f1f2963073d",
   "./welcome-story.js?v=welcome-story-20261018-v3": "893a1d0d2ce8683bd802181bffc3e0496994a3faaf6ed27e968b2d19a21afa91",
   "./academic-catalog.js?v=acad-cat-v2": "75e7b80663d41330658c948ad1d4829d49f5c9abed581350582cfeace06d5b32",
-  "./profile-ui.js?v=profile-v19-avatar-cache": "90a9c2e278f871a931a0952a20329d8400a162bd6269d9d96152fe5816b8c383",
+  "./profile-ui.js?v=profile-v20-sky-instr": "4db65994d9b9c7ac0f7cfb1dcf57118cc1d016314f8865614b58dba8de9993e7",
   "./profile-ui.css?v=profile-v15-uni-tap": "6408a4b7ac8acf6845cd0148c58377a4953c8ff879d30b2c520eafae0314b98a",
   "./profile-v2.html?v=profile-v2-6": "00dce1ac58ca9ec4ff4f6672c054e4874915ce6ce66c104781cab459b3ae456e",
   "./profile-v2-mount.js?v=profile-v2-6": "967e7d81fbf821c06ce5b1ddd867ab4fa5e882e37ef3aa1f0c445e0c623f3ec0",
@@ -123,7 +123,7 @@ const ASSET_DIGESTS = {
   "./sky-faq-en.js?v=faq1": "4923f584193c9569329b001b20867f2954b93b8e232a704e2effd632f25bb833",
   "./sky-faq-sci.js?v=faq1": "f574bcdb1441678c6ae4cbf6be8baa73d5cdd06a24bccfab712e241a29b6a42b",
   "./sky-faq-gk.js?v=faq1": "e406ee8982e255881ff5a6c854c19dc0c4f8004d6e4cc341a2c114bf678ee492",
-  "./ai-agent-chat.js?v=agent-f1-ui-skyv11": "815418efa977e2358c0db98bfb6486d7713f36be67ca64e0dfb5eba886dde021",
+  "./ai-agent-chat.js?v=agent-f1-ui-skyv12": "c2050044e313f0f68275b6165146ca89dcd7912c0f3e4674ffbd56747111b0d7",
   "./question-engine.js?v=qe1": "db404fefd97bea27dad177748bafb0a9ba7d87bedca094e3da795c5b77946cd4",
   "./question-engine-panel.js?v=qe1": "33376e371654d575484194b5fcf8e486f4e3329c13e5330ff8619caab0399ec4",
   "./notification-fcm.js?v=fcm-p3-v15": "3b1880bc1ab5b9f91cf844b021369f2431eae099175873ab4d7eb018370318ee",
