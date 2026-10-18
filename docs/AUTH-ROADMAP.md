@@ -23,14 +23,17 @@
 | Email Gateway | `EmailGatewayCoordinator` (Durable Object) |
 | মূল API | `/api/auth/v1/signup`, `/email-ownership/start`, `/email-ownership/verify`, `/password-reset` |
 | Bot আটকানো | `TURNSTILE_SECRET_KEY` |
+| OTP log / alert | `observability/otp-delivery-log.mjs` (`otp_delivery`, `otp_request`), `observability/otp-alert.mjs` (Telegram) |
 
 ## ⚠️ যা জানা আছে
 - Signup করলেই Firebase এ account তৈরি হয়, OTP যাচাইয়ের আগেই।
 - Forgot password এ শুধু Firebase link; Descope যুক্ত নেই।
-- OTP পাঠাতে server এর ~৪ সেকেন্ড; কোন provider দিয়ে গেল log এ নেই।
+- OTP পাঠাতে server এর ~৪ সেকেন্ড; provider এর নাম আর সময় এখন log এ আসে (PR #104)।
 - Temp mail আটকানো আর অনুমোদিত domain তালিকা ঠিক আছে — হাত দেবে না।
 - Worker Free এর ৬৪ variable সীমায় আছে — নতুন var যোগ করা যাবে না (secret বা code default ব্যবহার করো)।
+- `admission-gk-staging` এ একটাও secret নেই (provider key, TG_BOT_TOKEN কিছুই না) — staging এ আসল OTP বা Telegram alert test করা যায় না, শুধু unit test।
 - `wrangler.staging.toml` এ `AI_STATE` Durable Object binding নেই (production এ আছে) — staging test এ খেয়াল রাখো।
+- Sandbox এ `npm ci` চালাবে না (memory শেষ হয়ে আটকে যায়); bundle বড় (~১.৫ MB) হলে branch এ CI দিয়ে build করাও।
 
 ---
 
@@ -38,8 +41,8 @@
 
 ### ধাপ ০: সব কিছু দেখতে পাওয়া 🟡
 - [x] ✅ `wrangler.toml` এ log স্থায়ীভাবে চালু — `[observability] enabled = true` (PR #101), staging আর production দুটোতেই deploy হয়ে log আসা যাচাই করা হয়েছে
-- [ ] প্রতিটা OTP আর email এর জন্য log: provider এর নাম, কত সময় লাগল, ফল কী
-- [ ] কোনো provider ব্যর্থ হলে বা ৩০ সেকেন্ডের বেশি দেরি হলে Telegram এ alert
+- [x] ✅ প্রতিটা OTP আর email এর জন্য log: provider এর নাম, কত সময় লাগল, ফল কী — `otp_delivery` / `otp_request` (PR #104, staging + production এ deploy)। Deploy এর পরে এখনো কোনো OTP পাঠানো হয়নি, তাই live log প্রথম OTP এর পরে দেখা বাকি
+- [ ] 🟡 কোনো provider ব্যর্থ হলে বা ৩০ সেকেন্ডের বেশি দেরি হলে Telegram এ alert — code + test তৈরি (`observability/otp-alert.mjs`, PR খোলা), merge আর production deploy এর অপেক্ষায়
 
 ### ধাপ ১: OTP যাচাইয়ের পরে account তৈরি ⬜
 - [ ] Signup ক্রম: নাম → জন্ম তারিখ → স্কুল/কলেজ → email → password; শুধু সাময়িকভাবে রাখা (১০ মিনিট, DO বা KV)
@@ -92,8 +95,8 @@
 ---
 
 ## 📝 শেষ অবস্থা
-- **শেষ session:** ১৮ অক্টোবর ২০২৬ (৩য়)
-  1. PR #101 merge হয়েছে; `deploy-staging.yml` আর `deploy-pages-worker.yml` দুটোই সফল।
-  2. Telemetry তে staging আর production দুটোরই log আসছে — ধাপ ০ এর প্রথম কাজ ✅।
-  3. Code এ কোনো পরিবর্তন হয়নি; শুধু config।
-- **পরের কাজ:** ধাপ ০ — প্রতিটা OTP/email এর log (provider, সময়, ফল), তারপর Telegram alert।
+- **শেষ session:** ১৮ অক্টোবর ২০২৬ (৪র্থ)
+  1. PR #104 (OTP log) main এ merge আর staging + production এ deploy হয়েছে — যাচাই করা হলো; deploy এর পরে কোনো OTP আসেনি, তাই live log এখনো দেখা যায়নি।
+  2. নতুন `observability/otp-alert.mjs`: provider ব্যর্থ, সব ব্যর্থ, বা ৩০ সেকেন্ডের বেশি হলে Telegram (`TG_BOT_TOKEN`/`TG_CHAT_ID`) এ alert; প্রতি provider ১৫ মিনিটে একবার; email/OTP কখনো যায় না। নতুন var যোগ হয়নি।
+  3. Test pass (নতুন ৬টা; পুরোনো ২টা ব্যর্থ test আগের মতোই, এই কাজের সাথে সম্পর্ক নেই); bundle CI তে build হয়ে local build এর সাথে হুবহু মিলেছে।
+- **পরের কাজ:** মালিকের "হ্যাঁ" পেলে PR merge → `deploy-staging.yml` → `deploy-pages-worker.yml` → একটা আসল OTP পাঠিয়ে log আর alert যাচাই → ধাপ ০ ✅ → ধাপ ১।
