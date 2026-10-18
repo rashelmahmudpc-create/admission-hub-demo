@@ -52,6 +52,11 @@ await t('W8. a failing search never breaks the run', async () => {
   const r = await T.runTools([[{ name: 'web_search', args: { query: 'সর্বশেষ খবর' } }, { name: 'calculate', args: { expression: '2+2' } }]], { env, kv: kvOf() });
   return r.results.length === 2 && !r.results[0].ok && r.results[1].ok;
 });
+await t('W10. admission date / schedule questions search; history and study questions do not', () => {
+  const on = (q) => T.planServerTools(q, { searchOn: true }).some(p => p.name === 'web_search');
+  return ['ঢাবি ভর্তি পরীক্ষা কবে?', 'ঢাকা বিশ্ববিদ্যালয়ের ভর্তি পরীক্ষার তারিখ কবে', 'ঢাবি ভর্তি পরীক্ষার সময়সূচী', 'গুচ্ছ আবেদন কবে শুরু', 'when is the DU admission exam'].every(on)
+    && !['পলাশীর যুদ্ধ কবে হয়েছিল?', 'কবে আমার পরীক্ষা ছিল', 'সমাস কাকে বলে', 'বাংলাদেশের রাজধানী কোথায়'].some(on);
+});
 await t('W9. web_search is never a no-model simple plan', () => !T.isSimplePlan([{ name: 'web_search', args: { query: 'x' } }], 'সর্বশেষ খবর'));
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
