@@ -1,0 +1,46 @@
+name: tmp-sw-sync
+# One-shot helper for branch fix/sw-version-sync only. Deleted right after it runs.
+on:
+  push:
+    branches: ['fix/sw-version-sync']
+permissions:
+  contents: write
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Apply fix
+        run: |
+          V=$(grep -o "const BUILD_ID = '[^']*'" sw.js | cut -d"'" -f2)
+          echo "sw.js BUILD_ID=$V"
+          sed -i "s/const expectedSwVersion = 'v357-email-allowlist';/const expectedSwVersion = '$V';/; s/const cur = 'admission-hub-shell-v357-email-allowlist';/const cur = 'admission-hub-shell-$V';/" index.html
+          python3 - <<'EOF'
+          p='account-retirement.test.mjs'; s=open(p).read()
+          old='''  SW.includes("const BUILD_ID = 'v357-email-allowlist'") &&
+            H.includes("const expectedSwVersion = 'v357-email-allowlist'") &&
+            H.includes('admission-hub-shell-v357-email-allowlist'));'''
+          old='\n'.join(l.strip() and ('  '+l.strip()) for l in old.split('\n'))
+          new='''  (() => {
+              // Read the live build id from sw.js so a normal BUILD_ID bump never needs a test edit,
+              // but index.html must always follow it (a stale value deletes the live offline shell).
+              const m = SW.match(/const BUILD_ID = '([^']+)'/);
+              return !!m && H.includes(`const expectedSwVersion = '${m[1]}'`) && H.includes(`admission-hub-shell-${m[1]}`);
+            })());'''
+          lines=new.split('\n'); new='\n'.join([lines[0]]+['    '+l.strip() if i<4 else '  '+l.strip() for i,l in enumerate(lines[1:])])
+          assert old in s, 'old block not found'
+          s=s.replace(old,new); open(p,'w').write(s)
+          EOF
+          git diff --stat
+          node account-retirement.test.mjs | tail -3
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html account-retirement.test.mjs
+          git commit -m "fix(sw): index.html follows sw.js BUILD_ID again (stale v357 deleted the live offline shell); guard test reads BUILD_ID instead of a pinned value"
+          git push origin HEAD:fix/sw-version-sync
