@@ -215,6 +215,9 @@ assert 'https://' not in CSS, 'design CSS must not fetch anything'
 # back to the mascot otherwise. The URL is re-read from the host a few times
 # after boot, because the profile can finish loading just after the frame
 # paints; each read is a localStorage lookup, so it costs no network.
+# The avatar is also the fastest way into the Profile tab: dashboard-v2.css
+# already carried .dv2-avatar-tap/.dv2-avatar-img, but nothing ever applied
+# them, so the photo was decorative.
 JS = replace(JS,
     "$('#avatar').innerHTML=mascot(false);",
     "function avatarUrl(){var u=null;try{u=(parent.__ahAvatarUrl&&parent.__ahAvatarUrl())||null}catch(_){}\n"
@@ -222,16 +225,24 @@ JS = replace(JS,
     "if(!u)return null;try{if(u.charAt(0)==='/')return parent.location.origin+u}catch(_){}\n"
     "return u}\n"
     "function paintAvatar(){var el=$('#avatar');if(!el)return;var u=avatarUrl();\n"
-    "var want=u?'<img alt=\"\" src=\"'+u+'\">':mascot(false);\n"
+    "var want=u?'<img class=\"dv2-avatar-img\" alt=\"\" src=\"'+u+'\">':mascot(false);\n"
     "if(el.getAttribute('data-src')!==(u||'')){el.setAttribute('data-src',u||'');el.innerHTML=want}}\n"
     "paintAvatar();\n"
     "var avatarTries=0,avatarTick=setInterval(function(){paintAvatar();\n"
-    "if(++avatarTries>=8)clearInterval(avatarTick)},600);")
+    "if(++avatarTries>=8)clearInterval(avatarTick)},600);\n"
+    "(function(){var el=$('#avatar');if(!el)return;el.classList.add('dv2-avatar-tap');\n"
+    "el.addEventListener('click',function(){var path='my-profile';\n"
+    "try{if(parent.__dv3Action&&parent.__dv3Action('nav.profile'))return}catch(_){}\n"
+    "try{if(parent.AdmissionNavigation&&parent.AdmissionNavigation.openTab)parent.AdmissionNavigation.openTab(path)}catch(_){}});\n"
+    "el.setAttribute('role','button');el.setAttribute('aria-label','প্রোফাইল খোলো')})();")
 # The photo must fill the rounded square the mascot sat in, or it renders at its
-# natural pixel size and bursts the header.
+# natural pixel size and bursts the header. .dv2-avatar-img is absolutely
+# positioned, so .avatar must establish the containing block or the photo
+# escapes to the nearest positioned ancestor and covers the page.
 CSS = replace(CSS,
     ".avatar .mascot{width:42px;margin-bottom:-4px}",
     ".avatar .mascot{width:42px;margin-bottom:-4px}\n"
+    ".avatar{position:relative}\n"
     ".avatar img{width:100%;height:100%;object-fit:cover;display:block}")
 
 # ---- PATCH 9: header clears the phone's status bar and blends with it -----
