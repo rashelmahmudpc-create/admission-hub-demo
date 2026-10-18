@@ -108,9 +108,12 @@ await test('content hydration is public and account-independent',
   !/AHAuth|ahPubToken|authHeaders|Authorization/.test(CLOUD));
 
 await test('service-worker build and HTML registration are synchronized',
-  SW.includes("const BUILD_ID = 'v357-email-allowlist'") &&
-  H.includes("const expectedSwVersion = 'v357-email-allowlist'") &&
-  H.includes('admission-hub-shell-v357-email-allowlist'));
+  (() => {
+    // Read the live build id from sw.js so a normal BUILD_ID bump never needs a test edit,
+    // but index.html must always follow it (a stale value deletes the live offline shell).
+    const m = SW.match(/const BUILD_ID = '([^']+)'/);
+    return !!m && H.includes(`const expectedSwVersion = '${m[1]}'`) && H.includes(`admission-hub-shell-${m[1]}`);
+  })());
 await test('service-worker shell cannot cache retired assets', !retiredAssetRe.test(SW));
 await test('premium account and institution assets use synchronized cache-busting versions',
   ['account-access.css?v=20261018-allowlist-v1', 'account-access.js?v=20261018-logout-otp-v1', 'institutions-bd.js?v=bd-institutions-v2']
