@@ -21,7 +21,7 @@ const req = (content, ctx) => new Request('https://x/api/ai/chat', { method: 'PO
 const stages = (text) => [...text.matchAll(/event: stage\ndata: (.*)\n/g)].map(m => JSON.parse(m[1]).stage);
 
 console.log('runner');
-await t('T1. 10 tools declared, 5 of them in the app', () => T.TOOL_NAMES.length === 10 && T.CLIENT_TOOLS.length === 5 && T.CLIENT_TOOLS.every(n => T.TOOL_NAMES.includes(n)));
+await t('T1. 11 tools declared, 5 of them in the app', () => T.TOOL_NAMES.length === 11 && T.CLIENT_TOOLS.length === 5 && T.CLIENT_TOOLS.every(n => T.TOOL_NAMES.includes(n)));
 await t('T2. limits: 5 tools, 3 steps, 20 s, 3 s per tool', () => T.LIMITS.maxTools === 5 && T.LIMITS.maxSteps === 3 && T.LIMITS.budgetMs === 20000 && T.LIMITS.perToolMs === 3000);
 await t('T3. never more than 5 tools, never more than 3 steps', async () => {
   const c = { name: 'calculate', args: { expression: '1+1' } };
