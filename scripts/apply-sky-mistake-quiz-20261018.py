@@ -54,8 +54,8 @@ t = sub(t, "version: 'sky-tools-client-v1'", "version: 'sky-tools-client-v2'")
 wr('sky-tools-client.js', t)
 
 r = rd('sky-recall.mjs')
-r = sub(r, "chips.push({ label: '🔁 ভুলগুলো ঝালাই', go: 'mistake-bank' });",
-           "chips.push({ label: '🔁 ভুল থেকে কুইজ', q: 'আমার ভুলগুলো থেকে ৫টা প্রশ্নে কুইজ দাও' });")
+r = sub(r, "buttons.push({ label: '🔁 ভুলগুলো ঝালাই করি', prompt: 'গত দুই দিনে আমার কয়েকটা প্রশ্ন ভুল হয়েছে — Mistake Bank থেকে কীভাবে রিভিশন করব, ধাপে ধাপে বলো' });",
+           "buttons.push({ label: '🔁 ভুল থেকে কুইজ', prompt: 'আমার ভুলগুলো থেকে ৫টা প্রশ্নে কুইজ দাও' });")
 wr('sky-recall.mjs', r)
 
 for f, a, b in [
@@ -63,13 +63,5 @@ for f, a, b in [
     ('sw.js', 'sky-tools-client.js?v=tools1', 'sky-tools-client.js?v=tools2'),
     ('sky-agent-tools.test.mjs', 'sky-tools-client\\.js\\?v=tools1', 'sky-tools-client\\.js\\?v=tools2')]:
     s = rd(f); s = sub(s, a, b, 99); wr(f, s)
-for f in ['index.html', 'sw.js', 'account-retirement.test.mjs', 'p11-dashboard-v2.test.mjs', 'p21-ai-agent-ui.test.mjs', 'startup-ai-regression.test.mjs']:
-    s = rd(f)
-    if 'agent-f1-ui-skyv10' not in s: sys.exit('chat token missing in ' + f)
-    wr(f, s.replace('agent-f1-ui-skyv10', 'agent-f1-ui-skyv11'))
-s = rd('sw.js'); s = sub(s, "const BUILD_ID = 'v359-sky-recall';", "const BUILD_ID = 'v360-sky-mistake-quiz';"); wr('sw.js', s)
-
-c = rd('ai-agent-chat.js')
-c = sub(c, "/* Sky recall (owner plan step 2): on chat open", "/* Sky recall (owner plan step 2; step 3 = quiz from own mistakes): on chat open")
-wr('ai-agent-chat.js', c)
+s = rd('sw.js'); s = sub(s, "const BUILD_ID = 'v360-sky-recall-v2';", "const BUILD_ID = 'v361-sky-mistake-quiz';"); wr('sw.js', s)
 print('sky mistake quiz applied')

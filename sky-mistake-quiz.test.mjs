@@ -64,10 +64,10 @@ test('ordinary questions are not taken by this tool', () => {
   }
 });
 
-test('the chat-open reminder offers this quiz (not just a page link)', () => {
+test('the chat-open reminder button runs this quiz (real questions, not an AI talk)', () => {
   const r = buildRecall({ records: [], stats: {}, recent: { mistakes: 3, since: NOW - 2 * H }, now: NOW });
-  assert.equal(r.chips[0].q, Q);
-  assert.equal(S.run(r.chips[0].q, {}).tools[0], 'mistake_quiz');
+  assert.equal(r.button.prompt, Q);
+  assert.equal(S.run(r.button.prompt, {}).tools[0], 'mistake_quiz');
 });
 
 test('small talk and shared answers do not intercept the button text', async () => {
