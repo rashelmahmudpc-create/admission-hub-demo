@@ -1,7 +1,8 @@
 name: Apply study-lock notice to AGENTS.md 2026-10-19
 
-# Prepends the STUDY LOCK block (from CLAUDE.md) to the top of AGENTS.md and
-# commits back to the SAME branch. Idempotent. Never touches main, no deploy.
+# Puts the STUDY LOCK block (from CLAUDE.md) at the top of AGENTS.md, replacing
+# an older block if present, and commits back to the SAME branch. Idempotent.
+# Never touches main, no deploy. (rev 2: owner-authored notice)
 
 on:
   push:
@@ -22,20 +23,17 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: chore/study-lock
-      - name: Prepend block
+      - name: Put block at top of AGENTS.md
         run: |
           set -eu
           python3 - <<'PY'
           import pathlib, re
-          src = pathlib.Path('CLAUDE.md').read_text()
-          block = re.search(r'<!-- STUDY-LOCK:START -->.*?<!-- STUDY-LOCK:END -->', src, re.S).group(0)
-          p = pathlib.Path('AGENTS.md'); t = p.read_text()
-          if '<!-- STUDY-LOCK:START -->' in t:
-              print('already present')
-          else:
-              p.write_text(block + '\n\n' + t); print('prepended')
+          pat = re.compile(r'<!-- STUDY-LOCK:START -->.*?<!-- STUDY-LOCK:END -->\n*', re.S)
+          block = pat.search(pathlib.Path('CLAUDE.md').read_text()).group(0).rstrip() + '\n\n'
+          p = pathlib.Path('AGENTS.md'); t = pat.sub('', p.read_text(), count=1)
+          p.write_text(block + t.lstrip('\n')); print('block at top')
           PY
-          head -c 300 AGENTS.md
+          head -c 200 AGENTS.md
       - name: Commit and push to the feature branch
         run: |
           set -eu
@@ -43,6 +41,6 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add AGENTS.md
           if git diff --cached --quiet; then echo 'Nothing to commit.'; else
-            git commit -m 'docs(agents): STUDY LOCK notice at top of AGENTS.md' -m 'Applied by apply-study-lock-agents-20261019.yml. No deploy.'
+            git commit -m 'docs(agents): owner-authored STUDY LOCK notice at top of AGENTS.md' -m 'Applied by apply-study-lock-agents-20261019.yml. No deploy.'
             git push origin HEAD:chore/study-lock
           fi
