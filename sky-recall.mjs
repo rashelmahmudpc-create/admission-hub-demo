@@ -54,7 +54,7 @@ export function buildRecall(input = {}) {
     const when = whenWord(Number(recent.since) || 0, now);
     const lead = when === 'আজ' ? 'আজ' : when === 'গতকাল' ? 'গতকাল থেকে' : 'সম্প্রতি';
     parts.push(lead + ' ' + bn(wrong) + 'টা প্রশ্নে ভুল হয়েছে — আগে ওগুলো একবার ঝালিয়ে নেবে?');
-    buttons.push({ label: '🔁 ভুলগুলো ঝালাই করি', prompt: 'গত দুই দিনে আমার কয়েকটা প্রশ্ন ভুল হয়েছে — Mistake Bank থেকে কীভাবে রিভিশন করব, ধাপে ধাপে বলো' });
+    buttons.push({ label: '🔁 ভুল থেকে কুইজ', prompt: 'আমার ভুলগুলো থেকে ৫টা প্রশ্নে কুইজ দাও' });
     kinds.push('mistakes');
   }
 

@@ -7,6 +7,7 @@
      grade_quiz            "১-ক ২-খ ৩-গ" right after a quiz
      knowledge_lookup      "সমাস সম্পর্কে তথ্য খুঁজে দাও"
      open_page             "প্রশ্নব্যাংক খোলো"
+     mistake_quiz          "আমার ভুলগুলো থেকে ৫টা প্রশ্নে কুইজ দাও" (step 3, 2026-10-18)
    At most 5 tools per question. A question the bank cannot answer returns null
    and goes to the AI as before. */
 (function (root) {
@@ -18,7 +19,8 @@
   const norm = (s) => String(s == null ? '' : s).normalize('NFC').toLowerCase().replace(/[\u200c\u200d]/g, '').replace(/[?？!।,.:;"“”‘’'`()[\]{}]+/g, ' ').replace(/\s+/g, ' ').trim();
   const LABEL = {
     search_question_bank: 'প্রশ্নব্যাংকে খুঁজছি', make_quiz: 'কুইজ বানাচ্ছি', grade_quiz: 'তোমার উত্তর মিলিয়ে দেখছি',
-    knowledge_lookup: 'জমানো জ্ঞানভান্ডারে খুঁজছি', open_page: 'পেজের পথ বের করছি'
+    knowledge_lookup: 'জমানো জ্ঞানভান্ডারে খুঁজছি', open_page: 'পেজের পথ বের করছি',
+    mistake_quiz: 'তোমার ভুল-ব্যাংক থেকে প্রশ্ন বাছছি'
   };
   const cache = () => (typeof root.CACHE !== 'undefined' && root.CACHE) || (typeof CACHE !== 'undefined' ? CACHE : null) || {};
   const nameOf = (list, id) => { const r = (list || []).find((x) => x && String(x.id) === String(id)); return r ? String(r.name || '') : ''; };
@@ -41,6 +43,8 @@
   const RE_QUIZ = /(কুইজ|quiz|এমসিকিউ|mcq|পরীক্ষা নাও|প্রশ্ন দাও|প্রশ্ন করো)/i;
   const RE_SEARCH = /(প্রশ্ন\s*(খুঁজ|খোঁজ|দেখাও|বের কর)|question.*(search|find)|search.*question)/i;
   const RE_LOOKUP = /(সম্পর্কে (তথ্য|জানতে)|তথ্য খুঁজ|খুঁজে (দেখ|দাও)|lookup|look up)/i;
+  const RE_MQ_A = /(ভুল|mistake)/i;
+  const RE_MQ_B = /(কুইজ|quiz|ঝালা|রিভিশন|revise|revision|অনুশীলন|practice|এমসিকিউ|mcq)/i;
   const RE_GRADE = /^(?:\s*[0-9০-৯]{1,2}\s*[-.)।:=]?\s*[কখগঘঙচabcdefABCDEF]\s*[,;\s]*){2,20}$|^\s*(?:[কখগঘঙচ]\s*[,;\s]+){1,19}[কখগঘঙচ]\s*$/;
 
   function topicMatch(text) {
@@ -143,6 +147,33 @@
     return null;
   }
 
+  /* Step 3 (owner 2026-10-18): a quiz from the student's own mistakes on this
+     phone — newest first, mastered ones skipped. The questions are the real ones
+     the student got wrong, so nothing is invented. Read-only. */
+  function mistakeQuiz(text) {
+    if (!RE_MQ_A.test(text) || !RE_MQ_B.test(text)) return null;
+    const c = cache();
+    const byId = {}; for (const q of (c.questions || [])) if (q && q.id != null) byId[String(q.id)] = q;
+    const rows = [];
+    for (const m of (c.mistakes || [])) {
+      if (!m || m.mastered === true || m.revisionStatus === 'mastered') continue;
+      const src = byId[String(m.questionId)] || {};
+      const options = Array.isArray(m.options) && m.options.length >= 2 ? m.options : src.options;
+      const question = m.question || src.question;
+      let a = Number(m.correctAnswerIndex);
+      if (!(isFinite(a) && a >= 0)) a = src.question ? ansIndex(src) : -1;
+      if (!(isFinite(a) && a >= 0) && Array.isArray(options)) a = options.indexOf(m.correctAnswer);
+      if (!question || !Array.isArray(options) || options.length < 2 || !(a >= 0 && a < options.length)) continue;
+      rows.push({ id: m.questionId != null ? m.questionId : m.id, q: String(question).trim(), options: options.slice(0, 6).map((o) => String(o)), answer: a, explanation: String(m.explanation || src.explanation || '').trim().slice(0, 300), t: Number(m.lastWrongAt || m.time || 0) });
+    }
+    if (!rows.length) return { text: '🎉 এখন তোমার ভুল-ব্যাংকে ঝালাই করার মতো কোনো প্রশ্ন নেই। একটা পরীক্ষা দাও, ভুল হলে সেগুলো থেকে আমি কুইজ বানিয়ে দেব।', go: 'mistakes-bank', goName: 'ভুল-ব্যাংক' };
+    rows.sort((x, y) => y.t - x.t);
+    const pick = rows.slice(0, count(text));
+    const title = 'তোমার ভুল থেকে ' + bn(pick.length) + 'টা প্রশ্ন' + (rows.length > pick.length ? ' (মোট ' + bn(rows.length) + 'টা জমা আছে)' : '');
+    const card = { title: title, questions: pick.map((r) => ({ q: r.q, options: r.options, answer: r.answer, explanation: r.explanation })) };
+    return { text: JSON.stringify(card), quiz: pick.map((r) => ({ id: r.id, a: r.answer })), mistakeQuiz: pick.length };
+  }
+
   /**
    * Try the in-app tools for one message. Returns null (send to the AI) or
    * { text, steps: [labels], tools: [names], quiz?, go?, goName?, faq?, q? }.
@@ -155,6 +186,7 @@
     ctx = ctx || {};
     const order = [
       ['grade_quiz', () => gradeQuiz(t, ctx.lastQuiz)],
+      ['mistake_quiz', () => mistakeQuiz(t)],
       ['open_page', () => openPage(t)],
       ['search_question_bank', () => searchBank(t)],
       ['make_quiz', () => (RE_QUIZ.test(t) ? makeQuiz(t, ctx.seed) : null)],
@@ -170,5 +202,5 @@
     return null;
   }
 
-  root.SkyTools = { run, version: 'sky-tools-client-v1', limits: { maxTools: MAX_TOOLS, quizDefault: QUIZ_DEFAULT, quizMax: QUIZ_MAX }, _t: { parseAnswers, gradeQuiz, makeQuiz, openPage, searchBank, topicMatch, count } };
+  root.SkyTools = { run, version: 'sky-tools-client-v2', limits: { maxTools: MAX_TOOLS, quizDefault: QUIZ_DEFAULT, quizMax: QUIZ_MAX }, _t: { parseAnswers, gradeQuiz, makeQuiz, mistakeQuiz, openPage, searchBank, topicMatch, count } };
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -3,7 +3,7 @@ const CACHE_PREFIX = 'admission-hub-shell-';
 // hold user data; this one holds exactly one image and is trimmed on write.
 const AVATAR_CACHE = 'admission-hub-avatar-v1';
 
-const BUILD_ID = 'v360-sky-recall-v2';
+const BUILD_ID = 'v361-sky-mistake-quiz';
 const CACHE_NAME = `${CACHE_PREFIX}${BUILD_ID}`;
 const VERSION_HEADER = 'X-Admission-Hub-Build';
 const DOCUMENT_NETWORK_TIMEOUT_MS = 2500;
@@ -51,7 +51,7 @@ const APP_SHELL = [
   './dashboard-v2.js?v=dash2f18-chrome',
   './sky-smalltalk.js?v=st2',
   './sky-replies.json?v=r1',
-  './sky-tools-client.js?v=tools1',
+  './sky-tools-client.js?v=tools2',
   './sky-faq.js?v=faq1',
   './sky-faq-bn.js?v=faq1',
   './sky-faq-en.js?v=faq1',
@@ -92,7 +92,7 @@ const APP_SHELL = [
 // A truncated/corrupt download is NEVER written to the shell cache.
 const ASSET_DIGESTS = {
 /* sw-manifest:start */
-  "./index.html": "46545ac724b54c70052a40a761368cf4163689a45f40e2d28110dc547eb21469",
+  "./index.html": "e974b41b375fd9e7abe50a78e43e4cd1704254d16bbed75b88a098e0fb1d73fb",
   "./manifest.json": "6dcf0e0c6f7671750549e53558ba8b9f0c2c83b0c6759072a6b5e2276331f491",
   "./manifest.webmanifest": "abcd26174710f6df3e183889a5a9da182f73ee8cdcc543b43db8fb4070cad54f",
   "./dashboard-v2.css?v=dash2f13-theme": "4541bc1e65fd158c593443562975400d128b8f1d3b636595df3c235b99e8cced",
@@ -117,7 +117,7 @@ const ASSET_DIGESTS = {
   "./dashboard-v2.js?v=dash2f18-chrome": "943a731165376cadca9bb4da2a33c7f3ccc1d24d063165fcede77089615e3739",
   "./sky-smalltalk.js?v=st2": "ee85bc86a84d6c75f391d7f76fa03abd53f2df1973dd7980ae15ee94eb122a49",
   "./sky-replies.json?v=r1": "f5e97d43641a1dbedbe3d17f24c740ebb38b761a79c833a902b8876b7ead5a9f",
-  "./sky-tools-client.js?v=tools1": "0c07c9945f1cca5210314b4885c5c821907807d89cf9555a8320681fdb0f6736",
+  "./sky-tools-client.js?v=tools2": "e34be110e52658bce7d42b3b2bb8c00937342976b19eadf10fd4f2bf4bdcce87",
   "./sky-faq.js?v=faq1": "00149c15af74f969c26af581133c83b45bf922f7d1bf98293bc3c9c489b3547e",
   "./sky-faq-bn.js?v=faq1": "f417de34ddc4b08dce2dc212610ccc4ca265ca323876c5f3f5c1d52b01d859f9",
   "./sky-faq-en.js?v=faq1": "4923f584193c9569329b001b20867f2954b93b8e232a704e2effd632f25bb833",
