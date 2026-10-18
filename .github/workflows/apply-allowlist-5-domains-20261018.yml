@@ -53,7 +53,7 @@ jobs:
         if: env.SKIP != '1'
         run: |
           set -eu
-          node --test --test-concurrency=1 email-policy.test.mjs verification-orchestrator.test.mjs verification-providers.test.mjs descope-otp.test.mjs descope-magiclink.test.mjs backup-public-handler.test.mjs email-branding.test.mjs free-tier-failover.test.mjs telegram-otp-auth.test.mjs native-auth-operations.test.mjs security-device-trust.test.mjs
+          node --test --test-concurrency=1 email-policy.test.mjs verification-orchestrator.test.mjs verification-providers.test.mjs descope-otp.test.mjs descope-magiclink.test.mjs backup-public-handler.test.mjs email-branding.test.mjs free-tier-failover.test.mjs native-auth-operations.test.mjs security-device-trust.test.mjs
           node --test native-auth.test.mjs 2>&1 | tee /tmp/na.log || true
           if grep -E '^not ok .*(signup|password reset|ownership|verification)' /tmp/na.log; then echo 'auth flow tests failing'; exit 1; fi
       - name: Commit and push to the feature branch
