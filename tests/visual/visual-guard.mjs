@@ -88,7 +88,8 @@ async function capture(browser, origin, screen) {
   const loggedIn = Boolean(screen.hash);
   const ctx = await setupContext(browser, origin, loggedIn);
   const page = await ctx.newPage();
-  await page.clock.setFixedTime(new Date('2026-10-18T06:00:00Z'));
+  // Same start time on every run, but time keeps moving (the Sky splash needs a running clock to close).
+  await page.clock.install({ time: new Date('2026-10-18T06:00:00Z') });
   let stage = 'goto';
   try {
     await page.goto(origin + '/', { waitUntil: 'domcontentloaded', timeout: 30000 });
@@ -104,7 +105,10 @@ async function capture(browser, origin, screen) {
       const close = page.locator('.ah-account-close').first();
       await close.waitFor({ state: 'visible', timeout: 10000 }).then(() => close.click()).catch(() => {});
       stage = 'wait splash';
-      await page.locator('#ahSkyEntry').waitFor({ state: 'hidden', timeout: 15000 }).catch(() => {});
+      // Closing the sheet starts the Sky splash a moment later: wait for it to appear, then to go away.
+      const splash = page.locator('#ahSkyEntry');
+      await splash.waitFor({ state: 'attached', timeout: 3000 }).catch(() => {});
+      await splash.waitFor({ state: 'detached', timeout: 15000 }).catch(() => {});
       await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
       stage = 'set hash';
       await page.evaluate(h => { location.hash = h; }, screen.hash);
