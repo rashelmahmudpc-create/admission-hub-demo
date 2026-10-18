@@ -30,6 +30,8 @@ jobs:
         run: npm i --no-save --no-audit --no-fund --ignore-scripts playwright-core@1.55.0
       - name: Install Chromium
         run: npx playwright-core install --with-deps chromium
+      - name: Install Bengali fonts (same family the site uses)
+        run: sudo apt-get install -y -qq fonts-noto-core
       - name: Make baseline if missing (or asked)
         id: base
         run: |
