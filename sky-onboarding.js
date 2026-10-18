@@ -765,11 +765,23 @@ const build = () => {
       const app = appEl(), stage = $('sky-stage');
       if (stage) stage.style.height = '';
       if (!app) return;
-      if (app.dataset.kb !== '1') { delete app.dataset.kbroomy; return; }
+      if (app.dataset.kb !== '1') { delete app.dataset.kbroomy; app.style.removeProperty('--kbbird'); return; }
       const scr = stage && stage.querySelector('.scr.on');
       if (!scr) return;
+      app.style.removeProperty('--kbbird');
       app.dataset.kbroomy = '1';
-      if (scr.scrollHeight > scr.clientHeight + 2 || scr.clientHeight < 96) delete app.dataset.kbroomy;
+      // Size the big bird to the free space: grow into a gap, shrink when tight (aspect 1:1, so the
+      // width change is the height change). Only if even 56px does not fit does it go to the corner.
+      const top = scr.getBoundingClientRect().top;
+      let bottom = top;
+      for (const child of scr.children) { const r = child.getBoundingClientRect(); if (r.height > 0) bottom = Math.max(bottom, r.bottom); }
+      const need = bottom - top + (parseFloat(getComputedStyle(scr).paddingBottom) || 0);
+      const bird = $('sky-bird'), w = bird ? bird.getBoundingClientRect().width : 0;
+      if (w) {
+        const nw = Math.max(56, Math.min(170, Math.floor(w - (need - scr.clientHeight) - 8)));
+        if (Math.abs(nw - w) > 2) app.style.setProperty('--kbbird', nw + 'px');
+      }
+      if (scr.scrollHeight > scr.clientHeight + 2 || scr.clientHeight < 96) { delete app.dataset.kbroomy; app.style.removeProperty('--kbbird'); }
     };
     const placeLater = () => { placeTimers.forEach(clearTimeout); placeTimers = [60, 380, 800].map(ms => setTimeout(() => { fitStage(); place(); }, ms)); };
     const setKb = on => {

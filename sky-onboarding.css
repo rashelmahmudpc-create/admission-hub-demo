@@ -378,4 +378,7 @@
 /* Roomy keyboard mode: there is enough room, so the big bird stays and fills the space a little
    smaller instead of shrinking to the corner (sky-onboarding.js sets data-kbroomy after measuring). */
 #ah-sky-flow #sky-app[data-kb="1"][data-kbroomy="1"] .petwrap{padding-top:8px}
+#ah-sky-flow #sky-app[data-kb="1"][data-kbroomy="1"] .bird{width:var(--kbbird,clamp(112px,calc(var(--vh,100svh)*.215),180px))}
+/* Keyboard up (owner 2026-10-18): the provider buttons step aside while typing. */
+#ah-sky-flow #sky-app[data-kb="1"] .scr .or,#ah-sky-flow #sky-app[data-kb="1"] .scr .tiles{display:none}
 #ah-sky-flow #sky-app[data-kb="1"][data-kbroomy="1"] .bubble{font-size:16px;padding:10px 18px;min-height:0}
