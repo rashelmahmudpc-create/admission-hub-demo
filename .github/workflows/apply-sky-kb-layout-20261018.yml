@@ -4,6 +4,7 @@ name: Apply Sky keyboard layout v11 (2026-10-18)
 # and the keyboard, and on the GPA screen the bottom third stayed empty after the keyboard closed.
 # Runs scripts/apply-sky-kb-layout-20261018.py (sky-onboarding.{css,js} + cache tokens), regenerates
 # the SW digests, runs the onboarding tests and commits to this branch only.
+# Re-run 2: the script now matches the current BUILD_ID by pattern (main moved on meanwhile).
 
 on:
   push:

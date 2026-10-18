@@ -9,9 +9,10 @@ after the keyboard closed. Fixes:
   2. the "+140px taller page" trick is removed; the strip under the page is a paint-only box-shadow.
   3. --vh is applied only while a field is focused and the keyboard is really up; a watchdog and the
      visualViewport handler restore the full layout when iOS never reports the keyboard going away.
-  4. cache tokens: sky-flow-20261017-v10 -> sky-flow-20261018-v11, SW BUILD_ID -> v360-sky-kb-layout.
+  4. cache tokens: sky-flow-20261017-v10 -> sky-flow-20261018-v11, SW BUILD_ID -> v361-sky-kb-layout.
 """
 import pathlib
+import re
 
 def sub(path, old, new):
     p = pathlib.Path(path); s = p.read_text(encoding='utf8')
@@ -161,7 +162,11 @@ for path, old, new in EDITS:
 # cache tokens (the assets are served immutable; the ?v= token is what makes phones refetch)
 for f in ('app-seed.js', 'index.html', 'sw.js'):
     sub_all(f, 'sky-flow-20261017-v10', 'sky-flow-20261018-v11')
-sub('sw.js', "const BUILD_ID = 'v359-sky-recall';", "const BUILD_ID = 'v360-sky-kb-layout';")
+# main moves fast (other PRs bump BUILD_ID too), so replace whatever BUILD_ID is current
+sw = pathlib.Path('sw.js'); s = sw.read_text(encoding='utf8')
+s, n = re.subn(r"const BUILD_ID = '[^']+';", "const BUILD_ID = 'v361-sky-kb-layout';", s, count=1)
+if n != 1: raise SystemExit('sw.js: BUILD_ID not found')
+sw.write_text(s, encoding='utf8')
 sub('scripts/cache-bump.mjs', "  ['sky-flow-20261017-v9', 'sky-flow-20261017-v10']" + chr(10),
     "  ['sky-flow-20261017-v9', 'sky-flow-20261017-v10']," + chr(10)
     + "  // keyboard layout v11: roomy bird, Next above the keyboard, no +140px page, no stale --vh." + chr(10)
