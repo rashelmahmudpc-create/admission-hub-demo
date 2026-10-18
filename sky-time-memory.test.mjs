@@ -16,7 +16,7 @@ await t('T1. prompt memory: web_search rules (when, sources, no student data, no
 });
 await t('T2. prompt memory: clock rules; v3 active, v2 kept deprecated', () => {
   const p = buildSystemPrompt({});
-  return p.includes('get_datetime') && p.includes('NOW (Asia/Dhaka') && SYSTEM_PROMPT_V === 'sys-sky-v3-live-tools'
+  return p.includes('get_datetime') && p.includes('NOW (Asia/Dhaka') && SYSTEM_PROMPT_V === 'sys-sky-v3-1-live-tools'
     && getPrompt('sky-core').version === 'v3' && getPrompt('sky-core-v2').status === 'deprecated'
     && getPrompt('sky-core-v2').text.includes('You have no live internet access') && validatePromptRegistry().length === 0;
 });

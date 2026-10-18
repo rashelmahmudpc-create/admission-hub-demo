@@ -65,6 +65,32 @@ await t('W11. the outer worker passes the Tavily key to the chat handler (envPub
   return /TAVILY_API_KEY:\s*env\.TAVILY_API_KEY/.test(block) && /TAVILY_DAILY_CAP:\s*env\.TAVILY_DAILY_CAP/.test(block)
     && readFileSync('worker-bundle.mjs', 'utf8').includes('TAVILY_API_KEY: env.TAVILY_API_KEY');
 });
+await t('W12. a short follow-up after a news question searches again, with the earlier topic', () => {
+  const prev = 'রাজশাহী বিশ্ববিদ্যালয়ের ভর্তি পরীক্ষা কবে';
+  const a = T.planServerTools('পরের বছরেরটা কবে হবে', { searchOn: true, prevText: prev }).find(x => x.name === 'web_search');
+  const b = T.planServerTools('তাহলে ২০২৬-২৭ এর টা কবে?', { searchOn: true, prevText: prev }).find(x => x.name === 'web_search');
+  const c = T.planServerTools('না আমি পরের বছরের টা জানতে চাচ্ছি', { searchOn: true, prevText: prev }).find(x => x.name === 'web_search');
+  const none = T.planServerTools('পরের বছরেরটা কবে হবে', { searchOn: true, prevText: 'সমাস কাকে বলে' }).some(x => x.name === 'web_search');
+  const own = T.planServerTools('ঢাকা বিশ্ববিদ্যালয়ের ভর্তি পরীক্ষা কবে', { searchOn: true, prevText: prev }).find(x => x.name === 'web_search');
+  return a && a.args.query.includes('রাজশাহী') && b && b.args.query.includes('রাজশাহী') && b.args.query.includes('২০২৬-২৭')
+    && c && c.args.query.includes('রাজশাহী') && !/আমি/.test(c.args.query) && !none && own && !own.args.query.includes('রাজশাহী');
+});
+await t('W13. "আমার" + admission date still searches; own-result questions do not', () =>
+  T.isNewsQuestion('আমার জন্য পরবর্তী ভর্তি পরীক্ষা কবে') && !T.isNewsQuestion('আমার রেজাল্ট কেমন') && !T.isNewsQuestion('আমার সর্বশেষ পরীক্ষার স্কোর'));
+await t('W14. a failed / empty search tells the model not to answer from memory', () => {
+  const f = T.renderToolContext([{ name: 'web_search', ok: false, error: 'daily-limit' }]);
+  const e = T.renderToolContext([{ name: 'web_search', ok: true, query: 'x', results: [] }]);
+  return /could not run/.test(f) && /found no result/.test(e) && /has not been published/.test(f);
+});
+await t('W15. the chat passes the previous user turn to the planner', async () => {
+  const { readFileSync } = await import('fs');
+  return /planServerTools\(toolText, \{ prevText: prevUser/.test(readFileSync('ai-agent.js', 'utf8'));
+});
+await t('W16. a session year (২০২৬-২৭, 2025-2026) stays in the query; phone numbers still go', async () => {
+  const { cleanSearchQuery: c } = await import('./sky-web-search.mjs');
+  return c('রাবি ২০২৫-২০২৬ ভর্তি') === 'রাবি ২০২৫-২০২৬ ভর্তি' && c('২০২৬-২৭ সেশন') === '২০২৬-২৭ সেশন'
+    && c('call +8801712345678 now') === 'call now' && c('01712 345 678 ফোন') === 'ফোন';
+});
 await t('W9. web_search is never a no-model simple plan', () => !T.isSimplePlan([{ name: 'web_search', args: { query: 'x' } }], 'সর্বশেষ খবর'));
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

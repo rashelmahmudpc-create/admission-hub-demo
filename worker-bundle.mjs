@@ -376,7 +376,7 @@ var REGISTRY = Object.freeze({
     purpose: "Sky core memory v3 (live web search + clock): AdmissionSky identity, language, level, honest promotion, hard safety rules.",
     createdAt: "2026-10-18",
     status: "active",
-    legacyVersion: "sys-sky-v3-live-tools",
+    legacyVersion: "sys-sky-v3-1-live-tools",
     text: `You are Sky, the AI study partner inside AdmissionSky (formerly "Admission Hub"), a Bengali-first preparation app for SSC, HSC and university admission students in Bangladesh.
 
 IDENTITY
@@ -412,7 +412,7 @@ ACCURACY
 
 LIVE TOOLS (the server runs them and attaches the result; you never call them yourself)
 - Web search (web_search): for news, recent events, and things that change every year (admission exam dates, schedules, application windows, circulars, notices, results, seat numbers), the server searches the live web and attaches a "TOOL web_search" block. Use only that block for such facts and end the answer with a short "উৎস:" list of the links you used as Markdown links [title](url). Never say you cannot browse the internet.
-- If such a question arrives with no search block (search off or today's search limit reached), say the latest information could not be checked right now and point to the official website; never guess a date or result.
+- If such a question arrives with no search block, or the block says the search could not run, say the latest information could not be checked right now and point to the official website; never guess a date or result, and never claim from memory that a notice or date "has not been published yet". A follow-up about the same topic needs the same live check.
 - Never put the student's name, email, phone, address or any personal detail into a search; searches carry only the cleaned question.
 - Study topics (সমাস, সন্ধি, formulas, history, GK) are answered from your own knowledge, not the web.
 - Clock and calendar (get_datetime): every turn carries a "NOW (Asia/Dhaka, live clock)" line, and a time/date question gets a "TOOL get_datetime" block. Use them for today's date, weekday, time, Bangla date, "this year" and how many days are left; never guess the date or time.
@@ -717,21 +717,38 @@ function renderAppFeatures(data) {
 var SEARCH_KV_SWITCH = "sky:web-search";
 var SEARCH_DAILY_DEFAULT = 50;
 var RE_NEWS = /(খবর|সংবাদ|সর্বশেষ|সাম্প্রতিক|সদ্য|হালনাগাদ|আপডেট|আজকে?র|আজ\s*কী|এ\s*বছরের|এই\s*বছর|চলতি|বর্তমানে?\s*(কে|কী|কি|কত)|এখন\s*(কে|কী|কি|কত)|নতুন\s*(নিয়ম|সার্কুলার|বিজ্ঞপ্তি|নোটিশ)|সার্কুলার|বিজ্ঞপ্তি|ঘোষণা|২০২[৫-৯]|202[5-9]|\b(news|latest|recent(ly)?|current(ly)?|today'?s?|this\s+year|update[sd]?|announced?|circular|notice)\b)/i;
-var RE_NOT_WEB = /(আমার|\bmy\b|সমাস|সন্ধি|কারক|সমীকরণ|সূত্র|অনুবাদ|translate|formula|equation)/i;
+var RE_NOT_WEB = /(সমাস|সন্ধি|কারক|সমীকরণ|সূত্র|অনুবাদ|translate|formula|equation)/i;
+var RE_PERSONAL = /(আমার|\bmy\b)/i;
 var RE_WHEN = /(কবে|কখন|তারিখ|সময়সূচ[িী]|শিডিউল|ডেডলাইন|শেষ\s*সময়|\b(when|date|dates|schedule|deadline)\b)/i;
 var RE_ADMISSION = /(ভর্তি|পরীক্ষা|আবেদন|ফরম|ফর্ম|ফল\s*প্রকাশ|রেজাল্ট|বিজ্ঞপ্তি|সার্কুলার|প্রবেশপত্র|এডমিট|অ্যাডমিট|ঢাবি|জাবি|রাবি|চবি|বুয়েট|গুচ্ছ|মেডিকেল|বিশ্ববিদ্যালয়|ইউনিট|\b(admission|exam|result|application|admit\s*card|unit)\b)/i;
 var RE_PAST = /(হয়েছিল|হয়েছিলো|ছিল|ছিলো|ঘটেছিল|\b(was|were|did)\b)/i;
 function isNewsQuestion(text) {
   const t = String(text || "");
   if (RE_NOT_WEB.test(t)) return false;
+  const dated = RE_WHEN.test(t) && RE_ADMISSION.test(t) && !RE_PAST.test(t);
+  if (RE_PERSONAL.test(t)) return dated;
   if (RE_NEWS.test(t)) return true;
-  return RE_WHEN.test(t) && RE_ADMISSION.test(t) && !RE_PAST.test(t);
+  return dated;
+}
+var RE_FOLLOW = /(কবে|কখন|তারিখ|পরের|পরবর্তী|আগামী|নতুন|এবার|এবারের|তাহলে|সেটা|ওটা|টা\b|টার|প্রকাশ|হয়েছে|হবে|\b(next|when|date|then|that|published|out)\b|২০২[৫-৯]|202[5-9])/i;
+function searchQueryFor(text, prevText, firstName) {
+  const t = String(text || "");
+  if (isNewsQuestion(t)) {
+    const own = cleanSearchQuery(t, firstName);
+    if (prevText && isNewsQuestion(prevText) && t.length <= 100 && !/(বিশ্ববিদ্যালয়|ভার্সিটি|কলেজ|মেডিক্যাল|মেডিকেল|গুচ্ছ|বুয়েট|ঢাবি|রাবি|জাবি|চবি|খুবি|শাবি|university|\b(du|ru|ju|cu|buet|gst)\b)/i.test(t))
+      return cleanSearchQuery(String(prevText).slice(0, 120) + " " + t, firstName);
+    return own;
+  }
+  if (prevText && isNewsQuestion(prevText) && t.length <= 100 && RE_FOLLOW.test(t) && !RE_NOT_WEB.test(t))
+    return cleanSearchQuery(String(prevText).slice(0, 120) + " " + t, firstName);
+  return "";
 }
 function cleanSearchQuery(text, firstName) {
   let q = String(text || "").slice(0, 300);
-  q = q.replace(/[\w.+-]+@[\w-]+(\.[\w-]+)+/g, " ").replace(/https?:\/\/\S+/gi, " ").replace(/[\d০-৯]{3,5}[\s-][\d০-৯]{3,4}[\s-][\d০-৯]{3,4}/g, " ").replace(/\+?[\d০-৯][\d০-৯-]{5,}[\d০-৯]/g, " ");
+  q = q.replace(/[\w.+-]+@[\w-]+(\.[\w-]+)+/g, " ").replace(/https?:\/\/\S+/gi, " ").replace(/[\d০-৯]{3,5}[\s-][\d০-৯]{3,4}[\s-][\d০-৯]{3,4}/g, (m) => /^(20|২০)[\d০-৯]{2}[\s-]/.test(m) ? m : " ").replace(/\+?[\d০-৯][\d০-৯-]{8,}[\d০-৯]/g, " ");
   const n = String(firstName || "").trim();
   if (n.length >= 2) q = q.split(n).join(" ");
+  q = q.replace(/(^|\s)(আমার|আমি|আমাকে|আমরা|my|me|i)(?=\s|$)/gi, " ");
   q = q.replace(/\s+/g, " ").trim().slice(0, 200);
   return q.length >= 3 ? q : "";
 }
@@ -783,6 +800,9 @@ async function webSearch(query, ctx = {}) {
     snippet: String(r && r.content || "").replace(/\s+/g, " ").slice(0, 400)
   })).filter((r) => r.url).slice(0, 4);
   return { ok: true, query: q, results };
+}
+function renderSearchFailure(r) {
+  return "TOOL web_search: the live search " + (r && r.ok ? "found no result" : "could not run right now") + ". Do not state from memory whether a date, notice, circular or result has or has not been published. Say you could not check the latest update right now and give the official website.";
 }
 function renderSearchContext(r) {
   const lines = r.results.map((x, i) => i + 1 + ". " + x.title + " — " + x.snippet + " (" + x.url + ")");
@@ -1037,8 +1057,8 @@ function planServerTools(text, ctx = {}) {
   if (!ctx.quizMode && !ctx.hasImage && isAppFeatureQuestion(t)) plan.push({ name: "get_app_features", args: {} });
   const timeQ = !ctx.quizMode && isTimeQuestion(t);
   if (timeQ) plan.push({ name: "get_datetime", args: { text: t.slice(0, 200) } });
-  if (!timeQ && ctx.searchOn && !ctx.quizMode && !ctx.hasImage && isNewsQuestion(t)) {
-    const query = cleanSearchQuery(t, ctx.firstName);
+  if (!timeQ && ctx.searchOn && !ctx.quizMode && !ctx.hasImage) {
+    const query = searchQueryFor(t, ctx.prevText, ctx.firstName);
     if (query) plan.push({ name: "web_search", args: { query } });
   }
   return plan.slice(0, LIMITS.maxTools);
@@ -1157,12 +1177,17 @@ function renderSimpleAnswer(results, firstName) {
 function renderToolContext(results) {
   const out = [];
   for (const r of results) {
+    if (!r.ok && r.name === "web_search") {
+      out.push(renderSearchFailure(r));
+      continue;
+    }
     if (!r.ok) continue;
     if (r.name === "get_app_features") out.push(renderAppFeatures(r.data));
     else if (r.name === "calculate") out.push("TOOL calculate: " + r.expression + " = " + r.value + " (exact; use this number).");
     else if (r.name === "get_exam_history" && !r.empty) out.push("TOOL get_exam_history (this student only): exams " + r.exams + ", questions " + r.questions + ", accuracy " + r.accuracy + "%, streak " + r.streak + ", mistakes " + r.mistakes + ".");
     else if (r.name === "get_datetime") out.push("TOOL get_datetime (live clock, Asia/Dhaka): " + r.weekday + ", " + r.date + ", " + r.bangla + ", " + r.time + (r.target ? "; " + r.target + " is " + r.daysLeft + " day(s) from today" : "") + ". Use exactly these values.");
     else if (r.name === "web_search" && r.results && r.results.length) out.push(renderSearchContext(r));
+    else if (r.name === "web_search") out.push(renderSearchFailure(r));
     else if (r.name === "analyze_weak_topics" && !r.empty) out.push("TOOL analyze_weak_topics (this student only): " + r.weak.map((w) => w.name + " " + w.accuracy + "%").join(", ") + ".");
   }
   return out.length ? out.join("\n") : "";
@@ -2909,7 +2934,7 @@ function rankChainByModelHealth(entries, badMap, now) {
 
 // ai-agent.js
 var AGENT_VERSION = "agent-f1";
-var SYSTEM_PROMPT_V = "sys-sky-v3-live-tools";
+var SYSTEM_PROMPT_V = "sys-sky-v3-1-live-tools";
 function contextEngineEnabled(env) {
   return String(env && env.USE_CONTEXT_ENGINE || "").trim() === "enabled";
 }
@@ -3747,7 +3772,8 @@ async function agentChat(request, env, uid, opts = {}) {
     return putKv(env.PUB_KV, key, val, ttlMs ? Math.round(ttlMs / 1e3) : void 0);
   };
   const toolText = String((v.messages[v.messages.length - 1] || {}).content || "");
-  let toolPlan = examMode ? [] : planServerTools(toolText, { quizMode, hasImage: v.messages.some((m) => m.image), searchOn: !!(env && env.TAVILY_API_KEY) });
+  const prevUser = v.messages.slice(0, -1).reverse().find((m) => m.role === "user");
+  let toolPlan = examMode ? [] : planServerTools(toolText, { prevText: prevUser ? String(prevUser.content || "") : "", firstName: (sanitizeProfileContext(body && body.context && body.context.profile) || {}).firstName, quizMode, hasImage: v.messages.some((m) => m.image), searchOn: !!(env && env.TAVILY_API_KEY) });
   if (toolPlan.length && !await toolsEnabled(env && env.PUB_KV)) toolPlan = [];
   if (toolPlan.length && isSimplePlan(toolPlan, toolText)) {
     const prof = sanitizeProfileContext(body && body.context && body.context.profile) || {};

@@ -35,16 +35,16 @@ t('M5-৪. an unknown prompt id resolves to null, never an empty string',
 
 /* ── ২. The legacy version id is preserved, not deleted ── */
 t('M5-৫. the previous version constant is kept as a legacy alias',
-  getPrompt(BASE_PROMPT_ID).legacyVersion === SYSTEM_PROMPT_V && SYSTEM_PROMPT_V === 'sys-sky-v3-live-tools');
+  getPrompt(BASE_PROMPT_ID).legacyVersion === SYSTEM_PROMPT_V && SYSTEM_PROMPT_V === 'sys-sky-v3-1-live-tools');
 
 /* ── ৩. Zero behaviour change: the prompt is byte-identical ── */
 t('M5-৬. buildSystemPrompt reads its core text from the registry, not an inline literal',
   SRC.includes('getPromptText(BASE_PROMPT_ID)') && !SRC.includes('let p = `You are Admission Hub AI.'));
 t('M5-৭. the composed base prompt equals the registry text exactly',
-  buildSystemPrompt({}) === getPromptText(BASE_PROMPT_ID) && buildSystemPrompt({}).length === 6806);
+  buildSystemPrompt({}) === getPromptText(BASE_PROMPT_ID) && buildSystemPrompt({}).length === 6945);
 t('M5-৮. the base prompt hash is stable (locks the exact wording against drift)', (() => {
   const h = createHash('sha256').update(buildSystemPrompt({})).digest('hex');
-  return h === '6028327cc4cb8c9d6de867a124d71b2c065c68dc2fcdc97c85d6038c38ba6635';
+  return h === 'e0f49e242fe3b4f342afdccf4cdcd40c36054d2310181dcf86b337982edb500f';
 })());
 t('M5-৯. conditional blocks still append on top of the shared base text', (() => {
   const base = buildSystemPrompt({});
