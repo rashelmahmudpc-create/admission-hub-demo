@@ -77,6 +77,18 @@ const REGISTRY = Object.freeze({
     riskLevel: RISK.LOW,
     ownerScoped: true,
     enabled: true
+  }),
+  /* owner 2026-10-18: live clock + calendar (Asia/Dhaka, Bangla date, days left).
+     Pure computation, reads no user data. */
+  'time.now': Object.freeze({
+    name: 'time.now',
+    description: 'Current date and time in Bangladesh (Asia/Dhaka), weekday, Bangla date and days left to a date.',
+    permission: PERMISSION.READ,
+    inputSchema: schema('object', { text: { type: 'string' } }, []),
+    outputSchema: schema('object', { iso: { type: 'string' }, weekday: { type: 'string' }, bangla: { type: 'string' } }, ['iso']),
+    riskLevel: RISK.LOW,
+    ownerScoped: true,
+    enabled: true
   })
 });
 

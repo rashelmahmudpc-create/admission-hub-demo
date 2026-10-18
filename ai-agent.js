@@ -19,7 +19,7 @@ import { buildContext, renderContext, describeContext, CONTEXT_VERSION } from '.
 import { getPromptText, BASE_PROMPT_ID } from './prompt-registry.js';
 import { listTools, TOOL_REGISTRY_VERSION } from './tool-registry.js';
 import { isAppFeatureQuestion, loadAppFeatures, renderAppFeatures } from './sky-app-features.mjs';
-import { planServerTools, isSimplePlan, simpleToolResponse, runTools, renderToolContext, toolsEnabled } from './sky-tools.mjs';
+import { planServerTools, isSimplePlan, simpleToolResponse, runTools, renderToolContext, toolsEnabled, nowLine } from './sky-tools.mjs';
 import { bumpDailyStats, statsFromTiming } from './sky-daily-report.mjs';
 import { extractMemoryCandidates, makeMemory, upsertMemory, parseMemory, renderMemory, resolveMemoryOwner, isPiiFree, KIND, SOURCE, MEMORY_VERSION } from './memory-engine.js';
 import { validateResponse, describeResponseValidation, RESPONSE_VALIDATION_VERSION } from './response-validator.js';
@@ -38,7 +38,7 @@ import { selectHistory, capRecalledTurns } from './ai-history-trim.mjs';
 import { healthyChain, failureMarker, isEntryHealthy, rankChainByModelHealth } from './ai-provider-health.mjs';
 
 export const AGENT_VERSION = 'agent-f1';
-export const SYSTEM_PROMPT_V = 'sys-sky-v2-core-memory';
+export const SYSTEM_PROMPT_V = 'sys-sky-v3-live-tools';
 
 /* ── M4 Context Engine feature flag (default off) ------------------------ */
 export function contextEngineEnabled(env) {
@@ -1150,7 +1150,8 @@ export async function agentChat(request, env, uid, opts = {}) {
   const settleBackground = async () => { if (background.length) await Promise.all(background.splice(0)); };
   if (persistSummary) later(() => statePut('chatmemsum:' + sendCtx.uid, freshSummary));
 
-  const systemPrompt = buildSystemPrompt({ stats, examMode, quiz: quizMode, onboarding, prefs: aiPrefs });
+  /* owner 2026-10-18: the live Dhaka clock rides on every turn (one line). */
+  const systemPrompt = buildSystemPrompt({ stats, examMode, quiz: quizMode, onboarding, prefs: aiPrefs }) + '\n\n' + nowLine();
   /* M4 Context Engine (opt-in). When enabled, a typed permission-scoped bundle
      is rendered and appended; when disabled the prompt above is byte-identical
      to the pre-M4 output, so the legacy path stays intact.

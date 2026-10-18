@@ -22,13 +22,15 @@ import { loadAppFeatures, renderAppFeatures, isAppFeatureQuestion } from './sky-
 import { isNewsQuestion, cleanSearchQuery, webSearch, renderSearchContext } from './sky-web-search.mjs';
 export { isNewsQuestion, cleanSearchQuery, webSearch, renderSearchContext, takeSearchQuota, SEARCH_KV_SWITCH, SEARCH_DAILY_DEFAULT } from './sky-web-search.mjs';
 
+import { isTimeQuestion, getDateTime, renderDateTime } from './sky-time.mjs';
+export { isTimeQuestion, getDateTime, nowLine } from './sky-time.mjs';
 export const SKY_TOOLS_VERSION = 'sky-tools-v1';
 export const TOOLS_KV_SWITCH = 'sky:agent-tools';
 export const LIMITS = Object.freeze({ maxTools: 5, maxSteps: 3, budgetMs: 20000, perToolMs: 3000 });
 
 export const TOOL_NAMES = Object.freeze([
   'get_exam_history', 'analyze_weak_topics', 'search_question_bank', 'make_quiz', 'grade_quiz',
-  'get_app_features', 'knowledge_lookup', 'calculate', 'open_page', 'web_search'
+  'get_app_features', 'knowledge_lookup', 'calculate', 'open_page', 'web_search', 'get_datetime'
 ]);
 export const CLIENT_TOOLS = Object.freeze(['search_question_bank', 'make_quiz', 'grade_quiz', 'knowledge_lookup', 'open_page']);
 
@@ -42,7 +44,8 @@ export const TOOL_LABELS = Object.freeze({
   grade_quiz: 'তোমার উত্তর মিলিয়ে দেখছি',
   knowledge_lookup: 'জমানো জ্ঞানভান্ডারে খুঁজছি',
   open_page: 'পেজের পথ বের করছি',
-  web_search: 'ওয়েবে সর্বশেষ খবর খুঁজছি'
+  web_search: 'ওয়েবে সর্বশেষ খবর খুঁজছি',
+  get_datetime: 'এখনকার সময় ও তারিখ দেখছি'
 });
 /* per-tool time cap override (a web call needs more than 3 s) */
 const TOOL_MS = Object.freeze({ web_search: 6000 });
@@ -127,7 +130,11 @@ export function planServerTools(text, ctx = {}) {
   if (RE_HISTORY.test(t)) plan.push({ name: 'get_exam_history', args: {} });
   if (RE_WEAK.test(t)) plan.push({ name: 'analyze_weak_topics', args: {} });
   if (!ctx.quizMode && !ctx.hasImage && isAppFeatureQuestion(t)) plan.push({ name: 'get_app_features', args: {} });
-  if (ctx.searchOn && !ctx.quizMode && !ctx.hasImage && isNewsQuestion(t)) {
+  /* get_datetime (owner 2026-10-18): a clock/calendar question is answered from
+     the live Dhaka clock and never goes to the web. */
+  const timeQ = !ctx.quizMode && isTimeQuestion(t);
+  if (timeQ) plan.push({ name: 'get_datetime', args: { text: t.slice(0, 200) } });
+  if (!timeQ && ctx.searchOn && !ctx.quizMode && !ctx.hasImage && isNewsQuestion(t)) {
     const query = cleanSearchQuery(t, ctx.firstName);
     if (query) plan.push({ name: 'web_search', args: { query } });
   }
@@ -141,6 +148,7 @@ export function isSimplePlan(plan, text) {
   if (RE_REMEMBER.test(String(text || ''))) return false; /* a fact to remember goes to the AI + memory */
   const names = plan.map((p) => p.name);
   if (names.length === 1 && names[0] === 'calculate') return true;
+  if (names.length === 1 && names[0] === 'get_datetime') return String(text || '').trim().length <= 80;
   const short = String(text || '').trim().length <= 60;
   return short && names.every((n) => n === 'get_exam_history' || n === 'analyze_weak_topics');
 }
@@ -154,6 +162,7 @@ async function execOne(call, ctx) {
     case 'get_exam_history': return getExamHistory(ctx.stats);
     case 'analyze_weak_topics': return analyzeWeakTopics(ctx.stats);
     case 'get_app_features': return { ok: true, data: await loadAppFeatures(ctx.kv) };
+    case 'get_datetime': return getDateTime(ctx.nowMs || Date.now(), call.args && call.args.text);
     case 'web_search': return webSearch(call.args && call.args.query, ctx);
     default: return { ok: false, error: CLIENT_TOOLS.includes(call.name) ? 'client-tool' : 'unknown-tool' };
   }
@@ -206,6 +215,8 @@ export function renderSimpleAnswer(results, firstName) {
     if (r.name === 'calculate') {
       if (r.ok) parts.push('🧮 **' + toBnDigits(r.expression) + ' = ' + fmtNumber(r.value) + '**');
       else parts.push(r.error === 'divide-by-zero' ? '⚠️ শূন্য দিয়ে ভাগ করা যায় না।' : '⚠️ হিসাবটা বুঝতে পারিনি — সংখ্যা আর চিহ্ন (+ − × ÷) দিয়ে আবার লেখো।');
+    } else if (r.name === 'get_datetime') {
+      if (r.ok) parts.push(renderDateTime(r));
     } else if (r.name === 'get_exam_history') {
       if (!r.ok) continue;
       if (r.empty) { parts.push('📊 ' + hi + 'এখনো কোনো পরীক্ষার ফল জমা নেই। একটা মক টেস্ট দাও, তারপর আমি তোমার অগ্রগতি দেখাতে পারব।'); continue; }
@@ -234,6 +245,7 @@ export function renderToolContext(results) {
     if (r.name === 'get_app_features') out.push(renderAppFeatures(r.data));
     else if (r.name === 'calculate') out.push('TOOL calculate: ' + r.expression + ' = ' + r.value + ' (exact; use this number).');
     else if (r.name === 'get_exam_history' && !r.empty) out.push('TOOL get_exam_history (this student only): exams ' + r.exams + ', questions ' + r.questions + ', accuracy ' + r.accuracy + '%, streak ' + r.streak + ', mistakes ' + r.mistakes + '.');
+    else if (r.name === 'get_datetime') out.push('TOOL get_datetime (live clock, Asia/Dhaka): ' + r.weekday + ', ' + r.date + ', ' + r.bangla + ', ' + r.time + (r.target ? '; ' + r.target + ' is ' + r.daysLeft + ' day(s) from today' : '') + '. Use exactly these values.');
     else if (r.name === 'web_search' && r.results && r.results.length) out.push(renderSearchContext(r));
     else if (r.name === 'analyze_weak_topics' && !r.empty) out.push('TOOL analyze_weak_topics (this student only): ' + r.weak.map((w) => w.name + ' ' + w.accuracy + '%').join(', ') + '.');
   }
