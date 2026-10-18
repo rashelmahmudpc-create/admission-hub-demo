@@ -36,3 +36,6 @@
 - `test:native-auth` এ ২টা test আগে থেকেই ব্যর্থ (HttpOnly cookie, release guard literals)। কিছু guard check main এও ব্যর্থ। এগুলো নতুন সমস্যা না।
 - `auth-native/` এর ভেতরে `console.*` লেখা নিষেধ (guard test আছে)। Log এর জন্য `observability/` এর sink ব্যবহার করো।
 - Temp-mail blocking আর allowed-domain list বদলাবে না।
+- `auth_verification_challenges` আর `auth_email_ownership_links` এ `user_id` → `auth_users` FK আছে; account ছাড়া OTP পাঠাতে আলাদা table লাগবে (দেখো `AUTH-STEP1-PLAN.md`)।
+- Sandbox এ `git clone --depth 1` করে `node --test` চলে (`npm ci` লাগে না): `native-auth.test.mjs native-auth-operations.test.mjs native-auth-protection.test.mjs verification-orchestrator.test.mjs` → 126/128, পুরোনো ২টা fail।
+- Composio দিয়ে commit করতে পুরো ফাইল পাঠাতে হয়; `public-auth-handler.mjs` (~২১০০ লাইন) বড়, তাই নতুন logic আলাদা ছোট ফাইলে রাখো (যেমন `auth-native/worker/pending-signup.mjs`) আর handler এ শুধু কয়েক লাইন যোগ করো।

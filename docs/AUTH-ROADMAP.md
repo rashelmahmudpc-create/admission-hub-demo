@@ -34,6 +34,7 @@
 - Worker Free এর ৬৪ variable সীমায় আছে — নতুন var যোগ করা যাবে না (secret বা code default ব্যবহার করো)।
 - `admission-gk-staging` এ একটাও secret নেই (provider key, TG_BOT_TOKEN কিছুই না) — staging এ আসল OTP বা Telegram alert test করা যায় না, শুধু unit test।
 - `wrangler.staging.toml` এ `AI_STATE` Durable Object binding নেই (production এ আছে) — staging test এ খেয়াল রাখো।
+- OTP challenge আর ownership table (`auth_verification_challenges`, `auth_email_ownership_links`) এ `user_id` → `auth_users` FOREIGN KEY আছে — account ছাড়া (ভুয়া userId দিয়ে) OTP পাঠানো যাবে না। ধাপ ১ এর নকশা `docs/AUTH-STEP1-PLAN.md` এ।
 - Sandbox এ `npm ci` চালাবে না (memory শেষ হয়ে আটকে যায়); bundle বড় (~১.৫ MB) হলে branch এ CI দিয়ে build করাও।
 
 ---
@@ -45,7 +46,7 @@
 - [x] ✅ প্রতিটা OTP আর email এর জন্য log: provider এর নাম, কত সময় লাগল, ফল কী — `otp_delivery` / `otp_request` (PR #104)। Live যাচাই ১৮ অক্টোবর 15:30 UTC: Logto (`otp-h`), accepted, 6711 ms, rank 1
 - [x] ✅ কোনো provider ব্যর্থ হলে বা ৩০ সেকেন্ডের বেশি দেরি হলে Telegram এ alert — `observability/otp-alert.mjs` (PR #106), production এ চালু; সফল OTP তে alert যায়নি (ঠিক আছে), ব্যর্থতার alert unit test দিয়ে প্রমাণিত
 
-### ধাপ ১: OTP যাচাইয়ের পরে account তৈরি ⬜
+### ধাপ ১: OTP যাচাইয়ের পরে account তৈরি 🟡
 - [ ] Signup ক্রম: নাম → জন্ম তারিখ → স্কুল/কলেজ → email → password; শুধু সাময়িকভাবে রাখা (১০ মিনিট, DO বা KV)
 - [ ] OTP সঠিক হলে তবেই Firebase account → সাথে সাথে login → dashboard
 - [ ] মাঝপথে ছেড়ে দেওয়া signup নিজে থেকে মুছে যাবে
@@ -96,8 +97,8 @@
 ---
 
 ## 📝 শেষ অবস্থা
-- **শেষ session:** ১৮ অক্টোবর ২০২৬ (৬ষ্ঠ)
-  1. মালিক site থেকে OTP পাঠালেন; telemetry তে `otp_delivery` এসেছে: Logto, accepted, 6.7 সেকেন্ড, কোনো error নেই।
-  2. Telegram alert production এ চালু; সফল OTP তে alert যায়নি, যা ঠিক। ধাপ ০ ✅।
-  3. নতুন তথ্য: Brevo প্রথম priority হলেও বাদ পড়েছে, ধাপ ৪ এ কারণ খুঁজতে হবে।
-- **পরের কাজ:** ধাপ ১ — signup তথ্য ১০ মিনিটের জন্য সাময়িক রাখা, OTP সঠিক হলে তবেই Firebase account → login → dashboard।
+- **শেষ session:** ১৮ অক্টোবর ২০২৬ (৭ম)
+  1. ধাপ ০ যাচাই: telemetry তে `otp_delivery` আছে (Logto, accepted, 6711 ms)। ✅ ঠিক আছে।
+  2. ধাপ ১ এর code খুঁটিয়ে দেখা হলো: OTP table এ `auth_users` FK থাকায় পুরোনো পরিকল্পনা (account ছাড়া userId) চলবে না; নতুন নকশা `AUTH-STEP1-PLAN.md` এ লেখা। Code বদলানো বা deploy হয়নি।
+  3. `test:native-auth` এর মূল ৪টা ফাইল sandbox এ চলে (`npm ci` ছাড়াই): 128 এর মধ্যে 126 pass, শুধু পুরোনো ২টা fail।
+- **পরের কাজ:** ধাপ ১ — `AUTH-STEP1-PLAN.md` এর "করণীয়" ১ থেকে শুরু (pending signup table + `signup` purpose), তারপর handler, test, CI bundle, staging → production।
