@@ -1,0 +1,77 @@
+name: visual-guard
+# Screenshot safety net. Runs on every PR. Never pushes to main.
+on:
+  pull_request:
+  push:
+    branches: ['safety/**']
+  workflow_dispatch:
+    inputs:
+      update:
+        description: 'Make new baseline images (true/false)'
+        default: 'false'
+permissions:
+  contents: write
+concurrency:
+  group: visual-guard-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+jobs:
+  visual:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install playwright-core only
+        run: npm i --no-save --no-audit --no-fund --ignore-scripts playwright-core@1.55.0
+      - name: Install Chromium
+        run: npx playwright-core install --with-deps chromium
+      - name: Install Bengali fonts (same family the site uses)
+        run: sudo apt-get install -y -qq fonts-noto-core
+      - name: Make baseline if missing (or asked)
+        id: base
+        run: |
+          if [ "${{ github.event.inputs.update }}" = "true" ] || [ -z "$(ls tests/visual/baseline/*.png 2>/dev/null)" ]; then
+            node tests/visual/visual-guard.mjs --update
+            echo "made=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Compare run 1
+        run: node tests/visual/visual-guard.mjs
+      - name: Compare run 2 (must also pass)
+        run: node tests/visual/visual-guard.mjs
+      - name: Self-check - broken CSS must FAIL
+        run: |
+          git fetch -q origin tag exam-center-backup || true
+          if git show exam-center-backup:exam-center-sky.css > tests/visual/broken-check.css 2>/dev/null; then
+            if VG_INJECT_CSS=tests/visual/broken-check.css VG_OUT=tests/visual/output/broken-check node tests/visual/visual-guard.mjs; then
+              echo "::error::Guard did NOT catch the known broken CSS"; exit 1
+            fi
+            echo "OK: guard caught the broken CSS"
+          else
+            echo "::warning::exam-center-backup tag not found, self-check skipped"
+          fi
+          rm -f tests/visual/broken-check.css
+      - name: Upload new baseline images
+        if: steps.base.outputs.made == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-baseline
+          path: tests/visual/baseline/*.png
+      - name: Save new baseline to this PR branch (never main)
+        if: steps.base.outputs.made == 'true' && (github.head_ref || github.ref_name) != 'main' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        run: |
+          git config user.name "visual-guard-bot"
+          git config user.email "visual-guard-bot@users.noreply.github.com"
+          git add tests/visual/baseline/*.png
+          git commit -m "visual-guard: baseline images made on CI Linux" || exit 0
+          git push origin HEAD:${{ github.head_ref || github.ref_name }}
+      - name: Upload failed screenshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-diff
+          path: tests/visual/output/
