@@ -1326,7 +1326,7 @@ const ACT_ACTIONS = { 'prefs.write': { bn: 'তোমার AI পছন্দ �
     return fetch('/api/ai/recall', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-AH-Guest': guestId() },
-      body: JSON.stringify({ stats: localStats(), recent: recentMistakes() }),
+      body: JSON.stringify({ stats: localStats(), recent: recentMistakes(), profile: profilePayload() }),
       signal: ctrl ? ctrl.signal : undefined
     }).then((r) => (r.ok ? r.json() : null)).then((j) => {
       const rc = j && j.recall;

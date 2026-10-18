@@ -1350,9 +1350,9 @@ var call = async (stub, path, body) => {
 async function bumpDailyStats(env, inc, now = Date.now()) {
   try {
     const stub = statsStub(env);
-    const clean3 = cleanInc(inc);
-    if (!stub || !Object.keys(clean3).length) return false;
-    await Promise.race([call(stub, "/stats/bump", { day: dhakaDay(now), inc: clean3 }), new Promise((r) => setTimeout(r, 500))]);
+    const clean4 = cleanInc(inc);
+    if (!stub || !Object.keys(clean4).length) return false;
+    await Promise.race([call(stub, "/stats/bump", { day: dhakaDay(now), inc: clean4 }), new Promise((r) => setTimeout(r, 500))]);
     return true;
   } catch (_) {
     return false;
@@ -1524,11 +1524,13 @@ var RETAIN_TRIGGERS = Object.freeze([
   "remember that",
   "note this"
 ]);
-var FRAG = "[\\p{L}\\p{M}\\p{N} ,.।-]";
+var GOAL_FRAG = "[\\p{L}\\p{M}\\p{N} .-]";
 var SIGNALS = Object.freeze([
   { kind: KIND.STUDIES, key: "weak-topic", re: /((?:\S+\s+){0,3})(?:দুর্বল|পারি না|কঠিন লাগে|weak in|struggl\w* with)/iu, confidence: 0.8 },
   { kind: KIND.STUDIES, key: "strong-topic", re: /((?:\S+\s+){0,3})(?:ভালো|strong in|good at)/iu, confidence: 0.75 },
-  { kind: KIND.STUDIES, key: "goal", re: new RegExp(`(?:লক্ষ্য|টার্গেট|goal|target)\\s*[:\\-–]?\\s*(${FRAG}{2,60})`, "iu"), confidence: 0.8 },
+  { kind: KIND.STUDIES, key: "goal", re: new RegExp(`(?:লক্ষ্য|টার্গেট|goal|target)\\s*(?:হলো|হল|হচ্ছে|is)?\\s*[:\\-–]?\\s*(${GOAL_FRAG}{2,60})`, "iu"), confidence: 0.8 },
+  /* Sky step 3: "আমি ঢাকা মেডিকেলে ভর্তি হতে চাই" / "ঢাবিতে চান্স পেতে চাই" is a goal too. */
+  { kind: KIND.STUDIES, key: "goal", re: /((?:\S+\s+){0,4}?\S+?)(?:-?(?:এ|তে|য়))?\s+(?:ভর্তি\s*হতে|চান্স\s*পেতে|পড়তে)\s*চাই/iu, confidence: 0.8 },
   // The trigger itself is the preference — trailing words add nothing.
   { kind: KIND.PREFERENCE, key: "answer-style", re: /(ছোট করে|বিস্তারিত|detailed|short answers?|সহজ করে|simple করে)/iu, confidence: 0.75 },
   { kind: KIND.HABIT, key: "study-time", re: /((?:রাতে|সকালে|বিকেলে|দুপুরে|at night|in the morning|evening)\s*(?:পড়ি|পড়াশোনা|study)[\p{L}\p{M}\p{N} ,.।-]{0,40})/iu, confidence: 0.75 }
@@ -1538,7 +1540,7 @@ function cleanCapture(text) {
   const cleaned = String(text || "").replace(/[\u0000-\u001f\u007f]/g, " ").split(/\s+/).map((word) => word.replace(/[,।]/g, "")).filter((word) => word && !FILLER_WORDS.includes(word.toLowerCase())).join(" ");
   return sanitizeMemoryText(cleaned, 80);
 }
-var TOPIC_KEYS = Object.freeze(["weak-topic", "strong-topic"]);
+var TOPIC_KEYS = Object.freeze(["weak-topic", "strong-topic", "goal"]);
 var QUESTION_WORD = /(?:^|\s)(?:কী|কি|কোন|কোনটা|কোনগুলো|কোথায়|কিসে|কীসে|কেন|কীভাবে|কিভাবে|what|which|where|am i)(?=\s|$)/iu;
 function isQuestionClause(clause) {
   return QUESTION_WORD.test(String(clause || "")) || /দুর্বলতা/u.test(String(clause || ""));
@@ -1552,14 +1554,23 @@ function extractMemoryCandidates(text) {
   if (!value) return [];
   const out = [];
   const explicit = isRetentionRequest(value);
-  const statements = value.split(/[?？!।\n]|,\s*/).filter((c) => c.trim() && !isQuestionClause(c)).join(" । ");
+  const clauses = value.split(/[?？!।\n]|,\s*/).filter((c) => c.trim() && !isQuestionClause(c));
+  const seenKeys = /* @__PURE__ */ new Set();
   for (const signal of SIGNALS) {
-    const source = TOPIC_KEYS.includes(signal.key) ? statements : value;
-    if (!source) continue;
-    const match = source.match(signal.re);
+    if (seenKeys.has(signal.key)) continue;
+    let match = null;
+    if (TOPIC_KEYS.includes(signal.key)) {
+      for (const clause of clauses) {
+        match = clause.match(signal.re);
+        if (match) break;
+      }
+    } else {
+      match = value.match(signal.re);
+    }
     if (!match) continue;
     const captured = cleanCapture(match[1] || match[0]);
     if (!captured) continue;
+    seenKeys.add(signal.key);
     out.push({
       kind: signal.kind,
       key: signal.key,
@@ -1592,6 +1603,15 @@ function statedWeakTopics(records, limit = 3) {
     if (out.length >= limit) break;
   }
   return out;
+}
+function statedGoal(records) {
+  const items = Array.isArray(records) ? records : [];
+  for (const r of items.slice().sort((a, b) => (b.ts || 0) - (a.ts || 0))) {
+    if (!r || r.kind !== KIND.STUDIES || r.key !== "goal") continue;
+    const value = sanitizeMemoryText(r.value, 80);
+    if (value && isPiiFree(value)) return value;
+  }
+  return "";
 }
 var KIND_LABEL = Object.freeze({
   [KIND.STUDIES]: "পড়াশোনা",
@@ -1639,6 +1659,7 @@ function buildRecall(input = {}) {
   const records = Array.isArray(input.records) ? input.records : [];
   const stats = input.stats && typeof input.stats === "object" ? input.stats : {};
   const recent = input.recent && typeof input.recent === "object" ? input.recent : {};
+  const goal = input.goal && input.goal.label ? cleanName(input.goal.label, 60) : "";
   const parts = [];
   const buttons = [];
   const kinds = [];
@@ -1668,7 +1689,8 @@ function buildRecall(input = {}) {
     if (name) {
       const base = topicBase(name) || name;
       const noExam = !parts.length && stats.exams === 0 ? "তুমি এখনো পরীক্ষা দাওনি, তবে " : "";
-      parts.push(noExam + "আগে বলেছিলে " + name + " দুর্বল — আজ " + base + " দিয়ে শুরু করি?");
+      const forGoal = goal && !parts.length ? goal + "-এর প্রস্তুতিতে " : "";
+      parts.push(noExam + "আগে বলেছিলে " + name + " দুর্বল — " + (forGoal ? forGoal + "আজ " : "আজ ") + base + " দিয়ে শুরু করি?");
       buttons.push({ label: "🎯 " + base + " দিয়ে শুরু", prompt: base + " থেকে ৫টা প্রশ্নে কুইজ দাও" });
       kinds.push("weak-stated");
     }
@@ -1686,6 +1708,11 @@ function buildRecall(input = {}) {
       }
     }
   }
+  if (!parts.length && goal) {
+    parts.push("তোমার লক্ষ্য " + goal + " — আজকের পড়া কোথা থেকে শুরু করবে, একটা প্ল্যান করে দিই?");
+    buttons.push({ label: "🎯 আজকের প্ল্যান", prompt: "আমার ভর্তির লক্ষ্য অনুযায়ী আজকের পড়ার প্ল্যান দাও" });
+    kinds.push("goal");
+  }
   if (!parts.length) return null;
   return { line: parts.slice(0, 2).join(" "), button: buttons[0], kinds, version: RECALL_VERSION };
 }
@@ -1694,6 +1721,42 @@ function sanitizeRecent(raw) {
   const mistakes = Math.max(0, Math.min(999, Number(raw.mistakes) | 0));
   const since = Number(raw.since);
   return { mistakes, since: Number.isFinite(since) && since > 0 ? since : 0 };
+}
+
+// sky-goal.mjs
+var GOAL_VERSION = "goal-v1";
+var clean2 = (v, max = 80) => {
+  const s = sanitizeMemoryText(String(v == null ? "" : v), max);
+  return s && isPiiFree(s) ? s : "";
+};
+var RE_GOAL_Q = /(প্রস্তুতি|প্রিপারেশন|কী\s*পড়ব|কি\s*পড়ব|কোনটা\s*আগে|কোথা\s*থেকে\s*শুরু|কিভাবে\s*পড়ব|কীভাবে\s*পড়ব|রুটিন|স্টাডি\s*প্ল্যান|পড়ার\s*প্ল্যান|পড়ার\s*পরিকল্পনা|পরামর্শ|সাজেশন|গাইডলাইন|চান্স|ভর্তি|অ্যাডমিশন|এডমিশন|আমার\s*(?:লক্ষ্য|টার্গেট)|লক্ষ্য\s*অনুযায়ী|[কখগঘচ]\s*ইউনিট|ইউনিটে\s*(?:ভর্তি|চান্স|পরীক্ষা)|ঢাবি|জাবি|রাবি|চবি|খুবি|বুয়েট|কুয়েট|রুয়েট|চুয়েট|মেডিকেল|গুচ্ছ|বিশ্ববিদ্যালয়ে|ভার্সিটিতে|admission|prepare|preparation|study\s*plan|routine|target|goal)/iu;
+function isGoalQuestion(text) {
+  const t = String(text || "").slice(0, 600);
+  return t.trim().length >= 4 && RE_GOAL_Q.test(t);
+}
+function resolveGoal({ profile, records } = {}) {
+  const p = profile && typeof profile === "object" ? profile : {};
+  const t = Array.isArray(p.targets) && p.targets[0] ? p.targets[0] : null;
+  if (t && clean2(t.name, 120)) {
+    const university = clean2(t.name, 120), unit = clean2(t.unit, 40), year = clean2(t.year, 40);
+    return { label: [university, unit].filter(Boolean).join(" "), university, unit, year, source: "profile" };
+  }
+  const g = clean2(p.academicGoal, 80);
+  if (g) return { label: g, university: "", unit: "", year: "", source: "profile" };
+  const said = clean2(statedGoal(records), 80);
+  if (said) return { label: said, university: "", unit: "", year: "", source: "chat" };
+  return null;
+}
+function renderGoalContext(goal, opts = {}) {
+  const weak = Array.isArray(opts.weakTopics) ? opts.weakTopics.filter((w) => w && w.name).slice(0, 3) : [];
+  const stated = Array.isArray(opts.stated) ? opts.stated.slice(0, 2) : [];
+  const weakLine = weak.length ? " Measured weak topics: " + weak.map((w) => w.name + " " + (w.accuracy | 0) + "%").join(", ") + "." : stated.length ? " The student said they are weak in: " + stated.join(", ") + "." : "";
+  if (!goal || !goal.label) {
+    if (opts.askedBefore) return "ADMISSION GOAL (" + GOAL_VERSION + "): unknown (already asked once — do not ask again in this chat)." + weakLine;
+    return "ADMISSION GOAL (" + GOAL_VERSION + "): unknown — the student has not set a target university/unit." + weakLine + ' Give useful general advice first, then ask ONE short question at the end: "তুমি কোন বিশ্ববিদ্যালয়/ইউনিটে ভর্তি হতে চাও? বললে সেই অনুযায়ী সাজিয়ে দেব (প্রোফাইলেও লক্ষ্য দিয়ে রাখতে পারো)।" Do not guess a target.';
+  }
+  const where = goal.source === "chat" ? "said earlier in chat" : "from their profile";
+  return "ADMISSION GOAL (" + GOAL_VERSION + ", this student only, " + where + "): " + goal.label + (goal.year ? " (" + goal.year + ")" : "") + "." + weakLine + ' Shape this answer around that goal: name it once near the start (e.g. "তোমার লক্ষ্য ' + goal.label + ', তাই…"), put the subjects that exam tests first, and fit the weak topics into the plan. Never promise a seat or a chance. Never state exam dates, mark distribution, seat numbers or cut-offs unless they are given above; if needed say to check the official circular.';
 }
 
 // sky-instructions.mjs
@@ -2076,9 +2139,9 @@ function authorizeAction(name, { uid, args, enabled = ENABLED } = {}) {
   if (action.ready !== true) return { allowed: false, reason: "action-not-ready", owner: null, args: null };
   const owner = resolveActionOwner(uid);
   if (!owner) return { allowed: false, reason: "no-owner-identity", owner: null, args: null };
-  const clean3 = sanitizeActionArgs(name, args);
-  if (!clean3.ok) return { allowed: false, reason: clean3.reason, owner: null, args: null };
-  return { allowed: true, reason: "ok", owner, args: clean3.args };
+  const clean4 = sanitizeActionArgs(name, args);
+  if (!clean4.ok) return { allowed: false, reason: clean4.reason, owner: null, args: null };
+  return { allowed: true, reason: "ok", owner, args: clean4.args };
 }
 function makeProposal(name, { uid, args, now = Date.now(), id, enabled = ENABLED } = {}) {
   const auth = authorizeAction(name, { uid, args, enabled });
@@ -2438,11 +2501,11 @@ var AiStateObject = class {
   async bumpStats({ day, inc }) {
     const d = String(day || "").slice(0, 10);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return { ok: false };
-    const clean3 = cleanInc(inc);
+    const clean4 = cleanInc(inc);
     const key = "stats:" + d;
     const cur = await this.#entry(key) || { v: {} };
     const v = Object.assign({}, cur.v || {});
-    for (const k of Object.keys(clean3)) v[k] = num2(v[k]) + clean3[k];
+    for (const k of Object.keys(clean4)) v[k] = num2(v[k]) + clean4[k];
     await this.ctx.storage.put(key, { v, exp: Date.now() + 40 * 864e5 });
     return { ok: true };
   }
@@ -4212,6 +4275,20 @@ data: ${JSON.stringify({ stage: id, label })}
     if (memoryText || summaryText || msgs.length > v.messages.length) prepStage("memory", "তোমার আগের কথাগুলো মনে করছি");
     const formatRules = !quizMode && !onboarding ? RESPONSE_FORMAT_RULES : "";
     let sys = [systemPrompt, formatRules, ctxText, memoryText, summaryText].filter(Boolean).join("\n\n");
+    let goalUsed = false;
+    if (!quizMode && !onboarding && !examMode && sendCtx.uid.startsWith("account-") && isGoalQuestion(toolText)) {
+      try {
+        const goalRecs = memoryOn ? memRecords : [];
+        const askedBefore = v.messages.some((m) => m && m.role === "assistant" && /ভর্তি হতে চাও/.test(String(m.content || "")));
+        const goalBlock = renderGoalContext(resolveGoal({ profile: profileCtx, records: goalRecs }), { weakTopics: stats && stats.weakTopics, stated: statedWeakTopics(goalRecs, 2), askedBefore });
+        if (goalBlock) {
+          sys = sys + "\n\n" + goalBlock;
+          goalUsed = true;
+        }
+      } catch (_) {
+        goalUsed = false;
+      }
+    }
     const hasImage = msgs.some((m) => m.image);
     mark("context");
     if (appFeatureHit) sys = sys + "\n\n" + renderAppFeatures(await appFeaturesP);
@@ -4229,7 +4306,7 @@ data: ${JSON.stringify({ stage: id, label })}
       } catch (_) {
       }
     }
-    const chatCacheOn = chatCacheEnabled(env) && env && env.PROFILE_DB && !toolCtxUsed && !appFeatureHit;
+    const chatCacheOn = chatCacheEnabled(env) && env && env.PROFILE_DB && !toolCtxUsed && !goalUsed && !appFeatureHit;
     const cacheQuestion = (v.messages[v.messages.length - 1] || {}).content;
     const cacheable = chatCacheOn && !instrText && isCacheableRequest({
       messages: v.messages,
@@ -4613,8 +4690,20 @@ async function agentRecall(env, uid, body) {
     }
   }
   let recall = null;
+  let records = [];
   try {
-    recall = buildRecall({ records: parseMemory(raw, id), stats, recent, now: Date.now() });
+    records = parseMemory(raw, id);
+  } catch (_) {
+    records = [];
+  }
+  let goal = null;
+  try {
+    goal = resolveGoal({ profile: sanitizeProfileContext(b.profile), records });
+  } catch (_) {
+    goal = null;
+  }
+  try {
+    recall = buildRecall({ records, stats, recent, goal, now: Date.now() });
   } catch (_) {
     recall = null;
   }
@@ -5098,11 +5187,11 @@ var JSONH = {
 };
 var json2 = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: JSONH });
 var onlyRows = (rows4) => (Array.isArray(rows4) ? rows4 : []).filter((row) => row && row.id).map((row) => {
-  const clean3 = { ...row };
+  const clean4 = { ...row };
   for (const key of ["imageDataUrl", "image", "thumbnail"]) {
-    if (typeof clean3[key] === "string" && clean3[key].startsWith("data:") && clean3[key].length > 9e5) delete clean3[key];
+    if (typeof clean4[key] === "string" && clean4[key].startsWith("data:") && clean4[key].length > 9e5) delete clean4[key];
   }
-  return clean3;
+  return clean4;
 });
 var hashText = (text) => {
   let h = 2166136261;
@@ -5280,10 +5369,10 @@ var publishGlobal = async (env, full) => {
   let raw = JSON.stringify(doc);
   if (raw.length > cap) {
     doc.vocabularyMaster = (doc.vocabularyMaster || []).map((row) => {
-      const clean3 = { ...row };
-      delete clean3.imageDataUrl;
-      delete clean3.image;
-      return clean3;
+      const clean4 = { ...row };
+      delete clean4.imageDataUrl;
+      delete clean4.image;
+      return clean4;
     });
     raw = JSON.stringify(doc);
   }
@@ -11208,11 +11297,11 @@ async function verifyTelegramLogin(input, env, { now = Date.now(), cryptoImpl = 
   if (!constantTimeEqual(expected, hash)) throw new TelegramLoginError("TELEGRAM_LOGIN_INVALID");
   const age = Math.floor(Number(now) / 1e3) - Number(data.auth_date);
   if (age > MAX_AGE_SECONDS || age < -60) throw new TelegramLoginError("TELEGRAM_LOGIN_EXPIRED");
-  const clean3 = (value) => String(value || "").replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, 64);
+  const clean4 = (value) => String(value || "").replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, 64);
   return Object.freeze({
     id: data.id,
-    displayName: [clean3(data.first_name), clean3(data.last_name)].filter(Boolean).join(" ").slice(0, 80),
-    username: clean3(data.username)
+    displayName: [clean4(data.first_name), clean4(data.last_name)].filter(Boolean).join(" ").slice(0, 80),
+    username: clean4(data.username)
   });
 }
 async function telegramLoginCredentials(telegramId, env, cryptoImpl = globalThis.crypto) {
@@ -15434,9 +15523,9 @@ var UserDataStore = class {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return null;
       return { table, key: day, column: "day", keyCol: "day" };
     }
-    const clean3 = safeId(id || doc?.id);
-    if (!clean3) return null;
-    return { table, key: clean3, column: "id", keyCol: "id" };
+    const clean4 = safeId(id || doc?.id);
+    if (!clean4) return null;
+    return { table, key: clean4, column: "id", keyCol: "id" };
   }
   #extraColumns(store, doc) {
     const obj = doc && typeof doc === "object" ? doc : {};
@@ -18011,12 +18100,12 @@ function dayRange(endDay, count) {
   return out;
 }
 function computeStreak(days = []) {
-  const clean3 = [...new Set(days.filter(Boolean))].sort();
-  if (!clean3.length) return 0;
+  const clean4 = [...new Set(days.filter(Boolean))].sort();
+  if (!clean4.length) return 0;
   let best = 1;
   let run = 1;
-  for (let i = 1; i < clean3.length; i += 1) {
-    run = daysBetween(clean3[i - 1], clean3[i]) === 1 ? run + 1 : 1;
+  for (let i = 1; i < clean4.length; i += 1) {
+    run = daysBetween(clean4[i - 1], clean4[i]) === 1 ? run + 1 : 1;
     if (run > best) best = run;
   }
   return best;
@@ -25068,19 +25157,19 @@ var TelegramNotificationError = class extends Error {
     this.code = code;
   }
 };
-var clean2 = (value, maxLength) => String(value || "").replace(CONTROL_CHARS2, "").trim().slice(0, maxLength);
+var clean3 = (value, maxLength) => String(value || "").replace(CONTROL_CHARS2, "").trim().slice(0, maxLength);
 function createTelegramCompletionMessage({ status, summary, details = [], timestamp = (/* @__PURE__ */ new Date()).toISOString() }) {
   const normalizedStatus = String(status || "").toUpperCase();
   if (!ALLOWED_STATUSES.has(normalizedStatus)) throw new TelegramNotificationError("INVALID_NOTIFICATION", "Notification status is invalid.");
-  const safeSummary = clean2(summary, 1500);
+  const safeSummary = clean3(summary, 1500);
   if (!safeSummary) throw new TelegramNotificationError("INVALID_NOTIFICATION", "Notification summary is required.");
   if (!Array.isArray(details) || details.length > 12) throw new TelegramNotificationError("INVALID_NOTIFICATION", "Notification details are invalid.");
   const lines = ["🔥 AdmissionSky", `Status: ${normalizedStatus}`, safeSummary];
   for (const item of details) {
-    const value = clean2(item, 240);
+    const value = clean3(item, 240);
     if (value) lines.push(`• ${value}`);
   }
-  lines.push(`Time: ${clean2(timestamp, 40)}`);
+  lines.push(`Time: ${clean3(timestamp, 40)}`);
   const text = lines.join("\n");
   if (text.length > 4096) throw new TelegramNotificationError("INVALID_NOTIFICATION", "Notification is too large.");
   return text;
@@ -25126,7 +25215,7 @@ async function sendTelegramNotification({ token, chatId, message, fetchImpl = gl
     throw new TelegramNotificationError("REQUIRED_SECRET_NOT_CONFIGURED", "Telegram notification configuration is unavailable.");
   }
   if (typeof fetchImpl !== "function") throw new TelegramNotificationError("NOTIFIER_UNAVAILABLE", "Telegram notification transport is unavailable.");
-  const text = typeof message === "string" ? clean2(message, 4096) : createTelegramCompletionMessage(message);
+  const text = typeof message === "string" ? clean3(message, 4096) : createTelegramCompletionMessage(message);
   if (!text) throw new TelegramNotificationError("INVALID_NOTIFICATION", "Notification message is required.");
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort("telegram-notification-timeout"), Math.max(250, Math.min(15e3, Number(timeoutMs || 5e3))));
@@ -29593,12 +29682,12 @@ function stripLeadingGreeting(text) {
   return rest.length >= 12 ? rest : s;
 }
 function splitSentences(text, max = 200) {
-  const clean3 = String(text == null ? "" : text).trim();
-  if (!clean3) return [];
-  if (clean3.length <= max) return [clean3];
+  const clean4 = String(text == null ? "" : text).trim();
+  if (!clean4) return [];
+  if (clean4.length <= max) return [clean4];
   const out = [];
   let buf = "";
-  const parts = clean3.split(/(?<=[।!?\n])|(?<!\d)\.(?=\s|$)/);
+  const parts = clean4.split(/(?<=[।!?\n])|(?<!\d)\.(?=\s|$)/);
   for (const raw of parts) {
     const piece = raw.trim();
     if (!piece) continue;

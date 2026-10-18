@@ -188,11 +188,15 @@ const RETAIN_TRIGGERS = Object.freeze([
 ]);
 
 const FRAG = '[\\p{L}\\p{M}\\p{N} ,.।-]';
+/* A goal stops at a comma / danda, so the next clause ("…, সমাসে দুর্বল") never leaks in. */
+const GOAL_FRAG = '[\\p{L}\\p{M}\\p{N} .-]';
 
 const SIGNALS = Object.freeze([
   { kind: KIND.STUDIES, key: 'weak-topic', re: /((?:\S+\s+){0,3})(?:দুর্বল|পারি না|কঠিন লাগে|weak in|struggl\w* with)/iu, confidence: 0.8 },
   { kind: KIND.STUDIES, key: 'strong-topic', re: /((?:\S+\s+){0,3})(?:ভালো|strong in|good at)/iu, confidence: 0.75 },
-  { kind: KIND.STUDIES, key: 'goal', re: new RegExp(`(?:লক্ষ্য|টার্গেট|goal|target)\\s*[:\\-–]?\\s*(${FRAG}{2,60})`, 'iu'), confidence: 0.8 },
+  { kind: KIND.STUDIES, key: 'goal', re: new RegExp(`(?:লক্ষ্য|টার্গেট|goal|target)\\s*(?:হলো|হল|হচ্ছে|is)?\\s*[:\\-–]?\\s*(${GOAL_FRAG}{2,60})`, 'iu'), confidence: 0.8 },
+  /* Sky step 3: "আমি ঢাকা মেডিকেলে ভর্তি হতে চাই" / "ঢাবিতে চান্স পেতে চাই" is a goal too. */
+  { kind: KIND.STUDIES, key: 'goal', re: /((?:\S+\s+){0,4}?\S+?)(?:-?(?:এ|তে|য়))?\s+(?:ভর্তি\s*হতে|চান্স\s*পেতে|পড়তে)\s*চাই/iu, confidence: 0.8 },
   // The trigger itself is the preference — trailing words add nothing.
   { kind: KIND.PREFERENCE, key: 'answer-style', re: /(ছোট করে|বিস্তারিত|detailed|short answers?|সহজ করে|simple করে)/iu, confidence: 0.75 },
   { kind: KIND.HABIT, key: 'study-time', re: /((?:রাতে|সকালে|বিকেলে|দুপুরে|at night|in the morning|evening)\s*(?:পড়ি|পড়াশোনা|study)[\p{L}\p{M}\p{N} ,.।-]{0,40})/iu, confidence: 0.75 }
@@ -211,7 +215,7 @@ function cleanCapture(text) {
   return sanitizeMemoryText(cleaned, 80);
 }
 
-const TOPIC_KEYS = Object.freeze(['weak-topic', 'strong-topic']);
+const TOPIC_KEYS = Object.freeze(['weak-topic', 'strong-topic', 'goal']);
 const QUESTION_WORD = /(?:^|\s)(?:কী|কি|কোন|কোনটা|কোনগুলো|কোথায়|কিসে|কীসে|কেন|কীভাবে|কিভাবে|what|which|where|am i)(?=\s|$)/iu;
 function isQuestionClause(clause) {
   return QUESTION_WORD.test(String(clause || '')) || /দুর্বলতা/u.test(String(clause || ''));
@@ -236,15 +240,24 @@ export function extractMemoryCandidates(text) {
   /* Sky memory fix 2026-10-18: a question ("আমি কোন বিষয়ে দুর্বল?") is not a
      fact. Topic signals are matched only inside statement clauses, so asking
      about a weakness never overwrites the weakness the student stated before. */
-  const statements = value.split(/[?？!।\n]|,\s*/).filter(c => c.trim() && !isQuestionClause(c)).join(' । ');
+  /* Sky step 3: each clause is matched on its own, so a capture never spans two
+     clauses ("…পড়া, সমাসে দুর্বল" → weak "সমাসে", not "পড়া সমাসে"), and a
+     goal question ("আমার লক্ষ্য কী?") never overwrites the stated goal. */
+  const clauses = value.split(/[?？!।\n]|,\s*/).filter(c => c.trim() && !isQuestionClause(c));
+  const seenKeys = new Set();
 
   for (const signal of SIGNALS) {
-    const source = TOPIC_KEYS.includes(signal.key) ? statements : value;
-    if (!source) continue;
-    const match = source.match(signal.re);
+    if (seenKeys.has(signal.key)) continue;
+    let match = null;
+    if (TOPIC_KEYS.includes(signal.key)) {
+      for (const clause of clauses) { match = clause.match(signal.re); if (match) break; }
+    } else {
+      match = value.match(signal.re);
+    }
     if (!match) continue;
     const captured = cleanCapture(match[1] || match[0]);
     if (!captured) continue;
+    seenKeys.add(signal.key);
     out.push({
       kind: signal.kind,
       key: signal.key,
@@ -284,6 +297,17 @@ export function statedWeakTopics(records, limit = 3) {
     if (out.length >= limit) break;
   }
   return out;
+}
+
+/** Sky step 3: the newest admission goal the student stated in chat, or ''. */
+export function statedGoal(records) {
+  const items = Array.isArray(records) ? records : [];
+  for (const r of items.slice().sort((a, b) => (b.ts || 0) - (a.ts || 0))) {
+    if (!r || r.kind !== KIND.STUDIES || r.key !== 'goal') continue;
+    const value = sanitizeMemoryText(r.value, 80);
+    if (value && isPiiFree(value)) return value;
+  }
+  return '';
 }
 
 const KIND_LABEL = Object.freeze({
