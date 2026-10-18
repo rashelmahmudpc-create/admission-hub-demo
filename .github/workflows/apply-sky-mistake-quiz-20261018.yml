@@ -1,0 +1,59 @@
+name: Apply Sky step 3 mistake quiz (2026-10-18)
+
+# Owner plan step 3: "আমার ভুলগুলো থেকে ৫টা প্রশ্নে কুইজ দাও" (and the chat-open reminder
+# button) builds a tap-to-answer quiz from the student's own recent mistakes on
+# the phone. Runs scripts/apply-sky-mistake-quiz-20261018.py, regenerates the SW
+# digests and worker-bundle.mjs, runs the AI tests, commits to this branch only.
+
+on:
+  push:
+    branches: [feat/sky-mistake-quiz-20261018]
+    paths: ['.github/workflows/apply-sky-mistake-quiz-20261018.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.ref_name == 'feat/sky-mistake-quiz-20261018'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: feat/sky-mistake-quiz-20261018
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Already applied?
+        id: done
+        run: |
+          if grep -q 'mistake_quiz' sky-tools-client.js; then echo 'already=1' >> "$GITHUB_OUTPUT"; fi
+      - name: Apply
+        if: steps.done.outputs.already != '1'
+        run: |
+          set -eu
+          python3 scripts/apply-sky-mistake-quiz-20261018.py
+          npm ci --ignore-scripts
+          npm run sw:manifest
+          npm run build:worker
+          npm run check:worker-bundle
+          git diff --stat
+      - name: Tests
+        if: steps.done.outputs.already != '1'
+        run: |
+          set -eu
+          for f in sky-mistake-quiz sky-recall sky-agent-tools sky-memory-weak-recall ai-audit-fixes ai-agent-f1 ai-chat-history ai-live-stages ai-provider-adapters p06-personal-tutor p21-ai-agent-ui p25-chat-cache p27-history-trim p29-ai-status-privacy p30-ai-latency-cache p14-security-gate phase9-m10-observability phase9-m4-context-engine phase9-m5-prompt-registry phase9-m8-response-validation phase9-m9-action-ui pr3-shared-answers sky-contact sky-core-memory sky-daily-report sky-time-memory sky-web-search voice-agent-client-core voice-agent; do
+            echo "::group::$f"; node --test "$f.test.mjs"; echo "::endgroup::"
+          done
+      - name: Commit and push
+        if: steps.done.outputs.already != '1'
+        run: |
+          set -eu
+          git config user.name 'github-actions[bot]'; git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -qm 'feat(ai): Sky step 3 — quiz from the student own recent mistakes; reminder button runs it; bundle + SW digests regenerated'
+          git push origin HEAD:feat/sky-mistake-quiz-20261018
