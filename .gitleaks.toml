@@ -1,0 +1,21 @@
+# Gitleaks config for admission-hub-demo.
+# Uses the default ruleset and only allow-lists known-safe material:
+#  - *.test.mjs fixtures (fake keys used to prove redaction works)
+#  - vendored Firebase SDK files in sdk/
+#  - Firebase *Web* API keys (AIza...): these are public by design; protect them
+#    with HTTP-referrer restrictions in Google Cloud Console instead.
+title = "admission-hub-demo gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Test fixtures, vendored SDKs and public Firebase Web API keys"
+paths = [
+  '''(^|/)[^/]*\.test\.mjs$''',
+  '''^sdk/''',
+  '''^node_modules/''',
+]
+regexes = [
+  '''AIza[0-9A-Za-z_\-]{35}''',
+]
