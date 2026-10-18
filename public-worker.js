@@ -1,7 +1,7 @@
 // Admission Hub — Public Product Worker (account system retired, v221)
 // Active routes: public content · Firebase-account/ephemeral-guest AI · content admin.
 // The former login/profile/onboarding/session/state APIs are intentionally absent.
-import { agentChat, agentStatus, agentRecall, sanitizeAiPrefs, AI_PREFS_DEFAULT, clearAiMemory } from './ai-agent.js';
+import { agentChat, agentStatus, agentRecall, agentInstructions, sanitizeAiPrefs, AI_PREFS_DEFAULT, clearAiMemory } from './ai-agent.js';
 import {
   authorizeAction, makeProposal, confirmProposal, proposalSummary,
   makeAuditRecord, parseAudit, appendAudit, STATUS, actionsEnabled
@@ -509,6 +509,15 @@ export default {
         }
         return json({ ok: true, prefs });
       }
+      /* Sky custom instructions (owner plan step 3): the student's own short
+         note that Sky follows on every answer. Signed-in only; the note is
+         checked on save (harmful / cheating / rule-breaking / PII refused). */
+      if (path === '/api/ai/instructions' && (request.method === 'GET' || request.method === 'POST' || request.method === 'DELETE')) {
+        const identity = await aiRequestIdentity(request, env, false);
+        if (!identity.authenticated) return json({ error: 'sign_in_required', message: 'নির্দেশনা সেভ করতে লগইন করো।' }, 401);
+        const body = request.method === 'POST' ? await request.json().catch(() => null) : null;
+        return await agentInstructions(env, identity.uid, request.method, body);
+      }
       /* AI audit 2026-10-16: the student's own "forget my AI memory". Signed-in
          only; clears conversation + long-term memory, personalization and the
          action audit. The daily quota is not reset. */
@@ -518,6 +527,7 @@ export default {
         try {
           await clearAiMemory(env, identity.uid);
           await env.PUB_KV.delete('aiprefs:' + identity.uid);
+          await env.PUB_KV.delete('aiinstr:' + identity.uid);
           await env.PUB_KV.delete('actaudit:' + identity.uid);
           await env.PUB_KV.delete('actprop:' + identity.uid);
         } catch (_) {

@@ -1140,6 +1140,36 @@ const ACT_ACTIONS = { 'prefs.write': { bn: 'তোমার AI পছন্দ �
     else { actEl.className = 'cb' + (inpEl.value.trim() ? ' send' : ''); actEl.innerHTML = ic(inpEl.value.trim() ? 'send' : 'mic'); actEl.setAttribute('aria-label', inpEl.value.trim() ? T.send : 'ভয়েস'); }
   }
 
+  /* ───────── Sky custom instructions (owner plan step 3) ───────── */
+  const INSTR_HOWTO = 'Sky-কে এক লাইনে বলে দাও কীভাবে উত্তর দেবে, আমি সবসময় সেটা মানব।\nযেমন লেখো:\nনির্দেশনা: সবসময় উদাহরণ দিয়ে বোঝাবে, শেষে একটা MCQ দেবে\n\nদেখতে: "আমার নির্দেশনা"   মুছতে: "নির্দেশনা মুছে দাও"';
+  function instrParse(q) {
+    const s = String(q || '').trim();
+    let m = s.match(/^(?:sky\s*[,，]?\s*)?(?:\/?নির্দেশনা|\/?instruction|\/?নির্দেশ)\s*[:：=\-–]\s*([\s\S]+)$/i);
+    if (m) return { op: 'save', text: m[1].trim() };
+    if (/^(?:আমার\s*)?(?:নির্দেশনা|instruction)\s*(?:টা|গুলো)?\s*(?:মুছে\s*(?:দাও|ফেলো|দিন)|মুছো|ডিলিট\s*করো|delete|clear|remove)\s*[।.!]?$/i.test(s)) return { op: 'clear' };
+    if (/^(?:আমার\s*(?:নির্দেশনা|instruction)\s*(?:কী|কি|দেখাও)?|নির্দেশনা\s*দেখাও|my\s+instruction)\s*[?？।]?$/i.test(s)) return { op: 'show' };
+    if (/^\/?(?:নির্দেশনা|instruction)\s*[?？]?$/i.test(s)) return { op: 'help' };
+    return null;
+  }
+  async function instrRun(cmd) {
+    if (cmd.op === 'help') return INSTR_HOWTO;
+    const opts = cmd.op === 'show'
+      ? { method: 'GET', credentials: 'same-origin' }
+      : { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: cmd.op === 'clear' ? '' : cmd.text }) };
+    let r = null;
+    try {
+      const res = await fetch('/api/ai/instructions', opts);
+      r = { status: res.status, body: await res.json().catch(() => ({})) };
+    } catch (_) { return 'ইন্টারনেট সংযোগ দেখে আবার চেষ্টা করো।'; }
+    const b = r.body || {};
+    if (r.status === 401) return 'নির্দেশনা দিতে আগে লগইন করো।';
+    if (b.off) return 'এই সুবিধা এখন সাময়িক বন্ধ আছে।';
+    if (r.status !== 200) return b.message || 'এখন সেভ করা গেল না — আবার চেষ্টা করো।';
+    if (cmd.op === 'show') return b.text ? 'তোমার নির্দেশনা:\n' + b.text + '\n\nবদলাতে নতুন করে লেখো "নির্দেশনা: …"। মুছতে: "নির্দেশনা মুছে দাও"' : 'তুমি এখনো কোনো নির্দেশনা দাওনি।\n\n' + INSTR_HOWTO;
+    if (cmd.op === 'clear') return 'তোমার নির্দেশনা মুছে ফেলেছি। এখন থেকে আগের মতো উত্তর দেব।';
+    return 'ঠিক আছে, মনে রাখলাম ✓\n"' + b.text + '"\nএখন থেকে প্রতিটা উত্তরে এভাবেই বলব। বদলাতে আবার "নির্দেশনা: …" লেখো।';
+  }
+
   async function send(text) {
     const t = String(text == null ? inpEl.value : text).trim();
     if (!t || busy) return;
@@ -1151,6 +1181,15 @@ const ACT_ACTIONS = { 'prefs.write': { bn: 'তোমার AI পছন্দ �
 
     sessions[cur].msgs.push({ role: 'user', text: t, ts: Date.now() });
     if (!sessions[cur].name) sessions[cur].name = t.slice(0, 40);
+    /* Step 3 (owner 2026-10-18): "নির্দেশনা: …" saves the student's own note,
+       Sky follows it on every answer. Checked on the server; no AI limit used. */
+    const instrCmd = instrParse(t);
+    if (instrCmd) {
+      const reply = await instrRun(instrCmd);
+      sessions[cur].msgs.push({ role: 'ai', text: reply, ts: Date.now(), local: true });
+      save(); renderMsgs(); mood('happy', 1200);
+      return;
+    }
     /* PR-2 (owner 2026-10-17): hi / ধন্যবাদ / তুমি কে … are answered here from the
        in-app bank (sky-smalltalk.js): instant, no server call, no AI limit used. */
     /* The big reply bank (sky-replies.json) loads once on first use; wait at most 0.8 s. */
