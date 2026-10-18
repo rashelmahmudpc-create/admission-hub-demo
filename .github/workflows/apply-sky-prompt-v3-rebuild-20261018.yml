@@ -1,0 +1,70 @@
+name: Apply Sky prompt web_search v3 2026-10-18
+
+# Owner 2026-10-18: fix prompt so Sky knows it has web_search (Tavily), not "no internet".
+# prompt-registry v3 + SYSTEM_PROMPT_V=sys-sky-v3-web-search + rebuilt worker-bundle.
+# Package checked by SHA-256, final tree by fingerprint. Never deploys.
+
+on:
+  push:
+    branches: [fix/sky-prompt-v3-rebuild]
+    paths: ['.github/workflows/apply-sky-prompt-v3-rebuild-20261018.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  PKG_URL: https://backend.composio.dev/api/v3/sl/VxANQ5m280
+  PKG_SHA256: c2a9aaff7caf4847e209b726515c615fcec90ba1dc5dc704abb450ea9be769e7
+  BASE: 2de6d2c4f1a9a4ece1b5166d3310388ecea5ee3b
+  WF: .github/workflows/apply-sky-prompt-v3-rebuild-20261018.yml
+
+jobs:
+  apply:
+    if: github.ref_name == 'fix/sky-prompt-v3-rebuild'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: fix/sky-prompt-v3-rebuild
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Already applied?
+        id: done
+        run: |
+          if grep -q 'sys-sky-v3-web-search' ai-agent.js; then echo 'already=1' >> "$GITHUB_OUTPUT"; fi
+      - name: Overlay and verify tree
+        if: steps.done.outputs.already != '1'
+        run: |
+          set -eu
+          [ "$(git rev-parse HEAD~1)" = "$BASE" ] || { echo 'branch moved'; exit 1; }
+          curl -fsSL --retry 3 -L "$PKG_URL" -o /tmp/pkg.tgz
+          echo "$PKG_SHA256  /tmp/pkg.tgz" | sha256sum -c -
+          mkdir /tmp/pk && tar xzf /tmp/pkg.tgz -C /tmp/pk
+          cp -a /tmp/pk/f/. .
+          node --check ai-agent.js
+          node --check prompt-registry.js
+          git add -A
+          FP=$(git ls-files -s | grep -vF "$WF" | awk '{print $2, $4}' | sha256sum | cut -c1-64)
+          [ "$FP" = "$(cat /tmp/pk/fp)" ] || { echo 'tree fingerprint mismatch'; git status --short; exit 1; }
+      - name: Checks and tests
+        if: steps.done.outputs.already != '1'
+        run: |
+          set -eu
+          npm ci --ignore-scripts
+          npm run check:worker-bundle
+          cp sw.js /tmp/sw.packaged.js; npm run sw:manifest; cmp sw.js /tmp/sw.packaged.js
+          for f in phase9-m5-prompt-registry phase9-m6-tool-registry phase9-m7-memory-engine sky-web-search ai-agent-f1; do
+            echo "::group::$f"; node "$f.test.mjs"; echo "::endgroup::"
+          done
+      - name: Commit and push
+        if: steps.done.outputs.already != '1'
+        run: |
+          set -eu
+          git config user.name 'github-actions[bot]'; git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -qm 'fix(sky): prompt tells Sky it has web_search, rebuilt worker-bundle (sys-sky-v3-web-search)'
+          git push origin HEAD:fix/sky-prompt-v3-rebuild
