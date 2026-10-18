@@ -13,6 +13,20 @@
        instead of a local stub.
    See tools/exam_center_port_plan.md.
 */
+const $=s=>document.querySelector(s),bn=n=>String(n).replace(/\d/g,d=>'০১২৩৪৫৬৭৮৯'[d]),PG=50;
+let app=null;
+const ic=p=>`<svg class="ic" viewBox="0 0 24 24">${p}</svg>`;
+const I={back:ic('<path d="M15 5l-7 7 7 7"/>'),lock:ic('<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/>'),ck:ic('<path d="M5 12.5l4.5 4.5L19 7"/>'),x:ic('<path d="M6 6l12 12M18 6L6 18"/>'),flag:ic('<path d="M5 21V4M5 4h11l-2 4 2 4H5"/>'),star:ic('<path d="M12 3l2.7 5.6 6.1.8-4.5 4.3 1.1 6.1L12 16.8 6.6 19.8l1.1-6.1L3.2 9.4l6.1-.8z"/>'),fire:ic('<path d="M12 3c1 4 5 5 5 10a5 5 0 01-10 0c0-2 1-3 2-4 0 2 1 3 2 3 0-3-1-5 1-9z"/>'),clk:ic('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'),grid:ic('<rect x="4" y="4" width="6" height="6" rx="1.5"/><rect x="14" y="4" width="6" height="6" rx="1.5"/><rect x="4" y="14" width="6" height="6" rx="1.5"/><rect x="14" y="14" width="6" height="6" rx="1.5"/>'),bulb:ic('<path d="M9 18h6M10 21h4M12 3a6 6 0 00-4 10.5c.7.7 1 1.5 1 2.5h6c0-1 .3-1.8 1-2.5A6 6 0 0012 3z"/>'),skip:ic('<path d="M5 5l9 7-9 7zM18 5v14"/>'),arr:ic('<path d="M5 12h14M13 6l6 6-6 6"/>')};
+I.spark=ic('<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/>');I.share=ic('<circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M8.2 11l7.6-4M8.2 13l7.6 4"/>');
+const IL=[
+`<svg viewBox="0 0 150 130" fill="none" stroke="#fff" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"><rect x="30" y="14" width="66" height="88" rx="12" fill="#fff3"/><path d="M48 14v-5h30v5M46 44h34M46 62h24M46 80h14"/><circle cx="106" cy="86" r="24" fill="#1B6FE0"/><path d="M106 72v15l9 6"/><circle cx="20" cy="40" r="5" fill="#fff"/><circle cx="130" cy="30" r="4" fill="#FFD36B"/></svg>`,
+`<svg viewBox="0 0 150 130"><path d="M88 6L36 70h32l-10 52 56-70H80z" fill="#FFD36B" stroke="#fff" stroke-width="5" stroke-linejoin="round"/><g fill="#fff"><circle cx="124" cy="28" r="5"/><circle cx="20" cy="40" r="4"/><circle cx="130" cy="92" r="4"/></g></svg>`,
+`<svg viewBox="0 0 150 130" fill="none" stroke="#fff" stroke-width="4.5" stroke-linecap="round"><rect x="26" y="12" width="70" height="92" rx="12" fill="#fff3"/><path d="M44 40h34M44 58h22"/><circle cx="106" cy="86" r="24" fill="#FF5C70"/><path d="M96 76l20 20M116 76L96 96"/></svg>`,
+`<svg viewBox="0 0 150 130" fill="none" stroke="#fff" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"><rect x="20" y="70" width="20" height="46" rx="5" fill="#fff5"/><rect x="52" y="48" width="20" height="68" rx="5" fill="#fff5"/><rect x="84" y="26" width="20" height="90" rx="5" fill="#fff5"/><path d="M22 54L58 30l30-16 34 8"/><circle cx="122" cy="22" r="6" fill="#FFD36B"/></svg>`];
+const M=[{n:'মক টেস্ট',d:'আসল পরীক্ষা, টাইমার সহ, উত্তর পরে',c:['#1B6FE0','#5CC0FF'],say:'আসল পরীক্ষার মতো! একবার চাপলে উত্তর আর বদলানো যাবে না। ভেবে চাপুন!',mo:'think'},
+{n:'ফ্ল্যাশ টেস্ট',d:'প্রতি উত্তরে সাথে সাথে ফলাফল',c:['#2E9BFF','#8C7CFF'],say:'ফ্ল্যাশ টেস্টে আমি পাশে থেকে আপনার প্রতিটি উত্তরে নাচব!',mo:'dance'},
+{n:'মিস্টেক টেস্ট',d:'শুধু আপনার ভুল প্রশ্ন থেকে অনুশীলন',c:['#3BA7FF','#FF8FA3'],say:'ভুলই সবচেয়ে বড় শিক্ষক। চলুন ভুলগুলো ঠিক করি!',mo:'hi'},
+{n:'আমার অ্যাটেম্পট',d:'ইতিহাস, স্কোর ও বিশ্লেষণ',c:['#2AA9F5','#3FDCB4'],say:'আপনার আগের পরীক্ষার সব হিসাব এখানেই!',mo:'fly'}];
 /* TODO 1 (done) — real data. The bank is NOT hardcoded any more; it is read
    from CACHE, which cloud-content-sync.js fills from GET /pub/content.
    The demo's per-question shape is {q,o,a,t,s,e}; the backend's is
@@ -235,7 +249,7 @@ function attempts(){go();cur='att';T.push(setInterval(chat,3800));app.innerHTML=
 /* ---------- events ---------- */
 function sheet(h){const d=document.createElement('div');d.className='sheet';d.innerHTML=`<div>${h}</div>`;d.onclick=e=>{const b=e.target.closest('button');if(e.target==d||(b&&b.dataset.x))d.remove();else if(b&&b.dataset.ok){d.remove();finish()}else if(b&&b.dataset.jp){d.remove();const i=+b.dataset.jp;E.pg=Math.floor(i/PG);mockUI(false);setTimeout(()=>$('#q'+i)?.scrollIntoView({behavior:'smooth'}),50)}};document.body.append(d)}
 function submit(){const n=E.list.length,an=Object.keys(E.ans).length;if(!S.c.confirm)return finish();sheet(`<h3>জমা দিতে চান?</h3><p>${bn(an)}টি উত্তর দিয়েছেন, ${bn(n-an)}টি বাকি আছে। জমা দিলে আর ফেরা যাবে না।</p><div style="display:flex;gap:10px"><button class="sec" data-x="1">ফিরে যান</button><button class="pri" data-ok="1">জমা দিন</button></div>`)}
-app.onclick=e=>{const t=e.target;let b;
+function skyClick(e){const t=e.target;let b;
 if(t.closest('.skyw')){return act()}
 if(b=t.closest('[data-ai]'))return aiToggle(+b.dataset.ai);
 if(b=t.closest('[data-aix]')){const box=$('#aio');if(!box)return;box.textContent='Sky লিখছে...';box.classList.add('on');const i=b.closest('.aih')?.parentElement?.querySelector('[data-ai]');const idx=i?(+i.dataset.ai):-1;const Z=idx>=0?curA.list[idx]:null;if(Z)return void askAI(Z,box);return}
@@ -261,11 +275,26 @@ if(a=='skp'){go();E.i++;if(E.i>=E.list.length){E.i--;return finish()}return flas
 if(a=='hint'){const Z=E.list[E.i],w=Z.pm.filter(o=>o!=Z.a);E.hid[Z.u]=sh(w).slice(0,2);flashUI(false);return say('দুটো ভুল অপশন সরিয়ে দিলাম! এবার ঠিকটা বাছুন।','think',3500)}
 if(a=='nxt'){E.i++;return flashUI()}if(a=='sub')return submit();if(a=='fin')return finish();if(a=='note')return toast('নোট যুক্ত হবে (ব্যাকএন্ড সংযোগের পর)');
 if(a=='more'){S.lim+=50;return result(curA,false)}
-if(a=='redo')return retry(curA,true);if(a=='same')return retry(curA,false);}};
+if(a=='redo')return retry(curA,true);if(a=='same')return retry(curA,false);}}
 function syncCfg(){const c=S.c;document.querySelectorAll('.nt[data-k="n"]').forEach(b=>b.classList.toggle('on',String(c.n)==b.dataset.v));document.querySelectorAll('.nt[data-k="tm"]').forEach(b=>b.classList.toggle('on',String(c.tm)==b.dataset.v));const x=$('#est');x&&(x.textContent=estT())}
-app.oninput=e=>{const t=e.target;if(!t.dataset.in)return;const v=parseInt(t.value);if(!v||v<1)return;if(t.dataset.in=='n')S.c.n=Math.min(500,v);else S.c.tm=Math.min(300,v);syncCfg()};
-document.addEventListener('focusin',e=>{e.target.tagName=='INPUT'&&document.body.classList.add('kb')});
-document.addEventListener('focusout',()=>document.body.classList.remove('kb'));
+function skyInput(e){const t=e.target;if(!t.dataset.in)return;const v=parseInt(t.value);if(!v||v<1)return;if(t.dataset.in=='n')S.c.n=Math.min(500,v);else S.c.tm=Math.min(300,v);syncCfg()}
+document.addEventListener('focusin',e=>{e.target.tagName=='INPUT'&&$('#examCenterSky')?.classList.add('kb')});
+document.addEventListener('focusout',()=>$('#examCenterSky')?.classList.remove('kb'));
 document.addEventListener('keydown',e=>{if(e.key=='Enter'&&e.target.tagName=='INPUT')e.target.blur()});
 document.addEventListener('pointerdown',e=>{const a=document.activeElement;if(a&&a.tagName=='INPUT'&&!e.target.closest('input'))a.blur()});
-center();
+/* Called by the app when the exam route mounts. Re-attaches the handlers to the
+   live container and renders the centre. */
+window.mountExamCenterSky=function(host){
+  app=host; if(!app) return;
+  app.onclick=skyClick; app.oninput=skyInput;
+  mapBank(); center();
+};
+/* index.html's inline app script renders the first route while parsing, before
+   this deferred file has defined the mount. If that first route was the exam
+   centre, the shell fell back to the older grid — re-render once now so the
+   owner's screens win. */
+if(app) center();
+try{
+  const rp=(location.hash.replace(/^#\/?/,'').split('?')[0]||'dashboard');
+  if(rp==='exam'&&typeof window.render==='function') window.render();
+}catch(_){}

@@ -5,17 +5,17 @@
    TODO (port): none — CSS needs no data changes.
 */
 
-*{box-sizing:border-box;margin:0;-webkit-tap-highlight-color:transparent}
-:root{--bg:#EAF6FF;--card:#fff;--ink:#102A5C;--mut:#5F7BA6;--b:#2E9BFF;--b2:#7CCBFF;--b3:#1B6FE0;--or:#FFB23F;--ok:#12B886;--okb:#DDF8EE;--bad:#FF5C70;--badb:#FFE9EC;--lav:#8C7CFF;--line:#D3E8FA;--gl:rgba(255,255,255,.72);box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);color-scheme:light dark}
-@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0C1B35;--card:#142A4F;--ink:#E8F3FF;--mut:#8FB0DA;--line:#25416F;--okb:#0F3B33;--badb:#44202C;--gl:rgba(20,42,79,.75);color-scheme:dark}}
-:root[data-theme="dark"]{--bg:#0C1B35;--card:#142A4F;--ink:#E8F3FF;--mut:#8FB0DA;--line:#25416F;--okb:#0F3B33;--badb:#44202C;--gl:rgba(20,42,79,.75);color-scheme:dark}
-html,body{min-height:100%;background:var(--bg)}
-body{font-family:"Noto Sans Bengali","Hind Siliguri",system-ui,sans-serif;color:var(--ink);overflow-x:hidden;background:linear-gradient(180deg,#CFEBFF 0,var(--bg) 360px)}
-body:before,body:after{content:"";position:fixed;z-index:-1;border-radius:50%;filter:blur(40px);opacity:.7;animation:cl 14s ease-in-out infinite alternate}
-body:before{width:260px;height:260px;left:-80px;top:80px;background:#fff8}body:after{width:300px;height:300px;right:-100px;top:340px;background:rgba(140,124,255,.22);animation-duration:18s}
+#examCenterSky *{box-sizing:border-box;margin:0;-webkit-tap-highlight-color:transparent}
+#examCenterSky{--bg:#EAF6FF;--card:#fff;--ink:#102A5C;--mut:#5F7BA6;--b:#2E9BFF;--b2:#7CCBFF;--b3:#1B6FE0;--or:#FFB23F;--ok:#12B886;--okb:#DDF8EE;--bad:#FF5C70;--badb:#FFE9EC;--lav:#8C7CFF;--line:#D3E8FA;--gl:rgba(255,255,255,.72);box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);color-scheme:light dark}
+@media(prefers-color-scheme:dark){#examCenterSky:not([data-theme="light"]){--bg:#0C1B35;--card:#142A4F;--ink:#E8F3FF;--mut:#8FB0DA;--line:#25416F;--okb:#0F3B33;--badb:#44202C;--gl:rgba(20,42,79,.75);color-scheme:dark}}
+:root[data-theme="dark"] #examCenterSky{--bg:#0C1B35;--card:#142A4F;--ink:#E8F3FF;--mut:#8FB0DA;--line:#25416F;--okb:#0F3B33;--badb:#44202C;--gl:rgba(20,42,79,.75);color-scheme:dark}
+#examCenterSky{min-height:100%;background:var(--bg)}
+#examCenterSky{font-family:"Noto Sans Bengali","Hind Siliguri",system-ui,sans-serif;color:var(--ink);overflow-x:hidden;background:linear-gradient(180deg,#CFEBFF 0,var(--bg) 360px)}
+#examCenterSky:before,#examCenterSky:after{content:"";position:fixed;z-index:-1;border-radius:50%;filter:blur(40px);opacity:.7;animation:cl 14s ease-in-out infinite alternate}
+#examCenterSky:before{width:260px;height:260px;left:-80px;top:80px;background:#fff8}#examCenterSky:after{width:300px;height:300px;right:-100px;top:340px;background:rgba(140,124,255,.22);animation-duration:18s}
 @keyframes cl{to{transform:translate(50px,40px)}}
-button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
-#app{max-width:480px;margin:0 auto;min-height:100vh}
+#examCenterSky button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
+#examCenterSky{max-width:480px;margin:0 auto;min-height:100vh}
 .scr{padding:14px 16px 120px}.in{animation:fu .5s cubic-bezier(.2,.8,.2,1) both}
 @keyframes fu{from{opacity:0;transform:translateY(16px)}}
 small{font-size:11px;letter-spacing:.14em;font-weight:800;color:var(--b3)}
@@ -134,12 +134,12 @@ h1{font-size:30px;font-weight:800;line-height:1.15}
 @keyframes cf{45%{transform:translate(calc(var(--x)*.8),var(--y)) rotate(calc(var(--r)*.5))}100%{transform:translate(var(--x),calc(var(--y) + 520px)) rotate(var(--r));opacity:0}}
 .stage{background:linear-gradient(160deg,#fff,#DDF1FF);border:1.5px solid var(--line);border-radius:30px;padding:12px;margin-top:12px;box-shadow:0 20px 38px -26px rgba(27,111,224,.8)}
 @media(prefers-color-scheme:dark){:root:not([data-theme="light"]) .stage{background:linear-gradient(160deg,#17325C,#0F2347)}}
-:root[data-theme="dark"] .stage{background:linear-gradient(160deg,#17325C,#0F2347)}
+:root[data-theme="dark"] #examCenterSky .stage{background:linear-gradient(160deg,#17325C,#0F2347)}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 
-body{background:radial-gradient(70% 38% at 0 0,#B9E3FF,transparent 60%),radial-gradient(60% 36% at 100% 18%,#DAD3FF,transparent 62%),radial-gradient(70% 40% at 40% 100%,#C9F5E8,transparent 60%),var(--bg)}
+#examCenterSky{background:radial-gradient(70% 38% at 0 0,#B9E3FF,transparent 60%),radial-gradient(60% 36% at 100% 18%,#DAD3FF,transparent 62%),radial-gradient(70% 40% at 40% 100%,#C9F5E8,transparent 60%),var(--bg)}
 @media(prefers-color-scheme:dark){:root:not([data-theme="light"]) body{background:linear-gradient(180deg,#12294F,var(--bg) 360px)}}
-:root[data-theme="dark"] body{background:linear-gradient(180deg,#12294F,var(--bg) 360px)}
+:root[data-theme="dark"] #examCenterSky{background:linear-gradient(180deg,#12294F,var(--bg) 360px)}
 h1{background:linear-gradient(90deg,#1B6FE0,#8C7CFF);-webkit-background-clip:text;background-clip:text;color:transparent}
 .sl{box-shadow:0 26px 50px -24px rgba(27,111,224,.8),0 0 0 4px #fff6}
 .sd{height:268px;padding:22px}.sd .no{left:22px;top:20px}
@@ -179,10 +179,9 @@ h1{background:linear-gradient(90deg,#1B6FE0,#8C7CFF);-webkit-background-clip:tex
 .th:after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:10px;background:radial-gradient(circle at 10px 0,transparent 8px,var(--card) 9px) 0 0/20px 10px}
 .tb2{padding:10px 20px 8px}.tb2 div{display:flex;justify-content:space-between;padding:11px 0;border-bottom:1px dashed var(--line);font-size:14px}.tb2 div:last-child{border:0}.tb2 b{color:var(--b3)}
 
-html{-webkit-text-size-adjust:100%;overscroll-behavior:none}
 input,button{font-size:16px;touch-action:manipulation}
 .stp2 input{font-size:18px;font-weight:800;font-family:inherit}
-body.kb .bar{display:none}body.kb .scr{padding-bottom:40px}
+#examCenterSky.kb .bar{display:none}#examCenterSky.kb .scr{padding-bottom:40px}
 .sl{position:relative;isolation:isolate;transform:translateZ(0);transition:transform .2s}.sl.prs{transform:scale(.985)}
 .tr{will-change:transform}
 .ill{animation:none!important;transform:translateX(calc(var(--d,0px)*-.14));transition:transform .12s linear}
