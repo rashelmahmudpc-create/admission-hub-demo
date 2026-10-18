@@ -588,8 +588,10 @@ export default {
          Signed-in only; a guest or a no-memory session simply gets nothing. */
       if (path === '/api/ai/recall' && request.method === 'POST') {
         const identity = await aiRequestIdentity(request, env, false);
-        if (!identity.authenticated || identity.persistMemory === false) return json({ ok: true, recall: null });
-        return await agentRecall(request, env, identity.uid);
+        if (!identity.authenticated) return json({ error: 'sign_in_required', recall: null }, 401);
+        if (identity.persistMemory === false) return json({ ok: true, recall: null });
+        const body = await request.json().catch(() => null);
+        return await agentRecall(env, identity.uid, body);
       }
       if (path === '/api/ai/chat' && request.method === 'POST') {
         const identity = await aiRequestIdentity(request, env, false);
