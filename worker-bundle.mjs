@@ -3647,13 +3647,13 @@ function authVerificationGuidance(text) {
 }
 function guidanceResponse(text, stream) {
   if (!stream) return jsonResp({ text, intent: INTENTS.GENERAL_CHAT, pv: SYSTEM_PROMPT_V, agent: AGENT_VERSION, authoritative: false });
-  const encoder7 = new TextEncoder();
+  const encoder8 = new TextEncoder();
   return new Response(new ReadableStream({
     start(controller) {
-      controller.enqueue(encoder7.encode(`data: ${JSON.stringify({ text })}
+      controller.enqueue(encoder8.encode(`data: ${JSON.stringify({ text })}
 
 `));
-      controller.enqueue(encoder7.encode(`event: done
+      controller.enqueue(encoder8.encode(`event: done
 data: ${JSON.stringify({ intent: INTENTS.GENERAL_CHAT, pv: SYSTEM_PROMPT_V, agent: AGENT_VERSION, authoritative: false })}
 
 `));
@@ -4087,12 +4087,12 @@ data: ${JSON.stringify({ stage: id, label })}
       emitTiming({ failed: true });
       return jsonResp({ error: "provider_failed", message: "AI একটু ব্যস্ত — কয়েক সেকেন্ড পরে আবার চেষ্টা করো।", detail: lastErr, retryable: true }, 502);
     }
-    const encoder7 = new TextEncoder();
+    const encoder8 = new TextEncoder();
     const streamOut = new ReadableStream({
       async start(controller) {
         const push = (s) => {
           try {
-            controller.enqueue(encoder7.encode(s));
+            controller.enqueue(encoder8.encode(s));
           } catch (_) {
           }
         };
@@ -8424,6 +8424,12 @@ var FIREBASE_OPERATION_LIMITS = Object.freeze({
     Object.freeze({ scope: "firebase-facebook-device-15m", source: "device", limit: 30, windowMs: 15 * 60 * 1e3 }),
     Object.freeze({ scope: "firebase-facebook-global-minute", source: "global", limit: 180, windowMs: 60 * 1e3 })
   ]),
+  // POST /telegram/login (owner 2026-10-18) asks for its own slot.
+  "telegram-login": Object.freeze([
+    Object.freeze({ scope: "firebase-telegram-ip-15m", source: "ip", limit: 60, windowMs: 15 * 60 * 1e3 }),
+    Object.freeze({ scope: "firebase-telegram-device-15m", source: "device", limit: 30, windowMs: 15 * 60 * 1e3 }),
+    Object.freeze({ scope: "firebase-telegram-global-minute", source: "global", limit: 180, windowMs: 60 * 1e3 })
+  ]),
   "password-reset": Object.freeze([
     Object.freeze({ scope: "firebase-reset-email-hour", source: "email", limit: 3, windowMs: 60 * 60 * 1e3 }),
     Object.freeze({ scope: "firebase-reset-email-day", source: "email", limit: 8, windowMs: 24 * 60 * 60 * 1e3 }),
@@ -10665,19 +10671,19 @@ var base64Url = (bytes) => {
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 };
 var validTelegramWebhookSecret = (value) => SECRET_PATTERN.test(String(value || ""));
-async function deriveTelegramWebhookSecret(rootSecret, cryptoImpl = globalThis.crypto) {
-  const source = safeRootSecret(rootSecret);
+async function deriveTelegramWebhookSecret(rootSecret2, cryptoImpl = globalThis.crypto) {
+  const source = safeRootSecret(rootSecret2);
   if (!source || !cryptoImpl?.subtle) return "";
   try {
-    const encoder7 = new TextEncoder();
+    const encoder8 = new TextEncoder();
     const key = await cryptoImpl.subtle.importKey(
       "raw",
-      encoder7.encode(source),
+      encoder8.encode(source),
       { name: "HMAC", hash: "SHA-256" },
       false,
       ["sign"]
     );
-    const signature = await cryptoImpl.subtle.sign("HMAC", key, encoder7.encode(WEBHOOK_CONTEXT));
+    const signature = await cryptoImpl.subtle.sign("HMAC", key, encoder8.encode(WEBHOOK_CONTEXT));
     const derived = base64Url(signature);
     return validTelegramWebhookSecret(derived) ? derived : "";
   } catch {
@@ -10690,6 +10696,86 @@ async function resolveTelegramWebhookSecret(env = {}, cryptoImpl = globalThis.cr
   return deriveTelegramWebhookSecret(env?.AUTH_HMAC_SECRET, cryptoImpl);
 }
 var __telegramSecurityTest = Object.freeze({ WEBHOOK_CONTEXT, safeRootSecret, base64Url });
+
+// auth-native/verification/telegram-login.mjs
+var TELEGRAM_LOGIN_DOMAIN = "telegram.admissionsky.pages.dev";
+var MAX_AGE_SECONDS = 600;
+var BOT_TOKEN_PATTERN = /^\d{5,15}:[A-Za-z0-9_-]{30,64}$/;
+var LOGIN_EMAIL_PATTERN = /^tg(\d{1,20})\.([0-9a-f]{20})@telegram\.admissionsky\.pages\.dev$/;
+var encoder5 = new TextEncoder();
+var hex = (buffer) => [...new Uint8Array(buffer)].map((b) => b.toString(16).padStart(2, "0")).join("");
+var hmacHex = async (keyBytes, text, cryptoImpl) => {
+  const key = await cryptoImpl.subtle.importKey("raw", keyBytes, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  return hex(await cryptoImpl.subtle.sign("HMAC", key, encoder5.encode(text)));
+};
+var rootSecret = (env) => {
+  const value = String(env?.AUTH_HMAC_SECRET || "");
+  return value.length >= 32 && value.length <= 4096 ? value : "";
+};
+var telegramLoginBotToken = (env) => {
+  const token = String(env?.TELEGRAM_AUTH_BOT_TOKEN || env?.TG_BOT_TOKEN || "").trim();
+  return BOT_TOKEN_PATTERN.test(token) ? token : "";
+};
+var telegramLoginBotId = (env) => telegramLoginBotToken(env).split(":")[0] || "";
+var telegramLoginReady = (env) => Boolean(
+  telegramLoginBotToken(env) && rootSecret(env) && String(env?.TELEGRAM_LOGIN_ACTIVATION || "enabled") !== "disabled"
+);
+var reservedTelegramLoginEmail = (email) => String(email || "").trim().toLowerCase().endsWith(`@${TELEGRAM_LOGIN_DOMAIN}`);
+var TelegramLoginError = class extends Error {
+  constructor(reason2) {
+    super(reason2);
+    this.name = "TelegramLoginError";
+    this.reason = reason2;
+  }
+};
+async function verifyTelegramLogin(input, env, { now = Date.now(), cryptoImpl = globalThis.crypto } = {}) {
+  const token = telegramLoginBotToken(env);
+  if (!token || !cryptoImpl?.subtle) throw new TelegramLoginError("TELEGRAM_LOGIN_UNAVAILABLE");
+  if (!input || typeof input !== "object" || Array.isArray(input)) throw new TelegramLoginError("TELEGRAM_LOGIN_INVALID");
+  const hash = String(input.hash || "").toLowerCase();
+  const data = {};
+  for (const [key, value] of Object.entries(input)) {
+    if (key === "hash" || value === void 0 || value === null) continue;
+    if (!/^[a-z_]{1,32}$/.test(key) || !["string", "number", "boolean"].includes(typeof value)) throw new TelegramLoginError("TELEGRAM_LOGIN_INVALID");
+    data[key] = String(value);
+  }
+  if (Object.keys(data).length > 16 || !/^[0-9a-f]{64}$/.test(hash) || !/^\d{1,20}$/.test(data.id || "") || !/^\d{9,12}$/.test(data.auth_date || "")) {
+    throw new TelegramLoginError("TELEGRAM_LOGIN_INVALID");
+  }
+  const checkString = Object.keys(data).sort().map((key) => `${key}=${data[key]}`).join("\n");
+  const secret = await cryptoImpl.subtle.digest("SHA-256", encoder5.encode(token));
+  const expected = await hmacHex(secret, checkString, cryptoImpl);
+  if (!constantTimeEqual(expected, hash)) throw new TelegramLoginError("TELEGRAM_LOGIN_INVALID");
+  const age = Math.floor(Number(now) / 1e3) - Number(data.auth_date);
+  if (age > MAX_AGE_SECONDS || age < -60) throw new TelegramLoginError("TELEGRAM_LOGIN_EXPIRED");
+  const clean2 = (value) => String(value || "").replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, 64);
+  return Object.freeze({
+    id: data.id,
+    displayName: [clean2(data.first_name), clean2(data.last_name)].filter(Boolean).join(" ").slice(0, 80),
+    username: clean2(data.username)
+  });
+}
+async function telegramLoginCredentials(telegramId, env, cryptoImpl = globalThis.crypto) {
+  const root = rootSecret(env);
+  const id = String(telegramId || "");
+  if (!root || !/^\d{1,20}$/.test(id)) throw new TelegramLoginError("TELEGRAM_LOGIN_UNAVAILABLE");
+  const key = encoder5.encode(root);
+  const [tag, password] = await Promise.all([
+    hmacHex(key, `admission-hub-telegram-login-email-v1:${id}`, cryptoImpl),
+    hmacHex(key, `admission-hub-telegram-login-password-v1:${id}`, cryptoImpl)
+  ]);
+  return Object.freeze({ email: `tg${id}.${tag.slice(0, 20)}@${TELEGRAM_LOGIN_DOMAIN}`, password: `Tg-${password.slice(0, 44)}` });
+}
+async function isTelegramLoginEmail(email, env, cryptoImpl = globalThis.crypto) {
+  const match = LOGIN_EMAIL_PATTERN.exec(String(email || "").trim().toLowerCase());
+  if (!match || !rootSecret(env)) return false;
+  try {
+    const expected = await telegramLoginCredentials(match[1], env, cryptoImpl);
+    return constantTimeEqual(expected.email, `tg${match[1]}.${match[2]}@${TELEGRAM_LOGIN_DOMAIN}`);
+  } catch {
+    return false;
+  }
+}
 
 // auth-native/worker/public-auth-handler.mjs
 var AUTH_API_PREFIX = "/api/auth/v1";
@@ -11062,7 +11148,8 @@ var firebaseReadySession = async ({ provider, jar, env, context, allowTelegram =
   }
   assertProviderUser(refreshed, user);
   const ownershipProven = !user.emailVerified && await emailOwnershipProven({ env, user, context, allowed: true });
-  const telegramVerified = !user.emailVerified && !ownershipProven && await telegramVerificationStatus({ env, user, context, allowed: allowTelegram });
+  const telegramLoginAccount = !user.emailVerified && !ownershipProven && await isTelegramLoginEmail(user.email, env);
+  const telegramVerified = telegramLoginAccount || !user.emailVerified && !ownershipProven && await telegramVerificationStatus({ env, user, context, allowed: allowTelegram });
   if (!user.emailVerified && !ownershipProven && !telegramVerified) throw new NativeAuthError(AUTH_ERROR_CODES.EMAIL_NOT_VERIFIED);
   const session = await callAuthority(env, "/internal/firebase/session/get", {
     sessionToken,
@@ -11342,6 +11429,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
             methods: {
               google,
               facebook,
+              telegramLogin: available && telegramLoginReady(env) ? { available: true, botId: telegramLoginBotId(env) } : { available: false },
               passkey: {
                 available: passkeyAvailable,
                 enrollmentAvailable: passkeyEnrollmentAvailable,
@@ -11379,6 +11467,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         }
         const input = credentials(await readJson(request));
         if (isDisposableEmail(input.email)) throw new NativeAuthError(AUTH_ERROR_CODES.DISPOSABLE_EMAIL);
+        if (reservedTelegramLoginEmail(input.email)) throw new NativeAuthError(AUTH_ERROR_CODES.DISPOSABLE_EMAIL);
         const prepared = await callAuthority(env, "/internal/firebase/rate", { input: { operation: "signup", email: input.email }, context });
         let signed;
         try {
@@ -11751,6 +11840,51 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           emailVerified: user.emailVerified === true,
           telegramVerified: user.emailVerified !== true && passwordTelegramVerified
         });
+      }
+      if (request.method === "POST" && url.pathname === `${AUTH_API_PREFIX}/telegram/login`) {
+        if (!provider.configured || !telegramLoginReady(env)) throw new NativeAuthError(AUTH_ERROR_CODES.TELEGRAM_VERIFICATION_UNAVAILABLE);
+        authStage = "CREDENTIAL_INPUT";
+        let telegramUser;
+        try {
+          telegramUser = await verifyTelegramLogin(await readJson(request), env);
+        } catch {
+          throw new NativeAuthError(AUTH_ERROR_CODES.TELEGRAM_VERIFICATION_INVALID);
+        }
+        authStage = "RATE_CHECK";
+        await callAuthority(env, "/internal/firebase/rate", { input: { operation: "telegram-login" }, context });
+        const credentials2 = await telegramLoginCredentials(telegramUser.id, env);
+        authStage = "FIREBASE_EXCHANGE";
+        let signed;
+        try {
+          signed = await provider.signIn(credentials2.email, credentials2.password);
+        } catch (signInCause) {
+          try {
+            signed = await provider.signUp(credentials2.email, credentials2.password);
+          } catch (cause) {
+            if (String(cause?.reason || "").startsWith("EMAIL_EXISTS")) throw providerError(signInCause, "telegram-signin");
+            throw providerError(cause, "telegram-signup");
+          }
+        }
+        authStage = "IDENTITY_LOOKUP";
+        let user;
+        try {
+          user = await provider.lookup(signed.idToken);
+        } catch (cause) {
+          throw providerError(cause, "telegram-lookup");
+        }
+        assertProviderUser(signed, user);
+        authStage = "ACCOUNT_SESSION";
+        const established = await callAuthority(env, "/internal/firebase/session/create", {
+          input: { email: user.email, subject: user.subject, verified: true },
+          context
+        });
+        const enrichment = seedGoogleProfile(env, context, established, { ...user, displayName: telegramUser.displayName, photoUrl: "" }).catch(() => {
+        });
+        if (typeof executionContext?.waitUntil === "function") executionContext.waitUntil(enrichment);
+        else await enrichment;
+        const result = authSuccess(request, established, signed.refreshToken, context, { emailVerified: false, telegramVerified: true });
+        result.headers.set("X-AH-Auth-Stage", "SESSION_CREATED");
+        return result;
       }
       if (request.method === "POST" && url.pathname === `${AUTH_API_PREFIX}/facebook`) {
         if (!provider.configured || !facebookEndpointReady(env)) throw new NativeAuthError(AUTH_ERROR_CODES.GOOGLE_UNAVAILABLE);
@@ -13089,7 +13223,7 @@ var PASSKEY_ORIGINS = Object.freeze([
 var CHALLENGE_TTL_MS = 12e4;
 var SESSION_TTL_MS2 = 30 * 6e4;
 var MAX_ADMIN_CREDENTIALS = 8;
-var encoder5 = new TextEncoder();
+var encoder6 = new TextEncoder();
 var CRED_PREFIX = "admin:pk:cred:";
 var CHALLENGE_PREFIX = "admin:pk:chal:";
 var SESSION_PREFIX = "admin:pk:sess:";
@@ -13106,19 +13240,19 @@ var randomToken2 = (bytes = 32) => {
   return bytesToBase64Url3(value);
 };
 var sha256Hex2 = async (value) => {
-  const digest3 = await crypto.subtle.digest("SHA-256", encoder5.encode(String(value)));
+  const digest3 = await crypto.subtle.digest("SHA-256", encoder6.encode(String(value)));
   return [...new Uint8Array(digest3)].map((b) => b.toString(16).padStart(2, "0")).join("");
 };
 var sessionKey = async (env) => {
   const secret = String(env?.ADMIN_TOKEN || "");
   if (!secret) return null;
-  const material = await crypto.subtle.importKey("raw", encoder5.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const material = await crypto.subtle.importKey("raw", encoder6.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   return material;
 };
-var hmacHex = async (env, label, value) => {
+var hmacHex2 = async (env, label, value) => {
   const key = await sessionKey(env);
   if (!key) return null;
-  const mac = await crypto.subtle.sign("HMAC", key, encoder5.encode(`${label}:${value}`));
+  const mac = await crypto.subtle.sign("HMAC", key, encoder6.encode(`${label}:${value}`));
   return [...new Uint8Array(mac)].map((b) => b.toString(16).padStart(2, "0")).join("");
 };
 var json5 = (obj, status = 200) => new Response(JSON.stringify(obj), {
@@ -13219,7 +13353,7 @@ async function handleRegister(request, env) {
   }
   const record = {
     credentialId: verified.credentialId,
-    userHandle: bytesToBase64Url3(encoder5.encode(PASSKEY_USER_ID)),
+    userHandle: bytesToBase64Url3(encoder6.encode(PASSKEY_USER_ID)),
     publicKeyJwk: verified.publicKeyJwk,
     counter: verified.counter,
     backupEligible: verified.backupEligible,
@@ -13280,7 +13414,7 @@ async function handleAdminPasskeyRequest(request, env) {
       purpose,
       challenge,
       rpId,
-      mac: await hmacHex(env, "admin-passkey-challenge", `${challengeId}:${challenge}`),
+      mac: await hmacHex2(env, "admin-passkey-challenge", `${challengeId}:${challenge}`),
       createdAt: Date.now()
     });
     const credentials2 = await listCredentials(env);
@@ -13293,7 +13427,7 @@ async function handleAdminPasskeyRequest(request, env) {
         userVerification: "required",
         ...purpose === "register" ? {
           rp,
-          user: { id: bytesToBase64Url3(encoder5.encode(PASSKEY_USER_ID)), name: "admin@admissionhub", displayName: "AdmissionHub Admin" },
+          user: { id: bytesToBase64Url3(encoder6.encode(PASSKEY_USER_ID)), name: "admin@admissionhub", displayName: "AdmissionHub Admin" },
           pubKeyCredParams: [{ type: "public-key", alg: -7 }, { type: "public-key", alg: -257 }],
           authenticatorSelection: { residentKey: "preferred", userVerification: "required" },
           attestation: "none",
@@ -13313,7 +13447,7 @@ async function handleAdminPasskeyRequest(request, env) {
 }
 var __adminPasskeyTest = Object.freeze({
   sha256Hex: sha256Hex2,
-  hmacHex,
+  hmacHex: hmacHex2,
   listCredentials,
   putChallenge,
   takeChallenge,
@@ -21255,7 +21389,7 @@ var sha256HexStr = async (s) => {
   const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
   return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, "0")).join("");
 };
-var hmacHex2 = async (keyBytes, msg) => {
+var hmacHex3 = async (keyBytes, msg) => {
   const key = await crypto.subtle.importKey("raw", keyBytes, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(msg));
   return [...new Uint8Array(sig)].map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -21289,11 +21423,11 @@ x-amz-date:${amzDate}
       const canonicalRequest = ["GET", path, queryStr, canonicalHeaders, signedHeaders, payloadHash].join("\n");
       const scope = `${shortDate}/${region}/${service}/aws4_request`;
       const stringToSign = ["AWS4-HMAC-SHA256", amzDate, scope, await sha256HexStr(canonicalRequest)].join("\n");
-      let k = await hmacHex2(new TextEncoder().encode(`AWS4${sk}`), shortDate);
-      k = await hmacHex2(hexToBytes(k), region);
-      k = await hmacHex2(hexToBytes(k), service);
-      k = await hmacHex2(hexToBytes(k), "aws4_request");
-      const signature = await hmacHex2(hexToBytes(k), stringToSign);
+      let k = await hmacHex3(new TextEncoder().encode(`AWS4${sk}`), shortDate);
+      k = await hmacHex3(hexToBytes(k), region);
+      k = await hmacHex3(hexToBytes(k), service);
+      k = await hmacHex3(hexToBytes(k), "aws4_request");
+      const signature = await hmacHex3(hexToBytes(k), stringToSign);
       const res = await fetch(`https://${R2_HOST}/${bucketName}?${queryStr}`, {
         method: "GET",
         headers: {
@@ -29087,7 +29221,7 @@ function pickAdapter(table, provider) {
 // voice-agent-gate.mjs
 var COOKIE_NAME = "ah_voice";
 var SESSION_TTL_MS3 = 180 * 24 * 60 * 60 * 1e3;
-var encoder6 = new TextEncoder();
+var encoder7 = new TextEncoder();
 var b64url = (bytes) => btoa(String.fromCharCode(...new Uint8Array(bytes))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 function gateSecret(env) {
   return String(env && env.VOICE_PAGE_PASSWORD || "");
@@ -29098,12 +29232,12 @@ function gateConfigured(env) {
 async function sign(payload, secret) {
   const key = await crypto.subtle.importKey(
     "raw",
-    encoder6.encode(secret),
+    encoder7.encode(secret),
     { name: "HMAC", hash: "SHA-256" },
     false,
     ["sign"]
   );
-  return b64url(await crypto.subtle.sign("HMAC", key, encoder6.encode(payload)));
+  return b64url(await crypto.subtle.sign("HMAC", key, encoder7.encode(payload)));
 }
 async function makeSession(env, now = Date.now(), ttl = SESSION_TTL_MS3) {
   const secret = gateSecret(env);

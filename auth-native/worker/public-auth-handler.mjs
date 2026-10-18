@@ -6,6 +6,7 @@ import { FirebaseEmailPasswordProvider, FirebaseRequestError } from '../provider
 import { verificationConfig } from '../verification/config.mjs';
 import { verifyTurnstile } from '../verification/turnstile.mjs';
 import { resolveTelegramWebhookSecret, validTelegramWebhookSecret } from '../verification/telegram-security.mjs';
+import { isTelegramLoginEmail, reservedTelegramLoginEmail, telegramLoginBotId, telegramLoginCredentials, telegramLoginReady, verifyTelegramLogin } from '../verification/telegram-login.mjs';
 
 export const AUTH_API_PREFIX = '/api/auth/v1';
 // Phase 7 public-safe profile projection — deliberately unauthenticated and
@@ -364,8 +365,11 @@ const firebaseReadySession = async ({ provider, jar, env, context, allowTelegram
   // the session even while Firebase's own emailVerified flag is still false.
   // Firebase remains the fallback: it either sets that flag or proves ownership too.
   const ownershipProven = !user.emailVerified && await emailOwnershipProven({ env, user, context, allowed: true });
-  const telegramVerified = !user.emailVerified && !ownershipProven
-    && await telegramVerificationStatus({ env, user, context, allowed: allowTelegram });
+  // A "Continue with Telegram" account is proven by Telegram's signature at
+  // login; its derived address can never receive mail, so it counts as verified.
+  const telegramLoginAccount = !user.emailVerified && !ownershipProven && await isTelegramLoginEmail(user.email, env);
+  const telegramVerified = telegramLoginAccount || (!user.emailVerified && !ownershipProven
+    && await telegramVerificationStatus({ env, user, context, allowed: allowTelegram }));
   if (!user.emailVerified && !ownershipProven && !telegramVerified) throw new NativeAuthError(AUTH_ERROR_CODES.EMAIL_NOT_VERIFIED);
   const session = await callAuthority(env, '/internal/firebase/session/get', {
     sessionToken,
@@ -682,6 +686,9 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
             methods: {
               google,
               facebook,
+              telegramLogin: available && telegramLoginReady(env)
+                ? { available: true, botId: telegramLoginBotId(env) }
+                : { available: false },
               passkey: {
                 available: passkeyAvailable,
                 enrollmentAvailable: passkeyEnrollmentAvailable,
@@ -722,6 +729,7 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         // Owner order 2026-10-16: refuse a throwaway inbox before any account is
         // created or any OTP is sent. Server-side so a patched client cannot skip it.
         if (isDisposableEmail(input.email)) throw new NativeAuthError(AUTH_ERROR_CODES.DISPOSABLE_EMAIL);
+        if (reservedTelegramLoginEmail(input.email)) throw new NativeAuthError(AUTH_ERROR_CODES.DISPOSABLE_EMAIL);
         const prepared = await callAuthority(env, '/internal/firebase/rate', { input: { operation: 'signup', email: input.email }, context });
         let signed;
         try { signed = await provider.signUp(prepared.email, input.password); } catch (cause) { throw providerError(cause, 'signup'); }
@@ -1062,6 +1070,44 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           emailVerified: user.emailVerified === true,
           telegramVerified: user.emailVerified !== true && passwordTelegramVerified
         });
+      }
+
+      // Owner 2026-10-18: "Continue with Telegram" login.
+      if (request.method === 'POST' && url.pathname === `${AUTH_API_PREFIX}/telegram/login`) {
+        if (!provider.configured || !telegramLoginReady(env)) throw new NativeAuthError(AUTH_ERROR_CODES.TELEGRAM_VERIFICATION_UNAVAILABLE);
+        authStage = 'CREDENTIAL_INPUT';
+        let telegramUser;
+        try { telegramUser = await verifyTelegramLogin(await readJson(request), env); }
+        catch { throw new NativeAuthError(AUTH_ERROR_CODES.TELEGRAM_VERIFICATION_INVALID); }
+        authStage = 'RATE_CHECK';
+        await callAuthority(env, '/internal/firebase/rate', { input: { operation: 'telegram-login' }, context });
+        const credentials = await telegramLoginCredentials(telegramUser.id, env);
+        authStage = 'FIREBASE_EXCHANGE';
+        let signed;
+        try { signed = await provider.signIn(credentials.email, credentials.password); }
+        catch (signInCause) {
+          try { signed = await provider.signUp(credentials.email, credentials.password); }
+          catch (cause) {
+            if (String(cause?.reason || '').startsWith('EMAIL_EXISTS')) throw providerError(signInCause, 'telegram-signin');
+            throw providerError(cause, 'telegram-signup');
+          }
+        }
+        authStage = 'IDENTITY_LOOKUP';
+        let user;
+        try { user = await provider.lookup(signed.idToken); } catch (cause) { throw providerError(cause, 'telegram-lookup'); }
+        assertProviderUser(signed, user);
+        authStage = 'ACCOUNT_SESSION';
+        const established = await callAuthority(env, '/internal/firebase/session/create', {
+          input: { email: user.email, subject: user.subject, verified: true },
+          context
+        });
+        // Telegram -> auto profile name (best effort, never blocks the login).
+        const enrichment = seedGoogleProfile(env, context, established, { ...user, displayName: telegramUser.displayName, photoUrl: '' }).catch(() => {});
+        if (typeof executionContext?.waitUntil === 'function') executionContext.waitUntil(enrichment);
+        else await enrichment;
+        const result = authSuccess(request, established, signed.refreshToken, context, { emailVerified: false, telegramVerified: true });
+        result.headers.set('X-AH-Auth-Stage', 'SESSION_CREATED');
+        return result;
       }
 
       if (request.method === 'POST' && url.pathname === `${AUTH_API_PREFIX}/facebook`) {

@@ -1397,3 +1397,8 @@ body.ah-account-page-active>.ah-account-page[data-current-view="sky"]:not([data-
 body.ah-account-page-active>.ah-account-page[data-current-view="sky"]:not([data-sky-flow="on"])::after{content:"";position:absolute;left:50%;top:50%;width:36px;height:36px;margin:-18px 0 0 -18px;box-sizing:border-box;border-radius:50%;border:3px solid rgba(47,107,255,.18);border-top-color:#2F6BFF;animation:ahSkyWait .8s linear infinite}
 @keyframes ahSkyWait{to{transform:rotate(360deg)}}
 @media(prefers-reduced-motion:reduce){body.ah-account-page-active>.ah-account-page[data-current-view="sky"]::after{animation:none}}
+/* Owner 2026-10-18: Continue with Telegram (replaces Facebook). */
+.ah-welcome-telegram{position:relative;z-index:3;width:min(calc(100% - 32px),760px);margin:10px auto 0;box-sizing:border-box}
+.ah-welcome-telegram .ah-account-secondary{min-height:56px;width:100%;display:grid;grid-template-columns:34px 1fr 25px;align-items:center;gap:6px;margin:0;padding:0 16px;border:1px solid #dbe5e1;border-radius:17px;background:var(--ah-surface);color:var(--ah-ink-mid);box-shadow:0 8px 20px rgba(26,68,57,.06);font-family:inherit;font-size:14px;font-weight:850;cursor:pointer}
+.ah-welcome-telegram .ah-account-secondary>b{font-size:21px;font-weight:500;text-align:right}
+.ah-telegram-logo{width:30px;display:grid;place-items:center}.ah-telegram-logo svg{width:24px;height:24px;display:block}

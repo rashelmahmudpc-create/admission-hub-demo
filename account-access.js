@@ -111,7 +111,7 @@
             <div class="ah-account-google ah-welcome-google" data-role="welcome-google-button"><button class="ah-account-secondary" type="button" disabled aria-label="Google দিয়ে প্রবেশ এখন প্রস্তুত হচ্ছে"><span class="ah-google-g" aria-hidden="true">G</span><span>Continue with Google</span><b aria-hidden="true">→</b></button></div>
             <button class="ah-account-link ah-entry-guest" type="button" data-role="continue-guest"><span data-bn="Continue as Guest" data-en="Continue as Guest">Continue as Guest</span><b aria-hidden="true">→</b></button>
           </div>
-          <div class="ah-account-facebook ah-welcome-facebook" data-role="welcome-facebook-button" hidden><button class="ah-account-secondary" type="button" aria-label="Facebook দিয়ে প্রবেশ"><span class="ah-facebook-f" aria-hidden="true">f</span><span>Continue with Facebook</span><b aria-hidden="true">→</b></button></div>
+          <div class="ah-account-telegram ah-welcome-telegram" data-role="welcome-telegram-button" hidden><button class="ah-account-secondary" type="button" aria-label="Continue with Telegram"><span class="ah-telegram-logo" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="12" fill="#29A9EB"/><path fill="#fff" d="M5.4 11.8l11.6-4.5c.5-.2 1 .1.8.9l-2 9.3c-.1.6-.5.8-1.1.5l-3-2.2-1.4 1.4c-.2.2-.3.3-.6.3l.2-3.1 5.6-5.1c.2-.2 0-.3-.4-.1l-6.9 4.4-3-.9c-.6-.2-.6-.6.2-.9z"/></svg></span><span>Continue with Telegram</span><b aria-hidden="true">→</b></button></div>
         </div>
 
         <form class="ah-account-view ah-login-view" data-view="login" data-login-contract="reference-login-v1" novalidate>
@@ -2110,6 +2110,66 @@
     } finally { setBusy(false); }
   };
 
+  /* Owner 2026-10-18: "Continue with Telegram" (replaces Facebook). The
+   * browser goes to oauth.telegram.org for the official bot and comes back to
+   * /?tgLogin=1 with Telegram's signed payload; the Worker checks the signature. */
+  const TELEGRAM_LOGIN_FLAG = 'ah-telegram-login-pending';
+  const TELEGRAM_LOGIN_KEYS = ['tgLogin', 'id', 'first_name', 'last_name', 'username', 'photo_url', 'auth_date', 'hash'];
+  const telegramLoginPayload = () => {
+    let payload = null;
+    const fragment = String(location.hash || '');
+    const marker = fragment.indexOf('tgAuthResult=');
+    if (marker !== -1) {
+      try {
+        let raw = decodeURIComponent(fragment.slice(marker + 13).split('&')[0]).replace(/-/g, '+').replace(/_/g, '/');
+        while (raw.length % 4) raw += '=';
+        const bytes = Uint8Array.from(atob(raw), c => c.charCodeAt(0));
+        payload = JSON.parse(new TextDecoder().decode(bytes));
+      } catch (_) { payload = null; }
+    }
+    const query = new URLSearchParams(location.search);
+    if (!payload && query.get('id') && query.get('hash')) {
+      payload = {};
+      for (const key of TELEGRAM_LOGIN_KEYS.slice(1)) if (query.has(key)) payload[key] = query.get(key);
+    }
+    return payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : null;
+  };
+  const finishTelegramLogin = async () => {
+    let pending = false;
+    try { pending = sessionStorage.getItem(TELEGRAM_LOGIN_FLAG) === '1'; sessionStorage.removeItem(TELEGRAM_LOGIN_FLAG); } catch (_) {}
+    const returned = new URLSearchParams(location.search).get('tgLogin') === '1' || String(location.hash || '').includes('tgAuthResult=');
+    if (!returned) return;
+    const payload = telegramLoginPayload();
+    try {
+      const url = new URL(location.href);
+      for (const key of TELEGRAM_LOGIN_KEYS) url.searchParams.delete(key);
+      history.replaceState(history.state, '', url.pathname + url.search);
+    } catch (_) {}
+    if (accountVerified(state.session)) return;
+    if (!payload) {
+      if (pending) { open(); message('Telegram login was not completed. Please try again.', 'error'); }
+      return;
+    }
+    setBusy(true);
+    try {
+      const result = await api('/telegram/login', { method: 'POST', body: payload });
+      await establishSession(result, 'Signed in with Telegram.');
+      landOnDashboard();
+    } catch (error) {
+      open();
+      message(error?.code ? friendlyError(error) : 'Telegram login failed. Please try again.', 'error');
+    } finally { setBusy(false); }
+  };
+  const signInWithTelegram = () => {
+    const botId = String(state.capabilities.telegramLogin?.botId || '');
+    if (state.busy || !state.capabilities.telegramLogin?.available || !/^\d{5,15}$/.test(botId)) return false;
+    const origin = location.origin;
+    try { sessionStorage.setItem(TELEGRAM_LOGIN_FLAG, '1'); } catch (_) {}
+    const params = new URLSearchParams({ bot_id: botId, origin, embed: '0', request_access: 'write', return_to: `${origin}/?tgLogin=1` });
+    location.assign(`https://oauth.telegram.org/auth?${params.toString()}`);
+    return true;
+  };
+
   const linkGoogle = async (email, password) => {
     // The Google token from the redirect that just came back (memory only).
     const accessToken = String(state.googleLinkToken || '');
@@ -2136,7 +2196,13 @@
       available: methods.passkey?.available === true && passkeyBrowserReady(),
       enrollmentAvailable: (methods.passkey?.enrollmentAvailable === true || methods.passkey?.available === true) && passkeyBrowserReady()
     };
-    state.capabilities.telegram = { available: methods.telegramVerification?.available === true };
+    /* Owner 2026-10-18: Telegram is a LOGIN method now; the post-signup
+     * Telegram verification choice is removed. */
+    state.capabilities.telegram = { available: false };
+    state.capabilities.telegramLogin = {
+      available: methods.telegramLogin?.available === true && /^\d{5,15}$/.test(String(methods.telegramLogin?.botId || '')),
+      botId: String(methods.telegramLogin?.botId || '')
+    };
     state.capabilities.emailOwnership = { available: methods.emailOwnership?.available === true };
     // Email + password is the base method: the server only reports it as
     // unavailable when it is deliberately switched off, so absent means on.
@@ -2174,9 +2240,9 @@
         host.append(button);
       }
     }
-    const facebookHost = $('[data-role="welcome-facebook-button"]');
-    if (facebookHost) {
-      facebookHost.hidden = !state.capabilities.facebook.available;
+    const telegramHost = $('[data-role="welcome-telegram-button"]');
+    if (telegramHost) {
+      telegramHost.hidden = !state.capabilities.telegramLogin.available;
     }
   };
 
@@ -3092,7 +3158,7 @@
       navigateDashboard();
       notify();
     });
-    $('[data-role="welcome-facebook-button"] button')?.addEventListener('click', () => signInWithFacebook());
+    $('[data-role="welcome-telegram-button"] button')?.addEventListener('click', () => signInWithTelegram());
     $('[data-role="signup-next-education"]').addEventListener('click', () => setSignupStep('school', { validate: true }));
     $('[data-role="signup-back-personal"]')?.addEventListener('click', () => setSignupStep('personal'));
     $('[data-role="signup-next-college"]').addEventListener('click', () => setSignupStep('college', { validate: true }));
@@ -3623,6 +3689,7 @@
     });
     Promise.allSettled([configReady, sessionReady]).then(async () => {
       await finishOAuthRedirect();
+      await finishTelegramLogin();
       if (accountVerified(state.session)) return;
       if (magicToken) { const t = magicToken; magicToken = ''; await consumeMagicLink(t); return; }
       if (googleHandoff) { signInWithGoogle(); return; }
@@ -3759,6 +3826,7 @@
       emailOwnership: Boolean(state.capabilities.emailOwnership.available),
       google: Boolean(state.capabilities.google.available),
       facebook: Boolean(state.capabilities.facebook?.available),
+      telegramLogin: Boolean(state.capabilities.telegramLogin?.available),
       passkey: Boolean(state.capabilities.passkey.available && passkeyBrowserReady())
     }),
     institutions: async kind => {
@@ -3844,6 +3912,7 @@
       await establishSession(result, 'Facebook \u09a6\u09bf\u09af\u09bc\u09c7 \u09a4\u09cb\u09ae\u09be\u09b0 \u098f\u0995\u0987 account-\u098f \u09aa\u09cd\u09b0\u09ac\u09c7\u09b6 \u09b9\u09af\u09bc\u09c7\u099b\u09c7\u0964');
       return true;
     },
+    telegram: async () => signInWithTelegram(),
     passkey: async () => {
       if (!passkeyBrowserReady()) return false;
       try {
