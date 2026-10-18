@@ -1,0 +1,70 @@
+name: Apply pending signup frontend 2026-10-18
+
+# AUTH step 1 (করণীয় ৪ frontend): runs scripts/apply-pending-signup-frontend-20261018.py on
+# auth/step1-pending-signup (signup request sends X-AH-Signup-Flow: pending-v1,
+# account-access.js cache token bumped), regenerates sw.js digests, runs tests,
+# removes the script and commits back to the SAME branch. Never touches main, never deploys.
+
+on:
+  push:
+    branches: [auth/step1-pending-signup]
+    paths:
+      - '.github/workflows/apply-pending-signup-frontend-20261018.yml'
+      - 'scripts/apply-pending-signup-frontend-20261018.py'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-pending-signup-frontend-20261018
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: github.ref_name == 'auth/step1-pending-signup'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: auth/step1-pending-signup
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Apply the frontend patch
+        run: |
+          set -eu
+          if [ ! -f scripts/apply-pending-signup-frontend-20261018.py ]; then echo 'Already applied.'; exit 0; fi
+          python3 scripts/apply-pending-signup-frontend-20261018.py
+          python3 scripts/apply-pending-signup-frontend-20261018.py >/dev/null
+          node --check account-access.js
+          grep -q "'X-AH-Signup-Flow': 'pending-v1'" account-access.js
+          grep -q 'account-access.js?v=20261018-pending-signup-v1' index.html
+          grep -q 'account-access.js?v=20261018-pending-signup-v1' sw.js
+          git diff --stat
+      - name: Install and regenerate the service-worker digests
+        run: |
+          set -eu
+          npm ci
+          npm run sw:manifest
+          npm run check:worker-bundle
+      - name: Pending signup tests (must pass)
+        run: node --test --test-concurrency=1 pending-signup.test.mjs pending-signup-wire.test.mjs
+      - name: Frontend auth tests (informational)
+        continue-on-error: true
+        run: |
+          node account-retirement.test.mjs 2>&1 | tail -3 || true
+          node --test --test-concurrency=1 multimethod-auth-ui.test.mjs premium-onboarding-ui.test.mjs sky-onboarding.test.mjs firebase-auth-ui.test.mjs signup-autosave.test.mjs 2>&1 | grep -E "^not ok|^# (pass|fail)" || true
+      - name: Commit and push to the feature branch
+        run: |
+          set -eu
+          if [ ! -f scripts/apply-pending-signup-frontend-20261018.py ]; then exit 0; fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm -q scripts/apply-pending-signup-frontend-20261018.py
+          git add -A
+          git commit -m 'auth(step1): signup request opts in to the held signup (X-AH-Signup-Flow), cache token bumped' -m 'Applied by apply-pending-signup-frontend-20261018.yml. No deploy.'
+          git push origin HEAD:auth/step1-pending-signup
