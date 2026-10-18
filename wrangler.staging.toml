@@ -101,3 +101,8 @@ new_sqlite_classes = ["AdmissionAuthAuthority"]
 [[migrations]]
 tag = "v3-voice-agent"
 new_sqlite_classes = ["VoiceAgentSession"]
+
+# AUTH-ROADMAP step 0: staging keeps Workers Logs on too, so every test is visible.
+[observability]
+enabled = true
+head_sampling_rate = 1

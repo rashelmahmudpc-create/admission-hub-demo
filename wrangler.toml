@@ -162,3 +162,10 @@ database_id = "8f7cf101-66a3-437d-bc98-a8984698d7f5"
 [[r2_buckets]]
 binding = "FILE_BUCKET"
 bucket_name = "admission-hub"
+
+# AUTH-ROADMAP step 0 (owner 2026-10-18): keep Workers Logs on permanently.
+# Without this block every `wrangler deploy` turns the Worker's logs off again.
+# Not a variable, so it does not count toward the 64-variable ceiling.
+[observability]
+enabled = true
+head_sampling_rate = 1
