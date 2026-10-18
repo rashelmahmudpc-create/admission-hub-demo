@@ -747,7 +747,24 @@ const build = () => {
       else if (br.bottom > sr.bottom - 10) delta = br.bottom - sr.bottom + 14;
       if (Math.abs(delta) > 3) scr.scrollBy({ top: delta, behavior: reduce() ? 'auto' : 'smooth' });
     };
-    const placeLater = () => { placeTimers.forEach(clearTimeout); placeTimers = [60, 380, 800].map(ms => setTimeout(place, ms)); };
+    // Compact mode sizes the stage to the screen's own content so the Next button sits right under
+    // the fields/hint/suggestions instead of far below them (flex shrinks it when space runs out).
+    const fitStage = () => {
+      const app = appEl(), stage = $('sky-stage');
+      if (!stage) return;
+      if (!app || app.dataset.kb !== '1') { stage.style.height = ''; return; }
+      const scr = stage.querySelector('.scr.on');
+      if (!scr) return;
+      const top = scr.getBoundingClientRect().top;
+      let bottom = 0;
+      for (const child of scr.children) {
+        const r = child.getBoundingClientRect();
+        if (r.height > 0) bottom = Math.max(bottom, r.bottom);
+      }
+      const pad = parseFloat(getComputedStyle(scr).paddingBottom) || 0;
+      stage.style.height = Math.max(96, Math.ceil(bottom - top + pad)) + 'px';
+    };
+    const placeLater = () => { placeTimers.forEach(clearTimeout); placeTimers = [60, 380, 800].map(ms => setTimeout(() => { fitStage(); place(); }, ms)); };
     const setKb = on => {
       const app = appEl();
       if (!app || (app.dataset.kb === '1') === on) return;
@@ -757,6 +774,7 @@ const build = () => {
       const pageEl = hostEl && hostEl.parentElement;
       if (on) { app.dataset.kb = '1'; if (hostEl) hostEl.dataset.kb = '1'; if (pageEl) pageEl.dataset.skyKb = '1'; }
       else { delete app.dataset.kb; if (hostEl) delete hostEl.dataset.kb; if (pageEl) delete pageEl.dataset.skyKb; }
+      fitStage();
       if (bird && first && !reduce() && bird.animate) {
         const last = bird.getBoundingClientRect();
         if (last.width) {
@@ -803,7 +821,13 @@ const build = () => {
     };
     document.addEventListener('focusin', evalKb, true);
     document.addEventListener('focusout', evalKb, true);
-    document.addEventListener('input', () => { if (!editing()) return; clearTimeout(inTimer); inTimer = setTimeout(place, 220); }, true);
+    document.addEventListener('input', () => { if (!editing()) return; clearTimeout(inTimer); inTimer = setTimeout(() => { fitStage(); place(); }, 220); }, true);
+    try {
+      let stageTimer = 0;
+      const refit = () => { clearTimeout(stageTimer); stageTimer = setTimeout(fitStage, 90); };
+      const watch = () => { const st = $('sky-stage'); if (st) new MutationObserver(refit).observe(st, { attributes: true, attributeFilter: ['class', 'hidden'], childList: true, subtree: true }); return !!st; };
+      if (!watch()) { let tries = 0; const t = setInterval(() => { if (watch() || ++tries > 40) clearInterval(t); }, 250); }
+    } catch (_) {}
     if (window.visualViewport) window.visualViewport.addEventListener('resize', () => { if (editing()) { reeval(); placeLater(); } });
   }
   wake();

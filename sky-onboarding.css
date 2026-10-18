@@ -364,9 +364,9 @@
 #ah-sky-flow #sky-app[data-kb="1"] .bird{width:62px;flex:none}
 #ah-sky-flow #sky-app[data-kb="1"] .bubble{margin:0;flex:1;min-width:0;min-height:0;max-width:none;display:block;text-align:left;font-size:14.5px;line-height:1.4;padding:9px 14px;border-radius:18px}
 #ah-sky-flow #sky-app[data-kb="1"] .bubble:before{top:50%;left:-7px;margin:-7px 0 0;width:14px;height:14px}
-#ah-sky-flow #sky-app[data-kb="1"] .stage{margin-top:4px;-webkit-mask-image:linear-gradient(#000 calc(100% - 22px),transparent);mask-image:linear-gradient(#000 calc(100% - 22px),transparent)}
-#ah-sky-flow #sky-app[data-kb="1"] .scr{padding-top:6px;padding-bottom:26px}
-#ah-sky-flow #sky-app[data-kb="1"] .foot{padding:6px 20px 10px}
+#ah-sky-flow #sky-app[data-kb="1"] .stage{flex:0 1 auto;transition:height .22s ease;margin-top:4px;-webkit-mask-image:linear-gradient(#000 calc(100% - 16px),transparent);mask-image:linear-gradient(#000 calc(100% - 16px),transparent)}
+#ah-sky-flow #sky-app[data-kb="1"] .scr{padding-top:6px;padding-bottom:18px}
+#ah-sky-flow #sky-app[data-kb="1"] .foot{padding:8px 20px 10px}
 #ah-sky-flow #sky-app[data-kb="1"] .cta{height:52px}
 
 /* iOS leaves a strip between the bottom of the visible page and the keyboard bar / Safari's bottom
@@ -378,3 +378,6 @@
 .ah-account-page.ah-account-page.ah-account-page[data-sky-flow="on"][data-sky-kb="1"]{height:calc(var(--visual-viewport-height,100dvh) + 140px)!important}
 #ah-sky-flow[data-kb="1"]{height:calc(var(--vh,100dvh) + 140px)!important}
 #ah-sky-flow[data-kb="1"] #sky-app{box-sizing:border-box;padding-bottom:140px}
+
+/* Keyboard up: the Next button follows the content instead of sitting at the very bottom with a large
+   empty gap above it (the stage is sized to the screen's content by sky-onboarding.js). */
