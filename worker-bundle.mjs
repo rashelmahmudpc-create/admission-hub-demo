@@ -1629,55 +1629,65 @@ function whenWord(ts, now) {
   if (d === 1) return "গতকাল";
   return bn2(d) + " দিন আগে";
 }
+var SMALLTALK = /^(হাই|হ্যালো|হেলো|হাই স্কাই|hi|hii+|hello|hey|ধন্যবাদ|থ্যাংকস|thanks?|thank you|thx|ok|okay|ওকে|আচ্ছা|ঠিক আছে|জি|হ্যাঁ|না|সালাম|আসসালামু আলাইকুম|bye|বাই|good (morning|night)|শুভ (সকাল|রাত্রি|সন্ধ্যা))[\s!।.?,😊🙂👍❤️]*$/iu;
+function isSmallTalkTopic(v) {
+  const s = String(v || "").trim();
+  return s.length < 3 || SMALLTALK.test(s);
+}
 function buildRecall(input = {}) {
   const now = Number(input.now) || Date.now();
   const records = Array.isArray(input.records) ? input.records : [];
   const stats = input.stats && typeof input.stats === "object" ? input.stats : {};
   const recent = input.recent && typeof input.recent === "object" ? input.recent : {};
   const parts = [];
-  const chips = [];
+  const buttons = [];
   const kinds = [];
   const wrong = Math.max(0, Math.min(999, Number(recent.mistakes) | 0));
   if (wrong > 0) {
     const when = whenWord(Number(recent.since) || 0, now);
     const lead = when === "আজ" ? "আজ" : when === "গতকাল" ? "গতকাল থেকে" : "সম্প্রতি";
     parts.push(lead + " " + bn2(wrong) + "টা প্রশ্নে ভুল হয়েছে — আগে ওগুলো একবার ঝালিয়ে নেবে?");
-    chips.push({ label: "🔁 ভুলগুলো ঝালাই", go: "mistake-bank" });
+    buttons.push({ label: "🔁 ভুলগুলো ঝালাই করি", prompt: "গত দুই দিনে আমার কয়েকটা প্রশ্ন ভুল হয়েছে — Mistake Bank থেকে কীভাবে রিভিশন করব, ধাপে ধাপে বলো" });
     kinds.push("mistakes");
   }
   const measured = Array.isArray(stats.weakTopics) ? stats.weakTopics.filter((t) => t && t.name) : [];
-  const said = statedWeakTopics(records, 1);
+  let weakDone = false;
   if (measured.length) {
     const worst = measured.slice().sort((a, b) => (a.accuracy | 0) - (b.accuracy | 0))[0];
     const name = cleanName(worst.name);
     if (name) {
       parts.push(name + "-এ সঠিকতা এখন " + bn2(worst.accuracy | 0) + "% — আজ একটু " + name + " চর্চা করি?");
-      chips.push({ label: "🎯 " + name + " কুইজ", q: name + " থেকে ৫টা প্রশ্নে কুইজ দাও" });
+      buttons.push({ label: "🎯 " + name + " চর্চা", prompt: name + " থেকে ৫টা প্রশ্নে কুইজ দাও" });
       kinds.push("weak-measured");
+      weakDone = true;
     }
-  } else if (said.length) {
-    const name = cleanName(said[0]);
-    const base = topicBase(name);
+  }
+  if (!weakDone) {
+    const said = statedWeakTopics(records, 1);
+    const name = said.length ? cleanName(said[0]) : "";
     if (name) {
-      parts.push("আগে বলেছিলে " + name + " দুর্বল — আজ " + base + " দিয়ে শুরু করি?");
-      chips.push({ label: "🎯 " + base + " কুইজ", q: base + " থেকে ৫টা প্রশ্নে কুইজ দাও" });
+      const base = topicBase(name) || name;
+      const noExam = !parts.length && stats.exams === 0 ? "তুমি এখনো পরীক্ষা দাওনি, তবে " : "";
+      parts.push(noExam + "আগে বলেছিলে " + name + " দুর্বল — আজ " + base + " দিয়ে শুরু করি?");
+      buttons.push({ label: "🎯 " + base + " দিয়ে শুরু", prompt: base + " থেকে ৫টা প্রশ্নে কুইজ দাও" });
       kinds.push("weak-stated");
     }
   }
   if (!parts.length) {
     const last = records.find((r) => r && r.kind === KIND.STUDIES && r.key === "last-topic");
-    if (last && now - (Number(last.ts) || 0) <= LAST_TOPIC_MAX_AGE) {
+    const age = last ? now - (Number(last.ts) || 0) : Infinity;
+    if (last && age >= 0 && age <= LAST_TOPIC_MAX_AGE) {
       const topic = cleanName(last.value, 60);
-      if (topic) {
+      if (topic && !isSmallTalkTopic(topic)) {
         const when = whenWord(Number(last.ts), now);
         parts.push((when ? when + " " : "") + "আমরা “" + topic + "” নিয়ে কথা বলছিলাম — সেখান থেকে চালিয়ে যাবে?");
-        chips.push({ label: "↩️ আগের আলোচনা", q: "আগের আলোচনাটা চালিয়ে যাও: " + topic });
+        buttons.push({ label: "↩️ চালিয়ে যাই", prompt: "আগের আলোচনাটা চালিয়ে যাও: " + topic });
         kinds.push("last-topic");
       }
     }
   }
   if (!parts.length) return null;
-  return { line: parts.slice(0, 2).join(" "), chips: chips.slice(0, 2), kinds, version: RECALL_VERSION };
+  return { line: parts.slice(0, 2).join(" "), button: buttons[0], kinds, version: RECALL_VERSION };
 }
 function sanitizeRecent(raw) {
   if (!raw || typeof raw !== "object") return null;
@@ -4478,7 +4488,7 @@ data: ${JSON.stringify({ error: "stream_failed", message: "যুক্তি-�
     }
   });
 }
-async function agentRecall(request, env, uid) {
+async function agentRecall(env, uid, body) {
   const id = String(uid || "");
   if (!id.startsWith("account-")) return jsonResp({ ok: true, recall: null });
   let off = false;
@@ -4488,9 +4498,9 @@ async function agentRecall(request, env, uid) {
     off = false;
   }
   if (off) return jsonResp({ ok: true, recall: null, off: true });
-  const body = await request.json().catch(() => null) || {};
-  const stats = capStats(body && body.stats) || {};
-  const recent = sanitizeRecent(body && body.recent);
+  const b = body && typeof body === "object" ? body : {};
+  const stats = capStats(b.stats) || {};
+  const recent = sanitizeRecent(b.recent);
   const key = "mem:" + MEMORY_VERSION + ":" + id;
   let raw = null;
   const aiState = aiStateStore(env);
@@ -4503,7 +4513,13 @@ async function agentRecall(request, env, uid) {
       fromState = false;
     }
   }
-  if (!fromState) raw = await getKv(env && env.PUB_KV, key);
+  if (!fromState) {
+    try {
+      raw = await getKv(env && env.PUB_KV, key);
+    } catch (_) {
+      raw = null;
+    }
+  }
   let recall = null;
   try {
     recall = buildRecall({ records: parseMemory(raw, id), stats, recent, now: Date.now() });
@@ -5456,8 +5472,10 @@ var public_worker_default = {
       }
       if (path === "/api/ai/recall" && request.method === "POST") {
         const identity = await aiRequestIdentity(request, env, false);
-        if (!identity.authenticated || identity.persistMemory === false) return json2({ ok: true, recall: null });
-        return await agentRecall(request, env, identity.uid);
+        if (!identity.authenticated) return json2({ error: "sign_in_required", recall: null }, 401);
+        if (identity.persistMemory === false) return json2({ ok: true, recall: null });
+        const body = await request.json().catch(() => null);
+        return await agentRecall(env, identity.uid, body);
       }
       if (path === "/api/ai/chat" && request.method === "POST") {
         const identity = await aiRequestIdentity(request, env, false);

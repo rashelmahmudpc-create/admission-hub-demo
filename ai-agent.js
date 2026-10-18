@@ -1646,21 +1646,21 @@ function openEarly(run, early, first) {
    One memory read, no write, no model call and no AI limit used. Only the
    caller's own memory is read (parseMemory re-checks the owner). Guests get
    nothing. Kill switch: PUB_KV 'sky:recall' = "off". */
-export async function agentRecall(request, env, uid) {
+export async function agentRecall(env, uid, body) {
   const id = String(uid || '');
   if (!id.startsWith('account-')) return jsonResp({ ok: true, recall: null });
   let off = false;
   try { off = String((await getKv(env && env.PUB_KV, 'sky:recall')) || '').trim().toLowerCase() === 'off'; } catch (_) { off = false; }
   if (off) return jsonResp({ ok: true, recall: null, off: true });
-  const body = (await request.json().catch(() => null)) || {};
-  const stats = capStats(body && body.stats) || {};
-  const recent = sanitizeRecent(body && body.recent);
+  const b = body && typeof body === 'object' ? body : {};
+  const stats = capStats(b.stats) || {};
+  const recent = sanitizeRecent(b.recent);
   const key = 'mem:' + MEMORY_VERSION + ':' + id;
   let raw = null;
   const aiState = aiStateStore(env);
   let fromState = false;
   if (aiState) { try { raw = await aiState.get(id, key); fromState = true; } catch (_) { fromState = false; } }
-  if (!fromState) raw = await getKv(env && env.PUB_KV, key);
+  if (!fromState) { try { raw = await getKv(env && env.PUB_KV, key); } catch (_) { raw = null; } }
   let recall = null;
   try { recall = buildRecall({ records: parseMemory(raw, id), stats, recent, now: Date.now() }); } catch (_) { recall = null; }
   return jsonResp({ ok: true, recall, version: RECALL_VERSION });

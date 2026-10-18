@@ -17,7 +17,7 @@ const V2 = readFileSync('dashboard-v2.js', 'utf8');
 const t = (name, cond) => test(name, () => assert.ok(cond, name));
 
 t('১. index.html-এ ai-রুট dispatch (renderAiAgentPage)', H.includes("if(p==='ai'){ if(window.renderAiAgentPage)"));
-t('২. ai-agent-chat.js স্ক্রিপ্ট-ট্যাগ', H.includes('./ai-agent-chat.js?v=agent-f1-ui-skyv10'));
+t('২. ai-agent-chat.js স্ক্রিপ্ট-ট্যাগ', H.includes('./ai-agent-chat.js?v=agent-f1-ui-skyv11'));
 t('৩. ai-agent-chat.js ফাইল-বিদ্যমান + renderAiAgentPage-এক্সপোজ', existsSync('ai-agent-chat.js') && UI.includes('window.renderAiAgentPage = render'));
 t('৪. NAV_TABS থেকে AI ট্যাব বাদ — AI এখন dashboard Command Center + সরাসরি /ai রুট', (H.match(/const NAV_TABS=\[[\s\S]*?\];/) || [''])[0].length > 0 && !(H.match(/const NAV_TABS=\[[\s\S]*?\];/) || [''])[0].includes("key:'ai'") && !H.includes('juju-floating') && H.includes("if(p==='ai'){ if(window.renderAiAgentPage)"));
 
@@ -44,4 +44,4 @@ t('২১. M9 অ্যাকশন-ইঞ্জিন অটুট (প্র�
 t('২২. p06 weak-topic কনট্র্যাক্ট অটুট', UI.includes('const learningProfile = ') && UI.includes('weakTopics: lp.weakTopics, subjects: lp.subjects'));
 t('২৩. duplicate-turn গার্ড অটুট (একই টার্ন দুইবার নয়)', /const history = sessions\[cur\]\.msgs\.slice\(0, -1\)[\s\S]{0,300}?map\(\(m\) => \(\{ role: m\.role === 'user' \? 'user' : 'assistant', content: /.test(UI));
 
-t('২৪. sw APP_SHELL-এ AI ফাইল', SW.includes('./ai-agent-chat.js?v=agent-f1-ui-skyv10') && SW.includes('dashboard-v2.js?v='));
+t('২৪. sw APP_SHELL-এ AI ফাইল', SW.includes('./ai-agent-chat.js?v=agent-f1-ui-skyv11') && SW.includes('dashboard-v2.js?v='));
