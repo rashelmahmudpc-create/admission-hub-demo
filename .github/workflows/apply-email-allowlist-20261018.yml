@@ -1,0 +1,62 @@
+name: Apply email allowlist (gmail/yahoo/icloud/outlook only) 2026-10-18
+
+# Owner order 2026-10-18: only gmail.com, yahoo.com, icloud.com, outlook.com.
+# Runs scripts/email-allowlist-20261018.py on fix/email-allowlist: client fields refuse every
+# other address (Next never advances) and the Worker refuses signup, login,
+# password-reset and OTP for them; no institutional exception. Regenerates
+# worker-bundle.mjs and sw.js, runs guard tests, commits back. No deploy.
+
+on:
+  push:
+    branches: [fix/email-allowlist]
+    paths:
+      - '.github/workflows/apply-email-allowlist-20261018.yml'
+      - 'scripts/email-allowlist-20261018.py'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-email-allowlist-20261018
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: github.ref_name == 'fix/email-allowlist'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: fix/email-allowlist
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Apply patch
+        run: |
+          set -eu
+          if [ ! -f scripts/email-allowlist-20261018.py ]; then echo 'Already applied.'; echo 'SKIP=1' >> "$GITHUB_ENV"; exit 0; fi
+          python3 scripts/email-allowlist-20261018.py
+          npm ci
+          npm run build:worker
+          node scripts/sw-manifest.mjs
+          git diff --stat
+      - name: Guard tests
+        if: env.SKIP != '1'
+        run: |
+          set -eu
+          npm run check:worker-bundle
+          node --test --test-concurrency=1 email-policy.test.mjs verification-orchestrator.test.mjs verification-providers.test.mjs descope-magiclink.test.mjs descope-otp.test.mjs account-retirement.test.mjs
+      - name: Commit and push to the fix branch
+        if: env.SKIP != '1'
+        run: |
+          set -eu
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm -q scripts/email-allowlist-20261018.py
+          git add -A
+          git commit -m 'fix(auth): only gmail/yahoo/icloud/outlook accepted - field, signup, login, reset, OTP' -m 'Applied by apply-email-allowlist-20261018.yml. Bundle + sw.js regenerated. No deploy.'
+          git push origin HEAD:fix/email-allowlist
