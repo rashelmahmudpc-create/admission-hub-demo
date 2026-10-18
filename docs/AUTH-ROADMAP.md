@@ -23,25 +23,30 @@
 | Email Gateway | `EmailGatewayCoordinator` (Durable Object) |
 | মূল API | `/api/auth/v1/signup`, `/email-ownership/start`, `/email-ownership/verify`, `/password-reset` |
 | Bot আটকানো | `TURNSTILE_SECRET_KEY` |
+| OTP log / alert | `observability/otp-delivery-log.mjs` (`otp_delivery`, `otp_request`), `observability/otp-alert.mjs` (Telegram) |
 
 ## ⚠️ যা জানা আছে
 - Signup করলেই Firebase এ account তৈরি হয়, OTP যাচাইয়ের আগেই।
 - Forgot password এ শুধু Firebase link; Descope যুক্ত নেই।
-- OTP পাঠাতে server এর ~৪ সেকেন্ড; কোন provider দিয়ে গেল log এ নেই।
+- OTP পাঠাতে server এর ~৪ সেকেন্ড; provider এর নাম আর সময় এখন log এ আসে (PR #104)।
+- Live OTP তে Brevo (`otp-a`, priority 10) বাদ পড়ে Logto আগে গেছে — quota বা availability check; ধাপ ৪ এ দেখতে হবে।
 - Temp mail আটকানো আর অনুমোদিত domain তালিকা ঠিক আছে — হাত দেবে না।
 - Worker Free এর ৬৪ variable সীমায় আছে — নতুন var যোগ করা যাবে না (secret বা code default ব্যবহার করো)।
+- `admission-gk-staging` এ একটাও secret নেই (provider key, TG_BOT_TOKEN কিছুই না) — staging এ আসল OTP বা Telegram alert test করা যায় না, শুধু unit test।
 - `wrangler.staging.toml` এ `AI_STATE` Durable Object binding নেই (production এ আছে) — staging test এ খেয়াল রাখো।
+- OTP challenge আর ownership table (`auth_verification_challenges`, `auth_email_ownership_links`) এ `user_id` → `auth_users` FOREIGN KEY আছে — account ছাড়া (ভুয়া userId দিয়ে) OTP পাঠানো যাবে না। ধাপ ১ এর নকশা `docs/AUTH-STEP1-PLAN.md` এ।
+- Sandbox এ `npm ci` চালাবে না (memory শেষ হয়ে আটকে যায়); bundle বড় (~১.৫ MB) হলে branch এ CI দিয়ে build করাও।
 
 ---
 
 ## 🧭 ধাপসমূহ
 
-### ধাপ ০: সব কিছু দেখতে পাওয়া 🟡
+### ধাপ ০: সব কিছু দেখতে পাওয়া ✅
 - [x] ✅ `wrangler.toml` এ log স্থায়ীভাবে চালু — `[observability] enabled = true` (PR #101), staging আর production দুটোতেই deploy হয়ে log আসা যাচাই করা হয়েছে
-- [ ] প্রতিটা OTP আর email এর জন্য log: provider এর নাম, কত সময় লাগল, ফল কী
-- [ ] কোনো provider ব্যর্থ হলে বা ৩০ সেকেন্ডের বেশি দেরি হলে Telegram এ alert
+- [x] ✅ প্রতিটা OTP আর email এর জন্য log: provider এর নাম, কত সময় লাগল, ফল কী — `otp_delivery` / `otp_request` (PR #104)। Live যাচাই ১৮ অক্টোবর 15:30 UTC: Logto (`otp-h`), accepted, 6711 ms, rank 1
+- [x] ✅ কোনো provider ব্যর্থ হলে বা ৩০ সেকেন্ডের বেশি দেরি হলে Telegram এ alert — `observability/otp-alert.mjs` (PR #106), production এ চালু; সফল OTP তে alert যায়নি (ঠিক আছে), ব্যর্থতার alert unit test দিয়ে প্রমাণিত
 
-### ধাপ ১: OTP যাচাইয়ের পরে account তৈরি ⬜
+### ধাপ ১: OTP যাচাইয়ের পরে account তৈরি 🟡
 - [ ] Signup ক্রম: নাম → জন্ম তারিখ → স্কুল/কলেজ → email → password; শুধু সাময়িকভাবে রাখা (১০ মিনিট, DO বা KV)
 - [ ] OTP সঠিক হলে তবেই Firebase account → সাথে সাথে login → dashboard
 - [ ] মাঝপথে ছেড়ে দেওয়া signup নিজে থেকে মুছে যাবে
@@ -92,8 +97,8 @@
 ---
 
 ## 📝 শেষ অবস্থা
-- **শেষ session:** ১৮ অক্টোবর ২০২৬ (৩য়)
-  1. PR #101 merge হয়েছে; `deploy-staging.yml` আর `deploy-pages-worker.yml` দুটোই সফল।
-  2. Telemetry তে staging আর production দুটোরই log আসছে — ধাপ ০ এর প্রথম কাজ ✅।
-  3. Code এ কোনো পরিবর্তন হয়নি; শুধু config।
-- **পরের কাজ:** ধাপ ০ — প্রতিটা OTP/email এর log (provider, সময়, ফল), তারপর Telegram alert।
+- **শেষ session:** ১৮ অক্টোবর ২০২৬ (৭ম)
+  1. ধাপ ০ যাচাই: telemetry তে `otp_delivery` আছে (Logto, accepted, 6711 ms)। ✅ ঠিক আছে।
+  2. ধাপ ১ এর code খুঁটিয়ে দেখা হলো: OTP table এ `auth_users` FK থাকায় পুরোনো পরিকল্পনা (account ছাড়া userId) চলবে না; নতুন নকশা `AUTH-STEP1-PLAN.md` এ লেখা। Code বদলানো বা deploy হয়নি।
+  3. `test:native-auth` এর মূল ৪টা ফাইল sandbox এ চলে (`npm ci` ছাড়াই): 128 এর মধ্যে 126 pass, শুধু পুরোনো ২টা fail।
+- **পরের কাজ:** ধাপ ১ — `AUTH-STEP1-PLAN.md` এর "করণীয়" ১ থেকে শুরু (pending signup table + `signup` purpose), তারপর handler, test, CI bundle, staging → production।

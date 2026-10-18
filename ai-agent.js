@@ -23,6 +23,10 @@ import { planServerTools, isSimplePlan, simpleToolResponse, runTools, renderTool
 import { bumpDailyStats, statsFromTiming } from './sky-daily-report.mjs';
 /* Sky recall (owner plan step 2): the chat-open reminder. Pure, no model call. */
 import { buildRecall, sanitizeRecent, RECALL_VERSION } from './sky-recall.mjs';
+/* Sky goal (owner plan step 3): advice shaped around the admission goal. Pure. */
+import { isGoalQuestion, resolveGoal, renderGoalContext } from './sky-goal.mjs';
+/* Sky custom instructions (owner plan step 3): the student's own short note. */
+import { checkInstruction, parseStoredInstruction, storedInstruction, renderInstructionBlock, INSTRUCTION_KV_PREFIX, INSTRUCTION_MAX, INSTRUCTION_EXAMPLES, INSTRUCTIONS_VERSION } from './sky-instructions.mjs';
 import { extractMemoryCandidates, makeMemory, upsertMemory, parseMemory, renderMemory, resolveMemoryOwner, isPiiFree, statedWeakTopics, KIND, SOURCE, MEMORY_VERSION } from './memory-engine.js';
 import { validateResponse, describeResponseValidation, RESPONSE_VALIDATION_VERSION } from './response-validator.js';
 import { describeActions, ACTION_VERSION } from './action-engine.js';
@@ -1129,6 +1133,10 @@ export async function agentChat(request, env, uid, opts = {}) {
   const memKeyEarly = 'mem:' + MEMORY_VERSION + ':' + sendCtx.uid;
   const safeRead = (fn) => Promise.resolve().then(fn).catch(() => null);
   const prefsP = safeRead(() => getKv(env.PUB_KV, 'aiprefs:' + sendCtx.uid));
+  /* Step 3: the student's own instruction. Read in parallel with prefs; never
+     in a running mock exam, quiz JSON or onboarding (those formats are fixed). */
+  const instrWanted = sendCtx.uid.startsWith('account-') && !quizMode && examMode !== 'mock-running' && !onboarding;
+  const instrP = instrWanted ? safeRead(() => readInstruction(env, sendCtx.uid)) : Promise.resolve(null);
   const chatMemP = persistMemory ? safeRead(async () => await stateGet('chatmem:' + sendCtx.uid)) : Promise.resolve(null);
   const sumP = persistMemory && v.fresh !== true ? safeRead(() => stateGet('chatmemsum:' + sendCtx.uid)) : Promise.resolve('');
   const longP = persistMemory ? (earlyLongP || safeRead(() => stateGet(memKeyEarly))) : Promise.resolve(null);
@@ -1137,6 +1145,8 @@ export async function agentChat(request, env, uid, opts = {}) {
     const rawPrefs = await prefsP;
     aiPrefs = rawPrefs ? sanitizeAiPrefs(JSON.parse(rawPrefs)) : null;
   } catch (_) { aiPrefs = null; }
+  let instrText = '';
+  try { const ins = await instrP; instrText = ins && ins.text ? ins.text : ''; } catch (_) { instrText = ''; }
   /* M7: long-term memory is automatic for a signed-in student — no toggle and no
      prompt. Guests never reach here (refused above), so persistMemory is true. */
   const memoryOn = persistMemory;
@@ -1183,7 +1193,7 @@ export async function agentChat(request, env, uid, opts = {}) {
   if (persistSummary) later(() => statePut('chatmemsum:' + sendCtx.uid, freshSummary, CHAT_MEMORY_TTL_MS));
 
   /* owner 2026-10-18: the live Dhaka clock rides on every turn (one line). */
-  const systemPrompt = buildSystemPrompt({ stats, examMode, quiz: quizMode, onboarding, prefs: aiPrefs }) + '\n\n' + nowLine();
+  const systemPrompt = buildSystemPrompt({ stats, examMode, quiz: quizMode, onboarding, prefs: aiPrefs }) + '\n\n' + nowLine() + (instrText ? '\n\n' + renderInstructionBlock(instrText) : '');
   /* M4 Context Engine (opt-in). When enabled, a typed permission-scoped bundle
      is rendered and appended; when disabled the prompt above is byte-identical
      to the pre-M4 output, so the legacy path stays intact.
@@ -1251,6 +1261,18 @@ export async function agentChat(request, env, uid, opts = {}) {
      text and hash stay locked) and is skipped for quiz JSON and onboarding. */
   const formatRules = (!quizMode && !onboarding) ? RESPONSE_FORMAT_RULES : '';
   let sys = [systemPrompt, formatRules, ctxText, memoryText, summaryText].filter(Boolean).join('\n\n');
+  /* Sky goal (owner plan step 3): a study-advice / admission question is shaped
+     around this student's own goal (profile target, else what they said in
+     chat). Unknown goal → Sky asks once. Personal, so never cached or shared. */
+  let goalUsed = false;
+  if (!quizMode && !onboarding && !examMode && sendCtx.uid.startsWith('account-') && isGoalQuestion(toolText)) {
+    try {
+      const goalRecs = memoryOn ? memRecords : [];
+      const askedBefore = v.messages.some(m => m && m.role === 'assistant' && /ভর্তি হতে চাও/.test(String(m.content || '')));
+      const goalBlock = renderGoalContext(resolveGoal({ profile: profileCtx, records: goalRecs }), { weakTopics: stats && stats.weakTopics, stated: statedWeakTopics(goalRecs, 2), askedBefore });
+      if (goalBlock) { sys = sys + '\n\n' + goalBlock; goalUsed = true; }
+    } catch (_) { goalUsed = false; }
+  }
 
   const hasImage = msgs.some(m => m.image);
   mark('context');
@@ -1276,9 +1298,11 @@ export async function agentChat(request, env, uid, opts = {}) {
       mark('tools');
     } catch (_) { /* answer without tools */ }
   }
-  const chatCacheOn = chatCacheEnabled(env) && env && env.PROFILE_DB && !toolCtxUsed && !appFeatureHit;
+  /* Step 3: a student with their own instruction never gets a cached/shared
+     answer — the cached one was written without their wish. */
+  const chatCacheOn = chatCacheEnabled(env) && env && env.PROFILE_DB && !toolCtxUsed && !goalUsed && !appFeatureHit;
   const cacheQuestion = (v.messages[v.messages.length - 1] || {}).content;
-  const cacheable = chatCacheOn && isCacheableRequest({
+  const cacheable = chatCacheOn && !instrText && isCacheableRequest({
     messages: v.messages, hasImage, quizMode, onboarding,
     memoryText, summaryText, ctxText, stats, intent
   });
@@ -1287,7 +1311,7 @@ export async function agentChat(request, env, uid, opts = {}) {
      answered from an IMPERSONAL prompt and that answer may be shared. The
      personal prompt is never used to produce a shared answer, so nothing about
      one student can reach another. Memory is still updated as usual. */
-  const sharedCandidate = !cacheable && chatCacheOn && isSharedAcademicCandidate({
+  const sharedCandidate = !cacheable && chatCacheOn && !instrText && isSharedAcademicCandidate({
     messages: v.messages, hasImage, quizMode, onboarding, examMode, intent,
     fresh: freshThread, recalled: msgs.length > v.messages.length
   });
@@ -1646,24 +1670,71 @@ function openEarly(run, early, first) {
    One memory read, no write, no model call and no AI limit used. Only the
    caller's own memory is read (parseMemory re-checks the owner). Guests get
    nothing. Kill switch: PUB_KV 'sky:recall' = "off". */
-export async function agentRecall(request, env, uid) {
+export async function agentRecall(env, uid, body) {
   const id = String(uid || '');
   if (!id.startsWith('account-')) return jsonResp({ ok: true, recall: null });
   let off = false;
   try { off = String((await getKv(env && env.PUB_KV, 'sky:recall')) || '').trim().toLowerCase() === 'off'; } catch (_) { off = false; }
   if (off) return jsonResp({ ok: true, recall: null, off: true });
-  const body = (await request.json().catch(() => null)) || {};
-  const stats = capStats(body && body.stats) || {};
-  const recent = sanitizeRecent(body && body.recent);
+  const b = body && typeof body === 'object' ? body : {};
+  const stats = capStats(b.stats) || {};
+  const recent = sanitizeRecent(b.recent);
   const key = 'mem:' + MEMORY_VERSION + ':' + id;
   let raw = null;
   const aiState = aiStateStore(env);
   let fromState = false;
   if (aiState) { try { raw = await aiState.get(id, key); fromState = true; } catch (_) { fromState = false; } }
-  if (!fromState) raw = await getKv(env && env.PUB_KV, key);
+  if (!fromState) { try { raw = await getKv(env && env.PUB_KV, key); } catch (_) { raw = null; } }
   let recall = null;
-  try { recall = buildRecall({ records: parseMemory(raw, id), stats, recent, now: Date.now() }); } catch (_) { recall = null; }
+  let records = [];
+  try { records = parseMemory(raw, id); } catch (_) { records = []; }
+  let goal = null;
+  try { goal = resolveGoal({ profile: sanitizeProfileContext(b.profile), records }); } catch (_) { goal = null; }
+  try { recall = buildRecall({ records, stats, recent, goal, now: Date.now() }); } catch (_) { recall = null; }
   return jsonResp({ ok: true, recall, version: RECALL_VERSION });
+}
+
+/* ── /api/ai/instructions --------------------------------------------------- */
+/* Sky custom instructions (owner plan step 3, 2026-10-18). One short note per
+   signed-in student, saved in PUB_KV 'aiinstr:<uid>'. checkInstruction() runs
+   on save AND on every read, so a rule added later also cleans old notes.
+   Kill switch: PUB_KV 'sky:instructions' = "off" (reads return nothing, saves
+   are refused). */
+async function instructionsOff(env) {
+  try { return String((await getKv(env && env.PUB_KV, 'sky:instructions')) || '').trim().toLowerCase() === 'off'; } catch (_) { return false; }
+}
+export async function readInstruction(env, uid) {
+  const id = String(uid || '');
+  if (!id.startsWith('account-') || !env || !env.PUB_KV) return null;
+  const [off, raw] = await Promise.all([instructionsOff(env), getKv(env.PUB_KV, INSTRUCTION_KV_PREFIX + id).catch(() => null)]);
+  if (off) return null;
+  return parseStoredInstruction(raw);
+}
+export async function agentInstructions(env, uid, method, body) {
+  const id = String(uid || '');
+  if (!id.startsWith('account-')) return jsonResp({ error: 'sign_in_required', message: 'নির্দেশনা সেভ করতে লগইন করো।' }, 401);
+  const base = { max: INSTRUCTION_MAX, examples: INSTRUCTION_EXAMPLES, version: INSTRUCTIONS_VERSION };
+  if (await instructionsOff(env)) return jsonResp({ ok: true, off: true, text: '', ...base });
+  const key = INSTRUCTION_KV_PREFIX + id;
+  if (method === 'GET') {
+    let cur = null;
+    try { cur = parseStoredInstruction(await getKv(env.PUB_KV, key)); } catch (_) { cur = null; }
+    return jsonResp({ ok: true, text: cur ? cur.text : '', ts: cur ? cur.ts : 0, ...base });
+  }
+  const raw = method === 'DELETE' ? '' : (body && typeof body === 'object' ? body.text : '');
+  if (raw != null && typeof raw !== 'string') return jsonResp({ error: 'invalid_instruction', message: 'নির্দেশনা লেখা হিসেবে পাঠাও।' }, 400);
+  if (typeof raw === 'string' && raw.trim().length > INSTRUCTION_MAX * 2) {
+    return jsonResp({ error: 'too_long', message: `নির্দেশনা ${INSTRUCTION_MAX} অক্ষরের মধ্যে রাখো।` }, 400);
+  }
+  const c = checkInstruction(raw);
+  if (!c.ok) return jsonResp({ error: 'instruction_refused', reason: c.reason, message: c.message }, 400);
+  try {
+    if (!c.text) await env.PUB_KV.delete(key);
+    else await env.PUB_KV.put(key, storedInstruction(c.text));
+  } catch (_) {
+    return jsonResp({ error: 'save_failed', message: 'এখন সেভ করা গেল না — আবার চেষ্টা করো।' }, 500);
+  }
+  return jsonResp({ ok: true, text: c.text, message: c.message, ...base });
 }
 
 /* ── GET /api/ai/status ---------------------------------------------------- */

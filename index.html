@@ -871,8 +871,8 @@ textarea{min-height:96px}
      the download during head parse instead. The versioned URLs must match
      app-seed.js's `version` constant; scripts/build-welcome-pages.mjs rewrites
      both and fails loudly if they drift. -->
-<link rel="preload" as="style" href="./sky-onboarding.css?v=sky-flow-20261017-v10">
-<link rel="preload" as="script" href="./sky-onboarding.js?v=sky-flow-20261017-v10">
+<link rel="preload" as="style" href="./sky-onboarding.css?v=sky-flow-20261018-v12">
+<link rel="preload" as="script" href="./sky-onboarding.js?v=sky-flow-20261018-v12">
 <link rel="stylesheet" href="./question-bank-clean.css?v=qbc1">
 </head>
 <body class="app-booting">
@@ -981,7 +981,7 @@ textarea{min-height:96px}
 <script>window.ADMISSION_HUB_TURNSTILE_SITEKEY='0x4AAAAAAFYX5IGYQ0F-3DU9';</script>
 <script defer src="./account-access.js?v=20261018-logout-otp-v1&startup=fast1"></script>
 <script defer src="./email-policy-client.js?v=20261018-allowlist-v1"></script>
-<script src="./app-seed.js?v=sky-flow-20261017-v10" defer></script>
+<script src="./app-seed.js?v=sky-flow-20261018-v12" defer></script>
 <script defer src="./ios-chrome.js?v=9"></script>
 <script>
 (function installAdmissionSafety(){
@@ -5631,7 +5631,7 @@ window.__admissionBootPromise.catch(error => console.error('[Admission Hub] boot
 <!-- First-interaction modules execute before optional/heavy tools. -->
 <script defer src="./dashboard-v2.js?v=dash2f18-chrome"></script>
 <script defer src="./academic-catalog.js?v=acad-cat-v2"></script>
-<script defer src="./profile-ui.js?v=profile-v19-avatar-cache"></script>
+<script defer src="./profile-ui.js?v=profile-v20-sky-instr"></script>
 <script defer src="./profile-v2-mount.js?v=profile-v2-6"></script>
 <script defer src="./sky-smalltalk.js?v=st2"></script>
 <script defer src="./sky-faq.js?v=faq1"></script>
@@ -5640,7 +5640,7 @@ window.__admissionBootPromise.catch(error => console.error('[Admission Hub] boot
 <script defer src="./sky-faq-sci.js?v=faq1"></script>
 <script defer src="./sky-faq-gk.js?v=faq1"></script>
 <script defer src="./sky-tools-client.js?v=tools1"></script>
-<script defer src="./ai-agent-chat.js?v=agent-f1-ui-skyv10"></script>
+<script defer src="./ai-agent-chat.js?v=agent-f1-ui-skyv13"></script>
 <script defer src="./question-engine.js?v=qe1"></script>
 <script defer src="./question-engine-panel.js?v=qe1"></script>
 <script defer src="qbank-redesign.js?v=practice15"></script>
@@ -5989,7 +5989,7 @@ window.admissionLoadPack = function admissionLoadPack(name) {
 <script defer src="./progress-tool.js?v=progress-v7-p09-insights"></script>
 <script defer src="./mistakes-bank-tool.js?v=mistakes-bank-v2-p10"></script>
 <script defer src="./smart-revision-tool.js?v=smart-revision-v3-p10"></script>
-<script defer src="./source-course-tool.js?v=bangla-only-courses-v26-course-mcq-analytics"></script>
+<script defer src="./source-course-tool.js?v=bangla-only-courses-v27-course-integrity-gate"></script>
 <script defer src="./android-runtime-fix.js?v=and-scroll-v1"></script>
 <script>window.AH_CLOUD_ROLE='public';</script>
 <script type="application/x-ah-idle" data-ah-src="./cloud-content-sync.js?v=vm-erase-v223"></script>

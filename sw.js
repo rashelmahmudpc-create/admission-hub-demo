@@ -3,7 +3,7 @@ const CACHE_PREFIX = 'admission-hub-shell-';
 // hold user data; this one holds exactly one image and is trimmed on write.
 const AVATAR_CACHE = 'admission-hub-avatar-v1';
 
-const BUILD_ID = 'v359-sky-recall';
+const BUILD_ID = 'v364-sky-goal';
 const CACHE_NAME = `${CACHE_PREFIX}${BUILD_ID}`;
 const VERSION_HEADER = 'X-Admission-Hub-Build';
 const DOCUMENT_NETWORK_TIMEOUT_MS = 2500;
@@ -34,16 +34,16 @@ const APP_SHELL = [
   './session-persist.js?v=session-v2',
   './analytics-service.js?v=analytics-p2-v2-insights',
   './account-access.css?v=20261018-allowlist-v1',
-  './sky-onboarding.css?v=sky-flow-20261017-v10',
+  './sky-onboarding.css?v=sky-flow-20261018-v12',
   './institutions-bd.js?v=bd-institutions-v2',
   './language-engine.js?v=lang-v5-single-email-button',
   './account-access.js?v=20261018-logout-otp-v1&startup=fast1',
-  './sky-onboarding.js?v=sky-flow-20261017-v10',
+  './sky-onboarding.js?v=sky-flow-20261018-v12',
   './email-policy-client.js?v=20261018-allowlist-v1',
   './welcome-story.css?v=welcome-story-20261018-v3',
   './welcome-story.js?v=welcome-story-20261018-v3',
   './academic-catalog.js?v=acad-cat-v2',
-  './profile-ui.js?v=profile-v19-avatar-cache',
+  './profile-ui.js?v=profile-v20-sky-instr',
   './profile-ui.css?v=profile-v15-uni-tap',
   './profile-v2.html?v=profile-v2-6',
   './profile-v2-mount.js?v=profile-v2-6',
@@ -57,7 +57,7 @@ const APP_SHELL = [
   './sky-faq-en.js?v=faq1',
   './sky-faq-sci.js?v=faq1',
   './sky-faq-gk.js?v=faq1',
-  './ai-agent-chat.js?v=agent-f1-ui-skyv10',
+  './ai-agent-chat.js?v=agent-f1-ui-skyv13',
   './question-engine.js?v=qe1',
   './question-engine-panel.js?v=qe1',
   './notification-fcm.js?v=fcm-p3-v15',
@@ -92,7 +92,7 @@ const APP_SHELL = [
 // A truncated/corrupt download is NEVER written to the shell cache.
 const ASSET_DIGESTS = {
 /* sw-manifest:start */
-  "./index.html": "c3923dfa50c72cea08d36899e6f36d23271219dfa9771ca0386e584be23453a7",
+  "./index.html": "f4e30fdb7c21f393c6d14153b5c1ad0dbe21f0b65a9e4a0dacf9d1252b0aa51b",
   "./manifest.json": "6dcf0e0c6f7671750549e53558ba8b9f0c2c83b0c6759072a6b5e2276331f491",
   "./manifest.webmanifest": "abcd26174710f6df3e183889a5a9da182f73ee8cdcc543b43db8fb4070cad54f",
   "./dashboard-v2.css?v=dash2f13-theme": "4541bc1e65fd158c593443562975400d128b8f1d3b636595df3c235b99e8cced",
@@ -100,16 +100,16 @@ const ASSET_DIGESTS = {
   "./session-persist.js?v=session-v2": "99f3d1f49f6d5714fd25f1c12b2aa978ca97a009d6caba9a690a0442d082593c",
   "./analytics-service.js?v=analytics-p2-v2-insights": "6c1f711ed0d99baade68bccd2754f78029c7a7d62d65934239f60a710317d0b0",
   "./account-access.css?v=20261018-allowlist-v1": "bf4f6e237ddfffd888d094b492a9cf49c10fcd85958ab13e91770a23fc8949f0",
-  "./sky-onboarding.css?v=sky-flow-20261017-v10": "b8143d8ad9db7472cd4a7a24420171c31b01fc6db1f45bcb065020cc1c2aa337",
+  "./sky-onboarding.css?v=sky-flow-20261018-v12": "f94c44b34348038eea1b934f68ae0988a27ef64d76dbef47cd6dd640efde0bbe",
   "./institutions-bd.js?v=bd-institutions-v2": "602c5549515e8207ad152b948ca9b8fe3ad0fbe429afb56380e4e21b662f779d",
   "./language-engine.js?v=lang-v5-single-email-button": "52aaa5d77b3030721ccbc1c777801a3787c1d1061391b0f4b80841b6a9ddd054",
   "./account-access.js?v=20261018-logout-otp-v1&startup=fast1": "44d2e65887f13bd33b6e093a17ba4e4a12f9ef6b226548de5acb505a044a6c4d",
-  "./sky-onboarding.js?v=sky-flow-20261017-v10": "2a8fd5a4eda7713d0e5c2fcf9fb3eece1fd326ed8f74d7dcb6e794d506ca72fc",
+  "./sky-onboarding.js?v=sky-flow-20261018-v12": "6aca49e00f6a1b7376f73e1270fe00e9ae76b7a269ee82d60a172a4c0aca43f3",
   "./email-policy-client.js?v=20261018-allowlist-v1": "d52570ca207888a5dc0e320a30ea59b576887e4bc4f33f48bfec64c2eb2245b5",
   "./welcome-story.css?v=welcome-story-20261018-v3": "4b589890fdf457149113e236320f94014b5cc2845c190b1bdf853f1f2963073d",
   "./welcome-story.js?v=welcome-story-20261018-v3": "893a1d0d2ce8683bd802181bffc3e0496994a3faaf6ed27e968b2d19a21afa91",
   "./academic-catalog.js?v=acad-cat-v2": "75e7b80663d41330658c948ad1d4829d49f5c9abed581350582cfeace06d5b32",
-  "./profile-ui.js?v=profile-v19-avatar-cache": "90a9c2e278f871a931a0952a20329d8400a162bd6269d9d96152fe5816b8c383",
+  "./profile-ui.js?v=profile-v20-sky-instr": "4db65994d9b9c7ac0f7cfb1dcf57118cc1d016314f8865614b58dba8de9993e7",
   "./profile-ui.css?v=profile-v15-uni-tap": "6408a4b7ac8acf6845cd0148c58377a4953c8ff879d30b2c520eafae0314b98a",
   "./profile-v2.html?v=profile-v2-6": "00dce1ac58ca9ec4ff4f6672c054e4874915ce6ce66c104781cab459b3ae456e",
   "./profile-v2-mount.js?v=profile-v2-6": "967e7d81fbf821c06ce5b1ddd867ab4fa5e882e37ef3aa1f0c445e0c623f3ec0",
@@ -123,7 +123,7 @@ const ASSET_DIGESTS = {
   "./sky-faq-en.js?v=faq1": "4923f584193c9569329b001b20867f2954b93b8e232a704e2effd632f25bb833",
   "./sky-faq-sci.js?v=faq1": "f574bcdb1441678c6ae4cbf6be8baa73d5cdd06a24bccfab712e241a29b6a42b",
   "./sky-faq-gk.js?v=faq1": "e406ee8982e255881ff5a6c854c19dc0c4f8004d6e4cc341a2c114bf678ee492",
-  "./ai-agent-chat.js?v=agent-f1-ui-skyv10": "45e8b31dde8d8d640cc0c797170d810cc168ea9644dce4118e5535ce15f71452",
+  "./ai-agent-chat.js?v=agent-f1-ui-skyv13": "987c7ffb6910f5781a7fa47ceb75f3b6ceb5d116e006a1291a3791f62bc34786",
   "./question-engine.js?v=qe1": "db404fefd97bea27dad177748bafb0a9ba7d87bedca094e3da795c5b77946cd4",
   "./question-engine-panel.js?v=qe1": "33376e371654d575484194b5fcf8e486f4e3329c13e5330ff8619caab0399ec4",
   "./notification-fcm.js?v=fcm-p3-v15": "3b1880bc1ab5b9f91cf844b021369f2431eae099175873ab4d7eb018370318ee",

@@ -126,7 +126,7 @@ async function bounded(action, milliseconds) {
 }
 
 export class VerificationOrchestrator {
-  constructor({ repository, hmacSecret, config, providers = [], activated = false, now = Date.now, cryptoImpl = globalThis.crypto } = {}) {
+  constructor({ repository, hmacSecret, config, providers = [], activated = false, now = Date.now, cryptoImpl = globalThis.crypto, onDeliveryEvent = null } = {}) {
     const required = [
       'reserveChallenge', 'markChallengeDelivery', 'confirmProviderEvidence', 'claimTelegramDelivery',
       'confirmTelegramDelivery', 'getPendingChallenge', 'isTelegramLinked', 'failChallenge', 'getChallenge',
@@ -145,6 +145,10 @@ export class VerificationOrchestrator {
     this.now = now;
     this.crypto = cryptoImpl;
     this.capabilityCache = null;
+    // AUTH-ROADMAP step 0 (owner 2026-10-18): optional sink for one event per provider
+    // try and one per request (provider id, outcome, reason, timing only). The worker
+    // wires observability/otp-delivery-log.mjs here; tests leave it null (silent).
+    this.onDeliveryEvent = typeof onDeliveryEvent === 'function' ? onDeliveryEvent : null;
     const supplied = providers instanceof Map ? providers : new Map(providers.map(provider => [provider.id, provider]));
     this.providers = new Map(this.config.providers.map(entry => {
       const provider = supplied.get(entry.id) || new DisabledVerificationProvider(entry);
@@ -384,12 +388,25 @@ export class VerificationOrchestrator {
     const destinations = identity.destinations;
     const deliveryMethod = input?.deliveryMethod === 'magic-link' && identity.purpose === 'email-ownership' ? 'magic-link' : '';
     const candidates = await this.#candidateRows({ ...identity, attemptId, previousProviderId, deliveryMethod }, destinations, now);
+    const requestStarted = Date.now();
+    const attemptRef = String(attemptId).slice(0, 8);
+    const tried = [];
+    const logBase = { attempt: attemptRef, purpose: identity.purpose, method: deliveryMethod || 'code', candidates: candidates.length };
+    const emit = (evt, fields) => { try { this.onDeliveryEvent?.({ evt, ...fields }); } catch {} };
+    const logDelivery = fields => emit('otp_delivery', fields);
+    const logRequest = fields => emit('otp_request', fields);
+    let rank = 0;
     for (const candidate of candidates) {
       const { entry, provider } = candidate;
+      rank += 1;
       const maxTries = 1 + policy.maxProviderRetries;
       for (let currentTry = 0; currentTry < maxTries; currentTry += 1) {
         const quota = await this.repository.reserveDailyQuota({ providerId: entry.id, dailyQuota: entry.dailyQuota, now });
-        if (quota.exhausted) break;
+        if (quota.exhausted) {
+          tried.push(`${entry.id}:quota`);
+          logDelivery({ ...logBase, provider: entry.id, rank, try: currentTry + 1, outcome: 'quota_exhausted' });
+          break;
+        }
         const started = Date.now();
         let providerAccepted = false;
         try {
@@ -406,6 +423,9 @@ export class VerificationOrchestrator {
           if (result?.accepted !== true) throw new VerificationProviderError('INVALID_PROVIDER_RESPONSE', VERIFICATION_FAILURE_CLASS.HARD);
           providerAccepted = true;
           const latencyMs = Date.now() - started;
+          tried.push(`${entry.id}:ok`);
+          logDelivery({ ...logBase, provider: entry.id, label: entry.label, rank, try: currentTry + 1, outcome: 'accepted', latencyMs });
+          logRequest({ ...logBase, outcome: 'sent', provider: entry.id, totalMs: Date.now() - requestStarted, tried: tried.join(',') });
           await this.#record(entry, { attemptId, userId: identity.userId, subjectRef: identity.subjectRef, success: true, reason: 'accepted', latencyMs, now });
           errorFromRepository(await this.repository.markChallengeDelivery({
             attemptId,
@@ -433,6 +453,11 @@ export class VerificationOrchestrator {
             throw new NativeAuthError(AUTH_ERROR_CODES.STORAGE_UNAVAILABLE);
           }
           const failure = providerFailure(cause);
+          tried.push(`${entry.id}:${failure.code}`);
+          logDelivery({
+            ...logBase, provider: entry.id, label: entry.label, rank, try: currentTry + 1, outcome: 'failed',
+            reason: failure.code, failureClass: failure.failureClass, latencyMs: Date.now() - started
+          });
           const providerState = await this.#record(entry, {
             attemptId, userId: identity.userId, subjectRef: identity.subjectRef,
             success: false, failureClass: failure.failureClass, reason: failure.code, retryAfter: failure.retryAfter,
@@ -444,6 +469,7 @@ export class VerificationOrchestrator {
             // problem, so skip it and let the next slot (Logto/Appwrite) carry the send.
             if (failure.code === 'INVALID_DESTINATION') {
               await this.repository.failChallenge({ attemptId, reason: failure.code, now });
+              logRequest({ ...logBase, outcome: 'invalid_destination', totalMs: Date.now() - requestStarted, tried: tried.join(',') });
               throw new NativeAuthError(AUTH_ERROR_CODES.INVALID_INPUT);
             }
             break;
@@ -456,6 +482,7 @@ export class VerificationOrchestrator {
         }
       }
     }
+    logRequest({ ...logBase, outcome: 'all_failed', totalMs: Date.now() - requestStarted, tried: tried.join(',') });
     await this.repository.failChallenge({ attemptId, reason: 'all_providers_unavailable', now });
     throw new NativeAuthError(AUTH_ERROR_CODES.BACKUP_UNAVAILABLE);
   }

@@ -1315,13 +1315,91 @@
         ${aiOpt('pick-ai-len', 'detailed', 'Detailed', pf.responseLen)}
       </div>
       <p class="pp-fine" data-role="ai-prefs-status" hidden></p>
+      ${aiInstrSection()}
       <div class="pp-sheet-actions"><button class="pp-btn-ghost" data-role="sheet-close" type="button">বাতিল</button></div>`);
+  }
+
+  /* Sky custom instructions (owner plan step 3, 2026-10-18): one short note the
+     student writes; Sky follows it on every answer. The Worker checks it
+     (harmful, cheating, rule-breaking, personal data are refused). */
+  const AI_INSTR_MAX = 300;
+  const AI_INSTR_EXAMPLES = [
+    'সবসময় সহজ বাংলায়, উদাহরণ দিয়ে বোঝাবে',
+    'উত্তর ছোট রাখবে, পয়েন্ট আকারে দেবে',
+    'প্রতিটা উত্তরের শেষে একটা ছোট প্র্যাকটিস প্রশ্ন দেবে',
+    'আমি মেডিকেল ভর্তি পরীক্ষার্থী — সেই অনুযায়ী বোঝাবে'
+  ];
+  function aiInstrSection() {
+    const saved = state.aiInstr && typeof state.aiInstr.text === 'string' ? state.aiInstr.text : '';
+    const val = typeof state.aiInstrDraft === 'string' ? state.aiInstrDraft : saved;
+    const off = !!(state.aiInstr && state.aiInstr.off);
+    const ex = AI_INSTR_EXAMPLES.map((t) => `<button class="pp-vopt" data-role="ai-instr-example" data-value="${esc(t)}" type="button" style="padding:6px 10px;font-size:12.5px;width:auto"><span>${esc(t)}</span></button>`).join('');
+    return `
+      <div class="pp-kicker" style="margin-top:16px" data-ai-instr-contract="sky-instructions-v1">SKY-কে তোমার নির্দেশনা</div>
+      <p class="pp-fine">এক লাইনে লেখো Sky কীভাবে উত্তর দেবে — Sky সবসময় সেটা মানবে। শুধু পড়াশোনার ধরন; খারাপ কিছু রাখা যাবে না।</p>
+      ${off ? '<p class="pp-fine">এই সুবিধা এখন সাময়িক বন্ধ আছে।</p>' : `
+      <label class="pp-field" style="margin-top:6px"><span>নির্দেশনা <em data-role="ai-instr-count">${bnNum(val.length)}/${bnNum(AI_INSTR_MAX)}</em></span>
+        <textarea id="pp-ai-instr" rows="3" maxlength="${AI_INSTR_MAX}" placeholder="যেমন: সবসময় উদাহরণ দিয়ে বোঝাবে, শেষে একটা MCQ দেবে">${esc(val)}</textarea>
+      </label>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 2px">${ex}</div>
+      <p class="pp-fine" data-role="ai-instr-status" ${state.aiInstrMsg ? '' : 'hidden'}>${esc(state.aiInstrMsg || '')}</p>
+      <div class="pp-sheet-actions" style="margin-top:8px">
+        ${saved ? '<button class="pp-btn-ghost" data-role="ai-instr-clear" type="button">মুছে ফেলো</button>' : ''}
+        <button class="pp-btn-primary" data-role="ai-instr-save" type="button">নির্দেশনা সেভ করো</button>
+      </div>`}`;
+  }
+  function wireAiInstr(host) {
+    const ta = host && host.querySelector('#pp-ai-instr');
+    if (!ta) return;
+    ta.addEventListener('input', () => {
+      state.aiInstrDraft = ta.value;
+      const c = host.querySelector('[data-role="ai-instr-count"]');
+      if (c) c.textContent = bnNum(ta.value.length) + '/' + bnNum(AI_INSTR_MAX);
+    });
+  }
+  async function instrFetch(method, payload) {
+    const res = await fetch('/api/ai/instructions', {
+      method, credentials: 'same-origin',
+      headers: payload ? { 'Content-Type': 'application/json' } : undefined,
+      body: payload ? JSON.stringify(payload) : undefined
+    });
+    let body = {};
+    try { body = await res.json(); } catch (_) { body = {}; }
+    return { ok: res.ok, status: res.status, body };
+  }
+  async function loadAiInstr() {
+    try {
+      const r = await instrFetch('GET');
+      state.aiInstr = r.ok ? { text: r.body.text || '', off: !!r.body.off } : { text: '' };
+    } catch (_) { state.aiInstr = state.aiInstr || { text: '' }; }
+  }
+  async function saveAiInstr(text) {
+    if (state.aiInstrSaving) return;
+    state.aiInstrSaving = true;
+    try {
+      const r = await instrFetch('POST', { text });
+      if (r.ok) {
+        state.aiInstr = { text: r.body.text || '' };
+        state.aiInstrDraft = undefined;
+        state.aiInstrMsg = r.body.text ? 'সেভ হয়েছে ✓ — এখন থেকে Sky এভাবে উত্তর দেবে।' : 'নির্দেশনা মুছে ফেলা হয়েছে — Sky আগের মতো উত্তর দেবে।';
+      } else {
+        state.aiInstrMsg = (r.body && r.body.message) || (r.status === 401 ? 'নির্দেশনা সেভ করতে লগইন করো।' : 'সেভ করা গেল না — আবার চেষ্টা করো।');
+      }
+    } catch (_) {
+      state.aiInstrMsg = 'ইন্টারনেট সংযোগ দেখে আবার চেষ্টা করো।';
+    } finally {
+      state.aiInstrSaving = false;
+      refreshAiPrefsSheet();
+    }
   }
 
   function refreshAiPrefsSheet(statusMsg) {
     const host = document.querySelector('[data-role="sheet-host"]');
     if (!host) return;
+    const ta = host.querySelector('#pp-ai-instr');
+    if (ta) state.aiInstrDraft = ta.value;
     host.innerHTML = aiPrefsSheet();
+    wireAiInstr(host);
     if (statusMsg) {
       const el = host.querySelector('[data-role="ai-prefs-status"]');
       if (el) { el.hidden = false; el.textContent = statusMsg; }
@@ -1343,12 +1421,14 @@
 
   async function loadAiPrefs() {
     if (state.aiPrefs) return;
+    const instrP = loadAiInstr();
     try {
       const body = await api('/api/ai/prefs');
       state.aiPrefs = body?.prefs || { ...AI_PREFS_DEFAULT };
     } catch (_) {
       state.aiPrefs = { ...AI_PREFS_DEFAULT };
     }
+    await instrP;
   }
 
   function visibilitySheet() {
@@ -1380,7 +1460,7 @@
     state.sheet = null;
     if (type === 'journey') host.innerHTML = journeySheet();
     else if (type === 'achv') host.innerHTML = achvSheet();
-    else if (type === 'aiprefs') { host.innerHTML = aiPrefsSheet(); }
+    else if (type === 'aiprefs') { host.innerHTML = aiPrefsSheet(); wireAiInstr(host); }
     else if (type === 'prefs') host.innerHTML = prefsSheet();
     else if (type === 'visibility') host.innerHTML = visibilitySheet();
     else host.innerHTML = '';
@@ -1830,7 +1910,26 @@
       closeSheet(); renderCurrentView(); toast('Appearance সেভ হয়েছে ✓');
       return;
     }
+    else if (role === 'ai-instr-example') {
+      state.aiInstrDraft = String(el.dataset.value || '').slice(0, AI_INSTR_MAX);
+      state.aiInstrMsg = '';
+      refreshAiPrefsSheet();
+      const ta = document.querySelector('#pp-ai-instr');
+      if (ta) { ta.value = state.aiInstrDraft; ta.focus(); }
+      return;
+    }
+    else if (role === 'ai-instr-save') {
+      const ta = document.querySelector('#pp-ai-instr');
+      saveAiInstr(ta ? ta.value : (state.aiInstrDraft || ''));
+      return;
+    }
+    else if (role === 'ai-instr-clear') {
+      state.aiInstrDraft = '';
+      saveAiInstr('');
+      return;
+    }
     else if (role === 'open-ai-prefs') {
+      state.aiInstrMsg = '';
       if (!state.aiPrefs) { loadAiPrefs().then(() => { state.sheet = 'aiprefs'; renderCurrentView(); }); }
       else { state.sheet = 'aiprefs'; renderCurrentView(); }
       return;

@@ -2,10 +2,10 @@
   'use strict';
 
   const COURSE_DEFS = {
-    sandhi: { id: 'sandhi-exact-native-v1', category: 'বাংলা', path: './courses/sandhi/index.html', hash: 'bf1ecb9767937231a3dcf36250e62eda8645f996f06a3806edf51ed06e6bd0ff', label: 'সন্ধি', title: 'সন্ধি — University Admission Master Guide', subtitle: 'Visual University Admission Master Guide · Bangla 2nd Paper' },
-    somas: { id: 'somas-exact-native-v1', category: 'বাংলা', path: './courses/somas/index.html', hash: '7311c4def169f85ac48b35bac2e64fed6adb26b43d1dda6ae9a44e1078fe433b', label: 'সমাস', title: 'সমাস — University Admission Master Guide', subtitle: 'Visual University Admission Master Guide · Bangla 2nd Paper' },
-    prottoy: { id: 'prottoy-exact-native-v1', category: 'বাংলা', path: './courses/prottoy/index.html', hash: '81c4e4c76feb2d20cef21048ee1a81280a42c8bb84849e52dc5c0b2ccebbc671', label: 'প্রত্যয়', title: 'প্রত্যয় — Visual Admission Master Guide', subtitle: 'Visual University Admission Master Guide · Bangla 2nd Paper' },
-    'prottoy-master': { id: 'prottoy-master-exact-native-v1', category: 'বাংলা', path: './courses/prottoy-master/index.html', hash: 'e285153168db59a84db610408f9f641168ea7bfc76a3018baaf51ca70867e7f8', label: 'প্রত্যয় Master', title: 'প্রত্যয় • Visual Admission Master Guide — Interactive', subtitle: 'Bangla 2nd Paper · 200 MCQ · Interactive guide' },
+    sandhi: { id: 'sandhi-exact-native-v1', category: 'বাংলা', path: './courses/sandhi/index.html', hash: '8188d2dbb2f1fe950c69919cb1bf6034ce3b54b3362d262f3742137e135f12b1', label: 'সন্ধি', title: 'সন্ধি — University Admission Master Guide', subtitle: 'Visual University Admission Master Guide · Bangla 2nd Paper' },
+    somas: { id: 'somas-exact-native-v1', category: 'বাংলা', path: './courses/somas/index.html', hash: 'cf603da7399fd1a7af671847211a7fc02a76091877faa52b522cede4e04c89a4', label: 'সমাস', title: 'সমাস — University Admission Master Guide', subtitle: 'Visual University Admission Master Guide · Bangla 2nd Paper' },
+    prottoy: { id: 'prottoy-exact-native-v1', category: 'বাংলা', path: './courses/prottoy/index.html', hash: '1013b164b3b4413ccfdd9c6eca5efdf354d86dc728181fdae3c2afa4163fc918', label: 'প্রত্যয়', title: 'প্রত্যয় — Visual Admission Master Guide', subtitle: 'Visual University Admission Master Guide · Bangla 2nd Paper' },
+    'prottoy-master': { id: 'prottoy-master-exact-native-v1', category: 'বাংলা', path: './courses/prottoy-master/index.html', hash: '35eccea4c20fcf4820845eb876d74c1d84de4b2876cb099f85cfb507d10d47fd', label: 'প্রত্যয় Master', title: 'প্রত্যয় • Visual Admission Master Guide — Interactive', subtitle: 'Bangla 2nd Paper · 200 MCQ · Interactive guide' },
   };
   const REMOVED_ENGLISH_PREFIXES = [
     'admissionHubNativeCourseV1:english-voice-exact-native-v1',
@@ -84,6 +84,15 @@
    * the only consumer, so this module never imports it. */
   const track = (type, detail) => { try { window.dispatchEvent(new CustomEvent('admission:activity', { detail: { type, ...(detail || {}) } })); } catch (_) {} };
   const coursePath = () => String(location.hash.replace(/^#\/?/, '').split('?')[0] || 'dashboard');
+  /* SHA-256 of a fetched course document, lowercase hex. Returns '' when the
+   * browser cannot compute it (no crypto.subtle), which fails the comparison
+   * above and withholds script execution — fail closed, never fail open. */
+  const sha256Hex = async text => {
+    try {
+      const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+      return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('');
+    } catch (_) { return ''; }
+  };
   const isCoursePath = path => path === 'source-courses' || path.startsWith('source-courses/');
   const installRouteCleanup = () => {
     if (routeCleanupInstalled) return;
@@ -173,20 +182,28 @@
     const request = fetch(`${def.path}?nativeCourse=v3`, { cache: 'reload' }).then(response => {
       if (!response.ok) throw new Error(`source ${response.status}`);
       return response.text();
-    }).then(text => {
+    }).then(async text => {
+      /* The course documents are supplied files and their scripts are executed
+       * with new Function() further down, which is remote code execution in the
+       * app origin unless the bytes are pinned. The SHA-256 recorded in
+       * COURSE_DEFS is enforced here: a document that does not match its
+       * recorded hash still renders, but its scripts are never executed.
+       * Update the hash in COURSE_DEFS whenever a course file legitimately
+       * changes, or that course's interactivity stops. */
+      const integrityOk = await sha256Hex(text) === String(def.hash || '').toLowerCase();
+      if (!integrityOk) console.error(`source-course integrity mismatch for "${key}" — its scripts will not run`);
       const doc = new DOMParser().parseFromString(text, 'text/html');
       const styles = Array.from(doc.querySelectorAll('style')).map(s => s.textContent || '').join('\n');
       /* Only executable scripts may be concatenated. Course pages carry a
        * `type="application/ld+json"` SEO block; feeding that to new Function()
        * threw "Unexpected token ':'" and no course would open at all. */
       const JS_TYPES = new Set(['', 'text/javascript', 'application/javascript', 'module']);
-      const scripts = Array.from(doc.querySelectorAll('script'))
+      const scripts = integrityOk ? Array.from(doc.querySelectorAll('script'))
         .filter(s => JS_TYPES.has(String(s.getAttribute('type') || '').trim().toLowerCase()))
         .map(s => s.textContent || '')
         .filter(text => !/__CF\$cv_params|cdn-cgi\/challenge-platform/.test(text))
-        .join('\n');
+        .join('\n') : '';
       const bodyHtml = Array.from(doc.body.childNodes).filter(node => node.nodeName !== 'SCRIPT').map(node => node.outerHTML || node.textContent || '').join('');
-      const def = COURSE_DEFS[key] || COURSE_DEFS.sandhi;
       const transformed = scripts
         .replace('const questions = [', 'const questions = window.__sourceCourseMCQ = [')
         .replace('var MCQ = [', 'var MCQ = window.__sourceCourseMCQ = [')

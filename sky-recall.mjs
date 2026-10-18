@@ -26,18 +26,28 @@ export function whenWord(ts, now) {
   return bn(d) + ' দিন আগে';
 }
 
+/* Small talk is not a topic worth recalling ("হাই", "ধন্যবাদ", "ok" ...). */
+const SMALLTALK = /^(হাই|হ্যালো|হেলো|হাই স্কাই|hi|hii+|hello|hey|ধন্যবাদ|থ্যাংকস|thanks?|thank you|thx|ok|okay|ওকে|আচ্ছা|ঠিক আছে|জি|হ্যাঁ|না|সালাম|আসসালামু আলাইকুম|bye|বাই|good (morning|night)|শুভ (সকাল|রাত্রি|সন্ধ্যা))[\s!।.?,😊🙂👍❤️]*$/iu;
+export function isSmallTalkTopic(v) {
+  const s = String(v || '').trim();
+  return s.length < 3 || SMALLTALK.test(s);
+}
+
 /**
  * input: { records (parsed long-term memory), stats (capStats shape),
  *          recent: { mistakes: n, since: ts } (client-counted, last 48 h), now }
- * output: { line, chips: [{label, q} | {label, go}], kinds: [...], version } | null
+ * output: { line, button: { label, prompt }, kinds: [...], version } | null
+ * Plain text only — the chat bubble uses textContent, never Markdown/HTML.
  */
 export function buildRecall(input = {}) {
   const now = Number(input.now) || Date.now();
   const records = Array.isArray(input.records) ? input.records : [];
   const stats = input.stats && typeof input.stats === 'object' ? input.stats : {};
   const recent = input.recent && typeof input.recent === 'object' ? input.recent : {};
+  /* Step 3: the admission goal (profile target, else said in chat). */
+  const goal = input.goal && input.goal.label ? cleanName(input.goal.label, 60) : '';
   const parts = [];
-  const chips = [];
+  const buttons = [];
   const kinds = [];
 
   /* 1. Recent mistakes (the app counted them; 48 h, not yet mastered). */
@@ -46,47 +56,61 @@ export function buildRecall(input = {}) {
     const when = whenWord(Number(recent.since) || 0, now);
     const lead = when === 'আজ' ? 'আজ' : when === 'গতকাল' ? 'গতকাল থেকে' : 'সম্প্রতি';
     parts.push(lead + ' ' + bn(wrong) + 'টা প্রশ্নে ভুল হয়েছে — আগে ওগুলো একবার ঝালিয়ে নেবে?');
-    chips.push({ label: '🔁 ভুলগুলো ঝালাই', go: 'mistake-bank' });
+    buttons.push({ label: '🔁 ভুলগুলো ঝালাই করি', prompt: 'গত দুই দিনে আমার কয়েকটা প্রশ্ন ভুল হয়েছে — Mistake Bank থেকে কীভাবে রিভিশন করব, ধাপে ধাপে বলো' });
     kinds.push('mistakes');
   }
 
   /* 2. Weak topic: measured from exams first, else what the student said. */
   const measured = Array.isArray(stats.weakTopics) ? stats.weakTopics.filter((t) => t && t.name) : [];
-  const said = statedWeakTopics(records, 1);
+  let weakDone = false;
   if (measured.length) {
     const worst = measured.slice().sort((a, b) => (a.accuracy | 0) - (b.accuracy | 0))[0];
     const name = cleanName(worst.name);
     if (name) {
       parts.push(name + '-এ সঠিকতা এখন ' + bn(worst.accuracy | 0) + '% — আজ একটু ' + name + ' চর্চা করি?');
-      chips.push({ label: '🎯 ' + name + ' কুইজ', q: name + ' থেকে ৫টা প্রশ্নে কুইজ দাও' });
+      buttons.push({ label: '🎯 ' + name + ' চর্চা', prompt: name + ' থেকে ৫টা প্রশ্নে কুইজ দাও' });
       kinds.push('weak-measured');
+      weakDone = true;
     }
-  } else if (said.length) {
-    const name = cleanName(said[0]);
-    const base = topicBase(name);
+  }
+  if (!weakDone) {
+    const said = statedWeakTopics(records, 1);
+    const name = said.length ? cleanName(said[0]) : '';
     if (name) {
-      parts.push('আগে বলেছিলে ' + name + ' দুর্বল — আজ ' + base + ' দিয়ে শুরু করি?');
-      chips.push({ label: '🎯 ' + base + ' কুইজ', q: base + ' থেকে ৫টা প্রশ্নে কুইজ দাও' });
+      const base = topicBase(name) || name;
+      const noExam = !parts.length && stats.exams === 0 ? 'তুমি এখনো পরীক্ষা দাওনি, তবে ' : '';
+      const forGoal = goal && !parts.length ? goal + '-এর প্রস্তুতিতে ' : '';
+      parts.push(noExam + 'আগে বলেছিলে ' + name + ' দুর্বল — ' + (forGoal ? forGoal + 'আজ ' : 'আজ ') + base + ' দিয়ে শুরু করি?');
+      buttons.push({ label: '🎯 ' + base + ' দিয়ে শুরু', prompt: base + ' থেকে ৫টা প্রশ্নে কুইজ দাও' });
       kinds.push('weak-stated');
     }
   }
 
-  /* 3. Last discussed topic (only when nothing above, and only if recent). */
+  /* 3. Last discussed topic (only when nothing above, only within 7 days,
+        and never a greeting / thank-you). */
   if (!parts.length) {
     const last = records.find((r) => r && r.kind === KIND.STUDIES && r.key === 'last-topic');
-    if (last && now - (Number(last.ts) || 0) <= LAST_TOPIC_MAX_AGE) {
+    const age = last ? now - (Number(last.ts) || 0) : Infinity;
+    if (last && age >= 0 && age <= LAST_TOPIC_MAX_AGE) {
       const topic = cleanName(last.value, 60);
-      if (topic) {
+      if (topic && !isSmallTalkTopic(topic)) {
         const when = whenWord(Number(last.ts), now);
         parts.push((when ? when + ' ' : '') + 'আমরা “' + topic + '” নিয়ে কথা বলছিলাম — সেখান থেকে চালিয়ে যাবে?');
-        chips.push({ label: '↩️ আগের আলোচনা', q: 'আগের আলোচনাটা চালিয়ে যাও: ' + topic });
+        buttons.push({ label: '↩️ চালিয়ে যাই', prompt: 'আগের আলোচনাটা চালিয়ে যাও: ' + topic });
         kinds.push('last-topic');
       }
     }
   }
 
+  /* 4. Only the goal is known: offer a plan for it. */
+  if (!parts.length && goal) {
+    parts.push('তোমার লক্ষ্য ' + goal + ' — আজকের পড়া কোথা থেকে শুরু করবে, একটা প্ল্যান করে দিই?');
+    buttons.push({ label: '🎯 আজকের প্ল্যান', prompt: 'আমার ভর্তির লক্ষ্য অনুযায়ী আজকের পড়ার প্ল্যান দাও' });
+    kinds.push('goal');
+  }
+
   if (!parts.length) return null;
-  return { line: parts.slice(0, 2).join(' '), chips: chips.slice(0, 2), kinds, version: RECALL_VERSION };
+  return { line: parts.slice(0, 2).join(' '), button: buttons[0], kinds, version: RECALL_VERSION };
 }
 
 /** Recent-mistake summary the client sends: clamp and trust nothing else. */

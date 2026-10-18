@@ -22,6 +22,8 @@
  * Storage: D1 binding PROFILE_DB (fcm_devices + notification_settings tables).
  * Rate limits: KV binding GK_KV (registration burst + test sends).
  */
+import { corsHeaders } from './cors-policy.mjs';
+
 import { computeAnalytics, AnalyticsStore } from './analytics-notifications.mjs';
 import { retryDecision, isRetryable, advanceFanout, FanoutStore, DEFAULT_WINDOW_BUDGET } from './send-planner.mjs';
 import { readAdminSession } from './admin-passkey.mjs';
@@ -597,8 +599,7 @@ const jsonResponse = (request, obj, status = 200) => new Response(JSON.stringify
   headers: {
     'Content-Type': 'application/json; charset=utf-8',
     'Cache-Control': 'no-store',
-    'Access-Control-Allow-Origin': request.headers.get('Origin') || '*',
-    'Access-Control-Allow-Credentials': 'true'
+    ...corsHeaders(request),
   }
 });
 
@@ -1028,8 +1029,7 @@ export async function handleFcmNotificationRequest(request, env) {
 
   if (request.method === 'OPTIONS') {
     return new Response(null, { status: 204, headers: {
-      'Access-Control-Allow-Origin': request.headers.get('Origin') || '*',
-      'Access-Control-Allow-Credentials': 'true',
+      ...corsHeaders(request),
       'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type, Authorization',
       'Access-Control-Max-Age': '86400'

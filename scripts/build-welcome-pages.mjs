@@ -3,7 +3,10 @@ import {readFileSync,writeFileSync} from 'node:fs';
 import {join,resolve} from 'node:path';
 import {spawnSync} from 'node:child_process';
 const root=resolve(process.argv[2]||'dist');
-const version='sky-flow-20261016-v6';
+/* The welcome version comes from app-seed.js (the file that actually loads sky-onboarding), so the
+   deployed ?v= tokens can never fall behind the source again (a pinned v6 here shipped stale assets). */
+const version=(readFileSync(join(root,'app-seed.js'),'utf8').match(/sky-flow-\d{8}-v\d+/)||[])[0];
+if(!version)throw Error('app-seed.js sky-flow version missing');
 const release=(process.env.GITHUB_SHA||'local-preview').slice(0,12);
 const buildId=`welcome-${release}`;
 const indexPath=join(root,'index.html');

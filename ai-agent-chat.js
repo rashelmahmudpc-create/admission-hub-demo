@@ -594,10 +594,8 @@
 #app.sky .say{position:relative;max-width:300px;padding:9px 18px;border-radius:999px;background:var(--surf);box-shadow:0 0 0 1px var(--line),var(--sh);font-size:14.5px;font-weight:600;text-align:center;line-height:1.4;opacity:0;transform:translateY(6px) scale(.96);transition:opacity .25s,transform .3s cubic-bezier(.3,1.4,.5,1)}
 #app.sky .say:after{content:"";position:absolute;left:50%;bottom:-5px;width:11px;height:11px;margin-left:-5px;background:var(--surf);transform:rotate(45deg);box-shadow:2px 2px 0 0 var(--line)}
 #app.sky .say.on{opacity:1;transform:none}
-#app.sky .recall{max-width:340px;margin:10px auto 0;padding:12px 14px;border-radius:16px;background:var(--surf);box-shadow:0 0 0 1px var(--line),var(--sh);font-size:14px;line-height:1.55;text-align:center;animation:drop .5s ease both}
-#app.sky .recall p{margin:0 0 8px}
-#app.sky .recall .rcc{display:flex;flex-wrap:wrap;gap:8px;justify-content:center}
-#app.sky .recall button{border:0;border-radius:999px;padding:7px 13px;font:inherit;font-size:13px;font-weight:700;background:var(--line);color:inherit;cursor:pointer}
+#app.sky .say.long{border-radius:18px;max-width:330px}
+#app.sky .recallb{display:block;margin:12px auto 0;border:0;border-radius:999px;padding:8px 16px;font:inherit;font-size:13.5px;font-weight:700;background:var(--surf);box-shadow:0 0 0 1px var(--line),var(--sh);color:inherit;cursor:pointer;animation:drop .5s ease both}
 #app.sky .hbig{width:176px;height:176px;cursor:pointer;animation:drop .8s cubic-bezier(.3,1.5,.5,1) both}
 @keyframes drop{from{opacity:0;transform:translateY(-40px) scale(.8)}}
 #app.sky .av{display:block;overflow:visible}
@@ -1142,6 +1140,36 @@ const ACT_ACTIONS = { 'prefs.write': { bn: 'তোমার AI পছন্দ �
     else { actEl.className = 'cb' + (inpEl.value.trim() ? ' send' : ''); actEl.innerHTML = ic(inpEl.value.trim() ? 'send' : 'mic'); actEl.setAttribute('aria-label', inpEl.value.trim() ? T.send : 'ভয়েস'); }
   }
 
+  /* ───────── Sky custom instructions (owner plan step 3) ───────── */
+  const INSTR_HOWTO = 'Sky-কে এক লাইনে বলে দাও কীভাবে উত্তর দেবে, আমি সবসময় সেটা মানব।\nযেমন লেখো:\nনির্দেশনা: সবসময় উদাহরণ দিয়ে বোঝাবে, শেষে একটা MCQ দেবে\n\nদেখতে: "আমার নির্দেশনা"   মুছতে: "নির্দেশনা মুছে দাও"';
+  function instrParse(q) {
+    const s = String(q || '').trim();
+    let m = s.match(/^(?:sky\s*[,，]?\s*)?(?:\/?নির্দেশনা|\/?instruction|\/?নির্দেশ)\s*[:：=\-–]\s*([\s\S]+)$/i);
+    if (m) return { op: 'save', text: m[1].trim() };
+    if (/^(?:আমার\s*)?(?:নির্দেশনা|instruction)\s*(?:টা|গুলো)?\s*(?:মুছে\s*(?:দাও|ফেলো|দিন)|মুছো|ডিলিট\s*করো|delete|clear|remove)\s*[।.!]?$/i.test(s)) return { op: 'clear' };
+    if (/^(?:আমার\s*(?:নির্দেশনা|instruction)\s*(?:কী|কি|দেখাও)?|নির্দেশনা\s*দেখাও|my\s+instruction)\s*[?？।]?$/i.test(s)) return { op: 'show' };
+    if (/^\/?(?:নির্দেশনা|instruction)\s*[?？]?$/i.test(s)) return { op: 'help' };
+    return null;
+  }
+  async function instrRun(cmd) {
+    if (cmd.op === 'help') return INSTR_HOWTO;
+    const opts = cmd.op === 'show'
+      ? { method: 'GET', credentials: 'same-origin' }
+      : { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: cmd.op === 'clear' ? '' : cmd.text }) };
+    let r = null;
+    try {
+      const res = await fetch('/api/ai/instructions', opts);
+      r = { status: res.status, body: await res.json().catch(() => ({})) };
+    } catch (_) { return 'ইন্টারনেট সংযোগ দেখে আবার চেষ্টা করো।'; }
+    const b = r.body || {};
+    if (r.status === 401) return 'নির্দেশনা দিতে আগে লগইন করো।';
+    if (b.off) return 'এই সুবিধা এখন সাময়িক বন্ধ আছে।';
+    if (r.status !== 200) return b.message || 'এখন সেভ করা গেল না — আবার চেষ্টা করো।';
+    if (cmd.op === 'show') return b.text ? 'তোমার নির্দেশনা:\n' + b.text + '\n\nবদলাতে নতুন করে লেখো "নির্দেশনা: …"। মুছতে: "নির্দেশনা মুছে দাও"' : 'তুমি এখনো কোনো নির্দেশনা দাওনি।\n\n' + INSTR_HOWTO;
+    if (cmd.op === 'clear') return 'তোমার নির্দেশনা মুছে ফেলেছি। এখন থেকে আগের মতো উত্তর দেব।';
+    return 'ঠিক আছে, মনে রাখলাম ✓\n"' + b.text + '"\nএখন থেকে প্রতিটা উত্তরে এভাবেই বলব। বদলাতে আবার "নির্দেশনা: …" লেখো।';
+  }
+
   async function send(text) {
     const t = String(text == null ? inpEl.value : text).trim();
     if (!t || busy) return;
@@ -1153,6 +1181,15 @@ const ACT_ACTIONS = { 'prefs.write': { bn: 'তোমার AI পছন্দ �
 
     sessions[cur].msgs.push({ role: 'user', text: t, ts: Date.now() });
     if (!sessions[cur].name) sessions[cur].name = t.slice(0, 40);
+    /* Step 3 (owner 2026-10-18): "নির্দেশনা: …" saves the student's own note,
+       Sky follows it on every answer. Checked on the server; no AI limit used. */
+    const instrCmd = instrParse(t);
+    if (instrCmd) {
+      const reply = await instrRun(instrCmd);
+      sessions[cur].msgs.push({ role: 'ai', text: reply, ts: Date.now(), local: true });
+      save(); renderMsgs(); mood('happy', 1200);
+      return;
+    }
     /* PR-2 (owner 2026-10-17): hi / ধন্যবাদ / তুমি কে … are answered here from the
        in-app bank (sky-smalltalk.js): instant, no server call, no AI limit used. */
     /* The big reply bank (sky-replies.json) loads once on first use; wait at most 0.8 s. */
@@ -1278,40 +1315,41 @@ const ACT_ACTIONS = { 'prefs.write': { bn: 'তোমার AI পছন্দ �
     cur = 0; save(); renderMsgs(); resetHero(); closeLayers();
   }
   /* Sky recall (owner plan step 2): on chat open Sky reminds the student of
-     recent mistakes / their weak topic by itself. Signed-in, empty chat only;
-     any failure just leaves the normal greeting. Text is always escaped. */
-  async function loadRecall() {
-    if (!accountScope || !sessions[cur] || sessions[cur].msgs.length) return;
-    let rc = null;
-    try {
-      const r = await fetch('/api/ai/recall', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-AH-Guest': guestId() },
-        body: JSON.stringify({ stats: localStats(), recent: recentMistakes() })
-      });
-      if (!r.ok) return;
-      rc = ((await r.json()) || {}).recall;
-    } catch (_) { return; }
-    if (!rc || !rc.line || sessions[cur].msgs.length) return;
-    const hero = document.getElementById('hero');
-    if (!hero || hero.style.display === 'none') return;
-    let box = document.getElementById('skyRecall');
-    if (!box) { box = document.createElement('div'); box.id = 'skyRecall'; box.className = 'recall'; hero.appendChild(box); }
-    const chips = (Array.isArray(rc.chips) ? rc.chips : []).slice(0, 2).map((ch, i) => '<button type="button" data-rc="' + i + '">' + esc(String((ch && ch.label) || '')) + '</button>').join('');
-    box.innerHTML = '<p>' + esc(String(rc.line)) + '</p>' + (chips ? '<div class="rcc">' + chips + '</div>' : '');
-    box.onclick = (e) => {
-      const b = e.target.closest('[data-rc]'); if (!b) return;
-      const ch = rc.chips[+b.getAttribute('data-rc')] || {};
-      box.remove();
-      if (ch.go) { const sb = document.querySelector('[data-go="' + String(ch.go).replace(/[^a-z0-9-]/gi, '') + '"]'); if (sb) sb.click(); else if (window.navigate) window.navigate(ch.go); return; }
-      if (ch.q) send(String(ch.q));
-    };
-    try { mood('wave', 1800); } catch (_) {}
+     recent mistakes / their weak topic by itself, in place of the time-based
+     greeting. Signed-in, empty chat, Bangla UI only. 2.5 s timeout; any
+     failure or "nothing to say" (null) keeps the normal greeting. The bubble
+     and the button use textContent only — never HTML/Markdown. */
+  function fetchRecall() {
+    if (lang === 'en' || !accountScope || !sessions[cur] || sessions[cur].msgs.length) return Promise.resolve(null);
+    const ctrl = typeof AbortController === 'function' ? new AbortController() : null;
+    const t = setTimeout(() => { try { ctrl && ctrl.abort(); } catch (_) {} }, 2500);
+    return fetch('/api/ai/recall', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-AH-Guest': guestId() },
+      body: JSON.stringify({ stats: localStats(), recent: recentMistakes(), profile: profilePayload() }),
+      signal: ctrl ? ctrl.signal : undefined
+    }).then((r) => (r.ok ? r.json() : null)).then((j) => {
+      const rc = j && j.recall;
+      return rc && typeof rc.line === 'string' && rc.line ? rc : null;
+    }).catch(() => null).finally(() => clearTimeout(t));
+  }
+  function showRecall(rc, greet) {
+    if (sessions[cur].msgs.length) return;
+    if (!rc) { say(greet, 4200); return; }
+    { const sy = document.getElementById('say'); if (sy) sy.classList.add('long'); }
+    say(String(rc.line).slice(0, 300), 15000);
+    const btn = rc.button;
+    const bub = document.querySelector('#hero .bub');
+    if (!btn || !btn.prompt || !bub) return;
+    let el = document.getElementById('skyRecallBtn');
+    if (!el) { el = document.createElement('button'); el.type = 'button'; el.id = 'skyRecallBtn'; el.className = 'recallb'; bub.insertAdjacentElement('afterend', el); }
+    el.textContent = String(btn.label || 'শুরু করি').slice(0, 60);
+    el.onclick = () => { el.remove(); send(String(btn.prompt).slice(0, 300)); };
   }
   function resetHero() {
     const hero = document.getElementById('hero');
     if (hero) hero.style.display = '';
-    { const ob = document.getElementById('skyRecall'); if (ob) ob.remove(); }
+    { const ob = document.getElementById('skyRecallBtn'); if (ob) ob.remove(); const sy = document.getElementById('say'); if (sy) sy.classList.remove('long'); }
     const app = document.getElementById('app');
     if (app) app.classList.remove('chatting');
     say('নতুন কথা শুরু করি — কী জানতে চাও?', 3200);
@@ -1472,8 +1510,8 @@ const ACT_ACTIONS = { 'prefs.write': { bn: 'তোমার AI পছন্দ �
     const H = new Date().getHours();
     const greet = H < 5 ? 'এত রাতে জেগে? আজ একটু কম পড়ে ঘুমিয়ে নাও' : H < 12 ? 'শুভ সকাল! আজ কোন বিষয় দিয়ে শুরু করবে?' : H < 16 ? 'শুভ দুপুর! পড়ার সময় হলো — কী ধরবে?' : H < 19 ? 'শুভ বিকেল! আজকের পড়ার রিভিশন দেবে?' : 'শুভ সন্ধ্যা! আজকের পড়া কতদূর?';
     mood('wave', 2200);
-    setTimeout(() => { if (!sessions[cur].msgs.length) say(greet, 4200); }, 900);
-    loadRecall();
+    const recallP = fetchRecall();
+    setTimeout(() => { recallP.then((rc) => showRecall(rc, greet)); }, 900);
     loop(); wake();
     const askMsg = ['বাংলা, ইংরেজি, GK — কোনটা দিয়ে শুরু?', 'শেষ কবে রিভিশন দিয়েছিলে?', 'Mistake Bank-এ নতুন ভুল জমেছে কি?', 'পরীক্ষার আগে একটা Mock Test দিয়েছো?', 'ছবি তুলে প্রশ্ন পাঠালেও আমি বুঝে নেব', 'Smart Revision করলে বেশি দিন মনে থাকে', 'আজকের পড়ার লক্ষ্য কত?'];
     clearInterval(window.__skyNudge);
