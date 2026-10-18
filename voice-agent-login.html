@@ -70,6 +70,7 @@
       return r.json().catch(function(){ return {}; }).then(function(d){
         err.textContent = r.status === 403 ? 'পাসওয়ার্ড মিলল না'
           : r.status === 501 ? 'পাসওয়ার্ড এখনো বসানো হয়নি'
+          : r.status === 429 ? 'অনেকবার ভুল হয়েছে — ১৫ মিনিট পরে আবার চেষ্টা করুন'
           : 'এখন হচ্ছে না, আবার চেষ্টা করুন';
       });
     }).catch(function(){ err.textContent = 'সংযোগে সমস্যা'; })

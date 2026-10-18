@@ -198,7 +198,7 @@ t('M10-৩০ঙ. the chain names only Groq models that still exist',
   && AGENT_SRC.includes("'openai/gpt-oss-20b'"));
 t('M10-৩০খ. memory reads and writes go through the state helpers, not KV directly',
   AGENT_SRC.includes("await stateGet('chatmem:' + sendCtx.uid)")
-  && AGENT_SRC.includes("await statePut('chatmem:' + sendCtx.uid, JSON.stringify(next))")
+  && AGENT_SRC.includes("await statePut('chatmem:' + sendCtx.uid, JSON.stringify(next), CHAT_MEMORY_TTL_MS)")
   /* P30: the long-term record is read once (memKeyEarly) and the last-topic save
      reuses it, writing in the background — still through the state helper. */
   && AGENT_SRC.includes('stateGet(memKeyEarly)')
