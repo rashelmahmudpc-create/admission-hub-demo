@@ -37,7 +37,7 @@
 ## 🧭 ধাপসমূহ
 
 ### ধাপ ০: সব কিছু দেখতে পাওয়া 🟡
-- [~] `wrangler.toml` এ log স্থায়ীভাবে চালু করা — `[observability] enabled = true` যোগ হয়েছে (production + staging), PR খোলা, merge/deploy বাকি
+- [x] ✅ `wrangler.toml` এ log স্থায়ীভাবে চালু — `[observability] enabled = true` (PR #101), staging আর production দুটোতেই deploy হয়ে log আসা যাচাই করা হয়েছে
 - [ ] প্রতিটা OTP আর email এর জন্য log: provider এর নাম, কত সময় লাগল, ফল কী
 - [ ] কোনো provider ব্যর্থ হলে বা ৩০ সেকেন্ডের বেশি দেরি হলে Telegram এ alert
 
@@ -92,8 +92,8 @@
 ---
 
 ## 📝 শেষ অবস্থা
-- **শেষ session:** ১৮ অক্টোবর ২০২৬ (২য়)
-  1. `docs/AUTH-ROADMAP.md` ছিল না — এই ফর্ম থেকে বানানো হলো।
-  2. `wrangler.toml` আর `wrangler.staging.toml` এ `[observability] enabled = true` যোগ করে PR খোলা হলো।
-  3. Merge + staging deploy মালিকের "হ্যাঁ" এর অপেক্ষায়; এরপর production deploy।
-- **পরের কাজ:** ধাপ ০ — PR merge ও deploy, তারপর provider log (নাম, সময়, ফল)।
+- **শেষ session:** ১৮ অক্টোবর ২০২৬ (৩য়)
+  1. PR #101 merge হয়েছে; `deploy-staging.yml` আর `deploy-pages-worker.yml` দুটোই সফল।
+  2. Telemetry তে staging আর production দুটোরই log আসছে — ধাপ ০ এর প্রথম কাজ ✅।
+  3. Code এ কোনো পরিবর্তন হয়নি; শুধু config।
+- **পরের কাজ:** ধাপ ০ — প্রতিটা OTP/email এর log (provider, সময়, ফল), তারপর Telegram alert।
