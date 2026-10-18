@@ -32,8 +32,8 @@ test('retired standalone OTP identity methods are absent and cannot create a ses
 
 test('same Firebase subject and email preserve one durable identity across sessions', async () => {
   const state = setup();
-  const first = await state.engine.establishFirebaseSession({ email: 'SAME@example.com', subject: 'firebase-uid-one' }, state.context);
-  const second = await state.engine.establishFirebaseSession({ email: 'same@example.com', subject: 'firebase-uid-one' }, state.context);
+  const first = await state.engine.establishFirebaseSession({ email: 'SAME@gmail.com', subject: 'firebase-uid-one' }, state.context);
+  const second = await state.engine.establishFirebaseSession({ email: 'same@gmail.com', subject: 'firebase-uid-one' }, state.context);
   assert.equal(first.created, true);
   assert.equal(second.created, false);
   assert.equal(second.user.id, first.user.id);
@@ -43,9 +43,9 @@ test('same Firebase subject and email preserve one durable identity across sessi
 
 test('different Firebase subject cannot silently take over an existing email-linked account', async () => {
   const state = setup();
-  await state.engine.establishFirebaseSession({ email: 'collision@example.com', subject: 'firebase-uid-original' }, state.context);
+  await state.engine.establishFirebaseSession({ email: 'collision@gmail.com', subject: 'firebase-uid-original' }, state.context);
   await expectCode(
-    () => state.engine.establishFirebaseSession({ email: 'collision@example.com', subject: 'firebase-uid-other' }, state.context),
+    () => state.engine.establishFirebaseSession({ email: 'collision@gmail.com', subject: 'firebase-uid-other' }, state.context),
     AUTH_ERROR_CODES.ACCOUNT_CONFLICT
   );
   assert.equal(state.repository.snapshot().users.length, 1);
@@ -55,10 +55,10 @@ test('different Firebase subject cannot silently take over an existing email-lin
 test('Firebase operation limits are consumed atomically', async () => {
   const state = setup();
   for (let index = 0; index < 12; index += 1) {
-    await state.engine.consumeFirebaseOperation({ operation: 'login', email: 'limited@example.com' }, state.context);
+    await state.engine.consumeFirebaseOperation({ operation: 'login', email: 'limited@gmail.com' }, state.context);
   }
   await expectCode(
-    () => state.engine.consumeFirebaseOperation({ operation: 'login', email: 'limited@example.com' }, state.context),
+    () => state.engine.consumeFirebaseOperation({ operation: 'login', email: 'limited@gmail.com' }, state.context),
     AUTH_ERROR_CODES.RATE_LIMITED
   );
   for (let index = 0; index < 20; index += 1) {
@@ -85,7 +85,7 @@ test('every rate operation the public handler sends has a definition', async () 
   const state = setup();
   for (const operation of sent) {
     await assert.doesNotReject(
-      state.engine.consumeFirebaseOperation({ operation, email: `${operation}@example.com` }, state.context),
+      state.engine.consumeFirebaseOperation({ operation, email: `${operation}@gmail.com` }, state.context),
       `rate operation '${operation}' has no definition in FIREBASE_OPERATION_LIMITS`
     );
   }
@@ -93,7 +93,7 @@ test('every rate operation the public handler sends has a definition', async () 
 
 test('guided profile is validated, verification-ticket scoped, and readable only through the canonical account session', async () => {
   const state = setup();
-  const email = 'profile@example.com';
+  const email = 'profile@gmail.com';
   const subject = 'firebase-profile-subject';
   const prepared = await state.engine.beginFirebaseAccountVerification({
     email,
@@ -136,12 +136,12 @@ test('guided profile is validated, verification-ticket scoped, and readable only
 
 test('opaque Firebase sessions expire and revoke without exposing stored token', async () => {
   const state = setup();
-  const login = await state.engine.establishFirebaseSession({ email: 'session@example.com', subject: 'firebase-uid-session' }, state.context);
+  const login = await state.engine.establishFirebaseSession({ email: 'session@gmail.com', subject: 'firebase-uid-session' }, state.context);
   assert.equal(JSON.stringify(state.repository.snapshot()).includes(login.sessionToken), false);
   assert.equal((await state.engine.revokeSession(login.sessionToken)).revoked, true);
   await expectCode(() => state.engine.getSession(login.sessionToken), AUTH_ERROR_CODES.SESSION_INVALID);
 
-  const login2 = await state.engine.establishFirebaseSession({ email: 'session@example.com', subject: 'firebase-uid-session' }, state.context);
+  const login2 = await state.engine.establishFirebaseSession({ email: 'session@gmail.com', subject: 'firebase-uid-session' }, state.context);
   state.advance(SESSION_TTL_MS + 1);
   await expectCode(() => state.engine.getSession(login2.sessionToken), AUTH_ERROR_CODES.SESSION_INVALID);
 });
@@ -356,7 +356,7 @@ const handlerSetup = ({ backupCapabilities = null } = {}) => {
 
 test('Firebase signup sends standard verification but creates no authenticated session', async () => {
   const app = handlerSetup();
-  const email = 'real.user@example.com';
+  const email = 'real.user@gmail.com';
   const password = 'Correct-Horse-42';
   const signup = await app.handler(apiRequest(`${AUTH_API_PREFIX}/signup`, { method: 'POST', body: { email, password } }), app.env, {});
   assert.equal(signup.status, 202);
@@ -377,7 +377,7 @@ test('Firebase signup sends standard verification but creates no authenticated s
 
 test('password reset uses genuine email action while returning the same non-enumerating response for known and unknown addresses', async () => {
   const app = handlerSetup();
-  const email = 'reset.user@example.com';
+  const email = 'reset.user@gmail.com';
   await app.handler(apiRequest(`${AUTH_API_PREFIX}/signup`, {
     method: 'POST', body: { email, password: 'Reset-password-44' }
   }), app.env, {});
@@ -386,9 +386,9 @@ test('password reset uses genuine email action while returning the same non-enum
     method: 'POST', body: { email }
   }), app.env, {});
   const unknown = await app.handler(apiRequest(`${AUTH_API_PREFIX}/password-reset`, {
-    method: 'POST', body: { email: 'missing.user@example.com' }
+    method: 'POST', body: { email: 'missing.user@gmail.com' }
   }), app.env, {});
-  const disabledEmail = 'disabled.reset@example.com';
+  const disabledEmail = 'disabled.reset@gmail.com';
   await app.handler(apiRequest(`${AUTH_API_PREFIX}/signup`, {
     method: 'POST', body: { email: disabledEmail, password: 'Reset-password-55' }
   }), app.env, {});
@@ -413,7 +413,7 @@ test('password reset uses genuine email action while returning the same non-enum
 
 test('unverified Firebase account is denied, verified account on a new device passes one challenge then fast-paths', async () => {
   const app = handlerSetup();
-  const email = 'verified.user@example.com';
+  const email = 'verified.user@gmail.com';
   const password = 'Secure-password-88';
   await app.handler(apiRequest(`${AUTH_API_PREFIX}/signup`, { method: 'POST', body: { email, password } }), app.env, {});
 
@@ -492,7 +492,7 @@ test('unverified Firebase account is denied, verified account on a new device pa
 
 test('a proven email ownership unlocks every later login instead of demanding a fresh OTP', async () => {
   const app = handlerSetup();
-  const email = 'owner.relogin@example.com';
+  const email = 'owner.relogin@gmail.com';
   const password = 'Ownership-password-91';
   const signup = await app.handler(apiRequest(`${AUTH_API_PREFIX}/signup`, { method: 'POST', body: { email, password } }), app.env, {});
   // Carry the device cookie so the separate Phase-6 new-device challenge does
@@ -543,7 +543,7 @@ test('a proven email ownership unlocks every later login instead of demanding a 
 
 test('REPRO: an ownership-proven account on a new device must not loop on Email verification', async () => {
   const app = handlerSetup();
-  const email = 'loop.repro@example.com';
+  const email = 'loop.repro@gmail.com';
   const password = 'Loop-password-31';
   await app.handler(apiRequest(`${AUTH_API_PREFIX}/signup`, { method: 'POST', body: { email, password } }), app.env, {});
 
@@ -594,7 +594,7 @@ test('REPRO: an ownership-proven account on a new device must not loop on Email 
 
 test('verification resend requires password and never authenticates the user', async () => {
   const app = handlerSetup();
-  const email = 'resend.user@example.com';
+  const email = 'resend.user@gmail.com';
   const password = 'Resend-password-77';
   await app.handler(apiRequest(`${AUTH_API_PREFIX}/signup`, { method: 'POST', body: { email, password } }), app.env, {});
   const early = await app.handler(apiRequest(`${AUTH_API_PREFIX}/verification/resend`, { method: 'POST', body: { email, password } }), app.env, {});
@@ -756,7 +756,7 @@ test('approved Telegram publication exposes the Email-or-Telegram selector and t
 test('Email status creates a session only after real verification and preserves the ticket-scoped guided profile', async () => {
   const app = handlerSetup({ backupCapabilities: { available: true, availabilityCode: 'READY', telegramAvailable: true } });
   app.env.VERIFICATION_AUTH_ACTIVATION = 'enabled';
-  const email = 'guided.status@example.com';
+  const email = 'guided.status@gmail.com';
   const password = 'StrongPassword!9';
   const signup = await app.handler(apiRequest(`${AUTH_API_PREFIX}/signup`, {
     method: 'POST', body: { email, password }
@@ -820,7 +820,7 @@ test('stale cached Auth UI is rejected before signup creates an account or sends
   const response = await app.handler(apiRequest(`${AUTH_API_PREFIX}/signup`, {
     method: 'POST',
     ui: '',
-    body: { email: 'stale-ui@example.com', password: 'StrongPassword!9' }
+    body: { email: 'stale-ui@gmail.com', password: 'StrongPassword!9' }
   }), app.env, {});
   const body = await response.json();
   assert.equal(response.status, 409);
@@ -837,7 +837,7 @@ test('selector setup failure preserves the account but never auto-sends Firebase
   app.authority.fetch = request => new URL(request.url).pathname === '/internal/firebase/account-verification/begin'
     ? jsonResponse({ error: { code: AUTH_ERROR_CODES.VERIFICATION_UNAVAILABLE } }, 503)
     : authorityFetch(request);
-  const email = 'selector-outage@example.com';
+  const email = 'selector-outage@gmail.com';
   const response = await app.handler(apiRequest(`${AUTH_API_PREFIX}/signup`, {
     method: 'POST',
     body: { email, password: 'StrongPassword!9' }
@@ -869,19 +869,19 @@ test('public API rejects untrusted origins, weak or oversized input, and fails c
   const forbidden = await app.handler(apiRequest(`${AUTH_API_PREFIX}/config`, { origin: 'https://evil.example' }), app.env, {});
   assert.equal(forbidden.status, 403);
   const missingOrigin = await app.handler(apiRequest(`${AUTH_API_PREFIX}/signup`, {
-    method: 'POST', origin: '', body: { email: 'origin@example.com', password: 'StrongPass!123' }
+    method: 'POST', origin: '', body: { email: 'origin@gmail.com', password: 'StrongPass!123' }
   }), app.env, {});
   assert.equal(missingOrigin.status, 403);
 
   const weak = await app.handler(apiRequest(`${AUTH_API_PREFIX}/signup`, {
-    method: 'POST', body: { email: 'weak@example.com', password: 'short' }
+    method: 'POST', body: { email: 'weak@gmail.com', password: 'short' }
   }), app.env, {});
   assert.equal(weak.status, 400);
   assert.equal((await weak.json()).error.code, AUTH_ERROR_CODES.WEAK_PASSWORD);
   assert.equal(app.firebase.calls.length, 0);
 
   const oversized = await app.handler(apiRequest(`${AUTH_API_PREFIX}/signup`, {
-    method: 'POST', body: { email: 'large@example.com', password: 'x'.repeat(5000) }
+    method: 'POST', body: { email: 'large@gmail.com', password: 'x'.repeat(5000) }
   }), app.env, {});
   assert.equal(oversized.status, 400);
   assert.equal(app.firebase.calls.length, 0);
@@ -895,7 +895,7 @@ test('public API rejects untrusted origins, weak or oversized input, and fails c
   assert.equal(missingConfigBody.auth.providerStatus, 0);
 
   const unavailable = await app.handler(apiRequest(`${AUTH_API_PREFIX}/signup`, {
-    method: 'POST', body: { email: 'closed@example.com', password: 'Safe-password-11' }
+    method: 'POST', body: { email: 'closed@gmail.com', password: 'Safe-password-11' }
   }), missing, {});
   assert.equal(unavailable.status, 503);
   assert.equal((await unavailable.json()).error.code, AUTH_ERROR_CODES.NOT_CONFIGURED);
@@ -906,7 +906,7 @@ test('verification provider failure does not create a local authenticated identi
   const app = handlerSetup();
   app.firebase.failVerification = true;
   const response = await app.handler(apiRequest(`${AUTH_API_PREFIX}/signup`, {
-    method: 'POST', body: { email: 'quota@example.com', password: 'Safe-password-22' }
+    method: 'POST', body: { email: 'quota@gmail.com', password: 'Safe-password-22' }
   }), app.env, {});
   assert.equal(response.status, 503);
   assert.equal((await response.json()).error.code, AUTH_ERROR_CODES.VERIFICATION_UNAVAILABLE);
@@ -916,7 +916,7 @@ test('verification provider failure does not create a local authenticated identi
 
 test('failed duplicate signup cannot consume the 1000/day verification-send capacity', async () => {
   const app = handlerSetup();
-  const email = 'duplicate.user@example.com';
+  const email = 'duplicate.user@gmail.com';
   const password = 'Secure-password-66';
   const first = await app.handler(apiRequest(`${AUTH_API_PREFIX}/signup`, { method: 'POST', body: { email, password } }), app.env, {});
   assert.equal(first.status, 202);
@@ -930,7 +930,7 @@ test('failed duplicate signup cannot consume the 1000/day verification-send capa
 
 test('provider failures expose only a bounded operation diagnostic header', async () => {
   const app = handlerSetup();
-  const email = 'diagnostic.user@example.com';
+  const email = 'diagnostic.user@gmail.com';
   const password = 'Safe-password-77';
   await app.handler(apiRequest(`${AUTH_API_PREFIX}/signup`, { method: 'POST', body: { email, password } }), app.env, {});
   app.firebase.malformedSignIn = true;
@@ -950,7 +950,7 @@ test('malformed Firebase verification acceptance fails closed without an authent
   const app = handlerSetup();
   app.firebase.malformedVerification = true;
   const response = await app.handler(apiRequest(`${AUTH_API_PREFIX}/signup`, {
-    method: 'POST', body: { email: 'malformed@example.com', password: 'Safe-password-33' }
+    method: 'POST', body: { email: 'malformed@gmail.com', password: 'Safe-password-33' }
   }), app.env, {});
   assert.equal(response.status, 503);
   assert.equal((await response.json()).error.code, AUTH_ERROR_CODES.VERIFICATION_UNAVAILABLE);
@@ -971,7 +971,7 @@ const publicProfileRequest = publicId => new Request(`https://worker.example/api
 
 const publishPublicProfile = async app => {
   app.env.VERIFICATION_AUTH_ACTIVATION = 'enabled';
-  const email = 'shared.profile@example.com';
+  const email = 'shared.profile@gmail.com';
   const signup = await app.handler(apiRequest(`${AUTH_API_PREFIX}/signup`, {
     method: 'POST', body: { email, password: 'StrongPassword!9' }
   }), app.env, {});
@@ -1049,7 +1049,7 @@ test('unrelated /api/public paths are still not claimed by the native handler', 
 test('one email button falls back to the Firebase link once every OTP provider is out', async () => {
   const app = handlerSetup({ backupCapabilities: { available: true, availabilityCode: 'READY', telegramAvailable: true } });
   app.env.VERIFICATION_AUTH_ACTIVATION = 'enabled';
-  const email = 'fallback.link@example.com';
+  const email = 'fallback.link@gmail.com';
   const signup = await app.handler(apiRequest(`${AUTH_API_PREFIX}/signup`, {
     method: 'POST', body: { email, password: 'Fallback-password-71' }
   }), app.env, {});
@@ -1085,7 +1085,7 @@ test('one email button falls back to the Firebase link once every OTP provider i
 test('the Firebase link stays untouched while an OTP mailer still has quota', async () => {
   const app = handlerSetup({ backupCapabilities: { available: true, availabilityCode: 'READY', telegramAvailable: true } });
   app.env.VERIFICATION_AUTH_ACTIVATION = 'enabled';
-  const email = 'otp.first@example.com';
+  const email = 'otp.first@gmail.com';
   const signup = await app.handler(apiRequest(`${AUTH_API_PREFIX}/signup`, {
     method: 'POST', body: { email, password: 'Otp-first-password-71' }
   }), app.env, {});
@@ -1116,7 +1116,7 @@ test('the Firebase link stays untouched while an OTP mailer still has quota', as
 test('a fallback send is never followed by a second Firebase link for the same tap', async () => {
   const app = handlerSetup({ backupCapabilities: { available: true, availabilityCode: 'READY', telegramAvailable: true } });
   app.env.VERIFICATION_AUTH_ACTIVATION = 'enabled';
-  const email = 'no.double.send@example.com';
+  const email = 'no.double.send@gmail.com';
   const signup = await app.handler(apiRequest(`${AUTH_API_PREFIX}/signup`, {
     method: 'POST', body: { email, password: 'No-double-send-71' }
   }), app.env, {});
@@ -1164,7 +1164,7 @@ test('a rejected human check stops the ownership OTP before any mailer is asked 
   const app = handlerSetup();
   app.env.VERIFICATION_AUTH_ACTIVATION = 'enabled';
   app.env.TURNSTILE_SECRET_KEY = 'turnstile-secret-key';
-  const ticketCookies = await signupTicketCookies(app, 'human.check.fail@example.com', 'Human-check-fail-71');
+  const ticketCookies = await signupTicketCookies(app, 'human.check.fail@gmail.com', 'Human-check-fail-71');
 
   let sendAsked = false;
   const authorityFetch = app.authority.fetch.bind(app.authority);
@@ -1185,7 +1185,7 @@ test('a verified human check lets the ownership OTP proceed', async () => {
   const app = handlerSetup();
   app.env.VERIFICATION_AUTH_ACTIVATION = 'enabled';
   app.env.TURNSTILE_SECRET_KEY = 'turnstile-secret-key';
-  const ticketCookies = await signupTicketCookies(app, 'human.check.pass@example.com', 'Human-check-pass-71');
+  const ticketCookies = await signupTicketCookies(app, 'human.check.pass@gmail.com', 'Human-check-pass-71');
 
   const authorityFetch = app.authority.fetch.bind(app.authority);
   app.authority.fetch = request => new URL(request.url).pathname === '/internal/verification/ownership/request'

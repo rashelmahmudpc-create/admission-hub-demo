@@ -51,16 +51,27 @@ export function emailDomain(email) {
   return value.slice(at + 1).replace(/\.+$/, '');
 }
 
-// True when the address belongs to a disposable or unverifiable provider.
+// Owner order 2026-10-18 (final): ONLY these five mailbox domains may sign up or
+// receive any code/link. Exact match: no subdomains, no school/college/edu, no
+// temp mail. Every other domain is refused at the field AND by the Worker.
+export const ALLOWED_EMAIL_DOMAINS = Object.freeze(['gmail.com', 'yahoo.com', 'icloud.com', 'hotmail.com', 'outlook.com']);
+
+export function isAllowedEmailDomain(email) {
+  const domain = emailDomain(email);
+  return Boolean(domain) && ALLOWED_EMAIL_DOMAINS.includes(domain);
+}
+
+// True when the address must be refused: any well-formed address outside the
+// five allowed domains (the old denylist is kept only as documentation).
 export function isDisposableEmail(email) {
   const domain = emailDomain(email);
   if (!domain) return false;
-  return DISPOSABLE_DOMAINS.some(blocked => domain === blocked || domain.endsWith(`.${blocked}`));
+  return !ALLOWED_EMAIL_DOMAINS.includes(domain);
 }
 
 // The message the student sees. Official, calm, and it names the way forward
 // rather than only refusing — a real address is always welcome.
 export const DISPOSABLE_EMAIL_MESSAGE =
-  'এই ইমেইল সেবাটি দিয়ে অ্যাকাউন্ট খোলা যায় না। নিরাপত্তার জন্য একটি স্থায়ী ইমেইল ব্যবহার করুন—যেমন Gmail, Yahoo বা আপনার প্রতিষ্ঠানের ইমেইল।';
+  'এই ইমেইলে কোড পাঠানো সম্ভব না। শুধু Gmail, Yahoo, iCloud, Hotmail বা Outlook ইমেইল ব্যবহার করো।';
 
 export const DISPOSABLE_DOMAINS_LIST = DISPOSABLE_DOMAINS;

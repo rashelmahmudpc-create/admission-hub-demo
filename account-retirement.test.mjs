@@ -108,12 +108,12 @@ await test('content hydration is public and account-independent',
   !/AHAuth|ahPubToken|authHeaders|Authorization/.test(CLOUD));
 
 await test('service-worker build and HTML registration are synchronized',
-  SW.includes("const BUILD_ID = 'v356-sky-compact-gap'") &&
-  H.includes("const expectedSwVersion = 'v356-sky-compact-gap'") &&
-  H.includes('admission-hub-shell-v356-sky-compact-gap'));
+  SW.includes("const BUILD_ID = 'v357-email-allowlist'") &&
+  H.includes("const expectedSwVersion = 'v357-email-allowlist'") &&
+  H.includes('admission-hub-shell-v357-email-allowlist'));
 await test('service-worker shell cannot cache retired assets', !retiredAssetRe.test(SW));
 await test('premium account and institution assets use synchronized cache-busting versions',
-  ['account-access.css?v=20261016-disposable-email-v1', 'account-access.js?v=20261018-logout-otp-v1', 'institutions-bd.js?v=bd-institutions-v2']
+  ['account-access.css?v=20261018-allowlist-v1', 'account-access.js?v=20261018-logout-otp-v1', 'institutions-bd.js?v=bd-institutions-v2']
     .every(asset => H.includes(asset) && SW.includes(asset)) &&
   H.indexOf('institutions-bd.js?v=bd-institutions-v2') < H.indexOf('account-access.js?v=20261018-logout-otp-v1'));
 await test('premium Auth UI/server contract and curated-manual institution policy are locked',

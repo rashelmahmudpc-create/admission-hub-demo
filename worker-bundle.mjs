@@ -7759,7 +7759,7 @@ var DEFAULTS2 = Object.freeze({
   [AUTH_ERROR_CODES.OTP_USED]: Object.freeze({ status: 409, message: "এই কোডটি ইতিমধ্যে ব্যবহার হয়েছে।" }),
   [AUTH_ERROR_CODES.INVALID_CREDENTIALS]: Object.freeze({ status: 401, message: "ইমেইল বা পাসওয়ার্ড সঠিক নয়।" }),
   [AUTH_ERROR_CODES.EMAIL_ALREADY_IN_USE]: Object.freeze({ status: 409, message: "এই ইমেইলে অ্যাকাউন্ট আছে—লগইন করুন।" }),
-  [AUTH_ERROR_CODES.DISPOSABLE_EMAIL]: Object.freeze({ status: 400, message: "এই ইমেইল সেবাটি দিয়ে অ্যাকাউন্ট খোলা যায় না। নিরাপত্তার জন্য একটি স্থায়ী ইমেইল ব্যবহার করুন—যেমন Gmail, Yahoo বা আপনার প্রতিষ্ঠানের ইমেইল।" }),
+  [AUTH_ERROR_CODES.DISPOSABLE_EMAIL]: Object.freeze({ status: 400, message: "এই ইমেইলে কোড পাঠানো সম্ভব না। শুধু Gmail, Yahoo, iCloud, Hotmail বা Outlook ইমেইল ব্যবহার করো।" }),
   [AUTH_ERROR_CODES.ACCOUNT_LINK_REQUIRED]: Object.freeze({ status: 409, message: "একই ইমেইলের আগের অ্যাকাউন্টে একবার পাসওয়ার্ড দিয়ে Google যুক্ত করুন।" }),
   [AUTH_ERROR_CODES.ACCOUNT_CONFLICT]: Object.freeze({ status: 409, message: "এই পরিচয়টি অন্য একটি অ্যাকাউন্টের সঙ্গে যুক্ত—নিরাপত্তার জন্য লগইন বন্ধ রাখা হয়েছে।" }),
   [AUTH_ERROR_CODES.GOOGLE_UNAVAILABLE]: Object.freeze({ status: 503, message: "Google দিয়ে প্রবেশ এখন পাওয়া যাচ্ছে না—ইমেইল দিয়ে চেষ্টা করুন।" }),
@@ -10157,10 +10157,11 @@ function emailDomain(email) {
   if (at < 0 || at === value.length - 1) return "";
   return value.slice(at + 1).replace(/\.+$/, "");
 }
+var ALLOWED_EMAIL_DOMAINS = Object.freeze(["gmail.com", "yahoo.com", "icloud.com", "hotmail.com", "outlook.com"]);
 function isDisposableEmail(email) {
   const domain = emailDomain(email);
   if (!domain) return false;
-  return DISPOSABLE_DOMAINS.some((blocked) => domain === blocked || domain.endsWith(`.${blocked}`));
+  return !ALLOWED_EMAIL_DOMAINS.includes(domain);
 }
 
 // auth-native/providers/firebase-auth.mjs
@@ -10712,7 +10713,7 @@ function safeJson(raw) {
     return {};
   }
 }
-var OWNER_ALLOWED_DOMAINS = Object.freeze(["gmail.com", "yahoo.com", "icloud.com", "outlook.com"]);
+var OWNER_ALLOWED_DOMAINS = Object.freeze(["gmail.com", "yahoo.com", "icloud.com", "hotmail.com", "outlook.com"]);
 function verificationConfig(raw) {
   const input = typeof raw === "string" ? safeJson(raw) : raw && typeof raw === "object" ? raw : {};
   const policyInput = input.policy && typeof input.policy === "object" ? input.policy : {};
@@ -11656,6 +11657,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         if (!provider.configured) throw new NativeAuthError(AUTH_ERROR_CODES.NOT_CONFIGURED);
         const body = await readJson(request);
         const email = normalizeAuthEmail(body?.email);
+        if (isDisposableEmail(email)) throw new NativeAuthError(AUTH_ERROR_CODES.DISPOSABLE_EMAIL);
         const prepared = await callAuthority(env, "/internal/firebase/rate", {
           input: { operation: "password-reset", email },
           context
@@ -23918,7 +23920,7 @@ function recipientBias(providerId, email) {
   const domain = String(email || "").trim().toLowerCase().split("@").pop();
   return NON_GMAIL_FREEMAIL.has(domain) ? NON_GMAIL_PREFERENCE[providerId] || 0 : 0;
 }
-var INSTITUTIONAL_SUFFIXES = Object.freeze([".ac.bd", ".edu.bd"]);
+var INSTITUTIONAL_SUFFIXES = Object.freeze([]);
 var matchesDomain = (domain, list2) => list2.some((entry) => domain === entry || entry.startsWith(".") && domain.endsWith(entry));
 var MAGIC_LINK_PROVIDER_ID = "otp-m";
 async function bounded(action, milliseconds) {
@@ -24051,6 +24053,7 @@ var VerificationOrchestrator = class {
   // deliveries, and the allowlist is opt-in, so an unset list never blocks.
   #assertDeliverable(email) {
     if (!email) return;
+    if (isDisposableEmail(email)) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
     const allow = this.config.allowedDomains;
     if (!allow || allow.length === 0) return;
     const domain = email.slice(email.lastIndexOf("@") + 1);
