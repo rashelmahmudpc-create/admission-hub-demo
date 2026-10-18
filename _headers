@@ -7,6 +7,22 @@
 #   cause of the recurring "This site can't be reached / ERR_FAILED". The
 #   registration now uses the bare './sw.js' so ONLY the no-store rule below
 #   applies, and every device picks up each new worker on the next load.
+# SEC hardening (2026-10-18 audit) — every response, no exceptions.
+# HSTS: a first visit over plain http could be stripped to http and hijacked.
+# X-Frame-Options + frame-ancestors: the app is never framed (verified: no
+#   window.frameElement use, and the dashboard/profile frames use srcdoc, which
+#   X-Frame-Options does not apply to), so refusing to be framed costs nothing
+#   and closes clickjacking — which mattered most next to the old CORS hole.
+# The CSP here is deliberately frame-ancestors ONLY. A full default-src 'self'
+#   policy would block the Google fonts, the Datamuse/Dictionary/translate APIs
+#   and the inline boot scripts this app relies on, so it needs a browser pass
+#   against the live site before it can ship. Do not widen this line blind.
+/*
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+  X-Frame-Options: DENY
+  X-Content-Type-Options: nosniff
+  Content-Security-Policy: frame-ancestors 'none'
+
 /sw.js
   Cache-Control: no-cache, no-store, must-revalidate
 

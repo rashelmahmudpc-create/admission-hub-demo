@@ -14,6 +14,8 @@
  * Decision logic is pure and separate from I/O so it can be tested directly;
  * the D1 reads/writes are thin SQL. All times are Asia/Dhaka (UTC+6).
  */
+import { corsHeaders } from './cors-policy.mjs';
+
 import { UserDataStore } from './userdata-api.mjs';
 import { parseBody, sessionUser, FcmStore, fcmSendToTokens, fcmConfigured } from './fcm-notification.mjs';
 
@@ -329,8 +331,7 @@ const jsonResponse = (request, obj, status = 200) => new Response(JSON.stringify
   status,
   headers: {
     'Content-Type': 'application/json; charset=utf-8',
-    'Access-Control-Allow-Origin': request.headers.get('Origin') || '*',
-    'Access-Control-Allow-Credentials': 'true',
+    ...corsHeaders(request),
     'Cache-Control': 'no-store'
   }
 });

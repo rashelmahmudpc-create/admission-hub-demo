@@ -19,6 +19,8 @@
  *   GET  /api/userdata/bootstrap
  *     - cursor + per-store counts for a fresh device
  */
+import { corsHeaders } from './cors-policy.mjs';
+
 const AUTHORITY_NAME = 'admission-hub-global-auth-v1';
 const SESSION_COOKIE = '__Host-ah_session';
 const SESSION_TOKEN_RE = /^[A-Za-z0-9_-]{40,96}$/;
@@ -64,7 +66,7 @@ const jsonResponse = (request, obj, status = 200) => new Response(JSON.stringify
   headers: {
     'Content-Type': 'application/json; charset=utf-8',
     'Cache-Control': 'no-store',
-    ...(request?.headers?.get('Origin') ? { 'Access-Control-Allow-Origin': request.headers.get('Origin'), 'Access-Control-Allow-Credentials': 'true' } : {})
+    ...corsHeaders(request)
   }
 });
 

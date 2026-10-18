@@ -9,6 +9,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { webcrypto } from 'node:crypto';
 import { JSDOM } from 'jsdom';
 
 const TOOL = readFileSync(new URL('./source-course-tool.js', import.meta.url), 'utf8');
@@ -32,6 +33,12 @@ async function boot(route = 'source-courses/sandhi', options = {}) {
     pretendToBeVisual: true
   });
   const { window } = dom;
+  /* jsdom ships no WebCrypto, so the tool's SHA-256 integrity check would
+   * always fail here and every course would silently lose its interactivity —
+   * masking the very behaviour these tests cover. Bridge node's WebCrypto in. */
+  if (!window.crypto.subtle) {
+    Object.defineProperty(window.crypto, 'subtle', { value: webcrypto.subtle, configurable: true });
+  }
   window.activities = [];
   window.addEventListener('admission:activity', e => window.activities.push(e.detail));
   window.navigate = () => {};
@@ -41,7 +48,7 @@ async function boot(route = 'source-courses/sandhi', options = {}) {
   };
   window.fetch = async (url) => {
     const u = String(url);
-    if (u.includes('/courses/sandhi/')) return { ok: true, status: 200, text: async () => COURSE_HTML };
+    if (u.includes('/courses/sandhi/')) return { ok: true, status: 200, text: async () => options.courseHtml || COURSE_HTML };
     return { ok: false, status: 404, text: async () => '' };
   };
   if (options.intersectionObserver) {
@@ -222,3 +229,16 @@ test('m3-4: reaching the result screen emits quiz_complete with accuracy and dur
   assert.ok(done.questionCount > 0);
   assert.equal(typesOf(window, 'QUIZ_COMPLETE').length, 1, 'a result screen is reported once');
 });
+
+test('security: a tampered course document renders but its scripts never execute', async () => {
+  /* The course scripts run through new Function() in the app origin, so an
+   * altered document would be stored XSS. The SHA-256 in COURSE_DEFS must
+   * therefore gate execution: change one byte and the payload must not run. */
+  const tampered = COURSE_HTML.replace('var MCQ = [', 'window.__pwned = 1; var MCQ = [');
+  assert.notEqual(tampered, COURSE_HTML, 'the tamper fixture must actually differ');
+  const window = await boot('source-courses/sandhi', { courseHtml: tampered });
+  await sleep(400);
+  assert.equal(window.__pwned, undefined, 'tampered course scripts must not execute');
+  assert.equal(typesOf(window, 'QUESTION_ATTEMPT').length, 0, 'no quiz behaviour from an unverified document');
+});
+

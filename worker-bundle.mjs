@@ -13392,6 +13392,28 @@ var __publicAuthTest = Object.freeze({
   passkeyPublished
 });
 
+// cors-policy.mjs
+var allowedOrigin2 = (origin) => {
+  if (!origin) return false;
+  try {
+    const url = new URL(origin);
+    if (url.protocol === "http:" && ["localhost", "127.0.0.1"].includes(url.hostname)) return true;
+    if (url.protocol !== "https:") return false;
+    return url.hostname === "admissionhub.pages.dev" || url.hostname === "admissionsky.pages.dev" || /^[a-z0-9-]+\.admissionhub\.pages\.dev$/i.test(url.hostname) || url.hostname === "admission-gk.admissionhub.workers.dev";
+  } catch {
+    return false;
+  }
+};
+var corsHeaders2 = (request) => {
+  const origin = request && request.headers && request.headers.get("Origin") || "";
+  if (!origin || !allowedOrigin2(origin)) return { Vary: "Origin" };
+  return {
+    "Access-Control-Allow-Origin": origin,
+    "Access-Control-Allow-Credentials": "true",
+    Vary: "Origin"
+  };
+};
+
 // analytics-notifications.mjs
 var asInt2 = (v, fallback = 0) => {
   const n = Number(v);
@@ -14473,8 +14495,7 @@ var jsonResponse = (request, obj, status = 200) => new Response(JSON.stringify(o
   headers: {
     "Content-Type": "application/json; charset=utf-8",
     "Cache-Control": "no-store",
-    "Access-Control-Allow-Origin": request.headers.get("Origin") || "*",
-    "Access-Control-Allow-Credentials": "true"
+    ...corsHeaders2(request)
   }
 });
 var parseBody = async (request) => {
@@ -14818,8 +14839,7 @@ async function handleFcmNotificationRequest(request, env) {
   if (!isApi && !isInternal) return null;
   if (request.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: {
-      "Access-Control-Allow-Origin": request.headers.get("Origin") || "*",
-      "Access-Control-Allow-Credentials": "true",
+      ...corsHeaders2(request),
       "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
       "Access-Control-Allow-Headers": "Content-Type, Authorization",
       "Access-Control-Max-Age": "86400"
@@ -15281,7 +15301,7 @@ var jsonResponse2 = (request, obj, status = 200) => new Response(JSON.stringify(
   headers: {
     "Content-Type": "application/json; charset=utf-8",
     "Cache-Control": "no-store",
-    ...request?.headers?.get("Origin") ? { "Access-Control-Allow-Origin": request.headers.get("Origin"), "Access-Control-Allow-Credentials": "true" } : {}
+    ...corsHeaders2(request)
   }
 });
 var readSessionToken2 = (request) => {
@@ -15953,8 +15973,7 @@ var jsonResponse3 = (request, obj, status = 200) => new Response(JSON.stringify(
   status,
   headers: {
     "Content-Type": "application/json; charset=utf-8",
-    "Access-Control-Allow-Origin": request.headers.get("Origin") || "*",
-    "Access-Control-Allow-Credentials": "true",
+    ...corsHeaders2(request),
     "Cache-Control": "no-store"
   }
 });
@@ -17148,8 +17167,7 @@ var jsonResponse4 = (request, obj, status = 200) => new Response(JSON.stringify(
   status,
   headers: {
     "Content-Type": "application/json; charset=utf-8",
-    "Access-Control-Allow-Origin": request.headers.get("Origin") || "*",
-    "Access-Control-Allow-Credentials": "true",
+    ...corsHeaders2(request),
     "Cache-Control": "no-store"
   }
 });
@@ -17162,8 +17180,7 @@ async function handleIntelligenceRequest(request, env, deps = {}) {
   if (!OWNED_PATHS.has(path) && !path.startsWith(ADMIN_PREFIX)) return null;
   if (request.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: {
-      "Access-Control-Allow-Origin": request.headers.get("Origin") || "*",
-      "Access-Control-Allow-Credentials": "true",
+      ...corsHeaders2(request),
       "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
       "Access-Control-Allow-Headers": "Content-Type, Authorization",
       "Access-Control-Max-Age": "86400"
@@ -21681,8 +21698,7 @@ function json6(request, payload, status = 200) {
     headers: {
       "Content-Type": "application/json; charset=utf-8",
       "Cache-Control": "no-store",
-      "Access-Control-Allow-Origin": request.headers.get("Origin") || "*",
-      "Access-Control-Allow-Credentials": "true"
+      ...corsHeaders2(request)
     }
   });
 }
@@ -21690,8 +21706,7 @@ function preflight(request) {
   return new Response(null, {
     status: 204,
     headers: {
-      "Access-Control-Allow-Origin": request.headers.get("Origin") || "*",
-      "Access-Control-Allow-Credentials": "true",
+      ...corsHeaders2(request),
       "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
       "Access-Control-Allow-Headers": "Content-Type, Authorization",
       "Access-Control-Max-Age": "86400"
@@ -21973,8 +21988,7 @@ var jsonResponse6 = (request, obj, status = 200) => new Response(JSON.stringify(
   headers: {
     "Content-Type": "application/json; charset=utf-8",
     "Cache-Control": "no-store",
-    "Access-Control-Allow-Origin": request.headers.get("Origin") || "*",
-    "Access-Control-Allow-Credentials": "true"
+    ...corsHeaders2(request)
   }
 });
 var randKey2 = (len) => {
@@ -21994,8 +22008,7 @@ async function handleFilesStorageRequest(request, env) {
   if (!path.startsWith("/api/files")) return null;
   if (request.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: {
-      "Access-Control-Allow-Origin": request.headers.get("Origin") || "*",
-      "Access-Control-Allow-Credentials": "true",
+      ...corsHeaders2(request),
       "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
       "Access-Control-Allow-Headers": "Content-Type, Authorization, X-File-Ext, X-File-Folder",
       "Access-Control-Max-Age": "86400"
@@ -22003,17 +22016,7 @@ async function handleFilesStorageRequest(request, env) {
   }
   const bucket = env?.FILE_BUCKET;
   const available = Boolean(bucket && typeof bucket.put === "function");
-  if (request.method === "GET" && path === "/api/files/usage") {
-    const usage = await bucketUsage(env);
-    return jsonResponse6(request, {
-      ok: true,
-      usedBytes: usage.bytes,
-      exact: usage.exact,
-      limitBytes: BUCKET_HARD_LIMIT_BYTES,
-      percent: Math.min(100, Math.round(usage.bytes / BUCKET_HARD_LIMIT_BYTES * 1e3) / 10)
-    });
-  }
-  if (request.method === "GET") {
+  if (request.method === "GET" && path !== "/api/files/usage") {
     const key = path.slice("/api/files/".length);
     if (!KEY_RE.test(key)) return jsonResponse6(request, { error: "not-found" }, 404);
     if (!available) return jsonResponse6(request, { error: "storage-unavailable" }, 503);
@@ -22039,6 +22042,16 @@ async function handleFilesStorageRequest(request, env) {
   const session = await sessionUser3(env, request);
   if (!session) return jsonResponse6(request, { error: "auth-required" }, 401);
   const userId = String(session.user.id);
+  if (request.method === "GET" && path === "/api/files/usage") {
+    const usage = await bucketUsage(env);
+    return jsonResponse6(request, {
+      ok: true,
+      usedBytes: usage.bytes,
+      exact: usage.exact,
+      limitBytes: BUCKET_HARD_LIMIT_BYTES,
+      percent: Math.min(100, Math.round(usage.bytes / BUCKET_HARD_LIMIT_BYTES * 1e3) / 10)
+    });
+  }
   if (request.method !== "POST") return jsonResponse6(request, { error: "method-not-allowed" }, 405);
   if (path === "/api/files/upload") {
     if (!available) return jsonResponse6(request, { error: "storage-unavailable" }, 503);

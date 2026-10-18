@@ -21,6 +21,8 @@
  * deterministic arithmetic, so a dashboard load costs nothing.
  */
 
+import { corsHeaders } from './cors-policy.mjs';
+
 import {
   AI_INTELLIGENCE_VERSION,
   buildStudentProfile,
@@ -505,8 +507,7 @@ function json(request, payload, status = 200) {
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
       'Cache-Control': 'no-store',
-      'Access-Control-Allow-Origin': request.headers.get('Origin') || '*',
-      'Access-Control-Allow-Credentials': 'true'
+      ...corsHeaders(request),
     }
   });
 }
@@ -515,8 +516,7 @@ function preflight(request) {
   return new Response(null, {
     status: 204,
     headers: {
-      'Access-Control-Allow-Origin': request.headers.get('Origin') || '*',
-      'Access-Control-Allow-Credentials': 'true',
+      ...corsHeaders(request),
       'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type, Authorization',
       'Access-Control-Max-Age': '86400'

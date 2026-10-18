@@ -274,7 +274,11 @@ HTML = ('<!doctype html><html lang="bn"><head><meta charset="utf-8">'
 escaped = HTML.replace('\\', '\\\\').replace('`', '\\`').replace('${', '\\${')
 escaped = escaped.replace('</script>', '<\\/script>')
 
-out = open(OUTER, encoding='utf-8').read().replace('/*__SRCDOC__*/', '`' + escaped + '`')
+# The outer file carries the marker followed by an empty-string default, so the
+# template is valid JavaScript before substitution. Replace the whole
+# "marker + default" pair, not just the marker, or the default would survive as
+# a stray '' after the assembled template literal.
+out = open(OUTER, encoding='utf-8').read().replace("/*__SRCDOC__*/ ''", '`' + escaped + '`')
 if '/*__SRCDOC__*/' in out:
     raise SystemExit('srcdoc marker not substituted')
 

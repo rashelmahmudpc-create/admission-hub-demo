@@ -27,6 +27,8 @@
  * All decision logic is pure and separate from I/O; the D1 reads/writes are
  * thin SQL. Times are per-student local, defaulting to Asia/Dhaka (UTC+6).
  */
+import { corsHeaders } from './cors-policy.mjs';
+
 import { fcmSendToTokens, fcmConfigured, FcmStore, sessionUser, parseBody } from './fcm-notification.mjs';
 
 const DAY_MS = 24 * 3600 * 1000;
@@ -1280,8 +1282,7 @@ const jsonResponse = (request, obj, status = 200) => new Response(JSON.stringify
   status,
   headers: {
     'Content-Type': 'application/json; charset=utf-8',
-    'Access-Control-Allow-Origin': request.headers.get('Origin') || '*',
-    'Access-Control-Allow-Credentials': 'true',
+    ...corsHeaders(request),
     'Cache-Control': 'no-store'
   }
 });
@@ -1304,8 +1305,7 @@ export async function handleIntelligenceRequest(request, env, deps = {}) {
 
   if (request.method === 'OPTIONS') {
     return new Response(null, { status: 204, headers: {
-      'Access-Control-Allow-Origin': request.headers.get('Origin') || '*',
-      'Access-Control-Allow-Credentials': 'true',
+      ...corsHeaders(request),
       'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type, Authorization',
       'Access-Control-Max-Age': '86400'

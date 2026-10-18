@@ -14,6 +14,8 @@
  * per user (KV). Every limit is fail-soft — storage errors return 503,
  * they never crash the worker. */
 
+import { corsHeaders } from './cors-policy.mjs';
+
 const AUTHORITY_NAME = 'admission-hub-global-auth-v1';
 const SESSION_COOKIE = '__Host-ah_session';
 const SESSION_TOKEN_RE = /^[A-Za-z0-9_-]{40,96}$/;
@@ -225,8 +227,7 @@ const jsonResponse = (request, obj, status = 200) => new Response(JSON.stringify
   headers: {
     'Content-Type': 'application/json; charset=utf-8',
     'Cache-Control': 'no-store',
-    'Access-Control-Allow-Origin': request.headers.get('Origin') || '*',
-    'Access-Control-Allow-Credentials': 'true'
+    ...corsHeaders(request),
   }
 });
 
@@ -250,8 +251,7 @@ export async function handleFilesStorageRequest(request, env) {
 
   if (request.method === 'OPTIONS') {
     return new Response(null, { status: 204, headers: {
-      'Access-Control-Allow-Origin': request.headers.get('Origin') || '*',
-      'Access-Control-Allow-Credentials': 'true',
+      ...corsHeaders(request),
       'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-File-Ext, X-File-Folder',
       'Access-Control-Max-Age': '86400'
@@ -261,19 +261,10 @@ export async function handleFilesStorageRequest(request, env) {
   const bucket = env?.FILE_BUCKET;
   const available = Boolean(bucket && typeof bucket.put === 'function');
 
-  if (request.method === 'GET' && path === '/api/files/usage') {
-    const usage = await bucketUsage(env);
-    return jsonResponse(request, {
-      ok: true,
-      usedBytes: usage.bytes,
-      exact: usage.exact,
-      limitBytes: BUCKET_HARD_LIMIT_BYTES,
-      percent: Math.min(100, Math.round((usage.bytes / BUCKET_HARD_LIMIT_BYTES) * 1000) / 10)
-    });
-  }
-
-  /* Public read (unguessable server-generated keys). */
-  if (request.method === 'GET') {
+  /* Public read (unguessable server-generated keys). /api/files/usage is a
+   * reserved route, not a key, so it is excluded here and falls through to the
+   * session check below. */
+  if (request.method === 'GET' && path !== '/api/files/usage') {
     const key = path.slice('/api/files/'.length);
     if (!KEY_RE.test(key)) return jsonResponse(request, { error: 'not-found' }, 404);
     if (!available) return jsonResponse(request, { error: 'storage-unavailable' }, 503);
@@ -297,6 +288,20 @@ export async function handleFilesStorageRequest(request, env) {
   const session = await sessionUser(env, request);
   if (!session) return jsonResponse(request, { error: 'auth-required' }, 401);
   const userId = String(session.user.id);
+
+  /* Storage usage is an internal figure (exact byte counts and the account
+   * ceiling), so it sits behind the session check with everything else. It used
+   * to be answered above it, which leaked the limits to anyone. */
+  if (request.method === 'GET' && path === '/api/files/usage') {
+    const usage = await bucketUsage(env);
+    return jsonResponse(request, {
+      ok: true,
+      usedBytes: usage.bytes,
+      exact: usage.exact,
+      limitBytes: BUCKET_HARD_LIMIT_BYTES,
+      percent: Math.min(100, Math.round((usage.bytes / BUCKET_HARD_LIMIT_BYTES) * 1000) / 10)
+    });
+  }
 
   if (request.method !== 'POST') return jsonResponse(request, { error: 'method-not-allowed' }, 405);
 

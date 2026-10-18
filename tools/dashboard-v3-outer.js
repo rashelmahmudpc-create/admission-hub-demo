@@ -16,7 +16,7 @@
   if (window.__dashboardV2Installed) return;
   window.__dashboardV2Installed = true;
 
-  const FRAME_HTML = /*__SRCDOC__*/;
+  const FRAME_HTML = /*__SRCDOC__*/ '';
 
   const DAY = 86400000;
   const keyOf = (ts) => { const d = new Date(ts || Date.now()); const p = (n) => String(n).padStart(2, '0'); return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()); };
