@@ -31,15 +31,15 @@
     '1secmail.org', '1secmail.ru', 'tuta.io', 'tempmail.email', 'tempmailbox.net',
     'mail.ru', 'bk.ru', 'inbox.ru', 'list.ru', 'internet.ru'
   ]);
+  window.ADMISSION_HUB_ALLOWED_EMAIL_DOMAINS = Object.freeze(['gmail.com', 'yahoo.com', 'icloud.com', 'hotmail.com', 'outlook.com']);
   window.ADMISSION_HUB_DISPOSABLE_EMAIL_MESSAGE =
-    'এই ইমেইল সেবাটি দিয়ে অ্যাকাউন্ট খোলা যায় না। নিরাপত্তার জন্য একটি স্থায়ী ইমেইল ব্যবহার করুন—যেমন Gmail, Yahoo বা আপনার প্রতিষ্ঠানের ইমেইল।';
+    'এই ইমেইলে কোড পাঠানো সম্ভব না। শুধু Gmail, Yahoo, iCloud, Hotmail বা Outlook ইমেইল ব্যবহার করো।';
   window.ADMISSION_HUB_isDisposableEmail = value => {
     const text = String(value || '').trim().toLowerCase();
     const at = text.lastIndexOf('@');
     if (at < 0 || at === text.length - 1) return false;
     const domain = text.slice(at + 1).replace(/\.+$/, '');
-    return window.ADMISSION_HUB_DISPOSABLE_EMAILS.some(
-      blocked => domain === blocked || domain.endsWith(`.${blocked}`)
-    );
+    // Owner 2026-10-18: only the five allowed domains pass; everything else is refused.
+    return !window.ADMISSION_HUB_ALLOWED_EMAIL_DOMAINS.includes(domain);
   };
 })();

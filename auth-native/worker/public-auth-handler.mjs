@@ -802,6 +802,7 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         if (!provider.configured) throw new NativeAuthError(AUTH_ERROR_CODES.NOT_CONFIGURED);
         const body = await readJson(request);
         const email = normalizeAuthEmail(body?.email);
+        if (isDisposableEmail(email)) throw new NativeAuthError(AUTH_ERROR_CODES.DISPOSABLE_EMAIL);
         const prepared = await callAuthority(env, '/internal/firebase/rate', {
           input: { operation: 'password-reset', email }, context
         });

@@ -57,7 +57,7 @@ function safeJson(raw) {
 // allowed by suffix in the orchestrator. Applied whenever a deployment does not
 // set allowedDomains, so the guard is live by default; an explicit empty array
 // opts out (unrestricted).
-export const OWNER_ALLOWED_DOMAINS = Object.freeze(['gmail.com', 'yahoo.com', 'icloud.com', 'outlook.com']);
+export const OWNER_ALLOWED_DOMAINS = Object.freeze(['gmail.com', 'yahoo.com', 'icloud.com', 'hotmail.com', 'outlook.com']);
 
 export function verificationConfig(raw) {
   const input = typeof raw === 'string' ? safeJson(raw) : (raw && typeof raw === 'object' ? raw : {});

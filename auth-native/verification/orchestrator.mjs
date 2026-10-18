@@ -2,6 +2,7 @@ import { AuthHmac, normalizeAuthEmail, randomSixDigitOtp, randomToken } from '..
 import { AUTH_ERROR_CODES, errorFromRepository, failAuth, NativeAuthError } from '../core/errors.mjs';
 import { AuthSecretVault } from '../core/secret-vault.mjs';
 import { verificationConfig } from './config.mjs';
+import { isDisposableEmail } from '../../email-policy.js';
 import {
   assertVerificationProvider,
   DisabledVerificationProvider,
@@ -103,7 +104,8 @@ function recipientBias(providerId, email) {
 
 // Suffix forms that must match as the whole registrable domain or a parent
 // (a.bd college would pass had we used a bare endsWith on '.bd').
-const INSTITUTIONAL_SUFFIXES = Object.freeze(['.ac.bd', '.edu.bd']);
+// Owner 2026-10-18: no school/college/edu bypass any more.
+const INSTITUTIONAL_SUFFIXES = Object.freeze([]);
 // A domain is accepted when it equals an entry, or ends with `entry` where the
 // entry already carries its leading dot (e.g. '.ac.bd').
 const matchesDomain = (domain, list) =>
@@ -220,6 +222,8 @@ export class VerificationOrchestrator {
   // deliveries, and the allowlist is opt-in, so an unset list never blocks.
   #assertDeliverable(email) {
     if (!email) return;
+    // Owner 2026-10-18: only the five allowed domains, always (config cannot widen it).
+    if (isDisposableEmail(email)) failAuth(AUTH_ERROR_CODES.INVALID_INPUT);
     const allow = this.config.allowedDomains;
     if (!allow || allow.length === 0) return;
     const domain = email.slice(email.lastIndexOf('@') + 1);

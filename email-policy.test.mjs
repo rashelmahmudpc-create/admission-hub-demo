@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { DISPOSABLE_DOMAINS_LIST, isDisposableEmail, emailDomain } from './email-policy.js';
+import { ALLOWED_EMAIL_DOMAINS, DISPOSABLE_DOMAINS_LIST, isDisposableEmail, emailDomain } from './email-policy.js';
 
 const root = new URL('.', import.meta.url).pathname;
 const clientSource = readFileSync(`${root}email-policy-client.js`, 'utf8');
@@ -16,14 +16,20 @@ test('the disposable-email list blocks the services the owner named', () => {
   }
 });
 
-test('a genuine address is never refused, including a school or work domain', () => {
-  for (const email of [
-    'student@gmail.com', 'student@yahoo.com', 'student@icloud.com',
-    'student@outlook.com', 'student@protonmail.com',
-    'student@school.edu.bd', 'student@university.ac.bd', 'student@college.gov.bd',
-    'student@notmailinator.com.evil.com'
-  ]) {
+test('only the five owner domains are allowed', () => {
+  assert.deepEqual([...ALLOWED_EMAIL_DOMAINS], ['gmail.com', 'yahoo.com', 'icloud.com', 'hotmail.com', 'outlook.com']);
+  for (const email of ['student@gmail.com', 'Student@Yahoo.com', 'student@icloud.com', 'student@hotmail.com', 'student@outlook.com']) {
     assert.equal(isDisposableEmail(email), false, `${email} should be allowed`);
+  }
+});
+
+test('every other domain is refused, including school, college and work mail', () => {
+  for (const email of [
+    'student@protonmail.com', 'student@school.edu.bd', 'student@university.ac.bd',
+    'student@college.gov.bd', 'student@notmailinator.com.evil.com', 'student@sub.gmail.com',
+    'student@gmail.co', 'student@googlemail.com', 'student@randomtemp.xyz'
+  ]) {
+    assert.equal(isDisposableEmail(email), true, `${email} should be refused`);
   }
 });
 
@@ -45,4 +51,7 @@ test('the browser mirror carries exactly the server list', () => {
     clientSource.slice(clientSource.indexOf('['), clientSource.indexOf(']') + 1).replace(/'/g, '"')
   );
   assert.deepEqual([...mirrored].sort(), [...DISPOSABLE_DOMAINS_LIST].sort());
+  const allowStart = clientSource.indexOf('ADMISSION_HUB_ALLOWED_EMAIL_DOMAINS = Object.freeze(');
+  const allowed = JSON.parse(clientSource.slice(clientSource.indexOf('[', allowStart), clientSource.indexOf(']', allowStart) + 1).replace(/'/g, '"'));
+  assert.deepEqual(allowed, [...ALLOWED_EMAIL_DOMAINS]);
 });

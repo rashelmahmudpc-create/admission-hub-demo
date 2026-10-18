@@ -683,7 +683,7 @@
       CLIENT_UPDATE_REQUIRED: 'Admission Hub-এর নতুন সংস্করণ এসেছে—পেজটি একবার refresh করে আবার চেষ্টা করো।',
       INVALID_CREDENTIALS: 'Email বা Password সঠিক নয়। আবার দেখে লিখো।',
       EMAIL_ALREADY_IN_USE: 'এই Email-এ account আছে—Log In করো।',
-      DISPOSABLE_EMAIL: 'এই ইমেইল সেবাটি দিয়ে account খোলা যায় না—স্থায়ী ইমেইল ব্যবহার করো (Gmail, Yahoo বা প্রতিষ্ঠানের ইমেইল)।',
+      DISPOSABLE_EMAIL: 'এই ইমেইলে কোড পাঠানো সম্ভব না। শুধু Gmail, Yahoo, iCloud, Hotmail বা Outlook ইমেইল ব্যবহার করো।',
       EMAIL_NOT_VERIFIED: 'Account verification এখনো শেষ হয়নি।',
       WEAK_PASSWORD: 'কমপক্ষে ৮ অক্ষরের একটু শক্তিশালী Password দাও।',
       RATE_LIMITED: 'অনেকবার চেষ্টা হয়েছে—একটু অপেক্ষা করে আবার চেষ্টা করো।',

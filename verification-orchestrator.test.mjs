@@ -557,26 +557,25 @@ test('email-ownership refuses a domain outside the allowlist and sends nothing',
   assert.equal(provider.sends.length, 0);
 });
 
-test('email-ownership accepts an approved consumer domain and a Bangladesh college suffix', async () => {
+test('email-ownership accepts an owner domain but refuses a Bangladesh college suffix', async () => {
   const provider = new MockProvider({ id: 'otp-a' });
   const app = setup({ providers: [provider], config: allowConfig([provider], ['gmail.com', 'outlook.com']) });
   const gmail = await app.orchestrator.requestVerification(ownershipIdentity('student@gmail.com'), context);
   assert.equal(gmail.accepted, true);
   app.advance(61_000);
   const collegeIdentity = ownershipIdentity('student@college.ac.bd');
-  const college = await app.orchestrator.requestVerification(
+  await expectCode(() => app.orchestrator.requestVerification(
     { ...collegeIdentity, trustedIdentity: { ...collegeIdentity.trustedIdentity, emailRef: 'd'.repeat(64) } },
     context
-  );
-  assert.equal(college.accepted, true);
-  assert.equal(provider.sends.length, 2);
+  ), AUTH_ERROR_CODES.INVALID_INPUT);
+  assert.equal(provider.sends.length, 1);
 });
 
-test('an explicit empty allowlist opts out and stays unrestricted', async () => {
+test('an explicit empty allowlist can no longer widen the owner list', async () => {
   const provider = new MockProvider({ id: 'otp-a' });
   const app = setup({ providers: [provider], config: allowConfig([provider], []) });
-  const requested = await app.orchestrator.requestVerification(ownershipIdentity('anything@example.com'), context);
-  assert.equal(requested.accepted, true);
+  await expectCode(() => app.orchestrator.requestVerification(ownershipIdentity('anything@example.com'), context), AUTH_ERROR_CODES.INVALID_INPUT);
+  assert.equal(provider.sends.length, 0);
 });
 
 test('the fourth email-ownership OTP to one address in a day is rate limited', async () => {

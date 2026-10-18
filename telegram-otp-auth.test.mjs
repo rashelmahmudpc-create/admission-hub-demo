@@ -345,14 +345,14 @@ test('signup waits for an explicit Email or Telegram choice and keeps all creden
   const ordinary = app.client({ device: `device-${'o'.repeat(28)}` });
   const ordinaryResult = await signupOnly({
     call: (path, options) => ordinary.call(path, { ...options, canary: false })
-  }, 'ordinary.telegram@example.com');
+  }, 'ordinary.telegram@gmail.com');
   assert.equal(ordinaryResult.response.status, 202);
   assert.equal(ordinaryResult.body.verification.sent, true);
   assert.equal(ordinaryResult.body.verification.selectionRequired, false);
   assert.equal(ordinary.cookies.has(AUTH_VERIFICATION_COOKIE), false);
 
   const client = app.client();
-  const result = await signupOnly(client, 'telegram.student@example.com');
+  const result = await signupOnly(client, 'telegram.student@gmail.com');
   assert.equal(result.response.status, 202);
   assert.equal(result.body.accountCreated, true);
   assert.equal(result.body.authenticated, false);
@@ -380,7 +380,7 @@ test('Email is sent only after its button is selected and a delivery failure lea
   const app = await fixture();
   app.firebase.failVerificationEmails = true;
   const client = app.client();
-  const created = await signupOnly(client, 'email.offline@example.com');
+  const created = await signupOnly(client, 'email.offline@gmail.com');
   assert.equal(created.response.status, 202);
   assert.equal(created.body.verification.sent, false);
   assert.equal(app.firebase.verificationEmails, 0);
@@ -404,11 +404,11 @@ test('a temporary Email-and-Telegram outage keeps the prepared Firebase subject 
   app.firebase.failVerificationEmails = true;
   app.telegram.available = false;
   const client = app.client();
-  const prepared = await signupOnly(client, 'recoverable.outage@example.com');
+  const prepared = await signupOnly(client, 'recoverable.outage@gmail.com');
   assert.equal(prepared.response.status, 202);
   assert.equal(prepared.body.verification.selectionRequired, true);
   assert.equal(prepared.body.verification.options.telegram.available, false);
-  assert.equal(app.firebase.users.has('recoverable.outage@example.com'), true);
+  assert.equal(app.firebase.users.has('recoverable.outage@gmail.com'), true);
   assert.equal(app.authRepository.snapshot().users.length, 1);
   assert.equal(client.cookies.has(AUTH_SESSION_COOKIE), false);
 
@@ -416,7 +416,7 @@ test('a temporary Email-and-Telegram outage keeps the prepared Firebase subject 
   app.advance(30_001);
   const resumed = await client.call('/login', {
     method: 'POST',
-    body: { email: 'recoverable.outage@example.com', password: 'StrongPassword!9' }
+    body: { email: 'recoverable.outage@gmail.com', password: 'StrongPassword!9' }
   });
   assert.equal(resumed.response.status, 202);
   assert.equal(resumed.body.verification.selectionRequired, true);
@@ -429,7 +429,7 @@ test('an existing unverified Email/Password account can start the same Telegram 
   const original = app.client({ device: `device-${'u'.repeat(28)}` });
   const created = await original.call('/signup', {
     method: 'POST',
-    body: { email: 'existing.unverified@example.com', password: 'StrongPassword!9' },
+    body: { email: 'existing.unverified@gmail.com', password: 'StrongPassword!9' },
     canary: false
   });
   assert.equal(created.response.status, 202);
@@ -438,7 +438,7 @@ test('an existing unverified Email/Password account can start the same Telegram 
   const canary = app.client({ device: `device-${'v'.repeat(28)}` });
   const login = await canary.call('/login', {
     method: 'POST',
-    body: { email: 'existing.unverified@example.com', password: 'StrongPassword!9' }
+    body: { email: 'existing.unverified@gmail.com', password: 'StrongPassword!9' }
   });
   assert.equal(login.response.status, 202);
   assert.equal(login.body.authenticated, false);
@@ -461,7 +461,7 @@ test('an existing unverified Email/Password account can start the same Telegram 
 test('START sends a random six-digit OTP and correct submission activates the same Firebase UID without claiming email ownership', async () => {
   const app = await fixture();
   const client = app.client();
-  const created = await signup(client, 'canonical.telegram@example.com');
+  const created = await signup(client, 'canonical.telegram@gmail.com');
   const linkToken = linkTokenOf(created);
   assert.equal(app.telegram.messages.length, 0);
   const beforeStart = await client.call('/telegram/verification/verify', {
@@ -503,7 +503,7 @@ test('START sends a random six-digit OTP and correct submission activates the sa
   const later = app.client({ device: `device-${'l'.repeat(28)}` });
   const login = await later.call('/login', {
     method: 'POST',
-    body: { email: 'canonical.telegram@example.com', password: 'StrongPassword!9' }
+    body: { email: 'canonical.telegram@gmail.com', password: 'StrongPassword!9' }
   });
   assert.equal(login.response.status, 200);
   assert.equal(login.body.user.id, verified.body.user.id);
@@ -519,7 +519,7 @@ test('wrong, expired, locked, used, and superseded Telegram OTPs fail closed wit
   await t.test('wrong attempts lock at five and never resend', async () => {
     const app = await fixture();
     const client = app.client();
-    const created = await signup(client, 'wrong.telegram@example.com');
+    const created = await signup(client, 'wrong.telegram@gmail.com');
     await app.webhook({ linkToken: linkTokenOf(created) });
     const right = app.telegram.messages[0].code;
     const wrong = right === '999999' ? '000000' : '999999';
@@ -542,7 +542,7 @@ test('wrong, expired, locked, used, and superseded Telegram OTPs fail closed wit
   await t.test('expired code and replay are rejected', async () => {
     const app = await fixture();
     const expiredClient = app.client();
-    const expiredSignup = await signup(expiredClient, 'expired.telegram@example.com');
+    const expiredSignup = await signup(expiredClient, 'expired.telegram@gmail.com');
     await app.webhook({ linkToken: linkTokenOf(expiredSignup) });
     const expiredCode = app.telegram.messages[0].code;
     app.advance(300_001);
@@ -552,7 +552,7 @@ test('wrong, expired, locked, used, and superseded Telegram OTPs fail closed wit
     assert.equal(expired.body.error.code, AUTH_ERROR_CODES.OTP_EXPIRED);
 
     const replayClient = app.client({ device: `device-${'r'.repeat(28)}` });
-    const replaySignup = await signup(replayClient, 'replay.telegram@example.com');
+    const replaySignup = await signup(replayClient, 'replay.telegram@gmail.com');
     await app.webhook({ linkToken: linkTokenOf(replaySignup), telegramUserId: '223456789', updateId: 2 });
     const code = app.telegram.messages.at(-1).code;
     const first = await replayClient.call('/telegram/verification/verify', {
@@ -568,7 +568,7 @@ test('wrong, expired, locked, used, and superseded Telegram OTPs fail closed wit
   await t.test('resend cooldown and old-code invalidation', async () => {
     const app = await fixture();
     const client = app.client();
-    const first = await signup(client, 'resend.telegram@example.com');
+    const first = await signup(client, 'resend.telegram@gmail.com');
     const immediate = await client.call('/telegram/verification/resend', { method: 'POST', body: {} });
     assert.equal(immediate.body.error.code, AUTH_ERROR_CODES.RESEND_COOLDOWN);
     app.advance(60_001);
@@ -596,7 +596,7 @@ test('wrong, expired, locked, used, and superseded Telegram OTPs fail closed wit
 test('pending verification survives refresh on the same device, rejects another device, and recovers after START without browser credentials', async () => {
   const app = await fixture();
   const client = app.client({ device: `device-${'p'.repeat(28)}` });
-  const created = await signup(client, 'pending.telegram@example.com');
+  const created = await signup(client, 'pending.telegram@gmail.com');
   const pending = await client.call('/telegram/verification/pending');
   assert.equal(pending.response.status, 200);
   assert.equal(pending.body.pending, true);
@@ -621,7 +621,7 @@ test('one Telegram identity links to only one Firebase account and concurrent OT
   await t.test('stable Telegram identity conflict', async () => {
     const app = await fixture();
     const first = app.client({ device: `device-${'a'.repeat(28)}` });
-    const firstSignup = await signup(first, 'first.telegram@example.com');
+    const firstSignup = await signup(first, 'first.telegram@gmail.com');
     await app.webhook({ linkToken: linkTokenOf(firstSignup), telegramUserId: '523456789' });
     await first.call('/telegram/verification/verify', {
       method: 'POST',
@@ -629,7 +629,7 @@ test('one Telegram identity links to only one Firebase account and concurrent OT
     });
 
     const second = app.client({ device: `device-${'b'.repeat(28)}` });
-    const secondSignup = await signup(second, 'second.telegram@example.com');
+    const secondSignup = await signup(second, 'second.telegram@gmail.com');
     const conflict = await app.webhook({ linkToken: linkTokenOf(secondSignup), telegramUserId: '523456789', updateId: 5 });
     assert.equal(conflict.response.status, 409);
     assert.equal(conflict.body.error.code, AUTH_ERROR_CODES.ACCOUNT_CONFLICT);
@@ -642,7 +642,7 @@ test('one Telegram identity links to only one Firebase account and concurrent OT
   await t.test('concurrent correct submissions are atomic', async () => {
     const app = await fixture();
     const client = app.client({ device: `device-${'c'.repeat(28)}` });
-    const created = await signup(client, 'concurrent.telegram@example.com');
+    const created = await signup(client, 'concurrent.telegram@gmail.com');
     await app.webhook({ linkToken: linkTokenOf(created), telegramUserId: '623456789' });
     const body = { attemptId: created.body.verification.telegram.attemptId, code: app.telegram.messages[0].code };
     const [left, right] = await Promise.all([
@@ -659,7 +659,7 @@ test('one Telegram identity links to only one Firebase account and concurrent OT
 test('Bot API network failure stays retryable with the same expiring challenge and webhook authentication fails closed', async () => {
   const app = await fixture();
   const client = app.client();
-  const created = await signup(client, 'network.telegram@example.com');
+  const created = await signup(client, 'network.telegram@gmail.com');
   const token = linkTokenOf(created);
 
   const missingSecret = await app.webhook({ linkToken: token, secret: 'wrong-webhook-secret-value-12345' });
