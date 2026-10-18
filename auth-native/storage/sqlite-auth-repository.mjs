@@ -1004,7 +1004,9 @@ export class SqliteAuthRepository {
       // Phase 6 — completing a new-device challenge is the consent moment:
       // the device that verified earns 30-day trust (config-driven TTL).
       let trusted = false;
-      if (row.purpose === 'new-device' && input.trust && Number(input.trust.ttlMs) > 0) {
+      // 2026-10-18: the first (signup) verification is also a consent moment;
+      // without this the very device that verified kept getting OTP prompts.
+      if (input.trust && Number(input.trust.ttlMs) > 0) {
         this.#storeTrustedDevice({
           userId: row.userId,
           deviceRef: input.deviceRef,

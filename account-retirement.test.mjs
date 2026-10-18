@@ -108,14 +108,14 @@ await test('content hydration is public and account-independent',
   !/AHAuth|ahPubToken|authHeaders|Authorization/.test(CLOUD));
 
 await test('service-worker build and HTML registration are synchronized',
-  SW.includes("const BUILD_ID = 'v354-profile-cache-stable'") &&
-  H.includes("const expectedSwVersion = 'v354-profile-cache-stable'") &&
-  H.includes('admission-hub-shell-v354-profile-cache-stable'));
+  SW.includes("const BUILD_ID = 'v355-logout-otp-fix'") &&
+  H.includes("const expectedSwVersion = 'v355-logout-otp-fix'") &&
+  H.includes('admission-hub-shell-v355-logout-otp-fix'));
 await test('service-worker shell cannot cache retired assets', !retiredAssetRe.test(SW));
 await test('premium account and institution assets use synchronized cache-busting versions',
-  ['account-access.css?v=20261016-disposable-email-v1', 'account-access.js?v=20261018-magiclink-v1', 'institutions-bd.js?v=bd-institutions-v2']
+  ['account-access.css?v=20261016-disposable-email-v1', 'account-access.js?v=20261018-logout-otp-v1', 'institutions-bd.js?v=bd-institutions-v2']
     .every(asset => H.includes(asset) && SW.includes(asset)) &&
-  H.indexOf('institutions-bd.js?v=bd-institutions-v2') < H.indexOf('account-access.js?v=20261018-magiclink-v1'));
+  H.indexOf('institutions-bd.js?v=bd-institutions-v2') < H.indexOf('account-access.js?v=20261018-logout-otp-v1'));
 await test('premium Auth UI/server contract and curated-manual institution policy are locked',
   ACCOUNT_UI.includes("'X-AH-Auth-UI': 'auth-premium-v6'") &&
   AUTH_HANDLER.includes("const AUTH_UI_VERSION = 'auth-premium-v6'") &&

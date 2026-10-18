@@ -572,6 +572,19 @@ export class CloudflareNativeAuthEngine {
       // Fall through to the fail-safe below — an evaluation outage must not
       // silently allow a sensitive action, and must not lock normal logins
       // out when the risk engine is the thing that failed.
+      // 2026-10-18: a verified account on a device whose cookie is already known
+      // is a normal login; a risk-store outage must not turn it into an OTP.
+      if (verified === true && newDevice !== true) {
+        return Object.freeze({
+          level: 'NORMAL',
+          trusted: false,
+          challenge: null,
+          block: false,
+          sessionTtlMs: config.riskSessionPolicy.NORMAL?.sessionTtlMs ?? null,
+          trustOffer: false,
+          policyVersion: config.policyVersion
+        });
+      }
       const failSafe = resolveFailSafe('sensitive', config);
       return Object.freeze({
         level: 'ELEVATED',

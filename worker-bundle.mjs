@@ -8680,6 +8680,17 @@ var CloudflareNativeAuthEngine = class {
         if (trusted) signals.newDevice = false;
       }
     } catch {
+      if (verified === true && newDevice !== true) {
+        return Object.freeze({
+          level: "NORMAL",
+          trusted: false,
+          challenge: null,
+          block: false,
+          sessionTtlMs: config.riskSessionPolicy.NORMAL?.sessionTtlMs ?? null,
+          trustOffer: false,
+          policyVersion: config.policyVersion
+        });
+      }
       const failSafe = resolveFailSafe("sensitive", config);
       return Object.freeze({
         level: "ELEVATED",
@@ -22759,7 +22770,7 @@ var SqliteAuthRepository = class _SqliteAuthRepository {
       );
       this.sql.exec("UPDATE auth_users SET last_login_at=? WHERE user_id=?", input.now, row.userId);
       let trusted = false;
-      if (row.purpose === "new-device" && input.trust && Number(input.trust.ttlMs) > 0) {
+      if (input.trust && Number(input.trust.ttlMs) > 0) {
         this.#storeTrustedDevice({
           userId: row.userId,
           deviceRef: input.deviceRef,

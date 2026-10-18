@@ -3,7 +3,7 @@ const CACHE_PREFIX = 'admission-hub-shell-';
 // hold user data; this one holds exactly one image and is trimmed on write.
 const AVATAR_CACHE = 'admission-hub-avatar-v1';
 
-const BUILD_ID = 'v354-profile-cache-stable';
+const BUILD_ID = 'v355-logout-otp-fix';
 const CACHE_NAME = `${CACHE_PREFIX}${BUILD_ID}`;
 const VERSION_HEADER = 'X-Admission-Hub-Build';
 const DOCUMENT_NETWORK_TIMEOUT_MS = 2500;
@@ -37,16 +37,16 @@ const APP_SHELL = [
   './sky-onboarding.css?v=sky-flow-20261017-v9',
   './institutions-bd.js?v=bd-institutions-v2',
   './language-engine.js?v=lang-v5-single-email-button',
-  './account-access.js?v=20261018-magiclink-v1&startup=fast1',
+  './account-access.js?v=20261018-logout-otp-v1&startup=fast1',
   './sky-onboarding.js?v=sky-flow-20261017-v9',
   './email-policy-client.js?v=20261016-disposable-email-v1',
-  './welcome-story.css?v=welcome-story-20261016-v2',
-  './welcome-story.js?v=welcome-story-20261016-v2',
+  './welcome-story.css?v=welcome-story-20261018-v3',
+  './welcome-story.js?v=welcome-story-20261018-v3',
   './academic-catalog.js?v=acad-cat-v2',
   './profile-ui.js?v=profile-v19-avatar-cache',
   './profile-ui.css?v=profile-v15-uni-tap',
-  './profile-v2.html?v=profile-v2-5',
-  './profile-v2-mount.js?v=profile-v2-5',
+  './profile-v2.html?v=profile-v2-6',
+  './profile-v2-mount.js?v=profile-v2-6',
   './data-protection.js?v=dp-v3-fastboot',
   './dashboard-v2.js?v=dash2f18-chrome',
   './sky-smalltalk.js?v=st2',
@@ -92,7 +92,7 @@ const APP_SHELL = [
 // A truncated/corrupt download is NEVER written to the shell cache.
 const ASSET_DIGESTS = {
 /* sw-manifest:start */
-  "./index.html": "2715d22f60c72a53d831d4e5fde4a4807ed17568de81c24ff2d3a3106b6f657d",
+  "./index.html": "dfd9d5e2a4eca8fa79e4a2133dc3ebd0470a6476ca520c80af5dcf6e119d9246",
   "./manifest.json": "6dcf0e0c6f7671750549e53558ba8b9f0c2c83b0c6759072a6b5e2276331f491",
   "./manifest.webmanifest": "abcd26174710f6df3e183889a5a9da182f73ee8cdcc543b43db8fb4070cad54f",
   "./dashboard-v2.css?v=dash2f13-theme": "4541bc1e65fd158c593443562975400d128b8f1d3b636595df3c235b99e8cced",
@@ -103,16 +103,16 @@ const ASSET_DIGESTS = {
   "./sky-onboarding.css?v=sky-flow-20261017-v9": "9e2ae99a84f654c8ca25ed62ec5a29760f14472141f7177d25493d30fe348d7f",
   "./institutions-bd.js?v=bd-institutions-v2": "602c5549515e8207ad152b948ca9b8fe3ad0fbe429afb56380e4e21b662f779d",
   "./language-engine.js?v=lang-v5-single-email-button": "52aaa5d77b3030721ccbc1c777801a3787c1d1061391b0f4b80841b6a9ddd054",
-  "./account-access.js?v=20261018-magiclink-v1&startup=fast1": "0a92f896e8208eb01cf8ee3797e2229e14e3202f235a946665ac7bdcc6fa4c28",
+  "./account-access.js?v=20261018-logout-otp-v1&startup=fast1": "ffd052fb723d4378339faba313454965a65c7cd27f7083140d40b06608097574",
   "./sky-onboarding.js?v=sky-flow-20261017-v9": "94713027829d0d49f1d8c5443471bc642b75e9dc8ff7207b80b44e1c1b71a5f8",
   "./email-policy-client.js?v=20261016-disposable-email-v1": "a43771bf5a4649a57a5b4a5066bb3fc29c78d16a3df8740a835f8237939af23b",
-  "./welcome-story.css?v=welcome-story-20261016-v2": "21a22c43f68c7a07d3ba0d2ff57b5eec76ea56a7fe31984eba3ca5db5398c195",
-  "./welcome-story.js?v=welcome-story-20261016-v2": "eec97464e5b177b533f2af35f2b6b80d30a4e8d6cbf1f7eebca6d3167c9a13bf",
+  "./welcome-story.css?v=welcome-story-20261018-v3": "4b589890fdf457149113e236320f94014b5cc2845c190b1bdf853f1f2963073d",
+  "./welcome-story.js?v=welcome-story-20261018-v3": "d61803c6ff7d497254efcd33d294e52589ccddf729c930b50f9f18341820ecae",
   "./academic-catalog.js?v=acad-cat-v2": "75e7b80663d41330658c948ad1d4829d49f5c9abed581350582cfeace06d5b32",
   "./profile-ui.js?v=profile-v19-avatar-cache": "90a9c2e278f871a931a0952a20329d8400a162bd6269d9d96152fe5816b8c383",
   "./profile-ui.css?v=profile-v15-uni-tap": "6408a4b7ac8acf6845cd0148c58377a4953c8ff879d30b2c520eafae0314b98a",
-  "./profile-v2.html?v=profile-v2-5": "c7b07d739320f1b6113782985905ac3615892905820a0fbca0766b2ce89d54c6",
-  "./profile-v2-mount.js?v=profile-v2-5": "899dfd6ed66095efd7af447decd604b6003382bc6d7f6625bae3d85bdb42c32b",
+  "./profile-v2.html?v=profile-v2-6": "00dce1ac58ca9ec4ff4f6672c054e4874915ce6ce66c104781cab459b3ae456e",
+  "./profile-v2-mount.js?v=profile-v2-6": "967e7d81fbf821c06ce5b1ddd867ab4fa5e882e37ef3aa1f0c445e0c623f3ec0",
   "./data-protection.js?v=dp-v3-fastboot": "359dc907ade4bcb3a6a722385969ebb6af47f7e436e6cdf2cce0dd6b7343723d",
   "./dashboard-v2.js?v=dash2f18-chrome": "19248d3378b7e3de982ccbb715ff69369fec620531cecc402aa5decad2fc92c1",
   "./sky-smalltalk.js?v=st2": "ee85bc86a84d6c75f391d7f76fa03abd53f2df1973dd7980ae15ee94eb122a49",

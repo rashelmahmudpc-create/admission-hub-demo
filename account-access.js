@@ -2437,6 +2437,31 @@
     message('সব device থেকে লগ আউট হয়েছে (' + (result.revoked ?? 0) + 'টি active session)। এখানে পুনরায় লগইন করতে হবে।', 'success');
   };
 
+  // Single logout path for the account card AND the Profile v2 frame (which
+  // calls AdmissionAccount.logout()). Before 2026-10-18 the profile button only
+  // showed a "(demo)" toast and never ended the session.
+  const performLogout = async () => {
+    if (state.busy) return false;
+    setBusy(true);
+    setSessionState('LOGGING_OUT');
+    try {
+      // Flush in-memory signup details while the session is still valid.
+      try { await syncPendingProfile({ pending: true }); } catch (_) {}
+      try {
+        await api('/session/logout', { method: 'POST', body: {} });
+      } catch (error) {
+        // An already-ended session has the same end state: signed out.
+        if (!(error && (error.status === 401 || error.status === 403))) throw error;
+      }
+      clearAuthLocalState();
+      setSessionState('UNAUTHENTICATED');
+      broadcastAuthEvent('logout');
+      updateLauncher(); showView('login'); message('নিরাপদভাবে লগ আউট হয়েছে।', 'success');
+      return true;
+    } catch (error) { setSessionState('ERROR'); message(friendlyError(error), 'error'); return false; }
+    finally { setBusy(false); }
+  };
+
   const performLogoutAll = async () => {
     if (state.busy || !accountVerified(state.session)) return false;
     setBusy(true);
@@ -3008,7 +3033,7 @@
       const storyStyle = document.createElement('link');
       storyStyle.id = 'ah-welcome-story-style';
       storyStyle.rel = 'stylesheet';
-      storyStyle.href = 'welcome-story.css?v=welcome-story-20261016-v2';
+      storyStyle.href = 'welcome-story.css?v=welcome-story-20261018-v3';
       document.head.append(storyStyle);
     }
     if (!document.getElementById('ah-welcome-story')) {
@@ -3019,7 +3044,7 @@
     }
     if (!document.querySelector('script[src*="welcome-story.js"]')) {
       const storyScript = document.createElement('script');
-      storyScript.src = 'welcome-story.js?v=welcome-story-20261016-v2';
+      storyScript.src = 'welcome-story.js?v=welcome-story-20261018-v3';
       storyScript.defer = true;
       document.head.append(storyScript);
     }
@@ -3517,23 +3542,7 @@
     $('[data-role="trust-accept"]').addEventListener('click', () => { void acceptDeviceTrust(); });
     $('[data-role="trust-decline"]').addEventListener('click', () => { declineDeviceTrust(); });
 
-    $('[data-role="logout"]').addEventListener('click', async () => {
-      if (state.busy) return;
-      setBusy(true);
-      setSessionState('LOGGING_OUT');
-      try {
-        // Signup details live only in memory until a write lands. Flush them
-        // while the session is still valid — after logout the token is gone and
-        // the data would be lost for good.
-        await syncPendingProfile({ pending: true });
-        await api('/session/logout', { method: 'POST', body: {} });
-        clearAuthLocalState();
-        setSessionState('UNAUTHENTICATED');
-        broadcastAuthEvent('logout');
-        updateLauncher(); showView('login'); message('নিরাপদভাবে লগ আউট হয়েছে।', 'success');
-      } catch (error) { setSessionState('ERROR'); message(friendlyError(error), 'error'); }
-      finally { setBusy(false); }
-    });
+    $('[data-role="logout"]').addEventListener('click', () => { void performLogout(); });
 
     $('[data-role="logout-all"]').addEventListener('click', async () => {
       if (state.busy) return;
@@ -3870,7 +3879,8 @@
     refresh: refreshSession,
     getSession: () => state.session,
     getSessionState: () => getSessionState(),
-    terminateAllSessions: () => performLogoutAll(),
+    logout: async () => { setAccountPageActive(true); return performLogout(); },
+    terminateAllSessions: async () => { setAccountPageActive(true); return performLogoutAll(); },
     getEntryMode: entryMode,
     isGuest: () => entryMode() === 'guest' && !accountVerified(state.session),
     isVerified: () => accountVerified(state.session),

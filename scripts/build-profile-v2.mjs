@@ -530,7 +530,16 @@ ${shared}
       } else if (a === 'profile.public') {
         patchFields({ visibility: d.value ? 'public' : 'private' }).catch(function () {});
       } else if (a === 'auth.logout' || a === 'auth.logoutAll') {
-        try { window.AdmissionAccount && window.AdmissionAccount.open && window.AdmissionAccount.open(); } catch (_) {}
+        /* The profile runs inside an iframe: the account module lives on the
+           parent document (same origin), so reach it there. */
+        try {
+          var acc = (window.parent && window.parent !== window && window.parent.AdmissionAccount) || window.AdmissionAccount;
+          if (acc) {
+            if (a === 'auth.logout' && acc.logout) acc.logout();
+            else if (a === 'auth.logoutAll' && acc.terminateAllSessions) acc.terminateAllSessions();
+            else if (acc.open) acc.open();
+          }
+        } catch (_) {}
       }
     } catch (_) {}
   });

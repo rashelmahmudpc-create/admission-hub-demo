@@ -30,3 +30,7 @@
    centre, so on short phones the scene (and its caption) slid down under Get Started.
    Pin the track to the band so the scene is centred in it and the caption stays above the button. */
 #ah-welcome-story .band{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr)}
+/* 2026-10-18: Reduce Motion (iOS) disables every animation inside the account
+   shell, so the auth buttons (shown only by the `up` animation) stayed at
+   opacity:0 and the entry page looked empty. Show them statically. */
+@media (prefers-reduced-motion: reduce){#ah-welcome-story .auth .rv{opacity:1!important;translate:none!important;animation:none!important}}
