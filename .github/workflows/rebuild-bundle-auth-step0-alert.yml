@@ -1,0 +1,39 @@
+name: Rebuild worker bundle (auth step 0 alert branch, self-removing)
+
+# One-shot helper for PR "Auth ধাপ ০ (৩/৩)". Runs only on its own branch,
+# regenerates worker-bundle.mjs from sources, and deletes itself in the same
+# commit so nothing from it reaches main.
+on:
+  push:
+    branches: [auth/step0-telegram-alert]
+
+permissions:
+  contents: write
+
+jobs:
+  rebuild:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - name: Wire the alert sink into the auth Durable Object
+        run: |
+          f=auth-native/worker/auth-authority-do.mjs
+          sed -i "s#import { emitOtpDeliveryEvent } from '../../observability/otp-delivery-log.mjs';#import { createOtpDeliverySink } from '../../observability/otp-alert.mjs';#" $f
+          sed -i "s#^        onDeliveryEvent: emitOtpDeliveryEvent\$#        // AUTH-ROADMAP step 0: Workers Logs line per send + Telegram alert on failure / >30s.\n        onDeliveryEvent: createOtpDeliverySink({ env, waitUntil: typeof state.waitUntil === 'function' ? promise => state.waitUntil(promise) : null })#" $f
+          sed -i "s#assert.match(authority, /onDeliveryEvent: emitOtpDeliveryEvent/);#assert.match(authority, /onDeliveryEvent: createOtpDeliverySink/);#" otp-delivery-log.test.mjs
+          grep -q "createOtpDeliverySink({ env" $f
+      - name: Test the alert sink
+        run: node --test otp-alert.test.mjs otp-delivery-log.test.mjs
+      - name: Rebuild bundle and remove this helper
+        run: |
+          npm run build:worker
+          git rm -q .github/workflows/rebuild-bundle-auth-step0-alert.yml
+          git add worker-bundle.mjs auth-native/worker/auth-authority-do.mjs otp-delivery-log.test.mjs
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898299+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'auth step 0: wire OTP Telegram alert sink + regenerate worker-bundle.mjs'
+          git push origin HEAD:auth/step0-telegram-alert
