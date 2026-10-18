@@ -623,6 +623,18 @@ export default {
              this whitelist, the chat never saw the key and never searched. */
           TAVILY_API_KEY: env.TAVILY_API_KEY,
           TAVILY_DAILY_CAP: env.TAVILY_DAILY_CAP,
+          /* AI audit 2026-10-16: the dashboard kill-switches and tuning knobs the
+             AI path reads. Without them here a secret bound from the dashboard
+             (e.g. USE_WRITE_ACTIONS = "disabled", AI_CHAT_CACHE = "off") never
+             reaches the public handler and the switch silently does nothing. */
+          USE_WRITE_ACTIONS: env.USE_WRITE_ACTIONS,
+          AI_CHAT_CACHE: env.AI_CHAT_CACHE,
+          AGENT_GROQ_MODELS: env.AGENT_GROQ_MODELS,
+          AGENT_FIRST_CHUNK_MS: env.AGENT_FIRST_CHUNK_MS,
+          AI_KV_KEY_NAMES: env.AI_KV_KEY_NAMES,
+          PUBLIC_RATE_SALT: env.PUBLIC_RATE_SALT,
+          PUBLIC_RATE_LIMIT: env.PUBLIC_RATE_LIMIT,
+          PUBLIC_RATE_WINDOW_MS: env.PUBLIC_RATE_WINDOW_MS,
           /* P13 — D1 read path (public question/content lists). Absent binding
              leaves the KV path in place, so this is additive. */
           PROFILE_DB: env.PROFILE_DB,

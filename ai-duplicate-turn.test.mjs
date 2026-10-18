@@ -26,7 +26,7 @@ async function runSend(src, typed) {
   const asked = [];
   const fn = new Function(
     'text', 'sessions', 'cur', 'inpEl', 'document', 'save', 'renderMsgs', 'msgsEl',
-    'liveNode', 'setBusy', 'mood', 'MAX_HISTORY', 'ask', 'T', 'replaceStream', 'asked',
+    'liveNode', 'setBusy', 'mood', 'MAX_HISTORY', 'ask', 'T', 'replaceStream', 'asked', 'procStage',
     `return (async () => { let busy = 0; let activeReq = null; ${body}
       asked.push(history);
       return { asked, msgs: sessions[0].msgs }; })();`
@@ -36,7 +36,9 @@ async function runSend(src, typed) {
     typed, sessions, 0, { value: typed, style: {}, blur() {} },
     { getElementById: () => null },
     () => {}, () => {}, { querySelector: () => null },
-    null, () => {}, () => {}, 12, ask, {}, () => {}, asked
+    null, () => {}, () => {}, 12, ask, {}, () => {}, asked,
+    /* send() now reports live stages through procStage(); a no-op is enough here. */
+    () => {}
   );
 }
 

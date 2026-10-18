@@ -724,7 +724,10 @@ export function providerChain(env, tier = 'FAST', badSet = new Set(), kv = {}) {
    data only — a URL plus a default model — because they share one stream reader.
    A `<NAME>_MODELS` value (env or KV) overrides the default list. */
 const COMPAT_PROVIDERS = [
-  { key: 'OPENROUTER_API_KEYS', url: 'https://openrouter.ai/api/v1/chat/completions', models: ['openai/gpt-4o-mini'] },
+  /* openai/gpt-4o-mini is a PAID OpenRouter model ($0.15/M input, checked
+     2026-10-16): with no credit it answers 402, with credit it spends money.
+     Default to free (`:free`) models; OPENROUTER_API_KEYS_MODELS overrides. */
+  { key: 'OPENROUTER_API_KEYS', url: 'https://openrouter.ai/api/v1/chat/completions', models: ['google/gemma-4-31b-it:free'] },
   /* Vercel AI Gateway is an OpenAI-compatible front door to many models; the
    * free tier serves openai/gpt-4o-mini. Its 400 floor on max_output_tokens is
    * satisfied by the agent core's normal token budget. */
@@ -867,6 +870,10 @@ export function limitMessage(cap, resetAt, now) {
   return 'আজকের জন্য তোমার ' + bn(cap) + 'টি AI প্রশ্নের সুযোগ ব্যবহার করা হয়ে গেছে। পরবর্তী সুযোগ চালু হবে '
     + (clock ? 'বাংলাদেশ সময় ' + clock + '-এ, ' : '') + 'আর প্রায় ' + span + ' পর। তখন আমি আবার তোমার প্রশ্নের উত্তর দেবো।';
 }
+/* AI audit 2026-10-16: the short-term conversation memory and its rolling
+   summary expire after 180 idle days instead of living forever. Every new
+   message rewrites them, so an active student never notices. */
+export const CHAT_MEMORY_TTL_MS = 180 * 24 * 60 * 60 * 1000;
 export function readQuota(raw, now) {
   let n = 0, start = now;
   if (raw !== null && raw !== undefined && raw !== '') {
@@ -1064,6 +1071,17 @@ export async function agentChat(request, env, uid, opts = {}) {
     try { bumpDailyStats(env, statsFromTiming({ limited: true })).catch(() => {}); } catch (_) {}
     return jsonResp({ error: 'rate_limited', message: limitMessage(cap, resetAt, now), cap, remaining: quota.remaining, resetAt, retryAfterSec: Math.max(60, Math.ceil((resetAt - now) / 1000)) }, 429);
   }
+  /* AI audit 2026-10-16: a message the AI never answered (every provider
+     failed) gives its credit back — with a default cap of 10/day a provider
+     outage used to burn a student's whole allowance. Best effort, never throws. */
+  const refundQuota = async () => {
+    try {
+      if (aiState && typeof aiState.refundQuota === 'function') { await aiState.refundQuota(sendCtx.uid); return; }
+      const rlKey = 'airl:' + sendCtx.uid;
+      const q = readQuota(await getKv(env.PUB_KV, rlKey), Date.now());
+      if (q.n > 0) await putKv(env.PUB_KV, rlKey, JSON.stringify({ n: q.n - 1, start: q.start }), 172800);
+    } catch (_) { /* a failed refund only costs the student one credit */ }
+  };
 
   const verificationGuidance = authVerificationGuidance(v.messages[v.messages.length - 1].content);
   if (verificationGuidance) return guidanceResponse(verificationGuidance, stream);
@@ -1150,7 +1168,7 @@ export async function agentChat(request, env, uid, opts = {}) {
   const background = [];
   const later = (fn) => { background.push(Promise.resolve().then(fn).catch(() => {})); };
   const settleBackground = async () => { if (background.length) await Promise.all(background.splice(0)); };
-  if (persistSummary) later(() => statePut('chatmemsum:' + sendCtx.uid, freshSummary));
+  if (persistSummary) later(() => statePut('chatmemsum:' + sendCtx.uid, freshSummary, CHAT_MEMORY_TTL_MS));
 
   /* owner 2026-10-18: the live Dhaka clock rides on every turn (one line). */
   const systemPrompt = buildSystemPrompt({ stats, examMode, quiz: quizMode, onboarding, prefs: aiPrefs }) + '\n\n' + nowLine();
@@ -1355,8 +1373,14 @@ export async function agentChat(request, env, uid, opts = {}) {
        long-term memory — an unsafe reply is not a memory. */
     if (!validateResponse(text, validationCtx).persistable) return text;
     try {
-      const next = msgs.concat([{ role: 'user', content: v.messages[v.messages.length - 1].content }, { role: 'assistant', content: text }]).slice(-24).map(x => ({ role: x.role, content: x.content }));
-      await statePut('chatmem:' + sendCtx.uid, JSON.stringify(next));
+      /* AI audit 2026-10-16: `msgs` already ends with the current user turn, so
+         appending it again stored every question twice. Add it only if absent. */
+      const lastTurn = msgs[msgs.length - 1];
+      const withUser = lastTurn && lastTurn.role === 'user'
+        ? msgs
+        : msgs.concat([{ role: 'user', content: v.messages[v.messages.length - 1].content }]);
+      const next = withUser.concat([{ role: 'assistant', content: text }]).slice(-24).map(x => ({ role: x.role, content: x.content }));
+      await statePut('chatmem:' + sendCtx.uid, JSON.stringify(next), CHAT_MEMORY_TTL_MS);
     } catch (_) {}
 
     /* M7: both triggers the owner asked for — an explicit "মনে রাখো" and a
@@ -1431,9 +1455,10 @@ export async function agentChat(request, env, uid, opts = {}) {
       }
     }
     await settleBackground();
+    await refundQuota();
     emitTrace({ fallbackReason: FALLBACK.PROVIDER_ERROR, validated: false });
     emitTiming({ failed: true });
-    return jsonResp({ error: 'provider_failed', message: 'AI একটু ব্যস্ত — কয়েক সেকেন্ড পরে আবার চেষ্টা করো।', detail: lastErr, retryable: true }, 502);
+    return jsonResp({ error: 'provider_failed', message: 'AI একটু ব্যস্ত — কয়েক সেকেন্ড পরে আবার চেষ্টা করো।', retryable: true }, 502);
   }
 
   /* ── STREAMING (SSE) ── */
@@ -1473,6 +1498,11 @@ export async function agentChat(request, env, uid, opts = {}) {
         for (const c of chain) {
           /* P31: skip the rest of a model's keys once that model has failed. */
           if ((modelFails.get(c.model) || 0) >= MODEL_FAIL_LIMIT) continue;
+          /* AI audit 2026-10-16: if this provider already streamed text and then
+             fails, the client must drop that partial text before the next
+             provider starts — otherwise the student saw "partial + partial +
+             full" glued together, and the unvalidated partial stayed on screen. */
+          let streamedAny = false;
           try {
             let full = '';
             const adapter = adapterFor(c);
@@ -1484,6 +1514,7 @@ export async function agentChat(request, env, uid, opts = {}) {
               if (/```(chart|flow)/i.test(full)) stage('visual', 'চার্ট / ডায়াগ্রাম আঁকছি');
               if (/\n\s*\|?\s*:?-{3,}/.test(full)) stage('table', 'টেবিল সাজাচ্ছি');
               push(`data: ${JSON.stringify({ text: t })}\n\n`);
+              streamedAny = true;
             }
             if (full.trim()) {
               ok = true;
@@ -1514,6 +1545,7 @@ export async function agentChat(request, env, uid, opts = {}) {
             }
             lastErr = 'empty-' + c.model;
           } catch (e) {
+            if (streamedAny) push(`event: replace\ndata: ${JSON.stringify({ text: '' })}\n\n`);
             if (e instanceof ProviderError) {
               lastErr = e.message;
               /* P31: count the failure against the MODEL. A 5xx/429 is the model
@@ -1531,13 +1563,14 @@ export async function agentChat(request, env, uid, opts = {}) {
         }
         if (!ok) {
           await settleBackground();
+          await refundQuota();
           emitTrace({ fallbackReason: FALLBACK.PROVIDER_ERROR, validated: false });
           emitTiming({ failed: true });
-          push(`event: error\ndata: ${JSON.stringify({ error: 'provider_failed', message: 'AI একটু ব্যস্ত — কয়েক সেকেন্ড পরে আবার চেষ্টা করো।', detail: lastErr, retryable: true })}\n\n`);
+          push(`event: error\ndata: ${JSON.stringify({ error: 'provider_failed', message: 'AI একটু ব্যস্ত — কয়েক সেকেন্ড পরে আবার চেষ্টা করো।', retryable: true })}\n\n`);
         }
       } catch (e) {
         await settleBackground();
-        push(`event: error\ndata: ${JSON.stringify({ error: 'stream_failed', message: 'যুক্তি-বিচ্ছেদ ঘটেছে।', detail: String(e.message || e), retryable: true })}\n\n`);
+        push(`event: error\ndata: ${JSON.stringify({ error: 'stream_failed', message: 'সংযোগ বিচ্ছিন্ন হয়েছে — আবার চেষ্টা করো।', retryable: true })}\n\n`);
       } finally {
         try { controller.close(); } catch (_) {}
       }
@@ -1596,6 +1629,21 @@ function openEarly(run, early, first) {
 }
 
 /* ── GET /api/ai/status ---------------------------------------------------- */
+/* AI audit 2026-10-16: the student's "forget me" for the AI. Removes the
+   conversation memory, its summary and the long-term memory from the AI state
+   object and from the KV fallback. The quota is deliberately untouched. */
+export async function clearAiMemory(env, uid) {
+  const id = String(uid || '');
+  if (!id.startsWith('account-')) return { ok: false, reason: 'no-account' };
+  const keys = ['chatmem:' + id, 'chatmemsum:' + id, 'mem:' + MEMORY_VERSION + ':' + id];
+  const aiState = aiStateStore(env);
+  if (aiState && typeof aiState.del === 'function') {
+    try { await aiState.del(id, keys); } catch (_) { /* KV half still runs */ }
+  }
+  for (const k of keys) { try { await env.PUB_KV.delete(k); } catch (_) {} }
+  return { ok: true, cleared: keys.length };
+}
+
 export async function agentStatus(request, env, uid) {
   const kv = await aiKeyOverlay(env);
   const hasGemini = !!pickKey(env, kv, 'GEMINI_KEYS');
