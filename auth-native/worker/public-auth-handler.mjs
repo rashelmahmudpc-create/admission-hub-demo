@@ -794,6 +794,7 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         if (!provider.configured) throw new NativeAuthError(AUTH_ERROR_CODES.NOT_CONFIGURED);
         const body = await readJson(request);
         const email = normalizeAuthEmail(body?.email);
+        if (isDisposableEmail(email)) throw new NativeAuthError(AUTH_ERROR_CODES.DISPOSABLE_EMAIL);
         const prepared = await callAuthority(env, '/internal/firebase/rate', {
           input: { operation: 'password-reset', email }, context
         });
@@ -835,6 +836,7 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
       if (request.method === 'POST' && url.pathname === `${AUTH_API_PREFIX}/login`) {
         if (!provider.configured) throw new NativeAuthError(AUTH_ERROR_CODES.NOT_CONFIGURED);
         const input = credentials(await readJson(request));
+        if (isDisposableEmail(input.email)) throw new NativeAuthError(AUTH_ERROR_CODES.DISPOSABLE_EMAIL);
         const prepared = await callAuthority(env, '/internal/firebase/rate', { input: { operation: 'login', email: input.email }, context });
         // Phase 6 — escalating cooldown after repeated failed logins (§14):
         // the DO counts recorded failures and asks us to delay this attempt.

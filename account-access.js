@@ -683,7 +683,7 @@
       CLIENT_UPDATE_REQUIRED: 'Admission Hub-এর নতুন সংস্করণ এসেছে—পেজটি একবার refresh করে আবার চেষ্টা করো।',
       INVALID_CREDENTIALS: 'Email বা Password সঠিক নয়। আবার দেখে লিখো।',
       EMAIL_ALREADY_IN_USE: 'এই Email-এ account আছে—Log In করো।',
-      DISPOSABLE_EMAIL: 'এই ইমেইল সেবাটি দিয়ে account খোলা যায় না—স্থায়ী ইমেইল ব্যবহার করো (Gmail, Yahoo বা প্রতিষ্ঠানের ইমেইল)।',
+      DISPOSABLE_EMAIL: 'শুধু Gmail, Yahoo, iCloud বা Outlook ইমেইল দিয়ে এগোনো যাবে। অন্য কোনো ইমেইল গ্রহণ করা হয় না।',
       EMAIL_NOT_VERIFIED: 'Account verification এখনো শেষ হয়নি।',
       WEAK_PASSWORD: 'কমপক্ষে ৮ অক্ষরের একটু শক্তিশালী Password দাও।',
       RATE_LIMITED: 'অনেকবার চেষ্টা হয়েছে—একটু অপেক্ষা করে আবার চেষ্টা করো।',
@@ -3096,6 +3096,7 @@
       if (state.busy || !ensureAvailable()) return;
       const email = $('#ah-forgot-email').value.trim();
       if (!email || !$('#ah-forgot-email').checkValidity()) return message('সঠিক Email address লিখো।', 'error');
+      if (window.ADMISSION_HUB_isDisposableEmail?.(email)) return message(window.ADMISSION_HUB_DISPOSABLE_EMAIL_MESSAGE, 'error');
       setBusy(true);
       try {
         await api('/password-reset', { method: 'POST', body: { email } });
@@ -3224,6 +3225,7 @@
       const email = $('#ah-login-email').value.trim();
       const password = $('#ah-login-password').value;
       if (!email || !$('#ah-login-email').checkValidity()) return message('সঠিক ইমেইল ঠিকানা লিখুন।', 'error');
+      if (window.ADMISSION_HUB_isDisposableEmail?.(email)) return message(window.ADMISSION_HUB_DISPOSABLE_EMAIL_MESSAGE, 'error');
       if (password.length < 8) return message('পাসওয়ার্ডটি সঠিকভাবে লিখুন।', 'error');
       rememberedEmail = $('#ah-login-remember')?.checked ? email : '';
       setBusy(true);
