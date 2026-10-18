@@ -208,6 +208,32 @@ CSS = replace(CSS,
     "--f:'Noto Sans Bengali','Hind Siliguri','Inter',system-ui,-apple-system,'Segoe UI',sans-serif;")
 assert 'https://' not in CSS, 'design CSS must not fetch anything'
 
+# ---- PATCH 8b: the header shows the student's real photo ------------------
+# The design always drew the mascot, ignoring DATA.user.avatar, so the header
+# never showed an uploaded photo (owner report 2026-10-17: "ড্যাশবোর্ডে
+# প্রোফাইলের অনুযায়ী ছবিটা দেখাবে"). Paint the photo when there is one and fall
+# back to the mascot otherwise. The URL is re-read from the host a few times
+# after boot, because the profile can finish loading just after the frame
+# paints; each read is a localStorage lookup, so it costs no network.
+JS = replace(JS,
+    "$('#avatar').innerHTML=mascot(false);",
+    "function avatarUrl(){var u=null;try{u=(parent.__ahAvatarUrl&&parent.__ahAvatarUrl())||null}catch(_){}\n"
+    "if(!u){try{u=(DATA&&DATA.user&&DATA.user.avatar)||null}catch(_){}}\n"
+    "if(!u)return null;try{if(u.charAt(0)==='/')return parent.location.origin+u}catch(_){}\n"
+    "return u}\n"
+    "function paintAvatar(){var el=$('#avatar');if(!el)return;var u=avatarUrl();\n"
+    "var want=u?'<img alt=\"\" src=\"'+u+'\">':mascot(false);\n"
+    "if(el.getAttribute('data-src')!==(u||'')){el.setAttribute('data-src',u||'');el.innerHTML=want}}\n"
+    "paintAvatar();\n"
+    "var avatarTries=0,avatarTick=setInterval(function(){paintAvatar();\n"
+    "if(++avatarTries>=8)clearInterval(avatarTick)},600);")
+# The photo must fill the rounded square the mascot sat in, or it renders at its
+# natural pixel size and bursts the header.
+CSS = replace(CSS,
+    ".avatar .mascot{width:42px;margin-bottom:-4px}",
+    ".avatar .mascot{width:42px;margin-bottom:-4px}\n"
+    ".avatar img{width:100%;height:100%;object-fit:cover;display:block}")
+
 # ---- PATCH 9: header clears the phone's status bar and blends with it -----
 # The design was drawn inside a preview that added the safe-area padding itself.
 # Standalone, the sticky header sat at y=0 *under* the status bar, so the greeting

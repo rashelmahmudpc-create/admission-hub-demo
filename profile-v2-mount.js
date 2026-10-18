@@ -25,7 +25,7 @@
   /* Bump this whenever profile-v2.html OR this file changes. The URL carries the
      token, so a new build fetches a new URL and the service worker can never
      serve the previous copy from its shell cache. */
-  var PAGE_VERSION = 'profile-v2-4';
+  var PAGE_VERSION = 'profile-v2-5';
   var PAGE_URL = './profile-v2.html?v=' + PAGE_VERSION;
   /* A marker that exists only in the design's own page. If the fetched body
      lacks it we were handed something else (the service worker answers document

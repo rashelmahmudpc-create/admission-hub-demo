@@ -79,13 +79,58 @@ const shared = `
   var API = '/api/auth/v1';
   var PREF_KEY = 'as.profile.v4';
 
+  /* 30 days (owner rule, 2026-10-17): a cached profile paints instantly on
+     every visit until the student edits it; past 30 days it counts as stale, so
+     a change made on another device cannot show on this one forever. */
+  var PROFILE_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+  var CACHE_PREFIX = 'ah-profile-cache:';
+  var CACHE_KEY = 'ah-profile-cache-key';
+
   function readCache() {
     try {
-      var pid = localStorage.getItem('ah-profile-cache-key');
+      var pid = localStorage.getItem(CACHE_KEY);
       if (!pid) return null;
-      var raw = localStorage.getItem('ah-profile-cache:' + pid);
-      return raw ? JSON.parse(raw) : null;
+      var raw = localStorage.getItem(CACHE_PREFIX + pid);
+      if (!raw) return null;
+      var entry = JSON.parse(raw);
+      if (!entry || !entry.profile || entry.publicId !== pid) return null;
+      if ((Date.now() - (entry.ts || 0)) > PROFILE_CACHE_TTL_MS) return null;
+      return entry;
     } catch (_) { return null; }
+  }
+
+  /* The WRITE side of the cache above. profile-ui.js owned this, but the v2
+     mount replaces renderProfilePage before that module's boot runs, so on this
+     route nothing ever wrote it — the read above always missed and every tap on
+     the profile tab re-fetched and re-painted from scratch. That is the owner's
+     "বারবার লোডিং" (report 2026-10-17). The entry shape matches profile-ui's
+     profileCacheWrite so the two modules never disagree about a cached profile. */
+  function writeCache(entry) {
+    try {
+      if (!entry || !entry.publicId || !entry.profile) return;
+      var prev = null;
+      try { prev = JSON.parse(localStorage.getItem(CACHE_PREFIX + entry.publicId) || 'null'); } catch (_) {}
+      /* A patch response carries the profile only, so anything it omits keeps
+         the last known value. Caching present:false here would drop the photo
+         and the dashboard header would fall back to the mascot after every
+         edit, until the next full read put it back. */
+      var keep = function (value, fallback) {
+        return (value === undefined || value === null) ? fallback : value;
+      };
+      var av = keep(entry.avatar, null) || keep(prev && prev.avatar, null) || { present: false };
+      localStorage.setItem(CACHE_PREFIX + entry.publicId, JSON.stringify({
+        publicId: entry.publicId,
+        email: keep(entry.email, prev && prev.email),
+        profile: entry.profile,
+        completion: keep(entry.completion, prev && prev.completion),
+        context: keep(entry.context, prev && prev.context),
+        avatar: av,
+        avatarUrl: keep(entry.avatarUrl, prev && prev.avatarUrl),
+        joinedYear: keep(entry.joinedYear, prev && prev.joinedYear),
+        ts: Date.now()
+      }));
+      localStorage.setItem(CACHE_KEY, String(entry.publicId));
+    } catch (_) {}
   }
 
   /* The app's mode -> this UI's theme. Everything except an explicit 'dark'
@@ -258,8 +303,30 @@ ${shared}
       lastAvatar = (entry && entry.avatar) || null;
       push(entry);
       if (entry && entry.profile) version = entry.profile.version;
+      /* Persist what the rest of the app reads: the dashboard's avatar, and the
+         instant first paint on the next visit. */
+      writeCache(entry);
+      prefetchAvatar(entry);
       return entry;
     });
+  }
+
+  /* Warm the service worker's avatar cache as soon as the version is known, so
+     the dashboard header and the next profile open paint the photo from cache
+     with no network round-trip. Idempotent per version: the ?v= makes the URL
+     immutable, so re-fetching the same version would be pure waste. */
+  var avatarPrefetched = '';
+  function prefetchAvatar(entry) {
+    try {
+      var av = entry && entry.avatar;
+      if (!av || !av.present) return;
+      var v = String(av.updatedAt || 0);
+      if (avatarPrefetched === v) return;
+      avatarPrefetched = v;
+      var img = new Image();
+      img.decoding = 'async';
+      img.src = API + '/profile/avatar?v=' + v;
+    } catch (_) {}
   }
 
   /* Send only what changed, under the backend's own field names. */
@@ -332,7 +399,7 @@ ${shared}
     }).then(function (res) {
       if (res && res.profile) {
         version = res.profile.version;
-        push({
+        var next = {
           profile: res.profile,
           publicId: cachedIdentity.publicId,
           email: cachedIdentity.email,
@@ -341,7 +408,12 @@ ${shared}
              the mascot again after every edit — the cache key it reads is
              written by the app, not by this frame. */
           avatar: lastAvatar || undefined
-        });
+        };
+        push(next);
+        /* Owner rule: an edit shows immediately everywhere and stays cached for
+           the next 30 days. Writing here is what makes the dashboard avatar and
+           the next profile open correct without waiting for a re-read. */
+        writeCache(next);
       }
       return res;
     });

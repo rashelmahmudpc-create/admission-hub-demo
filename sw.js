@@ -3,7 +3,7 @@ const CACHE_PREFIX = 'admission-hub-shell-';
 // hold user data; this one holds exactly one image and is trimmed on write.
 const AVATAR_CACHE = 'admission-hub-avatar-v1';
 
-const BUILD_ID = 'v353-profile-avatar-fix';
+const BUILD_ID = 'v354-profile-cache-stable';
 const CACHE_NAME = `${CACHE_PREFIX}${BUILD_ID}`;
 const VERSION_HEADER = 'X-Admission-Hub-Build';
 const DOCUMENT_NETWORK_TIMEOUT_MS = 2500;
@@ -43,10 +43,10 @@ const APP_SHELL = [
   './welcome-story.css?v=welcome-story-20261016-v2',
   './welcome-story.js?v=welcome-story-20261016-v2',
   './academic-catalog.js?v=acad-cat-v2',
-  './profile-ui.js?v=profile-v18-avatar-cache',
+  './profile-ui.js?v=profile-v19-avatar-cache',
   './profile-ui.css?v=profile-v15-uni-tap',
-  './profile-v2.html?v=profile-v2-4',
-  './profile-v2-mount.js?v=profile-v2-4',
+  './profile-v2.html?v=profile-v2-5',
+  './profile-v2-mount.js?v=profile-v2-5',
   './data-protection.js?v=dp-v3-fastboot',
   './dashboard-v2.js?v=dash2f18-chrome',
   './sky-smalltalk.js?v=st2',
@@ -92,7 +92,7 @@ const APP_SHELL = [
 // A truncated/corrupt download is NEVER written to the shell cache.
 const ASSET_DIGESTS = {
 /* sw-manifest:start */
-  "./index.html": "21830501d93ed7d01539691a44f43768a38e9438cb61a12dd138365c1c0d27f7",
+  "./index.html": "2715d22f60c72a53d831d4e5fde4a4807ed17568de81c24ff2d3a3106b6f657d",
   "./manifest.json": "6dcf0e0c6f7671750549e53558ba8b9f0c2c83b0c6759072a6b5e2276331f491",
   "./manifest.webmanifest": "abcd26174710f6df3e183889a5a9da182f73ee8cdcc543b43db8fb4070cad54f",
   "./dashboard-v2.css?v=dash2f13-theme": "4541bc1e65fd158c593443562975400d128b8f1d3b636595df3c235b99e8cced",
@@ -109,12 +109,12 @@ const ASSET_DIGESTS = {
   "./welcome-story.css?v=welcome-story-20261016-v2": "21a22c43f68c7a07d3ba0d2ff57b5eec76ea56a7fe31984eba3ca5db5398c195",
   "./welcome-story.js?v=welcome-story-20261016-v2": "eec97464e5b177b533f2af35f2b6b80d30a4e8d6cbf1f7eebca6d3167c9a13bf",
   "./academic-catalog.js?v=acad-cat-v2": "75e7b80663d41330658c948ad1d4829d49f5c9abed581350582cfeace06d5b32",
-  "./profile-ui.js?v=profile-v18-avatar-cache": "aaa1bf37e54b4dd44bad0a9ea6c904645f0457cea98d10aaa02bf39664d6b1b8",
+  "./profile-ui.js?v=profile-v19-avatar-cache": "90a9c2e278f871a931a0952a20329d8400a162bd6269d9d96152fe5816b8c383",
   "./profile-ui.css?v=profile-v15-uni-tap": "6408a4b7ac8acf6845cd0148c58377a4953c8ff879d30b2c520eafae0314b98a",
-  "./profile-v2.html?v=profile-v2-4": "3b0b255fe5ec103bcb4f42419208112defad8b7de019c64d3f25582f879184c7",
-  "./profile-v2-mount.js?v=profile-v2-4": "d7d1d04d083e6e7253cfeb8349307aaafea3d7bf6a91dd175b80999877007da2",
+  "./profile-v2.html?v=profile-v2-5": "c7b07d739320f1b6113782985905ac3615892905820a0fbca0766b2ce89d54c6",
+  "./profile-v2-mount.js?v=profile-v2-5": "899dfd6ed66095efd7af447decd604b6003382bc6d7f6625bae3d85bdb42c32b",
   "./data-protection.js?v=dp-v3-fastboot": "359dc907ade4bcb3a6a722385969ebb6af47f7e436e6cdf2cce0dd6b7343723d",
-  "./dashboard-v2.js?v=dash2f18-chrome": "f53d800f44030fd02a36da9ad2292bd1ab3d958ab7c3c3ad5c65ef3942f88aee",
+  "./dashboard-v2.js?v=dash2f18-chrome": "19248d3378b7e3de982ccbb715ff69369fec620531cecc402aa5decad2fc92c1",
   "./sky-smalltalk.js?v=st2": "ee85bc86a84d6c75f391d7f76fa03abd53f2df1973dd7980ae15ee94eb122a49",
   "./sky-replies.json?v=r1": "f5e97d43641a1dbedbe3d17f24c740ebb38b761a79c833a902b8876b7ead5a9f",
   "./sky-tools-client.js?v=tools1": "0c07c9945f1cca5210314b4885c5c821907807d89cf9555a8320681fdb0f6736",
@@ -266,7 +266,12 @@ self.addEventListener('activate', event => {
     const keys = await caches.keys();
     await Promise.all(
       keys
-        .filter(key => key !== CACHE_NAME)
+        // AVATAR_CACHE is version-keyed by the ?v= in its URL, not by the build,
+        // so deleting it here threw away a perfectly valid photo on every
+        // activation and forced a fresh download — the owner's "বারবার লোডিং"
+        // (report 2026-10-17). It holds exactly one image and trims itself on
+        // write, so it is safe to keep across builds.
+        .filter(key => key !== CACHE_NAME && key !== AVATAR_CACHE)
         .map(key => caches.delete(key))
     );
 

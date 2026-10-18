@@ -108,9 +108,9 @@ await test('content hydration is public and account-independent',
   !/AHAuth|ahPubToken|authHeaders|Authorization/.test(CLOUD));
 
 await test('service-worker build and HTML registration are synchronized',
-  SW.includes("const BUILD_ID = 'v353-profile-avatar-fix'") &&
-  H.includes("const expectedSwVersion = 'v353-profile-avatar-fix'") &&
-  H.includes('admission-hub-shell-v353-profile-avatar-fix'));
+  SW.includes("const BUILD_ID = 'v354-profile-cache-stable'") &&
+  H.includes("const expectedSwVersion = 'v354-profile-cache-stable'") &&
+  H.includes('admission-hub-shell-v354-profile-cache-stable'));
 await test('service-worker shell cannot cache retired assets', !retiredAssetRe.test(SW));
 await test('premium account and institution assets use synchronized cache-busting versions',
   ['account-access.css?v=20261016-disposable-email-v1', 'account-access.js?v=20261018-magiclink-v1', 'institutions-bd.js?v=bd-institutions-v2']
@@ -124,7 +124,8 @@ await test('premium Auth UI/server contract and curated-manual institution polic
 await test('main-app AI client is versioned in the public shell while prior shells are still purged',
   SW.includes('ai-agent-chat.js?v=agent-f1-ui-skyv9') &&
   H.includes('ai-agent-chat.js?v=agent-f1-ui-skyv9') &&
-  H.includes("name.startsWith('admission-hub-shell-')") && SW.includes('.filter(key => key !== CACHE_NAME)'));
+  H.includes("name.startsWith('admission-hub-shell-')") &&
+  SW.includes('.filter(key => key !== CACHE_NAME && key !== AVATAR_CACHE)'));
 
 const forbiddenWorkerRoutes = retiredRoutes.filter(route => !route.startsWith('/api/admin/'));
 await test('source Worker contains no retired account/profile/onboarding route literals', forbiddenWorkerRoutes.every(route => !SOURCE.includes(route)));

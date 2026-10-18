@@ -100,10 +100,32 @@
 
   // Dashboard upgrade hook: the dashboard header shows the uploaded avatar
   // once the profile has been loaded at least once in this session.
-  window.__ahHasAvatar = () => state.data?.avatar?.present === true;
+  window.__ahHasAvatar = () => state.data?.avatar?.present === true || cachedAvatar() !== null;
   // Shared, version-scoped avatar URL so every surface (dashboard, header)
   // reuses the same cached image instead of re-fetching it.
-  window.__ahAvatarUrl = () => (state.data?.avatar?.present ? `${API}/profile/avatar?v=${avatarVersion()}` : null);
+  window.__ahAvatarUrl = () => {
+    if (state.data?.avatar?.present) return `${API}/profile/avatar?v=${avatarVersion()}`;
+    // The v2 mount replaces renderProfilePage, so this module's own loadProfile
+    // never runs on the profile route and state.data stays empty. Without this
+    // fallback the dashboard could never see the photo (owner report
+    // 2026-10-17: "ড্যাশবোর্ডে প্রোফাইলের অনুযায়ী ছবি দেখাবে"). The mount writes
+    // the same cache, so reading it here is both correct and instant — a
+    // localStorage read, no network, so the header paints with no loading.
+    const av = cachedAvatar();
+    return av ? `${API}/profile/avatar?v=${av}` : null;
+  };
+
+  /* The uploaded avatar's version straight from the persistent profile cache,
+     or null when there is no cached photo. */
+  function cachedAvatar() {
+    try {
+      const pid = localStorage.getItem(PROFILE_CACHE_KEY);
+      if (!pid) return null;
+      const entry = JSON.parse(localStorage.getItem(PROFILE_CACHE_PREFIX + pid) || 'null');
+      const a = entry && entry.avatar;
+      return (a && a.present) ? String(a.updatedAt || 0) : null;
+    } catch (_) { return null; }
+  }
 
   /* ---------------- API ---------------- */
 

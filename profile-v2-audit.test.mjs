@@ -11,7 +11,7 @@ const PROFILE = {
   school: null, higherInstitution: null, targets: [], subjects: [],
   admissionSession: '2026', academicGoal: '', visibility: 'private', version: 1,
 };
-const student = { publicId: 'AH-AUDIT', email: 'audit@example.com', profile: PROFILE, avatar: { present: false } };
+const student = { publicId: 'AH-AUDIT', email: 'audit@example.com', profile: PROFILE, avatar: { present: false }, ts: Date.now() };
 
 /* Boot the real built page, capture every patch body the adapter emits, and run
    it through the real server-side validator. This is the only way to prove a
@@ -288,6 +288,77 @@ test('bulk: one bad field in a full save surfaces an error', async () => {
 
 
 /* ── LOADING ─────────────────────────────────────────────────────────────── */
+
+/* The owner's report: tapping the profile tab re-loaded every time. The cause
+   was that nothing wrote the persistent cache on this route, so the read below
+   always missed. This asserts the write, which is what makes the second visit
+   instant — without it the page is correct but slow, and slow is what he
+   noticed. */
+test('cache: a successful read is persisted for the next visit', async () => {
+  const { win, dom } = harness();
+  await wait(120);
+  const raw = win.localStorage.getItem('ah-profile-cache:AH-AUDIT');
+  assert.ok(raw, 'the profile read wrote the persistent cache');
+  const entry = JSON.parse(raw);
+  assert.equal(entry.publicId, 'AH-AUDIT');
+  assert.equal(entry.profile.fullName, 'রাশেল জায়ান', 'the real profile is cached');
+  assert.ok(entry.ts > 0, 'stamped with a time, so the 30-day rule can apply');
+  dom.window.close();
+});
+
+/* A patch response carries no avatar, so a naive cache write would drop the
+   photo and the dashboard header would fall back to the mascot after every
+   edit. The last known avatar must survive a save. */
+test('cache: an edit keeps the known avatar instead of clearing it', async () => {
+  const { win, dom, calls } = harness({ avatar: { present: true, updatedAt: 1700000000123 } });
+  await wait(120);
+  calls.length = 0;
+  win.document.dispatchEvent(new win.CustomEvent('app:action', {
+    detail: { action: 'profile.update', field: 'bio', value: 'ভালো ছেলে' },
+  }));
+  await wait(120);
+  const entry = JSON.parse(win.localStorage.getItem('ah-profile-cache:AH-AUDIT'));
+  assert.equal(entry.avatar.present, true, 'the photo survived the save');
+  assert.equal(entry.avatar.updatedAt, 1700000000123);
+  dom.window.close();
+});
+
+/* The owner's rule: the cache is good for 30 days, then counts as stale so a
+   change made on another device cannot hide forever on this one. */
+test('cache: an entry older than 30 days is not used', async () => {
+  const stale = Object.assign({}, student, { ts: Date.now() - (31 * 24 * 60 * 60 * 1000) });
+  const dom = new JSDOM(PAGE, {
+    url: 'https://admissionhub.pages.dev/profile-v2.html',
+    runScripts: 'dangerously', pretendToBeVisual: true,
+    beforeParse(win) {
+      win.localStorage.setItem('ah-profile-cache-key', 'AH-AUDIT');
+      win.localStorage.setItem('ah-profile-cache:AH-AUDIT', JSON.stringify(stale));
+      win.fetch = () => new Promise(() => {});
+    },
+  });
+  await wait(120);
+  const data = dom.window.PROFILE_DATA || {};
+  assert.notEqual(data.name, 'রাশেল জায়ান', 'a stale entry must not paint');
+  dom.window.close();
+});
+
+/* And the boundary: 29 days old is still good, so the rule is a window and not
+   a blanket refusal that would make the cache pointless. */
+test('cache: an entry inside 30 days is still used', async () => {
+  const fresh = Object.assign({}, student, { ts: Date.now() - (29 * 24 * 60 * 60 * 1000) });
+  const dom = new JSDOM(PAGE, {
+    url: 'https://admissionhub.pages.dev/profile-v2.html',
+    runScripts: 'dangerously', pretendToBeVisual: true,
+    beforeParse(win) {
+      win.localStorage.setItem('ah-profile-cache-key', 'AH-AUDIT');
+      win.localStorage.setItem('ah-profile-cache:AH-AUDIT', JSON.stringify(fresh));
+      win.fetch = () => new Promise(() => {});
+    },
+  });
+  await wait(120);
+  assert.equal((dom.window.PROFILE_DATA || {}).name, 'রাশেল জায়ান', 'a 29-day-old entry still paints');
+  dom.window.close();
+});
 
 /* A cache entry paints the student's own data on the first frame, before the
    network answers, so the page is never blank on a slow connection. */
