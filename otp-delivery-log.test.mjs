@@ -32,5 +32,5 @@ test('auth-native stays free of logging primitives; the orchestrator only uses t
   assert.doesNotMatch(orchestrator, /console\.(log|info|warn|error|debug)\s*\(/);
   assert.match(orchestrator, /this\.onDeliveryEvent\?\.\(/);
   const authority = readFileSync(new URL('./auth-native/worker/auth-authority-do.mjs', import.meta.url), 'utf8');
-  assert.match(authority, /onDeliveryEvent: emitOtpDeliveryEvent/);
+  assert.match(authority, /onDeliveryEvent: createOtpDeliverySink/);
 });

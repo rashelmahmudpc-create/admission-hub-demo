@@ -1350,9 +1350,9 @@ var call = async (stub, path, body) => {
 async function bumpDailyStats(env, inc, now = Date.now()) {
   try {
     const stub = statsStub(env);
-    const clean2 = cleanInc(inc);
-    if (!stub || !Object.keys(clean2).length) return false;
-    await Promise.race([call(stub, "/stats/bump", { day: dhakaDay(now), inc: clean2 }), new Promise((r) => setTimeout(r, 500))]);
+    const clean3 = cleanInc(inc);
+    if (!stub || !Object.keys(clean3).length) return false;
+    await Promise.race([call(stub, "/stats/bump", { day: dhakaDay(now), inc: clean3 }), new Promise((r) => setTimeout(r, 500))]);
     return true;
   } catch (_) {
     return false;
@@ -1993,9 +1993,9 @@ function authorizeAction(name, { uid, args, enabled = ENABLED } = {}) {
   if (action.ready !== true) return { allowed: false, reason: "action-not-ready", owner: null, args: null };
   const owner = resolveActionOwner(uid);
   if (!owner) return { allowed: false, reason: "no-owner-identity", owner: null, args: null };
-  const clean2 = sanitizeActionArgs(name, args);
-  if (!clean2.ok) return { allowed: false, reason: clean2.reason, owner: null, args: null };
-  return { allowed: true, reason: "ok", owner, args: clean2.args };
+  const clean3 = sanitizeActionArgs(name, args);
+  if (!clean3.ok) return { allowed: false, reason: clean3.reason, owner: null, args: null };
+  return { allowed: true, reason: "ok", owner, args: clean3.args };
 }
 function makeProposal(name, { uid, args, now = Date.now(), id, enabled = ENABLED } = {}) {
   const auth = authorizeAction(name, { uid, args, enabled });
@@ -2355,11 +2355,11 @@ var AiStateObject = class {
   async bumpStats({ day, inc }) {
     const d = String(day || "").slice(0, 10);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return { ok: false };
-    const clean2 = cleanInc(inc);
+    const clean3 = cleanInc(inc);
     const key = "stats:" + d;
     const cur = await this.#entry(key) || { v: {} };
     const v = Object.assign({}, cur.v || {});
-    for (const k of Object.keys(clean2)) v[k] = num2(v[k]) + clean2[k];
+    for (const k of Object.keys(clean3)) v[k] = num2(v[k]) + clean3[k];
     await this.ctx.storage.put(key, { v, exp: Date.now() + 40 * 864e5 });
     return { ok: true };
   }
@@ -4962,11 +4962,11 @@ var JSONH = {
 };
 var json2 = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: JSONH });
 var onlyRows = (rows4) => (Array.isArray(rows4) ? rows4 : []).filter((row) => row && row.id).map((row) => {
-  const clean2 = { ...row };
+  const clean3 = { ...row };
   for (const key of ["imageDataUrl", "image", "thumbnail"]) {
-    if (typeof clean2[key] === "string" && clean2[key].startsWith("data:") && clean2[key].length > 9e5) delete clean2[key];
+    if (typeof clean3[key] === "string" && clean3[key].startsWith("data:") && clean3[key].length > 9e5) delete clean3[key];
   }
-  return clean2;
+  return clean3;
 });
 var hashText = (text) => {
   let h = 2166136261;
@@ -5144,10 +5144,10 @@ var publishGlobal = async (env, full) => {
   let raw = JSON.stringify(doc);
   if (raw.length > cap) {
     doc.vocabularyMaster = (doc.vocabularyMaster || []).map((row) => {
-      const clean2 = { ...row };
-      delete clean2.imageDataUrl;
-      delete clean2.image;
-      return clean2;
+      const clean3 = { ...row };
+      delete clean3.imageDataUrl;
+      delete clean3.image;
+      return clean3;
     });
     raw = JSON.stringify(doc);
   }
@@ -11065,11 +11065,11 @@ async function verifyTelegramLogin(input, env, { now = Date.now(), cryptoImpl = 
   if (!constantTimeEqual(expected, hash)) throw new TelegramLoginError("TELEGRAM_LOGIN_INVALID");
   const age = Math.floor(Number(now) / 1e3) - Number(data.auth_date);
   if (age > MAX_AGE_SECONDS || age < -60) throw new TelegramLoginError("TELEGRAM_LOGIN_EXPIRED");
-  const clean2 = (value) => String(value || "").replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, 64);
+  const clean3 = (value) => String(value || "").replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, 64);
   return Object.freeze({
     id: data.id,
-    displayName: [clean2(data.first_name), clean2(data.last_name)].filter(Boolean).join(" ").slice(0, 80),
-    username: clean2(data.username)
+    displayName: [clean3(data.first_name), clean3(data.last_name)].filter(Boolean).join(" ").slice(0, 80),
+    username: clean3(data.username)
   });
 }
 async function telegramLoginCredentials(telegramId, env, cryptoImpl = globalThis.crypto) {
@@ -15271,9 +15271,9 @@ var UserDataStore = class {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return null;
       return { table, key: day, column: "day", keyCol: "day" };
     }
-    const clean2 = safeId(id || doc?.id);
-    if (!clean2) return null;
-    return { table, key: clean2, column: "id", keyCol: "id" };
+    const clean3 = safeId(id || doc?.id);
+    if (!clean3) return null;
+    return { table, key: clean3, column: "id", keyCol: "id" };
   }
   #extraColumns(store, doc) {
     const obj = doc && typeof doc === "object" ? doc : {};
@@ -17851,12 +17851,12 @@ function dayRange(endDay, count) {
   return out;
 }
 function computeStreak(days = []) {
-  const clean2 = [...new Set(days.filter(Boolean))].sort();
-  if (!clean2.length) return 0;
+  const clean3 = [...new Set(days.filter(Boolean))].sort();
+  if (!clean3.length) return 0;
   let best = 1;
   let run = 1;
-  for (let i = 1; i < clean2.length; i += 1) {
-    run = daysBetween(clean2[i - 1], clean2[i]) === 1 ? run + 1 : 1;
+  for (let i = 1; i < clean3.length; i += 1) {
+    run = daysBetween(clean3[i - 1], clean3[i]) === 1 ? run + 1 : 1;
     if (run > best) best = run;
   }
   return best;
@@ -24900,6 +24900,160 @@ function emitOtpDeliveryEvent(event, sink = console) {
   return record;
 }
 
+// email-gateway/operations/telegram-notifier.mjs
+var TOKEN_PATTERN = /^[0-9]{6,15}:[A-Za-z0-9_-]{30,100}$/;
+var CHAT_PATTERN = /^(?:-?[0-9]{5,24}|@[A-Za-z][A-Za-z0-9_]{4,31})$/;
+var CONTROL_CHARS2 = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g;
+var ALLOWED_STATUSES = /* @__PURE__ */ new Set(["IMPLEMENTED", "TESTED", "BLOCKED", "DEPLOYED", "VERIFIED", "COMPLETED"]);
+var TelegramNotificationError = class extends Error {
+  constructor(code, message) {
+    super(message);
+    this.name = "TelegramNotificationError";
+    this.code = code;
+  }
+};
+var clean2 = (value, maxLength) => String(value || "").replace(CONTROL_CHARS2, "").trim().slice(0, maxLength);
+function createTelegramCompletionMessage({ status, summary, details = [], timestamp = (/* @__PURE__ */ new Date()).toISOString() }) {
+  const normalizedStatus = String(status || "").toUpperCase();
+  if (!ALLOWED_STATUSES.has(normalizedStatus)) throw new TelegramNotificationError("INVALID_NOTIFICATION", "Notification status is invalid.");
+  const safeSummary = clean2(summary, 1500);
+  if (!safeSummary) throw new TelegramNotificationError("INVALID_NOTIFICATION", "Notification summary is required.");
+  if (!Array.isArray(details) || details.length > 12) throw new TelegramNotificationError("INVALID_NOTIFICATION", "Notification details are invalid.");
+  const lines = ["🔥 AdmissionSky", `Status: ${normalizedStatus}`, safeSummary];
+  for (const item of details) {
+    const value = clean2(item, 240);
+    if (value) lines.push(`• ${value}`);
+  }
+  lines.push(`Time: ${clean2(timestamp, 40)}`);
+  const text = lines.join("\n");
+  if (text.length > 4096) throw new TelegramNotificationError("INVALID_NOTIFICATION", "Notification is too large.");
+  return text;
+}
+async function readBoundedJson(response3, maximumBytes = 16384) {
+  if (!response3.body?.getReader) {
+    const text2 = await response3.text();
+    if (text2.length > maximumBytes) throw new TelegramNotificationError("INVALID_RESPONSE", "Notification provider response is invalid.");
+    try {
+      return JSON.parse(text2);
+    } catch (_) {
+      throw new TelegramNotificationError("INVALID_RESPONSE", "Notification provider response is invalid.");
+    }
+  }
+  const reader = response3.body.getReader();
+  const decoder3 = new TextDecoder();
+  let size = 0;
+  let text = "";
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > maximumBytes) {
+      try {
+        await reader.cancel();
+      } catch (_) {
+      }
+      throw new TelegramNotificationError("INVALID_RESPONSE", "Notification provider response is invalid.");
+    }
+    text += decoder3.decode(value, { stream: true });
+  }
+  text += decoder3.decode();
+  try {
+    return JSON.parse(text);
+  } catch (_) {
+    throw new TelegramNotificationError("INVALID_RESPONSE", "Notification provider response is invalid.");
+  }
+}
+async function sendTelegramNotification({ token, chatId, message, fetchImpl = globalThis.fetch, timeoutMs = 5e3 }) {
+  const safeToken = String(token || "").trim();
+  const safeChatId = String(chatId || "").trim();
+  if (!TOKEN_PATTERN.test(safeToken) || !CHAT_PATTERN.test(safeChatId)) {
+    throw new TelegramNotificationError("REQUIRED_SECRET_NOT_CONFIGURED", "Telegram notification configuration is unavailable.");
+  }
+  if (typeof fetchImpl !== "function") throw new TelegramNotificationError("NOTIFIER_UNAVAILABLE", "Telegram notification transport is unavailable.");
+  const text = typeof message === "string" ? clean2(message, 4096) : createTelegramCompletionMessage(message);
+  if (!text) throw new TelegramNotificationError("INVALID_NOTIFICATION", "Notification message is required.");
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort("telegram-notification-timeout"), Math.max(250, Math.min(15e3, Number(timeoutMs || 5e3))));
+  try {
+    const response3 = await fetchImpl(`https://api.telegram.org/bot${safeToken}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ chat_id: safeChatId, text, disable_web_page_preview: true, protect_content: true }),
+      signal: controller.signal
+    });
+    if (!response3.ok) throw new TelegramNotificationError("PROVIDER_REJECTED", "Telegram notification was rejected.");
+    const data = await readBoundedJson(response3);
+    const messageId = data?.ok === true && Number.isFinite(Number(data?.result?.message_id)) ? Number(data.result.message_id) : null;
+    if (messageId === null) throw new TelegramNotificationError("INVALID_RESPONSE", "Telegram notification acceptance evidence is missing.");
+    return Object.freeze({ sent: true, messageId });
+  } catch (error) {
+    if (error instanceof TelegramNotificationError) throw error;
+    if (error?.name === "AbortError") throw new TelegramNotificationError("TIMEOUT", "Telegram notification timed out.");
+    throw new TelegramNotificationError("TRANSPORT_ERROR", "Telegram notification transport failed.");
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// observability/otp-alert.mjs
+var OTP_SLOW_MS = 3e4;
+var OTP_ALERT_COOLDOWN_MS = 15 * 60 * 1e3;
+function otpAlertFor(record) {
+  if (!record) return null;
+  const ms = Math.max(Number(record.latencyMs) || 0, Number(record.totalMs) || 0);
+  if (record.evt === "otp_request" && record.outcome === "all_failed") {
+    return { kind: "all_failed", key: "all_failed", title: "🚨 সব OTP provider ব্যর্থ", ms };
+  }
+  if (record.evt === "otp_delivery" && record.outcome === "failed") {
+    return { kind: "provider_failed", key: `failed:${record.provider}`, title: `⚠️ OTP provider ব্যর্থ: ${record.name || record.provider}`, ms };
+  }
+  if (ms > OTP_SLOW_MS && (record.evt === "otp_request" || record.outcome === "accepted")) {
+    return { kind: "slow", key: `slow:${record.provider || "request"}`, title: `🐢 OTP পাঠাতে ${Math.round(ms / 1e3)} সেকেন্ড লেগেছে`, ms };
+  }
+  return null;
+}
+function formatOtpAlert(alert, record, at) {
+  const lines = ["🔥 AdmissionSky · OTP alert", alert.title];
+  if (record.provider) lines.push(`provider: ${record.name || record.provider} (${record.provider})`);
+  if (record.reason) lines.push(`কারণ: ${record.reason}`);
+  if (alert.ms) lines.push(`সময়: ${alert.ms} ms`);
+  if (record.purpose) lines.push(`purpose: ${record.purpose}${record.method ? ` · ${record.method}` : ""}`);
+  if (record.tried) lines.push(`চেষ্টা: ${record.tried}`);
+  if (record.attempt) lines.push(`ref: ${record.attempt}`);
+  lines.push(`সময় (UTC): ${new Date(at).toISOString()}`);
+  return lines.join("\n");
+}
+function createOtpDeliverySink({
+  env = {},
+  waitUntil = null,
+  fetchImpl = globalThis.fetch,
+  now = () => Date.now(),
+  sink = console,
+  cooldownMs = OTP_ALERT_COOLDOWN_MS,
+  send = sendTelegramNotification
+} = {}) {
+  const lastSent = /* @__PURE__ */ new Map();
+  return function onOtpDeliveryEvent(event) {
+    const record = emitOtpDeliveryEvent(event, sink);
+    const alert = otpAlertFor(record);
+    if (!alert || !env.TG_BOT_TOKEN || !env.TG_CHAT_ID) return record;
+    const at = now();
+    if (at - (lastSent.get(alert.key) || -Infinity) < cooldownMs) return record;
+    lastSent.set(alert.key, at);
+    const job = Promise.resolve().then(() => send({ token: env.TG_BOT_TOKEN, chatId: env.TG_CHAT_ID, message: formatOtpAlert(alert, record, at), fetchImpl, timeoutMs: 5e3 })).catch((error) => {
+      try {
+        sink.warn.call(sink, JSON.stringify({ evt: "otp_alert_failed", kind: alert.kind, code: String(error?.code || "ERROR").slice(0, 40) }));
+      } catch {
+      }
+    });
+    try {
+      if (typeof waitUntil === "function") waitUntil(job);
+    } catch {
+    }
+    return record;
+  };
+}
+
 // auth-native/verification/providers.mjs
 var safeInteger = (value, min = 0, max = Number.MAX_SAFE_INTEGER) => {
   const number = Number(value);
@@ -28583,7 +28737,8 @@ var AdmissionAuthAuthority = class {
         config: persistedVerificationConfig || env.VERIFICATION_ORCHESTRATOR_CONFIG,
         providers: createConfiguredVerificationProviders(env),
         activated: ["canary", "enabled"].includes(String(env.VERIFICATION_AUTH_ACTIVATION || "")),
-        onDeliveryEvent: emitOtpDeliveryEvent
+        // AUTH-ROADMAP step 0: Workers Logs line per send + Telegram alert on failure / >30s.
+        onDeliveryEvent: createOtpDeliverySink({ env, waitUntil: typeof state.waitUntil === "function" ? (promise) => state.waitUntil(promise) : null })
       });
       this.engine.bindVerification(this.verification);
       this.securityNotificationsDryRun = String(env.SECURITY_NOTIFICATIONS_ACTIVATION || "dry-run") !== "enabled";
@@ -29282,12 +29437,12 @@ function stripLeadingGreeting(text) {
   return rest.length >= 12 ? rest : s;
 }
 function splitSentences(text, max = 200) {
-  const clean2 = String(text == null ? "" : text).trim();
-  if (!clean2) return [];
-  if (clean2.length <= max) return [clean2];
+  const clean3 = String(text == null ? "" : text).trim();
+  if (!clean3) return [];
+  if (clean3.length <= max) return [clean3];
   const out = [];
   let buf = "";
-  const parts = clean2.split(/(?<=[।!?\n])|(?<!\d)\.(?=\s|$)/);
+  const parts = clean3.split(/(?<=[।!?\n])|(?<!\d)\.(?=\s|$)/);
   for (const raw of parts) {
     const piece = raw.trim();
     if (!piece) continue;

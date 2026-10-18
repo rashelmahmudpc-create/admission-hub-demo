@@ -3,7 +3,7 @@ import { asNativeAuthError, AUTH_ERROR_CODES, NativeAuthError } from '../core/er
 import { reconcileIdentitySnapshot, summarizeIdentityHealth } from '../core/identity-reconciliation.mjs';
 import { SqliteAuthRepository } from '../storage/sqlite-auth-repository.mjs';
 import { VerificationOrchestrator } from '../verification/orchestrator.mjs';
-import { emitOtpDeliveryEvent } from '../../observability/otp-delivery-log.mjs';
+import { createOtpDeliverySink } from '../../observability/otp-alert.mjs';
 import { createConfiguredVerificationProviders } from '../verification/providers.mjs';
 import { dispatchSecurityNotifications } from '../core/security-notifications.mjs';
 import { SqliteVerificationRepository } from '../verification/sqlite-verification-repository.mjs';
@@ -62,7 +62,8 @@ export class AdmissionAuthAuthority {
         config: persistedVerificationConfig || env.VERIFICATION_ORCHESTRATOR_CONFIG,
         providers: createConfiguredVerificationProviders(env),
         activated: ['canary', 'enabled'].includes(String(env.VERIFICATION_AUTH_ACTIVATION || '')),
-        onDeliveryEvent: emitOtpDeliveryEvent
+        // AUTH-ROADMAP step 0: Workers Logs line per send + Telegram alert on failure / >30s.
+        onDeliveryEvent: createOtpDeliverySink({ env, waitUntil: typeof state.waitUntil === 'function' ? promise => state.waitUntil(promise) : null })
       });
       // Phase 6 — the engine's security challenges reuse this orchestrator
       // for email/Telegram delivery.
