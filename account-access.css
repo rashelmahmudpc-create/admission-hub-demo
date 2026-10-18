@@ -1402,3 +1402,5 @@ body.ah-account-page-active>.ah-account-page[data-current-view="sky"]:not([data-
 .ah-welcome-telegram .ah-account-secondary{min-height:56px;width:100%;display:grid;grid-template-columns:34px 1fr 25px;align-items:center;gap:6px;margin:0;padding:0 16px;border:1px solid #dbe5e1;border-radius:17px;background:var(--ah-surface);color:var(--ah-ink-mid);box-shadow:0 8px 20px rgba(26,68,57,.06);font-family:inherit;font-size:14px;font-weight:850;cursor:pointer}
 .ah-welcome-telegram .ah-account-secondary>b{font-size:21px;font-weight:500;text-align:right}
 .ah-telegram-logo{width:30px;display:grid;place-items:center}.ah-telegram-logo svg{width:24px;height:24px;display:block}
+/* Owner 2026-10-18: native Telegram anchor never shows above the Welcome Story. */
+.ah-welcome-view > .ah-account-telegram,.ah-account-telegram.ah-welcome-telegram{display:none!important}

@@ -2242,7 +2242,7 @@
     }
     const telegramHost = $('[data-role="welcome-telegram-button"]');
     if (telegramHost) {
-      telegramHost.hidden = !state.capabilities.telegramLogin.available;
+      telegramHost.hidden = true; /* Owner 2026-10-18: Telegram lives on the Welcome Story, never above it. */
     }
   };
 
