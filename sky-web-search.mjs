@@ -12,9 +12,16 @@ export const SEARCH_DAILY_DEFAULT = 50;
 const RE_NEWS = /(খবর|সংবাদ|সর্বশেষ|সাম্প্রতিক|সদ্য|হালনাগাদ|আপডেট|আজকে?র|আজ\s*কী|এ\s*বছরের|এই\s*বছর|চলতি|বর্তমানে?\s*(কে|কী|কি|কত)|এখন\s*(কে|কী|কি|কত)|নতুন\s*(নিয়ম|সার্কুলার|বিজ্ঞপ্তি|নোটিশ)|সার্কুলার|বিজ্ঞপ্তি|ঘোষণা|২০২[৫-৯]|202[5-9]|\b(news|latest|recent(ly)?|current(ly)?|today'?s?|this\s+year|update[sd]?|announced?|circular|notice)\b)/i;
 /* personal / study questions never go to the web */
 const RE_NOT_WEB = /(আমার|\bmy\b|সমাস|সন্ধি|কারক|সমীকরণ|সূত্র|অনুবাদ|translate|formula|equation)/i;
+/* "when is the exam / form / result" — a date that changes every year (owner 2026-10-18).
+   Needs both a when-word and an admission word, and never a past-tense history question. */
+const RE_WHEN = /(কবে|কখন|তারিখ|সময়সূচ[িী]|শিডিউল|ডেডলাইন|শেষ\s*সময়|\b(when|date|dates|schedule|deadline)\b)/i;
+const RE_ADMISSION = /(ভর্তি|পরীক্ষা|আবেদন|ফরম|ফর্ম|ফল\s*প্রকাশ|রেজাল্ট|বিজ্ঞপ্তি|সার্কুলার|প্রবেশপত্র|এডমিট|অ্যাডমিট|ঢাবি|জাবি|রাবি|চবি|বুয়েট|গুচ্ছ|মেডিকেল|বিশ্ববিদ্যালয়|ইউনিট|\b(admission|exam|result|application|admit\s*card|unit)\b)/i;
+const RE_PAST = /(হয়েছিল|হয়েছিলো|ছিল|ছিলো|ঘটেছিল|\b(was|were|did)\b)/i;
 export function isNewsQuestion(text) {
   const t = String(text || '');
-  return RE_NEWS.test(t) && !RE_NOT_WEB.test(t);
+  if (RE_NOT_WEB.test(t)) return false;
+  if (RE_NEWS.test(t)) return true;
+  return RE_WHEN.test(t) && RE_ADMISSION.test(t) && !RE_PAST.test(t);
 }
 /** Only the question words leave the server: no email, phone, link, long number or the student's name. */
 export function cleanSearchQuery(text, firstName) {
