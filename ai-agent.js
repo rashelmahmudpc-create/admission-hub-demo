@@ -23,6 +23,8 @@ import { planServerTools, isSimplePlan, simpleToolResponse, runTools, renderTool
 import { bumpDailyStats, statsFromTiming } from './sky-daily-report.mjs';
 /* Sky recall (owner plan step 2): the chat-open reminder. Pure, no model call. */
 import { buildRecall, sanitizeRecent, RECALL_VERSION } from './sky-recall.mjs';
+/* Sky goal (owner plan step 3): advice shaped around the admission goal. Pure. */
+import { isGoalQuestion, resolveGoal, renderGoalContext } from './sky-goal.mjs';
 /* Sky custom instructions (owner plan step 3): the student's own short note. */
 import { checkInstruction, parseStoredInstruction, storedInstruction, renderInstructionBlock, INSTRUCTION_KV_PREFIX, INSTRUCTION_MAX, INSTRUCTION_EXAMPLES, INSTRUCTIONS_VERSION } from './sky-instructions.mjs';
 import { extractMemoryCandidates, makeMemory, upsertMemory, parseMemory, renderMemory, resolveMemoryOwner, isPiiFree, statedWeakTopics, KIND, SOURCE, MEMORY_VERSION } from './memory-engine.js';
@@ -1259,6 +1261,18 @@ export async function agentChat(request, env, uid, opts = {}) {
      text and hash stay locked) and is skipped for quiz JSON and onboarding. */
   const formatRules = (!quizMode && !onboarding) ? RESPONSE_FORMAT_RULES : '';
   let sys = [systemPrompt, formatRules, ctxText, memoryText, summaryText].filter(Boolean).join('\n\n');
+  /* Sky goal (owner plan step 3): a study-advice / admission question is shaped
+     around this student's own goal (profile target, else what they said in
+     chat). Unknown goal → Sky asks once. Personal, so never cached or shared. */
+  let goalUsed = false;
+  if (!quizMode && !onboarding && !examMode && sendCtx.uid.startsWith('account-') && isGoalQuestion(toolText)) {
+    try {
+      const goalRecs = memoryOn ? memRecords : [];
+      const askedBefore = v.messages.some(m => m && m.role === 'assistant' && /ভর্তি হতে চাও/.test(String(m.content || '')));
+      const goalBlock = renderGoalContext(resolveGoal({ profile: profileCtx, records: goalRecs }), { weakTopics: stats && stats.weakTopics, stated: statedWeakTopics(goalRecs, 2), askedBefore });
+      if (goalBlock) { sys = sys + '\n\n' + goalBlock; goalUsed = true; }
+    } catch (_) { goalUsed = false; }
+  }
 
   const hasImage = msgs.some(m => m.image);
   mark('context');
@@ -1286,7 +1300,7 @@ export async function agentChat(request, env, uid, opts = {}) {
   }
   /* Step 3: a student with their own instruction never gets a cached/shared
      answer — the cached one was written without their wish. */
-  const chatCacheOn = chatCacheEnabled(env) && env && env.PROFILE_DB && !toolCtxUsed && !appFeatureHit;
+  const chatCacheOn = chatCacheEnabled(env) && env && env.PROFILE_DB && !toolCtxUsed && !goalUsed && !appFeatureHit;
   const cacheQuestion = (v.messages[v.messages.length - 1] || {}).content;
   const cacheable = chatCacheOn && !instrText && isCacheableRequest({
     messages: v.messages, hasImage, quizMode, onboarding,
@@ -1672,7 +1686,11 @@ export async function agentRecall(env, uid, body) {
   if (aiState) { try { raw = await aiState.get(id, key); fromState = true; } catch (_) { fromState = false; } }
   if (!fromState) { try { raw = await getKv(env && env.PUB_KV, key); } catch (_) { raw = null; } }
   let recall = null;
-  try { recall = buildRecall({ records: parseMemory(raw, id), stats, recent, now: Date.now() }); } catch (_) { recall = null; }
+  let records = [];
+  try { records = parseMemory(raw, id); } catch (_) { records = []; }
+  let goal = null;
+  try { goal = resolveGoal({ profile: sanitizeProfileContext(b.profile), records }); } catch (_) { goal = null; }
+  try { recall = buildRecall({ records, stats, recent, goal, now: Date.now() }); } catch (_) { recall = null; }
   return jsonResp({ ok: true, recall, version: RECALL_VERSION });
 }
 

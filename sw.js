@@ -3,7 +3,7 @@ const CACHE_PREFIX = 'admission-hub-shell-';
 // hold user data; this one holds exactly one image and is trimmed on write.
 const AVATAR_CACHE = 'admission-hub-avatar-v1';
 
-const BUILD_ID = 'v363-sky-kb-v12';
+const BUILD_ID = 'v364-sky-goal';
 const CACHE_NAME = `${CACHE_PREFIX}${BUILD_ID}`;
 const VERSION_HEADER = 'X-Admission-Hub-Build';
 const DOCUMENT_NETWORK_TIMEOUT_MS = 2500;
@@ -57,7 +57,7 @@ const APP_SHELL = [
   './sky-faq-en.js?v=faq1',
   './sky-faq-sci.js?v=faq1',
   './sky-faq-gk.js?v=faq1',
-  './ai-agent-chat.js?v=agent-f1-ui-skyv12',
+  './ai-agent-chat.js?v=agent-f1-ui-skyv13',
   './question-engine.js?v=qe1',
   './question-engine-panel.js?v=qe1',
   './notification-fcm.js?v=fcm-p3-v15',
@@ -92,7 +92,7 @@ const APP_SHELL = [
 // A truncated/corrupt download is NEVER written to the shell cache.
 const ASSET_DIGESTS = {
 /* sw-manifest:start */
-  "./index.html": "64a1221c9cf4d42921b76792e8b2f357a61a0eff3f31aafd03909939f5fd329e",
+  "./index.html": "f4e30fdb7c21f393c6d14153b5c1ad0dbe21f0b65a9e4a0dacf9d1252b0aa51b",
   "./manifest.json": "6dcf0e0c6f7671750549e53558ba8b9f0c2c83b0c6759072a6b5e2276331f491",
   "./manifest.webmanifest": "abcd26174710f6df3e183889a5a9da182f73ee8cdcc543b43db8fb4070cad54f",
   "./dashboard-v2.css?v=dash2f13-theme": "4541bc1e65fd158c593443562975400d128b8f1d3b636595df3c235b99e8cced",
@@ -123,7 +123,7 @@ const ASSET_DIGESTS = {
   "./sky-faq-en.js?v=faq1": "4923f584193c9569329b001b20867f2954b93b8e232a704e2effd632f25bb833",
   "./sky-faq-sci.js?v=faq1": "f574bcdb1441678c6ae4cbf6be8baa73d5cdd06a24bccfab712e241a29b6a42b",
   "./sky-faq-gk.js?v=faq1": "e406ee8982e255881ff5a6c854c19dc0c4f8004d6e4cc341a2c114bf678ee492",
-  "./ai-agent-chat.js?v=agent-f1-ui-skyv12": "c2050044e313f0f68275b6165146ca89dcd7912c0f3e4674ffbd56747111b0d7",
+  "./ai-agent-chat.js?v=agent-f1-ui-skyv13": "987c7ffb6910f5781a7fa47ceb75f3b6ceb5d116e006a1291a3791f62bc34786",
   "./question-engine.js?v=qe1": "db404fefd97bea27dad177748bafb0a9ba7d87bedca094e3da795c5b77946cd4",
   "./question-engine-panel.js?v=qe1": "33376e371654d575484194b5fcf8e486f4e3329c13e5330ff8619caab0399ec4",
   "./notification-fcm.js?v=fcm-p3-v15": "3b1880bc1ab5b9f91cf844b021369f2431eae099175873ab4d7eb018370318ee",

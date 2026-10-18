@@ -44,6 +44,8 @@ export function buildRecall(input = {}) {
   const records = Array.isArray(input.records) ? input.records : [];
   const stats = input.stats && typeof input.stats === 'object' ? input.stats : {};
   const recent = input.recent && typeof input.recent === 'object' ? input.recent : {};
+  /* Step 3: the admission goal (profile target, else said in chat). */
+  const goal = input.goal && input.goal.label ? cleanName(input.goal.label, 60) : '';
   const parts = [];
   const buttons = [];
   const kinds = [];
@@ -77,7 +79,8 @@ export function buildRecall(input = {}) {
     if (name) {
       const base = topicBase(name) || name;
       const noExam = !parts.length && stats.exams === 0 ? 'তুমি এখনো পরীক্ষা দাওনি, তবে ' : '';
-      parts.push(noExam + 'আগে বলেছিলে ' + name + ' দুর্বল — আজ ' + base + ' দিয়ে শুরু করি?');
+      const forGoal = goal && !parts.length ? goal + '-এর প্রস্তুতিতে ' : '';
+      parts.push(noExam + 'আগে বলেছিলে ' + name + ' দুর্বল — ' + (forGoal ? forGoal + 'আজ ' : 'আজ ') + base + ' দিয়ে শুরু করি?');
       buttons.push({ label: '🎯 ' + base + ' দিয়ে শুরু', prompt: base + ' থেকে ৫টা প্রশ্নে কুইজ দাও' });
       kinds.push('weak-stated');
     }
@@ -97,6 +100,13 @@ export function buildRecall(input = {}) {
         kinds.push('last-topic');
       }
     }
+  }
+
+  /* 4. Only the goal is known: offer a plan for it. */
+  if (!parts.length && goal) {
+    parts.push('তোমার লক্ষ্য ' + goal + ' — আজকের পড়া কোথা থেকে শুরু করবে, একটা প্ল্যান করে দিই?');
+    buttons.push({ label: '🎯 আজকের প্ল্যান', prompt: 'আমার ভর্তির লক্ষ্য অনুযায়ী আজকের পড়ার প্ল্যান দাও' });
+    kinds.push('goal');
   }
 
   if (!parts.length) return null;
