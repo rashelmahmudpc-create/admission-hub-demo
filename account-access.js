@@ -2160,6 +2160,35 @@
       message(error?.code ? friendlyError(error) : 'Telegram login failed. Please try again.', 'error');
     } finally { setBusy(false); }
   };
+  /* Owner 2026-10-18: "Continue with WhatsApp". The student sends the
+   * pre-filled code from WhatsApp; our reply carries /?waLogin=<token>. */
+  const finishWhatsAppLogin = async () => {
+    const token = new URLSearchParams(location.search).get('waLogin');
+    if (!token) return;
+    try {
+      const url = new URL(location.href);
+      url.searchParams.delete('waLogin');
+      history.replaceState(history.state, '', url.pathname + url.search + url.hash);
+    } catch (_) {}
+    if (accountVerified(state.session)) return;
+    setBusy(true);
+    try {
+      const result = await api('/whatsapp/login', { method: 'POST', body: { token } });
+      await establishSession(result, 'Signed in with WhatsApp.');
+      landOnDashboard();
+    } catch (error) {
+      open();
+      message(error?.code ? friendlyError(error) : 'WhatsApp login failed. Please try again.', 'error');
+    } finally { setBusy(false); }
+  };
+  const signInWithWhatsApp = async () => {
+    if (state.busy || !state.capabilities.whatsappLogin?.available) return false;
+    const result = await api('/whatsapp/start', { method: 'POST', body: {} });
+    const target = String(result?.url || '');
+    if (!/^https:\/\/wa\.me\/\d{8,15}\?text=/.test(target)) return false;
+    location.assign(target);
+    return true;
+  };
   const signInWithTelegram = () => {
     const botId = String(state.capabilities.telegramLogin?.botId || '');
     if (state.busy || !state.capabilities.telegramLogin?.available || !/^\d{5,15}$/.test(botId)) return false;
@@ -2203,6 +2232,7 @@
       available: methods.telegramLogin?.available === true && /^\d{5,15}$/.test(String(methods.telegramLogin?.botId || '')),
       botId: String(methods.telegramLogin?.botId || '')
     };
+    state.capabilities.whatsappLogin = { available: methods.whatsappLogin?.available === true };
     state.capabilities.emailOwnership = { available: methods.emailOwnership?.available === true };
     // Email + password is the base method: the server only reports it as
     // unavailable when it is deliberately switched off, so absent means on.
@@ -3690,6 +3720,7 @@
     Promise.allSettled([configReady, sessionReady]).then(async () => {
       await finishOAuthRedirect();
       await finishTelegramLogin();
+      await finishWhatsAppLogin();
       if (accountVerified(state.session)) return;
       if (magicToken) { const t = magicToken; magicToken = ''; await consumeMagicLink(t); return; }
       if (googleHandoff) { signInWithGoogle(); return; }
@@ -3827,6 +3858,7 @@
       google: Boolean(state.capabilities.google.available),
       facebook: Boolean(state.capabilities.facebook?.available),
       telegramLogin: Boolean(state.capabilities.telegramLogin?.available),
+      whatsappLogin: Boolean(state.capabilities.whatsappLogin?.available),
       passkey: Boolean(state.capabilities.passkey.available && passkeyBrowserReady())
     }),
     institutions: async kind => {
@@ -3913,6 +3945,7 @@
       return true;
     },
     telegram: async () => signInWithTelegram(),
+    whatsapp: async () => signInWithWhatsApp(),
     passkey: async () => {
       if (!passkeyBrowserReady()) return false;
       try {

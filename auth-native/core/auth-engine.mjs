@@ -108,6 +108,12 @@ const FIREBASE_OPERATION_LIMITS = Object.freeze({
     Object.freeze({ scope: 'firebase-facebook-device-15m', source: 'device', limit: 30, windowMs: 15 * 60 * 1000 }),
     Object.freeze({ scope: 'firebase-facebook-global-minute', source: 'global', limit: 180, windowMs: 60 * 1000 })
   ]),
+  // POST /whatsapp/start + /whatsapp/login (owner 2026-10-18) share one slot.
+  'whatsapp-login': Object.freeze([
+    Object.freeze({ scope: 'firebase-whatsapp-ip-15m', source: 'ip', limit: 60, windowMs: 15 * 60 * 1000 }),
+    Object.freeze({ scope: 'firebase-whatsapp-device-15m', source: 'device', limit: 30, windowMs: 15 * 60 * 1000 }),
+    Object.freeze({ scope: 'firebase-whatsapp-global-minute', source: 'global', limit: 180, windowMs: 60 * 1000 })
+  ]),
   // POST /telegram/login (owner 2026-10-18) asks for its own slot.
   'telegram-login': Object.freeze([
     Object.freeze({ scope: 'firebase-telegram-ip-15m', source: 'ip', limit: 60, windowMs: 15 * 60 * 1000 }),

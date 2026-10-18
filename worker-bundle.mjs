@@ -3699,13 +3699,13 @@ function authVerificationGuidance(text) {
 }
 function guidanceResponse(text, stream) {
   if (!stream) return jsonResp({ text, intent: INTENTS.GENERAL_CHAT, pv: SYSTEM_PROMPT_V, agent: AGENT_VERSION, authoritative: false });
-  const encoder8 = new TextEncoder();
+  const encoder9 = new TextEncoder();
   return new Response(new ReadableStream({
     start(controller) {
-      controller.enqueue(encoder8.encode(`data: ${JSON.stringify({ text })}
+      controller.enqueue(encoder9.encode(`data: ${JSON.stringify({ text })}
 
 `));
-      controller.enqueue(encoder8.encode(`event: done
+      controller.enqueue(encoder9.encode(`event: done
 data: ${JSON.stringify({ intent: INTENTS.GENERAL_CHAT, pv: SYSTEM_PROMPT_V, agent: AGENT_VERSION, authoritative: false })}
 
 `));
@@ -4155,12 +4155,12 @@ data: ${JSON.stringify({ stage: id, label })}
       emitTiming({ failed: true });
       return jsonResp({ error: "provider_failed", message: "AI একটু ব্যস্ত — কয়েক সেকেন্ড পরে আবার চেষ্টা করো।", retryable: true }, 502);
     }
-    const encoder8 = new TextEncoder();
+    const encoder9 = new TextEncoder();
     const streamOut = new ReadableStream({
       async start(controller) {
         const push = (s) => {
           try {
-            controller.enqueue(encoder8.encode(s));
+            controller.enqueue(encoder9.encode(s));
           } catch (_) {
           }
         };
@@ -7726,6 +7726,8 @@ var AUTH_ERROR_CODES = Object.freeze({
   TELEGRAM_VERIFICATION_UNAVAILABLE: "TELEGRAM_VERIFICATION_UNAVAILABLE",
   TELEGRAM_VERIFICATION_PENDING: "TELEGRAM_VERIFICATION_PENDING",
   TELEGRAM_VERIFICATION_INVALID: "TELEGRAM_VERIFICATION_INVALID",
+  WHATSAPP_LOGIN_UNAVAILABLE: "WHATSAPP_LOGIN_UNAVAILABLE",
+  WHATSAPP_LOGIN_INVALID: "WHATSAPP_LOGIN_INVALID",
   PASSKEY_UNAVAILABLE: "PASSKEY_UNAVAILABLE",
   PASSKEY_INVALID: "PASSKEY_INVALID",
   PASSKEY_NOT_FOUND: "PASSKEY_NOT_FOUND",
@@ -7766,6 +7768,8 @@ var DEFAULTS2 = Object.freeze({
   [AUTH_ERROR_CODES.TELEGRAM_VERIFICATION_UNAVAILABLE]: Object.freeze({ status: 503, message: "Telegram যাচাই এখন পাওয়া যাচ্ছে না—ইমেইল যাচাই ব্যবহার করুন।" }),
   [AUTH_ERROR_CODES.TELEGRAM_VERIFICATION_PENDING]: Object.freeze({ status: 409, message: "Telegram-এ পরিচয় নিশ্চিত হওয়ার অপেক্ষা চলছে।" }),
   [AUTH_ERROR_CODES.TELEGRAM_VERIFICATION_INVALID]: Object.freeze({ status: 401, message: "অ্যাকাউন্ট যাচাইয়ের session সঠিক নয় বা সময় শেষ হয়েছে—আবার লগইন অথবা সাইনআপ করুন।" }),
+  [AUTH_ERROR_CODES.WHATSAPP_LOGIN_UNAVAILABLE]: Object.freeze({ status: 503, message: "WhatsApp দিয়ে প্রবেশ এখন পাওয়া যাচ্ছে না—অন্য পদ্ধতি ব্যবহার করুন।" }),
+  [AUTH_ERROR_CODES.WHATSAPP_LOGIN_INVALID]: Object.freeze({ status: 401, message: 'WhatsApp লগইন লিংকটি সঠিক নয় বা ১০ মিনিট পেরিয়ে গেছে—আবার "Continue with WhatsApp" চাপুন।' }),
   [AUTH_ERROR_CODES.PASSKEY_UNAVAILABLE]: Object.freeze({ status: 503, message: "এই ডিভাইসে Passkey এখন পাওয়া যাচ্ছে না—অন্য পদ্ধতি ব্যবহার করুন।" }),
   [AUTH_ERROR_CODES.PASSKEY_INVALID]: Object.freeze({ status: 401, message: "Passkey যাচাই হয়নি—আবার চেষ্টা করুন।" }),
   [AUTH_ERROR_CODES.PASSKEY_NOT_FOUND]: Object.freeze({ status: 404, message: "এই Passkey-এর সঙ্গে কোনো অ্যাকাউন্ট পাওয়া যায়নি।" }),
@@ -8538,6 +8542,12 @@ var FIREBASE_OPERATION_LIMITS = Object.freeze({
     Object.freeze({ scope: "firebase-facebook-ip-15m", source: "ip", limit: 60, windowMs: 15 * 60 * 1e3 }),
     Object.freeze({ scope: "firebase-facebook-device-15m", source: "device", limit: 30, windowMs: 15 * 60 * 1e3 }),
     Object.freeze({ scope: "firebase-facebook-global-minute", source: "global", limit: 180, windowMs: 60 * 1e3 })
+  ]),
+  // POST /whatsapp/start + /whatsapp/login (owner 2026-10-18) share one slot.
+  "whatsapp-login": Object.freeze([
+    Object.freeze({ scope: "firebase-whatsapp-ip-15m", source: "ip", limit: 60, windowMs: 15 * 60 * 1e3 }),
+    Object.freeze({ scope: "firebase-whatsapp-device-15m", source: "device", limit: 30, windowMs: 15 * 60 * 1e3 }),
+    Object.freeze({ scope: "firebase-whatsapp-global-minute", source: "global", limit: 180, windowMs: 60 * 1e3 })
   ]),
   // POST /telegram/login (owner 2026-10-18) asks for its own slot.
   "telegram-login": Object.freeze([
@@ -10787,19 +10797,19 @@ var base64Url = (bytes) => {
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 };
 var validTelegramWebhookSecret = (value) => SECRET_PATTERN.test(String(value || ""));
-async function deriveTelegramWebhookSecret(rootSecret2, cryptoImpl = globalThis.crypto) {
-  const source = safeRootSecret(rootSecret2);
+async function deriveTelegramWebhookSecret(rootSecret3, cryptoImpl = globalThis.crypto) {
+  const source = safeRootSecret(rootSecret3);
   if (!source || !cryptoImpl?.subtle) return "";
   try {
-    const encoder8 = new TextEncoder();
+    const encoder9 = new TextEncoder();
     const key = await cryptoImpl.subtle.importKey(
       "raw",
-      encoder8.encode(source),
+      encoder9.encode(source),
       { name: "HMAC", hash: "SHA-256" },
       false,
       ["sign"]
     );
-    const signature = await cryptoImpl.subtle.sign("HMAC", key, encoder8.encode(WEBHOOK_CONTEXT));
+    const signature = await cryptoImpl.subtle.sign("HMAC", key, encoder9.encode(WEBHOOK_CONTEXT));
     const derived = base64Url(signature);
     return validTelegramWebhookSecret(derived) ? derived : "";
   } catch {
@@ -10893,6 +10903,210 @@ async function isTelegramLoginEmail(email, env, cryptoImpl = globalThis.crypto) 
   }
 }
 
+// auth-native/verification/whatsapp-login.mjs
+var WHATSAPP_LOGIN_DOMAIN = "whatsapp.admissionsky.pages.dev";
+var WHATSAPP_LOGIN_QUERY_KEY = "waLogin";
+var WHATSAPP_START_TTL_SECONDS = 15 * 60;
+var WHATSAPP_LINK_TTL_SECONDS = 10 * 60;
+var DEFAULT_ORIGIN = "https://admissionhub.pages.dev";
+var DEFAULT_GRAPH_VERSION = "v21.0";
+var LOGIN_EMAIL_PATTERN2 = /^wa\.([0-9a-f]{24})\.([0-9a-f]{16})@whatsapp\.admissionsky\.pages\.dev$/;
+var START_CODE_PATTERN = /\bAH-([0-9a-z]{6,10})-([0-9a-f]{16})\b/i;
+var TOKEN_PATTERN = /^([A-Za-z0-9_-]{16,600})\.([0-9a-f]{32})$/;
+var encoder6 = new TextEncoder();
+var decoder3 = new TextDecoder();
+var hex2 = (bytes) => [...new Uint8Array(bytes)].map((b) => b.toString(16).padStart(2, "0")).join("");
+var hmacHex2 = async (keyText, text, cryptoImpl = globalThis.crypto) => {
+  const key = await cryptoImpl.subtle.importKey("raw", encoder6.encode(keyText), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  return hex2(await cryptoImpl.subtle.sign("HMAC", key, encoder6.encode(text)));
+};
+var rootSecret2 = (env) => {
+  const value = String(env?.AUTH_HMAC_SECRET || "");
+  return value.length >= 32 && value.length <= 4096 ? value : "";
+};
+var digits = (value, min, max) => {
+  const text = String(value ?? "").trim().replace(/^\+/, "");
+  return text.length >= min && text.length <= max && /^\d+$/.test(text) ? text : "";
+};
+var bounded = (value, min, max) => {
+  const text = String(value ?? "").trim();
+  return text.length >= min && text.length <= max ? text : "";
+};
+var cleanName = (value) => String(value || "").replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, 40);
+var nowSeconds = (now) => Math.floor(Number(now) / 1e3);
+var toBase64Url = (text) => {
+  let binary = "";
+  for (const byte of encoder6.encode(text)) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+};
+var fromBase64Url = (value) => {
+  let raw = String(value).replace(/-/g, "+").replace(/_/g, "/");
+  while (raw.length % 4) raw += "=";
+  return decoder3.decode(Uint8Array.from(atob(raw), (c) => c.charCodeAt(0)));
+};
+var WhatsAppLoginError = class extends Error {
+  constructor(reason2) {
+    super(reason2);
+    this.name = "WhatsAppLoginError";
+    this.reason = reason2;
+  }
+};
+var whatsappLoginSettings = (env) => {
+  const graphVersion = String(env?.WHATSAPP_GRAPH_VERSION || DEFAULT_GRAPH_VERSION).trim();
+  const origin = String(env?.WHATSAPP_LOGIN_RETURN_ORIGIN || DEFAULT_ORIGIN).trim().replace(/\/+$/, "");
+  return Object.freeze({
+    number: digits(env?.WHATSAPP_LOGIN_NUMBER, 8, 15),
+    phoneNumberId: digits(env?.WHATSAPP_PHONE_NUMBER_ID, 6, 32),
+    accessToken: bounded(env?.WHATSAPP_ACCESS_TOKEN, 20, 2048),
+    appSecret: bounded(env?.WHATSAPP_APP_SECRET, 16, 256),
+    verifyToken: bounded(env?.WHATSAPP_VERIFY_TOKEN, 16, 256),
+    graphVersion: /^v\d{1,2}\.\d$/.test(graphVersion) ? graphVersion : DEFAULT_GRAPH_VERSION,
+    origin: /^https:\/\/[a-z0-9.-]+(:\d{2,5})?$/i.test(origin) ? origin : DEFAULT_ORIGIN
+  });
+};
+var whatsappLoginReady = (env) => {
+  const s = whatsappLoginSettings(env);
+  return Boolean(s.number && s.phoneNumberId && s.accessToken && s.appSecret && s.verifyToken && rootSecret2(env) && String(env?.WHATSAPP_LOGIN_ACTIVATION || "enabled") !== "disabled");
+};
+var reservedWhatsAppLoginEmail = (email) => String(email || "").trim().toLowerCase().endsWith(`@${WHATSAPP_LOGIN_DOMAIN}`);
+var sign = (env, purpose, text, cryptoImpl) => hmacHex2(rootSecret2(env), `admission-hub-whatsapp-${purpose}-v1:${text}`, cryptoImpl);
+async function createWhatsAppStart(env, { now = Date.now(), cryptoImpl = globalThis.crypto } = {}) {
+  if (!whatsappLoginReady(env)) throw new WhatsAppLoginError("WHATSAPP_LOGIN_UNAVAILABLE");
+  const expires = (nowSeconds(now) + WHATSAPP_START_TTL_SECONDS).toString(36);
+  const tag = (await sign(env, "start", expires, cryptoImpl)).slice(0, 16);
+  const code = `AH-${expires}-${tag}`;
+  const text = `Admission Hub লগইন কোড: ${code}
+(শুধু Send চাপুন — লগইন লিংক এই চ্যাটেই চলে আসবে)`;
+  return Object.freeze({ code, text, url: `https://wa.me/${whatsappLoginSettings(env).number}?text=${encodeURIComponent(text)}` });
+}
+async function readWhatsAppStartCode(text, env, { now = Date.now(), cryptoImpl = globalThis.crypto } = {}) {
+  const match = START_CODE_PATTERN.exec(String(text || "").slice(0, 1024));
+  if (!match || !rootSecret2(env)) return false;
+  const expires = match[1].toLowerCase();
+  const expected = (await sign(env, "start", expires, cryptoImpl)).slice(0, 16);
+  if (!constantTimeEqual(expected, match[2].toLowerCase())) return false;
+  const exp = parseInt(expires, 36);
+  const current = nowSeconds(now);
+  return Number.isFinite(exp) && exp >= current && exp <= current + WHATSAPP_START_TTL_SECONDS + 60;
+}
+async function issueWhatsAppLoginToken(phone, env, { name = "", now = Date.now(), cryptoImpl = globalThis.crypto } = {}) {
+  const p = digits(phone, 8, 15);
+  if (!p || !rootSecret2(env)) throw new WhatsAppLoginError("WHATSAPP_LOGIN_UNAVAILABLE");
+  const nonce = hex2(cryptoImpl.getRandomValues(new Uint8Array(8)));
+  const body = toBase64Url(JSON.stringify({ p, n: cleanName(name), e: nowSeconds(now) + WHATSAPP_LINK_TTL_SECONDS, r: nonce }));
+  const tag = (await sign(env, "link", body, cryptoImpl)).slice(0, 32);
+  return `${body}.${tag}`;
+}
+async function verifyWhatsAppLoginToken(token, env, { now = Date.now(), cryptoImpl = globalThis.crypto } = {}) {
+  if (!rootSecret2(env)) throw new WhatsAppLoginError("WHATSAPP_LOGIN_UNAVAILABLE");
+  const match = TOKEN_PATTERN.exec(String(token || ""));
+  if (!match) throw new WhatsAppLoginError("WHATSAPP_LOGIN_INVALID");
+  const expected = (await sign(env, "link", match[1], cryptoImpl)).slice(0, 32);
+  if (!constantTimeEqual(expected, match[2])) throw new WhatsAppLoginError("WHATSAPP_LOGIN_INVALID");
+  let data;
+  try {
+    data = JSON.parse(fromBase64Url(match[1]));
+  } catch {
+    throw new WhatsAppLoginError("WHATSAPP_LOGIN_INVALID");
+  }
+  const p = digits(data?.p, 8, 15);
+  const current = nowSeconds(now);
+  if (!p || !Number.isFinite(data?.e)) throw new WhatsAppLoginError("WHATSAPP_LOGIN_INVALID");
+  if (data.e < current) throw new WhatsAppLoginError("WHATSAPP_LOGIN_EXPIRED");
+  if (data.e > current + WHATSAPP_LINK_TTL_SECONDS + 60) throw new WhatsAppLoginError("WHATSAPP_LOGIN_INVALID");
+  return Object.freeze({ phone: p, displayName: cleanName(data.n) });
+}
+async function whatsappLoginCredentials(phone, env, cryptoImpl = globalThis.crypto) {
+  const root = rootSecret2(env);
+  const p = digits(phone, 8, 15);
+  if (!root || !p) throw new WhatsAppLoginError("WHATSAPP_LOGIN_UNAVAILABLE");
+  const ref = (await hmacHex2(root, `admission-hub-whatsapp-login-ref-v1:${p}`, cryptoImpl)).slice(0, 24);
+  const [check, password] = await Promise.all([
+    hmacHex2(root, `admission-hub-whatsapp-login-check-v1:${ref}`, cryptoImpl),
+    hmacHex2(root, `admission-hub-whatsapp-login-password-v1:${p}`, cryptoImpl)
+  ]);
+  return Object.freeze({ email: `wa.${ref}.${check.slice(0, 16)}@${WHATSAPP_LOGIN_DOMAIN}`, password: `Wa-${password.slice(0, 44)}` });
+}
+async function isWhatsAppLoginEmail(email, env, cryptoImpl = globalThis.crypto) {
+  const match = LOGIN_EMAIL_PATTERN2.exec(String(email || "").trim().toLowerCase());
+  const root = rootSecret2(env);
+  if (!match || !root) return false;
+  try {
+    const check = await hmacHex2(root, `admission-hub-whatsapp-login-check-v1:${match[1]}`, cryptoImpl);
+    return constantTimeEqual(check.slice(0, 16), match[2]);
+  } catch {
+    return false;
+  }
+}
+async function verifyWhatsAppWebhookSignature(rawBody, header, env, cryptoImpl = globalThis.crypto) {
+  const { appSecret } = whatsappLoginSettings(env);
+  const supplied = String(header || "").trim().toLowerCase();
+  if (!appSecret || !/^sha256=[0-9a-f]{64}$/.test(supplied)) return false;
+  return constantTimeEqual(`sha256=${await hmacHex2(appSecret, String(rawBody ?? ""), cryptoImpl)}`, supplied);
+}
+var whatsappVerifyChallenge = (url, env) => {
+  const { verifyToken } = whatsappLoginSettings(env);
+  const params = url?.searchParams;
+  const supplied = String(params?.get("hub.verify_token") || "");
+  const challenge = String(params?.get("hub.challenge") || "");
+  if (!verifyToken || params?.get("hub.mode") !== "subscribe" || !/^[A-Za-z0-9_-]{1,128}$/.test(challenge)) return null;
+  return supplied.length === verifyToken.length && constantTimeEqual(supplied, verifyToken) ? challenge : null;
+};
+function whatsappIncomingMessages(payload) {
+  const out = [];
+  const list2 = (value, max = 10) => Array.isArray(value) ? value.slice(0, max) : [];
+  for (const entry of list2(payload?.entry)) {
+    for (const change of list2(entry?.changes)) {
+      const value = change?.value;
+      if (change?.field !== "messages" || !value || typeof value !== "object") continue;
+      const names = new Map(list2(value.contacts).map((c) => [String(c?.wa_id || ""), String(c?.profile?.name || "")]));
+      for (const message of list2(value.messages)) {
+        const from = digits(message?.from, 8, 15);
+        if (!from || message?.type !== "text" || typeof message?.text?.body !== "string") continue;
+        out.push(Object.freeze({ from, text: message.text.body.slice(0, 1024), name: cleanName(names.get(from)) }));
+      }
+    }
+  }
+  return out.slice(0, 10);
+}
+async function sendWhatsAppText(env, to, body, fetchImpl = globalThis.fetch) {
+  const s = whatsappLoginSettings(env);
+  if (!s.accessToken || !s.phoneNumberId || !digits(to, 8, 15)) throw new WhatsAppLoginError("WHATSAPP_LOGIN_UNAVAILABLE");
+  const response3 = await fetchImpl(`https://graph.facebook.com/${s.graphVersion}/${s.phoneNumberId}/messages`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${s.accessToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ messaging_product: "whatsapp", recipient_type: "individual", to, type: "text", text: { preview_url: false, body } })
+  });
+  if (!response3?.ok) throw new WhatsAppLoginError("WHATSAPP_SEND_FAILED");
+  return true;
+}
+var whatsappLoginReplyText = (link) => `Admission Hub-এ লগইন করতে এই লিংকে চাপুন (১০ মিনিট কাজ করবে):
+${link}
+
+এই লিংক কাউকে দেবেন না।`;
+async function handleWhatsAppWebhook(rawBody, signature, env, { now = Date.now(), fetchImpl = globalThis.fetch, cryptoImpl = globalThis.crypto } = {}) {
+  if (!whatsappLoginReady(env)) return Object.freeze({ ready: false, forbidden: false, sent: 0 });
+  if (!await verifyWhatsAppWebhookSignature(rawBody, signature, env, cryptoImpl)) return Object.freeze({ ready: true, forbidden: true, sent: 0 });
+  let payload;
+  try {
+    payload = JSON.parse(rawBody);
+  } catch {
+    return Object.freeze({ ready: true, forbidden: false, sent: 0 });
+  }
+  const { origin } = whatsappLoginSettings(env);
+  let sent = 0;
+  for (const message of whatsappIncomingMessages(payload)) {
+    if (!await readWhatsAppStartCode(message.text, env, { now, cryptoImpl })) continue;
+    try {
+      const token = await issueWhatsAppLoginToken(message.from, env, { name: message.name, now, cryptoImpl });
+      await sendWhatsAppText(env, message.from, whatsappLoginReplyText(`${origin}/?${WHATSAPP_LOGIN_QUERY_KEY}=${token}`), fetchImpl);
+      sent += 1;
+    } catch {
+    }
+  }
+  return Object.freeze({ ready: true, forbidden: false, sent });
+}
+
 // auth-native/worker/public-auth-handler.mjs
 var AUTH_API_PREFIX = "/api/auth/v1";
 var PUBLIC_PROFILE_PREFIX = "/api/public/profile/";
@@ -10968,7 +11182,7 @@ async function readJson(request, maxBytes = MAX_BODY_BYTES) {
   const declared = Number(request.headers.get("Content-Length") || 0);
   if (declared > maxBytes || !request.body) throw new NativeAuthError(AUTH_ERROR_CODES.INVALID_INPUT);
   const reader = request.body.getReader();
-  const decoder3 = new TextDecoder();
+  const decoder4 = new TextDecoder();
   let raw = "";
   let size = 0;
   while (true) {
@@ -10979,9 +11193,9 @@ async function readJson(request, maxBytes = MAX_BODY_BYTES) {
       await reader.cancel();
       throw new NativeAuthError(AUTH_ERROR_CODES.INVALID_INPUT);
     }
-    raw += decoder3.decode(value, { stream: true });
+    raw += decoder4.decode(value, { stream: true });
   }
-  raw += decoder3.decode();
+  raw += decoder4.decode();
   if (!raw) throw new NativeAuthError(AUTH_ERROR_CODES.INVALID_INPUT);
   try {
     return JSON.parse(raw);
@@ -11264,7 +11478,7 @@ var firebaseReadySession = async ({ provider, jar, env, context, allowTelegram =
   }
   assertProviderUser(refreshed, user);
   const ownershipProven = !user.emailVerified && await emailOwnershipProven({ env, user, context, allowed: true });
-  const telegramLoginAccount = !user.emailVerified && !ownershipProven && await isTelegramLoginEmail(user.email, env);
+  const telegramLoginAccount = !user.emailVerified && !ownershipProven && (await isTelegramLoginEmail(user.email, env) || await isWhatsAppLoginEmail(user.email, env));
   const telegramVerified = telegramLoginAccount || !user.emailVerified && !ownershipProven && await telegramVerificationStatus({ env, user, context, allowed: allowTelegram });
   if (!user.emailVerified && !ownershipProven && !telegramVerified) throw new NativeAuthError(AUTH_ERROR_CODES.EMAIL_NOT_VERIFIED);
   const session = await callAuthority(env, "/internal/firebase/session/get", {
@@ -11348,6 +11562,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
     const telegramOperation = request.method === "POST" && [
       `${AUTH_API_PREFIX}/telegram/webhook`,
       `${AUTH_API_PREFIX}/telegram/canary/activate`,
+      `${AUTH_API_PREFIX}/whatsapp/webhook`,
       `${AUTH_API_PREFIX}/telegram/canary/deactivate`
     ].includes(url.pathname);
     const originOptional = request.method === "GET" || telegramOperation;
@@ -11396,6 +11611,21 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
             webhookChanged: result?.webhookChanged === true
           } : { removed: result?.removed === true }
         });
+      }
+      if (url.pathname === `${AUTH_API_PREFIX}/whatsapp/webhook` && (request.method === "GET" || request.method === "POST")) {
+        if (!whatsappLoginReady(env)) return json4(request, 404, { ok: false, error: { code: "NOT_FOUND", message: "পাওয়া যায়নি।" } });
+        if (request.method === "GET") {
+          const challenge = whatsappVerifyChallenge(url, env);
+          if (!challenge) return json4(request, 403, { ok: false, error: { code: "FORBIDDEN", message: "অনুমতি নেই।" } });
+          return new Response(challenge, { status: 200, headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" } });
+        }
+        const declared = Number(request.headers.get("Content-Length") || 0);
+        if (declared > 256 * 1024) return json4(request, 413, { ok: false });
+        const raw = await request.text();
+        if (raw.length > 256 * 1024) return json4(request, 413, { ok: false });
+        const outcome = await handleWhatsAppWebhook(raw, request.headers.get("X-Hub-Signature-256"), env, { fetchImpl });
+        if (outcome.forbidden) return json4(request, 403, { ok: false, error: { code: "FORBIDDEN", message: "অনুমতি নেই।" } });
+        return json4(request, 200, { ok: true });
       }
       if (request.method === "POST" && url.pathname === `${AUTH_API_PREFIX}/telegram/webhook`) {
         const expected = await resolveTelegramWebhookSecret(env);
@@ -11545,6 +11775,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
             methods: {
               google,
               facebook,
+              whatsappLogin: available && whatsappLoginReady(env) ? { available: true } : { available: false },
               telegramLogin: available && telegramLoginReady(env) ? { available: true, botId: telegramLoginBotId(env) } : { available: false },
               passkey: {
                 available: passkeyAvailable,
@@ -11584,6 +11815,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         const input = credentials(await readJson(request));
         if (isDisposableEmail(input.email)) throw new NativeAuthError(AUTH_ERROR_CODES.DISPOSABLE_EMAIL);
         if (reservedTelegramLoginEmail(input.email)) throw new NativeAuthError(AUTH_ERROR_CODES.DISPOSABLE_EMAIL);
+        if (reservedWhatsAppLoginEmail(input.email)) throw new NativeAuthError(AUTH_ERROR_CODES.DISPOSABLE_EMAIL);
         const prepared = await callAuthority(env, "/internal/firebase/rate", { input: { operation: "signup", email: input.email }, context });
         let signed;
         try {
@@ -11957,6 +12189,59 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           emailVerified: user.emailVerified === true,
           telegramVerified: user.emailVerified !== true && passwordTelegramVerified
         });
+      }
+      if (request.method === "POST" && url.pathname === `${AUTH_API_PREFIX}/whatsapp/start`) {
+        if (!provider.configured || !whatsappLoginReady(env)) throw new NativeAuthError(AUTH_ERROR_CODES.WHATSAPP_LOGIN_UNAVAILABLE);
+        await readJson(request);
+        authStage = "RATE_CHECK";
+        await callAuthority(env, "/internal/firebase/rate", { input: { operation: "whatsapp-login" }, context });
+        const start = await createWhatsAppStart(env);
+        return json4(request, 200, { ok: true, url: start.url });
+      }
+      if (request.method === "POST" && url.pathname === `${AUTH_API_PREFIX}/whatsapp/login`) {
+        if (!provider.configured || !whatsappLoginReady(env)) throw new NativeAuthError(AUTH_ERROR_CODES.WHATSAPP_LOGIN_UNAVAILABLE);
+        authStage = "CREDENTIAL_INPUT";
+        let whatsappUser;
+        try {
+          whatsappUser = await verifyWhatsAppLoginToken((await readJson(request))?.token, env);
+        } catch {
+          throw new NativeAuthError(AUTH_ERROR_CODES.WHATSAPP_LOGIN_INVALID);
+        }
+        authStage = "RATE_CHECK";
+        await callAuthority(env, "/internal/firebase/rate", { input: { operation: "whatsapp-login" }, context });
+        const credentials2 = await whatsappLoginCredentials(whatsappUser.phone, env);
+        authStage = "FIREBASE_EXCHANGE";
+        let signed;
+        try {
+          signed = await provider.signIn(credentials2.email, credentials2.password);
+        } catch (signInCause) {
+          try {
+            signed = await provider.signUp(credentials2.email, credentials2.password);
+          } catch (cause) {
+            if (String(cause?.reason || "").startsWith("EMAIL_EXISTS")) throw providerError(signInCause, "whatsapp-signin");
+            throw providerError(cause, "whatsapp-signup");
+          }
+        }
+        authStage = "IDENTITY_LOOKUP";
+        let user;
+        try {
+          user = await provider.lookup(signed.idToken);
+        } catch (cause) {
+          throw providerError(cause, "whatsapp-lookup");
+        }
+        assertProviderUser(signed, user);
+        authStage = "ACCOUNT_SESSION";
+        const established = await callAuthority(env, "/internal/firebase/session/create", {
+          input: { email: user.email, subject: user.subject, verified: true },
+          context
+        });
+        const enrichment = seedGoogleProfile(env, context, established, { ...user, displayName: whatsappUser.displayName, photoUrl: "" }).catch(() => {
+        });
+        if (typeof executionContext?.waitUntil === "function") executionContext.waitUntil(enrichment);
+        else await enrichment;
+        const result = authSuccess(request, established, signed.refreshToken, context, { emailVerified: false, telegramVerified: true });
+        result.headers.set("X-AH-Auth-Stage", "SESSION_CREATED");
+        return result;
       }
       if (request.method === "POST" && url.pathname === `${AUTH_API_PREFIX}/telegram/login`) {
         if (!provider.configured || !telegramLoginReady(env)) throw new NativeAuthError(AUTH_ERROR_CODES.TELEGRAM_VERIFICATION_UNAVAILABLE);
@@ -13340,7 +13625,7 @@ var PASSKEY_ORIGINS = Object.freeze([
 var CHALLENGE_TTL_MS = 12e4;
 var SESSION_TTL_MS2 = 30 * 6e4;
 var MAX_ADMIN_CREDENTIALS = 8;
-var encoder6 = new TextEncoder();
+var encoder7 = new TextEncoder();
 var CRED_PREFIX = "admin:pk:cred:";
 var CHALLENGE_PREFIX = "admin:pk:chal:";
 var SESSION_PREFIX = "admin:pk:sess:";
@@ -13357,19 +13642,19 @@ var randomToken2 = (bytes = 32) => {
   return bytesToBase64Url3(value);
 };
 var sha256Hex2 = async (value) => {
-  const digest3 = await crypto.subtle.digest("SHA-256", encoder6.encode(String(value)));
+  const digest3 = await crypto.subtle.digest("SHA-256", encoder7.encode(String(value)));
   return [...new Uint8Array(digest3)].map((b) => b.toString(16).padStart(2, "0")).join("");
 };
 var sessionKey = async (env) => {
   const secret = String(env?.ADMIN_TOKEN || "");
   if (!secret) return null;
-  const material = await crypto.subtle.importKey("raw", encoder6.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const material = await crypto.subtle.importKey("raw", encoder7.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   return material;
 };
-var hmacHex2 = async (env, label, value) => {
+var hmacHex3 = async (env, label, value) => {
   const key = await sessionKey(env);
   if (!key) return null;
-  const mac = await crypto.subtle.sign("HMAC", key, encoder6.encode(`${label}:${value}`));
+  const mac = await crypto.subtle.sign("HMAC", key, encoder7.encode(`${label}:${value}`));
   return [...new Uint8Array(mac)].map((b) => b.toString(16).padStart(2, "0")).join("");
 };
 var json5 = (obj, status = 200) => new Response(JSON.stringify(obj), {
@@ -13470,7 +13755,7 @@ async function handleRegister(request, env) {
   }
   const record = {
     credentialId: verified.credentialId,
-    userHandle: bytesToBase64Url3(encoder6.encode(PASSKEY_USER_ID)),
+    userHandle: bytesToBase64Url3(encoder7.encode(PASSKEY_USER_ID)),
     publicKeyJwk: verified.publicKeyJwk,
     counter: verified.counter,
     backupEligible: verified.backupEligible,
@@ -13531,7 +13816,7 @@ async function handleAdminPasskeyRequest(request, env) {
       purpose,
       challenge,
       rpId,
-      mac: await hmacHex2(env, "admin-passkey-challenge", `${challengeId}:${challenge}`),
+      mac: await hmacHex3(env, "admin-passkey-challenge", `${challengeId}:${challenge}`),
       createdAt: Date.now()
     });
     const credentials2 = await listCredentials(env);
@@ -13544,7 +13829,7 @@ async function handleAdminPasskeyRequest(request, env) {
         userVerification: "required",
         ...purpose === "register" ? {
           rp,
-          user: { id: bytesToBase64Url3(encoder6.encode(PASSKEY_USER_ID)), name: "admin@admissionhub", displayName: "AdmissionHub Admin" },
+          user: { id: bytesToBase64Url3(encoder7.encode(PASSKEY_USER_ID)), name: "admin@admissionhub", displayName: "AdmissionHub Admin" },
           pubKeyCredParams: [{ type: "public-key", alg: -7 }, { type: "public-key", alg: -257 }],
           authenticatorSelection: { residentKey: "preferred", userVerification: "required" },
           attestation: "none",
@@ -13564,7 +13849,7 @@ async function handleAdminPasskeyRequest(request, env) {
 }
 var __adminPasskeyTest = Object.freeze({
   sha256Hex: sha256Hex2,
-  hmacHex: hmacHex2,
+  hmacHex: hmacHex3,
   listCredentials,
   putChallenge,
   takeChallenge,
@@ -21514,7 +21799,7 @@ var sha256HexStr = async (s) => {
   const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
   return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, "0")).join("");
 };
-var hmacHex3 = async (keyBytes, msg) => {
+var hmacHex4 = async (keyBytes, msg) => {
   const key = await crypto.subtle.importKey("raw", keyBytes, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(msg));
   return [...new Uint8Array(sig)].map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -21548,11 +21833,11 @@ x-amz-date:${amzDate}
       const canonicalRequest = ["GET", path, queryStr, canonicalHeaders, signedHeaders, payloadHash].join("\n");
       const scope = `${shortDate}/${region}/${service}/aws4_request`;
       const stringToSign = ["AWS4-HMAC-SHA256", amzDate, scope, await sha256HexStr(canonicalRequest)].join("\n");
-      let k = await hmacHex3(new TextEncoder().encode(`AWS4${sk}`), shortDate);
-      k = await hmacHex3(hexToBytes(k), region);
-      k = await hmacHex3(hexToBytes(k), service);
-      k = await hmacHex3(hexToBytes(k), "aws4_request");
-      const signature = await hmacHex3(hexToBytes(k), stringToSign);
+      let k = await hmacHex4(new TextEncoder().encode(`AWS4${sk}`), shortDate);
+      k = await hmacHex4(hexToBytes(k), region);
+      k = await hmacHex4(hexToBytes(k), service);
+      k = await hmacHex4(hexToBytes(k), "aws4_request");
+      const signature = await hmacHex4(hexToBytes(k), stringToSign);
       const res = await fetch(`https://${R2_HOST}/${bucketName}?${queryStr}`, {
         method: "GET",
         headers: {
@@ -23923,7 +24208,7 @@ function recipientBias(providerId, email) {
 var INSTITUTIONAL_SUFFIXES = Object.freeze([]);
 var matchesDomain = (domain, list2) => list2.some((entry) => domain === entry || entry.startsWith(".") && domain.endsWith(entry));
 var MAGIC_LINK_PROVIDER_ID = "otp-m";
-async function bounded(action, milliseconds) {
+async function bounded2(action, milliseconds) {
   let timer;
   try {
     return await Promise.race([
@@ -24103,8 +24388,8 @@ var VerificationOrchestrator = class {
           // Readiness probes run for every slot before a single send, so a slow
           // probe delayed the whole OTP past the browser's patience. Probes get
           // a short ceiling; the send itself keeps the slot's full timeoutMs.
-          bounded(() => provider.checkAvailability({ purpose: identity.purpose }), Math.min(entry.timeoutMs, PROBE_TIMEOUT_MS)),
-          bounded(() => provider.getRemainingQuota({ now }), Math.min(entry.timeoutMs, PROBE_TIMEOUT_MS)),
+          bounded2(() => provider.checkAvailability({ purpose: identity.purpose }), Math.min(entry.timeoutMs, PROBE_TIMEOUT_MS)),
+          bounded2(() => provider.getRemainingQuota({ now }), Math.min(entry.timeoutMs, PROBE_TIMEOUT_MS)),
           this.repository.dailyQuotaSnapshot({ providerId: entry.id, dailyQuota: entry.dailyQuota, now }),
           this.repository.providerSnapshot({ providerId: entry.id, now })
         ]);
@@ -24207,7 +24492,7 @@ var VerificationOrchestrator = class {
         const started = Date.now();
         let providerAccepted = false;
         try {
-          const result = await bounded(() => provider.sendVerification({
+          const result = await bounded2(() => provider.sendVerification({
             attemptId,
             purpose: identity.purpose,
             destination: destinations[entry.channel],
@@ -24321,7 +24606,7 @@ var VerificationOrchestrator = class {
       }
       const started = Date.now();
       try {
-        const result = await bounded(() => provider.verifyCode({
+        const result = await bounded2(() => provider.verifyCode({
           attemptId,
           evidence: evidence2,
           // Only this adapter needs the address at verification time. Resolve it
@@ -24452,7 +24737,7 @@ var VerificationOrchestrator = class {
     if (!this.config.enabled || !entry || !provider || typeof provider.sendTelegramCode !== "function") {
       throw new NativeAuthError(AUTH_ERROR_CODES.BACKUP_UNAVAILABLE);
     }
-    const status = await bounded(() => provider.getProviderStatus({ now: Number(this.now()) }), entry.timeoutMs);
+    const status = await bounded2(() => provider.getProviderStatus({ now: Number(this.now()) }), entry.timeoutMs);
     if (status?.configured !== true) throw new NativeAuthError(AUTH_ERROR_CODES.BACKUP_UNAVAILABLE);
     const now = Number(this.now());
     const [linkTokenMac, externalIdentityRef] = await Promise.all([
@@ -24468,7 +24753,7 @@ var VerificationOrchestrator = class {
       const packedCode = await this.vault.open(claimed.codeCipher, `telegram-verification-code:${claimed.attemptId}`);
       const code = /^telegram-otp-v1:(\d{6})$/.exec(packedCode)?.[1] || "";
       if (!code) throw new NativeAuthError(AUTH_ERROR_CODES.STORAGE_UNAVAILABLE);
-      const delivered = await bounded(() => provider.sendTelegramCode({
+      const delivered = await bounded2(() => provider.sendTelegramCode({
         chatId,
         code,
         expiresInSeconds: Math.max(1, Math.ceil((Number(claimed.expiresAt) - Number(this.now())) / 1e3))
@@ -24487,7 +24772,7 @@ var VerificationOrchestrator = class {
       throw new NativeAuthError(AUTH_ERROR_CODES.BACKUP_UNAVAILABLE);
     }
     try {
-      const result = await bounded(() => provider.configureWebhook(), entry.timeoutMs);
+      const result = await bounded2(() => provider.configureWebhook(), entry.timeoutMs);
       if (result?.ready !== true || result?.identityReady !== true || result?.webhookReady !== true || result?.endpointAccepted !== true) {
         throw new VerificationProviderError("WEBHOOK_NOT_READY", VERIFICATION_FAILURE_CLASS.HARD);
       }
@@ -24509,7 +24794,7 @@ var VerificationOrchestrator = class {
       throw new NativeAuthError(AUTH_ERROR_CODES.BACKUP_UNAVAILABLE);
     }
     try {
-      const result = await bounded(() => provider.removeConfiguredWebhook(), entry.timeoutMs);
+      const result = await bounded2(() => provider.removeConfiguredWebhook(), entry.timeoutMs);
       return Object.freeze({ removed: result?.removed === true });
     } catch {
       throw new NativeAuthError(AUTH_ERROR_CODES.BACKUP_UNAVAILABLE);
@@ -24553,9 +24838,9 @@ var VerificationOrchestrator = class {
       let remoteQuota = { remaining: 0, limit: 0, resetAt: 0 };
       let remoteStatus = { status: "unknown", configured: false };
       const probes = await Promise.allSettled([
-        bounded(() => provider.checkAvailability({ purpose: "status" }), entry.timeoutMs),
-        bounded(() => provider.getRemainingQuota({ now }), entry.timeoutMs),
-        bounded(() => provider.getProviderStatus({ now }), entry.timeoutMs)
+        bounded2(() => provider.checkAvailability({ purpose: "status" }), entry.timeoutMs),
+        bounded2(() => provider.getRemainingQuota({ now }), entry.timeoutMs),
+        bounded2(() => provider.getProviderStatus({ now }), entry.timeoutMs)
       ]);
       if (probes[0].status === "fulfilled") availability = probes[0].value;
       else availability = { available: false, code: providerFailure(probes[0].reason).code };
@@ -28003,8 +28288,8 @@ var parseList = (raw) => {
   }
 };
 var maskMobile = (raw) => {
-  const digits = String(raw || "").replace(/\D/g, "");
-  return digits.length >= 4 ? "•••" + digits.slice(-3) : null;
+  const digits2 = String(raw || "").replace(/\D/g, "");
+  return digits2.length >= 4 ? "•••" + digits2.slice(-3) : null;
 };
 function studentCounts(sql, { now = Date.now() } = {}) {
   if (!has(sql, "auth_users")) return { total: 0, active: 0, disabled: 0, suspended: 0, last24h: 0, last7d: 0 };
@@ -29347,7 +29632,7 @@ function pickAdapter(table, provider) {
 // voice-agent-gate.mjs
 var COOKIE_NAME = "ah_voice";
 var SESSION_TTL_MS3 = 180 * 24 * 60 * 60 * 1e3;
-var encoder7 = new TextEncoder();
+var encoder8 = new TextEncoder();
 var b64url = (bytes) => btoa(String.fromCharCode(...new Uint8Array(bytes))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 function gateSecret(env) {
   return String(env && env.VOICE_PAGE_PASSWORD || "");
@@ -29355,21 +29640,21 @@ function gateSecret(env) {
 function gateConfigured(env) {
   return gateSecret(env).length > 0;
 }
-async function sign(payload, secret) {
+async function sign2(payload, secret) {
   const key = await crypto.subtle.importKey(
     "raw",
-    encoder7.encode(secret),
+    encoder8.encode(secret),
     { name: "HMAC", hash: "SHA-256" },
     false,
     ["sign"]
   );
-  return b64url(await crypto.subtle.sign("HMAC", key, encoder7.encode(payload)));
+  return b64url(await crypto.subtle.sign("HMAC", key, encoder8.encode(payload)));
 }
 async function makeSession(env, now = Date.now(), ttl = SESSION_TTL_MS3) {
   const secret = gateSecret(env);
   if (!secret) return "";
   const payload = `v1.${now + ttl}`;
-  return `${payload}.${await sign(payload, secret)}`;
+  return `${payload}.${await sign2(payload, secret)}`;
 }
 async function sessionValid(env, request, now = Date.now()) {
   const secret = gateSecret(env);
@@ -29382,7 +29667,7 @@ async function sessionValid(env, request, now = Date.now()) {
   const given = raw.slice(cut + 1);
   if (!/^v1\.\d+$/.test(payload)) return false;
   if (Number(payload.slice(3)) <= now) return false;
-  const want = await sign(payload, secret);
+  const want = await sign2(payload, secret);
   return safeEqual(given, want);
 }
 function passwordMatches(env, given) {
