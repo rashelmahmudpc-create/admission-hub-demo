@@ -168,6 +168,25 @@
     } catch (_) { return null; }
   }
 
+  /* Sky recall (owner plan step 2): mistakes the student got wrong in the last
+     48 h and has not mastered yet. Only a count and the oldest time leave the
+     phone — never the question text. */
+  function recentMistakes() {
+    try {
+      if (typeof CACHE === 'undefined' || !Array.isArray(CACHE.mistakes)) return null;
+      const cut = Date.now() - 48 * 3600 * 1000;
+      let n = 0, since = 0;
+      CACHE.mistakes.forEach((m) => {
+        if (!m || m.mastered === true || m.revisionStatus === 'mastered') return;
+        const t = Number(m.lastWrongAt || m.time || 0);
+        if (!(t >= cut)) return;
+        n++;
+        if (!since || t < since) since = t;
+      });
+      return { mistakes: n, since: since };
+    } catch (_) { return null; }
+  }
+
   /* ───────── markdown → safe HTML (escape-first) ───────── */
   function mdInline(raw) {
     const codes = [];
@@ -575,6 +594,10 @@
 #app.sky .say{position:relative;max-width:300px;padding:9px 18px;border-radius:999px;background:var(--surf);box-shadow:0 0 0 1px var(--line),var(--sh);font-size:14.5px;font-weight:600;text-align:center;line-height:1.4;opacity:0;transform:translateY(6px) scale(.96);transition:opacity .25s,transform .3s cubic-bezier(.3,1.4,.5,1)}
 #app.sky .say:after{content:"";position:absolute;left:50%;bottom:-5px;width:11px;height:11px;margin-left:-5px;background:var(--surf);transform:rotate(45deg);box-shadow:2px 2px 0 0 var(--line)}
 #app.sky .say.on{opacity:1;transform:none}
+#app.sky .recall{max-width:340px;margin:10px auto 0;padding:12px 14px;border-radius:16px;background:var(--surf);box-shadow:0 0 0 1px var(--line),var(--sh);font-size:14px;line-height:1.55;text-align:center;animation:drop .5s ease both}
+#app.sky .recall p{margin:0 0 8px}
+#app.sky .recall .rcc{display:flex;flex-wrap:wrap;gap:8px;justify-content:center}
+#app.sky .recall button{border:0;border-radius:999px;padding:7px 13px;font:inherit;font-size:13px;font-weight:700;background:var(--line);color:inherit;cursor:pointer}
 #app.sky .hbig{width:176px;height:176px;cursor:pointer;animation:drop .8s cubic-bezier(.3,1.5,.5,1) both}
 @keyframes drop{from{opacity:0;transform:translateY(-40px) scale(.8)}}
 #app.sky .av{display:block;overflow:visible}
@@ -1254,9 +1277,41 @@ const ACT_ACTIONS = { 'prefs.write': { bn: 'তোমার AI পছন্দ �
     if (sessions.length > 20) sessions = sessions.slice(0, 20);
     cur = 0; save(); renderMsgs(); resetHero(); closeLayers();
   }
+  /* Sky recall (owner plan step 2): on chat open Sky reminds the student of
+     recent mistakes / their weak topic by itself. Signed-in, empty chat only;
+     any failure just leaves the normal greeting. Text is always escaped. */
+  async function loadRecall() {
+    if (!accountScope || !sessions[cur] || sessions[cur].msgs.length) return;
+    let rc = null;
+    try {
+      const r = await fetch('/api/ai/recall', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-AH-Guest': guestId() },
+        body: JSON.stringify({ stats: localStats(), recent: recentMistakes() })
+      });
+      if (!r.ok) return;
+      rc = ((await r.json()) || {}).recall;
+    } catch (_) { return; }
+    if (!rc || !rc.line || sessions[cur].msgs.length) return;
+    const hero = document.getElementById('hero');
+    if (!hero || hero.style.display === 'none') return;
+    let box = document.getElementById('skyRecall');
+    if (!box) { box = document.createElement('div'); box.id = 'skyRecall'; box.className = 'recall'; hero.appendChild(box); }
+    const chips = (Array.isArray(rc.chips) ? rc.chips : []).slice(0, 2).map((ch, i) => '<button type="button" data-rc="' + i + '">' + esc(String((ch && ch.label) || '')) + '</button>').join('');
+    box.innerHTML = '<p>' + esc(String(rc.line)) + '</p>' + (chips ? '<div class="rcc">' + chips + '</div>' : '');
+    box.onclick = (e) => {
+      const b = e.target.closest('[data-rc]'); if (!b) return;
+      const ch = rc.chips[+b.getAttribute('data-rc')] || {};
+      box.remove();
+      if (ch.go) { const sb = document.querySelector('[data-go="' + String(ch.go).replace(/[^a-z0-9-]/gi, '') + '"]'); if (sb) sb.click(); else if (window.navigate) window.navigate(ch.go); return; }
+      if (ch.q) send(String(ch.q));
+    };
+    try { mood('wave', 1800); } catch (_) {}
+  }
   function resetHero() {
     const hero = document.getElementById('hero');
     if (hero) hero.style.display = '';
+    { const ob = document.getElementById('skyRecall'); if (ob) ob.remove(); }
     const app = document.getElementById('app');
     if (app) app.classList.remove('chatting');
     say('নতুন কথা শুরু করি — কী জানতে চাও?', 3200);
@@ -1418,6 +1473,7 @@ const ACT_ACTIONS = { 'prefs.write': { bn: 'তোমার AI পছন্দ �
     const greet = H < 5 ? 'এত রাতে জেগে? আজ একটু কম পড়ে ঘুমিয়ে নাও' : H < 12 ? 'শুভ সকাল! আজ কোন বিষয় দিয়ে শুরু করবে?' : H < 16 ? 'শুভ দুপুর! পড়ার সময় হলো — কী ধরবে?' : H < 19 ? 'শুভ বিকেল! আজকের পড়ার রিভিশন দেবে?' : 'শুভ সন্ধ্যা! আজকের পড়া কতদূর?';
     mood('wave', 2200);
     setTimeout(() => { if (!sessions[cur].msgs.length) say(greet, 4200); }, 900);
+    loadRecall();
     loop(); wake();
     const askMsg = ['বাংলা, ইংরেজি, GK — কোনটা দিয়ে শুরু?', 'শেষ কবে রিভিশন দিয়েছিলে?', 'Mistake Bank-এ নতুন ভুল জমেছে কি?', 'পরীক্ষার আগে একটা Mock Test দিয়েছো?', 'ছবি তুলে প্রশ্ন পাঠালেও আমি বুঝে নেব', 'Smart Revision করলে বেশি দিন মনে থাকে', 'আজকের পড়ার লক্ষ্য কত?'];
     clearInterval(window.__skyNudge);
