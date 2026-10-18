@@ -42,7 +42,7 @@
 ### ধাপ ০: সব কিছু দেখতে পাওয়া 🟡
 - [x] ✅ `wrangler.toml` এ log স্থায়ীভাবে চালু — `[observability] enabled = true` (PR #101), staging আর production দুটোতেই deploy হয়ে log আসা যাচাই করা হয়েছে
 - [x] ✅ প্রতিটা OTP আর email এর জন্য log: provider এর নাম, কত সময় লাগল, ফল কী — `otp_delivery` / `otp_request` (PR #104, staging + production এ deploy)। Deploy এর পরে এখনো কোনো OTP পাঠানো হয়নি, তাই live log প্রথম OTP এর পরে দেখা বাকি
-- [ ] 🟡 কোনো provider ব্যর্থ হলে বা ৩০ সেকেন্ডের বেশি দেরি হলে Telegram এ alert — code + test তৈরি (`observability/otp-alert.mjs`, PR খোলা), merge আর production deploy এর অপেক্ষায়
+- [ ] 🟡 কোনো provider ব্যর্থ হলে বা ৩০ সেকেন্ডের বেশি দেরি হলে Telegram এ alert — `observability/otp-alert.mjs` (PR #106), merge করে staging + production এ deploy হয়েছে; শুধু একটা আসল OTP দিয়ে live যাচাই বাকি (Turnstile এর কারণে agent নিজে OTP পাঠাতে পারে না, মালিককে site থেকে একবার পাঠাতে হবে)
 
 ### ধাপ ১: OTP যাচাইয়ের পরে account তৈরি ⬜
 - [ ] Signup ক্রম: নাম → জন্ম তারিখ → স্কুল/কলেজ → email → password; শুধু সাময়িকভাবে রাখা (১০ মিনিট, DO বা KV)
@@ -95,8 +95,8 @@
 ---
 
 ## 📝 শেষ অবস্থা
-- **শেষ session:** ১৮ অক্টোবর ২০২৬ (৪র্থ)
-  1. PR #104 (OTP log) main এ merge আর staging + production এ deploy হয়েছে — যাচাই করা হলো; deploy এর পরে কোনো OTP আসেনি, তাই live log এখনো দেখা যায়নি।
-  2. নতুন `observability/otp-alert.mjs`: provider ব্যর্থ, সব ব্যর্থ, বা ৩০ সেকেন্ডের বেশি হলে Telegram (`TG_BOT_TOKEN`/`TG_CHAT_ID`) এ alert; প্রতি provider ১৫ মিনিটে একবার; email/OTP কখনো যায় না। নতুন var যোগ হয়নি।
-  3. Test pass (নতুন ৬টা; পুরোনো ২টা ব্যর্থ test আগের মতোই, এই কাজের সাথে সম্পর্ক নেই); bundle CI তে build হয়ে local build এর সাথে হুবহু মিলেছে।
-- **পরের কাজ:** মালিকের "হ্যাঁ" পেলে PR merge → `deploy-staging.yml` → `deploy-pages-worker.yml` → একটা আসল OTP পাঠিয়ে log আর alert যাচাই → ধাপ ০ ✅ → ধাপ ১।
+- **শেষ session:** ১৮ অক্টোবর ২০২৬ (৫ম)
+  1. মালিকের "হ্যাঁ" পেয়ে PR #106 merge (`260cb05`); `deploy-staging.yml` আর `deploy-pages-worker.yml` দুটোই সফল।
+  2. Deploy এর পরে production এ কোনো error নেই। OTP API তে Turnstile token লাগে, তাই agent নিজে OTP পাঠাতে পারেনি; এতে বোঝা যায় bot আটকানো কাজ করছে।
+  3. ধাপ ০ এর code আর deploy শেষ; শুধু একটা আসল OTP পাঠিয়ে live log (`otp_request`) দেখা বাকি।
+- **পরের কাজ:** মালিক site থেকে একটা OTP পাঠাবেন → agent telemetry তে `otp_request` দেখবে → ধাপ ০ ✅ → ধাপ ১ (OTP যাচাইয়ের পরে account তৈরি)।
