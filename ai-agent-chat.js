@@ -368,10 +368,17 @@
       const sc = card.querySelector('.qs'); if (sc) { sc.hidden = false; sc.textContent = '🎯 তোমার স্কোর: ' + bn(card.querySelectorAll('.qz.right').length) + '/' + bn(all.length); }
     }
   }
-  function mdRich(src) {
+  let skyLive = 0; /* 1 only while a streaming chunk is rendered */
+  function mdRich(src, live) {
+    live = live || skyLive;
+    /* Owner 2026-10-18: MCQ Card Engine (sky-mcq.js). Quiz JSON — even half-
+       streamed — and any MCQ written as text become tap-to-answer cards. */
+    const MCQ = window.SkyMCQ;
+    if (MCQ) { try { const h = MCQ.renderJson(src, !!live); if (h != null) return h; } catch (_) {} }
     const qz = quizCard(src); if (qz !== null) return qz;
     let t = String(src == null ? '' : src);
     const visuals = [];
+    if (MCQ) { try { t = MCQ.render(t, (h) => { visuals.push(h); return '\n\u0001V' + (visuals.length - 1) + '\u0001\n'; }, { live: !!live }); } catch (_) {} }
     t = t.replace(/```(chart|flow)\s*\n([\s\S]*?)```/gi, (m, kind, body) => {
       try {
         if (kind.toLowerCase() === 'flow') { const v = ahFlowSVG(body.split('\n')); if (v) visuals.push(v); }
@@ -1260,7 +1267,7 @@ const ACT_ACTIONS = { 'prefs.write': { bn: 'তোমার AI পছন্দ �
       if (!gotFirst) { gotFirst = true; mood('type'); }
       /* stream straight into the live node with the full rich renderer, so
          headings, tables and diagrams appear while the answer is written. */
-      if (node) { const b = node.querySelector('.bw'); if (b) b.innerHTML = mdRich(full); }
+      if (node) { const b = node.querySelector('.bw'); if (b) { skyLive = 1; b.innerHTML = mdRich(full); skyLive = 0; } }
       scrollEnd();
     }, { onStage: (label) => procStage(node, holder, label) }, (corrected) => { holder.text = corrected; replaceStream(corrected); });
 

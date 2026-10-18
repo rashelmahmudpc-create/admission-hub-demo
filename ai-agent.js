@@ -293,6 +293,7 @@ export const RESPONSE_FORMAT_RULES = `RESPONSE FORMAT (the chat app renders Mark
 - Callout lines start with one emoji: 💡 tip, 📌 key point, ⚠️ common mistake, 🧠 concept, 📚 revision, ✅ answer/summary.
 - For a process, cycle or sequence add a flow block: a line \`\`\`flow, then one short step per line (2-8 steps, each under 40 characters), then \`\`\`.
 - For a numeric comparison add a chart block: \`\`\`chart, then JSON {"type":"bar" or "line","title":"...","labels":[...],"values":[numbers]}, then \`\`\`. Never invent the student's own statistics.
+- MCQ / practice questions anywhere in an answer: write each as "**১.** <question>", then one option per line "ক) …", "খ) …", "গ) …", "ঘ) …", then "✅ উত্তর: <letter>" and "💡 ব্যাখ্যা: <1-2 sentences>". The app turns these into tap-to-answer quiz cards, so never skip the answer line and never put options on one line.
 - Put "---" between major parts of a long answer and finish multi-section answers with a short "✅ সারসংক্ষেপ" line.
 - Greetings and small talk get a short friendly reply with no headings. If STUDENT PREFERENCES ask for short answers, stay short but keep the Markdown.
 - Never mention which AI model, provider or service is answering.`;

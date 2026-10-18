@@ -51,6 +51,7 @@ const APP_SHELL = [
   './dashboard-v2.js?v=dash2f18-chrome',
   './sky-smalltalk.js?v=st2',
   './sky-replies.json?v=r1',
+  './sky-mcq.js?v=mcq1',
   './sky-tools-client.js?v=tools1',
   './sky-faq.js?v=faq1',
   './sky-faq-bn.js?v=faq1',
@@ -92,7 +93,7 @@ const APP_SHELL = [
 // A truncated/corrupt download is NEVER written to the shell cache.
 const ASSET_DIGESTS = {
 /* sw-manifest:start */
-  "./index.html": "64a1221c9cf4d42921b76792e8b2f357a61a0eff3f31aafd03909939f5fd329e",
+  "./index.html": "7e5031e674ba7c8e1c32e3bb2e762f196439ebef2ebe3d0667d71cd52ef51b5f",
   "./manifest.json": "6dcf0e0c6f7671750549e53558ba8b9f0c2c83b0c6759072a6b5e2276331f491",
   "./manifest.webmanifest": "abcd26174710f6df3e183889a5a9da182f73ee8cdcc543b43db8fb4070cad54f",
   "./dashboard-v2.css?v=dash2f13-theme": "4541bc1e65fd158c593443562975400d128b8f1d3b636595df3c235b99e8cced",
@@ -117,13 +118,14 @@ const ASSET_DIGESTS = {
   "./dashboard-v2.js?v=dash2f18-chrome": "943a731165376cadca9bb4da2a33c7f3ccc1d24d063165fcede77089615e3739",
   "./sky-smalltalk.js?v=st2": "ee85bc86a84d6c75f391d7f76fa03abd53f2df1973dd7980ae15ee94eb122a49",
   "./sky-replies.json?v=r1": "f5e97d43641a1dbedbe3d17f24c740ebb38b761a79c833a902b8876b7ead5a9f",
-  "./sky-tools-client.js?v=tools1": "0c07c9945f1cca5210314b4885c5c821907807d89cf9555a8320681fdb0f6736",
+  "./sky-mcq.js?v=mcq1": "8cd8c2f56a531106770fa4fb3cffcec8067bf505e3f131db1f838e7794024607",
+  "./sky-tools-client.js?v=tools1": "b0829da38b63c19639f184ce60b718bcb4614d5f4f6c2c45f4ea6a90bd2b66d3",
   "./sky-faq.js?v=faq1": "00149c15af74f969c26af581133c83b45bf922f7d1bf98293bc3c9c489b3547e",
   "./sky-faq-bn.js?v=faq1": "f417de34ddc4b08dce2dc212610ccc4ca265ca323876c5f3f5c1d52b01d859f9",
   "./sky-faq-en.js?v=faq1": "4923f584193c9569329b001b20867f2954b93b8e232a704e2effd632f25bb833",
   "./sky-faq-sci.js?v=faq1": "f574bcdb1441678c6ae4cbf6be8baa73d5cdd06a24bccfab712e241a29b6a42b",
   "./sky-faq-gk.js?v=faq1": "e406ee8982e255881ff5a6c854c19dc0c4f8004d6e4cc341a2c114bf678ee492",
-  "./ai-agent-chat.js?v=agent-f1-ui-skyv12": "c2050044e313f0f68275b6165146ca89dcd7912c0f3e4674ffbd56747111b0d7",
+  "./ai-agent-chat.js?v=agent-f1-ui-skyv12": "b06a6822a91fda0fb0aa35d401b41c1b85b79f1af2324a8abf140c23354aae58",
   "./question-engine.js?v=qe1": "db404fefd97bea27dad177748bafb0a9ba7d87bedca094e3da795c5b77946cd4",
   "./question-engine-panel.js?v=qe1": "33376e371654d575484194b5fcf8e486f4e3329c13e5330ff8619caab0399ec4",
   "./notification-fcm.js?v=fcm-p3-v15": "3b1880bc1ab5b9f91cf844b021369f2431eae099175873ab4d7eb018370318ee",

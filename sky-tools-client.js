@@ -78,9 +78,12 @@
     pick.forEach((q, i) => {
       lines.push('**' + bn(i + 1) + '.** ' + String(q.question).trim());
       q.options.slice(0, 6).forEach((o, j) => lines.push('   ' + LET[j] + ') ' + String(o).trim()));
+      /* MCQ Card Engine: the answer line turns this into a tap-to-answer card */
+      lines.push('   ✅ উত্তর: ' + LET[ansIndex(q)]);
+      if (q.explanation) lines.push('   💡 ব্যাখ্যা: ' + String(q.explanation).replace(/\s+/g, ' ').trim().slice(0, 400));
       lines.push('');
     });
-    lines.push('✅ উত্তর এভাবে লেখো: **' + pick.slice(0, 3).map((_, i) => bn(i + 1) + '-ক').join(' ') + (pick.length > 3 ? ' …' : '') + '** — আমি মিলিয়ে নম্বর দেব।');
+    lines.push('👆 প্রতিটা প্রশ্নে ট্যাপ করে উত্তর দাও — সাথে সাথে ফল আর ব্যাখ্যা দেখবে। চাইলে লিখেও পাঠাতে পারো: **' + pick.slice(0, 3).map((_, i) => bn(i + 1) + '-ক').join(' ') + (pick.length > 3 ? ' …' : '') + '**');
     if (pick.length < n) lines.push('', '📌 এই টপিকে এখন ' + bn(pick.length) + 'টা প্রশ্নই আছে।');
     return { text: lines.join('\n'), quiz: pick.map((q) => ({ id: q.id, a: ansIndex(q) })) };
   }
