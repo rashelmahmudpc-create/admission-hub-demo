@@ -1037,14 +1037,31 @@ function getExamHistory(stats) {
   if (stats.prevWeekly) out.prevWeekly = stats.prevWeekly;
   return out;
 }
-function analyzeWeakTopics(stats) {
+function analyzeWeakTopics(stats, stated) {
   const rows4 = stats && Array.isArray(stats.weakTopics) ? stats.weakTopics : [];
-  if (!rows4.length) return { ok: true, empty: true };
+  const said = (Array.isArray(stated) ? stated : []).map((s) => String(s || "").trim().slice(0, 80)).filter(Boolean).slice(0, 3);
+  const exams = stats && Number(stats.exams) > 0 ? stats.exams | 0 : 0;
+  if (!rows4.length && !said.length) return { ok: true, empty: true };
   const weak = rows4.slice(0, 4).map((r) => ({ name: r.name, accuracy: r.accuracy | 0, attempts: r.attempts | 0 })).sort((a, b) => a.accuracy - b.accuracy);
-  return { ok: true, weak };
+  const out = { ok: true, weak, exams };
+  if (said.length) out.stated = said;
+  return out;
+}
+function topicBase(word) {
+  const w = String(word || "").trim();
+  if (w.length > 4 && /তে$/u.test(w)) return w.slice(0, -2);
+  if (w.length > 3 && /া(?:\u09AF\u09BC|\u09DF)$/u.test(w)) return w.replace(/(?:\u09AF\u09BC|\u09DF)$/u, "");
+  if (w.length > 2 && /[\u0995-\u09B9]ে$/u.test(w)) return w.slice(0, -1);
+  return w;
+}
+function statedWeakLine(r, hi) {
+  const said = r.stated.map((s) => "**" + s + "**").join(", ");
+  const first = topicBase(r.stated[0]);
+  const lead = r.weak.length ? "📝 আগে নিজেও বলেছিলে " + said + " দুর্বল — এটাও মাথায় রাখছি।" : r.exams ? "🧠 " + hi + "পরীক্ষার ফলে এখনো দুর্বল টপিক ধরা পড়েনি, তবে আগে বলেছিলে " + said + " দুর্বল।" : "🧠 " + hi + "তুমি এখনো পরীক্ষা দাওনি, তবে আগে বলেছিলে " + said + " দুর্বল।";
+  return r.weak.length ? lead : lead + " আজ **" + first + '** দিয়ে শুরু করি? চাইলে বলো "' + first + ' থেকে কুইজ দাও"।';
 }
 var RE_HISTORY = /(আমার\s*(পরীক্ষা|রেজাল্ট|ফলাফল|ফল|স্কোর|নম্বর|অগ্রগতি|প্রোগ্রেস|পারফরম্যান্স)|কয়টা পরীক্ষা|কতগুলো পরীক্ষা|কেমন করছি|কেমন চলছে|my\s*(exam|result|score|progress|performance))/i;
-var RE_WEAK = /(আমার\s*(দুর্বল|কম পারা)\s*(টপিক|জায়গা|অধ্যায়|বিষয়|দিক)|দুর্বল\s*(টপিক|জায়গা|অধ্যায়|বিষয়)\s*(কোন|কী|কি|বলো|দেখাও)|কোন\s*(টপিকে|অধ্যায়ে|বিষয়ে)\s*(বেশি\s*)?(ভুল|দুর্বল|কম)|my\s*weak\s*(topic|area|point)s?|which\s*topics?\s*am\s*i\s*weak)/i;
+var RE_WEAK = /(দুর্বলতা\s*(কী|কি|কোথায়|কোনগুলো|গুলো|বলো|দেখাও)|(কোথায়|কিসে|কীসে)\s*দুর্বল|আমার\s*(দুর্বল|কম পারা)\s*(টপিক|জায়গা|অধ্যায়|বিষয়|দিক)|দুর্বল\s*(টপিক|জায়গা|অধ্যায়|বিষয়)\s*(কোন|কী|কি|বলো|দেখাও)|কোন\s*(টপিকে|অধ্যায়ে|বিষয়ে)\s*(বেশি\s*)?(ভুল|দুর্বল|কম)|my\s*weak\s*(topic|area|point)s?|which\s*topics?\s*am\s*i\s*weak)/i;
 var RE_REMEMBER = /(মনে\s*রাখ|মনে\s*রেখ|remember|ভুলে যেও না)/i;
 function planServerTools(text, ctx = {}) {
   const t = String(text || "").slice(0, 600);
@@ -1080,7 +1097,7 @@ async function execOne(call2, ctx) {
     case "get_exam_history":
       return getExamHistory(ctx.stats);
     case "analyze_weak_topics":
-      return analyzeWeakTopics(ctx.stats);
+      return analyzeWeakTopics(ctx.stats, ctx.statedWeak);
     case "get_app_features":
       return { ok: true, data: await loadAppFeatures(ctx.kv) };
     case "get_datetime":
@@ -1169,6 +1186,14 @@ function renderSimpleAnswer(results, firstName) {
         parts.push("🧠 এখনো কোনো টপিকে যথেষ্ট প্রশ্ন দাওনি, তাই দুর্বল টপিক বলা যাচ্ছে না। কয়েকটা পরীক্ষা দিলে আমি বলে দেব।");
         continue;
       }
+      if (!r.weak.length) {
+        parts.push(statedWeakLine(r, hi));
+        continue;
+      }
+      if (r.stated) {
+        parts.push(["🧠 **যেসব টপিকে আরো পড়া দরকার**", ""].concat(r.weak.map((w, i) => toBnDigits(i + 1) + ". " + w.name + " — সঠিকতা " + pct(w.accuracy))).concat(["", statedWeakLine(r, hi), '💡 সবচেয়ে কম যেটায়, সেটা দিয়ে শুরু করো। চাইলে বলো "' + r.weak[0].name + ' থেকে কুইজ দাও"।']).join("\n"));
+        continue;
+      }
       parts.push(["🧠 **যেসব টপিকে আরো পড়া দরকার**", ""].concat(r.weak.map((w, i) => toBnDigits(i + 1) + ". " + w.name + " — সঠিকতা " + pct(w.accuracy))).concat(["", '💡 সবচেয়ে কম যেটায়, সেটা দিয়ে শুরু করো। চাইলে বলো "' + r.weak[0].name + ' থেকে কুইজ দাও"।']).join("\n"));
     }
   }
@@ -1188,7 +1213,11 @@ function renderToolContext(results) {
     else if (r.name === "get_datetime") out.push("TOOL get_datetime (live clock, Asia/Dhaka): " + r.weekday + ", " + r.date + ", " + r.bangla + ", " + r.time + (r.target ? "; " + r.target + " is " + r.daysLeft + " day(s) from today" : "") + ". Use exactly these values.");
     else if (r.name === "web_search" && r.results && r.results.length) out.push(renderSearchContext(r));
     else if (r.name === "web_search") out.push(renderSearchFailure(r));
-    else if (r.name === "analyze_weak_topics" && !r.empty) out.push("TOOL analyze_weak_topics (this student only): " + r.weak.map((w) => w.name + " " + w.accuracy + "%").join(", ") + ".");
+    else if (r.name === "analyze_weak_topics" && !r.empty) {
+      const measured = r.weak.length ? "measured from exams: " + r.weak.map((w) => w.name + " " + w.accuracy + "%").join(", ") + "." : "no measured weak topic yet (exams taken: " + (r.exams | 0) + ").";
+      const said = r.stated ? " The student said earlier in chat they are weak in: " + r.stated.join(", ") + '. Mention this in your FIRST answer (e.g. "তুমি এখনো পরীক্ষা দাওনি, তবে আগে বলেছিলে ' + r.stated[0] + " দুর্বল। আজ " + topicBase(r.stated[0]) + ' দিয়ে শুরু করি?") and never say there is no information about their weakness.' : "";
+      out.push("TOOL analyze_weak_topics (this student only): " + measured + said);
+    }
   }
   return out.length ? out.join("\n") : "";
 }
@@ -1204,7 +1233,7 @@ async function toolsEnabled(kv2) {
 async function simpleToolResponse(plan, stream, meta = {}) {
   const startedAt = Date.now();
   const stages = [];
-  const run = await runTools([plan], { stats: meta.stats, kv: meta.kv, onStage: (id, label) => stages.push({ stage: id, label }) });
+  const run = await runTools([plan], { stats: meta.stats, statedWeak: meta.statedWeak, kv: meta.kv, onStage: (id, label) => stages.push({ stage: id, label }) });
   const text = renderSimpleAnswer(run.results, meta.firstName);
   if (!text) return null;
   const tools = run.results.map((r) => ({ name: r.name, ok: !!r.ok }));
@@ -1509,6 +1538,11 @@ function cleanCapture(text) {
   const cleaned = String(text || "").replace(/[\u0000-\u001f\u007f]/g, " ").split(/\s+/).map((word) => word.replace(/[,।]/g, "")).filter((word) => word && !FILLER_WORDS.includes(word.toLowerCase())).join(" ");
   return sanitizeMemoryText(cleaned, 80);
 }
+var TOPIC_KEYS = Object.freeze(["weak-topic", "strong-topic"]);
+var QUESTION_WORD = /(?:^|\s)(?:কী|কি|কোন|কোনটা|কোনগুলো|কোথায়|কিসে|কীসে|কেন|কীভাবে|কিভাবে|what|which|where|am i)(?=\s|$)/iu;
+function isQuestionClause(clause) {
+  return QUESTION_WORD.test(String(clause || "")) || /দুর্বলতা/u.test(String(clause || ""));
+}
 function isRetentionRequest(text) {
   const value = String(text || "");
   return RETAIN_TRIGGERS.some((trigger) => value.includes(trigger));
@@ -1518,8 +1552,11 @@ function extractMemoryCandidates(text) {
   if (!value) return [];
   const out = [];
   const explicit = isRetentionRequest(value);
+  const statements = value.split(/[?？!।\n]|,\s*/).filter((c) => c.trim() && !isQuestionClause(c)).join(" । ");
   for (const signal of SIGNALS) {
-    const match = value.match(signal.re);
+    const source = TOPIC_KEYS.includes(signal.key) ? statements : value;
+    if (!source) continue;
+    const match = source.match(signal.re);
     if (!match) continue;
     const captured = cleanCapture(match[1] || match[0]);
     if (!captured) continue;
@@ -1534,6 +1571,28 @@ function extractMemoryCandidates(text) {
   }
   return out;
 }
+var KEY_LABEL = Object.freeze({
+  "weak-topic": "দুর্বল বিষয় (শিক্ষার্থী নিজে বলেছে)",
+  "strong-topic": "ভালো পারে (শিক্ষার্থী নিজে বলেছে)",
+  "goal": "লক্ষ্য",
+  "last-topic": "সর্বশেষ আলোচনার বিষয়",
+  "answer-style": "উত্তরের ধরন",
+  "study-time": "পড়ার অভ্যাস"
+});
+function statedWeakTopics(records, limit = 3) {
+  const items = Array.isArray(records) ? records : [];
+  const seen = /* @__PURE__ */ new Set();
+  const out = [];
+  for (const r of items.slice().sort((a, b) => (b.ts || 0) - (a.ts || 0))) {
+    if (!r || r.kind !== KIND.STUDIES || r.key !== "weak-topic") continue;
+    const value = sanitizeMemoryText(r.value, 80);
+    if (!value || !isPiiFree(value) || seen.has(value)) continue;
+    seen.add(value);
+    out.push(value);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
 var KIND_LABEL = Object.freeze({
   [KIND.STUDIES]: "পড়াশোনা",
   [KIND.PREFERENCE]: "পছন্দ",
@@ -1543,13 +1602,14 @@ function renderMemory(records, viewVersion = "") {
   const items = Array.isArray(records) ? records.slice() : [];
   if (!items.length) return "";
   const ranked = items.sort((a, b) => b.confidence - a.confidence || (b.ts || 0) - (a.ts || 0)).slice(0, RENDER_LIMIT);
-  const lines = ranked.map((r) => `- ${KIND_LABEL[r.kind] || r.kind}: ${r.value}`);
+  const lines = ranked.map((r) => `- ${KIND_LABEL[r.kind] || r.kind} — ${KEY_LABEL[r.key] || r.key}: ${r.value}`);
   const v = viewVersion ? " — " + viewVersion : "";
+  const weakRule = ranked.some((r) => r.kind === KIND.STUDIES && r.key === "weak-topic") ? '\nশিক্ষার্থী নিজের দুর্বলতা বা কী পড়বে জানতে চাইলে প্রথম উত্তরেই "দুর্বল বিষয় (শিক্ষার্থী নিজে বলেছে)" লাইনটি ব্যবহার করো — পরীক্ষার ফল না থাকলেও। কখনো বলবে না "দুর্বলতার কোনো তথ্য নেই"। উদাহরণ: "তুমি এখনো পরীক্ষা দাওনি, তবে আগে বলেছিলে সমাসে দুর্বল। আজ সমাস দিয়ে শুরু করি?"' : "";
   return `
 
 LONG-TERM MEMORY${v}:
 ${lines.join("\n")}
-এই তথ্য শুধু এই শিক্ষার্থীর নিজেরই। স্বাভাবিকভাবে কাজে লাগাও; কখনো বলো না তুমি আলাদা করে কিছু মনে রেখেছ।`;
+এই তথ্য শুধু এই শিক্ষার্থীর নিজেরই। স্বাভাবিকভাবে কাজে লাগাও; কখনো বলো না তুমি আলাদা করে কিছু মনে রেখেছ।` + weakRule;
 }
 
 // response-validator.js
@@ -3802,9 +3862,19 @@ async function agentChat(request, env, uid, opts = {}) {
   const prevUser = v.messages.slice(0, -1).reverse().find((m) => m.role === "user");
   let toolPlan = examMode ? [] : planServerTools(toolText, { prevText: prevUser ? String(prevUser.content || "") : "", firstName: (sanitizeProfileContext(body && body.context && body.context.profile) || {}).firstName, quizMode, hasImage: v.messages.some((m) => m.image), searchOn: !!(env && env.TAVILY_API_KEY) });
   if (toolPlan.length && !await toolsEnabled(env && env.PUB_KV)) toolPlan = [];
+  let earlyLongP = null;
+  let statedWeak = [];
+  if (persistMemory && toolPlan.some((p) => p.name === "analyze_weak_topics")) {
+    earlyLongP = Promise.resolve().then(() => stateGet("mem:" + MEMORY_VERSION + ":" + sendCtx.uid)).catch(() => null);
+    try {
+      statedWeak = statedWeakTopics(parseMemory(await earlyLongP, sendCtx.uid));
+    } catch (_) {
+      statedWeak = [];
+    }
+  }
   if (toolPlan.length && isSimplePlan(toolPlan, toolText)) {
     const prof = sanitizeProfileContext(body && body.context && body.context.profile) || {};
-    const tr = await simpleToolResponse(toolPlan, stream, { intent, pv: SYSTEM_PROMPT_V, agent: AGENT_VERSION, firstName: prof.firstName, stats, kv: env && env.PUB_KV }).catch(() => null);
+    const tr = await simpleToolResponse(toolPlan, stream, { intent, pv: SYSTEM_PROMPT_V, agent: AGENT_VERSION, firstName: prof.firstName, stats, statedWeak, kv: env && env.PUB_KV }).catch(() => null);
     if (tr) {
       mark("tools");
       emitTiming({ tools: toolPlan.length, quota: false });
@@ -3885,7 +3955,7 @@ data: ${JSON.stringify({ stage: id, label })}
     const prefsP = safeRead(() => getKv(env.PUB_KV, "aiprefs:" + sendCtx.uid));
     const chatMemP = persistMemory ? safeRead(async () => await stateGet("chatmem:" + sendCtx.uid)) : Promise.resolve(null);
     const sumP = persistMemory && v.fresh !== true ? safeRead(() => stateGet("chatmemsum:" + sendCtx.uid)) : Promise.resolve("");
-    const longP = persistMemory ? safeRead(() => stateGet(memKeyEarly)) : Promise.resolve(null);
+    const longP = persistMemory ? earlyLongP || safeRead(() => stateGet(memKeyEarly)) : Promise.resolve(null);
     let aiPrefs = null;
     try {
       const rawPrefs = await prefsP;
@@ -3973,7 +4043,7 @@ data: ${JSON.stringify({ stage: id, label })}
     let toolCtxUsed = false;
     if (extraTools.length) {
       try {
-        const tr = await runTools([extraTools], { stats, env, kv: env && env.PUB_KV, onStage: prepStage });
+        const tr = await runTools([extraTools], { stats, statedWeak, env, kv: env && env.PUB_KV, onStage: prepStage });
         const block = renderToolContext(tr.results);
         if (block) {
           sys = sys + "\n\n" + block;

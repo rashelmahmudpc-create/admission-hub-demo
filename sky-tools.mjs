@@ -110,17 +110,43 @@ export function getExamHistory(stats) {
   if (stats.prevWeekly) out.prevWeekly = stats.prevWeekly;
   return out;
 }
-export function analyzeWeakTopics(stats) {
+/* Sky memory fix 2026-10-18: `stated` = weak topics the student named in chat
+   (long-term memory, this student only). An empty exam record no longer means
+   "nothing is known" — the student's own words count too. */
+export function analyzeWeakTopics(stats, stated) {
   const rows = stats && Array.isArray(stats.weakTopics) ? stats.weakTopics : [];
-  if (!rows.length) return { ok: true, empty: true };
+  const said = (Array.isArray(stated) ? stated : []).map((s) => String(s || '').trim().slice(0, 80)).filter(Boolean).slice(0, 3);
+  const exams = stats && Number(stats.exams) > 0 ? stats.exams | 0 : 0;
+  if (!rows.length && !said.length) return { ok: true, empty: true };
   const weak = rows.slice(0, 4).map((r) => ({ name: r.name, accuracy: r.accuracy | 0, attempts: r.attempts | 0 }))
     .sort((a, b) => a.accuracy - b.accuracy);
-  return { ok: true, weak };
+  const out = { ok: true, weak, exams };
+  if (said.length) out.stated = said;
+  return out;
+}
+
+/* "সমাসে" → "সমাস", "ইংরেজিতে" → "ইংরেজি", "বাংলায়" → "বাংলা" (for "X দিয়ে শুরু করি"). */
+export function topicBase(word) {
+  const w = String(word || '').trim();
+  if (w.length > 4 && /তে$/u.test(w)) return w.slice(0, -2);
+  if (w.length > 3 && /া(?:\u09AF\u09BC|\u09DF)$/u.test(w)) return w.replace(/(?:\u09AF\u09BC|\u09DF)$/u, '');
+  if (w.length > 2 && /[\u0995-\u09B9]ে$/u.test(w)) return w.slice(0, -1);
+  return w;
+}
+
+function statedWeakLine(r, hi) {
+  const said = r.stated.map((s) => '**' + s + '**').join(', ');
+  const first = topicBase(r.stated[0]);
+  const lead = r.weak.length
+    ? '📝 আগে নিজেও বলেছিলে ' + said + ' দুর্বল — এটাও মাথায় রাখছি।'
+    : (r.exams ? '🧠 ' + hi + 'পরীক্ষার ফলে এখনো দুর্বল টপিক ধরা পড়েনি, তবে আগে বলেছিলে ' + said + ' দুর্বল।'
+      : '🧠 ' + hi + 'তুমি এখনো পরীক্ষা দাওনি, তবে আগে বলেছিলে ' + said + ' দুর্বল।');
+  return r.weak.length ? lead : lead + ' আজ **' + first + '** দিয়ে শুরু করি? চাইলে বলো "' + first + ' থেকে কুইজ দাও"।';
 }
 
 /* ── planner: which tools a question needs (rule based, no model call) ── */
 const RE_HISTORY = /(আমার\s*(পরীক্ষা|রেজাল্ট|ফলাফল|ফল|স্কোর|নম্বর|অগ্রগতি|প্রোগ্রেস|পারফরম্যান্স)|কয়টা পরীক্ষা|কতগুলো পরীক্ষা|কেমন করছি|কেমন চলছে|my\s*(exam|result|score|progress|performance))/i;
-const RE_WEAK = /(আমার\s*(দুর্বল|কম পারা)\s*(টপিক|জায়গা|অধ্যায়|বিষয়|দিক)|দুর্বল\s*(টপিক|জায়গা|অধ্যায়|বিষয়)\s*(কোন|কী|কি|বলো|দেখাও)|কোন\s*(টপিকে|অধ্যায়ে|বিষয়ে)\s*(বেশি\s*)?(ভুল|দুর্বল|কম)|my\s*weak\s*(topic|area|point)s?|which\s*topics?\s*am\s*i\s*weak)/i;
+const RE_WEAK = /(দুর্বলতা\s*(কী|কি|কোথায়|কোনগুলো|গুলো|বলো|দেখাও)|(কোথায়|কিসে|কীসে)\s*দুর্বল|আমার\s*(দুর্বল|কম পারা)\s*(টপিক|জায়গা|অধ্যায়|বিষয়|দিক)|দুর্বল\s*(টপিক|জায়গা|অধ্যায়|বিষয়)\s*(কোন|কী|কি|বলো|দেখাও)|কোন\s*(টপিকে|অধ্যায়ে|বিষয়ে)\s*(বেশি\s*)?(ভুল|দুর্বল|কম)|my\s*weak\s*(topic|area|point)s?|which\s*topics?\s*am\s*i\s*weak)/i;
 const RE_REMEMBER = /(মনে\s*রাখ|মনে\s*রেখ|remember|ভুলে যেও না)/i;
 
 export function planServerTools(text, ctx = {}) {
@@ -162,7 +188,7 @@ async function execOne(call, ctx) {
   switch (call.name) {
     case 'calculate': return calculate(call.args && call.args.expression);
     case 'get_exam_history': return getExamHistory(ctx.stats);
-    case 'analyze_weak_topics': return analyzeWeakTopics(ctx.stats);
+    case 'analyze_weak_topics': return analyzeWeakTopics(ctx.stats, ctx.statedWeak);
     case 'get_app_features': return { ok: true, data: await loadAppFeatures(ctx.kv) };
     case 'get_datetime': return getDateTime(ctx.nowMs || Date.now(), call.args && call.args.text);
     case 'web_search': return webSearch(call.args && call.args.query, ctx);
@@ -233,6 +259,8 @@ export function renderSimpleAnswer(results, firstName) {
     } else if (r.name === 'analyze_weak_topics') {
       if (!r.ok) continue;
       if (r.empty) { parts.push('🧠 এখনো কোনো টপিকে যথেষ্ট প্রশ্ন দাওনি, তাই দুর্বল টপিক বলা যাচ্ছে না। কয়েকটা পরীক্ষা দিলে আমি বলে দেব।'); continue; }
+      if (!r.weak.length) { parts.push(statedWeakLine(r, hi)); continue; }
+      if (r.stated) { parts.push(['🧠 **যেসব টপিকে আরো পড়া দরকার**', ''].concat(r.weak.map((w, i) => toBnDigits(i + 1) + '. ' + w.name + ' — সঠিকতা ' + pct(w.accuracy))).concat(['', statedWeakLine(r, hi), '💡 সবচেয়ে কম যেটায়, সেটা দিয়ে শুরু করো। চাইলে বলো "' + r.weak[0].name + ' থেকে কুইজ দাও"।']).join('\n')); continue; }
       parts.push(['🧠 **যেসব টপিকে আরো পড়া দরকার**', ''].concat(r.weak.map((w, i) => toBnDigits(i + 1) + '. ' + w.name + ' — সঠিকতা ' + pct(w.accuracy))).concat(['', '💡 সবচেয়ে কম যেটায়, সেটা দিয়ে শুরু করো। চাইলে বলো "' + r.weak[0].name + ' থেকে কুইজ দাও"।']).join('\n'));
     }
   }
@@ -251,7 +279,11 @@ export function renderToolContext(results) {
     else if (r.name === 'get_datetime') out.push('TOOL get_datetime (live clock, Asia/Dhaka): ' + r.weekday + ', ' + r.date + ', ' + r.bangla + ', ' + r.time + (r.target ? '; ' + r.target + ' is ' + r.daysLeft + ' day(s) from today' : '') + '. Use exactly these values.');
     else if (r.name === 'web_search' && r.results && r.results.length) out.push(renderSearchContext(r));
     else if (r.name === 'web_search') out.push(renderSearchFailure(r));
-    else if (r.name === 'analyze_weak_topics' && !r.empty) out.push('TOOL analyze_weak_topics (this student only): ' + r.weak.map((w) => w.name + ' ' + w.accuracy + '%').join(', ') + '.');
+    else if (r.name === 'analyze_weak_topics' && !r.empty) {
+      const measured = r.weak.length ? 'measured from exams: ' + r.weak.map((w) => w.name + ' ' + w.accuracy + '%').join(', ') + '.' : 'no measured weak topic yet (exams taken: ' + (r.exams | 0) + ').';
+      const said = r.stated ? ' The student said earlier in chat they are weak in: ' + r.stated.join(', ') + '. Mention this in your FIRST answer (e.g. "তুমি এখনো পরীক্ষা দাওনি, তবে আগে বলেছিলে ' + r.stated[0] + ' দুর্বল। আজ ' + topicBase(r.stated[0]) + ' দিয়ে শুরু করি?") and never say there is no information about their weakness.' : '';
+      out.push('TOOL analyze_weak_topics (this student only): ' + measured + said);
+    }
   }
   return out.length ? out.join('\n') : '';
 }
@@ -274,7 +306,7 @@ export async function toolsEnabled(kv) {
 export async function simpleToolResponse(plan, stream, meta = {}) {
   const startedAt = Date.now();
   const stages = [];
-  const run = await runTools([plan], { stats: meta.stats, kv: meta.kv, onStage: (id, label) => stages.push({ stage: id, label }) });
+  const run = await runTools([plan], { stats: meta.stats, statedWeak: meta.statedWeak, kv: meta.kv, onStage: (id, label) => stages.push({ stage: id, label }) });
   const text = renderSimpleAnswer(run.results, meta.firstName);
   if (!text) return null;
   const tools = run.results.map((r) => ({ name: r.name, ok: !!r.ok }));
