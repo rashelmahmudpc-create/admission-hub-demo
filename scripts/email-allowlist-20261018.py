@@ -61,6 +61,13 @@ s = once(s, "if (matchesDomain(domain, allow) || matchesDomain(domain, INSTITUTI
   "if (matchesDomain(domain, allow)) return; // owner 2026-10-18: no institutional exception", p)
 wr(p, s)
 
+p = 'verification-orchestrator.test.mjs'; s = rd(p)
+s = once(s, "test('email-ownership accepts an approved consumer domain and a Bangladesh college suffix', async () => {",
+  "test('email-ownership accepts an approved consumer domain and refuses a Bangladesh college suffix (owner 2026-10-18)', async () => {", p)
+s = once(s, "  const college = await app.orchestrator.requestVerification(\n    { ...collegeIdentity, trustedIdentity: { ...collegeIdentity.trustedIdentity, emailRef: 'd'.repeat(64) } },\n    context\n  );\n  assert.equal(college.accepted, true);\n  assert.equal(provider.sends.length, 2);",
+  "  await expectCode(() => app.orchestrator.requestVerification(\n    { ...collegeIdentity, trustedIdentity: { ...collegeIdentity.trustedIdentity, emailRef: 'd'.repeat(64) } },\n    context\n  ), AUTH_ERROR_CODES.INVALID_INPUT);\n  assert.equal(provider.sends.length, 1);", p)
+wr(p, s)
+
 for old, new in [('account-access.js?v=20261018-magiclink-v1', 'account-access.js?v=20261018-email-allow-v1'),
                  ('email-policy-client.js?v=20261016-disposable-email-v1', 'email-policy-client.js?v=20261018-email-allow-v1'),
                  ('sky-onboarding.js?v=sky-flow-20261017-v9', 'sky-onboarding.js?v=sky-flow-20261018-v10')]:
