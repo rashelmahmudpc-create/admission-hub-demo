@@ -7,6 +7,7 @@ import { verificationConfig } from '../verification/config.mjs';
 import { verifyTurnstile } from '../verification/turnstile.mjs';
 import { resolveTelegramWebhookSecret, validTelegramWebhookSecret } from '../verification/telegram-security.mjs';
 import { isTelegramLoginEmail, reservedTelegramLoginEmail, telegramLoginBotId, telegramLoginCredentials, telegramLoginReady, verifyTelegramLogin } from '../verification/telegram-login.mjs';
+import { createWhatsAppStart, handleWhatsAppWebhook, isWhatsAppLoginEmail, reservedWhatsAppLoginEmail, verifyWhatsAppLoginToken, whatsappLoginCredentials, whatsappLoginReady, whatsappVerifyChallenge } from '../verification/whatsapp-login.mjs';
 
 export const AUTH_API_PREFIX = '/api/auth/v1';
 // Phase 7 public-safe profile projection — deliberately unauthenticated and
@@ -367,7 +368,9 @@ const firebaseReadySession = async ({ provider, jar, env, context, allowTelegram
   const ownershipProven = !user.emailVerified && await emailOwnershipProven({ env, user, context, allowed: true });
   // A "Continue with Telegram" account is proven by Telegram's signature at
   // login; its derived address can never receive mail, so it counts as verified.
-  const telegramLoginAccount = !user.emailVerified && !ownershipProven && await isTelegramLoginEmail(user.email, env);
+  // "Continue with WhatsApp" accounts (owner 2026-10-18) are proven the same way.
+  const telegramLoginAccount = !user.emailVerified && !ownershipProven
+    && (await isTelegramLoginEmail(user.email, env) || await isWhatsAppLoginEmail(user.email, env));
   const telegramVerified = telegramLoginAccount || (!user.emailVerified && !ownershipProven
     && await telegramVerificationStatus({ env, user, context, allowed: allowTelegram }));
   if (!user.emailVerified && !ownershipProven && !telegramVerified) throw new NativeAuthError(AUTH_ERROR_CODES.EMAIL_NOT_VERIFIED);
@@ -481,6 +484,7 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
     const telegramOperation = request.method === 'POST' && [
       `${AUTH_API_PREFIX}/telegram/webhook`,
       `${AUTH_API_PREFIX}/telegram/canary/activate`,
+      `${AUTH_API_PREFIX}/whatsapp/webhook`,
       `${AUTH_API_PREFIX}/telegram/canary/deactivate`
     ].includes(url.pathname);
     const originOptional = request.method === 'GET' || telegramOperation;
@@ -533,6 +537,24 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
             webhookChanged: result?.webhookChanged === true
           } : { removed: result?.removed === true })
         });
+      }
+
+      // Owner 2026-10-18: "Continue with WhatsApp" — Meta Cloud API webhook.
+      // GET = Meta's "Verify and save" handshake; POST = signed inbound messages.
+      if (url.pathname === `${AUTH_API_PREFIX}/whatsapp/webhook` && (request.method === 'GET' || request.method === 'POST')) {
+        if (!whatsappLoginReady(env)) return json(request, 404, { ok: false, error: { code: 'NOT_FOUND', message: 'পাওয়া যায়নি।' } });
+        if (request.method === 'GET') {
+          const challenge = whatsappVerifyChallenge(url, env);
+          if (!challenge) return json(request, 403, { ok: false, error: { code: 'FORBIDDEN', message: 'অনুমতি নেই।' } });
+          return new Response(challenge, { status: 200, headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' } });
+        }
+        const declared = Number(request.headers.get('Content-Length') || 0);
+        if (declared > 256 * 1024) return json(request, 413, { ok: false });
+        const raw = await request.text();
+        if (raw.length > 256 * 1024) return json(request, 413, { ok: false });
+        const outcome = await handleWhatsAppWebhook(raw, request.headers.get('X-Hub-Signature-256'), env, { fetchImpl });
+        if (outcome.forbidden) return json(request, 403, { ok: false, error: { code: 'FORBIDDEN', message: 'অনুমতি নেই।' } });
+        return json(request, 200, { ok: true });
       }
 
       if (request.method === 'POST' && url.pathname === `${AUTH_API_PREFIX}/telegram/webhook`) {
@@ -686,6 +708,7 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
             methods: {
               google,
               facebook,
+              whatsappLogin: available && whatsappLoginReady(env) ? { available: true } : { available: false },
               telegramLogin: available && telegramLoginReady(env)
                 ? { available: true, botId: telegramLoginBotId(env) }
                 : { available: false },
@@ -730,6 +753,7 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         // created or any OTP is sent. Server-side so a patched client cannot skip it.
         if (isDisposableEmail(input.email)) throw new NativeAuthError(AUTH_ERROR_CODES.DISPOSABLE_EMAIL);
         if (reservedTelegramLoginEmail(input.email)) throw new NativeAuthError(AUTH_ERROR_CODES.DISPOSABLE_EMAIL);
+        if (reservedWhatsAppLoginEmail(input.email)) throw new NativeAuthError(AUTH_ERROR_CODES.DISPOSABLE_EMAIL);
         const prepared = await callAuthority(env, '/internal/firebase/rate', { input: { operation: 'signup', email: input.email }, context });
         let signed;
         try { signed = await provider.signUp(prepared.email, input.password); } catch (cause) { throw providerError(cause, 'signup'); }
@@ -1071,6 +1095,55 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           emailVerified: user.emailVerified === true,
           telegramVerified: user.emailVerified !== true && passwordTelegramVerified
         });
+      }
+
+      // Owner 2026-10-18: "Continue with WhatsApp" — start link + login link.
+      if (request.method === 'POST' && url.pathname === `${AUTH_API_PREFIX}/whatsapp/start`) {
+        if (!provider.configured || !whatsappLoginReady(env)) throw new NativeAuthError(AUTH_ERROR_CODES.WHATSAPP_LOGIN_UNAVAILABLE);
+        await readJson(request);
+        authStage = 'RATE_CHECK';
+        await callAuthority(env, '/internal/firebase/rate', { input: { operation: 'whatsapp-login' }, context });
+        const start = await createWhatsAppStart(env);
+        return json(request, 200, { ok: true, url: start.url });
+      }
+
+      if (request.method === 'POST' && url.pathname === `${AUTH_API_PREFIX}/whatsapp/login`) {
+        if (!provider.configured || !whatsappLoginReady(env)) throw new NativeAuthError(AUTH_ERROR_CODES.WHATSAPP_LOGIN_UNAVAILABLE);
+        authStage = 'CREDENTIAL_INPUT';
+        let whatsappUser;
+        try { whatsappUser = await verifyWhatsAppLoginToken((await readJson(request))?.token, env); }
+        catch { throw new NativeAuthError(AUTH_ERROR_CODES.WHATSAPP_LOGIN_INVALID); }
+        authStage = 'RATE_CHECK';
+        await callAuthority(env, '/internal/firebase/rate', { input: { operation: 'whatsapp-login' }, context });
+        const credentials = await whatsappLoginCredentials(whatsappUser.phone, env);
+        authStage = 'FIREBASE_EXCHANGE';
+        let signed;
+        try { signed = await provider.signIn(credentials.email, credentials.password); }
+        catch (signInCause) {
+          try { signed = await provider.signUp(credentials.email, credentials.password); }
+          catch (cause) {
+            if (String(cause?.reason || '').startsWith('EMAIL_EXISTS')) throw providerError(signInCause, 'whatsapp-signin');
+            throw providerError(cause, 'whatsapp-signup');
+          }
+        }
+        authStage = 'IDENTITY_LOOKUP';
+        let user;
+        try { user = await provider.lookup(signed.idToken); } catch (cause) { throw providerError(cause, 'whatsapp-lookup'); }
+        assertProviderUser(signed, user);
+        authStage = 'ACCOUNT_SESSION';
+        const established = await callAuthority(env, '/internal/firebase/session/create', {
+          input: { email: user.email, subject: user.subject, verified: true },
+          context
+        });
+        // WhatsApp profile name -> auto profile name (best effort, never blocks the login).
+        const enrichment = seedGoogleProfile(env, context, established, { ...user, displayName: whatsappUser.displayName, photoUrl: '' }).catch(() => {});
+        if (typeof executionContext?.waitUntil === 'function') executionContext.waitUntil(enrichment);
+        else await enrichment;
+        // A messenger-proven account: reported like Telegram so session refresh
+        // (isWhatsAppLoginEmail below) and the client treat it the same way.
+        const result = authSuccess(request, established, signed.refreshToken, context, { emailVerified: false, telegramVerified: true });
+        result.headers.set('X-AH-Auth-Stage', 'SESSION_CREATED');
+        return result;
       }
 
       // Owner 2026-10-18: "Continue with Telegram" login.
