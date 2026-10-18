@@ -24138,7 +24138,7 @@ async function bounded(action, milliseconds) {
   }
 }
 var VerificationOrchestrator = class {
-  constructor({ repository, hmacSecret, config, providers = [], activated = false, now = Date.now, cryptoImpl = globalThis.crypto } = {}) {
+  constructor({ repository, hmacSecret, config, providers = [], activated = false, now = Date.now, cryptoImpl = globalThis.crypto, onDeliveryEvent = null } = {}) {
     const required = [
       "reserveChallenge",
       "markChallengeDelivery",
@@ -24173,6 +24173,7 @@ var VerificationOrchestrator = class {
     this.now = now;
     this.crypto = cryptoImpl;
     this.capabilityCache = null;
+    this.onDeliveryEvent = typeof onDeliveryEvent === "function" ? onDeliveryEvent : null;
     const supplied = providers instanceof Map ? providers : new Map(providers.map((provider) => [provider.id, provider]));
     this.providers = new Map(this.config.providers.map((entry) => {
       const provider = supplied.get(entry.id) || new DisabledVerificationProvider(entry);
@@ -24399,12 +24400,30 @@ var VerificationOrchestrator = class {
     const destinations = identity.destinations;
     const deliveryMethod = input?.deliveryMethod === "magic-link" && identity.purpose === "email-ownership" ? "magic-link" : "";
     const candidates = await this.#candidateRows({ ...identity, attemptId, previousProviderId, deliveryMethod }, destinations, now);
+    const requestStarted = Date.now();
+    const attemptRef = String(attemptId).slice(0, 8);
+    const tried = [];
+    const logBase = { attempt: attemptRef, purpose: identity.purpose, method: deliveryMethod || "code", candidates: candidates.length };
+    const emit = (evt, fields) => {
+      try {
+        this.onDeliveryEvent?.({ evt, ...fields });
+      } catch {
+      }
+    };
+    const logDelivery = (fields) => emit("otp_delivery", fields);
+    const logRequest = (fields) => emit("otp_request", fields);
+    let rank2 = 0;
     for (const candidate of candidates) {
       const { entry, provider } = candidate;
+      rank2 += 1;
       const maxTries = 1 + policy.maxProviderRetries;
       for (let currentTry = 0; currentTry < maxTries; currentTry += 1) {
         const quota = await this.repository.reserveDailyQuota({ providerId: entry.id, dailyQuota: entry.dailyQuota, now });
-        if (quota.exhausted) break;
+        if (quota.exhausted) {
+          tried.push(`${entry.id}:quota`);
+          logDelivery({ ...logBase, provider: entry.id, rank: rank2, try: currentTry + 1, outcome: "quota_exhausted" });
+          break;
+        }
         const started = Date.now();
         let providerAccepted = false;
         try {
@@ -24421,6 +24440,9 @@ var VerificationOrchestrator = class {
           if (result?.accepted !== true) throw new VerificationProviderError("INVALID_PROVIDER_RESPONSE", VERIFICATION_FAILURE_CLASS.HARD);
           providerAccepted = true;
           const latencyMs = Date.now() - started;
+          tried.push(`${entry.id}:ok`);
+          logDelivery({ ...logBase, provider: entry.id, label: entry.label, rank: rank2, try: currentTry + 1, outcome: "accepted", latencyMs });
+          logRequest({ ...logBase, outcome: "sent", provider: entry.id, totalMs: Date.now() - requestStarted, tried: tried.join(",") });
           await this.#record(entry, { attemptId, userId: identity.userId, subjectRef: identity.subjectRef, success: true, reason: "accepted", latencyMs, now });
           errorFromRepository(await this.repository.markChallengeDelivery({
             attemptId,
@@ -24451,6 +24473,18 @@ var VerificationOrchestrator = class {
             throw new NativeAuthError(AUTH_ERROR_CODES.STORAGE_UNAVAILABLE);
           }
           const failure = providerFailure(cause);
+          tried.push(`${entry.id}:${failure.code}`);
+          logDelivery({
+            ...logBase,
+            provider: entry.id,
+            label: entry.label,
+            rank: rank2,
+            try: currentTry + 1,
+            outcome: "failed",
+            reason: failure.code,
+            failureClass: failure.failureClass,
+            latencyMs: Date.now() - started
+          });
           const providerState = await this.#record(entry, {
             attemptId,
             userId: identity.userId,
@@ -24465,6 +24499,7 @@ var VerificationOrchestrator = class {
           if (failure.failureClass === VERIFICATION_FAILURE_CLASS.USER) {
             if (failure.code === "INVALID_DESTINATION") {
               await this.repository.failChallenge({ attemptId, reason: failure.code, now });
+              logRequest({ ...logBase, outcome: "invalid_destination", totalMs: Date.now() - requestStarted, tried: tried.join(",") });
               throw new NativeAuthError(AUTH_ERROR_CODES.INVALID_INPUT);
             }
             break;
@@ -24474,6 +24509,7 @@ var VerificationOrchestrator = class {
         }
       }
     }
+    logRequest({ ...logBase, outcome: "all_failed", totalMs: Date.now() - requestStarted, tried: tried.join(",") });
     await this.repository.failChallenge({ attemptId, reason: "all_providers_unavailable", now });
     throw new NativeAuthError(AUTH_ERROR_CODES.BACKUP_UNAVAILABLE);
   }
@@ -24821,6 +24857,48 @@ var VerificationOrchestrator = class {
   }
 };
 var __verificationOrchestratorTest = Object.freeze({ PURPOSES, SEND_LIMITS, providerFailure, ratio: ratio3 });
+
+// observability/otp-delivery-log.mjs
+var OTP_PROVIDER_NAMES = Object.freeze({
+  "otp-a": "Brevo",
+  "otp-b": "AppsScript",
+  "otp-c": "Mailjet",
+  "otp-d": "Resend",
+  "otp-e": "AgentMail",
+  "otp-f": "MailerSend",
+  "otp-g": "DeadSimple",
+  "otp-h": "Logto",
+  "otp-i": "Appwrite",
+  "otp-j": "Ory",
+  "otp-k": "Hanko",
+  "otp-l": "Descope-OTP",
+  "otp-m": "Descope-MagicLink",
+  telegram: "Telegram"
+});
+var EVENTS = /* @__PURE__ */ new Set(["otp_delivery", "otp_request"]);
+var STRING_FIELDS = /* @__PURE__ */ new Set(["attempt", "purpose", "method", "provider", "label", "outcome", "reason", "failureClass", "tried"]);
+var NUMBER_FIELDS = /* @__PURE__ */ new Set(["candidates", "rank", "try", "latencyMs", "totalMs"]);
+function sanitizeOtpDeliveryEvent(event) {
+  if (!event || !EVENTS.has(event.evt)) return null;
+  const out = { evt: event.evt };
+  for (const [key, value] of Object.entries(event)) {
+    if (STRING_FIELDS.has(key) && value != null && typeof value !== "object") out[key] = String(value).slice(0, key === "tried" ? 400 : 64);
+    else if (NUMBER_FIELDS.has(key) && Number.isFinite(Number(value))) out[key] = Math.round(Number(value));
+  }
+  if (out.attempt) out.attempt = out.attempt.slice(0, 8);
+  if (out.provider) out.name = OTP_PROVIDER_NAMES[out.provider] || out.provider;
+  return out;
+}
+function emitOtpDeliveryEvent(event, sink = console) {
+  const record = sanitizeOtpDeliveryEvent(event);
+  if (!record) return null;
+  try {
+    const failed = record.outcome === "failed" || record.outcome === "all_failed";
+    (failed ? sink.warn : sink.log).call(sink, JSON.stringify(record));
+  } catch {
+  }
+  return record;
+}
 
 // auth-native/verification/providers.mjs
 var safeInteger = (value, min = 0, max = Number.MAX_SAFE_INTEGER) => {
@@ -28504,7 +28582,8 @@ var AdmissionAuthAuthority = class {
         hmacSecret: env.AUTH_HMAC_SECRET,
         config: persistedVerificationConfig || env.VERIFICATION_ORCHESTRATOR_CONFIG,
         providers: createConfiguredVerificationProviders(env),
-        activated: ["canary", "enabled"].includes(String(env.VERIFICATION_AUTH_ACTIVATION || ""))
+        activated: ["canary", "enabled"].includes(String(env.VERIFICATION_AUTH_ACTIVATION || "")),
+        onDeliveryEvent: emitOtpDeliveryEvent
       });
       this.engine.bindVerification(this.verification);
       this.securityNotificationsDryRun = String(env.SECURITY_NOTIFICATIONS_ACTIVATION || "dry-run") !== "enabled";
