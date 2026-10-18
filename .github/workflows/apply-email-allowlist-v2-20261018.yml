@@ -27,6 +27,7 @@ jobs:
           set -eu
           git fetch -q origin fix/email-allowlist
           git show 2a10c5b:scripts/email-allowlist-20261018.py > /tmp/allow.py
+          sed -i 's/account-access\.js?v=20261018-magiclink-v1/account-access.js?v=20261018-logout-otp-v1/' /tmp/allow.py
           python3 /tmp/allow.py
           sed -i 's/@example\.com/@gmail.com/g' native-auth.test.mjs telegram-otp-auth.test.mjs
           git diff --stat
