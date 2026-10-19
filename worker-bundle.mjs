@@ -19798,7 +19798,7 @@ var jsonResponse5 = (request, obj, status = 200) => new Response(JSON.stringify(
   headers: {
     "Content-Type": "application/json; charset=utf-8",
     "Cache-Control": "no-store",
-    ...request?.headers?.get("Origin") ? { "Access-Control-Allow-Origin": request.headers.get("Origin"), "Access-Control-Allow-Credentials": "true" } : {}
+    ...corsHeaders2(request)
   }
 });
 var readBody2 = async (request) => {
@@ -20014,8 +20014,7 @@ async function handleAnalyticsRequest(request, env, ctx, deps = {}) {
   if (!path.startsWith(ANALYTICS_PREFIX) && path !== "/api/analytics") return null;
   if (request.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: {
-      "Access-Control-Allow-Origin": request.headers.get("Origin") || "*",
-      "Access-Control-Allow-Credentials": "true",
+      ...corsHeaders2(request),
       "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
       "Access-Control-Allow-Headers": "Content-Type, Authorization",
       "Access-Control-Max-Age": "86400"
@@ -31138,7 +31137,7 @@ var NEWS_SCHEMA = {
 };
 var cors = (request) => {
   const origin = request.headers.get("Origin") || "";
-  const ok2 = /^https:\/\/([a-z0-9-]+\.)?github\.io$/.test(origin) || /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin) || /^https:\/\/[a-z0-9-]+\.e2b\.app$/.test(origin);
+  const ok2 = /^https:\/\/sheikhrashel47-stack\.github\.io$/.test(origin) || /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin) || /^https:\/\/[a-z0-9-]+\.e2b\.app$/.test(origin);
   const headers = { "Access-Control-Allow-Methods": "GET, POST, OPTIONS", "Access-Control-Allow-Headers": "Content-Type, X-AH-App", "Access-Control-Max-Age": "86400" };
   if (ok2) headers["Access-Control-Allow-Origin"] = origin;
   return headers;

@@ -27,6 +27,7 @@
 
 import { DEFAULT_TZ_OFFSET_MIN, LEARNING_KINDS } from './notification-intelligence.mjs';
 import { sessionUser } from './fcm-notification.mjs';
+import { corsHeaders } from './cors-policy.mjs';
 
 const DAY_MS = 86400000;
 
@@ -1440,9 +1441,7 @@ const jsonResponse = (request, obj, status = 200) => new Response(JSON.stringify
   headers: {
     'Content-Type': 'application/json; charset=utf-8',
     'Cache-Control': 'no-store',
-    ...(request?.headers?.get('Origin')
-      ? { 'Access-Control-Allow-Origin': request.headers.get('Origin'), 'Access-Control-Allow-Credentials': 'true' }
-      : {})
+    ...corsHeaders(request)
   }
 });
 
@@ -1680,8 +1679,7 @@ export async function handleAnalyticsRequest(request, env, ctx, deps = {}) {
 
   if (request.method === 'OPTIONS') {
     return new Response(null, { status: 204, headers: {
-      'Access-Control-Allow-Origin': request.headers.get('Origin') || '*',
-      'Access-Control-Allow-Credentials': 'true',
+      ...corsHeaders(request),
       'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type, Authorization',
       'Access-Control-Max-Age': '86400'
