@@ -32,6 +32,14 @@ jobs:
           ! grep -Eiq 'background(-image)?[[:space:]]*:[^;]*url\(' dist/account-access.css
           du -sh dist
 
+      - name: Guard the minified bundle (same step the deploy runs)
+        run: |
+          set -eu
+          npm install --no-save --no-audit --no-fund esbuild@0.25.9 acorn@8.15.0
+          node scripts/minify-dist.mjs dist
+          find dist \( -name '*.js' -o -name '*.mjs' \) -print0 | xargs -0 -n1 node --check
+          du -sh dist
+
       - name: Guard SEO artifacts, meta tags and public/404 routing
         run: |
           set -eu
