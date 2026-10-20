@@ -138,6 +138,13 @@ new_sqlite_classes = ["VoiceAgentSession"]
 tag = "v4-ai-state"
 new_sqlite_classes = ["AiStateObject"]
 
+# F0.1 / DV-01 (Sky AI blueprint, owner-approved 2026-10-20): service binding
+# to the sky-ai Worker. A binding, not a variable, so it does not count toward
+# the 64-variable ceiling. Only GET /api/ai/sky-health is forwarded for now.
+[[services]]
+binding = "SKY_AI"
+service = "sky-ai"
+
 [[kv_namespaces]]
 binding = "GK_KV"
 id = "b9353515b098427687afcfb8654ed359"
