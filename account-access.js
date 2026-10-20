@@ -1457,6 +1457,7 @@
         signal: controller.signal,  
         headers: {  
           'X-AH-Auth-UI': 'auth-premium-v6',  
+          ...(options.signupFlow ? { 'X-AH-Signup-Flow': 'pending-v1' } : {}),
           ...(options.body ? { 'Content-Type': 'application/json' } : {})  
         },  
         ...(options.body ? { body: JSON.stringify(options.body) } : {})  
@@ -3263,7 +3264,7 @@
       state.signupJourney = true;
       setBusy(true);
       try {
-        const result = await api('/signup', { method: 'POST', body: { email, password } });
+        const result = await api('/signup', { method: 'POST', signupFlow: true, body: { email, password } });
         const selectionRequired = result.verification?.selectionRequired === true;
         const emailSent = result.verification?.sent === true;
         if (!selectionRequired && !emailSent) throw Object.assign(new Error('delivery-not-confirmed'), { code: 'VERIFICATION_UNAVAILABLE' });
@@ -3851,6 +3852,7 @@
     signup: async (email, password, profile) => {
       const result = await skyApi('/signup', {
         method: 'POST',
+        signupFlow: true,
         body: { email, password, remember: true }
       });
       state.verification = state.verification || {};
