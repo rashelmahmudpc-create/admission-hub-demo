@@ -530,6 +530,16 @@ async function handleErrorReport(request, env) {
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+    /* F0.1 / DV-01 (Sky AI blueprint) — first route through the new sky-ai
+     * Worker via the SKY_AI service binding. Only this new health path is
+     * forwarded; every existing /api/ai/* route is still served here. Without
+     * the binding (e.g. staging) the request falls through unchanged. */
+    if (url.pathname === '/api/ai/sky-health' && request.method === 'GET' && env.SKY_AI) {
+      return env.SKY_AI.fetch(new Request(request.url, {
+        method: 'GET',
+        headers: { 'x-sky-ai-caller': 'admission-gk' }
+      }));
+    }
     /* P23 — live voice agent. Routed first because it answers a WebSocket
      * upgrade, which no downstream handler should try to read. One object per
      * owner keeps the socket and the durable memory together. The ticket path is
