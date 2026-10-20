@@ -1,13 +1,17 @@
-name: Agent — apply patch + rebuild bundle (manual)
+name: Agent — apply patch + rebuild bundle
 
 # Lets a remote agent ship edits to large files (gk-agent-worker.js, the
 # 1.5MB worker-bundle.mjs) that it cannot upload whole. The agent commits a
-# small patches/*.patch on a feature branch; this job applies it, regenerates
-# worker-bundle.mjs with the locked esbuild version, runs the given test, and
-# pushes the result back to the SAME branch. Never runs on main, never deploys,
-# touches no secrets. Study Lock still applies (push is blocked outside 23:00-23:59).
+# small patches/*.patch on a sky/** feature branch; this job applies it,
+# regenerates worker-bundle.mjs with the locked esbuild version, runs the
+# sky-ai binding test, and pushes the result back to the SAME branch.
+# Never runs on main, never deploys, touches no secrets. Study Lock still
+# applies (push is blocked outside 23:00-23:59). The bot's own push uses
+# GITHUB_TOKEN, so it does not retrigger this workflow.
 
 on:
+  push:
+    branches: ['sky/**']
   workflow_dispatch:
     inputs:
       test_file:
@@ -29,22 +33,32 @@ jobs:
         with:
           node-version: '22'
       - name: Apply patches
+        id: apply
         run: |
           set -eu
           shopt -s nullglob
+          n=0
           for p in patches/*.patch; do
             echo "applying $p"
             git apply --whitespace=nowarn "$p"
             git rm -q "$p"
+            n=$((n+1))
           done
+          echo "count=$n" >> "$GITHUB_OUTPUT"
       - name: Rebuild worker bundle
+        if: ${{ steps.apply.outputs.count != '0' }}
         run: npm run build:worker
       - name: Verify bundle matches sources
+        if: ${{ steps.apply.outputs.count != '0' }}
         run: npm run check:worker-bundle
       - name: Run test
-        if: ${{ inputs.test_file != '' }}
-        run: node --test "${{ inputs.test_file }}"
+        if: ${{ steps.apply.outputs.count != '0' }}
+        run: |
+          f="${{ inputs.test_file }}"
+          [ -z "$f" ] && f=sky-ai-binding.test.mjs
+          [ -f "$f" ] && node --test "$f" || echo "no test file $f"
       - name: Commit and push
+        if: ${{ steps.apply.outputs.count != '0' }}
         run: |
           set -eu
           git config user.name 'github-actions[bot]'
