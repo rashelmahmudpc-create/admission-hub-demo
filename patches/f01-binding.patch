@@ -1,0 +1,39 @@
+diff --git a/gk-agent-worker.js b/gk-agent-worker.js
+index 4d70cd9..e24bc62 100644
+--- a/gk-agent-worker.js
++++ b/gk-agent-worker.js
+@@ -530,6 +530,16 @@ async function handleErrorReport(request, env) {
+ export default {
+   async fetch(request, env, ctx) {
+     const url = new URL(request.url);
++    /* F0.1 / DV-01 (Sky AI blueprint) — first route through the new sky-ai
++     * Worker via the SKY_AI service binding. Only this new health path is
++     * forwarded; every existing /api/ai/* route is still served here. Without
++     * the binding (e.g. staging) the request falls through unchanged. */
++    if (url.pathname === '/api/ai/sky-health' && request.method === 'GET' && env.SKY_AI) {
++      return env.SKY_AI.fetch(new Request(request.url, {
++        method: 'GET',
++        headers: { 'x-sky-ai-caller': 'admission-gk' }
++      }));
++    }
+     /* P23 — live voice agent. Routed first because it answers a WebSocket
+      * upgrade, which no downstream handler should try to read. One object per
+      * owner keeps the socket and the durable memory together. The ticket path is
+diff --git a/wrangler.toml b/wrangler.toml
+index 62c7ea1..c8b8e55 100644
+--- a/wrangler.toml
++++ b/wrangler.toml
+@@ -138,6 +138,13 @@ new_sqlite_classes = ["VoiceAgentSession"]
+ tag = "v4-ai-state"
+ new_sqlite_classes = ["AiStateObject"]
+ 
++# F0.1 / DV-01 (Sky AI blueprint, owner-approved 2026-10-20): service binding
++# to the sky-ai Worker. A binding, not a variable, so it does not count toward
++# the 64-variable ceiling. Only GET /api/ai/sky-health is forwarded for now.
++[[services]]
++binding = "SKY_AI"
++service = "sky-ai"
++
+ [[kv_namespaces]]
+ binding = "GK_KV"
+ id = "b9353515b098427687afcfb8654ed359"
