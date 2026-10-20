@@ -1,0 +1,80 @@
+diff --git a/account-access.js b/account-access.js
+index 420dc2e..0840cd8 100644
+--- a/account-access.js
++++ b/account-access.js
+@@ -1457,6 +1457,7 @@
+         signal: controller.signal,  
+         headers: {  
+           'X-AH-Auth-UI': 'auth-premium-v6',  
++          ...(options.signupFlow ? { 'X-AH-Signup-Flow': 'pending-v1' } : {}),
+           ...(options.body ? { 'Content-Type': 'application/json' } : {})  
+         },  
+         ...(options.body ? { body: JSON.stringify(options.body) } : {})  
+@@ -3263,7 +3264,7 @@
+       state.signupJourney = true;
+       setBusy(true);
+       try {
+-        const result = await api('/signup', { method: 'POST', body: { email, password } });
++        const result = await api('/signup', { method: 'POST', signupFlow: true, body: { email, password } });
+         const selectionRequired = result.verification?.selectionRequired === true;
+         const emailSent = result.verification?.sent === true;
+         if (!selectionRequired && !emailSent) throw Object.assign(new Error('delivery-not-confirmed'), { code: 'VERIFICATION_UNAVAILABLE' });
+@@ -3851,6 +3852,7 @@
+     signup: async (email, password, profile) => {
+       const result = await skyApi('/signup', {
+         method: 'POST',
++        signupFlow: true,
+         body: { email, password, remember: true }
+       });
+       state.verification = state.verification || {};
+diff --git a/account-retirement.test.mjs b/account-retirement.test.mjs
+index df95f92..0b7bc33 100644
+--- a/account-retirement.test.mjs
++++ b/account-retirement.test.mjs
+@@ -116,9 +116,9 @@ await test('service-worker build and HTML registration are synchronized',
+   })());
+ await test('service-worker shell cannot cache retired assets', !retiredAssetRe.test(SW));
+ await test('premium account and institution assets use synchronized cache-busting versions',
+-  ['account-access.css?v=20261018-allowlist-v1', 'account-access.js?v=20261018-logout-otp-v1', 'institutions-bd.js?v=bd-institutions-v2']
++  ['account-access.css?v=20261018-allowlist-v1', 'account-access.js?v=20261020-signup-flow-v1', 'institutions-bd.js?v=bd-institutions-v2']
+     .every(asset => H.includes(asset) && SW.includes(asset)) &&
+-  H.indexOf('institutions-bd.js?v=bd-institutions-v2') < H.indexOf('account-access.js?v=20261018-logout-otp-v1'));
++  H.indexOf('institutions-bd.js?v=bd-institutions-v2') < H.indexOf('account-access.js?v=20261020-signup-flow-v1'));
+ await test('premium Auth UI/server contract and curated-manual institution policy are locked',
+   ACCOUNT_UI.includes("'X-AH-Auth-UI': 'auth-premium-v6'") &&
+   AUTH_HANDLER.includes("const AUTH_UI_VERSION = 'auth-premium-v6'") &&
+diff --git a/index.html b/index.html
+index ec3500f..96c8686 100644
+--- a/index.html
++++ b/index.html
+@@ -979,7 +979,7 @@ textarea{min-height:96px}
+ <script defer src="./institutions-bd.js?v=bd-institutions-v2"></script>
+ <script defer src="./language-engine.js?v=lang-v5-single-email-button"></script>
+ <script>window.ADMISSION_HUB_TURNSTILE_SITEKEY='0x4AAAAAAFYX5IGYQ0F-3DU9';</script>
+-<script defer src="./account-access.js?v=20261018-logout-otp-v1&startup=fast1"></script>
++<script defer src="./account-access.js?v=20261020-signup-flow-v1&startup=fast1"></script>
+ <script defer src="./email-policy-client.js?v=20261018-allowlist-v1"></script>
+ <script src="./app-seed.js?v=sky-flow-20261018-v12" defer></script>
+ <script defer src="./ios-chrome.js?v=9"></script>
+diff --git a/sw.js b/sw.js
+index df89dc3..28e184a 100644
+--- a/sw.js
++++ b/sw.js
+@@ -37,7 +37,7 @@ const APP_SHELL = [
+   './sky-onboarding.css?v=sky-flow-20261018-v12',
+   './institutions-bd.js?v=bd-institutions-v2',
+   './language-engine.js?v=lang-v5-single-email-button',
+-  './account-access.js?v=20261018-logout-otp-v1&startup=fast1',
++  './account-access.js?v=20261020-signup-flow-v1&startup=fast1',
+   './sky-onboarding.js?v=sky-flow-20261018-v12',
+   './email-policy-client.js?v=20261018-allowlist-v1',
+   './welcome-story.css?v=welcome-story-20261018-v3',
+@@ -103,7 +103,7 @@ const ASSET_DIGESTS = {
+   "./sky-onboarding.css?v=sky-flow-20261018-v12": "f94c44b34348038eea1b934f68ae0988a27ef64d76dbef47cd6dd640efde0bbe",
+   "./institutions-bd.js?v=bd-institutions-v2": "602c5549515e8207ad152b948ca9b8fe3ad0fbe429afb56380e4e21b662f779d",
+   "./language-engine.js?v=lang-v5-single-email-button": "52aaa5d77b3030721ccbc1c777801a3787c1d1061391b0f4b80841b6a9ddd054",
+-  "./account-access.js?v=20261018-logout-otp-v1&startup=fast1": "44d2e65887f13bd33b6e093a17ba4e4a12f9ef6b226548de5acb505a044a6c4d",
++  "./account-access.js?v=20261020-signup-flow-v1&startup=fast1": "8467f3086c94eb9d94c304573bcaa5ffb8f480b83d1ac8f9c517e6fd38bb3e6f",
+   "./sky-onboarding.js?v=sky-flow-20261018-v12": "6aca49e00f6a1b7376f73e1270fe00e9ae76b7a269ee82d60a172a4c0aca43f3",
+   "./email-policy-client.js?v=20261018-allowlist-v1": "d52570ca207888a5dc0e320a30ea59b576887e4bc4f33f48bfec64c2eb2245b5",
+   "./welcome-story.css?v=welcome-story-20261018-v3": "4b589890fdf457149113e236320f94014b5cc2845c190b1bdf853f1f2963073d",
