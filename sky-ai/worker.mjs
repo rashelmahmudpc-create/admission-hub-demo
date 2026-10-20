@@ -11,7 +11,9 @@
  * live here.
  */
 
-export const SKY_AI_VERSION = 'sky-ai-f0.1-skeleton';
+import { loadFlags, evaluateAll } from './flags.mjs';
+
+export const SKY_AI_VERSION = 'sky-ai-f0.2-flags';
 
 function json(body, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -37,6 +39,16 @@ export async function handle(request, env = {}) {
        * (internal header set by the caller) or straight from the internet. */
       via: request.headers.get('x-sky-ai-caller') === 'admission-gk' ? 'service-binding' : 'direct'
     });
+  }
+
+  /* F0.2 / DV-02: evaluated flags for one student. The uid is trusted only
+   * when admission-gk (which verified the session) sets it on the internal
+   * service-binding call; a direct internet caller is always anonymous. */
+  if (request.method === 'GET' && path === '/api/ai/sky-flags') {
+    const trusted = request.headers.get('x-sky-ai-caller') === 'admission-gk';
+    const uid = trusted ? (request.headers.get('x-sky-uid') || '') : '';
+    const flags = await loadFlags(env);
+    return json({ ok: true, version: SKY_AI_VERSION, flags: evaluateAll(flags, uid || null) });
   }
 
   /* Nothing else is served yet. A clear 404 (not a silent fallback) makes a
