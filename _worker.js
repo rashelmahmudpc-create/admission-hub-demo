@@ -27,7 +27,27 @@ const SERVER_ONLY_ASSETS = new Set([
   '/ai-chat-cache.mjs', '/ai-history-trim.mjs', '/ai-tier-router.mjs',
   '/ai-state-do.mjs', '/ai-provider-health.mjs', '/ai-analytics-copilot.mjs',
   '/ai-analytics-routes.mjs', '/ai-analytics-provider.mjs', '/ai-analytics-store.mjs',
-  '/ai-analytics-policy.mjs', '/ai-analytics-intelligence.mjs', '/p19-error-monitor.mjs'
+  '/ai-analytics-policy.mjs', '/ai-analytics-intelligence.mjs', '/p19-error-monitor.mjs',
+  /* Audit 2026-10-20 (SEC-001): further Worker-only modules that were still
+     being served as public assets. Verified none is referenced by index.html or
+     sw.js, and none is imported by a client-public module, so all are
+     server-only. sentry-report.js is deliberately NOT listed here: index.html
+     loads it as a module, so it must stay downloadable. */
+  '/analytics-engine.mjs', '/personalized-notification.mjs',
+  '/notification-intelligence.mjs', '/sky-tools.mjs',
+  '/digest-notifications.mjs', '/event-notifications.mjs',
+  '/files-storage.mjs', '/email-policy.js',
+  '/sky-recall.mjs', '/sky-time.mjs', '/sky-goal.mjs', '/sky-contact.mjs',
+  '/sky-instructions.mjs', '/sky-web-search.mjs', '/sky-daily-report.mjs',
+  '/sky-app-features.mjs',
+  '/voice-agent.mjs', '/voice-agent-core.mjs', '/voice-agent-gate.mjs',
+  '/voice-agent-providers.mjs',
+  '/p19-backup.mjs', '/p13-api-compression.mjs', '/p13-d1-read.mjs',
+  '/p13-load-runner.mjs', '/p13-load-harness.js', '/master-update.js',
+  /* Same audit: server-only modules imported exclusively by other server-only
+     modules (never by a page, the service worker or a client bundle). */
+  '/cors-policy.mjs', '/admin-passkey.mjs', '/analytics-notifications.mjs',
+  '/send-planner.mjs'
 ]);
 const SERVER_ONLY_PREFIXES = ['/auth/', '/auth-native/', '/email-gateway/', '/apps-script/', '/docs/', '/AGENT_RESUME/', '/.github/'];
 const isRetiredAsset = pathname => RETIRED_ASSETS.has(pathname) ||
