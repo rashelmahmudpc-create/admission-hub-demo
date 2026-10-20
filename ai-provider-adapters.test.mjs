@@ -259,13 +259,43 @@ t('M2.7-৭. a bad-set hit on one compat key leaves the other in the chain', (()
 })());
 
 t('M2.7-৮. every added provider keeps the openai-compat shape and a URL', (() => {
-  const names = ['SAMBANOVA_API_KEYS', 'COHERE_API_KEYS', 'HUGGINGFACE_API_KEYS', 'DEEPINFRA_API_KEYS',
-    'TOGETHER_API_KEYS', 'KIMI_API_KEYS', 'AIML_API_KEYS', 'LLM7_API_KEYS', 'SILICONFLOW_API_KEYS',
-    'STEPFUN_API_KEYS', 'MINIMAX_API_KEYS'];
+  /* Provider audit 2026-10-20 removed the dead providers; these remain. */
+  const names = ['COHERE_API_KEYS', 'MISTRAL_API_KEYS', 'VERCEL_AI_GATEWAY_KEY'];
   return names.every(n => {
     const c = routerChain({ [n]: 'k' }, 'FAST', new Set()).filter(x => x.provider === 'openai-compat');
     return c.length === 1 && c[0].key === 'k' && /^https:\/\//.test(c[0].url) && Boolean(c[0].model);
   });
+})());
+
+t('M2.7-৯. removed providers no longer join the chain (audit 2026-10-20)', (() => {
+  const gone = ['SAMBANOVA_API_KEYS', 'HUGGINGFACE_API_KEYS', 'DEEPINFRA_API_KEYS', 'TOGETHER_API_KEYS',
+    'KIMI_API_KEYS', 'AIML_API_KEYS', 'STEPFUN_API_KEYS', 'MINIMAX_API_KEYS', 'GITHUB_MODELS_TOKEN',
+    'SILICONFLOW_API_KEYS', 'LLM7_API_KEYS'];
+  return gone.every(n => routerChain({ [n]: 'k' }, 'FAST', new Set()).filter(x => x.provider === 'openai-compat').length === 0);
+})());
+
+t('M2.7-১০. Cerebras keeps gpt-oss-120b first and qwen-3.8-27b as the fallback', (() => {
+  const c = routerChain({ CEREBRAS_API_KEYS: 'k' }, 'FAST', new Set()).filter(x => x.provider === 'openai-compat');
+  return c.length === 2 && c[0].model === 'gpt-oss-120b' && c[1].model === 'qwen-3.8-27b';
+})());
+
+t('M2.7-১১. keyless providers join only when switched on with `anon`, and send no key', (() => {
+  const off = routerChain({}, 'FAST', new Set()).filter(x => /ovh|pollinations/.test(x.url || ''));
+  const on = routerChain({}, 'FAST', new Set(), { OVH_AI_KEY: 'anon', POLLINATIONS_KEY: 'anon' })
+    .filter(x => /ovh|pollinations/.test(x.url || ''));
+  return off.length === 0 && on.length === 2 && on.every(x => x.key === '');
+})());
+
+t('M2.7-১২. AI_EXTRA_PROVIDERS adds providers from data and rejects bad entries', (() => {
+  const extra = JSON.stringify([
+    { key: 'NVIDIA_API_KEYS', url: 'https://integrate.api.nvidia.com/v1/chat/completions', models: ['m1', 'm2'] },
+    { key: 'BAD', url: 'http://insecure.example/v1', models: ['x'] },
+    { key: 'lower', url: 'https://x.example', models: ['x'] }
+  ]);
+  const c = routerChain({}, 'FAST', new Set(), { AI_EXTRA_PROVIDERS: extra, NVIDIA_API_KEYS: 'nv', BAD: 'b', lower: 'l' })
+    .filter(x => x.provider === 'openai-compat');
+  const junk = routerChain({}, 'FAST', new Set(), { AI_EXTRA_PROVIDERS: '{not json' });
+  return c.length === 2 && c.every(x => x.key === 'nv' && x.url.startsWith('https://integrate')) && Array.isArray(junk);
 })());
 
 console.log(`\n🧩 PHASE9-M2-ADAPTERS: ${pass} pass / ${fail} fail`);
