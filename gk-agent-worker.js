@@ -95,7 +95,7 @@ const NEWS_SCHEMA = {
 
 const cors = request => {
   const origin = request.headers.get('Origin') || '';
-  const ok = /^https:\/\/([a-z0-9-]+\.)?github\.io$/.test(origin) || /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin) || /^https:\/\/[a-z0-9-]+\.e2b\.app$/.test(origin); // e2b = workspace-প্রিভিউ
+  const ok = /^https:\/\/sheikhrashel47-stack\.github\.io$/.test(origin) || /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin) || /^https:\/\/[a-z0-9-]+\.e2b\.app$/.test(origin); // e2b = workspace-প্রিভিউ
   const headers = { 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type, X-AH-App', 'Access-Control-Max-Age': '86400' };
   if (ok) headers['Access-Control-Allow-Origin'] = origin;
   return headers;

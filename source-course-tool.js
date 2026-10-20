@@ -218,7 +218,12 @@
         .replace(/document\.addEventListener\((['\"])DOMContentLoaded\1/g, 'document.addEventListener("admission:source-domcontentloaded"')
         .replace(/window\.addEventListener\((['\"])load\1/g, 'window.addEventListener("admission:source-load"')
         .replace(/\n\}\);\s*$/, '\n}') + (def.bridge ? `\n${def.bridge}` : '');
-      const payload = { title: doc.title, styles, scripts: transformed, bodyHtml, sourceHash: def.hash, mcq: [], courseKey: key, courseLabel: def.label };
+      const payload = { title: doc.title, styles, scripts: transformed,
+        /* Same gate as `scripts`: an unverified document must not have its markup
+         * injected either, because inline handlers in that markup execute in the app
+         * origin even though new Function() never runs. */
+        bodyHtml: integrityOk ? bodyHtml : '',
+        integrityOk, sourceHash: def.hash, mcq: [], courseKey: key, courseLabel: def.label };
       if (courseKey() === key) state.payload = payload;
       return payload;
     });
@@ -250,6 +255,12 @@
     const sourceHtml = payload.bodyHtml.includes('class="spacer"') ? payload.bodyHtml.replace(/(<div class="spacer">)/, '$1' + sourceBack) : sourceBack + payload.bodyHtml;
     host.innerHTML = sourceHtml;
     const def = courseDef();
+    if (payload.integrityOk === false) {
+      host.insertAdjacentHTML('afterbegin', `<section class="card" style="margin:16px auto;max-width:860px;border:1px solid #f0c36a;background:#fff9e8;color:#5b4315"><strong>এই কোর্স ফাইলটি যাচাই করা যায়নি</strong><p style="margin:6px 0 0">ফাইলের হ্যাশ মেলেনি, তাই এর কিছুই চালানো হয়নি। কনটেন্ট বদলানো হয়ে থাকলে কোর্সটি আবার প্রকাশ করতে হবে।</p></section>`);
+      state.routeMounted = true;
+      state.mountedCourseKey = courseKey();
+      return;
+    }
     if (def.missingDependency) {
       host.insertAdjacentHTML('afterbegin', `<section class="card" style="margin:16px auto;max-width:860px;border:1px solid #f0c36a;background:#fff9e8;color:#5b4315"><strong>এই supplied source-এর companion file পাওয়া যায়নি</strong><p style="margin:6px 0 0">${esc(def.missingDependency)} ছাড়া original source-এর data ও MCQ চালু করা সম্ভব নয়। কোনো invented question যোগ করা হয়নি। companion file যোগ করলে এই Course nativeভাবে সম্পূর্ণ করা যাবে।</p></section>`);
       state.routeMounted = true;

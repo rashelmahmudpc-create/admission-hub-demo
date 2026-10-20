@@ -230,6 +230,19 @@ test('m3-4: reaching the result screen emits quiz_complete with accuracy and dur
   assert.equal(typesOf(window, 'QUIZ_COMPLETE').length, 1, 'a result screen is reported once');
 });
 
+test('security: a tampered course document cannot inject markup either', async () => {
+  /* Gating `scripts` alone left the other half open: payload.bodyHtml was still
+   * injected with host.innerHTML, so an <img onerror> in a tampered document ran
+   * in the app origin without any script ever being compiled. The markup must be
+   * dropped by the same integrity flag. */
+  const tampered = COURSE_HTML.replace('<body>', '<body><img src=x onerror="window.__htmlPwned=1">');
+  assert.notEqual(tampered, COURSE_HTML, 'the tamper fixture must actually differ');
+  const window = await boot('source-courses/sandhi', { courseHtml: tampered });
+  await sleep(400);
+  assert.equal(window.__htmlPwned, undefined, 'tampered markup must not be injected');
+  assert.ok(window.document.body.innerHTML.includes('যাচাই করা যায়নি'), 'the student sees a mismatch notice');
+});
+
 test('security: a tampered course document renders but its scripts never execute', async () => {
   /* The course scripts run through new Function() in the app origin, so an
    * altered document would be stored XSS. The SHA-256 in COURSE_DEFS must
