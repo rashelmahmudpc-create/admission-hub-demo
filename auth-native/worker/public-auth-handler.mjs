@@ -729,7 +729,10 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         if (telegramRequested && !currentAuthUi(request)) {
           throw new NativeAuthError(AUTH_ERROR_CODES.CLIENT_UPDATE_REQUIRED);
         }
-        const input = credentials(await readJson(request));
+        const turnstileBody = await readJson(request);
+        // A1.5 / AU-SEC-01 L4: human check before any Firebase or OTP work.
+        await verifyTurnstile({ env, token: turnstileBody?.turnstileToken, ip: context.ip, fetchImpl });
+        const input = credentials(turnstileBody);
         // Owner order 2026-10-16: refuse a throwaway inbox before any account is
         // created or any OTP is sent. Server-side so a patched client cannot skip it.
         if (isDisposableEmail(input.email)) throw new NativeAuthError(AUTH_ERROR_CODES.DISPOSABLE_EMAIL);
@@ -807,6 +810,8 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
       if (request.method === 'POST' && url.pathname === `${AUTH_API_PREFIX}/password-reset`) {
         if (!provider.configured) throw new NativeAuthError(AUTH_ERROR_CODES.NOT_CONFIGURED);
         const body = await readJson(request);
+        // A1.5 / AU-SEC-01 L4: human check before any send.
+        await verifyTurnstile({ env, token: body?.turnstileToken, ip: context.ip, fetchImpl });
         const email = normalizeAuthEmail(body?.email);
         if (isDisposableEmail(email)) throw new NativeAuthError(AUTH_ERROR_CODES.DISPOSABLE_EMAIL);
         const prepared = await callAuthority(env, '/internal/firebase/rate', {
@@ -830,7 +835,10 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
 
       if (request.method === 'POST' && url.pathname === `${AUTH_API_PREFIX}/verification/resend`) {
         if (!provider.configured) throw new NativeAuthError(AUTH_ERROR_CODES.NOT_CONFIGURED);
-        const input = credentials(await readJson(request));
+        const turnstileBody = await readJson(request);
+        // A1.5 / AU-SEC-01 L4: human check before any Firebase or OTP work.
+        await verifyTurnstile({ env, token: turnstileBody?.turnstileToken, ip: context.ip, fetchImpl });
+        const input = credentials(turnstileBody);
         const prepared = await callAuthority(env, '/internal/firebase/rate', { input: { operation: 'verification-resend', email: input.email }, context });
         let signed;
         let user;
@@ -849,7 +857,10 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
 
       if (request.method === 'POST' && url.pathname === `${AUTH_API_PREFIX}/login`) {
         if (!provider.configured) throw new NativeAuthError(AUTH_ERROR_CODES.NOT_CONFIGURED);
-        const input = credentials(await readJson(request));
+        const turnstileBody = await readJson(request);
+        // A1.5 / AU-SEC-01 L4: human check before any Firebase or OTP work.
+        await verifyTurnstile({ env, token: turnstileBody?.turnstileToken, ip: context.ip, fetchImpl });
+        const input = credentials(turnstileBody);
         const prepared = await callAuthority(env, '/internal/firebase/rate', { input: { operation: 'login', email: input.email }, context });
         // Phase 6 — escalating cooldown after repeated failed logins (§14):
         // the DO counts recorded failures and asks us to delay this attempt.
@@ -1395,7 +1406,9 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         }
         const verificationTicket = jar[AUTH_VERIFICATION_COOKIE];
         if (!verificationTicket) throw new NativeAuthError(AUTH_ERROR_CODES.TELEGRAM_VERIFICATION_INVALID);
-        await readJson(request);
+        const turnstileBody = await readJson(request);
+        // A1.5 / AU-SEC-01 L4: human check before a Telegram code is issued.
+        await verifyTurnstile({ env, token: turnstileBody?.turnstileToken, ip: context.ip, fetchImpl });
         const result = await callAuthority(env, '/internal/verification/preauth/request', {
           input: { verificationTicket },
           context
@@ -1851,6 +1864,8 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           throw new NativeAuthError(AUTH_ERROR_CODES.BACKUP_UNAVAILABLE);
         }
         const body = await readJson(request);
+        // A1.5 / AU-SEC-01 L4: human check before any send.
+        await verifyTurnstile({ env, token: body?.turnstileToken, ip: context.ip, fetchImpl });
         const contact = String(body.contact || '').trim();
         if (contact && !/^\+[1-9]\d{7,14}$/.test(contact)) throw new NativeAuthError(AUTH_ERROR_CODES.INVALID_INPUT);
         const current = await firebaseReadySession({ provider, jar, env, context, allowTelegram: telegramVerificationRequested(env, url) });
