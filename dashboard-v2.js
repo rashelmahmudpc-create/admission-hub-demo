@@ -360,17 +360,17 @@ svg{display:block}
 .tab.on .ti .onI{opacity:1;transform:scale(1.08) translateY(-1px)}
 .tab.pop .ti .onI{animation:pop .6s cubic-bezier(.34,1.56,.64,1)}
 .ai-slot{position:relative;height:100%}
-.aibtn{position:absolute;left:50%;top:-26px;transform:translateX(-50%);width:66px;height:66px;border-radius:50%;box-shadow:0 0 0 5px var(--bg),0 14px 28px rgba(108,76,234,.5);transition:transform .3s cubic-bezier(.34,1.56,.64,1)}
-.aibtn .orbring{position:absolute;inset:-3px;border-radius:50%;background:conic-gradient(from 0deg,#6C95FF,#B07BFF,#FF7CC8,#FFC857,#6C95FF);animation:ispin 4s linear infinite}
-.aibtn .core{position:absolute;inset:2.5px;border-radius:50%;background:radial-gradient(circle at 30% 22%,#8FAEFF 0%,#4B5FE6 45%,#2A2E9E 100%);box-shadow:inset 0 3px 8px rgba(255,255,255,.45),inset 0 -6px 10px rgba(20,10,90,.4)}
+.aibtn{position:absolute;left:50%;top:-14px;transform:translateX(-50%);width:52px;height:52px;border-radius:50%;box-shadow:0 0 0 4px var(--bg),0 4px 14px rgba(108,76,234,.45);transition:transform .3s cubic-bezier(.34,1.56,.64,1)}
+.aibtn .orbring{position:absolute;inset:-2px;border-radius:50%;background:conic-gradient(from 0deg,#6C95FF,#B07BFF,#FF7CC8,#FFC857,#6C95FF);animation:ispin 4s linear infinite}
+.aibtn .core{position:absolute;inset:2px;border-radius:50%;background:radial-gradient(circle at 30% 22%,#8FAEFF 0%,#4B5FE6 45%,#2A2E9E 100%);box-shadow:inset 0 3px 8px rgba(255,255,255,.45),inset 0 -6px 10px rgba(20,10,90,.4)}
 .aibtn .core::after{content:"";position:absolute;left:14%;top:8%;width:52%;height:30%;border-radius:50%;background:linear-gradient(rgba(255,255,255,.5),transparent)}
-.aibtn svg{position:absolute;inset:0;margin:auto;width:38px;height:38px;z-index:2;overflow:visible}
+.aibtn svg{position:absolute;inset:0;margin:auto;width:30px;height:30px;z-index:2;overflow:visible}
 .aibtn .sp1{transform-origin:center;transform-box:fill-box;animation:itw 2.2s ease-in-out infinite}
 .aibtn .sp2{transform-origin:center;transform-box:fill-box;animation:itw 2.2s ease-in-out infinite .7s}
 .aibtn .sp3{transform-origin:center;transform-box:fill-box;animation:itw 2.2s ease-in-out infinite 1.4s}
-.aibtn::before{content:"";position:absolute;inset:-9px;border-radius:50%;border:2px solid rgba(124,92,240,.4);animation:aiping 3s ease-out infinite;pointer-events:none}
+.aibtn::before{display:none}
 .aibtn:active{transform:translateX(-50%) scale(.9)}
-.ailabel{position:absolute;left:0;right:0;bottom:8px;text-align:center;font-size:11px;font-weight:800;color:var(--violet);letter-spacing:.04em}
+.ailabel{position:absolute;left:0;right:0;bottom:11px;text-align:center;font-size:11px;font-weight:800;color:var(--violet);letter-spacing:.04em}
 
 .toast{position:fixed;left:50%;bottom:calc(114px + env(safe-area-inset-bottom,0px));transform:translate(-50%,16px);z-index:70;background:var(--navy);color:#fff;font-size:13.5px;font-weight:600;padding:10px 16px;border-radius:14px;opacity:0;pointer-events:none;transition:.35s cubic-bezier(.34,1.4,.64,1);max-width:calc(100% - 36px);text-align:center;box-shadow:0 10px 24px rgba(8,12,40,.4)}
 .toast.on{opacity:1;transform:translate(-50%,0)}
