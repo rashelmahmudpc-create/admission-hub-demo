@@ -6,7 +6,7 @@ index 0840cd8..8a7ee76 100644
        if (state.pendingProfile && state.profileBound && !state.profileSynced) await syncPendingProfile({ pending: true });
 -      const result = await api('/telegram/verification/start', { method: 'POST', body: {} });
 +      const result = await api('/telegram/verification/start', { method: 'POST', body: { turnstileToken: await humanToken() } });
-       if (!setTelegramChallenge(result)) throw new Error('Telegram যাচাই এখন পাওয়া যাচ্ছে না।');
+       if (!setTelegramChallenge(result)) throw new Error('Telegram যাচাই এখন পাওয়া যাচ্ছে না।');
 @@ -3059,3 +3059,3 @@
          method: 'POST',
 -        body: { purpose: 'account-backup', ...(contact ? { contact } : {}) }
@@ -16,7 +16,7 @@ index 0840cd8..8a7ee76 100644
        try {
 -        await api('/password-reset', { method: 'POST', body: { email } });
 +        await api('/password-reset', { method: 'POST', body: { email, turnstileToken: await humanToken() } });
-         message('এই Email-এ অ্যাকাউন্ট থাকলে reset link পাঠানোর অনুরোধ নেওয়া হয়েছে। কিছুক্ষণ পর Inbox, Spam ও Promotions দেখো।', 'success');
+         message('এই Email-এ অ্যাকাউন্ট থাকলে reset link পাঠানোর অনুরোধ নেওয়া হয়েছে। কিছুক্ষণ পর Inbox, Spam ও Promotions দেখো।', 'success');
 @@ -3266,3 +3266,3 @@
        try {
 -        const result = await api('/signup', { method: 'POST', signupFlow: true, body: { email, password } });
