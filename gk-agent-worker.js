@@ -1,5 +1,6 @@
 // v133b: public-product module
 import pubHandler, { publishGlobal } from './public-worker.js';
+import { tryRouteToSkyAi } from './sky-ai-route.mjs';
 import { runDailyReport } from './sky-daily-report.mjs';
 import { handleInternalEmailRequest } from './email-gateway/worker/handler.mjs';
 import { createNativeAuthHandler } from './auth-native/worker/public-auth-handler.mjs';
@@ -539,6 +540,14 @@ export default {
         method: 'GET',
         headers: { 'x-sky-ai-caller': 'admission-gk' }
       }));
+    }
+    /* F0.1 step 4a / DV-01: generic, allowlist-gated proxy to sky-ai. The
+     * allowlist in sky-ai-route.mjs is EMPTY, so nothing changes for students.
+     * A route is moved by adding it there (after sky-ai serves it); any sky-ai
+     * 404/5xx/throw falls back to the local handler below. */
+    {
+      const viaSky = await tryRouteToSkyAi(request, env);
+      if (viaSky) return viaSky;
     }
     /* P23 — live voice agent. Routed first because it answers a WebSocket
      * upgrade, which no downstream handler should try to read. One object per
