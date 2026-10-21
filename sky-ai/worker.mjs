@@ -12,8 +12,9 @@
  */
 
 import { loadFlags, evaluateAll } from './flags.mjs';
+import { handlePrefsGet } from './prefs.mjs';
 
-export const SKY_AI_VERSION = 'sky-ai-f0.2-flags';
+export const SKY_AI_VERSION = 'sky-ai-f0.1-4b-prefs';
 
 function json(body, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -49,6 +50,12 @@ export async function handle(request, env = {}) {
     const uid = trusted ? (request.headers.get('x-sky-uid') || '') : '';
     const flags = await loadFlags(env);
     return json({ ok: true, version: SKY_AI_VERSION, flags: evaluateAll(flags, uid || null) });
+  }
+
+  /* F0.1 step 4b: GET /api/ai/prefs (internal-key protected, see prefs.mjs). */
+  if (request.method === 'GET' && path === '/api/ai/prefs') {
+    const res = await handlePrefsGet(request, env);
+    if (res) return res;
   }
 
   /* Nothing else is served yet. A clear 404 (not a silent fallback) makes a

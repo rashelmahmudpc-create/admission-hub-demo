@@ -42,3 +42,28 @@ export async function tryRouteToSkyAi(request, env, routes = SKY_AI_ROUTES) {
     return null;
   }
 }
+
+/* F0.1 step 4b: routes that need the student's identity. admission-gk first
+ * resolves the uid itself, then forwards it with a shared internal key read
+ * from PUB_KV ("secret:sky-internal", created once by the owner). EMPTY on
+ * purpose; add 'GET /api/ai/prefs' only after sky-ai is deployed with PUB_KV
+ * and the key exists. Missing key / any sky-ai error -> null (local handler). */
+export const SKY_AI_IDENTITY_ROUTES = Object.freeze([]);
+export const SKY_INTERNAL_KEY_NAME = 'secret:sky-internal';
+
+export async function forwardWithIdentity(request, env, uid, routes = SKY_AI_IDENTITY_ROUTES) {
+  if (!uid || request.method !== 'GET') return null;
+  if (!shouldRouteToSkyAi(request, env, routes) || !env.PUB_KV) return null;
+  try {
+    const key = await env.PUB_KV.get(SKY_INTERNAL_KEY_NAME);
+    if (!key) return null;
+    const res = await env.SKY_AI.fetch(new Request(request.url, {
+      method: 'GET',
+      headers: { 'x-sky-ai-caller': 'admission-gk', 'x-sky-uid': String(uid), 'x-sky-internal': key }
+    }));
+    if (!res || res.status === 404 || res.status >= 500) return null;
+    return res;
+  } catch (_) {
+    return null;
+  }
+}

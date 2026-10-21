@@ -1,0 +1,24 @@
+diff --git a/public-worker.js b/public-worker.js
+index f4639e6..706e386 100644
+--- a/public-worker.js
++++ b/public-worker.js
+@@ -9,6 +9,7 @@ import {
+ import { checkAbuse, isGuarded } from './p14-abuse-guard.mjs';
+ import { recordError, summarizeErrors } from './p19-error-monitor.mjs';
+ import { listReports } from './sky-daily-report.mjs';
++import { forwardWithIdentity } from './sky-ai-route.mjs';
+ import { createSnapshot, listSnapshots, restoreSnapshot } from './p19-backup.mjs';
+ 
+ const JSONH = {
+@@ -488,6 +489,11 @@ export default {
+       }
+       if (path === '/api/ai/prefs' && request.method === 'GET') {
+         const identity = await aiRequestIdentity(request, env, false);
++        /* F0.1 step 4b / DV-01: served by sky-ai only when 'GET /api/ai/prefs'
++           is in SKY_AI_IDENTITY_ROUTES (empty) and the internal key exists;
++           otherwise (or on any sky-ai error) the local code below answers. */
++        const viaSky = await forwardWithIdentity(request, env, identity.uid);
++        if (viaSky) return viaSky;
+         let prefs = null;
+         try {
+           const raw = await env.PUB_KV.get('aiprefs:' + identity.uid);
