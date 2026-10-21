@@ -12520,7 +12520,9 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         if (telegramRequested && !currentAuthUi(request)) {
           throw new NativeAuthError(AUTH_ERROR_CODES.CLIENT_UPDATE_REQUIRED);
         }
-        const input = credentials(await readJson(request));
+        const turnstileBody = await readJson(request);
+        await verifyTurnstile({ env, token: turnstileBody?.turnstileToken, ip: context.ip, fetchImpl });
+        const input = credentials(turnstileBody);
         if (isDisposableEmail(input.email)) throw new NativeAuthError(AUTH_ERROR_CODES.DISPOSABLE_EMAIL);
         if (reservedTelegramLoginEmail(input.email)) throw new NativeAuthError(AUTH_ERROR_CODES.DISPOSABLE_EMAIL);
         const prepared = await callAuthority(env, "/internal/firebase/rate", { input: { operation: "signup", email: input.email }, context });
@@ -12596,6 +12598,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
       if (request.method === "POST" && url.pathname === `${AUTH_API_PREFIX}/password-reset`) {
         if (!provider.configured) throw new NativeAuthError(AUTH_ERROR_CODES.NOT_CONFIGURED);
         const body = await readJson(request);
+        await verifyTurnstile({ env, token: body?.turnstileToken, ip: context.ip, fetchImpl });
         const email = normalizeAuthEmail(body?.email);
         if (isDisposableEmail(email)) throw new NativeAuthError(AUTH_ERROR_CODES.DISPOSABLE_EMAIL);
         const prepared = await callAuthority(env, "/internal/firebase/rate", {
@@ -12617,7 +12620,9 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
       }
       if (request.method === "POST" && url.pathname === `${AUTH_API_PREFIX}/verification/resend`) {
         if (!provider.configured) throw new NativeAuthError(AUTH_ERROR_CODES.NOT_CONFIGURED);
-        const input = credentials(await readJson(request));
+        const turnstileBody = await readJson(request);
+        await verifyTurnstile({ env, token: turnstileBody?.turnstileToken, ip: context.ip, fetchImpl });
+        const input = credentials(turnstileBody);
         const prepared = await callAuthority(env, "/internal/firebase/rate", { input: { operation: "verification-resend", email: input.email }, context });
         let signed;
         let user;
@@ -12647,7 +12652,9 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
       }
       if (request.method === "POST" && url.pathname === `${AUTH_API_PREFIX}/login`) {
         if (!provider.configured) throw new NativeAuthError(AUTH_ERROR_CODES.NOT_CONFIGURED);
-        const input = credentials(await readJson(request));
+        const turnstileBody = await readJson(request);
+        await verifyTurnstile({ env, token: turnstileBody?.turnstileToken, ip: context.ip, fetchImpl });
+        const input = credentials(turnstileBody);
         const prepared = await callAuthority(env, "/internal/firebase/rate", { input: { operation: "login", email: input.email }, context });
         if (Number(prepared?.retryAfter) > 0) {
           return json4(request, 429, { ok: false, error: { code: "RATE_LIMITED", message: "অনেকবার চেষ্টা হয়েছে—একটু পরে আবার চেষ্টা করুন।" } }, { "Retry-After": String(prepared.retryAfter) });
@@ -13256,7 +13263,8 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         }
         const verificationTicket = jar[AUTH_VERIFICATION_COOKIE];
         if (!verificationTicket) throw new NativeAuthError(AUTH_ERROR_CODES.TELEGRAM_VERIFICATION_INVALID);
-        await readJson(request);
+        const turnstileBody = await readJson(request);
+        await verifyTurnstile({ env, token: turnstileBody?.turnstileToken, ip: context.ip, fetchImpl });
         const result = await callAuthority(env, "/internal/verification/preauth/request", {
           input: { verificationTicket },
           context
@@ -13742,6 +13750,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           throw new NativeAuthError(AUTH_ERROR_CODES.BACKUP_UNAVAILABLE);
         }
         const body = await readJson(request);
+        await verifyTurnstile({ env, token: body?.turnstileToken, ip: context.ip, fetchImpl });
         const contact = String(body.contact || "").trim();
         if (contact && !/^\+[1-9]\d{7,14}$/.test(contact)) throw new NativeAuthError(AUTH_ERROR_CODES.INVALID_INPUT);
         const current = await firebaseReadySession({ provider, jar, env, context, allowTelegram: telegramVerificationRequested(env, url) });
