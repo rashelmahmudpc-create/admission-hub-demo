@@ -5013,6 +5013,53 @@ async function recordError(env, { path, method, status, message, now } = {}) {
   }
 }
 
+// sky-ai-route.mjs
+var SKY_AI_ROUTES = Object.freeze([]);
+function routeKey(request) {
+  return request.method + " " + new URL(request.url).pathname;
+}
+function shouldRouteToSkyAi(request, env, routes = SKY_AI_ROUTES) {
+  if (!env || !env.SKY_AI || typeof env.SKY_AI.fetch !== "function") return false;
+  return Array.isArray(routes) && routes.includes(routeKey(request));
+}
+async function tryRouteToSkyAi(request, env, routes = SKY_AI_ROUTES) {
+  if (!shouldRouteToSkyAi(request, env, routes)) return null;
+  try {
+    const copy2 = request.clone();
+    const headers = new Headers(copy2.headers);
+    headers.delete("x-sky-uid");
+    headers.set("x-sky-ai-caller", "admission-gk");
+    const hasBody = !["GET", "HEAD"].includes(copy2.method);
+    const res = await env.SKY_AI.fetch(new Request(copy2.url, {
+      method: copy2.method,
+      headers,
+      body: hasBody ? await copy2.arrayBuffer() : void 0
+    }));
+    if (!res || res.status === 404 || res.status >= 500) return null;
+    return res;
+  } catch (_) {
+    return null;
+  }
+}
+var SKY_AI_IDENTITY_ROUTES = Object.freeze([]);
+var SKY_INTERNAL_KEY_NAME = "secret:sky-internal";
+async function forwardWithIdentity(request, env, uid, routes = SKY_AI_IDENTITY_ROUTES) {
+  if (!uid || request.method !== "GET") return null;
+  if (!shouldRouteToSkyAi(request, env, routes) || !env.PUB_KV) return null;
+  try {
+    const key = await env.PUB_KV.get(SKY_INTERNAL_KEY_NAME);
+    if (!key) return null;
+    const res = await env.SKY_AI.fetch(new Request(request.url, {
+      method: "GET",
+      headers: { "x-sky-ai-caller": "admission-gk", "x-sky-uid": String(uid), "x-sky-internal": key }
+    }));
+    if (!res || res.status === 404 || res.status >= 500) return null;
+    return res;
+  } catch (_) {
+    return null;
+  }
+}
+
 // p19-backup.mjs
 var BACKUP_PREFIX = "backups/";
 var BACKUP_INDEX_KEY = "backup:index:v1";
@@ -5603,6 +5650,8 @@ var public_worker_default = {
       }
       if (path === "/api/ai/prefs" && request.method === "GET") {
         const identity = await aiRequestIdentity(request, env, false);
+        const viaSky = await forwardWithIdentity(request, env, identity.uid);
+        if (viaSky) return viaSky;
         let prefs = null;
         try {
           const raw = await env.PUB_KV.get("aiprefs:" + identity.uid);
@@ -5729,35 +5778,6 @@ var public_worker_default = {
     }
   }
 };
-
-// sky-ai-route.mjs
-var SKY_AI_ROUTES = Object.freeze([]);
-function routeKey(request) {
-  return request.method + " " + new URL(request.url).pathname;
-}
-function shouldRouteToSkyAi(request, env, routes = SKY_AI_ROUTES) {
-  if (!env || !env.SKY_AI || typeof env.SKY_AI.fetch !== "function") return false;
-  return Array.isArray(routes) && routes.includes(routeKey(request));
-}
-async function tryRouteToSkyAi(request, env, routes = SKY_AI_ROUTES) {
-  if (!shouldRouteToSkyAi(request, env, routes)) return null;
-  try {
-    const copy2 = request.clone();
-    const headers = new Headers(copy2.headers);
-    headers.delete("x-sky-uid");
-    headers.set("x-sky-ai-caller", "admission-gk");
-    const hasBody = !["GET", "HEAD"].includes(copy2.method);
-    const res = await env.SKY_AI.fetch(new Request(copy2.url, {
-      method: copy2.method,
-      headers,
-      body: hasBody ? await copy2.arrayBuffer() : void 0
-    }));
-    if (!res || res.status === 404 || res.status >= 500) return null;
-    return res;
-  } catch (_) {
-    return null;
-  }
-}
 
 // email-gateway/core/constants.mjs
 var EMAIL_GATEWAY_VERSION = "phase2b-2";

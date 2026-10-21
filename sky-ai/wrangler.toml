@@ -10,3 +10,9 @@ workers_dev = true
 [observability]
 enabled = true
 head_sampling_rate = 1
+
+# F0.1 step 4b: same KV namespace as admission-gk's PUB_KV (read-only use:
+# aiprefs:<uid> and the internal key secret:sky-internal). A binding, not a var.
+[[kv_namespaces]]
+binding = "PUB_KV"
+id = "b9353515b098427687afcfb8654ed359"
