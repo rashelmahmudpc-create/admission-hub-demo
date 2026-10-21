@@ -2923,7 +2923,7 @@
     setBusy(true);
     try {
       if (state.pendingProfile && state.profileBound && !state.profileSynced) await syncPendingProfile({ pending: true });
-      const result = await api('/telegram/verification/start', { method: 'POST', body: {} });
+      const result = await api('/telegram/verification/start', { method: 'POST', body: { turnstileToken: await humanToken() } });
       if (!setTelegramChallenge(result)) throw new Error('Telegram যাচাই এখন পাওয়া যাচ্ছে না।');
       if (state.signupJourney || pendingSignup()) rememberPendingSignup(true, 'telegram');
       showView('telegram');
@@ -3057,7 +3057,7 @@
     try {
       const result = await api(backupApiPath('/backup/request'), {
         method: 'POST',
-        body: { purpose: 'account-backup', ...(contact ? { contact } : {}) }
+        body: { purpose: 'account-backup', ...(contact ? { contact } : {}), turnstileToken: await humanToken() }
       });
       state.backup = { attemptId: result.attemptId, purpose: 'account-backup', interaction: result.interaction || null };
       $('#ah-backup-code').value = '';
@@ -3190,7 +3190,7 @@
       if (!email || !$('#ah-forgot-email').checkValidity()) return message('সঠিক Email address লিখো।', 'error');
       setBusy(true);
       try {
-        await api('/password-reset', { method: 'POST', body: { email } });
+        await api('/password-reset', { method: 'POST', body: { email, turnstileToken: await humanToken() } });
         message('এই Email-এ অ্যাকাউন্ট থাকলে reset link পাঠানোর অনুরোধ নেওয়া হয়েছে। কিছুক্ষণ পর Inbox, Spam ও Promotions দেখো।', 'success');
       } catch (error) { message(friendlyError(error), 'error'); }
       finally { setBusy(false); }
@@ -3264,7 +3264,7 @@
       state.signupJourney = true;
       setBusy(true);
       try {
-        const result = await api('/signup', { method: 'POST', signupFlow: true, body: { email, password } });
+        const result = await api('/signup', { method: 'POST', signupFlow: true, body: { email, password, turnstileToken: await humanToken() } });
         const selectionRequired = result.verification?.selectionRequired === true;
         const emailSent = result.verification?.sent === true;
         if (!selectionRequired && !emailSent) throw Object.assign(new Error('delivery-not-confirmed'), { code: 'VERIFICATION_UNAVAILABLE' });
@@ -3320,7 +3320,7 @@
       rememberedEmail = $('#ah-login-remember')?.checked ? email : '';
       setBusy(true);
       try {
-        const result = await api('/login', { method: 'POST', body: { email, password, remember: $('#ah-login-remember')?.checked === true } });
+        const result = await api('/login', { method: 'POST', body: { email, password, remember: $('#ah-login-remember')?.checked === true, turnstileToken: await humanToken() } });
         if (result.authenticated === true) {
           await establishSession(result, 'যাচাইকৃত অ্যাকাউন্টে লগইন হয়েছে।');
         } else if (result.verification?.reason === 'new-device') {
@@ -3515,7 +3515,7 @@
       if (!email || !$('#ah-resend-email').checkValidity() || password.length < 8) return message('ইমেইল ও পাসওয়ার্ড সঠিকভাবে লিখুন।', 'error');
       setBusy(true);
       try {
-        const result = await api('/verification/resend', { method: 'POST', body: { email, password } });
+        const result = await api('/verification/resend', { method: 'POST', body: { email, password, turnstileToken: await humanToken() } });
         if (result.alreadyVerified) {
           clearResendCooldown(); state.verification = null; prefillLogin(email); showView('login');
           message('ইমেইল ইতিমধ্যে যাচাইকৃত—এখন লগইন করুন।', 'success');
@@ -3772,7 +3772,7 @@
   };
   const startTelegramChallenge = async () => {
     await bindPendingProfile();
-    const result = await skyApi('/telegram/verification/start', { method: 'POST', body: {} });
+    const result = await skyApi('/telegram/verification/start', { method: 'POST', body: { turnstileToken: await humanToken() } });
     if (!setTelegramChallenge(result)) throw new Error('Telegram যাচাই এখন পাওয়া যাচ্ছে না।');
     if (state.signupJourney || pendingSignup()) rememberPendingSignup(true, 'telegram');
     return { resendAfter: telegramResendRemaining() || state.telegram?.resendAfter || 45 };
@@ -3853,7 +3853,7 @@
       const result = await skyApi('/signup', {
         method: 'POST',
         signupFlow: true,
-        body: { email, password, remember: true }
+        body: { email, password, remember: true, turnstileToken: await humanToken() }
       });
       state.verification = state.verification || {};
       state.verification.email = email;
@@ -3875,7 +3875,7 @@
       return result;
     },
     login: async (email, password) => {
-      const result = await skyApi('/login', { method: 'POST', body: { email, password, remember: true } });
+      const result = await skyApi('/login', { method: 'POST', body: { email, password, remember: true, turnstileToken: await humanToken() } });
       if (result.authenticated === true) {
         await establishSession(result, 'তোমার account-এ প্রবেশ হয়েছে।');
         return result;
@@ -3928,7 +3928,7 @@
         return true;
       } catch (_) { return false; }
     },
-    forgot: email => skyApi('/password-reset', { method: 'POST', body: { email } }),
+    forgot: async email => skyApi('/password-reset', { method: 'POST', body: { email, turnstileToken: await humanToken() } }),
     startEmail: startEmailChallenge,
     checkEmail: () => checkEmailVerification({ silent: true }),
     verifyEmail: verifyEmailChallenge,
