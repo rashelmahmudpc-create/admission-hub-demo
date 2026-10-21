@@ -6,8 +6,8 @@ const U = 'https://admission-gk.example/api/ai/prefs';
 const R = ['GET /api/ai/prefs'];
 const kv = (d) => ({ get: async (k) => (k in d ? d[k] : null) });
 
-test('identity allowlist ships empty', () => {
-  assert.equal(SKY_AI_IDENTITY_ROUTES.length, 0);
+test('identity allowlist contains only GET /api/ai/prefs', () => {
+  assert.deepEqual([...SKY_AI_IDENTITY_ROUTES], ['GET /api/ai/prefs']);
 });
 
 test('forwards uid + internal key when listed and key exists', async () => {
@@ -20,10 +20,10 @@ test('forwards uid + internal key when listed and key exists', async () => {
   assert.equal(seen.headers.get('x-sky-ai-caller'), 'admission-gk');
 });
 
-test('falls back (null) when empty list, no key, no uid, POST, or sky-ai fails', async () => {
+test('falls back (null) when unlisted, no key, no uid, POST, or sky-ai fails', async () => {
   const ok = { fetch: async () => new Response('x') };
   const withKey = { PUB_KV: kv({ 'secret:sky-internal': 'K' }), SKY_AI: ok };
-  assert.equal(await forwardWithIdentity(new Request(U), withKey, 'u'), null);
+  assert.equal(await forwardWithIdentity(new Request(U), withKey, 'u', []), null);
   assert.equal(await forwardWithIdentity(new Request(U), { PUB_KV: kv({}), SKY_AI: ok }, 'u', R), null);
   assert.equal(await forwardWithIdentity(new Request(U), withKey, '', R), null);
   assert.equal(await forwardWithIdentity(new Request(U, { method: 'POST', body: '{}' }), withKey, 'u', ['POST /api/ai/prefs']), null);

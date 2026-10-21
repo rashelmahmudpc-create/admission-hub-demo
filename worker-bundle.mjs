@@ -5041,7 +5041,7 @@ async function tryRouteToSkyAi(request, env, routes = SKY_AI_ROUTES) {
     return null;
   }
 }
-var SKY_AI_IDENTITY_ROUTES = Object.freeze([]);
+var SKY_AI_IDENTITY_ROUTES = Object.freeze(["GET /api/ai/prefs"]);
 var SKY_INTERNAL_KEY_NAME = "secret:sky-internal";
 async function forwardWithIdentity(request, env, uid, routes = SKY_AI_IDENTITY_ROUTES) {
   if (!uid || request.method !== "GET") return null;
