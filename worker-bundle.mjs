@@ -5730,6 +5730,35 @@ var public_worker_default = {
   }
 };
 
+// sky-ai-route.mjs
+var SKY_AI_ROUTES = Object.freeze([]);
+function routeKey(request) {
+  return request.method + " " + new URL(request.url).pathname;
+}
+function shouldRouteToSkyAi(request, env, routes = SKY_AI_ROUTES) {
+  if (!env || !env.SKY_AI || typeof env.SKY_AI.fetch !== "function") return false;
+  return Array.isArray(routes) && routes.includes(routeKey(request));
+}
+async function tryRouteToSkyAi(request, env, routes = SKY_AI_ROUTES) {
+  if (!shouldRouteToSkyAi(request, env, routes)) return null;
+  try {
+    const copy2 = request.clone();
+    const headers = new Headers(copy2.headers);
+    headers.delete("x-sky-uid");
+    headers.set("x-sky-ai-caller", "admission-gk");
+    const hasBody = !["GET", "HEAD"].includes(copy2.method);
+    const res = await env.SKY_AI.fetch(new Request(copy2.url, {
+      method: copy2.method,
+      headers,
+      body: hasBody ? await copy2.arrayBuffer() : void 0
+    }));
+    if (!res || res.status === 404 || res.status >= 500) return null;
+    return res;
+  } catch (_) {
+    return null;
+  }
+}
+
 // email-gateway/core/constants.mjs
 var EMAIL_GATEWAY_VERSION = "phase2b-2";
 var EMAIL_TYPES = Object.freeze({
@@ -31597,6 +31626,10 @@ var gk_agent_worker_default = {
         method: "GET",
         headers: { "x-sky-ai-caller": "admission-gk" }
       }));
+    }
+    {
+      const viaSky = await tryRouteToSkyAi(request, env);
+      if (viaSky) return viaSky;
     }
     if (url.pathname === "/api/voice/agent" || url.pathname.startsWith("/api/voice/agent/") || url.pathname === "/api/voice/login" || url.pathname === "/api/voice/session") {
       const id = env.VOICE_AGENT.idFromName(String(env.VOICE_OWNER_UID || "owner"));
