@@ -5,6 +5,7 @@ import {
   VerificationProviderError
 } from './provider-contract.mjs';
 import { deriveTelegramWebhookSecret, validTelegramWebhookSecret } from './telegram-security.mjs';
+import { createPoolProviders } from './pool-providers.mjs';
 
 const safeInteger = (value, min = 0, max = Number.MAX_SAFE_INTEGER) => {
   const number = Number(value);
@@ -2287,6 +2288,16 @@ export function createConfiguredVerificationProviders(env = {}, { fetchImpl = gl
     declaredDailyQuota: descopeMagicSlot ? descopeMagicSlot.dailyQuota : '',
     fetchImpl
   });
+  // otp-n..otp-u: mailers whose keys all live in the single OTP_RAW secret
+  // (64-variable ceiling). A slot only gets a quota while its orchestrator row
+  // is enabled, so an unconfigured mailer stays inert. Appended after every
+  // existing slot, and only while OTP_RAW is bound.
+  const poolProviders = env.OTP_RAW ? createPoolProviders({
+    raw: env.OTP_RAW,
+    slotQuota: id => { const slot = slotFromConfig(env.VERIFICATION_ORCHESTRATOR_CONFIG, id); return slot ? slot.dailyQuota : ''; },
+    fetchImpl,
+    helpers: { boundedJson, httpFailure, otpEmailBody, appName: OTP_EMAIL_APP }
+  }) : [];
   return [
     brevoOtpA.configured ? brevoOtpA : bridgeOtpA,
     appsScriptOtpB.configured ? appsScriptOtpB : bridgeOtpB,
@@ -2318,7 +2329,8 @@ export function createConfiguredVerificationProviders(env = {}, { fetchImpl = gl
       webhookUrl: env.TELEGRAM_AUTH_WEBHOOK_URL,
       declaredDailyQuota: env.TELEGRAM_AUTH_DAILY_QUOTA,
       fetchImpl
-    })
+    }),
+    ...poolProviders
   ];
 }
 
