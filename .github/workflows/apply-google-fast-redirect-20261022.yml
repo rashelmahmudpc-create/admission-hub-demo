@@ -1,0 +1,64 @@
+name: Apply Google fast redirect 2026-10-22
+
+# Applies scripts/apply-google-fast-redirect-20261022.py on the feature branch
+# (sw.js bypass for /__/auth/*, Firebase Auth prewarm), regenerates the sw.js
+# digests, runs the Google login tests and commits back to the SAME branch.
+# Never touches main and never deploys.
+
+on:
+  push:
+    branches: [fix/google-fast-redirect]
+    paths:
+      - '.github/workflows/apply-google-fast-redirect-20261022.yml'
+      - 'scripts/apply-google-fast-redirect-20261022.py'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-google-fast-redirect-20261022
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: github.ref_name == 'fix/google-fast-redirect'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: fix/google-fast-redirect
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Apply the patch
+        run: |
+          set -eu
+          python3 scripts/apply-google-fast-redirect-20261022.py
+          python3 scripts/apply-google-fast-redirect-20261022.py >/dev/null
+          grep -q "requestUrl.pathname.startsWith('/__/auth/')" sw.js
+          grep -q "loadGoogleAuth().catch(() => {})" account-access.js
+          node --check account-access.js
+          node --check sw.js
+          git diff --stat
+      - name: Install and refresh the service-worker digests
+        run: |
+          set -eu
+          npm ci
+          npm run sw:manifest
+      - name: Google and Facebook login tests (must pass)
+        run: node --test --test-concurrency=1 google-return-recovery.test.mjs google-redirect-login.test.mjs facebook-login-guard.test.mjs firebase-auth-ui.test.mjs firebase-google-auth.test.mjs
+      - name: Commit and push to the feature branch
+        run: |
+          set -eu
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add account-access.js sw.js
+          if git diff --cached --quiet; then echo 'Nothing to commit (already applied).'; else
+            git commit -m 'fix(google): sw.js bypasses /__/auth/*, Firebase Auth is prewarmed so Continue with Google redirects immediately' -m 'Applied by apply-google-fast-redirect-20261022.yml. No deploy.'
+            git push origin HEAD:fix/google-fast-redirect
+          fi
+          npm run check:sw-manifest
