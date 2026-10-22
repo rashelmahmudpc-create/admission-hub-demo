@@ -1,0 +1,67 @@
+name: Apply OTP pool providers 2026-10-22
+
+# Applies scripts/apply-otp-pool-20261022.py on the feature branch: wires the
+# OTP_RAW pool mailers otp-n..otp-u (Maileroo, Elastic Email, Mailgun, Alibaba
+# DirectMail, SparkPost, Plunk, Loops). Rebuilds worker-bundle.mjs, runs the
+# verification/auth guard tests and commits the result back to the SAME branch.
+# It never touches main and never deploys: merge the PR and run
+# deploy-pages-worker.yml to go live.
+
+on:
+  push:
+    branches: [feat/otp-pool-providers]
+    paths:
+      - '.github/workflows/apply-otp-pool-20261022.yml'
+      - 'scripts/apply-otp-pool-20261022.py'
+      - 'auth-native/verification/pool-providers.mjs'
+      - 'pool-providers.test.mjs'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-otp-pool-20261022
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: github.ref_name == 'feat/otp-pool-providers'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: feat/otp-pool-providers
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Apply the OTP pool patch
+        run: |
+          set -eu
+          python3 scripts/apply-otp-pool-20261022.py
+          python3 scripts/apply-otp-pool-20261022.py >/dev/null
+          grep -q '"id":"otp-n","enabled":true,"priority":38,"dailyQuota":100,' wrangler.toml
+          grep -q '"id":"otp-g","enabled":true,"priority":39,"dailyQuota":165,' wrangler.toml
+          grep -q "createPoolProviders" auth-native/verification/providers.mjs
+          git diff --stat
+      - name: Install and rebuild the Worker bundle
+        run: |
+          set -eu
+          npm ci
+          npm run build:worker
+          npm run check:worker-bundle
+      - name: Verification and auth guard tests
+        run: node --test --test-concurrency=1 --test-skip-pattern="credentials remain in server-managed HttpOnly cookies|release guard literals still match the shipped shell" pool-providers.test.mjs native-auth-protection.test.mjs compact-auth-config.test.mjs verification-providers.test.mjs verification-orchestrator.test.mjs descope-otp.test.mjs descope-magiclink.test.mjs
+      - name: Commit and push to the feature branch
+        run: |
+          set -eu
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add wrangler.toml auth-native/verification/providers.mjs auth-native/verification/config.mjs observability/otp-delivery-log.mjs worker-bundle.mjs
+          if git diff --cached --quiet; then echo 'Nothing to commit (already applied).'; else
+            git commit -m 'feat(otp): wire OTP_RAW pool mailers otp-n..otp-u' -m 'Applied by apply-otp-pool-20261022.yml. No deploy.'
+            git push origin HEAD:feat/otp-pool-providers
+          fi
