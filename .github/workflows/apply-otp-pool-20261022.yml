@@ -54,7 +54,14 @@ jobs:
           npm run build:worker
           npm run check:worker-bundle
       - name: Verification and auth guard tests
-        run: node --test --test-concurrency=1 --test-skip-pattern="credentials remain in server-managed HttpOnly cookies|release guard literals still match the shipped shell" pool-providers.test.mjs native-auth-protection.test.mjs compact-auth-config.test.mjs verification-providers.test.mjs verification-orchestrator.test.mjs descope-otp.test.mjs descope-magiclink.test.mjs
+        shell: bash
+        run: |
+          set +e
+          node --test --test-concurrency=1 --test-reporter=tap --test-skip-pattern="credentials remain in server-managed HttpOnly cookies|release guard literals still match the shipped shell" pool-providers.test.mjs native-auth-protection.test.mjs compact-auth-config.test.mjs verification-providers.test.mjs verification-orchestrator.test.mjs descope-otp.test.mjs descope-magiclink.test.mjs > /tmp/tests.log 2>&1
+          status=$?
+          grep -E '^# (tests|pass|fail)' /tmp/tests.log | while IFS= read -r line; do echo "::notice title=tests::$line"; done
+          grep -nE 'not ok|error:|expected:|actual:|Error \[|SyntaxError|TypeError|ReferenceError|Cannot find' /tmp/tests.log | head -40 | while IFS= read -r line; do echo "::error title=test::${line:0:300}"; done
+          exit $status
       - name: Commit and push to the feature branch
         run: |
           set -eu
