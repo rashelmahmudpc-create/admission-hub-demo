@@ -3415,11 +3415,11 @@ function capStats(stats) {
 var AI_PREFS_DEFAULT = Object.freeze({ langStyle: "bn", tone: "friendly", responseLen: "balanced" });
 function sanitizeAiPrefs(value) {
   if (!value || typeof value !== "object") return null;
-  const pick = (v, set, dflt) => set.has(String(v)) ? String(v) : dflt;
+  const pick2 = (v, set, dflt) => set.has(String(v)) ? String(v) : dflt;
   return {
-    langStyle: pick(value.langStyle, /* @__PURE__ */ new Set(["bn", "en", "mix"]), AI_PREFS_DEFAULT.langStyle),
-    tone: pick(value.tone, /* @__PURE__ */ new Set(["friendly", "professional", "simple", "motivating", "direct"]), AI_PREFS_DEFAULT.tone),
-    responseLen: pick(value.responseLen, /* @__PURE__ */ new Set(["short", "balanced", "detailed"]), AI_PREFS_DEFAULT.responseLen)
+    langStyle: pick2(value.langStyle, /* @__PURE__ */ new Set(["bn", "en", "mix"]), AI_PREFS_DEFAULT.langStyle),
+    tone: pick2(value.tone, /* @__PURE__ */ new Set(["friendly", "professional", "simple", "motivating", "direct"]), AI_PREFS_DEFAULT.tone),
+    responseLen: pick2(value.responseLen, /* @__PURE__ */ new Set(["short", "balanced", "detailed"]), AI_PREFS_DEFAULT.responseLen)
   };
 }
 var PROFILE_TEXT = (value, max) => String(value ?? "").normalize("NFKC").replace(/[\r\n\u0000<>]/g, "").trim().slice(0, max);
@@ -4407,7 +4407,7 @@ data: ${JSON.stringify({ stage: id, label })}
       examMode,
       blocked: safety.blocked
     };
-    const finalize = async (model, provider, text) => {
+    const finalize2 = async (model, provider, text) => {
       if (!memoryOn) return text;
       if (!validateResponse(text, validationCtx).persistable) return text;
       try {
@@ -4456,7 +4456,7 @@ data: ${JSON.stringify({ stage: id, label })}
               const toStore = check.text || raw;
               later(() => chatStore.putCache(cacheKey, "summary", { text: toStore, structured: check.structured ?? null, model: c.model, intent }, { ttlMs: chatCacheTtl(intent), model: c.model }));
             }
-            later(() => finalize(c.model, c.provider, raw));
+            later(() => finalize2(c.model, c.provider, raw));
             await settleBackground();
             emitTrace({ provider: c.provider, model: c.model, text: raw, responseType: check.structured?.type, validated: !check.enforced });
             emitTiming({ cache: cacheMode ? cacheMode + "-miss" : "off", provider: c.provider });
@@ -4548,7 +4548,7 @@ data: ${JSON.stringify({ text: check.text })}
 data: ${JSON.stringify({ model: c.model, provider: c.provider, intent, quiz: quizMode, pv: SYSTEM_PROMPT_V, agent: AGENT_VERSION, latencyMs: Date.now() - startedAt, structured: check.structured })}
 
 `);
-                later(() => finalize(c.model, c.provider, full));
+                later(() => finalize2(c.model, c.provider, full));
                 await settleBackground();
                 emitTrace({ provider: c.provider, model: c.model, text: full, responseType: check.structured?.type, validated: !check.enforced });
                 emitTiming({ cache: cacheMode ? cacheMode + "-miss" : "off", provider: c.provider });
@@ -11161,6 +11161,14 @@ var SLOT_DEFINITIONS = Object.freeze({
   "otp-e": Object.freeze({ channel: VERIFICATION_CHANNELS.OTP, verificationMode: VERIFICATION_MODES.LOCAL_CODE, priority: 37 }),
   "otp-f": Object.freeze({ channel: VERIFICATION_CHANNELS.OTP, verificationMode: VERIFICATION_MODES.LOCAL_CODE, priority: 38 }),
   "otp-g": Object.freeze({ channel: VERIFICATION_CHANNELS.OTP, verificationMode: VERIFICATION_MODES.LOCAL_CODE, priority: 39 }),
+  // otp-n..otp-u: OTP_RAW pool mailers (pool-providers.mjs).
+  "otp-n": Object.freeze({ channel: VERIFICATION_CHANNELS.OTP, verificationMode: VERIFICATION_MODES.LOCAL_CODE, priority: 38 }),
+  "otp-o": Object.freeze({ channel: VERIFICATION_CHANNELS.OTP, verificationMode: VERIFICATION_MODES.LOCAL_CODE, priority: 38 }),
+  "otp-q": Object.freeze({ channel: VERIFICATION_CHANNELS.OTP, verificationMode: VERIFICATION_MODES.LOCAL_CODE, priority: 38 }),
+  "otp-r": Object.freeze({ channel: VERIFICATION_CHANNELS.OTP, verificationMode: VERIFICATION_MODES.LOCAL_CODE, priority: 38 }),
+  "otp-s": Object.freeze({ channel: VERIFICATION_CHANNELS.OTP, verificationMode: VERIFICATION_MODES.LOCAL_CODE, priority: 38 }),
+  "otp-t": Object.freeze({ channel: VERIFICATION_CHANNELS.OTP, verificationMode: VERIFICATION_MODES.LOCAL_CODE, priority: 38 }),
+  "otp-u": Object.freeze({ channel: VERIFICATION_CHANNELS.OTP, verificationMode: VERIFICATION_MODES.LOCAL_CODE, priority: 38 }),
   whatsapp: Object.freeze({ channel: VERIFICATION_CHANNELS.WHATSAPP, verificationMode: VERIFICATION_MODES.LOCAL_CODE, priority: 40 }),
   telegram: Object.freeze({ channel: VERIFICATION_CHANNELS.TELEGRAM, verificationMode: VERIFICATION_MODES.LOCAL_CODE, priority: 50 })
 });
@@ -16392,8 +16400,8 @@ var MSG = {
 function buildMessage(kind, params = {}, lang = "bn") {
   const set = MSG[kind];
   if (!set) return null;
-  const pick = set[lang] || set.bn;
-  const out = typeof pick === "function" ? pick(params.count) : pick;
+  const pick2 = set[lang] || set.bn;
+  const out = typeof pick2 === "function" ? pick2(params.count) : pick2;
   return out ? { ...out, kind, link: params.link || "dashboard" } : null;
 }
 function pickNudge(state = {}, prefs = {}, nowMs = Date.now()) {
@@ -16563,7 +16571,7 @@ async function runScheduledPersonalizedNotifications(env, deps = {}) {
     if (!fcmConfigured(env)) return { processed: 0, sent: 0, skipped: 0, reason: "fcm-not-configured" };
   }
   const fcm = deps.fcmStore || new FcmStore(env?.PROFILE_DB);
-  const send = deps.send || ((userId, message) => sendToUser(env, userId, fcm, message));
+  const send2 = deps.send || ((userId, message) => sendToUser(env, userId, fcm, message));
   const { date } = dhakaParts2(now);
   const users = await personalized.audience();
   let sent = 0;
@@ -16591,7 +16599,7 @@ async function runScheduledPersonalizedNotifications(env, deps = {}) {
         skipped += 1;
         continue;
       }
-      const outcome = await send(userId, message);
+      const outcome = await send2(userId, message);
       if (outcome?.ok) sent += 1;
       results.push({ userId, kind: message.kind, ok: Boolean(outcome?.ok) });
     } catch (err) {
@@ -17092,10 +17100,10 @@ function buildMessage2(kind, params = {}, lang = "bn", variant = "A") {
   return { title, body, kind, category: meta.category, variant, link: params.link || "dashboard" };
 }
 var LEARNING_KINDS = Object.freeze(["lesson_start", "lesson_complete", "quiz_complete", "question_attempt", "course_complete"]);
-function attributeConversion(send = {}, learningEvents = [], windowMs = 6 * 3600 * 1e3) {
-  const sentAt = asInt4(send.sentAt);
+function attributeConversion(send2 = {}, learningEvents = [], windowMs = 6 * 3600 * 1e3) {
+  const sentAt = asInt4(send2.sentAt);
   if (!sentAt) return { converted: false, kind: null, lagMs: null };
-  const floor = Math.max(sentAt, asInt4(send.openedAt) || 0, asInt4(send.clickedAt) || 0);
+  const floor = Math.max(sentAt, asInt4(send2.openedAt) || 0, asInt4(send2.clickedAt) || 0);
   const candidates = (Array.isArray(learningEvents) ? learningEvents : []).map((e) => ({ kind: String(e?.kind || e?.name || ""), at: asInt4(e?.at) })).filter((e) => LEARNING_KINDS.includes(e.kind) && e.at >= floor && e.at - sentAt <= windowMs).sort((a, b) => a.at - b.at);
   if (!candidates.length) return { converted: false, kind: null, lagMs: null };
   return { converted: true, kind: candidates[0].kind, lagMs: candidates[0].at - sentAt };
@@ -17678,7 +17686,7 @@ async function runScheduledIntelligenceNotifications(env, deps = {}) {
     return { processed: 0, sent: 0, skipped: 0, reason: "fcm-not-configured" };
   }
   const users = await store.audience();
-  const send = deps.send || ((userId, message) => sendIntelligence(env, userId, message, new FcmStore(env?.PROFILE_DB)));
+  const send2 = deps.send || ((userId, message) => sendIntelligence(env, userId, message, new FcmStore(env?.PROFILE_DB)));
   const signalsFor = deps.signalsFor || null;
   let sent = 0;
   let skipped = 0;
@@ -17753,7 +17761,7 @@ async function runScheduledIntelligenceNotifications(env, deps = {}) {
         }
         continue;
       }
-      const delivered = await send(userId, outcome.message);
+      const delivered = await send2(userId, outcome.message);
       if (delivered?.ok) sent += 1;
       results.push({ userId, decision: "send", kind: outcome.candidate.kind, variant: outcome.variant, ok: Boolean(delivered?.ok) });
       try {
@@ -17856,11 +17864,11 @@ async function handleIntelligenceRequest(request, env, deps = {}) {
       if (!LEARNING_KINDS.includes(kind)) return jsonResponse4(request, { error: "invalid-kind" }, 400);
       const sends = await store2.convertibleSends(userId, at - 6 * 3600 * 1e3);
       const learningEvents = [{ kind, at }];
-      for (const send of sends) {
-        const credit = attributeConversion(send, learningEvents);
+      for (const send2 of sends) {
+        const credit = attributeConversion(send2, learningEvents);
         if (credit.converted) {
-          await store2.markLearning({ userId, key: send.key, kind: credit.kind, at });
-          return jsonResponse4(request, { ok: true, credited: send.key, lagMs: credit.lagMs });
+          await store2.markLearning({ userId, key: send2.key, kind: credit.kind, at });
+          return jsonResponse4(request, { ok: true, credited: send2.key, lagMs: credit.lagMs });
         }
       }
       return jsonResponse4(request, { ok: true, credited: null });
@@ -18043,8 +18051,8 @@ var MSG2 = {
 function buildEventMessage(event, lang = "bn") {
   const set = MSG2[event?.kind];
   if (!set) return null;
-  const pick = set[lang] || set.bn;
-  const out = typeof pick === "function" ? pick(event.value) : pick;
+  const pick2 = set[lang] || set.bn;
+  const out = typeof pick2 === "function" ? pick2(event.value) : pick2;
   return out ? { ...out, kind: event.kind, link: event.link || "dashboard" } : null;
 }
 var reachedMilestone = (value, table) => {
@@ -18258,7 +18266,7 @@ async function runScheduledEventNotifications(env, deps = {}) {
   if (!env?.__skipFcmCheck && deps.requireFcm !== false && !fcmConfigured(env)) {
     return { processed: 0, sent: 0, baseline: 0, reason: "fcm-not-configured" };
   }
-  const send = deps.send || ((userId, message) => defaultSend(env, userId, message));
+  const send2 = deps.send || ((userId, message) => defaultSend(env, userId, message));
   const { date, hour, minute } = dhakaParts2(now);
   const dayStart = Date.parse(date + "T00:00:00Z") - 6 * 3600 * 1e3;
   const users = await store.audience();
@@ -18294,7 +18302,7 @@ async function runScheduledEventNotifications(env, deps = {}) {
         if (!inSendWindow(hour, { ...prefs, ...DEFAULTS5 })) break;
         const claimed = await store.claimEvent(userId, event.key, event.kind, now);
         if (!claimed) continue;
-        const outcome = await send(userId, message);
+        const outcome = await send2(userId, message);
         budget -= 1;
         if (outcome?.ok) sent += 1;
         results.push({ userId, kind: event.kind, ok: Boolean(outcome?.ok) });
@@ -18419,8 +18427,8 @@ var MSG3 = {
 function buildDigestMessage(kind, summary, lang = "bn") {
   const set = MSG3[kind];
   if (!set) return null;
-  const pick = set[lang] || set.bn;
-  const out = pick(summary || summarize([]));
+  const pick2 = set[lang] || set.bn;
+  const out = pick2(summary || summarize([]));
   return out ? { ...out, kind: `digest-${kind}`, link: "dashboard" } : null;
 }
 var DigestStore = class {
@@ -18535,7 +18543,7 @@ async function runScheduledDigests(env, deps = {}) {
   if (!env?.__skipFcmCheck && deps.requireFcm !== false && !fcmConfigured(env)) {
     return { processed: 0, sent: 0, skipped: 0, reason: "fcm-not-configured" };
   }
-  const send = deps.send || ((userId, message) => defaultSend2(env, userId, message));
+  const send2 = deps.send || ((userId, message) => defaultSend2(env, userId, message));
   const cal = dhakaCalendar(now);
   const dayStart = Date.parse(cal.date + "T00:00:00Z") - DHAKA_OFFSET_MS2;
   const maxPerDay = Number(deps.maxPerDay ?? DEFAULTS6.max_per_day);
@@ -18579,7 +18587,7 @@ async function runScheduledDigests(env, deps = {}) {
         if (!message) continue;
         const claimed = await store.claimPeriod(userId, due.periodKey, due.kind, now);
         if (!claimed) continue;
-        const outcome = await send(userId, message);
+        const outcome = await send2(userId, message);
         budget -= 1;
         if (outcome?.ok) sent += 1;
         results.push({ userId, kind: due.kind, periodKey: due.periodKey, ok: Boolean(outcome?.ok) });
@@ -18613,7 +18621,7 @@ var asNum = (v, fallback = 0) => {
 var pct5 = (part, whole, dp = 1) => whole > 0 ? Number((part / whole * 100).toFixed(dp)) : 0;
 var ratio2 = (part, whole, dp = 4) => whole > 0 ? Number((part / whole).toFixed(dp)) : 0;
 var round = (n, dp = 2) => Number.isFinite(Number(n)) ? Number(Number(n).toFixed(dp)) : 0;
-var sum = (rows4, pick) => rows4.reduce((n, r) => n + asNum(pick(r)), 0);
+var sum = (rows4, pick2) => rows4.reduce((n, r) => n + asNum(pick2(r)), 0);
 var parseDay = (day) => {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(day || ""));
   return m ? Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : NaN;
@@ -18772,7 +18780,7 @@ function splitPeriods(series = [], days = 7) {
 function comparePeriods(series = [], days = 7) {
   const { current, previous } = splitPeriods(series, days);
   const active = (rows4) => rows4.filter((r) => r.active).length;
-  const pick = {
+  const pick2 = {
     practiceActivity: (rows4) => sum(rows4, (r) => r.questions),
     lessonsCompleted: (rows4) => sum(rows4, (r) => r.lessons),
     learningTimeMs: (rows4) => sum(rows4, (r) => r.timeMs),
@@ -18784,7 +18792,7 @@ function comparePeriods(series = [], days = 7) {
     }
   };
   const out = {};
-  for (const [key, fn] of Object.entries(pick)) out[key] = compareValue(fn(current), fn(previous));
+  for (const [key, fn] of Object.entries(pick2)) out[key] = compareValue(fn(current), fn(previous));
   return { days, current, previous, metrics: out };
 }
 function linearTrend(values = [], options = {}) {
@@ -19872,7 +19880,7 @@ function parseFilters(url, now = Date.now()) {
   const to = asInt5(url.searchParams.get("to"), 0);
   const sinceMs = from > 0 ? from : now - days * DAY_MS6;
   const untilMs = to > 0 ? to : now;
-  const pick = (key) => {
+  const pick2 = (key) => {
     const v = String(url.searchParams.get(key) || "").trim().slice(0, 80);
     return v || "";
   };
@@ -19880,12 +19888,12 @@ function parseFilters(url, now = Date.now()) {
     days,
     sinceMs,
     untilMs,
-    course: pick("course"),
-    lesson: pick("lesson"),
-    category: pick("category"),
-    segment: pick("segment"),
-    notificationType: pick("type"),
-    platform: pick("platform"),
+    course: pick2("course"),
+    lesson: pick2("lesson"),
+    category: pick2("category"),
+    segment: pick2("segment"),
+    notificationType: pick2("type"),
+    platform: pick2("platform"),
     tzOffsetMin: asInt5(url.searchParams.get("tz"), DEFAULT_TZ_OFFSET_MIN)
   };
 }
@@ -20166,7 +20174,7 @@ var stddev = (values = []) => {
   const m = mean(values);
   return Math.sqrt(values.reduce((a, b) => a + (asNum2(b) - m) ** 2, 0) / (values.length - 1));
 };
-var sumOf = (rows4 = [], pick = (r) => r) => rows4.reduce((n, r) => n + asNum2(pick(r)), 0);
+var sumOf = (rows4 = [], pick2 = (r) => r) => rows4.reduce((n, r) => n + asNum2(pick2(r)), 0);
 var CONFIDENCE_TARGETS = Object.freeze({
   profile: 10,
   // active days
@@ -20588,9 +20596,9 @@ function predictRisk(input = {}, options = {}) {
   const accuracy = asNum2(metrics.accuracy);
   const qSlope = trendSlope(series.map((d) => asNum2(d.questions)), { tail: windowDays });
   const lSlope = trendSlope(series.map((d) => asNum2(d.lessons)), { tail: windowDays });
-  const declineScore = (slope, pick) => {
-    const recentMean = mean(series.slice(-windowDays).map(pick));
-    const priorMean = mean(series.slice(-2 * windowDays, -windowDays).map(pick));
+  const declineScore = (slope, pick2) => {
+    const recentMean = mean(series.slice(-windowDays).map(pick2));
+    const priorMean = mean(series.slice(-2 * windowDays, -windowDays).map(pick2));
     const periodDrop = priorMean > 0 ? clamp012((priorMean - recentMean) / priorMean) : 0;
     const slopeDrop = slope.slope < 0 ? clamp012(Math.abs(slope.slope) / (Math.abs(slope.mean) || 1)) : 0;
     return clamp012(Math.max(periodDrop, slopeDrop));
@@ -25659,6 +25667,13 @@ var OTP_PROVIDER_NAMES = Object.freeze({
   "otp-k": "Hanko",
   "otp-l": "Descope-OTP",
   "otp-m": "Descope-MagicLink",
+  "otp-n": "Maileroo",
+  "otp-o": "ElasticEmail",
+  "otp-q": "Mailgun",
+  "otp-r": "AlibabaDirectMail",
+  "otp-s": "SparkPost",
+  "otp-t": "Plunk",
+  "otp-u": "Loops",
   telegram: "Telegram"
 });
 var EVENTS = /* @__PURE__ */ new Set(["otp_delivery", "otp_request"]);
@@ -25816,7 +25831,7 @@ function createOtpDeliverySink({
   now = () => Date.now(),
   sink = console,
   cooldownMs = OTP_ALERT_COOLDOWN_MS,
-  send = sendTelegramNotification
+  send: send2 = sendTelegramNotification
 } = {}) {
   const lastSent = /* @__PURE__ */ new Map();
   return function onOtpDeliveryEvent(event) {
@@ -25826,7 +25841,7 @@ function createOtpDeliverySink({
     const at = now();
     if (at - (lastSent.get(alert.key) || -Infinity) < cooldownMs) return record;
     lastSent.set(alert.key, at);
-    const job = Promise.resolve().then(() => send({ token: env.TG_BOT_TOKEN, chatId: env.TG_CHAT_ID, message: formatOtpAlert(alert, record, at), fetchImpl, timeoutMs: 5e3 })).catch((error) => {
+    const job = Promise.resolve().then(() => send2({ token: env.TG_BOT_TOKEN, chatId: env.TG_CHAT_ID, message: formatOtpAlert(alert, record, at), fetchImpl, timeoutMs: 5e3 })).catch((error) => {
       try {
         sink.warn.call(sink, JSON.stringify({ evt: "otp_alert_failed", kind: alert.kind, code: String(error?.code || "ERROR").slice(0, 40) }));
       } catch {
@@ -25838,6 +25853,350 @@ function createOtpDeliverySink({
     }
     return record;
   };
+}
+
+// auth-native/verification/pool-providers.mjs
+var POOL_SLOTS = Object.freeze({
+  maileroo: "otp-n",
+  elasticemail: "otp-o",
+  mailgun: "otp-q",
+  alibaba: "otp-r",
+  sparkpost: "otp-s",
+  plunk: "otp-t",
+  loops: "otp-u"
+});
+var ALIASES2 = Object.freeze([
+  ["maileroo", /maileroo/i],
+  ["elasticemail", /elastic\s*-?\s*e?mail|elastic/i],
+  ["emailoctopus", /e?mail\s*-?\s*octopus|octopus/i],
+  ["mailgun", /mail\s*-?\s*g[ua]n|mailguh/i],
+  ["alibaba", /alibaba|aliyun|direct\s*-?\s*mail/i],
+  ["sparkpost", /spark\s*-?\s*post|\bbird\b/i],
+  ["plunk", /plunk/i],
+  ["loops", /\bloops?\b/i]
+]);
+var EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,63}/g;
+var LABEL = /\b(api[\s_-]*key|key|token|secret|access[\s_-]*(?:key)?[\s_-]*secret|access[\s_-]*(?:key)?[\s_-]*id|id|domain|from|sender|region|template|transactional[\s_-]*id)\b\s*[:=]\s*/i;
+function emptyEntry() {
+  return { keys: [], short: [], emails: [], domains: [], labels: {}, region: "" };
+}
+function classifyLine(line) {
+  const bare = String(line).replace(/https?:\/\/\S+/g, " ").replace(EMAIL, " ").replace(/\b[a-z0-9-]+(\.[a-z0-9-]+)+\b/gi, " ");
+  for (const [name, pattern] of ALIASES2) if (pattern.test(bare)) return name;
+  return "";
+}
+function stripName(line, named) {
+  const pattern = ALIASES2.find(([n]) => n === named)[1];
+  const whole = new RegExp(`^(?:${pattern.source})[:=,;-]*$`, "i");
+  return line.split(/(\s+)/).map((word) => whole.test(word) ? " " : word).join("");
+}
+function absorb(entry, text) {
+  const lower2 = text.toLowerCase();
+  if (/\beu\b|europe/.test(lower2)) entry.region = entry.region || "eu";
+  const aliRegion = lower2.match(/\b(cn-[a-z]+|ap-southeast-\d|ap-[a-z]+-\d|eu-central-1|us-east-1)\b/);
+  if (aliRegion) entry.region = aliRegion[1];
+  for (const match of text.matchAll(EMAIL)) entry.emails.push(match[0]);
+  const parts = text.split(/[,;|]|\s{2,}|\t/);
+  for (const part of parts) {
+    const label = part.match(LABEL);
+    if (!label) continue;
+    const value = part.slice(label.index + label[0].length).trim().replace(/^["'`]|["'`]$/g, "").split(/\s+/)[0] || "";
+    if (!value) continue;
+    const name = label[1].toLowerCase().replace(/[\s_-]+/g, "");
+    entry.labels[name] = value;
+  }
+  const stripped = text.replace(EMAIL, " ").replace(/https?:\/\/\S+/g, " ");
+  for (const token of stripped.split(/[\s,;|"'`]+/)) {
+    const clean4 = token.replace(/^[^A-Za-z0-9]+|[^A-Za-z0-9=+/_-]+$/g, "");
+    if (/^(?=.*\.)[a-z0-9-]+(\.[a-z0-9-]+)+$/i.test(clean4) && !/^\d+(\.\d+)+$/.test(clean4)) {
+      entry.domains.push(clean4.toLowerCase());
+      continue;
+    }
+    if (!/^[A-Za-z0-9_+/=.-]+$/.test(clean4) || !/\d/.test(clean4) || !/[A-Za-z]/.test(clean4)) continue;
+    if (clean4.length >= 16) entry.keys.push(clean4);
+    else if (clean4.length >= 8) entry.short.push(clean4);
+  }
+}
+function fromJson(text) {
+  try {
+    const parsed = JSON.parse(text);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+    const out = {};
+    for (const [rawName, value] of Object.entries(parsed)) {
+      const name = classifyLine(rawName);
+      if (!name) continue;
+      const entry = out[name] || emptyEntry();
+      if (typeof value === "string") absorb(entry, value.split("|").join(" , "));
+      else if (value && typeof value === "object") {
+        for (const [field, inner] of Object.entries(value)) absorb(entry, `${field}: ${String(inner ?? "")}`);
+      }
+      out[name] = entry;
+    }
+    return out;
+  } catch {
+    return null;
+  }
+}
+var pick = (labels, names) => {
+  for (const name of names) if (labels[name]) return labels[name];
+  return "";
+};
+var firstKey = (entry, exclude = []) => entry.keys.find((key) => !exclude.includes(key)) || "";
+function finalize(name, entry) {
+  const L = entry.labels;
+  const labelledKey = pick(L, ["apikey", "key", "token", "secret"]);
+  const labelledFrom = pick(L, ["from", "sender"]);
+  const from = labelledFrom.includes("@") ? labelledFrom : entry.emails[0] || "";
+  const labelledDomain = pick(L, ["domain"]);
+  const domain = (labelledDomain || entry.domains.find((d) => !from.endsWith(d)) || entry.domains[0] || (from.split("@")[1] || "")).toLowerCase();
+  if (name === "alibaba") {
+    const id = pick(L, ["accesskeyid", "accessid", "id"]) || entry.keys.find((key) => /^LTAI/.test(key)) || entry.keys[0] || "";
+    const secret = pick(L, ["accesskeysecret", "accesssecret", "secret"]) || firstKey(entry, [id]);
+    return { accessKeyId: id, accessKeySecret: secret, from, region: /^(cn-|ap-|eu-|us-)/.test(entry.region) ? entry.region : "ap-southeast-1" };
+  }
+  if (name === "loops") {
+    const template = pick(L, ["template", "transactionalid", "id"]);
+    const key = labelledKey || firstKey(entry, [template]);
+    return { apiKey: key, transactionalId: template || firstKey(entry, [key]) || entry.short[0] || "" };
+  }
+  const apiKey = labelledKey || firstKey(entry);
+  if (name === "mailgun") return { apiKey, domain, from: from || (domain ? `otp@${domain}` : ""), region: entry.region === "eu" ? "eu" : "us" };
+  if (name === "sparkpost") return { apiKey, from, region: entry.region === "eu" ? "eu" : "us" };
+  return { apiKey, from };
+}
+function parseOtpRawPool(raw) {
+  const text = String(raw || "").slice(0, 16384);
+  if (!text.trim()) return {};
+  const entries = fromJson(text.trim()) || (() => {
+    const out = {};
+    let current = "";
+    for (const line of text.split(/\r?\n/)) {
+      if (!line.trim()) continue;
+      const named = classifyLine(line);
+      if (named) current = named;
+      if (!current) continue;
+      out[current] = out[current] || emptyEntry();
+      absorb(out[current], named ? stripName(line, named) : line);
+    }
+    return out;
+  })();
+  const result = {};
+  for (const [name, entry] of Object.entries(entries)) result[name] = Object.freeze(finalize(name, entry));
+  return Object.freeze(result);
+}
+var hint = (value) => value && value.length >= 8 ? `****${value.slice(-4)}` : "";
+var validEmail = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(value || "")) && String(value).length <= 254;
+var nextUtcMidnight = (now) => (Math.floor(Number(now) / 864e5) + 1) * 864e5;
+async function send(fetchImpl, url, init, helpers) {
+  let response3;
+  try {
+    response3 = await fetchImpl(url, { ...init, redirect: "manual", signal: init.signal || AbortSignal.timeout(12e3) });
+  } catch {
+    throw new VerificationProviderError("NETWORK_ERROR", VERIFICATION_FAILURE_CLASS.TEMPORARY);
+  }
+  let payload = {};
+  try {
+    payload = await helpers.boundedJson(response3);
+  } catch {
+    payload = {};
+  }
+  if (!response3.ok) throw helpers.httpFailure(response3, payload, { userStatuses: [] });
+  return payload;
+}
+var PoolMailer = class {
+  constructor({ id, mailer, config, required, declaredDailyQuota, fetchImpl, now, helpers }) {
+    this.id = id;
+    this.channel = VERIFICATION_CHANNELS.OTP;
+    this.verificationMode = VERIFICATION_MODES.LOCAL_CODE;
+    this.mailer = mailer;
+    this.cfg = config || {};
+    this.helpers = helpers || {};
+    const quota = Number(declaredDailyQuota);
+    this.declaredDailyQuota = Number.isInteger(quota) && quota > 0 ? quota : 0;
+    this.fetch = typeof fetchImpl === "function" ? fetchImpl.bind(globalThis) : null;
+    this.now = typeof now === "function" ? now : Date.now;
+    this.missing = required.filter((field) => {
+      const value = String(this.cfg[field] || "");
+      return field === "from" ? !validEmail(value) : value.length < 4;
+    });
+    this.configured = Boolean(this.fetch && this.declaredDailyQuota && !this.missing.length);
+  }
+  async probe() {
+    return { available: true, code: "READY" };
+  }
+  async checkAvailability() {
+    if (!this.declaredDailyQuota) return { available: false, code: "SLOT_DISABLED" };
+    if (this.missing.length) return { available: false, code: `MISSING_${this.missing[0].toUpperCase()}` };
+    try {
+      return await this.probe();
+    } catch (error) {
+      return { available: false, code: String(error?.code || "PROBE_FAILED") };
+    }
+  }
+  async getRemainingQuota() {
+    if (!this.configured) return { remaining: 0, limit: 0, resetAt: 0, source: "not-configured" };
+    return { remaining: this.declaredDailyQuota, limit: this.declaredDailyQuota, resetAt: nextUtcMidnight(this.now()), source: `${this.mailer}-declared-daily-quota` };
+  }
+  message(input) {
+    if (!this.configured) throw new VerificationProviderError("NOT_CONFIGURED", VERIFICATION_FAILURE_CLASS.HARD);
+    const destination = String(input.destination || "");
+    const code = String(input.code || "");
+    if (!validEmail(destination) || !/^\d{6}$/.test(code)) throw new VerificationProviderError("INVALID_DESTINATION", VERIFICATION_FAILURE_CLASS.USER);
+    const expiresAt = Number(input.expiresAt || 0);
+    const minutes = expiresAt > 0 ? Math.max(1, Math.round((expiresAt - Number(this.now())) / 6e4)) : 5;
+    const { text, html } = this.helpers.otpEmailBody(code, minutes, input.recipientName);
+    return { destination, code, minutes, text, html, subject: `${this.helpers.appName} — আপনার যাচাইকরণ কোড`, fromName: this.helpers.appName };
+  }
+  async verifyCode() {
+    throw new VerificationProviderError("LOCAL_VERIFICATION_ONLY", VERIFICATION_FAILURE_CLASS.USER);
+  }
+  async getProviderStatus() {
+    return { status: this.configured ? "configured" : "disabled", configured: this.configured, officialApi: true, mailer: this.mailer, keyHint: hint(this.cfg.apiKey || this.cfg.accessKeyId), missing: [...this.missing] };
+  }
+};
+var MailerooMailer = class extends PoolMailer {
+  async sendVerification(input = {}) {
+    const m = this.message(input);
+    await send(this.fetch, "https://smtp.maileroo.com/api/v2/emails", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${this.cfg.apiKey}`, "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ from: { address: this.cfg.from, display_name: m.fromName }, to: [{ address: m.destination }], subject: m.subject, html: m.html, plain: m.text })
+    }, this.helpers);
+    return { accepted: true };
+  }
+};
+var ElasticEmailMailer = class extends PoolMailer {
+  async sendVerification(input = {}) {
+    const m = this.message(input);
+    await send(this.fetch, "https://api.elasticemail.com/v4/emails/transactional", {
+      method: "POST",
+      headers: { "X-ElasticEmail-ApiKey": this.cfg.apiKey, "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ Recipients: { To: [m.destination] }, Content: { From: `${m.fromName} <${this.cfg.from}>`, Subject: m.subject, Body: [{ ContentType: "HTML", Content: m.html, Charset: "utf-8" }, { ContentType: "PlainText", Content: m.text, Charset: "utf-8" }] } })
+    }, this.helpers);
+    return { accepted: true };
+  }
+};
+var MailgunMailer = class extends PoolMailer {
+  get base() {
+    return this.cfg.region === "eu" ? "https://api.eu.mailgun.net" : "https://api.mailgun.net";
+  }
+  get auth() {
+    return `Basic ${btoa(`api:${this.cfg.apiKey}`)}`;
+  }
+  async probe() {
+    const payload = await send(this.fetch, `${this.base}/v3/domains/${encodeURIComponent(this.cfg.domain)}`, { method: "GET", headers: { Authorization: this.auth, Accept: "application/json" } }, this.helpers);
+    const domain = payload?.domain || {};
+    if (/sandbox/i.test(String(domain.name || this.cfg.domain))) return { available: false, code: "SANDBOX_DOMAIN" };
+    return domain.state === "active" ? { available: true, code: "READY" } : { available: false, code: "DOMAIN_NOT_VERIFIED" };
+  }
+  async sendVerification(input = {}) {
+    const m = this.message(input);
+    const form = new FormData();
+    form.set("from", `${m.fromName} <${this.cfg.from}>`);
+    form.set("to", m.destination);
+    form.set("subject", m.subject);
+    form.set("text", m.text);
+    form.set("html", m.html);
+    await send(this.fetch, `${this.base}/v3/${encodeURIComponent(this.cfg.domain)}/messages`, { method: "POST", headers: { Authorization: this.auth }, body: form }, this.helpers);
+    return { accepted: true };
+  }
+};
+var aliEncode = (value) => encodeURIComponent(value).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+var AlibabaMailer = class extends PoolMailer {
+  async #call(action, extra) {
+    const region = this.cfg.region || "ap-southeast-1";
+    const host = region === "cn-hangzhou" ? "dm.aliyuncs.com" : `dm.${region}.aliyuncs.com`;
+    const params = {
+      Action: action,
+      Format: "JSON",
+      Version: "2015-11-23",
+      AccessKeyId: this.cfg.accessKeyId,
+      SignatureMethod: "HMAC-SHA1",
+      SignatureVersion: "1.0",
+      SignatureNonce: crypto.randomUUID(),
+      Timestamp: new Date(Number(this.now())).toISOString().replace(/\.\d{3}Z$/, "Z"),
+      RegionId: region,
+      ...extra
+    };
+    const canonical = Object.keys(params).sort().map((key2) => `${aliEncode(key2)}=${aliEncode(params[key2])}`).join("&");
+    const toSign = `POST&${aliEncode("/")}&${aliEncode(canonical)}`;
+    const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(`${this.cfg.accessKeySecret}&`), { name: "HMAC", hash: "SHA-1" }, false, ["sign"]);
+    const signature = btoa(String.fromCharCode(...new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(toSign)))));
+    return send(this.fetch, `https://${host}/`, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" }, body: `${canonical}&Signature=${aliEncode(signature)}` }, this.helpers);
+  }
+  async sendVerification(input = {}) {
+    const m = this.message(input);
+    await this.#call("SingleSendMail", { AccountName: this.cfg.from, AddressType: "1", ReplyToAddress: "false", ToAddress: m.destination, Subject: m.subject, HtmlBody: m.html, TextBody: m.text, FromAlias: m.fromName });
+    return { accepted: true };
+  }
+};
+var SparkPostMailer = class extends PoolMailer {
+  get base() {
+    return this.cfg.region === "eu" ? "https://api.eu.sparkpost.com" : "https://api.sparkpost.com";
+  }
+  async probe() {
+    const domain = this.cfg.from.split("@")[1];
+    const payload = await send(this.fetch, `${this.base}/api/v1/sending-domains/${encodeURIComponent(domain)}`, { method: "GET", headers: { Authorization: this.cfg.apiKey, Accept: "application/json" } }, this.helpers);
+    const status = payload?.results?.status || {};
+    return status.ownership_verified === true ? { available: true, code: "READY" } : { available: false, code: "DOMAIN_NOT_VERIFIED" };
+  }
+  async sendVerification(input = {}) {
+    const m = this.message(input);
+    await send(this.fetch, `${this.base}/api/v1/transmissions`, {
+      method: "POST",
+      headers: { Authorization: this.cfg.apiKey, "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ options: { transactional: true, open_tracking: false, click_tracking: false }, content: { from: { email: this.cfg.from, name: m.fromName }, subject: m.subject, html: m.html, text: m.text }, recipients: [{ address: { email: m.destination } }] })
+    }, this.helpers);
+    return { accepted: true };
+  }
+};
+var PlunkMailer = class extends PoolMailer {
+  async sendVerification(input = {}) {
+    const m = this.message(input);
+    await send(this.fetch, "https://api.useplunk.com/v1/send", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${this.cfg.apiKey}`, "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ to: m.destination, subject: m.subject, body: m.html, name: m.fromName, ...validEmail(this.cfg.from) ? { from: this.cfg.from } : {} })
+    }, this.helpers);
+    return { accepted: true };
+  }
+};
+var LoopsMailer = class extends PoolMailer {
+  async probe() {
+    await send(this.fetch, "https://app.loops.so/api/v1/api-key", { method: "GET", headers: { Authorization: `Bearer ${this.cfg.apiKey}`, Accept: "application/json" } }, this.helpers);
+    return { available: true, code: "READY" };
+  }
+  async sendVerification(input = {}) {
+    const m = this.message(input);
+    await send(this.fetch, "https://app.loops.so/api/v1/transactional", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${this.cfg.apiKey}`, "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ transactionalId: this.cfg.transactionalId, email: m.destination, dataVariables: { code: m.code, minutes: String(m.minutes) } })
+    }, this.helpers);
+    return { accepted: true };
+  }
+};
+var DEFINITIONS = Object.freeze([
+  ["maileroo", MailerooMailer, ["apiKey", "from"]],
+  ["elasticemail", ElasticEmailMailer, ["apiKey", "from"]],
+  ["mailgun", MailgunMailer, ["apiKey", "domain", "from"]],
+  ["alibaba", AlibabaMailer, ["accessKeyId", "accessKeySecret", "from"]],
+  ["sparkpost", SparkPostMailer, ["apiKey", "from"]],
+  ["plunk", PlunkMailer, ["apiKey"]],
+  ["loops", LoopsMailer, ["apiKey", "transactionalId"]]
+]);
+function createPoolProviders({ raw, slotQuota, fetchImpl = globalThis.fetch, now = Date.now, helpers }) {
+  const pool = parseOtpRawPool(raw);
+  return DEFINITIONS.map(([mailer, Klass, required]) => new Klass({
+    id: POOL_SLOTS[mailer],
+    mailer,
+    config: pool[mailer],
+    required,
+    declaredDailyQuota: slotQuota(POOL_SLOTS[mailer]),
+    fetchImpl,
+    now,
+    helpers
+  }));
 }
 
 // auth-native/verification/providers.mjs
@@ -26060,7 +26419,7 @@ var otpEmailBody = (code, minutes, recipientName = "") => {
 </html>`;
   return { text, html };
 };
-var nextUtcMidnight = (now) => (Math.floor(Number(now) / 864e5) + 1) * 864e5;
+var nextUtcMidnight2 = (now) => (Math.floor(Number(now) / 864e5) + 1) * 864e5;
 var BrevoOtpVerificationProvider = class {
   constructor({ id = "otp-a", apiKey, fromAddress, fromName = OTP_EMAIL_APP, declaredDailyQuota, fetchImpl = globalThis.fetch, now = Date.now } = {}) {
     this.id = String(id || "");
@@ -26120,7 +26479,7 @@ var BrevoOtpVerificationProvider = class {
     return {
       remaining: Math.min(credits, limit),
       limit,
-      resetAt: nextUtcMidnight(this.now()),
+      resetAt: nextUtcMidnight2(this.now()),
       source: "brevo-account-credits"
     };
   }
@@ -26190,7 +26549,7 @@ var ResendOtpVerificationProvider = class {
   async getRemainingQuota() {
     if (!this.configured) return { remaining: 0, limit: 0, resetAt: 0, source: "not-configured" };
     const limit = this.declaredDailyQuota;
-    return { remaining: limit, limit, resetAt: nextUtcMidnight(this.now()), source: "resend-declared-daily-quota" };
+    return { remaining: limit, limit, resetAt: nextUtcMidnight2(this.now()), source: "resend-declared-daily-quota" };
   }
   async sendVerification(input = {}) {
     if (!this.configured) throw new VerificationProviderError("NOT_CONFIGURED", VERIFICATION_FAILURE_CLASS.HARD);
@@ -26286,7 +26645,7 @@ var AgentMailOtpVerificationProvider = class {
   async getRemainingQuota() {
     if (!this.configured) return { remaining: 0, limit: 0, resetAt: 0, source: "not-configured" };
     const limit = this.declaredDailyQuota;
-    return { remaining: limit, limit, resetAt: nextUtcMidnight(this.now()), source: "agentmail-declared-daily-quota" };
+    return { remaining: limit, limit, resetAt: nextUtcMidnight2(this.now()), source: "agentmail-declared-daily-quota" };
   }
   async sendVerification(input = {}) {
     if (!this.configured) throw new VerificationProviderError("NOT_CONFIGURED", VERIFICATION_FAILURE_CLASS.HARD);
@@ -26363,7 +26722,7 @@ var MailerSendOtpVerificationProvider = class {
   async getRemainingQuota() {
     if (!this.configured) return { remaining: 0, limit: 0, resetAt: 0, source: "not-configured" };
     const limit = this.declaredDailyQuota;
-    return { remaining: limit, limit, resetAt: nextUtcMidnight(this.now()), source: "mailersend-declared-daily-quota" };
+    return { remaining: limit, limit, resetAt: nextUtcMidnight2(this.now()), source: "mailersend-declared-daily-quota" };
   }
   async sendVerification(input = {}) {
     if (!this.configured) throw new VerificationProviderError("NOT_CONFIGURED", VERIFICATION_FAILURE_CLASS.HARD);
@@ -26460,7 +26819,7 @@ var DeadSimpleEmailOtpVerificationProvider = class {
   async getRemainingQuota() {
     if (!this.configured) return { remaining: 0, limit: 0, resetAt: 0, source: "not-configured" };
     const limit = this.declaredDailyQuota;
-    return { remaining: limit, limit, resetAt: nextUtcMidnight(this.now()), source: "deadsimpleemail-declared-daily-quota" };
+    return { remaining: limit, limit, resetAt: nextUtcMidnight2(this.now()), source: "deadsimpleemail-declared-daily-quota" };
   }
   async sendVerification(input = {}) {
     if (!this.configured) throw new VerificationProviderError("NOT_CONFIGURED", VERIFICATION_FAILURE_CLASS.HARD);
@@ -26547,7 +26906,7 @@ var MailjetOtpVerificationProvider = class {
   async getRemainingQuota() {
     if (!this.configured) return { remaining: 0, limit: 0, resetAt: 0, source: "not-configured" };
     const limit = this.declaredDailyQuota;
-    return { remaining: limit, limit, resetAt: nextUtcMidnight(this.now()), source: "mailjet-declared-daily-quota" };
+    return { remaining: limit, limit, resetAt: nextUtcMidnight2(this.now()), source: "mailjet-declared-daily-quota" };
   }
   async sendVerification(input = {}) {
     if (!this.configured) throw new VerificationProviderError("NOT_CONFIGURED", VERIFICATION_FAILURE_CLASS.HARD);
@@ -26927,7 +27286,7 @@ var LogtoOtpVerificationProvider = class {
   }
   async getRemainingQuota() {
     if (!this.configured) return { remaining: 0, limit: 0, resetAt: 0, source: "not-configured" };
-    return { remaining: this.declaredDailyQuota, limit: this.declaredDailyQuota, resetAt: nextUtcMidnight(this.now()), source: "declared" };
+    return { remaining: this.declaredDailyQuota, limit: this.declaredDailyQuota, resetAt: nextUtcMidnight2(this.now()), source: "declared" };
   }
   async sendVerification(input = {}) {
     if (!this.configured) throw new VerificationProviderError("NOT_CONFIGURED", VERIFICATION_FAILURE_CLASS.HARD);
@@ -27113,7 +27472,7 @@ var AppwriteOtpVerificationProvider = class {
   }
   async getRemainingQuota() {
     if (!this.configured) return { remaining: 0, limit: 0, resetAt: 0, source: "not-configured" };
-    return { remaining: this.declaredDailyQuota, limit: this.declaredDailyQuota, resetAt: nextUtcMidnight(this.now()), source: "declared" };
+    return { remaining: this.declaredDailyQuota, limit: this.declaredDailyQuota, resetAt: nextUtcMidnight2(this.now()), source: "declared" };
   }
   async sendVerification(input = {}) {
     if (!this.configured) throw new VerificationProviderError("NOT_CONFIGURED", VERIFICATION_FAILURE_CLASS.HARD);
@@ -27268,7 +27627,7 @@ var OryOtpVerificationProvider = class {
   }
   async getRemainingQuota() {
     if (!this.configured) return { remaining: 0, limit: 0, resetAt: 0, source: "not-configured" };
-    return { remaining: this.declaredDailyQuota, limit: this.declaredDailyQuota, resetAt: nextUtcMidnight(this.now()), source: "declared" };
+    return { remaining: this.declaredDailyQuota, limit: this.declaredDailyQuota, resetAt: nextUtcMidnight2(this.now()), source: "declared" };
   }
   async sendVerification(input = {}) {
     if (!this.configured) throw new VerificationProviderError("NOT_CONFIGURED", VERIFICATION_FAILURE_CLASS.HARD);
@@ -27436,7 +27795,7 @@ var HankoOtpVerificationProvider = class {
   }
   async getRemainingQuota() {
     if (!this.configured) return { remaining: 0, limit: 0, resetAt: 0, source: "not-configured" };
-    return { remaining: this.declaredDailyQuota, limit: this.declaredDailyQuota, resetAt: nextUtcMidnight(this.now()), source: "declared" };
+    return { remaining: this.declaredDailyQuota, limit: this.declaredDailyQuota, resetAt: nextUtcMidnight2(this.now()), source: "declared" };
   }
   async sendVerification(input = {}) {
     if (!this.configured) throw new VerificationProviderError("NOT_CONFIGURED", VERIFICATION_FAILURE_CLASS.HARD);
@@ -27695,7 +28054,7 @@ var DescopeOtpVerificationProvider = class {
   }
   async getRemainingQuota() {
     if (!this.configured) return { remaining: 0, limit: 0, resetAt: 0, source: "not-configured" };
-    return { remaining: this.declaredDailyQuota, limit: this.declaredDailyQuota, resetAt: nextUtcMidnight(this.now()), source: "declared" };
+    return { remaining: this.declaredDailyQuota, limit: this.declaredDailyQuota, resetAt: nextUtcMidnight2(this.now()), source: "declared" };
   }
   async #request(action, body, verify = false) {
     if (!this.configured) throw new VerificationProviderError("NOT_CONFIGURED", VERIFICATION_FAILURE_CLASS.HARD);
@@ -27785,7 +28144,7 @@ var DescopeMagicLinkVerificationProvider = class {
   }
   async getRemainingQuota() {
     if (!this.configured) return { remaining: 0, limit: 0, resetAt: 0, source: "not-configured" };
-    return { remaining: this.declaredDailyQuota, limit: this.declaredDailyQuota, resetAt: nextUtcMidnight(this.now()), source: "declared" };
+    return { remaining: this.declaredDailyQuota, limit: this.declaredDailyQuota, resetAt: nextUtcMidnight2(this.now()), source: "declared" };
   }
   async #request(path, body, verify = false) {
     if (!this.configured) throw new VerificationProviderError("NOT_CONFIGURED", VERIFICATION_FAILURE_CLASS.HARD);
@@ -27971,6 +28330,15 @@ function createConfiguredVerificationProviders(env = {}, { fetchImpl = globalThi
     declaredDailyQuota: descopeMagicSlot ? descopeMagicSlot.dailyQuota : "",
     fetchImpl
   });
+  const poolProviders = env.OTP_RAW ? createPoolProviders({
+    raw: env.OTP_RAW,
+    slotQuota: (id) => {
+      const slot = slotFromConfig(env.VERIFICATION_ORCHESTRATOR_CONFIG, id);
+      return slot ? slot.dailyQuota : "";
+    },
+    fetchImpl,
+    helpers: { boundedJson, httpFailure, otpEmailBody, appName: OTP_EMAIL_APP }
+  }) : [];
   return [
     brevoOtpA.configured ? brevoOtpA : bridgeOtpA,
     appsScriptOtpB.configured ? appsScriptOtpB : bridgeOtpB,
@@ -28002,7 +28370,8 @@ function createConfiguredVerificationProviders(env = {}, { fetchImpl = globalThi
       webhookUrl: env.TELEGRAM_AUTH_WEBHOOK_URL,
       declaredDailyQuota: env.TELEGRAM_AUTH_DAILY_QUOTA,
       fetchImpl
-    })
+    }),
+    ...poolProviders
   ];
 }
 var __verificationProvidersTest = Object.freeze({ httpsOrigin, boundedJson, httpFailure, appsScriptWebAppUrl, otpEmailBody });
