@@ -76,15 +76,13 @@ jobs:
               msg = ' | '.join(block)[:1800].replace('%', '%25')
               print('::error title=fail::' + msg)
           PY
-          src=$(grep -n -A40 "timeoutMs matches each slot speed" verification-orchestrator.test.mjs | cut -c1-200 | tr '\n' '|' | cut -c1-4000)
-          echo "::warning title=src::${src//%/%25}"
           exit $status
       - name: Commit and push to the feature branch
         run: |
           set -eu
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add wrangler.toml auth-native/verification/providers.mjs auth-native/verification/config.mjs observability/otp-delivery-log.mjs worker-bundle.mjs
+          git add wrangler.toml auth-native/verification/providers.mjs auth-native/verification/config.mjs observability/otp-delivery-log.mjs worker-bundle.mjs verification-orchestrator.test.mjs verification-providers.test.mjs
           if git diff --cached --quiet; then echo 'Nothing to commit (already applied).'; else
             git commit -m 'feat(otp): wire OTP_RAW pool mailers otp-n..otp-u' -m 'Applied by apply-otp-pool-20261022.yml. No deploy.'
             git push origin HEAD:feat/otp-pool-providers

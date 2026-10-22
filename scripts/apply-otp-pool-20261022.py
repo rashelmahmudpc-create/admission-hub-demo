@@ -3,6 +3,7 @@
 import json, re
 
 SLOTS = [('otp-n', 100), ('otp-o', 100), ('otp-q', 100), ('otp-r', 60), ('otp-s', 16), ('otp-t', 100), ('otp-u', 130)]
+IDS = [i for i, _ in SLOTS]
 
 def edit(path, fn):
     with open(path, encoding='utf-8') as fh:
@@ -23,22 +24,27 @@ def providers(s):
     assert old in s, 'providers return anchor'
     new = ("  // otp-n..otp-u: mailers whose keys all live in the single OTP_RAW secret\n"
            "  // (64-variable ceiling). A slot only gets a quota while its orchestrator row\n"
-           "  // is enabled, so an unconfigured mailer stays inert.\n"
-           "  const poolProviders = createPoolProviders({\n"
+           "  // is enabled, so an unconfigured mailer stays inert. Appended after every\n"
+           "  // existing slot, and only while OTP_RAW is bound.\n"
+           "  const poolProviders = env.OTP_RAW ? createPoolProviders({\n"
            "    raw: env.OTP_RAW,\n"
            "    slotQuota: id => { const slot = slotFromConfig(env.VERIFICATION_ORCHESTRATOR_CONFIG, id); return slot ? slot.dailyQuota : ''; },\n"
            "    fetchImpl,\n"
            "    helpers: { boundedJson, httpFailure, otpEmailBody, appName: OTP_EMAIL_APP }\n"
-           "  });\n"
-           "  return [\n    ...poolProviders,\n    brevoOtpA.configured ? brevoOtpA : bridgeOtpA,")
-    return s.replace(old, new, 1)
+           "  }) : [];\n"
+           "  return [\n    brevoOtpA.configured ? brevoOtpA : bridgeOtpA,")
+    s = s.replace(old, new, 1)
+    tail = "      fetchImpl\n    })\n  ];\n}\n\nexport const __verificationProvidersTest"
+    assert tail in s, 'providers tail anchor'
+    s = s.replace(tail, "      fetchImpl\n    }),\n    ...poolProviders\n  ];\n}\n\nexport const __verificationProvidersTest", 1)
+    return s
 
 def config(s):
     if "'otp-n'" in s:
         return s
     anchor = "  whatsapp: Object.freeze({ channel: VERIFICATION_CHANNELS.WHATSAPP"
     assert anchor in s, 'config anchor'
-    rows = ''.join("  '%s': Object.freeze({ channel: VERIFICATION_CHANNELS.OTP, verificationMode: VERIFICATION_MODES.LOCAL_CODE, priority: 38 }),\n" % i for i, _ in SLOTS)
+    rows = ''.join("  '%s': Object.freeze({ channel: VERIFICATION_CHANNELS.OTP, verificationMode: VERIFICATION_MODES.LOCAL_CODE, priority: 38 }),\n" % i for i in IDS)
     return s.replace(anchor, '  // otp-n..otp-u: OTP_RAW pool mailers (pool-providers.mjs).\n' + rows + anchor, 1)
 
 def log_names(s):
@@ -65,7 +71,32 @@ def wrangler(s):
     json.loads(m.group(1))
     return s
 
+def orchestrator_test(s):
+    if "'otp-n': 8000" in s:
+        return s
+    old = "'otp-c': 8000, telegram: 20000"
+    assert s.count(old) == 1, 'timeout guard anchor'
+    add = ''.join("'%s': 8000, " % i for i in IDS)
+    return s.replace(old, "'otp-c': 8000, " + add + "telegram: 20000", 1)
+
+def providers_test(s):
+    title = 'wrangler.toml enables otp-j and otp-k at 38'
+    start = s.find(title)
+    assert start >= 0, 'order guard title'
+    head, body = s[:start], s[start:]
+    if "'otp-n'" in body[:3000]:
+        return s
+    pattern = re.compile(r"('otp-m',)(\s*)('otp-g')")
+    m = pattern.search(body)
+    assert m and m.start() < 4000, 'order guard otp-m/otp-g anchor'
+    sep = m.group(2)
+    insert = m.group(1) + sep + (',' + sep).join("'%s'" % i for i in IDS) + ',' + sep + m.group(3)
+    body = body[:m.start()] + insert + body[m.end():]
+    return head + body
+
 edit('auth-native/verification/providers.mjs', providers)
 edit('auth-native/verification/config.mjs', config)
 edit('observability/otp-delivery-log.mjs', log_names)
 edit('wrangler.toml', wrangler)
+edit('verification-orchestrator.test.mjs', orchestrator_test)
+edit('verification-providers.test.mjs', providers_test)
