@@ -46,7 +46,7 @@ t('১৭. নো-JS ব্লকের স্টাইল হেডে (স্�
 t('১৮. Google Search Console মালিকানা-ট্যাগ হেডে (owner property-র জন্য)',
   !!doc.querySelector('meta[name="google-site-verification"]') && doc.querySelector('meta[name="google-site-verification"]').getAttribute('content') === 'qSlzeztG7xsLD3oYQz-CuO4WOg4xUZvmY37OhsWWPXE');
 t('১৯. canonical আগের মতোই আছে (SEO-ট্যাগ যোগে বদলায়নি)',
-  doc.querySelector('link[rel="canonical"]') && doc.querySelector('link[rel="canonical"]').getAttribute('href') === 'https://admissionhub.pages.dev/');
+  doc.querySelector('link[rel="canonical"]') && doc.querySelector('link[rel="canonical"]').getAttribute('href') === 'https://admissionsky.pages.dev/');
 
 console.log(`\nINTRO-BOOTSHELL: ${pass} pass / ${fail} fail`);
 if (fail) process.exit(1);

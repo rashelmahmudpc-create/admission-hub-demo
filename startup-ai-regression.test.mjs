@@ -93,7 +93,7 @@ test('১৪গ. a notification tap can never open a retired host',
   SW.includes('new URL(raw, self.location.origin).origin === self.location.origin ? raw : ') &&
   !/nd\.url\s*\|\|\s*'\.\/';\s*\n\s*\}/.test(SW) &&
   !NW.includes("'https://sheikhrashel47-stack.github.io/admission-hub/'") &&
-  NW.includes("'https://admissionhub.pages.dev/'"));
+  NW.includes("'https://admissionsky.pages.dev/'"));
 test('১৪ঘ. an installed-PWA launch (no navigate mode) still gets the rescue page, never a bare ERR_FAILED',
   /* owner screenshot 2026-10-13: .../?source=pwa#dashboard → "This site can't
      be reached — ERR_FAILED". A PWA/WebView top-level navigation can arrive

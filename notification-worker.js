@@ -158,7 +158,7 @@ export default {
           for (const key of (list?.keys || []).slice(0, 10)) {
             try {
               const sub = JSON.parse(await env.NOTIFY_KV.get(key.name));
-              const status = await sendWebPush(request, env, sub, { title: String(body.push.title).slice(0, 80), body: String(body.push.body || '').slice(0, 200), tag: body.push.tag || 'admission-hub', url: body.push.url || 'https://admissionhub.pages.dev/' });
+              const status = await sendWebPush(request, env, sub, { title: String(body.push.title).slice(0, 80), body: String(body.push.body || '').slice(0, 200), tag: body.push.tag || 'admission-hub', url: body.push.url || 'https://admissionsky.pages.dev/' });
               if (status >= 200 && status < 300) sent++;
             } catch (_) {}
           }

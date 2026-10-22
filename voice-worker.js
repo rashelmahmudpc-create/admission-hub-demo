@@ -47,7 +47,6 @@ const rateBuckets = new Map(); // per-isolate best effort (KV ছাড়াই
    visitor's browser. Only the app's own origins (and their preview
    subdomains) are allowed now; a request carrying any other Origin is refused. */
 const originAllowed = origin => /^https:\/\/([a-z0-9-]+\.)?(admissionsky|admissionhub)\.pages\.dev$/.test(origin)
-  || origin === 'https://sheikhrashel47-stack.github.io'
   || /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
 
 const corsHeaders = request => {
