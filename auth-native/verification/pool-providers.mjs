@@ -47,10 +47,13 @@ function classifyLine(line) {
   return '';
 }
 
+// Remove the provider word itself ("mailgun:", "Elastic") so it is never read as
+// a key, but only when the WHOLE word is the name — a key that merely contains
+// the provider name stays intact.
 function stripName(line, named) {
   const pattern = ALIASES.find(([n]) => n === named)[1];
-  // remove the provider word only outside addresses/domains
-  return line.split(/(\s+)/).map(word => (/[@.]/.test(word) ? word : word.replace(pattern, ' '))).join('');
+  const whole = new RegExp(`^(?:${pattern.source})[:=,;-]*$`, 'i');
+  return line.split(/(\s+)/).map(word => (whole.test(word) ? ' ' : word)).join('');
 }
 
 function absorb(entry, text) {
