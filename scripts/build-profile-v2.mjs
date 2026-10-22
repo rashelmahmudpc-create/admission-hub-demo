@@ -47,6 +47,53 @@ const styles = [...raw.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g)].map((m) => 
 const css = styles[1];
 const uiScript = pick(/<script[^>]*>([\s\S]*?)<\/script>/);
 
+/* ---- text size: the app is an app, not a website ---------------------- */
+/* Pinch-zoom is off by owner order (2026-10-22), so text size is a setting.
+   The scale lives in --ah-ts, set on this page's own :root by the boot block
+   below and by the settings sheet. The parent document (index.html) runs the
+   same engine and shares the localStorage key, so the choice survives a reload
+   and stays in step between the shell and this frame. Inputs keep a 16px floor:
+   below that iOS Safari zooms the whole page on focus, which is the exact bug
+   the shell's guard exists for. */
+const tsPx = (m) => `font-size:calc(${m[1]}px * var(--ah-ts,1))`;
+
+const INPUT_RE = /(^|[,\s{])(input|textarea|select|\.inp)\b/;
+const cssSized = css.replace(/([^{}]*)\{([^{}]*)\}/g, (rule, sel, body) => {
+  const floor = INPUT_RE.test(sel);
+  const sized = body.replace(
+    /font-size:([0-9.]+)px/g,
+    (m, px) => (floor ? `font-size:max(16px,calc(${px}px * var(--ah-ts,1)))` : tsPx(m))
+  );
+  return sel + '{' + sized + '}';
+});
+
+const TS_ROW =
+  "srow('tsize','device','\u099f\u09c7\u0995\u09cd\u09b8\u099f \u09b8\u09be\u0987\u099c'," +
+  "(function(){try{var v=parseFloat(localStorage.getItem('ah-textscale'));" +
+  "return v===0.9?'\u099b\u09cb\u099f':v===1.15?'\u09ac\u09a1\u09bc':v===1.3?'\u09b8\u09ac\u099a\u09c7\u09df\u09c7 \u09ac\u09a1\u09bc':'\u09b8\u09cd\u09ac\u09be\u09ad\u09be\u09ac\u09bf\u0995'}" +
+  "catch(_){return '\u09b8\u09cd\u09ac\u09be\u09ad\u09be\u09ac\u09bf\u0995'}})()," +
+  "'rgba(18,162,125,.14)','#12A27D')+\n  ";
+
+const TS_SHEET = `
+function sheetTextSize(){
+  var STEPS=[['small',0.9,'\u099b\u09cb\u099f'],['normal',1,'\u09b8\u09cd\u09ac\u09be\u09ad\u09be\u09ac\u09bf\u0995'],['large',1.15,'\u09ac\u09a1\u09bc'],['xlarge',1.3,'\u09b8\u09ac\u099a\u09c7\u09df\u09c7 \u09ac\u09a1\u09bc']];
+  function cur(){try{var v=parseFloat(localStorage.getItem('ah-textscale'));return STEPS.some(function(s){return s[1]===v})?v:1}catch(_){return 1}}
+  var v=cur();
+  openSheet({title:'\u099f\u09c7\u0995\u09cd\u09b8\u099f \u09b8\u09be\u0987\u099c',sub:'\u09b2\u09c7\u0996\u09be \u0995\u09a4 \u09ac\u09a1\u09bc \u09a6\u09c7\u0996\u09ac\u09c7\u0964',
+   body:'<div class="opts" id="tsopts">'+STEPS.map(function(s){return '<button type="button" class="opt'+(v===s[1]?' on':'')+'" data-v="'+s[1]+'" aria-pressed="'+(v===s[1])+'">'+s[2]+'</button>'}).join('')+'</div>',
+   foot:false,
+   mount:function(r){$$('.opt',r).forEach(function(b){b.onclick=function(){
+     var val=parseFloat(b.dataset.v);
+     try{localStorage.setItem('ah-textscale',String(val))}catch(_){}
+     try{document.documentElement.style.setProperty('--ah-ts',String(val))}catch(_){}
+     try{if(window.parent&&window.parent.AhTextScale)window.parent.AhTextScale.set(val)}catch(_){}
+     closeSheet();toast('\u099f\u09c7\u0995\u09cd\u09b8\u099f \u09b8\u09be\u0987\u099c \u09ac\u09a6\u09b2\u09c7\u099b\u09c7')}})}})}
+`;
+
+const TS_BOOT =
+  "(function(){try{var v=parseFloat(localStorage.getItem('ah-textscale'));" +
+  "if(v===0.9||v===1||v===1.15||v===1.3)document.documentElement.style.setProperty('--ah-ts',String(v))}catch(_){}})();";
+
 /* ---- strip the demo data the owner asked to be gone ------------------- */
 let script = uiScript;
 
@@ -70,6 +117,21 @@ script = script.replace(
   'var SAMPLE=window.PROFILE_STATS||{solved:0,mockDone:false};'
 );
 if (script.includes("solved:266")) throw new Error('SAMPLE demo value still present');
+
+/* ---- text size, wired into the owner's own script ---------------------- */
+if (!script.includes("srow('sec','shield'")) throw new Error('settings rows not found');
+script = script.replace("srow('sec','shield'", TS_ROW + "srow('sec','shield'");
+
+if (!script.includes("else if(k==='sec')openPage('pSec');"))
+  throw new Error('settings tap handler not found');
+script = script.replace(
+  "else if(k==='sec')openPage('pSec');",
+  "else if(k==='sec')openPage('pSec');else if(k==='tsize')sheetTextSize();"
+);
+
+if (!script.includes('function applyTheme(')) throw new Error('applyTheme not found');
+script = script.replace('function applyTheme(', TS_SHEET + '\nfunction applyTheme(');
+script = script.trimEnd() + '\n' + TS_BOOT + '\n';
 
 /* ---- adapter: real data in, real actions out ------------------------- */
 /* Split in two: the SEED must run before the owner's UI script, because that
@@ -570,7 +632,7 @@ const page = `<!DOCTYPE html>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Hind+Siliguri:wght@400;500;600;700&display=swap">
-<style>${css}</style>
+<style>${cssSized}</style>
 </head>
 <body>
 ${markup}

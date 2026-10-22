@@ -31195,7 +31195,7 @@ var NEWS_SCHEMA = {
 };
 var cors = (request) => {
   const origin = request.headers.get("Origin") || "";
-  const ok2 = /^https:\/\/sheikhrashel47-stack\.github\.io$/.test(origin) || /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin) || /^https:\/\/[a-z0-9-]+\.e2b\.app$/.test(origin);
+  const ok2 = /^https:\/\/([a-z0-9-]+\.)?(admissionsky|admissionhub)\.pages\.dev$/.test(origin) || /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin) || /^https:\/\/[a-z0-9-]+\.e2b\.app$/.test(origin);
   const headers = { "Access-Control-Allow-Methods": "GET, POST, OPTIONS", "Access-Control-Allow-Headers": "Content-Type, X-AH-App", "Access-Control-Max-Age": "86400" };
   if (ok2) headers["Access-Control-Allow-Origin"] = origin;
   return headers;
@@ -31614,8 +31614,9 @@ async function sendTelegramAlert(env, text) {
 }
 async function handleErrorReport(request, env) {
   const proxied = request.headers.get("x-ah-pages-proxy") === "1";
-  const sameOrigin = request.headers.get("Origin") === "https://admissionhub.pages.dev";
-  if (!proxied && !sameOrigin) return json7(request, { error: "forbidden" }, 403);
+  const sameOrigin = request.headers.get("Origin") === "https://admissionsky.pages.dev";
+  const sameOriginOld = request.headers.get("Origin") === "https://admissionhub.pages.dev";
+  if (!proxied && !sameOrigin && !sameOriginOld) return json7(request, { error: "forbidden" }, 403);
   let body = {};
   try {
     body = await request.json();
@@ -31750,7 +31751,7 @@ var gk_agent_worker_default = {
       return json7(request, { ok: true, keys: keys(env).length, askKey: !!env.ASK_API_KEY, kv: !!env.GK_KV, tg: !!env.TG_BOT_TOKEN, agent: "agent-f1", gemini: !!env.GEMINI_KEYS, groq: !!env.GROQ_API_KEY, lastDay: env.GK_KV ? await env.GK_KV.get("gkDay") : null });
     }
     const isApp = request.headers.get("X-AH-App") === APP_HEADER;
-    const beaconOk = !isApp && request.method === "POST" && url.pathname === "/api/bank" && (request.headers.get("Origin") === "https://admissionhub.pages.dev" || request.headers.get("Origin") === "https://admissionsky.pages.dev" || request.headers.get("Origin") === "https://sheikhrashel47-stack.github.io");
+    const beaconOk = !isApp && request.method === "POST" && url.pathname === "/api/bank" && (request.headers.get("Origin") === "https://admissionhub.pages.dev" || request.headers.get("Origin") === "https://admissionsky.pages.dev");
     if (!isApp && !beaconOk) return json7(request, { error: "forbidden" }, 403);
     if (request.method === "POST" && url.pathname === "/api/ask") return await createAsk(request, env, ctx);
     if (request.method === "POST" && url.pathname === "/api/bank") return await bankUpload(request, env);
