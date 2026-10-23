@@ -6,6 +6,7 @@ import {
 } from './provider-contract.mjs';
 import { deriveTelegramWebhookSecret, validTelegramWebhookSecret } from './telegram-security.mjs';
 import { createPoolProviders } from './pool-providers.mjs';
+import { createIdpProviders } from './idp-providers.mjs';
 
 const safeInteger = (value, min = 0, max = Number.MAX_SAFE_INTEGER) => {
   const number = Number(value);
@@ -2298,6 +2299,18 @@ export function createConfiguredVerificationProviders(env = {}, { fetchImpl = gl
     fetchImpl,
     helpers: { boundedJson, httpFailure, otpEmailBody, appName: OTP_EMAIL_APP }
   }) : [];
+  // otp-v..otp-y: hosted identity providers that mail and check their own code
+  // (Stytch, WorkOS, MojoAuth, Authgear). Keys live in the single OTP_IDP secret
+  // (idp-providers.mjs); Authgear needs none. A slot only gets a quota while its
+  // orchestrator row is enabled, so a slot without keys or row stays inert.
+  // Appended after every existing slot, and only while OTP_IDP is bound.
+  const idpProviders = !env.OTP_IDP ? [] : createIdpProviders({
+    raw: env.OTP_IDP,
+    slotQuota: id => { const slot = slotFromConfig(env.VERIFICATION_ORCHESTRATOR_CONFIG, id); return slot ? slot.dailyQuota : ''; },
+    kv: env.GK_KV || null,
+    fetchImpl,
+    helpers: { boundedJson, httpFailure }
+  });
   return [
     brevoOtpA.configured ? brevoOtpA : bridgeOtpA,
     appsScriptOtpB.configured ? appsScriptOtpB : bridgeOtpB,
@@ -2330,7 +2343,8 @@ export function createConfiguredVerificationProviders(env = {}, { fetchImpl = gl
       declaredDailyQuota: env.TELEGRAM_AUTH_DAILY_QUOTA,
       fetchImpl
     }),
-    ...poolProviders
+    ...poolProviders,
+    ...idpProviders
   ];
 }
 
