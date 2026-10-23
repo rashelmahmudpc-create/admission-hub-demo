@@ -1,0 +1,188 @@
+diff --git a/public-worker.js b/public-worker.js
+index 706e386..44d7adc 100644
+--- a/public-worker.js
++++ b/public-worker.js
+@@ -598,6 +598,13 @@ export default {
+       if (path === '/api/ai/actions/audit' && request.method === 'GET') {
+         const identity = await aiRequestIdentity(request, env, false);
+         if (!identity.authenticated) return json({ error: 'sign_in_required', message: 'AI action ব্যবহার করতে লগইন করো।' }, 401);
++        /* F0.1 step 4c / DV-01: served by sky-ai (same body) only while write
++           actions are enabled here (sky-ai has no USE_WRITE_ACTIONS); any sky-ai
++           miss or error falls back to the local answer below. */
++        if (actionsEnabled(env)) {
++          const viaSky = await forwardWithIdentity(request, env, identity.uid);
++          if (viaSky) return viaSky;
++        }
+         return json({ ok: true, actionsEnabled: actionsEnabled(env), audit: await readAudit(env, identity.uid) });
+       }
+       /* Sky recall (owner plan step 2): the reminder shown when the chat opens.
+diff --git a/sky-ai-route-identity.test.mjs b/sky-ai-route-identity.test.mjs
+index 538f2c8..7d54a05 100644
+--- a/sky-ai-route-identity.test.mjs
++++ b/sky-ai-route-identity.test.mjs
+@@ -6,8 +6,8 @@ const U = 'https://admission-gk.example/api/ai/prefs';
+ const R = ['GET /api/ai/prefs'];
+ const kv = (d) => ({ get: async (k) => (k in d ? d[k] : null) });
+ 
+-test('identity allowlist contains only GET /api/ai/prefs', () => {
+-  assert.deepEqual([...SKY_AI_IDENTITY_ROUTES], ['GET /api/ai/prefs']);
++test('identity allowlist contains only prefs + actions audit', () => {
++  assert.deepEqual([...SKY_AI_IDENTITY_ROUTES], ['GET /api/ai/prefs', 'GET /api/ai/actions/audit']);
+ });
+ 
+ test('forwards uid + internal key when listed and key exists', async () => {
+diff --git a/sky-ai-route.mjs b/sky-ai-route.mjs
+index 2ca4f07..e4f699a 100644
+--- a/sky-ai-route.mjs
++++ b/sky-ai-route.mjs
+@@ -48,7 +48,7 @@ export async function tryRouteToSkyAi(request, env, routes = SKY_AI_ROUTES) {
+  * from PUB_KV ("secret:sky-internal", created once by the owner). EMPTY on
+  * purpose; add 'GET /api/ai/prefs' only after sky-ai is deployed with PUB_KV
+  * and the key exists. Missing key / any sky-ai error -> null (local handler). */
+-export const SKY_AI_IDENTITY_ROUTES = Object.freeze(['GET /api/ai/prefs']);
++export const SKY_AI_IDENTITY_ROUTES = Object.freeze(['GET /api/ai/prefs', 'GET /api/ai/actions/audit']);
+ export const SKY_INTERNAL_KEY_NAME = 'secret:sky-internal';
+ 
+ export async function forwardWithIdentity(request, env, uid, routes = SKY_AI_IDENTITY_ROUTES) {
+diff --git a/sky-ai/audit.mjs b/sky-ai/audit.mjs
+new file mode 100644
+index 0000000..e9b26df
+--- /dev/null
++++ b/sky-ai/audit.mjs
+@@ -0,0 +1,39 @@
++/* F0.1 step 4c / DV-01 - GET /api/ai/actions/audit inside sky-ai.
++ *
++ * Same answer as admission-gk's public-worker.js handler:
++ *   { ok: true, actionsEnabled, audit } with audit = parseAudit(PUB_KV "actaudit:<uid>").
++ * parseAudit / actionsEnabled are imported from the shared action-engine.js (it has
++ * no imports, so sky-ai bundles only that file), so the logic cannot drift.
++ *
++ * Trust: the uid is accepted ONLY with the shared internal key (PUB_KV
++ * "secret:sky-internal"), exactly like prefs.mjs. admission-gk forwards here
++ * only for signed-in students and only while write actions are enabled there,
++ * so the 401 and the "disabled" cases keep being answered by admission-gk.
++ * Anything missing -> null, the worker answers 404 and admission-gk falls back.
++ */
++import { parseAudit, actionsEnabled } from '../action-engine.js';
++import { INTERNAL_KEY_NAME, sameKey } from './prefs.mjs';
++
++const HEADERS = {
++  'Content-Type': 'application/json',
++  'Access-Control-Allow-Origin': '*',
++  'Access-Control-Allow-Headers': 'authorization,content-type,x-ah-app,x-ah-guest',
++  'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
++  'cache-control': 'no-store',
++  'x-sky-ai-route': 'actions-audit'
++};
++
++export async function handleAuditGet(request, env = {}) {
++  const kv = env && env.PUB_KV;
++  if (!kv || typeof kv.get !== 'function') return null;
++  if (request.headers.get('x-sky-ai-caller') !== 'admission-gk') return null;
++  const uid = request.headers.get('x-sky-uid') || '';
++  const given = request.headers.get('x-sky-internal') || '';
++  if (!uid || !given) return null;
++  let key = null;
++  try { key = await kv.get(INTERNAL_KEY_NAME); } catch (_) { return null; }
++  if (!sameKey(key, given)) return null;
++  let audit = [];
++  try { audit = parseAudit(await kv.get('actaudit:' + uid), uid); } catch (_) { audit = []; }
++  return new Response(JSON.stringify({ ok: true, actionsEnabled: actionsEnabled(env), audit }), { status: 200, headers: HEADERS });
++}
+diff --git a/sky-ai/audit.test.mjs b/sky-ai/audit.test.mjs
+new file mode 100644
+index 0000000..d9a6f42
+--- /dev/null
++++ b/sky-ai/audit.test.mjs
+@@ -0,0 +1,50 @@
++import test from 'node:test';
++import assert from 'node:assert/strict';
++import { handleAuditGet } from './audit.mjs';
++import { handle } from './worker.mjs';
++import { parseAudit, actionsEnabled } from '../action-engine.js';
++
++const kv = (data) => ({ get: async (k) => (k in data ? data[k] : null) });
++const H = (extra = {}) => ({ 'x-sky-ai-caller': 'admission-gk', 'x-sky-uid': 'account-1', 'x-sky-internal': 'K', ...extra });
++const req = (h) => new Request('https://sky-ai.example/api/ai/actions/audit', { headers: h });
++const STORED = JSON.stringify([
++  { id: 'a', ownerUid: 'account-1', action: 'x' },
++  { id: 'b', ownerUid: 'account-2', action: 'y' }
++]);
++
++test('valid internal call returns the same body admission-gk builds', async () => {
++  const env = { PUB_KV: kv({ 'secret:sky-internal': 'K', 'actaudit:account-1': STORED }) };
++  const res = await handleAuditGet(req(H()), env);
++  assert.equal(res.status, 200);
++  assert.equal(res.headers.get('access-control-allow-origin'), '*');
++  assert.equal(res.headers.get('x-sky-ai-route'), 'actions-audit');
++  const expected = { ok: true, actionsEnabled: actionsEnabled(env), audit: parseAudit(STORED, 'account-1') };
++  assert.deepEqual(await res.json(), JSON.parse(JSON.stringify(expected)));
++});
++
++test('only the caller own records are returned', async () => {
++  const env = { PUB_KV: kv({ 'secret:sky-internal': 'K', 'actaudit:account-1': STORED }) };
++  const body = await (await handleAuditGet(req(H()), env)).json();
++  assert.deepEqual(body.audit.map(r => r.id), ['a']);
++});
++
++test('no stored audit -> empty list', async () => {
++  const body = await (await handleAuditGet(req(H()), { PUB_KV: kv({ 'secret:sky-internal': 'K' }) })).json();
++  assert.deepEqual(body, { ok: true, actionsEnabled: true, audit: [] });
++});
++
++test('wrong / missing key, caller or uid -> refused (null) and worker 404', async () => {
++  const env = { PUB_KV: kv({ 'secret:sky-internal': 'K', 'actaudit:account-1': STORED }) };
++  for (const h of [H({ 'x-sky-internal': 'X' }), H({ 'x-sky-internal': '' }), H({ 'x-sky-ai-caller': 'someone' }), H({ 'x-sky-uid': '' })]) {
++    assert.equal(await handleAuditGet(req(h), env), null);
++  }
++  assert.equal(await handleAuditGet(req(H()), { PUB_KV: kv({}) }), null, 'no key stored');
++  assert.equal(await handleAuditGet(req(H()), {}), null, 'no KV');
++  assert.equal((await handle(req(H({ 'x-sky-internal': 'X' })), env)).status, 404);
++});
++
++test('worker serves /api/ai/actions/audit on a valid internal call', async () => {
++  const res = await handle(req(H()), { PUB_KV: kv({ 'secret:sky-internal': 'K' }) });
++  assert.equal(res.status, 200);
++  assert.equal(res.headers.get('x-sky-ai-route'), 'actions-audit');
++});
+diff --git a/sky-ai/prefs.mjs b/sky-ai/prefs.mjs
+index 4a274e1..8ed415a 100644
+--- a/sky-ai/prefs.mjs
++++ b/sky-ai/prefs.mjs
+@@ -34,7 +34,7 @@ const HEADERS = {
+   'x-sky-ai-route': 'prefs'
+ };
+ 
+-function sameKey(a, b) {
++export function sameKey(a, b) {
+   a = String(a || ''); b = String(b || '');
+   if (!a || a.length !== b.length) return false;
+   let diff = 0;
+diff --git a/sky-ai/worker.mjs b/sky-ai/worker.mjs
+index 19881c6..d8b3417 100644
+--- a/sky-ai/worker.mjs
++++ b/sky-ai/worker.mjs
+@@ -13,8 +13,9 @@
+ 
+ import { loadFlags, evaluateAll } from './flags.mjs';
+ import { handlePrefsGet } from './prefs.mjs';
++import { handleAuditGet } from './audit.mjs';
+ 
+-export const SKY_AI_VERSION = 'sky-ai-f0.1-4b-prefs';
++export const SKY_AI_VERSION = 'sky-ai-f0.1-4c-audit';
+ 
+ function json(body, status = 200) {
+   return new Response(JSON.stringify(body), {
+@@ -58,6 +59,12 @@ export async function handle(request, env = {}) {
+     if (res) return res;
+   }
+ 
++  /* F0.1 step 4c: GET /api/ai/actions/audit (internal-key protected, see audit.mjs). */
++  if (request.method === 'GET' && path === '/api/ai/actions/audit') {
++    const res = await handleAuditGet(request, env);
++    if (res) return res;
++  }
++
+   /* Nothing else is served yet. A clear 404 (not a silent fallback) makes a
+    * mis-routed request obvious in logs instead of looking like an AI error. */
+   return json({ ok: false, error: 'not-implemented-in-sky-ai', path }, 404);
