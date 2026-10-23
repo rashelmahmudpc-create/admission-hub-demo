@@ -14036,13 +14036,18 @@ var __publicAuthTest = Object.freeze({
 });
 
 // cors-policy.mjs
+var PRODUCTION_HOSTS = /* @__PURE__ */ new Set([
+  "admissionhub.pages.dev",
+  "admissionsky.pages.dev",
+  "admission-gk.admissionhub.workers.dev"
+]);
 var allowedOrigin2 = (origin) => {
   if (!origin) return false;
   try {
     const url = new URL(origin);
-    if (url.protocol === "http:" && ["localhost", "127.0.0.1"].includes(url.hostname)) return true;
     if (url.protocol !== "https:") return false;
-    return url.hostname === "admissionhub.pages.dev" || url.hostname === "admissionsky.pages.dev" || /^[a-z0-9-]+\.admissionhub\.pages\.dev$/i.test(url.hostname) || url.hostname === "admission-gk.admissionhub.workers.dev";
+    if (url.port) return false;
+    return PRODUCTION_HOSTS.has(url.hostname.toLowerCase());
   } catch {
     return false;
   }
