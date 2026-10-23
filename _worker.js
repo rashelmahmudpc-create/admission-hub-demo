@@ -48,7 +48,7 @@ const SERVER_ONLY_ASSETS = new Set([
   /* Same audit: server-only modules imported exclusively by other server-only
      modules (never by a page, the service worker or a client bundle). */
   '/cors-policy.mjs', '/admin-passkey.mjs', '/analytics-notifications.mjs',
-  '/send-planner.mjs'
+  '/send-planner.mjs', '/sky-ai-route.mjs'
 ]);
 const SERVER_ONLY_PREFIXES = ['/auth/', '/auth-native/', '/email-gateway/', '/apps-script/', '/docs/', '/AGENT_RESUME/', '/.github/', '/tools/', '/scripts/', '/tests/', '/sky-ai/'];
 const isRetiredAsset = pathname => RETIRED_ASSETS.has(pathname) ||
