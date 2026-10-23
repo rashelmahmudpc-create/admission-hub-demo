@@ -13,8 +13,9 @@
 
 import { loadFlags, evaluateAll } from './flags.mjs';
 import { handlePrefsGet } from './prefs.mjs';
+import { handleAuditGet } from './audit.mjs';
 
-export const SKY_AI_VERSION = 'sky-ai-f0.1-4b-prefs';
+export const SKY_AI_VERSION = 'sky-ai-f0.1-4c-audit';
 
 function json(body, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -55,6 +56,12 @@ export async function handle(request, env = {}) {
   /* F0.1 step 4b: GET /api/ai/prefs (internal-key protected, see prefs.mjs). */
   if (request.method === 'GET' && path === '/api/ai/prefs') {
     const res = await handlePrefsGet(request, env);
+    if (res) return res;
+  }
+
+  /* F0.1 step 4c: GET /api/ai/actions/audit (internal-key protected, see audit.mjs). */
+  if (request.method === 'GET' && path === '/api/ai/actions/audit') {
+    const res = await handleAuditGet(request, env);
     if (res) return res;
   }
 

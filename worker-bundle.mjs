@@ -5041,7 +5041,7 @@ async function tryRouteToSkyAi(request, env, routes = SKY_AI_ROUTES) {
     return null;
   }
 }
-var SKY_AI_IDENTITY_ROUTES = Object.freeze(["GET /api/ai/prefs"]);
+var SKY_AI_IDENTITY_ROUTES = Object.freeze(["GET /api/ai/prefs", "GET /api/ai/actions/audit"]);
 var SKY_INTERNAL_KEY_NAME = "secret:sky-internal";
 async function forwardWithIdentity(request, env, uid, routes = SKY_AI_IDENTITY_ROUTES) {
   if (!uid || request.method !== "GET") return null;
@@ -5749,6 +5749,10 @@ var public_worker_default = {
       if (path === "/api/ai/actions/audit" && request.method === "GET") {
         const identity = await aiRequestIdentity(request, env, false);
         if (!identity.authenticated) return json2({ error: "sign_in_required", message: "AI action ব্যবহার করতে লগইন করো।" }, 401);
+        if (actionsEnabled(env)) {
+          const viaSky = await forwardWithIdentity(request, env, identity.uid);
+          if (viaSky) return viaSky;
+        }
         return json2({ ok: true, actionsEnabled: actionsEnabled(env), audit: await readAudit(env, identity.uid) });
       }
       if (path === "/api/ai/recall" && request.method === "POST") {
