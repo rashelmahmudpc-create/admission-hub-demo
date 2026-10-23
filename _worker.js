@@ -18,7 +18,8 @@ const SERVER_ONLY_ASSETS = new Set([
   '/gk-agent-worker.js', '/public-worker.js', '/ai-agent.js', '/worker-bundle.mjs',
   '/voice-worker.js', '/notification-worker.js', '/fcm-notification.mjs',
   '/p14-abuse-guard.mjs', '/action-engine.js', '/userdata-api.mjs',
-  '/wrangler.toml', '/package.json', '/package-lock.json',
+  '/wrangler.toml', '/wrangler.staging.toml', '/supabase_sync_schema.sql',
+  '/package.json', '/package-lock.json',
   /* AI audit 2026-10-16: Worker-only AI modules (system prompt text, safety
      validator patterns, memory/cache/router internals). None is loaded by a
      page; they were being served as public assets. */
@@ -49,7 +50,7 @@ const SERVER_ONLY_ASSETS = new Set([
   '/cors-policy.mjs', '/admin-passkey.mjs', '/analytics-notifications.mjs',
   '/send-planner.mjs'
 ]);
-const SERVER_ONLY_PREFIXES = ['/auth/', '/auth-native/', '/email-gateway/', '/apps-script/', '/docs/', '/AGENT_RESUME/', '/.github/'];
+const SERVER_ONLY_PREFIXES = ['/auth/', '/auth-native/', '/email-gateway/', '/apps-script/', '/docs/', '/AGENT_RESUME/', '/.github/', '/tools/', '/scripts/', '/tests/', '/sky-ai/'];
 const isRetiredAsset = pathname => RETIRED_ASSETS.has(pathname) ||
   RETIRED_ASSET_PREFIXES.some(prefix => pathname === prefix || pathname.startsWith(prefix + '/'));
 const isServerOnlyAsset = pathname => SERVER_ONLY_ASSETS.has(pathname) ||
