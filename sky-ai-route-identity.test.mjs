@@ -6,8 +6,8 @@ const U = 'https://admission-gk.example/api/ai/prefs';
 const R = ['GET /api/ai/prefs'];
 const kv = (d) => ({ get: async (k) => (k in d ? d[k] : null) });
 
-test('identity allowlist contains only GET /api/ai/prefs', () => {
-  assert.deepEqual([...SKY_AI_IDENTITY_ROUTES], ['GET /api/ai/prefs']);
+test('identity allowlist contains only prefs + actions audit', () => {
+  assert.deepEqual([...SKY_AI_IDENTITY_ROUTES], ['GET /api/ai/prefs', 'GET /api/ai/actions/audit']);
 });
 
 test('forwards uid + internal key when listed and key exists', async () => {
