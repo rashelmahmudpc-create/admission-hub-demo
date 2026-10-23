@@ -1,4 +1,6 @@
 name: Voice Agent Guard
+permissions:
+  contents: read
 on:
   push:
     branches: [main]

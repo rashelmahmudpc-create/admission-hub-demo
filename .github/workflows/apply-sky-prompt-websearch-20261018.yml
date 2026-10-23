@@ -1,4 +1,6 @@
 name: apply-sky-prompt-websearch-20261018
+permissions:
+  contents: read
 
 on:
   push:
