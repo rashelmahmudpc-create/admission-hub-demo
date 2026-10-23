@@ -11,7 +11,8 @@ export const OTP_PROVIDER_NAMES = Object.freeze({
   'otp-i': 'Appwrite', 'otp-j': 'Ory', 'otp-k': 'Hanko', 'otp-l': 'Descope-OTP',
   'otp-m': 'Descope-MagicLink', 'otp-n': 'Maileroo', 'otp-o': 'ElasticEmail',
   'otp-q': 'Mailgun', 'otp-r': 'AlibabaDirectMail', 'otp-s': 'SparkPost', 'otp-t': 'Plunk',
-  'otp-u': 'Loops', telegram: 'Telegram'
+  'otp-u': 'Loops', 'otp-v': 'Stytch', 'otp-w': 'WorkOS', 'otp-x': 'MojoAuth',
+  'otp-y': 'Authgear', 'otp-z': 'Stack Auth', 'otp-za': 'SuperTokens', telegram: 'Telegram'
 });
 
 const EVENTS = new Set(['otp_delivery', 'otp_request']);

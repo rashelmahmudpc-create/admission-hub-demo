@@ -11173,6 +11173,13 @@ var SLOT_DEFINITIONS = Object.freeze({
   "otp-s": Object.freeze({ channel: VERIFICATION_CHANNELS.OTP, verificationMode: VERIFICATION_MODES.LOCAL_CODE, priority: 38 }),
   "otp-t": Object.freeze({ channel: VERIFICATION_CHANNELS.OTP, verificationMode: VERIFICATION_MODES.LOCAL_CODE, priority: 38 }),
   "otp-u": Object.freeze({ channel: VERIFICATION_CHANNELS.OTP, verificationMode: VERIFICATION_MODES.LOCAL_CODE, priority: 38 }),
+  // otp-v..otp-za: hosted IdP OTP (idp-providers.mjs) — provider mails and checks the code.
+  "otp-v": Object.freeze({ channel: VERIFICATION_CHANNELS.OTP, verificationMode: VERIFICATION_MODES.PROVIDER_EVIDENCE, priority: 38 }),
+  "otp-w": Object.freeze({ channel: VERIFICATION_CHANNELS.OTP, verificationMode: VERIFICATION_MODES.PROVIDER_EVIDENCE, priority: 38 }),
+  "otp-x": Object.freeze({ channel: VERIFICATION_CHANNELS.OTP, verificationMode: VERIFICATION_MODES.PROVIDER_EVIDENCE, priority: 38 }),
+  "otp-y": Object.freeze({ channel: VERIFICATION_CHANNELS.OTP, verificationMode: VERIFICATION_MODES.PROVIDER_EVIDENCE, priority: 38 }),
+  "otp-z": Object.freeze({ channel: VERIFICATION_CHANNELS.OTP, verificationMode: VERIFICATION_MODES.PROVIDER_EVIDENCE, priority: 38 }),
+  "otp-za": Object.freeze({ channel: VERIFICATION_CHANNELS.OTP, verificationMode: VERIFICATION_MODES.PROVIDER_EVIDENCE, priority: 38 }),
   whatsapp: Object.freeze({ channel: VERIFICATION_CHANNELS.WHATSAPP, verificationMode: VERIFICATION_MODES.LOCAL_CODE, priority: 40 }),
   telegram: Object.freeze({ channel: VERIFICATION_CHANNELS.TELEGRAM, verificationMode: VERIFICATION_MODES.LOCAL_CODE, priority: 50 })
 });
@@ -25683,6 +25690,12 @@ var OTP_PROVIDER_NAMES = Object.freeze({
   "otp-s": "SparkPost",
   "otp-t": "Plunk",
   "otp-u": "Loops",
+  "otp-v": "Stytch",
+  "otp-w": "WorkOS",
+  "otp-x": "MojoAuth",
+  "otp-y": "Authgear",
+  "otp-z": "Stack Auth",
+  "otp-za": "SuperTokens",
   telegram: "Telegram"
 });
 var EVENTS = /* @__PURE__ */ new Set(["otp_delivery", "otp_request"]);
@@ -26208,8 +26221,387 @@ function createPoolProviders({ raw, slotQuota, fetchImpl = globalThis.fetch, now
   }));
 }
 
-// auth-native/verification/providers.mjs
+// auth-native/verification/idp-providers.mjs
+var IDP_SLOTS = Object.freeze({ stytch: "otp-v", workos: "otp-w", mojoauth: "otp-x", authgear: "otp-y", stackauth: "otp-z", supertokens: "otp-za" });
+var AUTHGEAR_PUBLIC_DEFAULTS = Object.freeze({ endpoint: "https://admissionsky.authgear.cloud" });
+var STATE_TTL_SECONDS = 900;
 var safeInteger = (value, min = 0, max = Number.MAX_SAFE_INTEGER) => {
+  const number = Number(value);
+  return Number.isInteger(number) && number >= min && number <= max ? number : 0;
+};
+var cleanKey = (value, pattern) => typeof value === "string" && pattern.test(value) ? value : "";
+var validEmail2 = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(value || "")) && String(value).length <= 254;
+var validAttemptId = (value) => /^[A-Za-z0-9_-]{24,96}$/.test(String(value || ""));
+var validCode = (value) => /^\d{6}$/.test(String(value || ""));
+var nextUtcMidnight2 = (now) => (Math.floor(Number(now) / 864e5) + 1) * 864e5;
+var basic = (user, pass) => `Basic ${btoa(`${user}:${pass}`)}`;
+function parseOtpIdp(raw) {
+  try {
+    const text = String(raw || "");
+    if (!text || text.length > 8192) return {};
+    const value = JSON.parse(text);
+    return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  } catch {
+    return {};
+  }
+}
+function stateStore(prefix, kv2, now) {
+  const memory = /* @__PURE__ */ new Map();
+  const usableKv = kv2 && typeof kv2.get === "function" && typeof kv2.put === "function" ? kv2 : null;
+  const key = (attemptId) => `${prefix}:${attemptId}`;
+  return {
+    async save(attemptId, state) {
+      const expires = Number(now()) + STATE_TTL_SECONDS * 1e3;
+      memory.set(attemptId, { ...state, expires });
+      for (const [id, row] of memory) if (row.expires < Number(now())) memory.delete(id);
+      if (usableKv) {
+        try {
+          await usableKv.put(key(attemptId), JSON.stringify(state), { expirationTtl: STATE_TTL_SECONDS });
+        } catch {
+        }
+      }
+    },
+    async load(attemptId) {
+      const row = memory.get(attemptId);
+      if (row && row.expires >= Number(now())) return row;
+      if (!usableKv) return null;
+      try {
+        const raw = await usableKv.get(key(attemptId));
+        return raw ? JSON.parse(raw) : null;
+      } catch {
+        return null;
+      }
+    },
+    async drop(attemptId) {
+      memory.delete(attemptId);
+      if (usableKv && typeof usableKv.delete === "function") {
+        try {
+          await usableKv.delete(key(attemptId));
+        } catch {
+        }
+      }
+    }
+  };
+}
+var HostedOtpProvider = class {
+  constructor({ id, mailer, declaredDailyQuota, kv: kv2 = null, fetchImpl = globalThis.fetch, now = Date.now, boundedJson: boundedJson2, httpFailure: httpFailure2, ready }) {
+    this.id = String(id || "");
+    this.channel = VERIFICATION_CHANNELS.OTP;
+    this.verificationMode = VERIFICATION_MODES.PROVIDER_EVIDENCE;
+    this.mailer = mailer;
+    this.declaredDailyQuota = safeInteger(declaredDailyQuota, 1, 1e7);
+    this.fetch = typeof fetchImpl === "function" ? fetchImpl.bind(globalThis) : null;
+    this.now = typeof now === "function" ? now : Date.now;
+    this.boundedJson = boundedJson2;
+    this.httpFailure = httpFailure2;
+    this.state = stateStore(`idp-otp-${this.id}`, kv2, this.now);
+    this.configured = Boolean(ready && this.declaredDailyQuota && this.fetch && boundedJson2 && httpFailure2);
+  }
+  async call(url, { method = "POST", headers = {}, body, timeoutMs = 12e3 } = {}) {
+    let response3;
+    try {
+      response3 = await this.fetch(url, {
+        method,
+        redirect: "manual",
+        credentials: "omit",
+        headers: { Accept: "application/json", "Content-Type": "application/json", "Cache-Control": "no-store", ...headers },
+        ...body ? { body: JSON.stringify(body) } : {},
+        signal: AbortSignal.timeout(timeoutMs)
+      });
+    } catch {
+      throw new VerificationProviderError("NETWORK_ERROR", VERIFICATION_FAILURE_CLASS.TEMPORARY, { retryAfter: 60 });
+    }
+    let payload = {};
+    try {
+      payload = await this.boundedJson(response3);
+    } catch (error) {
+      if (error instanceof VerificationProviderError) throw error;
+      throw new VerificationProviderError("INVALID_PROVIDER_RESPONSE", VERIFICATION_FAILURE_CLASS.HARD);
+    }
+    return { response: response3, payload: payload && typeof payload === "object" ? payload : {} };
+  }
+  fail(result, userStatuses = []) {
+    return this.httpFailure(result.response, null, { userStatuses });
+  }
+  ensureConfigured() {
+    if (!this.configured) throw new VerificationProviderError("NOT_CONFIGURED", VERIFICATION_FAILURE_CLASS.HARD);
+  }
+  sendInput(input) {
+    this.ensureConfigured();
+    const destination = String(input.destination || "").trim().toLowerCase();
+    const attemptId = String(input.attemptId || "");
+    if (!validEmail2(destination) || !validAttemptId(attemptId)) {
+      throw new VerificationProviderError("INVALID_DESTINATION", VERIFICATION_FAILURE_CLASS.USER);
+    }
+    return { destination, attemptId };
+  }
+  async verifyInput(input) {
+    this.ensureConfigured();
+    const attemptId = String(input.attemptId || "");
+    const code = String(input.evidence || "").trim();
+    if (!this.validCode(code)) return { code: "", attemptId, state: null };
+    const state = await this.state.load(attemptId);
+    if (!state?.email) throw new VerificationProviderError("CHALLENGE_EXPIRED", VERIFICATION_FAILURE_CLASS.USER);
+    return { code, attemptId, state };
+  }
+  validCode(code) {
+    return validCode(code);
+  }
+  async checkAvailability() {
+    return { available: this.configured, code: this.configured ? "READY" : "NOT_CONFIGURED" };
+  }
+  async getRemainingQuota() {
+    if (!this.configured) return { remaining: 0, limit: 0, resetAt: 0, source: "not-configured" };
+    return { remaining: this.declaredDailyQuota, limit: this.declaredDailyQuota, resetAt: nextUtcMidnight2(this.now()), source: "declared" };
+  }
+  async getProviderStatus() {
+    return { status: this.configured ? "configured" : "disabled", configured: this.configured, officialApi: true, mailer: this.mailer };
+  }
+};
+var StytchOtpVerificationProvider = class extends HostedOtpProvider {
+  constructor({ projectId, secret, ...rest } = {}) {
+    const pid = cleanKey(projectId, /^project-(test|live)-[0-9a-f-]{36}$/);
+    const key = cleanKey(secret, /^secret-(test|live)-[A-Za-z0-9_=-]{20,128}$/);
+    super({ id: "otp-v", mailer: "stytch", ...rest, ready: Boolean(pid && key) });
+    this.base = pid.startsWith("project-live-") ? "https://api.stytch.com" : "https://test.stytch.com";
+    this.auth = pid && key ? basic(pid, key) : "";
+  }
+  async sendVerification(input = {}) {
+    const { destination, attemptId } = this.sendInput(input);
+    const sent = await this.call(`${this.base}/v1/otps/email/login_or_create`, { headers: { Authorization: this.auth }, body: { email: destination, expiration_minutes: 10 } });
+    if (!sent.response.ok) throw this.fail(sent, [400]);
+    const methodId = String(sent.payload.email_id || "");
+    if (!/^email-(test|live)-[0-9a-f-]{36}$/.test(methodId)) throw new VerificationProviderError("INVALID_PROVIDER_RESPONSE", VERIFICATION_FAILURE_CLASS.HARD);
+    await this.state.save(attemptId, { email: destination, methodId });
+    return { accepted: true };
+  }
+  async verifyCode(input = {}) {
+    const { code, attemptId, state } = await this.verifyInput(input);
+    if (!code) return { verified: false };
+    const result = await this.call(`${this.base}/v1/otps/authenticate`, { headers: { Authorization: this.auth }, body: { method_id: state.methodId, code } });
+    if (result.response.ok && typeof result.payload.user_id === "string" && result.payload.user_id) {
+      await this.state.drop(attemptId);
+      return { verified: true };
+    }
+    if ([400, 401, 404].includes(Number(result.response.status))) return { verified: false };
+    throw this.fail(result);
+  }
+};
+var WorkOsOtpVerificationProvider = class extends HostedOtpProvider {
+  constructor({ apiKey, clientId, ...rest } = {}) {
+    const key = cleanKey(apiKey, /^sk_(test|live)_[A-Za-z0-9]{20,200}$/);
+    const client = cleanKey(clientId, /^client_[A-Za-z0-9]{10,64}$/);
+    super({ id: "otp-w", mailer: "workos", ...rest, ready: Boolean(key && client) });
+    this.apiKey = key;
+    this.clientId = client;
+  }
+  async sendVerification(input = {}) {
+    const { destination, attemptId } = this.sendInput(input);
+    const sent = await this.call("https://api.workos.com/user_management/magic_auth", { headers: { Authorization: `Bearer ${this.apiKey}` }, body: { email: destination } });
+    if (!sent.response.ok) throw this.fail(sent, [422]);
+    await this.state.save(attemptId, { email: destination });
+    return { accepted: true };
+  }
+  async verifyCode(input = {}) {
+    const { code, attemptId, state } = await this.verifyInput(input);
+    if (!code) return { verified: false };
+    const result = await this.call("https://api.workos.com/user_management/authenticate", {
+      body: { grant_type: "urn:workos:oauth:grant-type:magic-auth:code", client_id: this.clientId, client_secret: this.apiKey, code, email: state.email }
+    });
+    const email = String(result.payload?.user?.email || "").trim().toLowerCase();
+    if (result.response.ok && email === state.email) {
+      await this.state.drop(attemptId);
+      return { verified: true };
+    }
+    if (result.response.ok || [400, 401, 403, 404, 422].includes(Number(result.response.status))) return { verified: false };
+    throw this.fail(result);
+  }
+};
+var MojoAuthOtpVerificationProvider = class extends HostedOtpProvider {
+  constructor({ apiKey, ...rest } = {}) {
+    const key = cleanKey(apiKey, /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
+    super({ id: "otp-x", mailer: "mojoauth", ...rest, ready: Boolean(key) });
+    this.apiKey = key;
+  }
+  async sendVerification(input = {}) {
+    const { destination, attemptId } = this.sendInput(input);
+    const sent = await this.call("https://api.mojoauth.com/users/emailotp", { headers: { "X-API-Key": this.apiKey }, body: { email: destination } });
+    if (!sent.response.ok) throw this.fail(sent, [400]);
+    const stateId = String(sent.payload.state_id || "");
+    if (!/^[A-Za-z0-9_-]{8,128}$/.test(stateId)) throw new VerificationProviderError("INVALID_PROVIDER_RESPONSE", VERIFICATION_FAILURE_CLASS.HARD);
+    await this.state.save(attemptId, { email: destination, stateId });
+    return { accepted: true };
+  }
+  async verifyCode(input = {}) {
+    const { code, attemptId, state } = await this.verifyInput(input);
+    if (!code) return { verified: false };
+    const result = await this.call("https://api.mojoauth.com/users/emailotp/verify", { headers: { "X-API-Key": this.apiKey }, body: { state_id: state.stateId, otp: code } });
+    const email = String(result.payload?.user?.email || result.payload?.user?.identifier || "").trim().toLowerCase();
+    if (result.response.ok && result.payload.authenticated === true && email === state.email) {
+      await this.state.drop(attemptId);
+      return { verified: true };
+    }
+    if ([400, 401, 404].includes(Number(result.response.status)) || result.response.ok) return { verified: false };
+    throw this.fail(result);
+  }
+};
+var AuthgearOtpVerificationProvider = class extends HostedOtpProvider {
+  constructor({ endpoint = AUTHGEAR_PUBLIC_DEFAULTS.endpoint, ...rest } = {}) {
+    let origin = "";
+    try {
+      const url = new URL(String(endpoint || ""));
+      if (url.protocol === "https:" && /^[a-z0-9-]{2,63}\.authgear\.cloud$/.test(url.hostname) && !url.username && !url.password) origin = url.origin;
+    } catch {
+    }
+    super({ id: "otp-y", mailer: "authgear", ...rest, ready: Boolean(origin) });
+    this.origin = origin;
+  }
+  async step(stateToken, input) {
+    const result = await this.call(`${this.origin}/api/v1/authentication_flows/states/input`, { body: { state_token: stateToken, input } });
+    return result;
+  }
+  async sendVerification(input = {}) {
+    const { destination, attemptId } = this.sendInput(input);
+    const created = await this.call(`${this.origin}/api/v1/authentication_flows`, { body: { type: "signup_login", name: "default" } });
+    if (!created.response.ok) throw this.fail(created);
+    let token = String(created.payload?.result?.state_token || "");
+    if (!token) throw new VerificationProviderError("INVALID_PROVIDER_RESPONSE", VERIFICATION_FAILURE_CLASS.HARD);
+    let next = await this.step(token, { identification: "email", login_id: destination });
+    if (!next.response.ok) throw this.fail(next, [400]);
+    let action = next.payload?.result?.action || {};
+    if (action.type === "authenticate" && action.data?.type === "authentication_data") {
+      const options = Array.isArray(action.data.options) ? action.data.options : [];
+      const index = options.findIndex((row) => row?.authentication === "primary_oob_otp_email");
+      if (index < 0) throw new VerificationProviderError("PROVIDER_NO_EMAIL_OTP", VERIFICATION_FAILURE_CLASS.HARD);
+      next = await this.step(String(next.payload.result.state_token || ""), { authentication: "primary_oob_otp_email", index });
+      if (!next.response.ok) throw this.fail(next, [400]);
+      action = next.payload?.result?.action || {};
+    }
+    token = String(next.payload?.result?.state_token || "");
+    if (action.data?.type !== "verify_oob_otp_data" || !token) throw new VerificationProviderError("INVALID_PROVIDER_RESPONSE", VERIFICATION_FAILURE_CLASS.HARD);
+    await this.state.save(attemptId, { email: destination, token });
+    return { accepted: true };
+  }
+  async verifyCode(input = {}) {
+    const { code, attemptId, state } = await this.verifyInput(input);
+    if (!code) return { verified: false };
+    let result = await this.step(state.token, { code });
+    if ([400, 401].includes(Number(result.response.status)) || result.payload?.error) return { verified: false };
+    if (!result.response.ok) throw this.fail(result);
+    let action = result.payload?.result?.action || {};
+    if (action.type === "create_authenticator") {
+      result = await this.step(String(result.payload.result.state_token || ""), { authentication: "primary_oob_otp_email" });
+      if (!result.response.ok) throw this.fail(result);
+      action = result.payload?.result?.action || {};
+    }
+    if (action.type === "finished") {
+      await this.state.drop(attemptId);
+      return { verified: true };
+    }
+    return { verified: false };
+  }
+};
+var STACK_AUTH_DEFAULT_CALLBACK = "http://localhost:3000/handler/magic-link-callback";
+var StackAuthOtpVerificationProvider = class extends HostedOtpProvider {
+  constructor({ projectId, secretServerKey, callbackUrl, ...rest } = {}) {
+    const pid = cleanKey(projectId, /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
+    const key = cleanKey(secretServerKey, /^ssk_[A-Za-z0-9]{20,128}$/);
+    let cb = STACK_AUTH_DEFAULT_CALLBACK;
+    try {
+      const u = new URL(String(callbackUrl || ""));
+      if (u.protocol === "https:") cb = u.href;
+    } catch {
+    }
+    super({ id: "otp-z", mailer: "stackauth", ...rest, ready: Boolean(pid && key) });
+    this.headers = { "x-stack-project-id": pid, "x-stack-access-type": "server", "x-stack-secret-server-key": key };
+    this.callbackUrl = cb;
+  }
+  validCode(code) {
+    return /^[A-Za-z0-9]{6}$/.test(code);
+  }
+  async sendVerification(input = {}) {
+    const { destination, attemptId } = this.sendInput(input);
+    const sent = await this.call("https://api.stack-auth.com/api/v1/auth/otp/send-sign-in-code", { headers: this.headers, body: { email: destination, callback_url: this.callbackUrl } });
+    if (!sent.response.ok) throw this.fail(sent, [400]);
+    const nonce = String(sent.payload.nonce || "");
+    if (!/^[A-Za-z0-9]{8,128}$/.test(nonce)) throw new VerificationProviderError("INVALID_PROVIDER_RESPONSE", VERIFICATION_FAILURE_CLASS.HARD);
+    await this.state.save(attemptId, { email: destination, nonce });
+    return { accepted: true };
+  }
+  async verifyCode(input = {}) {
+    const { code, attemptId, state } = await this.verifyInput(input);
+    if (!code) return { verified: false };
+    const result = await this.call("https://api.stack-auth.com/api/v1/auth/otp/sign-in", { headers: this.headers, body: { code: code.toUpperCase() + state.nonce } });
+    if (result.response.ok && result.payload.access_token) {
+      await this.state.drop(attemptId);
+      return { verified: true };
+    }
+    if ([400, 401, 404, 409].includes(Number(result.response.status)) || result.response.ok) return { verified: false };
+    throw this.fail(result);
+  }
+};
+var SUPERTOKENS_APP_NAME = "Admissionsky";
+var SuperTokensOtpVerificationProvider = class extends HostedOtpProvider {
+  constructor({ connectionUri, apiKey, ...rest } = {}) {
+    let origin = "";
+    try {
+      const u = new URL(String(connectionUri || ""));
+      if (u.protocol === "https:" && /^st-[a-z0-9-]{8,80}\.aws\.supertokens\.io$/.test(u.hostname) && !u.username && !u.password) origin = u.origin;
+    } catch {
+    }
+    const key = cleanKey(apiKey, /^[A-Za-z0-9_=-]{16,128}$/);
+    super({ id: "otp-za", mailer: "supertokens", ...rest, ready: Boolean(origin && key) });
+    this.origin = origin;
+    this.headers = { "api-key": key, rid: "passwordless", "cdi-version": "5.2" };
+  }
+  async sendVerification(input = {}) {
+    const { destination, attemptId } = this.sendInput(input);
+    const made = await this.call(`${this.origin}/recipe/signinup/code`, { headers: this.headers, body: { email: destination } });
+    const p = made.payload;
+    if (!made.response.ok) throw this.fail(made, [400]);
+    if (p.status !== "OK" || !validCode(String(p.userInputCode || "")) || !p.preAuthSessionId || !p.deviceId) {
+      throw new VerificationProviderError("INVALID_PROVIDER_RESPONSE", VERIFICATION_FAILURE_CLASS.HARD);
+    }
+    const mailed = await this.call("https://api.supertokens.io/0/st/auth/passwordless/login", {
+      headers: { "api-version": "0" },
+      body: { email: destination, appName: SUPERTOKENS_APP_NAME, codeLifetime: safeInteger(p.codeLifetime, 6e4, 36e5) || 9e5, urlWithLinkCode: "", userInputCode: String(p.userInputCode) }
+    });
+    if (!mailed.response.ok) throw this.fail(mailed);
+    await this.state.save(attemptId, { email: destination, preAuthSessionId: String(p.preAuthSessionId), deviceId: String(p.deviceId) });
+    return { accepted: true };
+  }
+  async verifyCode(input = {}) {
+    const { code, attemptId, state } = await this.verifyInput(input);
+    if (!code) return { verified: false };
+    const result = await this.call(`${this.origin}/recipe/signinup/code/consume`, { headers: this.headers, body: { preAuthSessionId: state.preAuthSessionId, deviceId: state.deviceId, userInputCode: code } });
+    if (!result.response.ok) {
+      if ([400, 401, 404].includes(Number(result.response.status))) return { verified: false };
+      throw this.fail(result);
+    }
+    const emails = (Array.isArray(result.payload?.user?.emails) ? result.payload.user.emails : []).map((e) => String(e).toLowerCase());
+    if (result.payload.status === "OK" && emails.includes(state.email)) {
+      await this.state.drop(attemptId);
+      return { verified: true };
+    }
+    if (result.payload.status === "RESTART_FLOW_ERROR" || result.payload.status === "EXPIRED_USER_INPUT_CODE_ERROR") await this.state.drop(attemptId);
+    return { verified: false };
+  }
+};
+function createIdpProviders({ raw, slotQuota, kv: kv2 = null, fetchImpl = globalThis.fetch, helpers = {} } = {}) {
+  const keys2 = parseOtpIdp(raw);
+  const common = (id) => ({ declaredDailyQuota: slotQuota(id), kv: kv2, fetchImpl, boundedJson: helpers.boundedJson, httpFailure: helpers.httpFailure });
+  return [
+    new StytchOtpVerificationProvider({ ...common("otp-v"), projectId: keys2.stytch?.projectId, secret: keys2.stytch?.secret }),
+    new WorkOsOtpVerificationProvider({ ...common("otp-w"), apiKey: keys2.workos?.apiKey, clientId: keys2.workos?.clientId }),
+    new MojoAuthOtpVerificationProvider({ ...common("otp-x"), apiKey: keys2.mojoauth?.apiKey }),
+    new AuthgearOtpVerificationProvider({ ...common("otp-y") }),
+    new StackAuthOtpVerificationProvider({ ...common("otp-z"), projectId: keys2.stackauth?.projectId, secretServerKey: keys2.stackauth?.secretServerKey, callbackUrl: keys2.stackauth?.callbackUrl }),
+    new SuperTokensOtpVerificationProvider({ ...common("otp-za"), connectionUri: keys2.supertokens?.connectionUri, apiKey: keys2.supertokens?.apiKey })
+  ];
+}
+
+// auth-native/verification/providers.mjs
+var safeInteger2 = (value, min = 0, max = Number.MAX_SAFE_INTEGER) => {
   const number = Number(value);
   return Number.isInteger(number) && number >= min && number <= max ? number : 0;
 };
@@ -26428,7 +26820,7 @@ var otpEmailBody = (code, minutes, recipientName = "") => {
 </html>`;
   return { text, html };
 };
-var nextUtcMidnight2 = (now) => (Math.floor(Number(now) / 864e5) + 1) * 864e5;
+var nextUtcMidnight3 = (now) => (Math.floor(Number(now) / 864e5) + 1) * 864e5;
 var BrevoOtpVerificationProvider = class {
   constructor({ id = "otp-a", apiKey, fromAddress, fromName = OTP_EMAIL_APP, declaredDailyQuota, fetchImpl = globalThis.fetch, now = Date.now } = {}) {
     this.id = String(id || "");
@@ -26437,7 +26829,7 @@ var BrevoOtpVerificationProvider = class {
     this.apiKey = String(apiKey || "");
     this.fromAddress = validEmailAddress(fromAddress) ? String(fromAddress) : "";
     this.fromName = String(fromName || OTP_EMAIL_APP).slice(0, 64);
-    this.declaredDailyQuota = safeInteger(declaredDailyQuota, 1, 1e7);
+    this.declaredDailyQuota = safeInteger2(declaredDailyQuota, 1, 1e7);
     this.fetch = typeof fetchImpl === "function" ? fetchImpl.bind(globalThis) : null;
     this.now = typeof now === "function" ? now : Date.now;
     this.configured = Boolean(validSecret(this.apiKey) && this.fromAddress && this.declaredDailyQuota && this.fetch);
@@ -26483,12 +26875,12 @@ var BrevoOtpVerificationProvider = class {
     const payload = await fetchJson(this.fetch, "https://api.brevo.com/v3/account", { method: "GET", headers: this.#headers() });
     const plans = Array.isArray(payload?.plan) ? payload.plan : [];
     const sendLimit = plans.find((plan) => String(plan?.creditsType || "") === "sendLimit");
-    const credits = safeInteger(sendLimit?.credits, 0, 1e7);
+    const credits = safeInteger2(sendLimit?.credits, 0, 1e7);
     const limit = this.declaredDailyQuota;
     return {
       remaining: Math.min(credits, limit),
       limit,
-      resetAt: nextUtcMidnight2(this.now()),
+      resetAt: nextUtcMidnight3(this.now()),
       source: "brevo-account-credits"
     };
   }
@@ -26534,7 +26926,7 @@ var ResendOtpVerificationProvider = class {
     this.apiKey = String(apiKey || "");
     this.fromAddress = validEmailAddress(fromAddress) ? String(fromAddress) : "";
     this.fromName = String(fromName || OTP_EMAIL_APP).slice(0, 64);
-    this.declaredDailyQuota = safeInteger(declaredDailyQuota, 1, 1e7);
+    this.declaredDailyQuota = safeInteger2(declaredDailyQuota, 1, 1e7);
     this.fetch = typeof fetchImpl === "function" ? fetchImpl.bind(globalThis) : null;
     this.now = typeof now === "function" ? now : Date.now;
     this.configured = Boolean(validSecret(this.apiKey) && this.fromAddress && this.declaredDailyQuota && this.fetch);
@@ -26558,7 +26950,7 @@ var ResendOtpVerificationProvider = class {
   async getRemainingQuota() {
     if (!this.configured) return { remaining: 0, limit: 0, resetAt: 0, source: "not-configured" };
     const limit = this.declaredDailyQuota;
-    return { remaining: limit, limit, resetAt: nextUtcMidnight2(this.now()), source: "resend-declared-daily-quota" };
+    return { remaining: limit, limit, resetAt: nextUtcMidnight3(this.now()), source: "resend-declared-daily-quota" };
   }
   async sendVerification(input = {}) {
     if (!this.configured) throw new VerificationProviderError("NOT_CONFIGURED", VERIFICATION_FAILURE_CLASS.HARD);
@@ -26600,7 +26992,7 @@ var AgentMailOtpVerificationProvider = class {
     this.verificationMode = VERIFICATION_MODES.LOCAL_CODE;
     this.apiKey = String(apiKey || "");
     this.inboxId = validEmailAddress(inboxId) ? String(inboxId) : "";
-    this.declaredDailyQuota = safeInteger(declaredDailyQuota, 1, 1e7);
+    this.declaredDailyQuota = safeInteger2(declaredDailyQuota, 1, 1e7);
     this.fetch = typeof fetchImpl === "function" ? fetchImpl.bind(globalThis) : null;
     this.now = typeof now === "function" ? now : Date.now;
     this.configured = Boolean(validSecret(this.apiKey) && this.inboxId && this.declaredDailyQuota && this.fetch);
@@ -26654,7 +27046,7 @@ var AgentMailOtpVerificationProvider = class {
   async getRemainingQuota() {
     if (!this.configured) return { remaining: 0, limit: 0, resetAt: 0, source: "not-configured" };
     const limit = this.declaredDailyQuota;
-    return { remaining: limit, limit, resetAt: nextUtcMidnight2(this.now()), source: "agentmail-declared-daily-quota" };
+    return { remaining: limit, limit, resetAt: nextUtcMidnight3(this.now()), source: "agentmail-declared-daily-quota" };
   }
   async sendVerification(input = {}) {
     if (!this.configured) throw new VerificationProviderError("NOT_CONFIGURED", VERIFICATION_FAILURE_CLASS.HARD);
@@ -26705,7 +27097,7 @@ var MailerSendOtpVerificationProvider = class {
     this.apiKey = String(apiKey || "");
     this.fromAddress = validEmailAddress(fromAddress) ? String(fromAddress) : "";
     this.fromName = String(fromName || OTP_EMAIL_APP).slice(0, 64);
-    this.declaredDailyQuota = safeInteger(declaredDailyQuota, 1, 1e7);
+    this.declaredDailyQuota = safeInteger2(declaredDailyQuota, 1, 1e7);
     this.fetch = typeof fetchImpl === "function" ? fetchImpl.bind(globalThis) : null;
     this.now = typeof now === "function" ? now : Date.now;
     this.configured = Boolean(validSecret(this.apiKey) && this.fromAddress && this.declaredDailyQuota && this.fetch);
@@ -26731,7 +27123,7 @@ var MailerSendOtpVerificationProvider = class {
   async getRemainingQuota() {
     if (!this.configured) return { remaining: 0, limit: 0, resetAt: 0, source: "not-configured" };
     const limit = this.declaredDailyQuota;
-    return { remaining: limit, limit, resetAt: nextUtcMidnight2(this.now()), source: "mailersend-declared-daily-quota" };
+    return { remaining: limit, limit, resetAt: nextUtcMidnight3(this.now()), source: "mailersend-declared-daily-quota" };
   }
   async sendVerification(input = {}) {
     if (!this.configured) throw new VerificationProviderError("NOT_CONFIGURED", VERIFICATION_FAILURE_CLASS.HARD);
@@ -26775,7 +27167,7 @@ var DeadSimpleEmailOtpVerificationProvider = class {
     this.verificationMode = VERIFICATION_MODES.LOCAL_CODE;
     this.apiKey = String(apiKey || "");
     this.inboxId = validInboxId(inboxId) ? String(inboxId) : "";
-    this.declaredDailyQuota = safeInteger(declaredDailyQuota, 1, 1e7);
+    this.declaredDailyQuota = safeInteger2(declaredDailyQuota, 1, 1e7);
     this.fetch = typeof fetchImpl === "function" ? fetchImpl.bind(globalThis) : null;
     this.now = typeof now === "function" ? now : Date.now;
     this.configured = Boolean(validSecret(this.apiKey) && this.inboxId && this.declaredDailyQuota && this.fetch);
@@ -26828,7 +27220,7 @@ var DeadSimpleEmailOtpVerificationProvider = class {
   async getRemainingQuota() {
     if (!this.configured) return { remaining: 0, limit: 0, resetAt: 0, source: "not-configured" };
     const limit = this.declaredDailyQuota;
-    return { remaining: limit, limit, resetAt: nextUtcMidnight2(this.now()), source: "deadsimpleemail-declared-daily-quota" };
+    return { remaining: limit, limit, resetAt: nextUtcMidnight3(this.now()), source: "deadsimpleemail-declared-daily-quota" };
   }
   async sendVerification(input = {}) {
     if (!this.configured) throw new VerificationProviderError("NOT_CONFIGURED", VERIFICATION_FAILURE_CLASS.HARD);
@@ -26873,7 +27265,7 @@ var MailjetOtpVerificationProvider = class {
     this.apiBase = MAILJET_API_BASES.has(String(apiBase || "").trim()) ? String(apiBase).trim() : "";
     this.fromAddress = validEmailAddress(fromAddress) ? String(fromAddress) : "";
     this.fromName = String(fromName || OTP_EMAIL_APP).slice(0, 64);
-    this.declaredDailyQuota = safeInteger(declaredDailyQuota, 1, 1e7);
+    this.declaredDailyQuota = safeInteger2(declaredDailyQuota, 1, 1e7);
     this.fetch = typeof fetchImpl === "function" ? fetchImpl.bind(globalThis) : null;
     this.now = typeof now === "function" ? now : Date.now;
     this.configured = Boolean(validSecret(this.apiKey) && validSecret(this.secretKey) && this.apiBase && this.fromAddress && this.declaredDailyQuota && this.fetch);
@@ -26915,7 +27307,7 @@ var MailjetOtpVerificationProvider = class {
   async getRemainingQuota() {
     if (!this.configured) return { remaining: 0, limit: 0, resetAt: 0, source: "not-configured" };
     const limit = this.declaredDailyQuota;
-    return { remaining: limit, limit, resetAt: nextUtcMidnight2(this.now()), source: "mailjet-declared-daily-quota" };
+    return { remaining: limit, limit, resetAt: nextUtcMidnight3(this.now()), source: "mailjet-declared-daily-quota" };
   }
   async sendVerification(input = {}) {
     if (!this.configured) throw new VerificationProviderError("NOT_CONFIGURED", VERIFICATION_FAILURE_CLASS.HARD);
@@ -26961,7 +27353,7 @@ var AppsScriptOtpVerificationProvider = class {
     this.verificationMode = VERIFICATION_MODES.LOCAL_CODE;
     this.webAppUrl = appsScriptWebAppUrl(webAppUrl);
     this.sharedSecret = validSecret(sharedSecret) ? String(sharedSecret) : "";
-    this.declaredDailyQuota = safeInteger(declaredDailyQuota, 1, 1e7);
+    this.declaredDailyQuota = safeInteger2(declaredDailyQuota, 1, 1e7);
     this.fetch = typeof fetchImpl === "function" ? fetchImpl.bind(globalThis) : null;
     this.crypto = cryptoImpl?.subtle && typeof cryptoImpl.getRandomValues === "function" ? cryptoImpl : null;
     this.now = typeof now === "function" ? now : Date.now;
@@ -27017,9 +27409,9 @@ var AppsScriptOtpVerificationProvider = class {
   async getRemainingQuota() {
     if (!this.configured) return { remaining: 0, limit: 0, resetAt: 0, source: "not-configured" };
     const payload = await this.#call("quota");
-    const limit = safeInteger(payload?.limit, 1, this.declaredDailyQuota) || this.declaredDailyQuota;
-    const remaining = Math.min(limit, safeInteger(payload?.remaining, 0, limit));
-    const resetAt = safeInteger(payload?.resetAt, 0, 9e12);
+    const limit = safeInteger2(payload?.limit, 1, this.declaredDailyQuota) || this.declaredDailyQuota;
+    const remaining = Math.min(limit, safeInteger2(payload?.remaining, 0, limit));
+    const resetAt = safeInteger2(payload?.resetAt, 0, 9e12);
     if (!resetAt) throw new VerificationProviderError("INVALID_QUOTA_RESPONSE", VERIFICATION_FAILURE_CLASS.HARD);
     return { remaining, limit, resetAt, source: "apps-script-mail-quota" };
   }
@@ -27050,7 +27442,7 @@ var BridgeOtpVerificationProvider = class {
     this.verificationMode = VERIFICATION_MODES.LOCAL_CODE;
     this.origin = httpsOrigin(origin);
     this.apiKey = String(apiKey || "");
-    this.declaredDailyQuota = safeInteger(declaredDailyQuota, 1, 1e7);
+    this.declaredDailyQuota = safeInteger2(declaredDailyQuota, 1, 1e7);
     this.fetch = typeof fetchImpl === "function" ? fetchImpl.bind(globalThis) : null;
     this.configured = Boolean(this.origin && validSecret(this.apiKey) && this.declaredDailyQuota && this.fetch);
   }
@@ -27074,9 +27466,9 @@ var BridgeOtpVerificationProvider = class {
   async getRemainingQuota() {
     if (!this.configured) return { remaining: 0, limit: 0, resetAt: 0, source: "not-configured" };
     const payload = await fetchJson(this.fetch, `${this.origin}/v1/verification/quota`, { method: "GET", headers: this.#headers() });
-    const limit = safeInteger(payload?.limit, 1, this.declaredDailyQuota) || this.declaredDailyQuota;
-    const remaining = Math.min(limit, safeInteger(payload?.remaining, 0, limit));
-    const resetAt = safeInteger(payload?.resetAt, 0, 9e12);
+    const limit = safeInteger2(payload?.limit, 1, this.declaredDailyQuota) || this.declaredDailyQuota;
+    const remaining = Math.min(limit, safeInteger2(payload?.remaining, 0, limit));
+    const resetAt = safeInteger2(payload?.resetAt, 0, 9e12);
     if (!resetAt) throw new VerificationProviderError("INVALID_QUOTA_RESPONSE", VERIFICATION_FAILURE_CLASS.HARD);
     return { remaining, limit, resetAt, source: "provider-api" };
   }
@@ -27118,7 +27510,7 @@ var OfficialWhatsAppVerificationProvider = class {
     this.accessToken = String(accessToken || "");
     this.templateName = /^[a-z0-9_]{3,128}$/.test(String(templateName || "")) ? String(templateName) : "";
     this.templateLanguage = /^[a-z]{2,3}(?:_[A-Z]{2})?$/.test(String(templateLanguage || "")) ? String(templateLanguage) : "";
-    this.declaredDailyQuota = safeInteger(declaredDailyQuota, 1, 1e7);
+    this.declaredDailyQuota = safeInteger2(declaredDailyQuota, 1, 1e7);
     this.fetch = typeof fetchImpl === "function" ? fetchImpl.bind(globalThis) : null;
     this.configured = Boolean(this.graphVersion && this.phoneNumberId && validSecret(this.accessToken) && this.templateName && this.templateLanguage && this.declaredDailyQuota && this.fetch);
   }
@@ -27229,7 +27621,7 @@ var LogtoOtpVerificationProvider = class {
     this.endpoint = httpsOrigin(endpoint);
     this.appId = validLogtoAppId(appId) ? String(appId) : "";
     this.redirectUri = logtoRedirect(redirectUri);
-    this.declaredDailyQuota = safeInteger(declaredDailyQuota, 1, 1e7);
+    this.declaredDailyQuota = safeInteger2(declaredDailyQuota, 1, 1e7);
     this.kv = kv2 && typeof kv2.get === "function" && typeof kv2.put === "function" ? kv2 : null;
     this.fetch = typeof fetchImpl === "function" ? fetchImpl.bind(globalThis) : null;
     this.now = typeof now === "function" ? now : Date.now;
@@ -27295,7 +27687,7 @@ var LogtoOtpVerificationProvider = class {
   }
   async getRemainingQuota() {
     if (!this.configured) return { remaining: 0, limit: 0, resetAt: 0, source: "not-configured" };
-    return { remaining: this.declaredDailyQuota, limit: this.declaredDailyQuota, resetAt: nextUtcMidnight2(this.now()), source: "declared" };
+    return { remaining: this.declaredDailyQuota, limit: this.declaredDailyQuota, resetAt: nextUtcMidnight3(this.now()), source: "declared" };
   }
   async sendVerification(input = {}) {
     if (!this.configured) throw new VerificationProviderError("NOT_CONFIGURED", VERIFICATION_FAILURE_CLASS.HARD);
@@ -27392,7 +27784,7 @@ var AppwriteOtpVerificationProvider = class {
     this.endpoint = appwriteEndpoint(endpoint);
     this.projectId = validAppwriteProjectId(projectId) ? String(projectId) : "";
     this.apiKey = validSecret(apiKey) ? apiKey : "";
-    this.declaredDailyQuota = safeInteger(declaredDailyQuota, 1, 1e7);
+    this.declaredDailyQuota = safeInteger2(declaredDailyQuota, 1, 1e7);
     this.kv = kv2 && typeof kv2.get === "function" && typeof kv2.put === "function" ? kv2 : null;
     this.fetch = typeof fetchImpl === "function" ? fetchImpl.bind(globalThis) : null;
     this.now = typeof now === "function" ? now : Date.now;
@@ -27481,7 +27873,7 @@ var AppwriteOtpVerificationProvider = class {
   }
   async getRemainingQuota() {
     if (!this.configured) return { remaining: 0, limit: 0, resetAt: 0, source: "not-configured" };
-    return { remaining: this.declaredDailyQuota, limit: this.declaredDailyQuota, resetAt: nextUtcMidnight2(this.now()), source: "declared" };
+    return { remaining: this.declaredDailyQuota, limit: this.declaredDailyQuota, resetAt: nextUtcMidnight3(this.now()), source: "declared" };
   }
   async sendVerification(input = {}) {
     if (!this.configured) throw new VerificationProviderError("NOT_CONFIGURED", VERIFICATION_FAILURE_CLASS.HARD);
@@ -27583,7 +27975,7 @@ var OryOtpVerificationProvider = class {
     this.channel = VERIFICATION_CHANNELS.OTP;
     this.verificationMode = VERIFICATION_MODES.PROVIDER_EVIDENCE;
     this.endpoint = oryEndpoint(endpoint);
-    this.declaredDailyQuota = safeInteger(declaredDailyQuota, 1, 1e7);
+    this.declaredDailyQuota = safeInteger2(declaredDailyQuota, 1, 1e7);
     this.kv = kv2 && typeof kv2.get === "function" && typeof kv2.put === "function" ? kv2 : null;
     this.fetch = typeof fetchImpl === "function" ? fetchImpl.bind(globalThis) : null;
     this.now = typeof now === "function" ? now : Date.now;
@@ -27636,7 +28028,7 @@ var OryOtpVerificationProvider = class {
   }
   async getRemainingQuota() {
     if (!this.configured) return { remaining: 0, limit: 0, resetAt: 0, source: "not-configured" };
-    return { remaining: this.declaredDailyQuota, limit: this.declaredDailyQuota, resetAt: nextUtcMidnight2(this.now()), source: "declared" };
+    return { remaining: this.declaredDailyQuota, limit: this.declaredDailyQuota, resetAt: nextUtcMidnight3(this.now()), source: "declared" };
   }
   async sendVerification(input = {}) {
     if (!this.configured) throw new VerificationProviderError("NOT_CONFIGURED", VERIFICATION_FAILURE_CLASS.HARD);
@@ -27712,7 +28104,7 @@ var HankoOtpVerificationProvider = class {
     this.channel = VERIFICATION_CHANNELS.OTP;
     this.verificationMode = VERIFICATION_MODES.PROVIDER_EVIDENCE;
     this.endpoint = hankoEndpoint(endpoint);
-    this.declaredDailyQuota = safeInteger(declaredDailyQuota, 1, 1e7);
+    this.declaredDailyQuota = safeInteger2(declaredDailyQuota, 1, 1e7);
     this.kv = kv2 && typeof kv2.get === "function" && typeof kv2.put === "function" ? kv2 : null;
     this.fetch = typeof fetchImpl === "function" ? fetchImpl.bind(globalThis) : null;
     this.now = typeof now === "function" ? now : Date.now;
@@ -27804,7 +28196,7 @@ var HankoOtpVerificationProvider = class {
   }
   async getRemainingQuota() {
     if (!this.configured) return { remaining: 0, limit: 0, resetAt: 0, source: "not-configured" };
-    return { remaining: this.declaredDailyQuota, limit: this.declaredDailyQuota, resetAt: nextUtcMidnight2(this.now()), source: "declared" };
+    return { remaining: this.declaredDailyQuota, limit: this.declaredDailyQuota, resetAt: nextUtcMidnight3(this.now()), source: "declared" };
   }
   async sendVerification(input = {}) {
     if (!this.configured) throw new VerificationProviderError("NOT_CONFIGURED", VERIFICATION_FAILURE_CLASS.HARD);
@@ -27876,7 +28268,7 @@ var TelegramLinkVerificationProvider = class {
     this.webhookSecret = validTelegramWebhookSecret(webhookSecret) ? String(webhookSecret) : "";
     this.webhookSecretSource = validSecret(webhookSecretSource) ? String(webhookSecretSource) : "";
     this.webhookUrl = telegramWebhookEndpoint(webhookUrl);
-    this.declaredDailyQuota = safeInteger(declaredDailyQuota, 1, 1e7);
+    this.declaredDailyQuota = safeInteger2(declaredDailyQuota, 1, 1e7);
     this.fetch = typeof fetchImpl === "function" ? fetchImpl.bind(globalThis) : null;
     this.crypto = cryptoImpl;
     this.resolvedBotUsername = "";
@@ -28016,7 +28408,7 @@ var TelegramLinkVerificationProvider = class {
     if (!/^[1-9]\d{0,19}$/.test(chatId) || !/^\d{6}$/.test(code)) {
       throw new VerificationProviderError("INVALID_DESTINATION", VERIFICATION_FAILURE_CLASS.USER);
     }
-    const minutes = Math.max(1, Math.min(10, Math.ceil(safeInteger(input.expiresInSeconds, 60, 600) / 60)));
+    const minutes = Math.max(1, Math.min(10, Math.ceil(safeInteger2(input.expiresInSeconds, 60, 600) / 60)));
     const text = [
       `🔐 ${OTP_EMAIL_APP} Verification`,
       "আপনার verification code:",
@@ -28053,7 +28445,7 @@ var DescopeOtpVerificationProvider = class {
     this.channel = VERIFICATION_CHANNELS.OTP;
     this.verificationMode = VERIFICATION_MODES.PROVIDER_EVIDENCE;
     this.projectId = /^P[A-Za-z0-9]{20,63}$/.test(String(projectId || "")) ? String(projectId) : "";
-    this.declaredDailyQuota = safeInteger(declaredDailyQuota, 1, 1e3);
+    this.declaredDailyQuota = safeInteger2(declaredDailyQuota, 1, 1e3);
     this.fetch = typeof fetchImpl === "function" ? fetchImpl : null;
     this.now = typeof now === "function" ? now : Date.now;
     this.configured = Boolean(this.projectId && this.declaredDailyQuota && this.fetch);
@@ -28063,7 +28455,7 @@ var DescopeOtpVerificationProvider = class {
   }
   async getRemainingQuota() {
     if (!this.configured) return { remaining: 0, limit: 0, resetAt: 0, source: "not-configured" };
-    return { remaining: this.declaredDailyQuota, limit: this.declaredDailyQuota, resetAt: nextUtcMidnight2(this.now()), source: "declared" };
+    return { remaining: this.declaredDailyQuota, limit: this.declaredDailyQuota, resetAt: nextUtcMidnight3(this.now()), source: "declared" };
   }
   async #request(action, body, verify = false) {
     if (!this.configured) throw new VerificationProviderError("NOT_CONFIGURED", VERIFICATION_FAILURE_CLASS.HARD);
@@ -28142,7 +28534,7 @@ var DescopeMagicLinkVerificationProvider = class {
     this.verificationMode = VERIFICATION_MODES.PROVIDER_EVIDENCE;
     this.deliveryMethod = "magic-link";
     this.projectId = /^P[A-Za-z0-9]{20,63}$/.test(String(projectId || "")) ? String(projectId) : "";
-    this.declaredDailyQuota = safeInteger(declaredDailyQuota, 1, 1e3);
+    this.declaredDailyQuota = safeInteger2(declaredDailyQuota, 1, 1e3);
     this.redirectUri = redirectUri === DESCOPE_MAGIC_LINK_URI ? redirectUri : "";
     this.fetch = typeof fetchImpl === "function" ? fetchImpl : null;
     this.now = typeof now === "function" ? now : Date.now;
@@ -28153,7 +28545,7 @@ var DescopeMagicLinkVerificationProvider = class {
   }
   async getRemainingQuota() {
     if (!this.configured) return { remaining: 0, limit: 0, resetAt: 0, source: "not-configured" };
-    return { remaining: this.declaredDailyQuota, limit: this.declaredDailyQuota, resetAt: nextUtcMidnight2(this.now()), source: "declared" };
+    return { remaining: this.declaredDailyQuota, limit: this.declaredDailyQuota, resetAt: nextUtcMidnight3(this.now()), source: "declared" };
   }
   async #request(path, body, verify = false) {
     if (!this.configured) throw new VerificationProviderError("NOT_CONFIGURED", VERIFICATION_FAILURE_CLASS.HARD);
@@ -28348,6 +28740,16 @@ function createConfiguredVerificationProviders(env = {}, { fetchImpl = globalThi
     fetchImpl,
     helpers: { boundedJson, httpFailure, otpEmailBody, appName: OTP_EMAIL_APP }
   }) : [];
+  const idpProviders = !env.OTP_IDP ? [] : createIdpProviders({
+    raw: env.OTP_IDP,
+    slotQuota: (id) => {
+      const slot = slotFromConfig(env.VERIFICATION_ORCHESTRATOR_CONFIG, id);
+      return slot ? slot.dailyQuota : "";
+    },
+    kv: env.GK_KV || null,
+    fetchImpl,
+    helpers: { boundedJson, httpFailure }
+  });
   return [
     brevoOtpA.configured ? brevoOtpA : bridgeOtpA,
     appsScriptOtpB.configured ? appsScriptOtpB : bridgeOtpB,
@@ -28380,7 +28782,8 @@ function createConfiguredVerificationProviders(env = {}, { fetchImpl = globalThi
       declaredDailyQuota: env.TELEGRAM_AUTH_DAILY_QUOTA,
       fetchImpl
     }),
-    ...poolProviders
+    ...poolProviders,
+    ...idpProviders
   ];
 }
 var __verificationProvidersTest = Object.freeze({ httpsOrigin, boundedJson, httpFailure, appsScriptWebAppUrl, otpEmailBody });
