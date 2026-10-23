@@ -598,6 +598,13 @@ export default {
       if (path === '/api/ai/actions/audit' && request.method === 'GET') {
         const identity = await aiRequestIdentity(request, env, false);
         if (!identity.authenticated) return json({ error: 'sign_in_required', message: 'AI action ব্যবহার করতে লগইন করো।' }, 401);
+        /* F0.1 step 4c / DV-01: served by sky-ai (same body) only while write
+           actions are enabled here (sky-ai has no USE_WRITE_ACTIONS); any sky-ai
+           miss or error falls back to the local answer below. */
+        if (actionsEnabled(env)) {
+          const viaSky = await forwardWithIdentity(request, env, identity.uid);
+          if (viaSky) return viaSky;
+        }
         return json({ ok: true, actionsEnabled: actionsEnabled(env), audit: await readAudit(env, identity.uid) });
       }
       /* Sky recall (owner plan step 2): the reminder shown when the chat opens.

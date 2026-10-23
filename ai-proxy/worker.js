@@ -5,7 +5,7 @@ const MAX_DAILY_REQUESTS = 3;
 const MAX_POLL_SECONDS = 90;
 
 function corsHeaders(env) {
-  const allowed = env.ALLOWED_ORIGIN || 'https://admissionhub.pages.dev';
+  const allowed = env.ALLOWED_ORIGIN || 'https://admissionsky.pages.dev';
   return {
     'Access-Control-Allow-Origin': allowed,
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',

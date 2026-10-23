@@ -45,8 +45,8 @@ const APP_SHELL = [
   './academic-catalog.js?v=acad-cat-v2',
   './profile-ui.js?v=profile-v20-sky-instr',
   './profile-ui.css?v=profile-v15-uni-tap',
-  './profile-v2.html?v=profile-v2-6',
-  './profile-v2-mount.js?v=profile-v2-6',
+  './profile-v2.html?v=profile-v2-7',
+  './profile-v2-mount.js?v=profile-v2-7',
   './data-protection.js?v=dp-v3-fastboot',
   './dashboard-v2.js?v=dash2f18-chrome',
   './sky-smalltalk.js?v=st2',
@@ -92,7 +92,7 @@ const APP_SHELL = [
 // A truncated/corrupt download is NEVER written to the shell cache.
 const ASSET_DIGESTS = {
 /* sw-manifest:start */
-  "./index.html": "06576130d8e645a70f6482ebbaa3dbc208a4e1d8baf4d68225e52a04880cf539",
+  "./index.html": "001842d7e1f375b5c6d87b50fac06e5300a0985ed4cf48d66b4e296841092345",
   "./manifest.json": "6dcf0e0c6f7671750549e53558ba8b9f0c2c83b0c6759072a6b5e2276331f491",
   "./manifest.webmanifest": "abcd26174710f6df3e183889a5a9da182f73ee8cdcc543b43db8fb4070cad54f",
   "./dashboard-v2.css?v=dash2f13-theme": "4541bc1e65fd158c593443562975400d128b8f1d3b636595df3c235b99e8cced",
@@ -111,8 +111,8 @@ const ASSET_DIGESTS = {
   "./academic-catalog.js?v=acad-cat-v2": "75e7b80663d41330658c948ad1d4829d49f5c9abed581350582cfeace06d5b32",
   "./profile-ui.js?v=profile-v20-sky-instr": "4db65994d9b9c7ac0f7cfb1dcf57118cc1d016314f8865614b58dba8de9993e7",
   "./profile-ui.css?v=profile-v15-uni-tap": "6408a4b7ac8acf6845cd0148c58377a4953c8ff879d30b2c520eafae0314b98a",
-  "./profile-v2.html?v=profile-v2-6": "00dce1ac58ca9ec4ff4f6672c054e4874915ce6ce66c104781cab459b3ae456e",
-  "./profile-v2-mount.js?v=profile-v2-6": "967e7d81fbf821c06ce5b1ddd867ab4fa5e882e37ef3aa1f0c445e0c623f3ec0",
+  "./profile-v2.html?v=profile-v2-7": "4848023b26f93a044f7bb1f12a87b453f8c2e2c09876c1d0fdbd0c8a7bfb4c7f",
+  "./profile-v2-mount.js?v=profile-v2-7": "763ab4355577155de8cf5c02a9679c4d4e0fea7b556f880eb861753ca2fe9542",
   "./data-protection.js?v=dp-v3-fastboot": "359dc907ade4bcb3a6a722385969ebb6af47f7e436e6cdf2cce0dd6b7343723d",
   "./dashboard-v2.js?v=dash2f18-chrome": "943a731165376cadca9bb4da2a33c7f3ccc1d24d063165fcede77089615e3739",
   "./sky-smalltalk.js?v=st2": "ee85bc86a84d6c75f391d7f76fa03abd53f2df1973dd7980ae15ee94eb122a49",

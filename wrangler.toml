@@ -38,7 +38,7 @@ VERIFICATION_AUTH_ACTIVATION = "enabled"
 # if this pairing breaks. Dead Simple delivery lands in Gmail spam by design
 # (shared inbox domain) — it is kept only as a final channel, never a primary.
 # timeoutMs (owner 2026-10-16): a timeout fails over at once (no same-slot retry), so each slot gets its real speed: mailers 8s, Logto/Appwrite/Ory/Hanko 12s, Apps Script otp-b 20s (cold start ~11s), Telegram 20s.
-VERIFICATION_ORCHESTRATOR_CONFIG = '{"enabled":true,"providers":[{"id":"otp-a","enabled":true,"priority":10,"dailyQuota":300,"timeoutMs":8000,"label":"secure backup"},{"id":"otp-h","enabled":true,"priority":15,"dailyQuota":5000,"timeoutMs":12000,"label":"secure backup"},{"id":"otp-i","enabled":true,"priority":38,"dailyQuota":300,"timeoutMs":12000,"label":"secure backup"},{"id":"otp-j","enabled":true,"priority":38,"dailyQuota":300,"timeoutMs":12000,"label":"secure backup"},{"id":"otp-k","enabled":true,"priority":38,"dailyQuota":300,"timeoutMs":12000,"label":"secure backup"},{"id":"otp-l","enabled":true,"priority":38,"dailyQuota":1000,"timeoutMs":12000,"label":"secure backup","projectId":"P3Km4McYmZUg8ZzIJfEnf9ZCDkFD"},{"id":"otp-m","enabled":true,"priority":38,"dailyQuota":1000,"timeoutMs":12000,"label":"login link","projectId":"P3Km4McYmZUg8ZzIJfEnf9ZCDkFD"},{"id":"otp-b","enabled":true,"priority":20,"dailyQuota":100,"timeoutMs":20000,"label":"secure backup"},{"id":"otp-d","enabled":true,"priority":35,"dailyQuota":100,"timeoutMs":8000,"label":"secure backup"},{"id":"otp-e","enabled":true,"priority":37,"dailyQuota":100,"timeoutMs":8000,"label":"secure backup"},{"id":"otp-f","enabled":true,"priority":38,"dailyQuota":100,"timeoutMs":8000,"label":"secure backup"},{"id":"otp-g","enabled":true,"priority":39,"dailyQuota":150,"timeoutMs":8000,"label":"secure backup"},{"id":"otp-c","enabled":true,"priority":45,"dailyQuota":200,"timeoutMs":8000,"label":"secure backup"},{"id":"telegram","enabled":true,"priority":50,"dailyQuota":172800,"timeoutMs":20000,"label":"secure backup"}]}'
+VERIFICATION_ORCHESTRATOR_CONFIG = '{"enabled":true,"providers":[{"id":"otp-a","enabled":true,"priority":10,"dailyQuota":300,"timeoutMs":8000,"label":"secure backup"},{"id":"otp-h","enabled":true,"priority":15,"dailyQuota":1500,"timeoutMs":12000,"label":"secure backup"},{"id":"otp-i","enabled":true,"priority":38,"dailyQuota":1000,"timeoutMs":12000,"label":"secure backup"},{"id":"otp-j","enabled":true,"priority":38,"dailyQuota":300,"timeoutMs":12000,"label":"secure backup"},{"id":"otp-k","enabled":true,"priority":38,"dailyQuota":300,"timeoutMs":12000,"label":"secure backup"},{"id":"otp-l","enabled":true,"priority":38,"dailyQuota":150,"timeoutMs":12000,"label":"secure backup","projectId":"P3Km4McYmZUg8ZzIJfEnf9ZCDkFD"},{"id":"otp-m","enabled":true,"priority":38,"dailyQuota":100,"timeoutMs":12000,"label":"login link","projectId":"P3Km4McYmZUg8ZzIJfEnf9ZCDkFD"},{"id":"otp-b","enabled":true,"priority":20,"dailyQuota":100,"timeoutMs":20000,"label":"secure backup"},{"id":"otp-d","enabled":true,"priority":35,"dailyQuota":100,"timeoutMs":8000,"label":"secure backup"},{"id":"otp-e","enabled":true,"priority":37,"dailyQuota":100,"timeoutMs":8000,"label":"secure backup"},{"id":"otp-f","enabled":true,"priority":38,"dailyQuota":16,"timeoutMs":8000,"label":"secure backup"},{"id":"otp-n","enabled":true,"priority":38,"dailyQuota":100,"timeoutMs":8000,"label":"secure backup"},{"id":"otp-o","enabled":true,"priority":38,"dailyQuota":100,"timeoutMs":8000,"label":"secure backup"},{"id":"otp-q","enabled":true,"priority":38,"dailyQuota":100,"timeoutMs":8000,"label":"secure backup"},{"id":"otp-r","enabled":true,"priority":38,"dailyQuota":60,"timeoutMs":8000,"label":"secure backup"},{"id":"otp-s","enabled":true,"priority":38,"dailyQuota":16,"timeoutMs":8000,"label":"secure backup"},{"id":"otp-t","enabled":true,"priority":38,"dailyQuota":100,"timeoutMs":8000,"label":"secure backup"},{"id":"otp-u","enabled":true,"priority":38,"dailyQuota":130,"timeoutMs":8000,"label":"secure backup"},{"id":"otp-g","enabled":true,"priority":39,"dailyQuota":165,"timeoutMs":8000,"label":"secure backup"},{"id":"otp-c","enabled":true,"priority":45,"dailyQuota":200,"timeoutMs":8000,"label":"secure backup"},{"id":"telegram","enabled":true,"priority":50,"dailyQuota":172800,"timeoutMs":20000,"label":"secure backup"}]}'
 # otp-i is Appwrite Cloud Email OTP (project 6ad1e9280025bf4464ee, fra region), added
 # 2026-10-16. Owner order (same day): moved 17 -> 38 so it runs AFTER every branded
 # mailer (own logo/subject; ties sort by id so otp-f MailerSend goes first) and BEFORE
@@ -57,6 +57,18 @@ VERIFICATION_ORCHESTRATOR_CONFIG = '{"enabled":true,"providers":[{"id":"otp-a","
 # Both sit at priority 38 like otp-i (ties sort by id: f, i, j, k), after every
 # branded mailer and before the locked last-resort pair; dailyQuota 300 is our
 # own cap. No new vars or secrets (64-variable ceiling).
+# Quota realignment (owner order 2026-10-22): every cap now fits the provider's
+# published FREE-plan monthly allowance divided by 30, so no slot runs dry mid-month.
+# otp-h Logto 5000 -> 1500 (free plan 50K MAU a month).
+# otp-i Appwrite 300 -> 1000 (free plan 75K MAU; per-IP abuse limit is the real ceiling).
+# otp-f MailerSend 100 -> 16 (free plan 500/month, 100/day).
+# otp-g Dead Simple 150 -> 165 (free plan 5,000/month).
+# otp-l + otp-m share one Descope project: 150 + 100 = 250/day (~7,500 MAU/month).
+# otp-n..otp-u (owner 2026-10-22): Maileroo 100, Elastic Email 100, Mailgun 100,
+# Alibaba DirectMail 60, SparkPost 16, Plunk 100, Loops 130 per day (free plan / 30).
+# All keys live in ONE secret, OTP_RAW (any format; pool-providers.mjs parses it),
+# so the 64-variable ceiling is not crossed. Priority 38: after every branded
+# mailer, before the locked last-resort pair. A slot without keys stays inert.
 OTP_A_DAILY_QUOTA = "300"
 OTP_B_DAILY_QUOTA = "100"
 # otp-h (Logto) endpoint, app id and redirect are public values kept in
@@ -70,7 +82,7 @@ OTP_B_DAILY_QUOTA = "100"
 OTP_C_DAILY_QUOTA = "200"
 OTP_D_DAILY_QUOTA = "100"
 OTP_E_DAILY_QUOTA = "100"
-OTP_F_DAILY_QUOTA = "100"
+OTP_F_DAILY_QUOTA = "16"
 TELEGRAM_AUTH_WEBHOOK_URL = "https://admission-gk.admissionhub.workers.dev/api/auth/v1/telegram/webhook"
 TELEGRAM_AUTH_DAILY_QUOTA = "172800"
 # Cloudflare Workers AI backup list (Phase 9 M2.5). Free 10,000 Neurons/day.

@@ -96,7 +96,7 @@ const NEWS_SCHEMA = {
 
 const cors = request => {
   const origin = request.headers.get('Origin') || '';
-  const ok = /^https:\/\/sheikhrashel47-stack\.github\.io$/.test(origin) || /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin) || /^https:\/\/[a-z0-9-]+\.e2b\.app$/.test(origin); // e2b = workspace-প্রিভিউ
+  const ok = /^https:\/\/([a-z0-9-]+\.)?(admissionsky|admissionhub)\.pages\.dev$/.test(origin) || /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin) || /^https:\/\/[a-z0-9-]+\.e2b\.app$/.test(origin); // e2b = workspace-প্রিভিউ
   const headers = { 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type, X-AH-App', 'Access-Control-Max-Age': '86400' };
   if (ok) headers['Access-Control-Allow-Origin'] = origin;
   return headers;
@@ -490,8 +490,9 @@ async function sendTelegramAlert(env, text) {
 
 async function handleErrorReport(request, env) {
   const proxied = request.headers.get('x-ah-pages-proxy') === '1';
-  const sameOrigin = request.headers.get('Origin') === 'https://admissionhub.pages.dev';
-  if (!proxied && !sameOrigin) return json(request, { error: 'forbidden' }, 403);
+  const sameOrigin = request.headers.get('Origin') === 'https://admissionsky.pages.dev';
+  const sameOriginOld = request.headers.get('Origin') === 'https://admissionhub.pages.dev';
+  if (!proxied && !sameOrigin && !sameOriginOld) return json(request, { error: 'forbidden' }, 403);
 
   let body = {};
   try { body = await request.json(); } catch (_) {}
@@ -674,7 +675,7 @@ export default {
 
     const isApp = request.headers.get('X-AH-App') === APP_HEADER;
     // sendBeacon-ফলব্যাক: হেডার ছাড়া এলে শুধু অ্যাপের নিজের Origin হলে /api/bank POST গ্রহণযোগ্য
-    const beaconOk = !isApp && request.method === 'POST' && url.pathname === '/api/bank' && (request.headers.get('Origin') === 'https://admissionhub.pages.dev' || request.headers.get('Origin') === 'https://admissionsky.pages.dev' || request.headers.get('Origin') === 'https://sheikhrashel47-stack.github.io');
+    const beaconOk = !isApp && request.method === 'POST' && url.pathname === '/api/bank' && (request.headers.get('Origin') === 'https://admissionhub.pages.dev' || request.headers.get('Origin') === 'https://admissionsky.pages.dev');
     if (!isApp && !beaconOk) return json(request, { error: 'forbidden' }, 403);
     if (request.method === 'POST' && url.pathname === '/api/ask') return await createAsk(request, env, ctx);
     if (request.method === 'POST' && url.pathname === '/api/bank') return await bankUpload(request, env);

@@ -1181,5 +1181,5 @@ test('wrangler.toml enables otp-j and otp-k at 38 without new vars, ahead of the
   assert.match(toml, /\{"id":"otp-k","enabled":true,"priority":38,"dailyQuota":300/);
   const rows = JSON.parse(toml.match(/VERIFICATION_ORCHESTRATOR_CONFIG = '(.*)'/)[1]).providers;
   const order = rows.slice().sort((a, b) => a.priority - b.priority || a.id.localeCompare(b.id)).map(row => row.id);
-  assert.deepEqual(order.slice(order.indexOf('otp-f')), ['otp-f', 'otp-i', 'otp-j', 'otp-k', 'otp-l', 'otp-m', 'otp-g', 'otp-c', 'telegram']);
+  assert.deepEqual(order.slice(order.indexOf('otp-f')), ['otp-f', 'otp-i', 'otp-j', 'otp-k', 'otp-l', 'otp-m', 'otp-n', 'otp-o', 'otp-q', 'otp-r', 'otp-s', 'otp-t', 'otp-u', 'otp-g', 'otp-c', 'telegram']);
 });
