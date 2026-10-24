@@ -25505,6 +25505,9 @@ function providerFailure2(error) {
   if (error instanceof VerificationProviderError) return error;
   return new VerificationProviderError("UNEXPECTED_PROVIDER_FAILURE", VERIFICATION_FAILURE_CLASS.TEMPORARY);
 }
+var SLOW_SLOT_MIN_SAMPLES = 3;
+var SLOW_SLOT_FLOOR_MS = 1500;
+var SLOW_SLOT_RATIO = 2;
 var PROBE_TIMEOUT_MS2 = 5e3;
 var NON_GMAIL_FREEMAIL = /* @__PURE__ */ new Set(["icloud.com", "me.com", "mac.com", "yahoo.com", "yahoo.co.uk", "yahoo.co.in", "ymail.com", "rocketmail.com", "outlook.com", "hotmail.com", "live.com", "msn.com", "aol.com"]);
 var NON_GMAIL_PREFERENCE = Object.freeze({ "otp-h": -30, "otp-i": -40, "otp-b": -15, "otp-e": -30 });
@@ -25728,7 +25731,9 @@ var VerificationOrchestrator = class {
           // jumped ahead. They now only break ties; the order is the operator's
           // priority plus the deliberate recipient bias and resend demotion.
           score: entry.priority + lowPenalty + recipientBias(entry.id, destinations.otp) + (identity.previousProviderId && identity.previousProviderId === entry.id ? 25 : 0),
-          health: failurePenalty + latencyPenalty
+          health: failurePenalty + latencyPenalty,
+          latencyMs: Number(state.latencyEwmaMs || 0),
+          successes: Number(state.successCount || 0)
         };
       } catch (cause) {
         const failure = providerFailure2(cause);
@@ -25746,7 +25751,20 @@ var VerificationOrchestrator = class {
         return null;
       }
     }));
-    return rows4.filter(Boolean).sort((left, right) => left.score - right.score || Number(right.probe) - Number(left.probe) || left.health - right.health || left.entry.priority - right.entry.priority);
+    const candidates = rows4.filter(Boolean);
+    const measured = candidates.filter((row) => row.successes >= SLOW_SLOT_MIN_SAMPLES && row.latencyMs > 0);
+    if (measured.length > 1) {
+      const fastest = Math.min(...measured.map((row) => row.latencyMs));
+      const slowFrom = Math.max(SLOW_SLOT_FLOOR_MS, fastest * SLOW_SLOT_RATIO);
+      const priorities = candidates.map((row) => row.entry.priority);
+      const demotion = Math.max(...priorities) - Math.min(...priorities) + 10;
+      for (const row of measured) {
+        if (row.latencyMs < slowFrom) continue;
+        row.score += demotion;
+        row.slow = true;
+      }
+    }
+    return candidates.sort((left, right) => left.score - right.score || Number(right.probe) - Number(left.probe) || left.health - right.health || left.entry.priority - right.entry.priority);
   }
   async requestVerification(input = {}, requestContext = {}) {
     const identity = await this.#identity(input, requestContext);
@@ -25806,6 +25824,7 @@ var VerificationOrchestrator = class {
     const deliveryMethod = input?.deliveryMethod === "magic-link" && identity.purpose === "email-ownership" ? "magic-link" : "";
     const candidates = await this.#candidateRows({ ...identity, attemptId, previousProviderId, deliveryMethod }, destinations, now, deliveryDeadline);
     const attemptRef = String(attemptId).slice(0, 8);
+    const demoted = candidates.filter((candidate) => candidate.slow).map((candidate) => candidate.entry.id).join(",");
     const tried = [];
     const logBase = { attempt: attemptRef, purpose: identity.purpose, method: deliveryMethod || "code", candidates: candidates.length };
     const emit = (evt, fields) => {
@@ -25852,7 +25871,7 @@ var VerificationOrchestrator = class {
           providerAccepted = true;
           tried.push(`${entry.id}:ok`);
           logDelivery({ ...logBase, provider: entry.id, label: entry.label, rank: rank2, try: currentTry + 1, outcome: "accepted", latencyMs });
-          logRequest({ ...logBase, outcome: "sent", provider: entry.id, totalMs: Date.now() - requestStarted, tried: tried.join(",") });
+          logRequest({ ...logBase, outcome: "sent", provider: entry.id, totalMs: Date.now() - requestStarted, tried: tried.join(","), ...demoted ? { demoted } : {} });
           await this.#record(entry, { attemptId, userId: identity.userId, subjectRef: identity.subjectRef, success: true, reason: "accepted", latencyMs, now });
           errorFromRepository(await this.repository.markChallengeDelivery({
             attemptId,
@@ -25925,7 +25944,8 @@ var VerificationOrchestrator = class {
       outcome: budgetExhausted ? "budget_exhausted" : "all_failed",
       budgetMs: policy.deliveryBudgetMs,
       totalMs: Date.now() - requestStarted,
-      tried: tried.join(",")
+      tried: tried.join(","),
+      ...demoted ? { demoted } : {}
     });
     await this.repository.failChallenge({ attemptId, reason: "all_providers_unavailable", now });
     throw new NativeAuthError(AUTH_ERROR_CODES.BACKUP_UNAVAILABLE);

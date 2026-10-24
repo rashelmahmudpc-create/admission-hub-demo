@@ -66,6 +66,16 @@ function providerFailure(error) {
   return new VerificationProviderError('UNEXPECTED_PROVIDER_FAILURE', VERIFICATION_FAILURE_CLASS.TEMPORARY);
 }
 
+// A slot that has measurably slow sends moves behind the others. This is the one
+// latency lever that cannot create a duplicate: the send still happens once, it
+// just leaves through the provider that has been answering fastest. Readings are
+// only trusted after a few successful sends, and a slot is never demoted for
+// being under a sane absolute floor, so a quiet day on every provider does not
+// reshuffle the operator's order.
+const SLOW_SLOT_MIN_SAMPLES = 3;
+const SLOW_SLOT_FLOOR_MS = 1_500;
+const SLOW_SLOT_RATIO = 2;
+
 const PROBE_TIMEOUT_MS = 5000;
 
 // Owner 2026-10-16: iCloud / Yahoo / Outlook mailboxes did not receive codes that
@@ -321,7 +331,9 @@ export class VerificationOrchestrator {
           // jumped ahead. They now only break ties; the order is the operator's
           // priority plus the deliberate recipient bias and resend demotion.
           score: entry.priority + lowPenalty + recipientBias(entry.id, destinations.otp) + (identity.previousProviderId && identity.previousProviderId === entry.id ? 25 : 0),
-          health: failurePenalty + latencyPenalty
+          health: failurePenalty + latencyPenalty,
+          latencyMs: Number(state.latencyEwmaMs || 0),
+          successes: Number(state.successCount || 0)
         };
       } catch (cause) {
         const failure = providerFailure(cause);
@@ -339,7 +351,27 @@ export class VerificationOrchestrator {
         return null;
       }
     }));
-    return rows.filter(Boolean).sort((left, right) => left.score - right.score || (Number(right.probe) - Number(left.probe)) || left.health - right.health || left.entry.priority - right.entry.priority);
+    const candidates = rows.filter(Boolean);
+    // Owner 2026-10-24: the OTP must be quick without ever sending twice, so the
+    // order — not a second parallel send — is what carries the speed. Only a slot
+    // that has proven itself slow (a few successes, and an average more than twice
+    // the fastest healthy slot, above an absolute floor) is pushed back, far enough
+    // to sit behind every other candidate. Everything else keeps the operator's
+    // priority order untouched.
+    const measured = candidates.filter(row => row.successes >= SLOW_SLOT_MIN_SAMPLES && row.latencyMs > 0);
+    if (measured.length > 1) {
+      const fastest = Math.min(...measured.map(row => row.latencyMs));
+      const slowFrom = Math.max(SLOW_SLOT_FLOOR_MS, fastest * SLOW_SLOT_RATIO);
+      const priorities = candidates.map(row => row.entry.priority);
+      // Wide enough to clear the whole priority span, so a demoted slot really is last.
+      const demotion = Math.max(...priorities) - Math.min(...priorities) + 10;
+      for (const row of measured) {
+        if (row.latencyMs < slowFrom) continue;
+        row.score += demotion;
+        row.slow = true;
+      }
+    }
+    return candidates.sort((left, right) => left.score - right.score || (Number(right.probe) - Number(left.probe)) || left.health - right.health || left.entry.priority - right.entry.priority);
   }
 
   async requestVerification(input = {}, requestContext = {}) {
@@ -396,6 +428,8 @@ export class VerificationOrchestrator {
     const deliveryMethod = input?.deliveryMethod === 'magic-link' && identity.purpose === 'email-ownership' ? 'magic-link' : '';
     const candidates = await this.#candidateRows({ ...identity, attemptId, previousProviderId, deliveryMethod }, destinations, now, deliveryDeadline);
     const attemptRef = String(attemptId).slice(0, 8);
+    // Visible in the delivery log: which slots the latency rule moved back.
+    const demoted = candidates.filter(candidate => candidate.slow).map(candidate => candidate.entry.id).join(',');
     const tried = [];
     const logBase = { attempt: attemptRef, purpose: identity.purpose, method: deliveryMethod || 'code', candidates: candidates.length };
     const emit = (evt, fields) => { try { this.onDeliveryEvent?.({ evt, ...fields }); } catch {} };
@@ -442,7 +476,7 @@ export class VerificationOrchestrator {
           providerAccepted = true;
           tried.push(`${entry.id}:ok`);
           logDelivery({ ...logBase, provider: entry.id, label: entry.label, rank, try: currentTry + 1, outcome: 'accepted', latencyMs });
-          logRequest({ ...logBase, outcome: 'sent', provider: entry.id, totalMs: Date.now() - requestStarted, tried: tried.join(',') });
+          logRequest({ ...logBase, outcome: 'sent', provider: entry.id, totalMs: Date.now() - requestStarted, tried: tried.join(','), ...(demoted ? { demoted } : {}) });
           await this.#record(entry, { attemptId, userId: identity.userId, subjectRef: identity.subjectRef, success: true, reason: 'accepted', latencyMs, now });
           errorFromRepository(await this.repository.markChallengeDelivery({
             attemptId,
@@ -505,7 +539,8 @@ export class VerificationOrchestrator {
       outcome: budgetExhausted ? 'budget_exhausted' : 'all_failed',
       budgetMs: policy.deliveryBudgetMs,
       totalMs: Date.now() - requestStarted,
-      tried: tried.join(',')
+      tried: tried.join(','),
+      ...(demoted ? { demoted } : {})
     });
     await this.repository.failChallenge({ attemptId, reason: 'all_providers_unavailable', now });
     throw new NativeAuthError(AUTH_ERROR_CODES.BACKUP_UNAVAILABLE);

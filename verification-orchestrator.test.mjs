@@ -875,3 +875,63 @@ test('F-02: the next slot starts only after the previous one has failed', async 
   assert.equal(secondary.sends.length, 1);
   assert.ok(secondAt >= 900, `the next slot must wait for the first slot's 1000ms timeout; it started at ${secondAt}ms`);
 });
+
+/* Owner 2026-10-24: OTP has to be quick without ever sending twice. Speed comes
+   from the slot order, not from a parallel send: a provider that has measurably
+   slow sends is pushed behind the others, so the first attempt already leaves
+   through the fast one. Everything else keeps the operator's priority order. */
+const seedProviderSpeed = async (repository, providerId, { latencyMs, times = 5, now = 1_800_000_000_000 }) => {
+  for (let index = 0; index < times; index += 1) {
+    await repository.recordProviderResult({
+      providerId,
+      attemptId: `seed-${providerId}-${index}`,
+      userId: 'usr_seed',
+      subjectRef: 'subject_seed',
+      channel: VERIFICATION_CHANNELS.OTP,
+      success: true,
+      reason: 'accepted',
+      latencyMs,
+      failureThreshold: 3,
+      forceCooldown: false,
+      cooldownMs: 0,
+      now
+    });
+  }
+};
+
+test('a measurably slow slot moves behind the fast one, and only one send leaves', async () => {
+  const slow = new MockProvider({ id: 'otp-a' });
+  const fast = new MockProvider({ id: 'otp-b' });
+  const app = setup({ providers: [slow, fast] });
+  await seedProviderSpeed(app.repository, 'otp-a', { latencyMs: 6_000 });
+  await seedProviderSpeed(app.repository, 'otp-b', { latencyMs: 400 });
+
+  const result = await app.orchestrator.requestVerification(identity, context);
+  assert.equal(result.accepted, true);
+  assert.equal(fast.sends.length, 1, 'the fast slot carries the send');
+  assert.equal(slow.sends.length, 0, 'the slow slot is behind it, not beside it');
+});
+
+test('slots that perform alike keep the operator priority order', async () => {
+  const first = new MockProvider({ id: 'otp-a' });
+  const second = new MockProvider({ id: 'otp-b' });
+  const app = setup({ providers: [first, second] });
+  await seedProviderSpeed(app.repository, 'otp-a', { latencyMs: 900 });
+  await seedProviderSpeed(app.repository, 'otp-b', { latencyMs: 400 });
+
+  await app.orchestrator.requestVerification(identity, context);
+  assert.equal(first.sends.length, 1, 'priority 10 still goes first when the gap is not a problem');
+  assert.equal(second.sends.length, 0);
+});
+
+test('a slow reading is not trusted until the slot has a few successes', async () => {
+  const unproven = new MockProvider({ id: 'otp-a' });
+  const fast = new MockProvider({ id: 'otp-b' });
+  const app = setup({ providers: [unproven, fast] });
+  await seedProviderSpeed(app.repository, 'otp-a', { latencyMs: 6_000, times: 2 });
+  await seedProviderSpeed(app.repository, 'otp-b', { latencyMs: 400 });
+
+  await app.orchestrator.requestVerification(identity, context);
+  assert.equal(unproven.sends.length, 1, 'two samples are not enough to demote an operator-ordered slot');
+  assert.equal(fast.sends.length, 0);
+});
