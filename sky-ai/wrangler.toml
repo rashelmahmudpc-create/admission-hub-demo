@@ -5,7 +5,10 @@
 name = "sky-ai"
 main = "worker.mjs"
 compatibility_date = "2024-11-01"
-workers_dev = true
+# Owner 2026-10-21: no public URL. sky-ai is reachable only through
+# admission-gk's SKY_AI service binding, so the internal caller headers
+# (x-sky-ai-caller / x-sky-uid) cannot be forged from the internet.
+workers_dev = false
 
 [observability]
 enabled = true
