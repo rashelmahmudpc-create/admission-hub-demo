@@ -123,21 +123,36 @@ jobs:
             exit 0
           fi
           # Several routes, not one: the split has to carry the login surface, not
-          # just whichever path happened to work. Any 5xx means the forward broke
-          # something; a 4xx with an auth code means the handler ran and answered.
+          # just whichever path happened to work. Reports every result as an
+          # annotation and then fails once, so a broken probe is diagnosable
+          # without reading the log.
+          #
+          # These are deliberately the routes that cost nothing: an unauthenticated
+          # GET answers 401 from the handler itself, and a preflight answers 204.
+          # Nothing here sends a message, consumes a rate slot or touches a
+          # provider, so the probe can run on every deploy without side effects.
+          failed=0
           probe() {
             path="$1"
             expect="$2"
-            headers="$(curl -sS -o /dev/null -D - --max-time 25 -H 'Origin: https://admissionsky.pages.dev' "https://admission-gk.admissionhub.workers.dev$path" || true)"
+            method="${3:-GET}"
+            headers="$(curl -sS -o /dev/null -D - --max-time 25 -X "$method" -H 'Origin: https://admissionsky.pages.dev' "https://admission-gk.admissionhub.workers.dev$path" || true)"
             code="$(printf '%s' "$headers" | awk 'tolower($1) ~ /^http\// {print $2}' | tail -1)"
             front="$(printf '%s' "$headers" | tr -d '\r' | awk -F': ' 'tolower($1) == "x-ah-auth-front" {print $2}' | tail -1)"
-            echo "$path -> ${code:-no-response} front=${front:-none}"
-            test "${front:-}" = "admission-auth"
-            test "${code:-}" = "$expect"
+            echo "$method $path -> ${code:-no-response} front=${front:-none} (expected $expect)"
+            echo "::notice title=Probe $method $path::code=${code:-none} front=${front:-none} expected=$expect"
+            if [ "${front:-}" != "admission-auth" ] || [ "${code:-}" != "$expect" ]; then
+              failed=1
+              echo "::error title=Forwarded route failed::$method $path answered ${code:-nothing} from ${front:-the app}, expected $expect from admission-auth."
+            fi
           }
-          probe "/api/public/profile/AH-SMOKE-$RANDOM" 200
           probe "/api/auth/v1/session" 401
           probe "/api/auth/v1/account" 401
+          probe "/api/auth/v1/session" 204 OPTIONS
+          if [ "$failed" -ne 0 ]; then
+            echo "::error title=Auth split broken::a forwarded auth route did not answer as admission-auth. Roll back with AUTH_ROUTE = \"local\"."
+            exit 1
+          fi
           echo "::notice title=Auth split live::the forwarded login surface is answered by admission-auth."
 
       # The Worker must answer for the project the app now belongs to. The key is
