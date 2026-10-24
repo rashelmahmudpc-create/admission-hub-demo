@@ -5041,7 +5041,14 @@ async function tryRouteToSkyAi(request, env, routes = SKY_AI_ROUTES) {
     return null;
   }
 }
-var SKY_AI_IDENTITY_ROUTES = Object.freeze(["GET /api/ai/prefs", "GET /api/ai/actions/audit"]);
+var SKY_AI_IDENTITY_ROUTES = Object.freeze([
+  "GET /api/ai/prefs",
+  "GET /api/ai/actions/audit",
+  /* F0.2 / DV-02: evaluated flags for ONE student, so sky-ai needs the uid
+   * admission-gk verified. A guest stays anonymous and keeps the defaults
+   * (the local fallback in public-worker.js answers all-off). */
+  "GET /api/ai/sky-flags"
+]);
 var SKY_INTERNAL_KEY_NAME = "secret:sky-internal";
 async function forwardWithIdentity(request, env, uid, routes = SKY_AI_IDENTITY_ROUTES) {
   if (!uid || request.method !== "GET") return null;
@@ -5660,6 +5667,12 @@ var public_worker_default = {
           prefs = null;
         }
         return json2({ prefs: prefs || AI_PREFS_DEFAULT });
+      }
+      if (path === "/api/ai/sky-flags" && request.method === "GET") {
+        const identity = await aiRequestIdentity(request, env, false);
+        const viaSky = identity.uid ? await forwardWithIdentity(request, env, identity.uid) : null;
+        if (viaSky) return viaSky;
+        return json2({ ok: true, flags: {}, source: "gk-fallback" });
       }
       if (path === "/api/ai/prefs" && request.method === "POST") {
         const identity = await aiRequestIdentity(request, env, false);
