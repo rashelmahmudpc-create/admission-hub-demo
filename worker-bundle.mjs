@@ -5050,6 +5050,32 @@ var SKY_AI_IDENTITY_ROUTES = Object.freeze([
   "GET /api/ai/sky-flags"
 ]);
 var SKY_INTERNAL_KEY_NAME = "secret:sky-internal";
+var SKY_AI_POST_IDENTITY_ROUTES = Object.freeze([
+  "POST /api/ai/recall"
+]);
+async function forwardPostWithIdentity(request, env, uid, routes = SKY_AI_POST_IDENTITY_ROUTES) {
+  if (!uid || request.method !== "POST") return null;
+  if (!shouldRouteToSkyAi(request, env, routes) || !env.PUB_KV) return null;
+  try {
+    const key = await env.PUB_KV.get(SKY_INTERNAL_KEY_NAME);
+    if (!key) return null;
+    const body = await request.clone().arrayBuffer();
+    const res = await env.SKY_AI.fetch(new Request(request.url, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-sky-ai-caller": "admission-gk",
+        "x-sky-uid": String(uid),
+        "x-sky-internal": key
+      },
+      body
+    }));
+    if (!res || res.status === 404 || res.status >= 500) return null;
+    return res;
+  } catch (_) {
+    return null;
+  }
+}
 async function forwardWithIdentity(request, env, uid, routes = SKY_AI_IDENTITY_ROUTES) {
   if (!uid || request.method !== "GET") return null;
   if (!shouldRouteToSkyAi(request, env, routes) || !env.PUB_KV) return null;
@@ -5772,6 +5798,8 @@ var public_worker_default = {
         const identity = await aiRequestIdentity(request, env, false);
         if (!identity.authenticated) return json2({ error: "sign_in_required", recall: null }, 401);
         if (identity.persistMemory === false) return json2({ ok: true, recall: null });
+        const viaSky = await forwardPostWithIdentity(request, env, identity.uid);
+        if (viaSky) return viaSky;
         const body = await request.json().catch(() => null);
         return await agentRecall(env, identity.uid, body);
       }

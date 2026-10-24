@@ -88,6 +88,35 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: npx --yes wrangler@4.35.0 deploy --config wrangler.auth.toml
+      # F0.1 step 4d: sky-ai before the app, for the same reason. admission-gk
+      # forwards /api/ai/recall to it, so the app must never point at a sky-ai
+      # that does not serve the route yet. Its own deploy workflow is manual-only,
+      # which is why this exists rather than relying on it.
+      - name: Deploy sky-ai
+        working-directory: sky-ai
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx --yes wrangler@4.35.0 deploy --config wrangler.toml
+      # The route is signed-in only, so a deploy cannot call it without a
+      # student session. What it CAN prove is the part that fails silently: the
+      # cross-script AI_STATE binding. Missing it means recall falls back to KV
+      # and every student's reminder quietly disappears — a wrong answer, not an
+      # error. /health reports the binding, so this asserts it.
+      - name: Verify sky-ai can reach the shared memory store
+        run: |-
+          set -eu
+          for attempt in 1 2 3 4 5; do
+            body="$(curl -sS --max-time 20 "https://admission-gk.admissionhub.workers.dev/api/ai/sky-health?cb=$RANDOM" || true)"
+            printf 'attempt %s: %s\n' "$attempt" "$(printf '%s' "$body" | head -c 400)"
+            if printf '%s' "$body" | grep -q '"aiState":"ok"'; then
+              echo "::notice title=Sky AI ready::the AI_STATE binding reaches admission-gk's Durable Object."
+              exit 0
+            fi
+            sleep 6
+          done
+          echo "::error title=Sky AI memory store unreachable::/health did not report aiState=ok. Recall would silently return nothing. Check script_name in sky-ai/wrangler.toml."
+          exit 1
       - name: Deploy Worker
         uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd # v3
         with:

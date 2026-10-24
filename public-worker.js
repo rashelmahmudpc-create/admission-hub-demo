@@ -9,7 +9,7 @@ import {
 import { checkAbuse, isGuarded } from './p14-abuse-guard.mjs';
 import { recordError, summarizeErrors } from './p19-error-monitor.mjs';
 import { listReports } from './sky-daily-report.mjs';
-import { forwardWithIdentity } from './sky-ai-route.mjs';
+import { forwardWithIdentity, forwardPostWithIdentity } from './sky-ai-route.mjs';
 import { createSnapshot, listSnapshots, restoreSnapshot } from './p19-backup.mjs';
 
 const JSONH = {
@@ -623,6 +623,15 @@ export default {
         const identity = await aiRequestIdentity(request, env, false);
         if (!identity.authenticated) return json({ error: 'sign_in_required', recall: null }, 401);
         if (identity.persistMemory === false) return json({ ok: true, recall: null });
+        /* F0.1 step 4d: sky-ai answers this when it is listed in
+           SKY_AI_POST_IDENTITY_ROUTES. The two checks above stay here on
+           purpose — the 401 and the "this student turned memory off" case are
+           decisions about identity, and identity is resolved by this Worker.
+           Anything sky-ai cannot serve (no binding, no internal key, a 404 or a
+           5xx) returns null and the two lines below answer exactly as they do
+           today. forwardPostWithIdentity clones the body for that reason. */
+        const viaSky = await forwardPostWithIdentity(request, env, identity.uid);
+        if (viaSky) return viaSky;
         const body = await request.json().catch(() => null);
         return await agentRecall(env, identity.uid, body);
       }
