@@ -261,6 +261,8 @@ jobs:
           ! test -e dist/voice-agent-gate.mjs
           ! test -e dist/onboarding-welcome-hero.webp
           ! test -e dist/onboarding-personal-hero.webp
+      - name: Mark bundle built
+        run: echo "::notice title=DIAG build::the sanitized Pages bundle passed every assertion"
       - name: Deploy Pages UI
         uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd # v3
         with:
@@ -268,6 +270,8 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           wranglerVersion: '4.35.0'
           command: pages deploy dist --project-name admissionhub --branch main
+      - name: Mark main Pages deploy finished
+        run: echo "::notice title=DIAG deploy-admissionhub::the admissionhub deployment returned success"
 
       # Same sanitized bundle, second address: the owner's shorter
       # admissionsky.pages.dev. A Pages project named `admissionsky` owns that
@@ -297,6 +301,8 @@ jobs:
             exit 0
           fi
           echo "::warning title=Pages project create failed::wrangler exited $code for a reason other than 'already exists'. The deploy below decides whether that matters."
+      - name: Mark project step finished
+        run: echo "::notice title=DIAG project::the project step completed without stopping the job"
       - name: Deploy Pages UI to the short address
         uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd # v3
         with:
@@ -304,3 +310,5 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           wranglerVersion: '4.35.0'
           command: pages deploy dist --project-name admissionsky --branch main
+      - name: Mark short-address deploy finished
+        run: echo "::notice title=DIAG deploy-admissionsky::the admissionsky deployment returned success"
