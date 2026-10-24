@@ -4171,7 +4171,11 @@ var nativeAuthHandler = createNativeAuthHandler();
 var auth_worker_default = {
   async fetch(request, env, ctx) {
     const response = await nativeAuthHandler(request, env, ctx);
-    if (response) return response;
+    if (response) {
+      const marked = new Response(response.body, response);
+      marked.headers.set("X-AH-Auth-Front", "admission-auth");
+      return marked;
+    }
     return new Response("Not found", {
       status: 404,
       headers: {

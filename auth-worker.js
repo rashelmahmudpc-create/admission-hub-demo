@@ -19,7 +19,15 @@ const nativeAuthHandler = createNativeAuthHandler();
 export default {
   async fetch(request, env, ctx) {
     const response = await nativeAuthHandler(request, env, ctx);
-    if (response) return response;
+    // F-04: say who answered. admission-gk forwards the auth surface here and
+    // falls back in process on a transport error, so a deploy can only prove the
+    // forwarding path if the answer carries this mark. Without it a smoke test
+    // passes on the fallback and says nothing about the split.
+    if (response) {
+      const marked = new Response(response.body, response);
+      marked.headers.set('X-AH-Auth-Front', 'admission-auth');
+      return marked;
+    }
     return new Response('Not found', {
       status: 404,
       headers: {
