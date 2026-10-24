@@ -1,7 +1,7 @@
 // Admission Hub, Public Product Worker (account system retired, v221)
 // Active routes: public content · Firebase-account/ephemeral-guest AI · content admin.
 // The former login/profile/onboarding/session/state APIs are intentionally absent.
-import { agentChat, agentStatus, agentRecall, agentInstructions, sanitizeAiPrefs, AI_PREFS_DEFAULT, clearAiMemory } from './ai-agent.js';
+import { agentChat, agentStatus, agentRecall, agentInstructions, sanitizeAiPrefs, AI_PREFS_DEFAULT, clearAiEverything } from './ai-agent.js';
 import {
   authorizeAction, makeProposal, confirmProposal, proposalSummary,
   makeAuditRecord, parseAudit, appendAudit, STATUS, actionsEnabled
@@ -550,12 +550,16 @@ export default {
       if (path === '/api/ai/memory/clear' && request.method === 'POST') {
         const identity = await aiRequestIdentity(request, env, false);
         if (!identity.authenticated) return json({ error: 'sign_in_required', message: 'AI মেমরি মুছতে লগইন করো।' }, 401);
+        /* F0.1 step 4f: sky-ai answers this when the route is listed in
+           sky-ai-route.mjs. Forwarded BEFORE the local work, and the local work
+           is idempotent (deleting the same keys twice is the same as once), so a
+           lost answer can only cost a second, harmless attempt — never a
+           half-cleared account. WHAT gets deleted is defined once, in
+           clearAiEverything(). */
+        const viaSky = await forwardWithIdentityBody(request, env, identity.uid);
+        if (viaSky) return viaSky;
         try {
-          await clearAiMemory(env, identity.uid);
-          await env.PUB_KV.delete('aiprefs:' + identity.uid);
-          await env.PUB_KV.delete('aiinstr:' + identity.uid);
-          await env.PUB_KV.delete('actaudit:' + identity.uid);
-          await env.PUB_KV.delete('actprop:' + identity.uid);
+          await clearAiEverything(env, identity.uid);
         } catch (_) {
           return json({ error: 'clear_failed', message: 'এখন মুছে ফেলা গেল না, আবার চেষ্টা করো।' }, 500);
         }

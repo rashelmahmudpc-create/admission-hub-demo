@@ -127,6 +127,7 @@ test('the non-GET allowlist names every method it allows, so rollback is one lin
   assert.deepEqual([...SKY_AI_BODY_IDENTITY_ROUTES], [
     'POST /api/ai/recall',
     'POST /api/ai/instructions',
-    'DELETE /api/ai/instructions'
+    'DELETE /api/ai/instructions',
+    'POST /api/ai/memory/clear'
   ]);
 });

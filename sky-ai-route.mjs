@@ -74,7 +74,8 @@ export const SKY_INTERNAL_KEY_NAME = 'secret:sky-internal';
 export const SKY_AI_BODY_IDENTITY_ROUTES = Object.freeze([
   'POST /api/ai/recall',
   'POST /api/ai/instructions',
-  'DELETE /api/ai/instructions'
+  'DELETE /api/ai/instructions',
+  'POST /api/ai/memory/clear'
 ]);
 
 export async function forwardWithIdentityBody(request, env, uid, routes = SKY_AI_BODY_IDENTITY_ROUTES) {
