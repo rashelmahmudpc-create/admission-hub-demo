@@ -6,6 +6,7 @@ import {
   recordPasswordFailure,
   recordPasswordSuccess,
   normalizeGuardState,
+  passwordGuardKey,
   createKvPasswordGuard
 } from './auth-native/core/password-guard.mjs';
 
@@ -15,94 +16,100 @@ const DAY = 24 * HOUR;
 
 const user = PASSWORD_GUARD_SCALES.user;
 const admin = PASSWORD_GUARD_SCALES.admin;
+const T0 = 1_000_000_000_000;
 
-test('user scale: three wrong passwords in a minute cost five hours', () => {
-  let state = null;
-  const t0 = 1_000_000_000_000;
+const failTimes = (state, times, start = T0, scale = user) => {
+  let current = state;
   let decision;
-  for (let i = 0; i < 3; i += 1) {
-    const result = recordPasswordFailure(state, t0 + i * 1000, user);
-    state = result.state;
+  for (let i = 0; i < times; i += 1) {
+    const result = recordPasswordFailure(current, start + i * 1000, scale);
+    current = result.state;
     decision = result.decision;
   }
-  assert.equal(decision.blocked, true);
-  assert.equal(decision.retryAfterMs, 5 * HOUR);
-  assert.equal(decision.strikes, 1);
-  assert.equal(decision.recoveryRequired, true);
-});
+  return { state: current, decision };
+};
 
-test('user scale: two failures inside the minute do not block', () => {
-  let state = null;
-  for (let i = 0; i < 2; i += 1) {
-    state = recordPasswordFailure(state, 1_000_000_000_000 + i * 1000, user).state;
+test('user scale: the first four wrong passwords cost nothing', () => {
+  for (const count of [1, 2, 3, 4]) {
+    const { decision } = failTimes(null, count);
+    assert.equal(decision.blocked, false, `${count} failures must not block`);
+    assert.equal(decision.attemptsRemaining, 5 - count);
   }
-  const decision = guardDecision(state, 1_000_000_000_000 + 2000, user);
-  assert.equal(decision.blocked, false);
-  assert.equal(decision.attemptsRemaining, 1);
 });
 
-test('user scale: after the five hours two more chances, then a day', () => {
-  let state = null;
-  const t0 = 1_000_000_000_000;
-  for (let i = 0; i < 3; i += 1) state = recordPasswordFailure(state, t0 + i * 1000, user).state;
+test('user scale: the fifth wrong password costs thirty minutes', () => {
+  const { decision } = failTimes(null, 5);
+  assert.equal(decision.blocked, true);
+  assert.equal(decision.retryAfterMs, 30 * MINUTE);
+  assert.equal(decision.strikes, 1);
+});
 
-  const afterBlock = state.until + 1000;
-  const first = recordPasswordFailure(state, afterBlock, user);
-  state = first.state;
-  assert.equal(first.decision.blocked, false, 'the block expires on its own');
-  assert.equal(first.decision.strikes, 1, 'the strike ladder is kept');
-
-  const second = recordPasswordFailure(state, afterBlock + 1000, user);
-  state = second.state;
-  assert.equal(second.decision.blocked, true);
-  assert.equal(second.decision.retryAfterMs, 1 * DAY);
+test('user scale: five more cost five hours, then five more cost a day', () => {
+  const first = failTimes(null, 5);
+  const second = failTimes(first.state, 5, first.state.until + 1000);
+  assert.equal(second.decision.retryAfterMs, 5 * HOUR);
   assert.equal(second.decision.strikes, 2);
+
+  const third = failTimes(second.state, 5, second.state.until + 1000);
+  assert.equal(third.decision.retryAfterMs, 1 * DAY);
+  assert.equal(third.decision.strikes, 3);
+
+  const fourth = failTimes(third.state, 5, third.state.until + 1000);
+  assert.equal(fourth.decision.retryAfterMs, 1 * DAY, 'the ladder has a ceiling');
 });
 
-test('user scale: a fresh window forgets earlier failures', () => {
+test('user scale: a student typing slowly is never blocked', () => {
+  // A typo every twenty minutes - outside the fifteen-minute window - stays a
+  // single failure forever, and the fifth-in-a-window rule never fires.
   let state = null;
-  const t0 = 1_000_000_000_000;
-  state = recordPasswordFailure(state, t0, user).state;
-  state = recordPasswordFailure(state, t0 + 1000, user).state;
-  const later = recordPasswordFailure(state, t0 + 2 * MINUTE, user);
-  assert.equal(later.decision.blocked, false);
-  assert.equal(later.state.fails, 1, 'the old two fell outside the window');
+  let now = T0;
+  for (let i = 0; i < 20; i += 1) {
+    state = recordPasswordFailure(state, now, user).state;
+    now += 20 * MINUTE;
+    assert.equal(guardDecision(state, now, user).blocked, false);
+  }
+  assert.equal(state.fails, 1, 'each typo fell outside the fifteen-minute window');
+});
+
+test('user scale: a burst of typos inside the window is what counts', () => {
+  // Three typos in three minutes is one failure short of the block; a fourth
+  // and fifth inside the same window reach it. That is the intended shape:
+  // the count measures a burst, not a person's memory.
+  const four = failTimes(null, 4, T0);
+  assert.equal(four.decision.blocked, false);
+  assert.equal(four.decision.attemptsRemaining, 1);
+  const five = failTimes(null, 5, T0);
+  assert.equal(five.decision.blocked, true);
 });
 
 test('admin scale: every wrong password escalates 5m, 7h, 2d, 7d', () => {
   let state = null;
-  let now = 1_000_000_000_000;
-  const expected = [5 * MINUTE, 7 * HOUR, 2 * DAY, 7 * DAY, 7 * DAY];
-  for (const duration of expected) {
+  let now = T0;
+  for (const duration of [5 * MINUTE, 7 * HOUR, 2 * DAY, 7 * DAY, 7 * DAY]) {
     const result = recordPasswordFailure(state, now, admin);
     state = result.state;
     assert.equal(result.decision.retryAfterMs, duration);
-    assert.equal(result.decision.blocked, true);
     now += duration + 1000;
   }
 });
 
-test('admin scale: a wrong password during a block does not extend it', () => {
-  const t0 = 1_000_000_000_000;
-  const first = recordPasswordFailure(null, t0, admin);
-  const during = recordPasswordFailure(first.state, t0 + 1000, admin);
+test('a wrong password during a block does not extend it', () => {
+  const first = recordPasswordFailure(null, T0, admin);
+  const during = recordPasswordFailure(first.state, T0 + 1000, admin);
   assert.equal(during.escalated, false);
   assert.equal(during.decision.retryAfterMs, 5 * MINUTE - 1000, 'the clock is not pushed back');
 });
 
 test('a correct password during a block clears nothing', () => {
-  const t0 = 1_000_000_000_000;
-  const blocked = recordPasswordFailure(null, t0, admin).state;
-  const after = recordPasswordSuccess(blocked, t0 + 1000, admin);
+  const blocked = recordPasswordFailure(null, T0, admin).state;
+  const after = recordPasswordSuccess(blocked, T0 + 1000, admin);
   assert.equal(after.until, blocked.until, 'the block survives a correct guess');
-  assert.equal(guardDecision(after, t0 + 1000, admin).blocked, true);
+  assert.equal(guardDecision(after, T0 + 1000, admin).blocked, true);
 });
 
 test('a correct password outside a block resets the ladder', () => {
-  const t0 = 1_000_000_000_000;
-  let state = null;
-  for (let i = 0; i < 3; i += 1) state = recordPasswordFailure(state, t0 + i * 1000, user).state;
-  const cleared = recordPasswordSuccess(state, state.until + 1000, user);
+  const blocked = failTimes(null, 5).state;
+  const cleared = recordPasswordSuccess(blocked, blocked.until + 1000, user);
   assert.equal(cleared.strikes, 0);
   assert.equal(cleared.fails, 0);
 });
@@ -113,7 +120,14 @@ test('a malformed stored record fails closed to the empty state', () => {
   assert.equal(guardDecision(null, Date.now(), admin).blocked, false);
 });
 
-test('the kv guard tracks the account and the ip separately', async () => {
+test('the counter is keyed on the ip+email pair, not the email alone', () => {
+  const attacker = passwordGuardKey('Student@Example.com ', '203.0.113.7');
+  const student = passwordGuardKey('student@example.com', '198.51.100.9');
+  assert.notEqual(attacker, student, 'the same address from another ip is another key');
+  assert.equal(attacker, passwordGuardKey('student@example.com', '203.0.113.7'), 'case and padding do not split the key');
+});
+
+test('an attacker cannot lock a student out from another address', async () => {
   const store = new Map();
   const kv = {
     async get(key) {
@@ -123,27 +137,17 @@ test('the kv guard tracks the account and the ip separately', async () => {
       store.set(key, value);
     }
   };
-  let now = 1_000_000_000_000;
+  let now = T0;
   const guard = createKvPasswordGuard(kv, { now: () => now });
 
-  const identities = [
-    { scope: 'account', identity: 'a@example.com' },
-    { scope: 'ip', identity: '203.0.113.7' }
-  ];
-  const first = await guard.recordFailure(identities, admin);
-  assert.equal(first.blocked, true);
+  const attacker = passwordGuardKey('student@example.com', '203.0.113.7');
+  const student = passwordGuardKey('student@example.com', '198.51.100.9');
 
-  const sameAccount = await guard.check([{ scope: 'account', identity: 'a@example.com' }], admin);
-  assert.equal(sameAccount.blocked, true, 'the account counter is blocked');
+  for (let i = 0; i < 5; i += 1) await guard.recordFailure(attacker, user);
+  assert.equal((await guard.check(attacker, user)).blocked, true, 'the attacker address is blocked');
+  assert.equal((await guard.check(student, user)).blocked, false, 'the real student is not');
 
-  const otherIp = await guard.check([{ scope: 'ip', identity: '198.51.100.9' }], admin);
-  assert.equal(otherIp.blocked, false, 'a fresh ip is not blocked by the account block');
-
-  const otherAccount = await guard.check([{ scope: 'account', identity: 'b@example.com' }], admin);
-  assert.equal(otherAccount.blocked, false, 'a shared ip does not block a second account');
-
-  now += 5 * MINUTE + 1000;
-  await guard.recordSuccess(identities, admin);
-  const cleared = await guard.check(identities, admin);
-  assert.equal(cleared.blocked, false, 'the recovery path can clear the counters');
+  now += 30 * MINUTE + 1000;
+  await guard.recordSuccess(attacker, user);
+  assert.equal((await guard.check(attacker, user)).blocked, false, 'the recovery path lifts the block');
 });

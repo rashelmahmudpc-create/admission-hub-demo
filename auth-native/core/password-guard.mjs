@@ -1,11 +1,14 @@
 // Password guard (P29): escalating lockout after repeated wrong passwords.
 //
-// Two scales, because the two surfaces carry different risk. An ordinary
-// login tolerates a burst of typos; an admin surface does not. The frozen
-// defaults are the owner's numbers (2026-10-24):
+// Two scales, because the two surfaces carry different risk.
 //
-//   user  - 3 wrong passwords in a minute -> 5 hours. After the block two
-//           more chances; wrong again -> 1 day.
+//   user  - the owner's numbers (2026-10-24, final): five wrong passwords in
+//           a fifteen-minute window -> 30 minutes. Five more -> 5 hours.
+//           Five more -> 1 day. The window is what keeps this from punishing
+//           an ordinary student: typos inside a couple of minutes are not an
+//           attack, and the count is held against the ip+email pair, never
+//           the email alone - counting the email alone would let anyone lock
+//           a stranger out by guessing wrong on their address.
 //   admin - every wrong password escalates: 5 min, 7 h, 2 days, 7 days.
 //
 // The module decides, it does not store. Wire it to KV with
@@ -25,9 +28,9 @@ const DAY = 24 * HOUR;
 export const PASSWORD_GUARD_SCALES = Object.freeze({
   user: Object.freeze({
     name: 'user',
-    windowMs: MINUTE,
-    triggers: Object.freeze([3, 2]),
-    stepsMs: Object.freeze([5 * HOUR, 1 * DAY])
+    windowMs: 15 * MINUTE,
+    triggers: Object.freeze([5, 5, 5]),
+    stepsMs: Object.freeze([30 * MINUTE, 5 * HOUR, 1 * DAY])
   }),
   admin: Object.freeze({
     name: 'admin',
@@ -146,6 +149,18 @@ export function recordPasswordSuccess(state, now, scale = PASSWORD_GUARD_SCALES.
   return { ...emptyGuardState(), lastAt: now };
 }
 
+// The lockout counter is held against the ip+email pair, never the email on
+// its own. A counter keyed on the email alone is a lockout weapon: anyone who
+// knows a student's address could spend the five attempts and lock them out
+// without ever touching their account. Keying on the pair means an attacker
+// from one address only ever blocks that address, while the real student's
+// own address stays open.
+export function passwordGuardKey(email, ip) {
+  const mail = String(email || '').trim().toLowerCase();
+  const address = String(ip || '').trim();
+  return `${address}|${mail}`;
+}
+
 // KV-backed store. Cloudflare KV requires expirationTtl >= 60, so a short
 // cooldown still gets a minute of life - harmless, the clock governs the
 // decision and the record is read again on the next attempt anyway.
@@ -153,61 +168,47 @@ export function createKvPasswordGuard(store, options = {}) {
   const prefix = String(options.prefix || 'pwfail');
   const clock = typeof options.now === 'function' ? options.now : () => Date.now();
 
-  const keyFor = (scope, identity) => `${prefix}:${scope}:${identity}`;
+  const keyFor = identity => `${prefix}:${identity}`;
 
-  async function read(scope, identity) {
-    const raw = await store.get(keyFor(scope, identity));
+  async function read(identity) {
+    const raw = await store.get(keyFor(identity));
     return normalizeGuardState(raw);
   }
 
-  async function write(scope, identity, state, scale) {
+  async function write(identity, state, scale) {
     const resolved = resolvePasswordGuardScale(scale);
     const ttlMs = Math.max(60_000, state.until - clock(), resolved.windowMs * 2);
-    await store.put(keyFor(scope, identity), JSON.stringify(state), { expirationTtl: Math.ceil(ttlMs / 1000) });
+    await store.put(keyFor(identity), JSON.stringify(state), { expirationTtl: Math.ceil(ttlMs / 1000) });
   }
 
-  // Two counters per attempt - account and IP - so neither can be attacked
-  // through the other: a shared IP must not lock out an account, and a
-  // rotating IP must not escape the account counter.
-  async function each(identities, run) {
-    const results = [];
-    for (const entry of identities) {
-      if (!entry || !entry.identity) continue;
-      results.push(await run(String(entry.scope || 'account'), String(entry.identity)));
-    }
-    return results;
+  async function one(identity, run) {
+    if (!identity) return null;
+    return run(String(identity));
   }
 
   return Object.freeze({
     policyVersion: PASSWORD_GUARD_POLICY_VERSION,
 
-    async check(identities, scale) {
-      const decisions = await each(identities, async (scope, identity) => guardDecision(await read(scope, identity), clock(), scale));
-      return decisions.reduce(
-        (worst, current) => (!worst || current.retryAfterMs > worst.retryAfterMs ? current : worst),
-        null
-      );
+    async check(identity, scale) {
+      return one(identity, async key => guardDecision(await read(key), clock(), scale));
     },
 
-    async recordFailure(identities, scale) {
-      const decisions = await each(identities, async (scope, identity) => {
-        const result = recordPasswordFailure(await read(scope, identity), clock(), scale);
-        await write(scope, identity, result.state, scale);
+    async recordFailure(identity, scale) {
+      return one(identity, async key => {
+        const result = recordPasswordFailure(await read(key), clock(), scale);
+        await write(key, result.state, scale);
         return result.decision;
       });
-      return decisions.reduce(
-        (worst, current) => (!worst || current.retryAfterMs > worst.retryAfterMs ? current : worst),
-        null
-      );
     },
 
-    async recordSuccess(identities, scale) {
-      await each(identities, async (scope, identity) => {
-        const cleared = recordPasswordSuccess(await read(scope, identity), clock(), scale);
-        await write(scope, identity, cleared, scale);
-        return cleared;
+    // The recovery path (an email OTP or a reset link) calls this to lift the
+    // block; nothing else may, so a correct password alone cannot clear it.
+    async recordSuccess(identity, scale) {
+      return one(identity, async key => {
+        const cleared = recordPasswordSuccess(await read(key), clock(), scale);
+        await write(key, cleared, scale);
+        return true;
       });
-      return true;
     }
   });
 }
