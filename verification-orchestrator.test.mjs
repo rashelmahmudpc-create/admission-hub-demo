@@ -827,75 +827,51 @@ test('F-02: a budget that is still fresh never shortens a healthy first send', a
   assert.equal(secondary.sends.length, 0, 'a healthy primary still takes the send alone');
 });
 
-/* F-02 second half (blueprint 06): hedged send. The budget stopped the chain
-   from taking minutes; this stops one slow slot from spending its whole
-   timeout while a healthy slot sits idle behind it. Both sends carry the SAME
-   code, so the race can only be allowed to produce one challenge delivery. */
-test('F-02 hedge: a slow first slot is backed up after the hedge delay, and only one delivery is marked', async () => {
-  const slow = new MockProvider({ id: 'otp-a' });
-  slow.sendVerification = input => {
-    slow.sends.push(input);
-    return new Promise(resolve => setTimeout(() => resolve({ accepted: true }), 1_200));
-  };
-  const fast = new MockProvider({ id: 'otp-b' });
-  const app = setup({ providers: [slow, fast], config: rawConfig([slow, fast], { hedgeDelayMs: 250, deliveryBudgetMs: 25_000 }) });
-  let marked = 0;
-  const mark = app.repository.markChallengeDelivery.bind(app.repository);
-  app.repository.markChallengeDelivery = input => { marked += 1; return mark(input); };
-
-  const started = Date.now();
-  const result = await app.orchestrator.requestVerification(identity, context);
-  const elapsed = Date.now() - started;
-
-  assert.equal(result.accepted, true);
-  assert.ok(elapsed < 800, `the hedge must beat the slot's own 1000ms timeout; it took ${elapsed}ms`);
-  assert.equal(fast.sends.length, 1, 'the hedge slot carries the send');
-  assert.equal(marked, 1, 'exactly one challenge delivery is recorded');
-});
-
-test('F-02 hedge: a primary that answers inside the hedge delay is never doubled', async () => {
-  const primary = new MockProvider({ id: 'otp-a' });
-  const secondary = new MockProvider({ id: 'otp-b' });
-  const app = setup({ providers: [primary, secondary], config: rawConfig([primary, secondary], { hedgeDelayMs: 250, deliveryBudgetMs: 25_000 }) });
-  const result = await app.orchestrator.requestVerification(identity, context);
-  assert.equal(result.accepted, true);
-  assert.equal(secondary.sends.length, 0, 'the healthy path still costs one send');
-});
-
-test('F-02 hedge: a second accepted send is reported as a duplicate and never re-marks delivery', async () => {
-  const events = [];
+/* Duplicate guard (owner 2026-10-24). A parallel "hedged" send shipped earlier
+   the same day and was withdrawn: two providers can both deliver, and a message
+   handed to a provider cannot be recalled. These two tests pin the rule that
+   makes a duplicate impossible — one slot sends at a time, always. */
+test('F-02: a slow but working slot is waited for, never doubled', async () => {
+  const order = [];
   const primary = new MockProvider({ id: 'otp-a' });
   primary.sendVerification = input => {
     primary.sends.push(input);
-    return new Promise(resolve => setTimeout(() => resolve({ accepted: true }), 900));
+    order.push('otp-a');
+    return new Promise(resolve => setTimeout(() => resolve({ accepted: true }), 400));
   };
-  const hedge = new MockProvider({ id: 'otp-b' });
-  hedge.sendVerification = input => {
-    hedge.sends.push(input);
-    return new Promise(resolve => setTimeout(() => resolve({ accepted: true }), 50));
+  const secondary = new MockProvider({ id: 'otp-b' });
+  secondary.sendVerification = input => {
+    secondary.sends.push(input);
+    order.push('otp-b');
+    return Promise.resolve({ accepted: true });
   };
-  const repository = new MemoryVerificationRepository();
-  let marked = 0;
-  const mark = repository.markChallengeDelivery.bind(repository);
-  repository.markChallengeDelivery = input => { marked += 1; return mark(input); };
-  const orchestrator = new VerificationOrchestrator({
-    repository,
-    hmacSecret: SECRET,
-    config: rawConfig([primary, hedge], { hedgeDelayMs: 250, deliveryBudgetMs: 25_000 }),
-    providers: [primary, hedge],
-    activated: true,
-    now: () => 1_800_000_000_000,
-    onDeliveryEvent: event => events.push(event)
-  });
+  const app = setup({ providers: [primary, secondary], config: rawConfig([primary, secondary], { deliveryBudgetMs: 25_000 }) });
 
-  const result = await orchestrator.requestVerification(identity, context);
+  const result = await app.orchestrator.requestVerification(identity, context);
   assert.equal(result.accepted, true);
-  assert.equal(hedge.sends.length, 1, 'the hedge wins the race');
-  // The loser's mail is already in flight; give it time to come back accepted.
-  await new Promise(resolve => setTimeout(resolve, 900));
+  assert.equal(secondary.sends.length, 0, 'the second slot is never asked while the first is still sending');
+  assert.deepEqual(order, ['otp-a'], 'exactly one send left the process');
+});
 
-  assert.equal(marked, 1, 'the challenge is marked delivered exactly once');
-  const duplicates = events.filter(event => event.evt === 'otp_delivery' && event.outcome === 'duplicate_accepted');
-  assert.equal(duplicates.length, 1, 'the second accepted send is visible in the delivery log');
-  assert.equal(duplicates[0].provider, 'otp-a', 'the duplicate names the provider that sent twice');
+test('F-02: the next slot starts only after the previous one has failed', async () => {
+  const started = Date.now();
+  let secondAt = -1;
+  const primary = new MockProvider({ id: 'otp-a' });
+  primary.sendVerification = input => {
+    primary.sends.push(input);
+    return new Promise(() => {}); // hangs until its own timeoutMs
+  };
+  const secondary = new MockProvider({ id: 'otp-b' });
+  secondary.sendVerification = input => {
+    secondary.sends.push(input);
+    secondAt = Date.now() - started;
+    return Promise.resolve({ accepted: true });
+  };
+  const app = setup({ providers: [primary, secondary], config: rawConfig([primary, secondary], { deliveryBudgetMs: 25_000 }) });
+
+  const result = await app.orchestrator.requestVerification(identity, context);
+  assert.equal(result.accepted, true);
+  assert.equal(primary.sends.length, 1);
+  assert.equal(secondary.sends.length, 1);
+  assert.ok(secondAt >= 900, `the next slot must wait for the first slot's 1000ms timeout; it started at ${secondAt}ms`);
 });
