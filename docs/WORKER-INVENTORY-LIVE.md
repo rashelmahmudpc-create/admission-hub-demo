@@ -106,3 +106,40 @@ Account: `abb783e456e51a5d338419de93d5e576` (Rashelzayan213@icloud.com's Account
 - `sky-ai` — নাম `admission-hub-demo/sky-ai`-এর সাথে মেলে তবে মোছার আগে যাচাই দরকার
 - `ahai-watchman` — workers.dev বন্ধ, সোর্সে নেই
 - `email-worker` — workers.dev বন্ধ, সোর্সে নেই
+
+## 📡 লাইভ যাচাই — workers.dev (২৪-১০-২০২৬)
+
+subdomain: admissionhub। HTTP কোড = Worker সত্যিই সাড়া দেয় কি না।
+
+| Worker | HTTP | মানে |
+|---|---|---|
+| `admission-auth` | 404 | চলছে না |
+| `admission-gk` | 403 | চালু, নিষিদ্ধ |
+| `admission-gk-staging` | 403 | চালু, নিষিদ্ধ |
+| `admission-hub-ai` | 404 | চলছে না |
+| `admission-hub-ai-proxy` | 404 | চলছে না |
+| `admission-hub-vault` | 401 | চালু, তালা দেওয়া |
+| `admission-notify` | 403 | চালু, নিষিদ্ধ |
+| `admission-voice` | 404 | চলছে না |
+| `agent-hq` | 200 | চালু, উত্তর দিচ্ছে |
+| `agent-hq-bot` | 200 | চালু, উত্তর দিচ্ছে |
+| `ah-admin` | 200 | চালু, উত্তর দিচ্ছে |
+| `ah-public` | 401 | চালু, তালা দেওয়া |
+| `ahai-watchman` | 404 | চলছে না |
+| `email-worker` | 404 | চলছে না |
+| `gk-temp-fetcher` | 200 | চালু, উত্তর দিচ্ছে |
+| `mail-vault` | 200 | চালু, উত্তর দিচ্ছে |
+| `otp-tester` | 200 | চালু, উত্তর দিচ্ছে |
+| `sky-ai` | 404 | চলছে না |
+| `sky-control` | 200 | চালু, উত্তর দিচ্ছে |
+| `sky-xfer` | 404 | চলছে না |
+| `study-pal` | 200 | চালু, উত্তর দিচ্ছে |
+| `zayanday-vault` | 404 | চলছে না |
+
+## 🛡️ মুছার নিরাপদ ক্রম
+
+1. প্রতিটা Worker-এর কোড locale নামিয়ে backup।
+2. পুরনো CF গ্লোবাল কী আর GitHub PAT rotate — vault Worker-এ কপি বসে আছে।
+3. তারপর 404/অপ্রয়োজনীয়গুলো delete; 200 যারা আগে যাচাই।
+
+> owner-এর লিখিত অনুমতি ছাড়া কোনো Worker মোছা/বন্ধ করা হয়নি।
