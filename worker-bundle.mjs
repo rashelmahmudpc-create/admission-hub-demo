@@ -8222,6 +8222,10 @@ var corsHeaders = (request) => {
 // auth-native/core/errors.mjs
 var AUTH_ERROR_CODES = Object.freeze({
   INVALID_INPUT: "INVALID_INPUT",
+  // A failed Turnstile check is not "bad input" any more than a weak password is:
+  // reporting it as INVALID_INPUT told the student the form was wrong when the
+  // real problem was the human check (owner report 2026-10-24).
+  HUMAN_CHECK_FAILED: "HUMAN_CHECK_FAILED",
   CLIENT_UPDATE_REQUIRED: "CLIENT_UPDATE_REQUIRED",
   NOT_CONFIGURED: "NOT_CONFIGURED",
   RATE_LIMITED: "RATE_LIMITED",
@@ -8262,6 +8266,7 @@ var AUTH_ERROR_CODES = Object.freeze({
 });
 var DEFAULTS2 = Object.freeze({
   [AUTH_ERROR_CODES.INVALID_INPUT]: Object.freeze({ status: 400, message: "তথ্যটি সঠিকভাবে লিখুন।" }),
+  [AUTH_ERROR_CODES.HUMAN_CHECK_FAILED]: Object.freeze({ status: 400, message: "মানব যাচাই সম্পন্ন হয়নি। পেজটি একবার রিফ্রেশ করে আবার চেষ্টা করুন।" }),
   [AUTH_ERROR_CODES.CLIENT_UPDATE_REQUIRED]: Object.freeze({ status: 409, message: "Admission Hub-এর নতুন সংস্করণ চালু হয়েছে, পেজটি একবার রিফ্রেশ করে আবার চেষ্টা করুন।" }),
   [AUTH_ERROR_CODES.NOT_CONFIGURED]: Object.freeze({ status: 503, message: "অ্যাকাউন্ট সেবা এখনো প্রস্তুত নয়।" }),
   [AUTH_ERROR_CODES.RATE_LIMITED]: Object.freeze({ status: 429, message: "অনেকবার চেষ্টা হয়েছে, একটু পরে আবার চেষ্টা করুন।" }),
@@ -11300,7 +11305,7 @@ async function verifyTurnstile({ env, token, ip, fetchImpl = fetch, timeoutMs = 
   const secret = String(env?.TURNSTILE_SECRET_KEY || "").trim();
   if (!secret) return { enforced: false };
   const value = String(token ?? "");
-  if (!value || value.length > 4096) throw new NativeAuthError(AUTH_ERROR_CODES.INVALID_INPUT);
+  if (!value || value.length > 4096) throw new NativeAuthError(AUTH_ERROR_CODES.HUMAN_CHECK_FAILED);
   const form = new URLSearchParams({ secret, response: value });
   if (ip && ip !== "unknown") form.set("remoteip", String(ip).slice(0, 96));
   const controller = new AbortController();
@@ -11313,7 +11318,7 @@ async function verifyTurnstile({ env, token, ip, fetchImpl = fetch, timeoutMs = 
   } finally {
     clearTimeout(timer);
   }
-  throw new NativeAuthError(AUTH_ERROR_CODES.INVALID_INPUT);
+  throw new NativeAuthError(AUTH_ERROR_CODES.HUMAN_CHECK_FAILED);
 }
 
 // auth-native/verification/telegram-security.mjs
