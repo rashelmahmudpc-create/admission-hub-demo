@@ -93,6 +93,16 @@
       return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('');
     } catch (_) { return ''; }
   };
+  /* Cloudflare Pages appends its own analytics beacon to every served HTML
+   * document, so the bytes the browser receives are never the bytes on disk and
+   * the pinned SHA-256 below could never match in production -- every course
+   * silently lost its interactivity while the tests, which read the file
+   * directly, still passed. Only the injected block is removed, identified by
+   * the comment markers Cloudflare wraps it in: `prottoy` legitimately ships a
+   * cloudflareinsights script of its own, so matching the URL alone would
+   * change the hash of an unmodified course. */
+  const stripInjectedBeacon = text => String(text || '').replace(
+    /<!--\s*Cloudflare Pages Analytics\s*-->[\s\S]*?<!--\s*Cloudflare Pages Analytics\s*-->/g, '');
   const isCoursePath = path => path === 'source-courses' || path.startsWith('source-courses/');
   const installRouteCleanup = () => {
     if (routeCleanupInstalled) return;
@@ -190,7 +200,7 @@
        * recorded hash still renders, but its scripts are never executed.
        * Update the hash in COURSE_DEFS whenever a course file legitimately
        * changes, or that course's interactivity stops. */
-      const integrityOk = await sha256Hex(text) === String(def.hash || '').toLowerCase();
+      const integrityOk = await sha256Hex(stripInjectedBeacon(text)) === String(def.hash || '').toLowerCase();
       if (!integrityOk) console.error(`source-course integrity mismatch for "${key}", its scripts will not run`);
       const doc = new DOMParser().parseFromString(text, 'text/html');
       const styles = Array.from(doc.querySelectorAll('style')).map(s => s.textContent || '').join('\n');
