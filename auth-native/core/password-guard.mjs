@@ -203,9 +203,13 @@ export function createKvPasswordGuard(store, options = {}) {
 
     // The recovery path (an email OTP or a reset link) calls this to lift the
     // block; nothing else may, so a correct password alone cannot clear it.
+    // A pair with nothing recorded is left alone: most logins are successful
+    // first try, and a write per login would be pure cost.
     async recordSuccess(identity, scale) {
       return one(identity, async key => {
-        const cleared = recordPasswordSuccess(await read(key), clock(), scale);
+        const current = await read(key);
+        if (!current.fails && !current.strikes && !current.until) return true;
+        const cleared = recordPasswordSuccess(current, clock(), scale);
         await write(key, cleared, scale);
         return true;
       });

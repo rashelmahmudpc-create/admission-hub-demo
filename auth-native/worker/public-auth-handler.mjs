@@ -11,6 +11,7 @@ import { isPendingSignupTicket } from './pending-signup.mjs';
 import * as pendingSignup from './pending-signup-public.mjs';
 import { shadowVerdict, shadowDelayMs, sleep } from '../core/shadow-guard.mjs';
 import { parseCanaryEmails, isCanaryEmail, createKvCanaryFlags } from '../core/canary-accounts.mjs';
+import { createKvPasswordGuard, passwordGuardKey } from '../core/password-guard.mjs';
 /* D-5 / A1.5 ②: one shared CORS policy for every auth surface. This handler
  * used to keep its own copy that still accepted http://localhost and any
  * *.admissionhub.pages.dev preview host, so production served credentialed
@@ -888,6 +889,23 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         // decoy.
         const canaryHit = flagCanaryHit(env, prepared.email, context);
         const guardActive = shadowGuardEnabled(env) || canaryHit;
+        const guardStore = shadowGuardStore(env);
+        // The password guard counts the ip+email pair, so an attacker guessing
+        // on a student's address from elsewhere can never spend that student's
+        // attempts. A block is refused before the provider is called at all.
+        const passwordGuard = guardActive && guardStore
+          ? createKvPasswordGuard(guardStore)
+          : null;
+        const guardKey = passwordGuard ? passwordGuardKey(prepared.email, context.ip) : '';
+        if (passwordGuard) {
+          const state = await passwordGuard.check(guardKey, 'user');
+          if (state?.blocked) {
+            return json(request, 429, {
+              ok: false,
+              error: { code: 'RATE_LIMITED', message: 'অনেকবার ভুল পাসওয়ার্ড দেওয়া হয়েছে। ইমেইলের কোড দিয়ে এখনই আনলক করতে পারেন।' }
+            }, { 'Retry-After': String(state.retryAfterSeconds) });
+          }
+        }
         let shadow = null;
         if (guardActive) {
           shadow = shadowVerdict({
@@ -912,6 +930,12 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
               const recorded = await callAuthority(env, '/internal/firebase/login/failure', { input: { email: prepared.email }, context });
               failureRetryAfter = Number(recorded?.retryAfter || 0);
             } catch {}
+            if (passwordGuard) {
+              try {
+                const counted = await passwordGuard.recordFailure(guardKey, 'user');
+                if (counted?.blocked) failureRetryAfter = Math.max(failureRetryAfter, counted.retryAfterSeconds);
+              } catch {}
+            }
           }
           const error = providerError(cause, 'signin');
           if (failureRetryAfter > 0) error.retryAfter = Math.max(Number(error.retryAfter || 0), failureRetryAfter);
@@ -919,6 +943,12 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         }
         try { user = await provider.lookup(signed.idToken); } catch (cause) { throw providerError(cause, 'lookup'); }
         assertProviderUser(signed, user);
+        // The password was right, so the pair's failures are spent. This can
+        // only run when the pair was not blocked: a block is refused before
+        // the provider is reached, so a correct guess can never lift one.
+        if (passwordGuard) {
+          try { await passwordGuard.recordSuccess(guardKey, 'user'); } catch {}
+        }
         const telegramRequested = telegramVerificationRequested(env, url);
         const telegramVerified = !user.emailVerified && await telegramVerificationStatus({
           env,

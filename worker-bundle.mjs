@@ -12035,6 +12035,161 @@ function createKvCanaryFlags(store, options = {}) {
   });
 }
 
+// auth-native/core/password-guard.mjs
+var PASSWORD_GUARD_POLICY_VERSION = "password-guard-v1";
+var MINUTE = 60 * 1e3;
+var HOUR = 60 * MINUTE;
+var DAY2 = 24 * HOUR;
+var PASSWORD_GUARD_SCALES = Object.freeze({
+  user: Object.freeze({
+    name: "user",
+    windowMs: 15 * MINUTE,
+    triggers: Object.freeze([5, 5, 5]),
+    stepsMs: Object.freeze([30 * MINUTE, 5 * HOUR, 1 * DAY2])
+  }),
+  admin: Object.freeze({
+    name: "admin",
+    windowMs: 0,
+    triggers: Object.freeze([1, 1, 1, 1]),
+    stepsMs: Object.freeze([5 * MINUTE, 7 * HOUR, 2 * DAY2, 7 * DAY2])
+  })
+});
+function resolvePasswordGuardScale(scale) {
+  if (typeof scale === "string") return PASSWORD_GUARD_SCALES[scale] || PASSWORD_GUARD_SCALES.user;
+  if (scale && typeof scale === "object" && Array.isArray(scale.stepsMs) && scale.stepsMs.length) {
+    const windowMs = Number.isFinite(scale.windowMs) && scale.windowMs > 0 ? scale.windowMs : 0;
+    const triggers = (Array.isArray(scale.triggers) && scale.triggers.length ? scale.triggers : [1]).map((value) => Math.max(1, Math.floor(Number(value) || 1)));
+    return { name: String(scale.name || "custom"), windowMs, triggers, stepsMs: scale.stepsMs.slice() };
+  }
+  return PASSWORD_GUARD_SCALES.user;
+}
+function emptyGuardState() {
+  return { fails: 0, windowStartedAt: 0, strikes: 0, until: 0, lastAt: 0 };
+}
+function normalizeGuardState(raw) {
+  if (!raw) return emptyGuardState();
+  let value = raw;
+  if (typeof raw === "string") {
+    try {
+      value = JSON.parse(raw);
+    } catch {
+      return emptyGuardState();
+    }
+  }
+  if (!value || typeof value !== "object") return emptyGuardState();
+  const number = (key) => {
+    const n = Math.floor(Number(value[key]));
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  };
+  return {
+    fails: number("fails"),
+    windowStartedAt: number("windowStartedAt"),
+    strikes: number("strikes"),
+    until: number("until"),
+    lastAt: number("lastAt")
+  };
+}
+function triggerFor(strikes, scale) {
+  const list2 = scale.triggers;
+  return list2[Math.min(Math.max(strikes, 0), list2.length - 1)];
+}
+function stepFor(strikes, scale) {
+  const list2 = scale.stepsMs;
+  return list2[Math.min(Math.max(strikes - 1, 0), list2.length - 1)] || 0;
+}
+function guardDecision(state, now, scale = PASSWORD_GUARD_SCALES.user) {
+  const resolved = resolvePasswordGuardScale(scale);
+  const current = normalizeGuardState(state);
+  const blocked = current.until > now;
+  const needed = triggerFor(current.strikes, resolved);
+  return Object.freeze({
+    policyVersion: PASSWORD_GUARD_POLICY_VERSION,
+    scale: resolved.name,
+    blocked,
+    retryAfterMs: blocked ? current.until - now : 0,
+    retryAfterSeconds: blocked ? Math.ceil((current.until - now) / 1e3) : 0,
+    strikes: current.strikes,
+    fails: current.fails,
+    attemptsRemaining: Math.max(0, needed - current.fails),
+    // The recovery path is the handler's job; the guard only states that a
+    // blocked identity must be offered one.
+    recoveryRequired: blocked
+  });
+}
+function recordPasswordFailure(state, now, scale = PASSWORD_GUARD_SCALES.user) {
+  const resolved = resolvePasswordGuardScale(scale);
+  const current = normalizeGuardState(state);
+  if (current.until > now) {
+    return Object.freeze({ state: current, decision: guardDecision(current, now, resolved), escalated: false });
+  }
+  const windowExpired = resolved.windowMs > 0 && now - current.windowStartedAt > resolved.windowMs;
+  const fails = (windowExpired ? 0 : current.fails) + 1;
+  const windowStartedAt = windowExpired || !current.windowStartedAt ? now : current.windowStartedAt;
+  let next = { fails, windowStartedAt, strikes: current.strikes, until: current.until, lastAt: now };
+  let escalated = false;
+  if (fails >= triggerFor(current.strikes, resolved)) {
+    const strikes = current.strikes + 1;
+    next = { fails: 0, windowStartedAt: 0, strikes, until: now + stepFor(strikes, resolved), lastAt: now };
+    escalated = true;
+  }
+  return Object.freeze({ state: next, decision: guardDecision(next, now, resolved), escalated });
+}
+function recordPasswordSuccess(state, now, scale = PASSWORD_GUARD_SCALES.user) {
+  const resolved = resolvePasswordGuardScale(scale);
+  const current = normalizeGuardState(state);
+  if (current.until > now) return current;
+  return { ...emptyGuardState(), lastAt: now };
+}
+function passwordGuardKey(email, ip) {
+  const mail = String(email || "").trim().toLowerCase();
+  const address = String(ip || "").trim();
+  return `${address}|${mail}`;
+}
+function createKvPasswordGuard(store, options = {}) {
+  const prefix = String(options.prefix || "pwfail");
+  const clock = typeof options.now === "function" ? options.now : () => Date.now();
+  const keyFor = (identity) => `${prefix}:${identity}`;
+  async function read(identity) {
+    const raw = await store.get(keyFor(identity));
+    return normalizeGuardState(raw);
+  }
+  async function write(identity, state, scale) {
+    const resolved = resolvePasswordGuardScale(scale);
+    const ttlMs = Math.max(6e4, state.until - clock(), resolved.windowMs * 2);
+    await store.put(keyFor(identity), JSON.stringify(state), { expirationTtl: Math.ceil(ttlMs / 1e3) });
+  }
+  async function one2(identity, run) {
+    if (!identity) return null;
+    return run(String(identity));
+  }
+  return Object.freeze({
+    policyVersion: PASSWORD_GUARD_POLICY_VERSION,
+    async check(identity, scale) {
+      return one2(identity, async (key) => guardDecision(await read(key), clock(), scale));
+    },
+    async recordFailure(identity, scale) {
+      return one2(identity, async (key) => {
+        const result = recordPasswordFailure(await read(key), clock(), scale);
+        await write(key, result.state, scale);
+        return result.decision;
+      });
+    },
+    // The recovery path (an email OTP or a reset link) calls this to lift the
+    // block; nothing else may, so a correct password alone cannot clear it.
+    // A pair with nothing recorded is left alone: most logins are successful
+    // first try, and a write per login would be pure cost.
+    async recordSuccess(identity, scale) {
+      return one2(identity, async (key) => {
+        const current = await read(key);
+        if (!current.fails && !current.strikes && !current.until) return true;
+        const cleared = recordPasswordSuccess(current, clock(), scale);
+        await write(key, cleared, scale);
+        return true;
+      });
+    }
+  });
+}
+
 // auth-native/worker/public-auth-handler.mjs
 var AUTH_API_PREFIX = "/api/auth/v1";
 var PUBLIC_PROFILE_PREFIX = "/api/public/profile/";
@@ -12860,6 +13015,18 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         }
         const canaryHit = flagCanaryHit(env, prepared.email, context);
         const guardActive = shadowGuardEnabled(env) || canaryHit;
+        const guardStore = shadowGuardStore(env);
+        const passwordGuard = guardActive && guardStore ? createKvPasswordGuard(guardStore) : null;
+        const guardKey = passwordGuard ? passwordGuardKey(prepared.email, context.ip) : "";
+        if (passwordGuard) {
+          const state = await passwordGuard.check(guardKey, "user");
+          if (state?.blocked) {
+            return json4(request, 429, {
+              ok: false,
+              error: { code: "RATE_LIMITED", message: "অনেকবার ভুল পাসওয়ার্ড দেওয়া হয়েছে। ইমেইলের কোড দিয়ে এখনই আনলক করতে পারেন।" }
+            }, { "Retry-After": String(state.retryAfterSeconds) });
+          }
+        }
         let shadow = null;
         if (guardActive) {
           shadow = shadowVerdict({
@@ -12883,6 +13050,13 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
               failureRetryAfter = Number(recorded?.retryAfter || 0);
             } catch {
             }
+            if (passwordGuard) {
+              try {
+                const counted = await passwordGuard.recordFailure(guardKey, "user");
+                if (counted?.blocked) failureRetryAfter = Math.max(failureRetryAfter, counted.retryAfterSeconds);
+              } catch {
+              }
+            }
           }
           const error = providerError(cause, "signin");
           if (failureRetryAfter > 0) error.retryAfter = Math.max(Number(error.retryAfter || 0), failureRetryAfter);
@@ -12894,6 +13068,12 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           throw providerError(cause, "lookup");
         }
         assertProviderUser(signed, user);
+        if (passwordGuard) {
+          try {
+            await passwordGuard.recordSuccess(guardKey, "user");
+          } catch {
+          }
+        }
         const telegramRequested = telegramVerificationRequested(env, url);
         const telegramVerified = !user.emailVerified && await telegramVerificationStatus({
           env,
