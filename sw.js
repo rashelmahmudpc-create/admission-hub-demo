@@ -314,6 +314,16 @@ self.addEventListener('fetch', event => {
   const requestUrl = new URL(request.url);
   if (requestUrl.origin !== self.location.origin) return;
 
+  // Firebase Auth's helper pages are not app pages and the shell cache must
+  // never answer them. /__/auth/handler is where Google returns from the OAuth
+  // dance and /__/auth/iframe is the hidden frame the SDK handshakes with;
+  // _worker.js proxies both to the Firebase project. Every GET with an HTML
+  // Accept header counted as a document here, so the iframe was handed the
+  // cached app shell, its handshake never came back, and "Continue with Google"
+  // sat for a minute or two before Google appeared (owner 2026-10-22). Leaving
+  // these requests alone — no respondWith at all — is the only safe answer.
+  if (requestUrl.pathname.startsWith('/__/auth/') || requestUrl.pathname.startsWith('/__/firebase/')) return;
+
   // The privileged control page is network-only and must never be replaced by or
   // written into the offline application shell.
   if (requestUrl.pathname === '/verification-control-center' || requestUrl.pathname === '/verification-control-center.html'
