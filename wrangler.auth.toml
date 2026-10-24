@@ -1,0 +1,27 @@
+# F-04: the auth Worker. See AGENT_RESUME/2026-10-24-f04-admission-auth-worker-design.md
+#
+# Phase 1 has no traffic. Nothing routes here until admission-gk gets the
+# AUTH_WORKER service binding and AUTH_ROUTE is flipped to "service".
+name = "admission-auth"
+main = "auth-worker-bundle.mjs"
+compatibility_date = "2024-11-01"
+# Reachable on its own workers.dev address so phase 1 can be smoke-tested
+# before any user traffic is pointed at it.
+workers_dev = true
+
+[observability]
+enabled = true
+
+# The authority stays in admission-gk. `script_name` is what keeps its storage:
+# a Durable Object id is scoped to the declaring script, so declaring the class
+# here instead would have created a second, empty authority and invalidated every
+# session and pending OTP.
+[[durable_objects.bindings]]
+name = "AUTH_AUTHORITY"
+class_name = "AdmissionAuthAuthority"
+script_name = "admission-gk"
+
+[vars]
+# Nothing else is needed yet: every provider secret and the HMAC key are read
+# inside the authority, which still runs in admission-gk. Phase 3 moves them.
+AUTH_WORKER_ROLE = "auth-http-front"

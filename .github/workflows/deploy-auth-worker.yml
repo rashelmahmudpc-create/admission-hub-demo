@@ -1,0 +1,56 @@
+name: Deploy Auth Worker (F-04)
+
+# F-04 phase 1. Publishes the admission-auth script on its own, separately from
+# the app deploy, so a problem here can never hold the student app hostage (and
+# the other way round).
+#
+# Nothing routes to this Worker yet: admission-gk still answers /api/auth/v1/*
+# in-process until AUTH_ROUTE is flipped to "service" in phase 2.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type DEPLOY to publish the admission-auth Worker
+        required: true
+        type: string
+  push:
+    branches: [main]
+    paths:
+      - 'auth-worker.js'
+      - 'auth-worker-bundle.mjs'
+      - 'wrangler.auth.toml'
+      - 'auth-native/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/deploy-auth-worker.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: admission-auth-deploy
+  cancel-in-progress: false
+
+jobs:
+  auth:
+    if: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || inputs.confirmation == 'DEPLOY') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Verify the committed auth bundle matches its sources
+        run: npm run check:auth-worker-bundle
+      - name: Deploy admission-auth
+        uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd # v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: '4.35.0'
+          command: deploy --config wrangler.auth.toml
