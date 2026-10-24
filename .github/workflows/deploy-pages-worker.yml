@@ -272,14 +272,27 @@ jobs:
       # Same sanitized bundle, second address: the owner's shorter
       # admissionsky.pages.dev. A Pages project named `admissionsky` owns that
       # hostname automatically, so both addresses serve identical bytes.
+      # Creating a project that already exists fails by design, and the action
+      # reported that failure as a red X on every single deploy. A red mark that
+      # is always there is a red mark nobody reads, which is how a real failure
+      # gets missed — so this tolerates exactly the one expected error and keeps
+      # every other one fatal.
       - name: Ensure the admissionsky Pages project exists
-        uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd # v3
-        continue-on-error: true
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          wranglerVersion: '4.35.0'
-          command: pages project create admissionsky --production-branch main
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -u
+          out="$(npx --yes wrangler@4.35.0 pages project create admissionsky --production-branch main 2>&1)"
+          code=$?
+          printf '%s\n' "$out"
+          if [ "$code" -eq 0 ]; then exit 0; fi
+          if printf '%s' "$out" | grep -qiE 'already exists|already_exist|project with this name'; then
+            echo "::notice title=Pages project present::admissionsky already exists, so there is nothing to create."
+            exit 0
+          fi
+          echo "::error title=Pages project could not be created::wrangler exited $code for a reason other than the project existing."
+          exit 1
       - name: Deploy Pages UI to the short address
         uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd # v3
         with:
