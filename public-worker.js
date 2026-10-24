@@ -501,6 +501,16 @@ export default {
         } catch (_) { prefs = null; }
         return json({ prefs: prefs || AI_PREFS_DEFAULT });
       }
+      /* F0.2 / DV-02: this student's evaluated Sky flags (on/percent/beta/
+         killed). Evaluated by sky-ai, which needs the uid admission-gk already
+         verified; a guest keeps DEFAULT_FLAGS (every flag off), so shipping
+         this changes nothing for anyone until a flag is turned on. */
+      if (path === '/api/ai/sky-flags' && request.method === 'GET') {
+        const identity = await aiRequestIdentity(request, env, false);
+        const viaSky = identity.uid ? await forwardWithIdentity(request, env, identity.uid) : null;
+        if (viaSky) return viaSky;
+        return json({ ok: true, flags: {}, source: 'gk-fallback' });
+      }
       if (path === '/api/ai/prefs' && request.method === 'POST') {
         const identity = await aiRequestIdentity(request, env, false);
         // Personalization is saved per ACCOUNT (guest uids are ephemeral by design).

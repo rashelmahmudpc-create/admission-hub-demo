@@ -48,7 +48,14 @@ export async function tryRouteToSkyAi(request, env, routes = SKY_AI_ROUTES) {
  * from PUB_KV ("secret:sky-internal", created once by the owner). EMPTY on
  * purpose; add 'GET /api/ai/prefs' only after sky-ai is deployed with PUB_KV
  * and the key exists. Missing key / any sky-ai error -> null (local handler). */
-export const SKY_AI_IDENTITY_ROUTES = Object.freeze(['GET /api/ai/prefs', 'GET /api/ai/actions/audit']);
+export const SKY_AI_IDENTITY_ROUTES = Object.freeze([
+  'GET /api/ai/prefs',
+  'GET /api/ai/actions/audit',
+  /* F0.2 / DV-02: evaluated flags for ONE student, so sky-ai needs the uid
+   * admission-gk verified. A guest stays anonymous and keeps the defaults
+   * (the local fallback in public-worker.js answers all-off). */
+  'GET /api/ai/sky-flags'
+]);
 export const SKY_INTERNAL_KEY_NAME = 'secret:sky-internal';
 
 export async function forwardWithIdentity(request, env, uid, routes = SKY_AI_IDENTITY_ROUTES) {
