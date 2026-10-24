@@ -65,8 +65,12 @@ it, so nothing can break.
 Give `admission-gk` the `AUTH_WORKER` service binding and a var
 `AUTH_ROUTE: local | service`. In `service` mode the public route forwards to
 `admission-auth`; on any transport error it falls back to the in-process handler
-that is still there. Flip with a var change (no code deploy) and watch signup,
-login, OTP, Google return and the Telegram webhook.
+that is still there.
+
+Honest note on the rollback: the var lives in `wrangler.toml`, so switching back
+is a one-line revert plus the automatic deploy (about two minutes), not an
+instant runtime flip. That is still the safest shape here — no code change, and
+the fallback path means a broken forward never becomes a broken login.
 
 **Phase 3 — auth secrets move.**
 Set the auth-only secrets on `admission-auth` (`FIREBASE_*`, `TURNSTILE_SECRET_KEY`,
