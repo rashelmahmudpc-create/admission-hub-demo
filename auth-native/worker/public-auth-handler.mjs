@@ -398,6 +398,27 @@ const emailOwnershipProven = async ({ env, user, context, allowed }) => {
   } catch { return false; }
 };
 
+/**
+ * F-04: is this address a "Continue with Telegram" account?
+ *
+ * The derivation needs AUTH_HMAC_SECRET, and a Cloudflare secret is write-only:
+ * it cannot be copied into the split-out auth Worker, only re-issued (which
+ * would change every derived address and orphan those accounts). So the answer
+ * is asked from the authority, which still holds the secret — but only for an
+ * address in the reserved Telegram domain, and only after the local derivation,
+ * available in admission-gk, has said no. A normal student address costs one
+ * string compare and never reaches the authority.
+ */
+export const telegramLoginAccountFor = async ({ env, email }) => {
+  const address = String(email || '').trim().toLowerCase();
+  if (!reservedTelegramLoginEmail(address)) return false;
+  if (await isTelegramLoginEmail(address, env)) return true;
+  try {
+    const result = await callAuthority(env, '/internal/telegram/login-email', { email: address });
+    return result?.loginAccount === true;
+  } catch { return false; }
+};
+
 const firebaseReadySession = async ({ provider, jar, env, context, allowTelegram = false, trackRefresh = false }) => {
   const sessionToken = jar[AUTH_SESSION_COOKIE];
   const refreshToken = jar[AUTH_FIREBASE_COOKIE];
@@ -413,7 +434,8 @@ const firebaseReadySession = async ({ provider, jar, env, context, allowTelegram
   const ownershipProven = !user.emailVerified && await emailOwnershipProven({ env, user, context, allowed: true });
   // A "Continue with Telegram" account is proven by Telegram's signature at
   // login; its derived address can never receive mail, so it counts as verified.
-  const telegramLoginAccount = !user.emailVerified && !ownershipProven && await isTelegramLoginEmail(user.email, env);
+  const telegramLoginAccount = !user.emailVerified && !ownershipProven
+    && await telegramLoginAccountFor({ env, email: user.email });
   const telegramVerified = telegramLoginAccount || (!user.emailVerified && !ownershipProven
     && await telegramVerificationStatus({ env, user, context, allowed: allowTelegram }));
   if (!user.emailVerified && !ownershipProven && !telegramVerified) throw new NativeAuthError(AUTH_ERROR_CODES.EMAIL_NOT_VERIFIED);

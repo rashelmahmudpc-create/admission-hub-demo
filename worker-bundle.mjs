@@ -12768,6 +12768,17 @@ var emailOwnershipProven = async ({ env, user, context, allowed: allowed2 }) => 
     return false;
   }
 };
+var telegramLoginAccountFor = async ({ env, email }) => {
+  const address = String(email || "").trim().toLowerCase();
+  if (!reservedTelegramLoginEmail(address)) return false;
+  if (await isTelegramLoginEmail(address, env)) return true;
+  try {
+    const result = await callAuthority(env, "/internal/telegram/login-email", { email: address });
+    return result?.loginAccount === true;
+  } catch {
+    return false;
+  }
+};
 var firebaseReadySession = async ({ provider, jar, env, context, allowTelegram = false, trackRefresh = false }) => {
   const sessionToken = jar[AUTH_SESSION_COOKIE];
   const refreshToken = jar[AUTH_FIREBASE_COOKIE];
@@ -12786,7 +12797,7 @@ var firebaseReadySession = async ({ provider, jar, env, context, allowTelegram =
   }
   assertProviderUser(refreshed, user);
   const ownershipProven = !user.emailVerified && await emailOwnershipProven({ env, user, context, allowed: true });
-  const telegramLoginAccount = !user.emailVerified && !ownershipProven && await isTelegramLoginEmail(user.email, env);
+  const telegramLoginAccount = !user.emailVerified && !ownershipProven && await telegramLoginAccountFor({ env, email: user.email });
   const telegramVerified = telegramLoginAccount || !user.emailVerified && !ownershipProven && await telegramVerificationStatus({ env, user, context, allowed: allowTelegram });
   if (!user.emailVerified && !ownershipProven && !telegramVerified) throw new NativeAuthError(AUTH_ERROR_CODES.EMAIL_NOT_VERIFIED);
   const session = await callAuthority(env, "/internal/firebase/session/get", {
@@ -14667,7 +14678,13 @@ var __publicAuthTest = Object.freeze({
 
 // auth-native/worker/auth-route.mjs
 var AUTH_ROUTE_MODES = Object.freeze({ local: "local", service: "service" });
-var AUTH_ROUTE_LOCAL_PATHS = Object.freeze(["/api/auth/v1/telegram/webhook"]);
+var AUTH_ROUTE_LOCAL_PATHS = Object.freeze([
+  "/api/auth/v1/config",
+  "/api/auth/v1/telegram/login",
+  "/api/auth/v1/telegram/webhook",
+  "/api/auth/v1/telegram/canary/activate",
+  "/api/auth/v1/telegram/canary/deactivate"
+]);
 function authRouteMode(env) {
   const requested = String(env?.AUTH_ROUTE || "").trim().toLowerCase();
   if (requested !== AUTH_ROUTE_MODES.service) return AUTH_ROUTE_MODES.local;
@@ -31324,6 +31341,11 @@ var AdmissionAuthAuthority = class {
           }
         }, body.context);
         return response2(200, { ok: true, result });
+      }
+      if (url.pathname === "/internal/telegram/login-email") {
+        const email = String(body?.email || "").trim().toLowerCase();
+        const loginAccount = email.endsWith(`@${TELEGRAM_LOGIN_DOMAIN}`) && await isTelegramLoginEmail(email, this.env);
+        return response2(200, { ok: true, result: { loginAccount } });
       }
       if (url.pathname === "/internal/verification/telegram/status") {
         const identity = await this.engine.getFirebaseIdentity(body.input, body.context);

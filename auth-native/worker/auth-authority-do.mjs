@@ -13,6 +13,7 @@ import { listStudents, studentProfile } from '../storage/student-admin-view.mjs'
 import { wipeAll, wipeConfirmPhrase, wipeCounts } from '../storage/student-wipe.mjs';
 import { normalizeAuthEmail } from '../core/crypto.mjs';
 import { PendingSignupStore } from './pending-signup.mjs';
+import { isTelegramLoginEmail, TELEGRAM_LOGIN_DOMAIN } from '../verification/telegram-login.mjs';
 import { handlePendingSignupRoute, isPendingSignupRoute } from './pending-signup-authority.mjs';
 
 const JSON_HEADERS = Object.freeze({
@@ -362,6 +363,16 @@ export class AdmissionAuthAuthority {
           }
         }, body.context);
         return response(200, { ok: true, result });
+      }
+      // F-04 phase 3: the split-out auth Worker cannot hold AUTH_HMAC_SECRET —
+      // a Cloudflare secret is write-only, and re-issuing it would change every
+      // derived Telegram address and orphan those accounts. So the derivation
+      // stays with the secret, and the front asks instead of guessing.
+      if (url.pathname === '/internal/telegram/login-email') {
+        const email = String(body?.email || '').trim().toLowerCase();
+        const loginAccount = email.endsWith(`@${TELEGRAM_LOGIN_DOMAIN}`)
+          && await isTelegramLoginEmail(email, this.env);
+        return response(200, { ok: true, result: { loginAccount } });
       }
       if (url.pathname === '/internal/verification/telegram/status') {
         const identity = await this.engine.getFirebaseIdentity(body.input, body.context);

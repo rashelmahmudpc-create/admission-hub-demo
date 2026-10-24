@@ -2258,6 +2258,17 @@ var emailOwnershipProven = async ({ env, user, context, allowed }) => {
     return false;
   }
 };
+var telegramLoginAccountFor = async ({ env, email }) => {
+  const address = String(email || "").trim().toLowerCase();
+  if (!reservedTelegramLoginEmail(address)) return false;
+  if (await isTelegramLoginEmail(address, env)) return true;
+  try {
+    const result = await callAuthority(env, "/internal/telegram/login-email", { email: address });
+    return result?.loginAccount === true;
+  } catch {
+    return false;
+  }
+};
 var firebaseReadySession = async ({ provider, jar, env, context, allowTelegram = false, trackRefresh = false }) => {
   const sessionToken = jar[AUTH_SESSION_COOKIE];
   const refreshToken = jar[AUTH_FIREBASE_COOKIE];
@@ -2276,7 +2287,7 @@ var firebaseReadySession = async ({ provider, jar, env, context, allowTelegram =
   }
   assertProviderUser(refreshed, user);
   const ownershipProven = !user.emailVerified && await emailOwnershipProven({ env, user, context, allowed: true });
-  const telegramLoginAccount = !user.emailVerified && !ownershipProven && await isTelegramLoginEmail(user.email, env);
+  const telegramLoginAccount = !user.emailVerified && !ownershipProven && await telegramLoginAccountFor({ env, email: user.email });
   const telegramVerified = telegramLoginAccount || !user.emailVerified && !ownershipProven && await telegramVerificationStatus({ env, user, context, allowed: allowTelegram });
   if (!user.emailVerified && !ownershipProven && !telegramVerified) throw new NativeAuthError(AUTH_ERROR_CODES.EMAIL_NOT_VERIFIED);
   const session = await callAuthority(env, "/internal/firebase/session/get", {

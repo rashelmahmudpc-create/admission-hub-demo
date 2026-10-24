@@ -11,7 +11,7 @@ const ENTRY = readFileSync(new URL('./gk-agent-worker.js', import.meta.url), 'ut
 
 const request = (path, init = {}) => new Request(`https://admissionsky.pages.dev${path}`, init);
 
-const harness = ({ env, path = '/api/auth/v1/config', init = {}, response = new Response('remote', { status: 200 }), forwardImpl = null } = {}) => {
+const harness = ({ env, path = '/api/auth/v1/session', init = {}, response = new Response('remote', { status: 200 }), forwardImpl = null } = {}) => {
   const calls = { local: 0, forward: 0 };
   const local = async () => { calls.local += 1; return new Response('local', { status: 200 }); };
   const forward = async () => { calls.forward += 1; return forwardImpl ? forwardImpl() : response; };
