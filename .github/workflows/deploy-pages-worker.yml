@@ -91,6 +91,27 @@ jobs:
           printf '%s\n' "$body" | head -c 600
           printf '%s' "$body" | grep -q '"ok":true'
 
+      # F-04: when the auth surface is forwarded, /config cannot prove it — that
+      # route stays in process on purpose so the login page keeps reporting the
+      # full environment. So this checks a route that IS forwarded and asserts
+      # who answered. The mark is absent when the request fell back in process,
+      # which is exactly the case this must catch: a deploy that looks green
+      # while the split is not actually carrying any traffic.
+      - name: Smoke-test the forwarded auth surface
+        run: |-
+          set -eu
+          mode="$(sed -n 's/^AUTH_ROUTE *= *"\([a-z]*\)"$/\1/p' wrangler.toml | head -1)"
+          echo "AUTH_ROUTE=${mode:-unset}"
+          if [ "$mode" != "service" ]; then
+            echo "::notice title=Forwarding check skipped::AUTH_ROUTE is not service, so the in-process handler is the expected answer."
+            exit 0
+          fi
+          url="https://admission-gk.admissionhub.workers.dev/api/public/profile/AH-SMOKE-$RANDOM"
+          headers="$(curl -sS -o /dev/null -D - --max-time 25 "$url" || true)"
+          printf '%s\n' "$headers" | head -20
+          printf '%s' "$headers" | grep -qi '^x-ah-auth-front: admission-auth'
+          echo "::notice title=Auth split live::a forwarded route was answered by admission-auth."
+
       # The Worker must answer for the project the app now belongs to. The key is
       # the public Firebase Web API key of admissionsky-997d2 (project 916950643726),
       # not a secret in the confidential sense; it is inlined so this deploy does not

@@ -65,4 +65,12 @@ test('the built entry really serves only the auth surface', async () => {
   const body = await auth.json();
   assert.equal(body.ok, false);
   assert.ok(body.error?.code, 'the handler produces its own error shape');
+
+  // F-04: the answer carries the mark the app's smoke test looks for. Without
+  // it, a deploy cannot tell forwarding apart from the in-process fallback, and
+  // the split could be dead while every check stayed green.
+  assert.equal(auth.headers.get('X-AH-Auth-Front'), 'admission-auth');
+  const other = await call('/index.html');
+  assert.equal(other.headers.get('X-AH-Auth-Front'), null, 'only answers from this script are marked');
+  assert.equal((await auth.json().catch(() => null)), null, 'the body was not consumed by marking it');
 });
