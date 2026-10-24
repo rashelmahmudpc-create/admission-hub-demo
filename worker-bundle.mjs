@@ -14667,6 +14667,7 @@ var __publicAuthTest = Object.freeze({
 
 // auth-native/worker/auth-route.mjs
 var AUTH_ROUTE_MODES = Object.freeze({ local: "local", service: "service" });
+var AUTH_ROUTE_LOCAL_PATHS = Object.freeze(["/api/auth/v1/telegram/webhook"]);
 function authRouteMode(env) {
   const requested = String(env?.AUTH_ROUTE || "").trim().toLowerCase();
   if (requested !== AUTH_ROUTE_MODES.service) return AUTH_ROUTE_MODES.local;
@@ -14682,6 +14683,7 @@ async function routeAuthRequest({ request, env, ctx, local, forward = null }) {
     return local(request, env, ctx);
   }
   if (!claimsAuthPath(pathname)) return local(request, env, ctx);
+  if (AUTH_ROUTE_LOCAL_PATHS.includes(pathname)) return local(request, env, ctx);
   try {
     const response3 = await (forward ? forward(request.clone()) : env.AUTH_WORKER.fetch(request.clone()));
     if (response3) return response3;

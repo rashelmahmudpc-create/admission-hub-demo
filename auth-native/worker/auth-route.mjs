@@ -11,6 +11,19 @@ import { claimsAuthPath } from './public-auth-handler.mjs';
  */
 export const AUTH_ROUTE_MODES = Object.freeze({ local: 'local', service: 'service' });
 
+/**
+ * Paths the auth Worker is not yet equipped to answer, so they stay in process
+ * even in service mode.
+ *
+ * The inbound Telegram webhook is verified with a secret derived from
+ * AUTH_HMAC_SECRET, and Cloudflare secrets are write-only: the value cannot be
+ * copied to the new script, only re-issued. Re-issuing it would invalidate the
+ * registered webhook for a live feature, so the honest staging is to leave this
+ * one route with the script that already holds the secret. Everything a student
+ * touches — signup, login, reset, OTP, session — is fully forwarded.
+ */
+export const AUTH_ROUTE_LOCAL_PATHS = Object.freeze(['/api/auth/v1/telegram/webhook']);
+
 export function authRouteMode(env) {
   const requested = String(env?.AUTH_ROUTE || '').trim().toLowerCase();
   if (requested !== AUTH_ROUTE_MODES.service) return AUTH_ROUTE_MODES.local;
@@ -38,6 +51,7 @@ export async function routeAuthRequest({ request, env, ctx, local, forward = nul
   // falling through the app's own chain exactly as it does today, and the one
   // shared predicate is what guarantees the two sides cannot disagree.
   if (!claimsAuthPath(pathname)) return local(request, env, ctx);
+  if (AUTH_ROUTE_LOCAL_PATHS.includes(pathname)) return local(request, env, ctx);
 
   try {
     // Clone first: a service binding reads the body, and the fallback below has

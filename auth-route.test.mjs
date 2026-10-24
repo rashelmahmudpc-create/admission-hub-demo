@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { AUTH_ROUTE_MODES, authRouteMode, routeAuthRequest } from './auth-native/worker/auth-route.mjs';
+import { AUTH_ROUTE_LOCAL_PATHS, AUTH_ROUTE_MODES, authRouteMode, routeAuthRequest } from './auth-native/worker/auth-route.mjs';
 import { claimsAuthPath } from './auth-native/worker/public-auth-handler.mjs';
 
 // F-04 phase 2. The switch that sends logins to another Worker is only safe if
@@ -45,6 +45,22 @@ test('service mode forwards only the paths the auth handler owns', async () => {
     const other = harness({ env: { AUTH_ROUTE: 'service', AUTH_WORKER: binding }, path });
     assert.equal(await (await other.run()).text(), 'local', `${path} keeps falling through the app chain`);
     assert.deepEqual(other.calls, { local: 1, forward: 0 }, `${path} must not reach the auth Worker`);
+  }
+});
+
+test('the one route whose secret still lives only in admission-gk stays in process', async () => {
+  const binding = { fetch: async () => new Response('remote', { status: 200 }) };
+  for (const path of AUTH_ROUTE_LOCAL_PATHS) {
+    assert.ok(claimsAuthPath(path), `${path} is an auth path, so the exception has to be explicit`);
+    const app = harness({ env: { AUTH_ROUTE: 'service', AUTH_WORKER: binding }, path });
+    assert.equal(await (await app.run()).text(), 'local');
+    assert.deepEqual(app.calls, { local: 1, forward: 0 }, `${path} must not be forwarded before its secret exists here`);
+  }
+  // The exception is a staging detail, not a hole in the surface: the routes
+  // students actually use are still forwarded.
+  for (const path of ['/api/auth/v1/signup', '/api/auth/v1/login', '/api/auth/v1/session']) {
+    const app = harness({ env: { AUTH_ROUTE: 'service', AUTH_WORKER: binding }, path });
+    assert.equal(await (await app.run()).text(), 'remote', `${path} is forwarded`);
   }
 });
 

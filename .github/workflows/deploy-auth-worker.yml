@@ -54,16 +54,65 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           wranglerVersion: '4.35.0'
           command: deploy --config wrangler.auth.toml
-      # F-04 phase 2 gate: prove the new script really answers before anyone
-      # points traffic at it. A cross-script Durable Object binding is the one
-      # thing that cannot be checked from the repository, so it is checked here:
-      # GET is origin-optional, and /config reaches the authority. A 503
-      # NOT_CONFIGURED or AUTHORITY error means the binding is wrong and the
-      # AUTH_ROUTE switch must stay on "local".
+      # F-04 phase 3: the front's own secrets. FIREBASE_WEB_API_KEY is the public
+      # key of admissionsky-997d2 and is inlined for the same reason as in the
+      # app deploy: a missing repository secret must not silently skip login.
+      - name: Bind the Firebase Web API key
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -eu
+          KEY='AIzaSyCMYPy-qANPN1pPPI1B957wwKezmotK_NI'
+          test "${#KEY}" -eq 39
+          printf '%s' "$KEY" | npx --yes wrangler@4.35.0 secret put FIREBASE_WEB_API_KEY --name admission-auth
+      # Absent secrets are reported, never guessed: a secret that is missing in
+      # the app is missing here too, so both scripts stay in the same state.
+      - name: Bind the Turnstile secret key
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TURNSTILE_SECRET_KEY: ${{ secrets.TURNSTILE_SECRET_KEY }}
+        run: |
+          set -eu
+          if [ -z "${TURNSTILE_SECRET_KEY:-}" ]; then
+            echo "::notice title=Turnstile skipped::TURNSTILE_SECRET_KEY is not set; the human check stays inert."
+            exit 0
+          fi
+          printf '%s' "$TURNSTILE_SECRET_KEY" | npx --yes wrangler@4.35.0 secret put TURNSTILE_SECRET_KEY --name admission-auth
+      - name: Bind the admin token
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
+        run: |
+          set -eu
+          if [ -z "${ADMIN_TOKEN:-}" ]; then
+            echo "::notice title=Admin token skipped::ADMIN_TOKEN is not set; the admin routes refuse everybody, which is their safe default."
+            exit 0
+          fi
+          printf '%s' "$ADMIN_TOKEN" | npx --yes wrangler@4.35.0 secret put ADMIN_TOKEN --name admission-auth
+      # F-04 gate: prove the new script really answers before anyone points
+      # traffic at it. `ok:true` alone would also be returned by a script with no
+      # working authority, so this checks two things:
+      #   ok:true     — the route exists and no error was thrown;
+      #   "available":true — /config reached the cross-script Durable Object and
+      #                  could identify the Firebase project. That single field is
+      #                  the difference between a login that works and a UI that
+      #                  reports every method unavailable, which is exactly what
+      #                  forwarding before phase 3 would have done.
       - name: Smoke-test the deployed script
         run: |
           set -eu
           url="https://admission-auth.admissionhub.workers.dev/api/auth/v1/config?cb=$RANDOM"
-          body="$(curl -sS --max-time 25 -H 'X-AH-Auth-UI: auth-premium-v6' "$url" || true)"
-          printf '%s\n' "$body" | head -c 600
-          printf '%s' "$body" | grep -q '"ok":true'
+          for attempt in 1 2 3; do
+            body="$(curl -sS --max-time 25 -H 'X-AH-Auth-UI: auth-premium-v6' "$url" || true)"
+            printf 'attempt %s: %s\n' "$attempt" "$(printf '%s' "$body" | head -c 600)"
+            if printf '%s' "$body" | grep -q '"ok":true' && printf '%s' "$body" | grep -q '"available":true'; then
+              echo "::notice title=Auth Worker ready::/config is ok and the authority answered (available:true)."
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error title=Auth Worker not ready::/config never reported available:true. Do not flip AUTH_ROUTE; the authority binding or the Firebase key is wrong."
+          exit 1
