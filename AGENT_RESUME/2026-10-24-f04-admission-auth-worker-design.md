@@ -111,10 +111,28 @@ Closing 3b means re-issuing those values for `admission-auth` in the dashboard,
 which is a deliberate owner action, not a code change.
 
 **Phase 2 and 3 are live** (2026-10-24): `AUTH_ROUTE = "service"`, and the app
-deploy smoke-tests a forwarded route and fails unless the answer carries
+deploy smoke-tests forwarded routes and fails unless the answers carry
 `X-AH-Auth-Front: admission-auth`, so the split cannot be dead while the checks
 are green. No students were on the platform at the time, which is why the flip
 was made the same day.
+
+Measured live, not assumed (app deploy run 40112401065):
+
+| probe | answer | who answered | client address |
+|---|---|---|---|
+| `GET /api/auth/v1/session` | 401 | `admission-auth` | present |
+| `GET /api/auth/v1/account` | 401 | `admission-auth` | present |
+| `OPTIONS /api/auth/v1/session` | 204 | `admission-auth` | present |
+
+The last column matters most: rate limits, the shadow guard and risk scoring are
+keyed on the caller's address, and if the service-binding hop had dropped it,
+every student would have shared one bucket and started blocking each other —
+a quieter failure than an outage. `X-AH-Client-Addr` now reports it on every
+deploy, and the app deploy fails if it ever reads `absent`.
+
+One probe is deliberately *not* in that list: the public profile. It consumes a
+rate slot per caller, and a deploy probe that spends the anonymous quota every
+merge eventually fails for reasons unrelated to the split.
 
 **Phase 4 — retire the local path.** Partly done: the app deploy now deploys
 `admission-auth` before itself and shares the `admission-auth-deploy` concurrency
