@@ -2,10 +2,10 @@
   'use strict';
 
   const COURSE_DEFS = {
-    sandhi: { id: 'sandhi-exact-native-v1', category: 'বাংলা', path: './courses/sandhi/index.html', hash: '8188d2dbb2f1fe950c69919cb1bf6034ce3b54b3362d262f3742137e135f12b1', label: 'সন্ধি', title: 'সন্ধি, University Admission Master Guide', subtitle: 'Visual University Admission Master Guide · Bangla 2nd Paper' },
-    somas: { id: 'somas-exact-native-v1', category: 'বাংলা', path: './courses/somas/index.html', hash: 'cf603da7399fd1a7af671847211a7fc02a76091877faa52b522cede4e04c89a4', label: 'সমাস', title: 'সমাস, University Admission Master Guide', subtitle: 'Visual University Admission Master Guide · Bangla 2nd Paper' },
-    prottoy: { id: 'prottoy-exact-native-v1', category: 'বাংলা', path: './courses/prottoy/index.html', hash: '1013b164b3b4413ccfdd9c6eca5efdf354d86dc728181fdae3c2afa4163fc918', label: 'প্রত্যয়', title: 'প্রত্যয়, Visual Admission Master Guide', subtitle: 'Visual University Admission Master Guide · Bangla 2nd Paper' },
-    'prottoy-master': { id: 'prottoy-master-exact-native-v1', category: 'বাংলা', path: './courses/prottoy-master/index.html', hash: '35eccea4c20fcf4820845eb876d74c1d84de4b2876cb099f85cfb507d10d47fd', label: 'প্রত্যয় Master', title: 'প্রত্যয় • Visual Admission Master Guide, Interactive', subtitle: 'Bangla 2nd Paper · 200 MCQ · Interactive guide' },
+    sandhi: { id: 'sandhi-exact-native-v1', category: 'বাংলা', path: './courses/sandhi/index.html', hash: 'eb3376f93f7c5a80ee90cd314399a8a40de623c0347fe51248aa84fabbf7aa67', label: 'সন্ধি', title: 'সন্ধি, University Admission Master Guide', subtitle: 'Visual University Admission Master Guide · Bangla 2nd Paper' },
+    somas: { id: 'somas-exact-native-v1', category: 'বাংলা', path: './courses/somas/index.html', hash: '02bc032b62c12ed852690b0a0017c270350ea47f2f7ad7143b15423c1df3b4d4', label: 'সমাস', title: 'সমাস, University Admission Master Guide', subtitle: 'Visual University Admission Master Guide · Bangla 2nd Paper' },
+    prottoy: { id: 'prottoy-exact-native-v1', category: 'বাংলা', path: './courses/prottoy/index.html', hash: '55da5a2b846b20cdd22da5f149b1216eddeb7b5eea8dfd82d8b229c167774eef', label: 'প্রত্যয়', title: 'প্রত্যয়, Visual Admission Master Guide', subtitle: 'Visual University Admission Master Guide · Bangla 2nd Paper' },
+    'prottoy-master': { id: 'prottoy-master-exact-native-v1', category: 'বাংলা', path: './courses/prottoy-master/index.html', hash: 'dff4c9dbe1ed7d243cfd8de7f0c273a018eae33d5dacda1b6a404b3f8cfdecf3', label: 'প্রত্যয় Master', title: 'প্রত্যয় • Visual Admission Master Guide, Interactive', subtitle: 'Bangla 2nd Paper · 200 MCQ · Interactive guide' },
   };
   const REMOVED_ENGLISH_PREFIXES = [
     'admissionHubNativeCourseV1:english-voice-exact-native-v1',
