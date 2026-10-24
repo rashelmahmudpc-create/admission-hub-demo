@@ -25517,6 +25517,77 @@ var VerificationOrchestrator = class {
       now: input.now
     });
   }
+  /**
+   * F-02 second half: race the next slot against a primary that is taking too
+   * long. Resolves with the first accepted send. A primary that answers inside
+   * hedgeDelayMs is returned alone, so the healthy path still costs one send.
+   *
+   * `late` is the other side's pending outcome, if any: it may still be accepted
+   * by its provider after the race is over (the mail is already in flight), and
+   * the caller reports that as a duplicate instead of pretending it never
+   * happened.
+   */
+  async #raceHedgedSend({ primary, hedge, hedgeDelayMs }) {
+    const settle = (run, side) => Promise.resolve().then(run).then(
+      (value) => ({ side, ok: true, value }),
+      (error) => ({ side, ok: false, error })
+    );
+    const main = settle(primary, "primary");
+    let timer;
+    const delay = new Promise((resolve) => {
+      timer = setTimeout(() => resolve(null), Math.max(0, hedgeDelayMs));
+    });
+    const early = await Promise.race([main, delay]);
+    clearTimeout(timer);
+    if (early) {
+      if (early.ok) return { winner: early.value, late: null, hedged: false };
+      throw early.error;
+    }
+    const second = settle(hedge, "hedge");
+    const firstAccepted = await new Promise((resolve) => {
+      let pending = 2;
+      const one2 = (outcome) => {
+        if (outcome.ok) return resolve(outcome);
+        pending -= 1;
+        if (pending === 0) resolve({ ok: false, error: outcome.error, side: "both" });
+      };
+      main.then(one2);
+      second.then(one2);
+    });
+    if (!firstAccepted.ok) throw firstAccepted.error;
+    return {
+      winner: firstAccepted.value,
+      late: firstAccepted.side === "primary" ? second : main,
+      hedged: true
+    };
+  }
+  /**
+   * A hedged send that comes back accepted after the challenge was already
+   * marked delivered is a real event and must be visible: the student may get a
+   * second message with the same code. It deliberately does NOT call
+   * markChallengeDelivery — the challenge is no longer pending, so that call
+   * would be refused and the whole request would fail after the code was out.
+   */
+  #trackHedgedLoser(late, { attemptId, identity, logBase, logDelivery }) {
+    Promise.resolve(late).then(async (outcome) => {
+      if (!outcome?.ok) return;
+      const { entry, latencyMs } = outcome.value;
+      logDelivery({ ...logBase, provider: entry.id, label: entry.label, outcome: "duplicate_accepted", latencyMs });
+      try {
+        await this.#record(entry, {
+          attemptId,
+          userId: identity.userId,
+          subjectRef: identity.subjectRef,
+          success: true,
+          reason: "hedged_duplicate",
+          latencyMs,
+          now: Number(this.now())
+        });
+      } catch (_) {
+      }
+    }).catch(() => {
+    });
+  }
   async #candidateRows(identity, destinations, now, deadline = 0) {
     const magicLink = identity.deliveryMethod === "magic-link";
     const eligible = this.config.enabled ? this.config.providers.filter((entry) => entry.enabled && destinations[entry.channel] && entry.id === MAGIC_LINK_PROVIDER_ID2 === magicLink) : [];
@@ -25639,8 +25710,11 @@ var VerificationOrchestrator = class {
     const logRequest = (fields) => emit("otp_request", fields);
     let rank2 = 0;
     let budgetExhausted = false;
-    for (const candidate of candidates) {
-      const { entry, provider } = candidate;
+    const hedgeDelayMs = Number(policy.hedgeDelayMs) || 0;
+    let hedgeConsumed = 0;
+    for (let index = 0; index < candidates.length; index += 1) {
+      if (index < hedgeConsumed) continue;
+      const { entry, provider } = candidates[index];
       rank2 += 1;
       const maxTries = 1 + policy.maxProviderRetries;
       for (let currentTry = 0; currentTry < maxTries; currentTry += 1) {
@@ -25658,30 +25732,59 @@ var VerificationOrchestrator = class {
         const started = Date.now();
         let providerAccepted = false;
         try {
-          const result = await bounded2(() => provider.sendVerification({
+          const payloadFor = (channel) => ({
             attemptId,
             purpose: identity.purpose,
-            destination: destinations[entry.channel],
+            destination: destinations[channel],
             code,
             linkToken,
             recipientName: identity.recipientName,
             expiresAt: now + policy.codeTtlSeconds * 1e3,
             signalContext: { origin: identity.context.origin }
-          }), Math.min(entry.timeoutMs, deliveryDeadline - Date.now()));
-          if (result?.accepted !== true) throw new VerificationProviderError("INVALID_PROVIDER_RESPONSE", VERIFICATION_FAILURE_CLASS.HARD);
+          });
+          const sendThrough = (target) => bounded2(
+            () => target.provider.sendVerification(payloadFor(target.entry.channel)),
+            Math.min(target.entry.timeoutMs, deliveryDeadline - Date.now())
+          ).then((result2) => {
+            if (result2?.accepted !== true) throw new VerificationProviderError("INVALID_PROVIDER_RESPONSE", VERIFICATION_FAILURE_CLASS.HARD);
+            return { entry: target.entry, result: result2, latencyMs: Date.now() - started };
+          });
+          const hedgeTarget = index === 0 && currentTry === 0 && hedgeDelayMs > 0 && candidates.length > 1 ? candidates[1] : null;
+          let delivered;
+          if (hedgeTarget) {
+            const raced = await this.#raceHedgedSend({
+              primary: () => sendThrough({ entry, provider }),
+              hedge: async () => {
+                hedgeConsumed = 2;
+                const hedgeQuota = await this.repository.reserveDailyQuota({
+                  providerId: hedgeTarget.entry.id,
+                  dailyQuota: hedgeTarget.entry.dailyQuota,
+                  now
+                });
+                if (hedgeQuota.exhausted) throw new VerificationProviderError("QUOTA_EXHAUSTED", VERIFICATION_FAILURE_CLASS.TEMPORARY);
+                logDelivery({ ...logBase, provider: hedgeTarget.entry.id, outcome: "hedged", afterMs: hedgeDelayMs });
+                return sendThrough(hedgeTarget);
+              },
+              hedgeDelayMs
+            });
+            delivered = raced.winner;
+            if (raced.late) this.#trackHedgedLoser(raced.late, { attemptId, identity, logBase, logDelivery });
+          } else {
+            delivered = await sendThrough({ entry, provider });
+          }
           providerAccepted = true;
-          const latencyMs = Date.now() - started;
-          tried.push(`${entry.id}:ok`);
-          logDelivery({ ...logBase, provider: entry.id, label: entry.label, rank: rank2, try: currentTry + 1, outcome: "accepted", latencyMs });
-          logRequest({ ...logBase, outcome: "sent", provider: entry.id, totalMs: Date.now() - requestStarted, tried: tried.join(",") });
-          await this.#record(entry, { attemptId, userId: identity.userId, subjectRef: identity.subjectRef, success: true, reason: "accepted", latencyMs, now });
+          const { entry: winnerEntry, result, latencyMs } = delivered;
+          tried.push(`${winnerEntry.id}:ok`);
+          logDelivery({ ...logBase, provider: winnerEntry.id, label: winnerEntry.label, rank: rank2, try: currentTry + 1, outcome: "accepted", latencyMs });
+          logRequest({ ...logBase, outcome: "sent", provider: winnerEntry.id, totalMs: Date.now() - requestStarted, tried: tried.join(",") });
+          await this.#record(winnerEntry, { attemptId, userId: identity.userId, subjectRef: identity.subjectRef, success: true, reason: "accepted", latencyMs, now });
           errorFromRepository(await this.repository.markChallengeDelivery({
             attemptId,
-            providerId: entry.id,
-            channel: entry.channel,
-            verificationMode: entry.verificationMode,
-            retainCodeCipher: entry.id === "telegram",
-            retainLinkCipher: entry.id === "telegram",
+            providerId: winnerEntry.id,
+            channel: winnerEntry.channel,
+            verificationMode: winnerEntry.verificationMode,
+            retainCodeCipher: winnerEntry.id === "telegram",
+            retainLinkCipher: winnerEntry.id === "telegram",
             latencyMs,
             now
           }));
