@@ -92,6 +92,24 @@ smoke test would still have passed on `ok:true`. So:
 The auth smoke test now asserts `"available":true`, not just `"ok":true`: that is
 the field that proves the cross-script authority answered.
 
+**Phase 3b — what is left behind, on purpose.** `CANARY_EMAILS`,
+`SHADOW_GUARD_ACTIVATION`, `AUTH_HMAC_SECRET` and the Telegram bot/webhook
+secrets exist only inside `admission-gk` and have no repository copy. Cloudflare
+secrets are write-only, so they cannot be copied — only re-issued, and re-issuing
+`AUTH_HMAC_SECRET` or the bot token would invalidate live state. Consequences
+until then, stated plainly:
+
+  * `/config` and the Telegram routes stay in process, so they keep the full
+    environment (`AUTH_ROUTE_LOCAL_PATHS`);
+  * a Telegram-login account is still recognised, by asking the authority;
+  * the decoy-account path is inactive on the forwarded login, and the shadow
+    guard runs in its default OBSERVE mode;
+  * failed-login alerts keep working when the repository Telegram secrets are
+    present, which the auth deploy binds as `TG_BOT_TOKEN`/`TG_CHAT_ID`.
+
+Closing 3b means re-issuing those values for `admission-auth` in the dashboard,
+which is a deliberate owner action, not a code change.
+
 **Phase 4 — retire the local path.**
 Delete the fallback handler wiring, keep `AUTH_ROUTE` for a release as a
 safety valve, update `.github/workflows/deploy-pages-worker.yml` to deploy both
