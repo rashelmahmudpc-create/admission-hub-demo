@@ -12,6 +12,7 @@ import * as pendingSignup from './pending-signup-public.mjs';
 import { shadowVerdict, shadowDelayMs, sleep } from '../core/shadow-guard.mjs';
 import { parseCanaryEmails, isCanaryEmail, createKvCanaryFlags } from '../core/canary-accounts.mjs';
 import { createKvPasswordGuard, passwordGuardKey } from '../core/password-guard.mjs';
+import { sendSecurityAlertInBackground, SECURITY_ALERT_EVENTS } from '../core/security-alerts.mjs';
 /* D-5 / A1.5 ②: one shared CORS policy for every auth surface. This handler
  * used to keep its own copy that still accepted http://localhost and any
  * *.admissionhub.pages.dev preview host, so production served credentialed
@@ -131,6 +132,13 @@ const flagCanaryHit = (env, email, context) => {
       .then(() => flags.flag(context.ip, context.deviceId))
       .catch(() => {});
   }
+  // The owner is told at once: a canary hit is the clearest signal the app
+  // has that someone is probing it on purpose.
+  sendSecurityAlertInBackground(env, {
+    event: SECURITY_ALERT_EVENTS.CANARY_HIT,
+    email,
+    at: Date.now()
+  });
   return true;
 };
 
@@ -916,6 +924,13 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
             // The delay is spent before the answer, so the response time
             // carries no signal either.
             await sleep(shadowDelayMs());
+            sendSecurityAlertInBackground(env, {
+              event: SECURITY_ALERT_EVENTS.SHADOW_BAN,
+              email: prepared.email,
+              band: shadow.band,
+              reasons: shadow.reasons,
+              at: Date.now()
+            });
             throw new NativeAuthError(AUTH_ERROR_CODES.INVALID_CREDENTIALS);
           }
         }
@@ -948,6 +963,17 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         // the provider is reached, so a correct guess can never lift one.
         if (passwordGuard) {
           try { await passwordGuard.recordSuccess(guardKey, 'user'); } catch {}
+        }
+        // A new device that got past the password is exactly the event the
+        // owner asked to hear about: if it was not them, this is the first
+        // they will know.
+        if (guardActive && context.isNewDevice) {
+          sendSecurityAlertInBackground(env, {
+            event: SECURITY_ALERT_EVENTS.NEW_DEVICE,
+            email: prepared.email,
+            band: shadow ? shadow.band : 'low',
+            at: Date.now()
+          });
         }
         const telegramRequested = telegramVerificationRequested(env, url);
         const telegramVerified = !user.emailVerified && await telegramVerificationStatus({

@@ -2366,14 +2366,14 @@ function makeTrace(input = {}) {
 function sanitizeTrace(raw) {
   const src = raw && typeof raw === "object" ? raw : {};
   const out = {};
-  for (const field of TRACE_FIELDS) {
-    if (!(field in src)) continue;
-    const v = src[field];
-    if (field === "stream" || field === "validated" || field === "priced") out[field] = !!v;
-    else if (field === "latencyMs" || field === "tokensIn" || field === "tokensOut" || field === "at") out[field] = num(v);
-    else if (field === "costUsd") out[field] = v === null || v === void 0 ? null : Number.isFinite(Number(v)) ? Number(v) : null;
-    else if (field === "rid") out[field] = str(v, 24) || makeRequestId();
-    else out[field] = str(v, field === "model" ? 64 : 48);
+  for (const field2 of TRACE_FIELDS) {
+    if (!(field2 in src)) continue;
+    const v = src[field2];
+    if (field2 === "stream" || field2 === "validated" || field2 === "priced") out[field2] = !!v;
+    else if (field2 === "latencyMs" || field2 === "tokensIn" || field2 === "tokensOut" || field2 === "at") out[field2] = num(v);
+    else if (field2 === "costUsd") out[field2] = v === null || v === void 0 ? null : Number.isFinite(Number(v)) ? Number(v) : null;
+    else if (field2 === "rid") out[field2] = str(v, 24) || makeRequestId();
+    else out[field2] = str(v, field2 === "model" ? 64 : 48);
   }
   if (!out.rid) out.rid = makeRequestId();
   if (!out.fallbackReason) out.fallbackReason = FALLBACK.NONE;
@@ -12190,6 +12190,68 @@ function createKvPasswordGuard(store, options = {}) {
   });
 }
 
+// auth-native/core/security-alerts.mjs
+var SECURITY_ALERT_EVENTS = Object.freeze({
+  CANARY_HIT: "canary-hit",
+  SHADOW_BAN: "shadow-ban",
+  NEW_DEVICE: "new-device"
+});
+var MAX_FIELD = 200;
+var field = (value, max = MAX_FIELD) => typeof value === "string" ? value.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "").trim().slice(0, max) : "";
+var EMAIL_SHAPE = /^([^@\s]{1,64})@([^@\s]{1,190})$/;
+function maskAlertEmail(value) {
+  const email = field(value, 254);
+  const match = EMAIL_SHAPE.exec(email);
+  if (!match) return "";
+  const local = match[1];
+  const head = local.slice(0, 1);
+  return `${head}${"*".repeat(Math.max(3, local.length - 1))}@${match[2].toLowerCase()}`;
+}
+var LABELS = Object.freeze({
+  [SECURITY_ALERT_EVENTS.CANARY_HIT]: "🍯 ক্যানারি অ্যাকাউন্টে চেষ্টা",
+  [SECURITY_ALERT_EVENTS.SHADOW_BAN]: "👻 ছায়া-ব্যান হয়েছে",
+  [SECURITY_ALERT_EVENTS.NEW_DEVICE]: "📱 নতুন ডিভাইসে লগইন"
+});
+function renderSecurityAlert(input = {}) {
+  const event = String(input.event || "");
+  const label = LABELS[event];
+  if (!label) return null;
+  const lines = [label];
+  const email = maskAlertEmail(input.email);
+  if (email) lines.push(`অ্যাকাউন্ট: ${email}`);
+  const country = field(input.country, 40);
+  if (country) lines.push(`দেশ: ${country}`);
+  const band = field(input.band, 20);
+  if (band) lines.push(`ঝুঁকি: ${band}`);
+  const reasons = Array.isArray(input.reasons) ? input.reasons.map((value) => field(value, 40)).filter(Boolean).slice(0, 5) : [];
+  if (reasons.length) lines.push(`কারণ: ${reasons.join(", ")}`);
+  const at = Number(input.at);
+  if (Number.isFinite(at) && at > 0) lines.push(`সময়: ${new Date(at).toISOString()}`);
+  return Object.freeze({ event, text: lines.join("\n") });
+}
+async function sendSecurityAlert(env, input = {}, options = {}) {
+  const rendered = renderSecurityAlert(input);
+  if (!rendered) return "unknown-event";
+  const token = String(env?.TG_BOT_TOKEN || "");
+  const chatId = String(env?.TG_CHAT_ID || "");
+  if (!token || !chatId) return "not-configured";
+  const fetchImpl = options.fetchImpl || globalThis.fetch;
+  if (typeof fetchImpl !== "function") return "failed";
+  try {
+    const response3 = await fetchImpl(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: chatId, text: rendered.text, disable_web_page_preview: true })
+    });
+    return response3?.ok ? "sent" : "failed";
+  } catch {
+    return "failed";
+  }
+}
+function sendSecurityAlertInBackground(env, input, options = {}) {
+  return Promise.resolve().then(() => sendSecurityAlert(env, input, options)).catch(() => "failed");
+}
+
 // auth-native/worker/public-auth-handler.mjs
 var AUTH_API_PREFIX = "/api/auth/v1";
 var PUBLIC_PROFILE_PREFIX = "/api/public/profile/";
@@ -12289,6 +12351,11 @@ var flagCanaryHit = (env, email, context) => {
     Promise.resolve().then(() => flags.flag(context.ip, context.deviceId)).catch(() => {
     });
   }
+  sendSecurityAlertInBackground(env, {
+    event: SECURITY_ALERT_EVENTS.CANARY_HIT,
+    email,
+    at: Date.now()
+  });
   return true;
 };
 var credentials = (body) => {
@@ -13035,6 +13102,13 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           });
           if (shadow.shadowBan) {
             await sleep(shadowDelayMs());
+            sendSecurityAlertInBackground(env, {
+              event: SECURITY_ALERT_EVENTS.SHADOW_BAN,
+              email: prepared.email,
+              band: shadow.band,
+              reasons: shadow.reasons,
+              at: Date.now()
+            });
             throw new NativeAuthError(AUTH_ERROR_CODES.INVALID_CREDENTIALS);
           }
         }
@@ -13073,6 +13147,14 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
             await passwordGuard.recordSuccess(guardKey, "user");
           } catch {
           }
+        }
+        if (guardActive && context.isNewDevice) {
+          sendSecurityAlertInBackground(env, {
+            event: SECURITY_ALERT_EVENTS.NEW_DEVICE,
+            email: prepared.email,
+            band: shadow ? shadow.band : "low",
+            at: Date.now()
+          });
         }
         const telegramRequested = telegramVerificationRequested(env, url);
         const telegramVerified = !user.emailVerified && await telegramVerificationStatus({
@@ -16569,14 +16651,14 @@ var UserDataStore = class {
     }
     const heavy = {};
     let heavyBytes = 0;
-    for (const field of HEAVY_KEYS) {
-      if (doc[field] === void 0) continue;
-      heavy[field] = doc[field];
-      heavyBytes += JSON.stringify(doc[field]).length;
+    for (const field2 of HEAVY_KEYS) {
+      if (doc[field2] === void 0) continue;
+      heavy[field2] = doc[field2];
+      heavyBytes += JSON.stringify(doc[field2]).length;
     }
     if (heavyBytes < HEAVY_MIN_BYTES) return { summary: doc, spilled: false };
     const summary = { ...doc };
-    for (const field of HEAVY_KEYS) delete summary[field];
+    for (const field2 of HEAVY_KEYS) delete summary[field2];
     try {
       const body = await this.#gzip(JSON.stringify(heavy));
       await this.#r2.put(this.#blobKey(userId, store, key), body, {
@@ -17844,11 +17926,11 @@ var IntelligenceStore = class {
       status: String(r.status)
     }));
   }
-  async markOutcome({ userId, key, field, at }) {
+  async markOutcome({ userId, key, field: field2, at }) {
     await this.init();
-    if (!["opened_at", "clicked_at"].includes(field)) return false;
+    if (!["opened_at", "clicked_at"].includes(field2)) return false;
     const res = await this.#d1.prepare(
-      `UPDATE notification_outcomes SET ${field}=COALESCE(${field}, ?) WHERE user_id=? AND notification_key=?`
+      `UPDATE notification_outcomes SET ${field2}=COALESCE(${field2}, ?) WHERE user_id=? AND notification_key=?`
     ).bind(at, userId, key).run();
     return asInt4(res?.meta?.changes, 0) > 0;
   }
@@ -18217,9 +18299,9 @@ async function handleIntelligenceRequest(request, env, deps = {}) {
     }
     const key = String(body.notification_key || body.key || "");
     if (!key) return jsonResponse4(request, { error: "missing-key" }, 400);
-    const field = action === "opened" ? "opened_at" : action === "clicked" ? "clicked_at" : "";
-    if (!field) return jsonResponse4(request, { error: "invalid-action" }, 400);
-    const changed = await store2.markOutcome({ userId, key, field, at });
+    const field2 = action === "opened" ? "opened_at" : action === "clicked" ? "clicked_at" : "";
+    if (!field2) return jsonResponse4(request, { error: "invalid-action" }, 400);
+    const changed = await store2.markOutcome({ userId, key, field: field2, at });
     return jsonResponse4(request, { ok: true, key, recorded: changed });
   }
   if (!path.startsWith(ADMIN_PREFIX)) return null;
@@ -26291,7 +26373,7 @@ function fromJson(text) {
       const entry = out[name] || emptyEntry();
       if (typeof value === "string") absorb(entry, value.split("|").join(" , "));
       else if (value && typeof value === "object") {
-        for (const [field, inner] of Object.entries(value)) absorb(entry, `${field}: ${String(inner ?? "")}`);
+        for (const [field2, inner] of Object.entries(value)) absorb(entry, `${field2}: ${String(inner ?? "")}`);
       }
       out[name] = entry;
     }
@@ -26378,9 +26460,9 @@ var PoolMailer = class {
     this.declaredDailyQuota = Number.isInteger(quota) && quota > 0 ? quota : 0;
     this.fetch = typeof fetchImpl === "function" ? fetchImpl.bind(globalThis) : null;
     this.now = typeof now === "function" ? now : Date.now;
-    this.missing = required.filter((field) => {
-      const value = String(this.cfg[field] || "");
-      return field === "from" ? !validEmail(value) : value.length < 4;
+    this.missing = required.filter((field2) => {
+      const value = String(this.cfg[field2] || "");
+      return field2 === "from" ? !validEmail(value) : value.length < 4;
     });
     this.configured = Boolean(this.fetch && this.declaredDailyQuota && !this.missing.length);
   }
