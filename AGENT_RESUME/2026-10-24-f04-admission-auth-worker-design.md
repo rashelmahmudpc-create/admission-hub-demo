@@ -65,14 +65,32 @@ it, so nothing can break.
 Give `admission-gk` the `AUTH_WORKER` service binding and a var
 `AUTH_ROUTE: local | service`. In `service` mode the public route forwards to
 `admission-auth`; on any transport error it falls back to the in-process handler
-that is still there. Flip with a var change (no code deploy) and watch signup,
-login, OTP, Google return and the Telegram webhook.
+that is still there. Flip with a var change and the automatic deploy, and watch
+signup, login, OTP, Google return and the Telegram webhook.
 
-**Phase 3 — auth secrets move.**
-Set the auth-only secrets on `admission-auth` (`FIREBASE_*`, `TURNSTILE_SECRET_KEY`,
-the mail provider keys, `AUTH_HMAC_SECRET`, Telegram bot token) and remove them
-from `admission-gk` once Phase 2 has run clean for a few days. Cron stays on
-`admission-gk` until the alarm migration in the DO is planned.
+**Phase 3 — the new script gets the front's configuration.** *(runs before the
+flip; the order below was wrong until it was checked against the code)*
+
+`/config` reports a provider as available only when it is configured in the
+script that answers the request. Forwarding before this phase would have shown
+every student a login page where every method reads "unavailable" — and the
+smoke test would still have passed on `ok:true`. So:
+
+  * non-secret configuration moves into `wrangler.auth.toml`: the Firebase
+    continue URL, the Google/passkey/verification activation flags, and the
+    `GK_KV`/`PUB_KV` bindings the human-check store needs;
+  * the secrets the front actually reads are bound by the auth deploy workflow
+    from the same sources the app deploy uses;
+  * the mail and OTP-provider keys deliberately do **not** move: delivery runs
+    inside `AdmissionAuthAuthority`, which stays declared by `admission-gk`, so it
+    keeps reading that script's environment;
+  * `AUTH_HMAC_SECRET` and the Telegram bot tokens cannot be copied at all —
+    Cloudflare secrets are write-only — so the one route that derives a secret
+    from them (the inbound Telegram webhook) stays in process until they are
+    re-issued for this script. That exception is `AUTH_ROUTE_LOCAL_PATHS`.
+
+The auth smoke test now asserts `"available":true`, not just `"ok":true`: that is
+the field that proves the cross-script authority answered.
 
 **Phase 4 — retire the local path.**
 Delete the fallback handler wiring, keep `AUTH_ROUTE` for a release as a
