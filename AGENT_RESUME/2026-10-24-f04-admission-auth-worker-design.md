@@ -110,10 +110,20 @@ until then, stated plainly:
 Closing 3b means re-issuing those values for `admission-auth` in the dashboard,
 which is a deliberate owner action, not a code change.
 
-**Phase 4 — retire the local path.**
-Delete the fallback handler wiring, keep `AUTH_ROUTE` for a release as a
-safety valve, update `.github/workflows/deploy-pages-worker.yml` to deploy both
-scripts (auth first, then the app, so the entry never points at a stale auth).
+**Phase 2 and 3 are live** (2026-10-24): `AUTH_ROUTE = "service"`, and the app
+deploy smoke-tests a forwarded route and fails unless the answer carries
+`X-AH-Auth-Front: admission-auth`, so the split cannot be dead while the checks
+are green. No students were on the platform at the time, which is why the flip
+was made the same day.
+
+**Phase 4 — retire the local path.** Partly done: the app deploy now deploys
+`admission-auth` before itself and shares the `admission-auth-deploy` concurrency
+group with the auth workflow, so the entry never points at a stale auth and the
+two uploads cannot collide.
+
+What cannot be deleted yet is the in-process handler. `AUTH_ROUTE_LOCAL_PATHS`
+needs it for `/config` and the Telegram routes, and those cannot move until phase
+3b re-issues their secrets. So retirement is gated on 3b, not on time.
 
 ## Rollback
 
