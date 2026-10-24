@@ -1899,6 +1899,10 @@ function sendThrottledSecurityAlert(env, store, input = {}, options = {}) {
 // auth-native/worker/public-auth-handler.mjs
 var AUTH_API_PREFIX = "/api/auth/v1";
 var PUBLIC_PROFILE_PREFIX = "/api/public/profile/";
+function claimsAuthPath(pathname) {
+  const path = String(pathname || "");
+  return path === AUTH_API_PREFIX || path.startsWith(`${AUTH_API_PREFIX}/`) || path.startsWith(PUBLIC_PROFILE_PREFIX);
+}
 var AUTH_SESSION_COOKIE = "__Host-ah_session";
 var AUTH_FIREBASE_COOKIE = "__Host-ah_firebase";
 var AUTH_DEVICE_COOKIE = "__Host-ah_device";
@@ -2352,7 +2356,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
   return async function handleNativeAuthRequest(request, env, executionContext) {
     const url = new URL(request.url);
     const isPublicProfileRoute = url.pathname.startsWith(PUBLIC_PROFILE_PREFIX);
-    if (!url.pathname.startsWith(`${AUTH_API_PREFIX}/`) && url.pathname !== AUTH_API_PREFIX && !isPublicProfileRoute) return null;
+    if (!claimsAuthPath(url.pathname)) return null;
     const origin = request.headers.get("Origin") || "";
     const telegramOperation = request.method === "POST" && [
       `${AUTH_API_PREFIX}/telegram/webhook`,

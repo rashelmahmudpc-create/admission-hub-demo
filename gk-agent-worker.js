@@ -4,6 +4,9 @@ import { tryRouteToSkyAi } from './sky-ai-route.mjs';
 import { runDailyReport } from './sky-daily-report.mjs';
 import { handleInternalEmailRequest } from './email-gateway/worker/handler.mjs';
 import { createNativeAuthHandler } from './auth-native/worker/public-auth-handler.mjs';
+/* F-04 phase 2: AUTH_ROUTE = "service" forwards the auth surface to the
+ * admission-auth Worker; anything else keeps the in-process handler. */
+import { routeAuthRequest } from './auth-native/worker/auth-route.mjs';
 import { handleFcmNotificationRequest, runScheduledGlobalNotifications } from './fcm-notification.mjs';
 import { handleAdminPasskeyRequest } from './admin-passkey.mjs';
 import { handlePersonalizedNotificationRequest, runScheduledPersonalizedNotifications } from './personalized-notification.mjs';
@@ -561,7 +564,13 @@ export default {
       const id = env.VOICE_AGENT.idFromName(String(env.VOICE_OWNER_UID || 'owner'));
       return env.VOICE_AGENT.get(id).fetch(request);
     }
-    const authResponse = await nativeAuthHandler(request, env, ctx);
+    const authResponse = await routeAuthRequest({
+      request,
+      env,
+      ctx,
+      local: nativeAuthHandler,
+      forward: forwarded => env.AUTH_WORKER.fetch(forwarded)
+    });
     if (authResponse) return authResponse;
     const emailResponse = await handleInternalEmailRequest(request, env, ctx);
     if (emailResponse) return emailResponse;

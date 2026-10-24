@@ -12409,6 +12409,10 @@ function sendThrottledSecurityAlert(env, store, input = {}, options = {}) {
 // auth-native/worker/public-auth-handler.mjs
 var AUTH_API_PREFIX = "/api/auth/v1";
 var PUBLIC_PROFILE_PREFIX = "/api/public/profile/";
+function claimsAuthPath(pathname) {
+  const path = String(pathname || "");
+  return path === AUTH_API_PREFIX || path.startsWith(`${AUTH_API_PREFIX}/`) || path.startsWith(PUBLIC_PROFILE_PREFIX);
+}
 var AUTH_SESSION_COOKIE = "__Host-ah_session";
 var AUTH_FIREBASE_COOKIE = "__Host-ah_firebase";
 var AUTH_DEVICE_COOKIE = "__Host-ah_device";
@@ -12862,7 +12866,7 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
   return async function handleNativeAuthRequest(request, env, executionContext) {
     const url = new URL(request.url);
     const isPublicProfileRoute = url.pathname.startsWith(PUBLIC_PROFILE_PREFIX);
-    if (!url.pathname.startsWith(`${AUTH_API_PREFIX}/`) && url.pathname !== AUTH_API_PREFIX && !isPublicProfileRoute) return null;
+    if (!claimsAuthPath(url.pathname)) return null;
     const origin = request.headers.get("Origin") || "";
     const telegramOperation = request.method === "POST" && [
       `${AUTH_API_PREFIX}/telegram/webhook`,
@@ -14660,6 +14664,31 @@ var __publicAuthTest = Object.freeze({
   passkeyEndpointReady,
   passkeyPublished
 });
+
+// auth-native/worker/auth-route.mjs
+var AUTH_ROUTE_MODES = Object.freeze({ local: "local", service: "service" });
+function authRouteMode(env) {
+  const requested = String(env?.AUTH_ROUTE || "").trim().toLowerCase();
+  if (requested !== AUTH_ROUTE_MODES.service) return AUTH_ROUTE_MODES.local;
+  const binding = env?.AUTH_WORKER;
+  return binding && typeof binding.fetch === "function" ? AUTH_ROUTE_MODES.service : AUTH_ROUTE_MODES.local;
+}
+async function routeAuthRequest({ request, env, ctx, local, forward = null }) {
+  if (authRouteMode(env) === AUTH_ROUTE_MODES.local) return local(request, env, ctx);
+  let pathname;
+  try {
+    pathname = new URL(request.url).pathname;
+  } catch (_) {
+    return local(request, env, ctx);
+  }
+  if (!claimsAuthPath(pathname)) return local(request, env, ctx);
+  try {
+    const response3 = await (forward ? forward(request.clone()) : env.AUTH_WORKER.fetch(request.clone()));
+    if (response3) return response3;
+  } catch (_) {
+  }
+  return local(request, env, ctx);
+}
 
 // analytics-notifications.mjs
 var asInt2 = (v, fallback = 0) => {
@@ -33073,7 +33102,13 @@ var gk_agent_worker_default = {
       const id = env.VOICE_AGENT.idFromName(String(env.VOICE_OWNER_UID || "owner"));
       return env.VOICE_AGENT.get(id).fetch(request);
     }
-    const authResponse = await nativeAuthHandler(request, env, ctx);
+    const authResponse = await routeAuthRequest({
+      request,
+      env,
+      ctx,
+      local: nativeAuthHandler,
+      forward: (forwarded) => env.AUTH_WORKER.fetch(forwarded)
+    });
     if (authResponse) return authResponse;
     const emailResponse = await handleInternalEmailRequest(request, env, ctx);
     if (emailResponse) return emailResponse;
