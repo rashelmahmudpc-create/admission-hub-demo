@@ -95,3 +95,18 @@ test('ঙ১ — the crawler files agree with the canonical host', () => {
     assert.ok(match[1].startsWith(`${LIVE_ORIGIN}/`), `sitemap entry is not on the live host: ${match[1]}`);
   }
 });
+
+test('ঙ১ — every indexable page is listed in sitemap.xml', () => {
+  const sitemap = readFileSync(join(ROOT, 'sitemap.xml'), 'utf8');
+  const listed = new Set([...sitemap.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]));
+
+  const missing = [];
+  for (const [file, path] of htmlFiles()) {
+    const html = readFileSync(join(ROOT, file), 'utf8');
+    if (isNoindex(html)) continue;
+    const url = `${LIVE_ORIGIN}/${path}`;
+    if (!listed.has(url)) missing.push(`${file} -> ${url}`);
+  }
+
+  assert.deepEqual(missing, [], 'a page Google may index is not in sitemap.xml');
+});
