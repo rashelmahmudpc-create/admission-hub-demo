@@ -1,12 +1,12 @@
 /**
- * 🔔 ADMISSION HUB — Smart Notification Worker
+ * 🔔 ADMISSION HUB, Smart Notification Worker
  * v107 · Telegram delivery + iPhone/PWA web-push (VAPID) + cron streak-fallback
  *
  * Secrets (worker → Settings → Variables & Secrets):
- *   TG_BOT_TOKEN  — @BotFather টোকেন
- *   TG_CHAT_ID    — ইউজারের chat id (Start-এর পর getUpdates থেকে)
- *   VAPID_PRIV    — URL-safe base64url P-256 private key (32 bytes)
- *   VAPID_PUB     — URL-safe base64url P-256 public key (65 bytes, 0x04 সহ)
+ *   TG_BOT_TOKEN , @BotFather টোকেন
+ *   TG_CHAT_ID   , ইউজারের chat id (Start-এর পর getUpdates থেকে)
+ *   VAPID_PRIV   , URL-safe base64url P-256 private key (32 bytes)
+ *   VAPID_PUB    , URL-safe base64url P-256 public key (65 bytes, 0x04 সহ)
  * KV binding: NOTIFY_KV  (subs + state + dispatch dates)
  */
 
@@ -182,11 +182,11 @@ export default {
       const dispatchDate = await env.NOTIFY_KV.get('dispatchDate');
       if (dispatchDate === today) return; // আজ already পাঠানো হয়েছে
       const state = JSON.parse(await env.NOTIFY_KV.get('state') || 'null');
-      if (!state || state.lastOpen === today) return; // অ্যাপ আজ খোলা হয়েছে — দরকার নেই
+      if (!state || state.lastOpen === today) return; // অ্যাপ আজ খোলা হয়েছে, দরকার নেই
       const streak = Number(state.streak) || 0;
       const msg = streak >= 2
-        ? `ভাই, আজ অ্যাপ খোলা হয়নি 😶 তোর ${streak} দিনের streak ভাঙার ঝুঁকিতে আছে — অন্তত 10টা MCQ দিয়ে বাঁচিয়ে রাখি! 🔥`
-        : 'চল আজকের practice দিয়ে দিনটা শুরু করি 📚 ছোট শুরুই যথেষ্ট — 10টা MCQ!';
+        ? `ভাই, আজ অ্যাপ খোলা হয়নি 😶 তোর ${streak} দিনের streak ভাঙার ঝুঁকিতে আছে, অন্তত 10টা MCQ দিয়ে বাঁচিয়ে রাখি! 🔥`
+        : 'চল আজকের practice দিয়ে দিনটা শুরু করি 📚 ছোট শুরুই যথেষ্ট, 10টা MCQ!';
       await sendTelegram(env, msg);
       await env.NOTIFY_KV.put('dispatchDate', today);
     } catch (_) {}

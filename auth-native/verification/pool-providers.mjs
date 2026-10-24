@@ -6,7 +6,7 @@
 // value belongs to which provider. Nothing here ever logs, returns or echoes a
 // key: getProviderStatus() only exposes the last four characters.
 //
-// Slots (all LOCAL_CODE, priority 38 — after every branded mailer and before the
+// Slots (all LOCAL_CODE, priority 38, after every branded mailer and before the
 // locked last-resort pair otp-g / otp-c):
 //   otp-n Maileroo · otp-o Elastic Email · otp-q Mailgun · otp-r Alibaba DirectMail
 //   otp-s SparkPost (Bird) · otp-t Plunk · otp-u Loops
@@ -48,7 +48,7 @@ function classifyLine(line) {
 }
 
 // Remove the provider word itself ("mailgun:", "Elastic") so it is never read as
-// a key, but only when the WHOLE word is the name — a key that merely contains
+// a key, but only when the WHOLE word is the name, a key that merely contains
 // the provider name stays intact.
 function stripName(line, named) {
   const pattern = ALIASES.find(([n]) => n === named)[1];
@@ -160,7 +160,7 @@ async function send(fetchImpl, url, init, helpers) {
   } catch { throw new VerificationProviderError('NETWORK_ERROR', VERIFICATION_FAILURE_CLASS.TEMPORARY); }
   let payload = {};
   try { payload = await helpers.boundedJson(response); } catch { payload = {}; }
-  // userStatuses: [] — a 400/422 here means a bad key/sender on OUR side, never the
+  // userStatuses: [], a 400/422 here means a bad key/sender on OUR side, never the
   // student's fault, so it must fail over to the next mailer.
   if (!response.ok) throw helpers.httpFailure(response, payload, { userStatuses: [] });
   return payload;
@@ -203,7 +203,7 @@ class PoolMailer {
     const expiresAt = Number(input.expiresAt || 0);
     const minutes = expiresAt > 0 ? Math.max(1, Math.round((expiresAt - Number(this.now())) / 60_000)) : 5;
     const { text, html } = this.helpers.otpEmailBody(code, minutes, input.recipientName);
-    return { destination, code, minutes, text, html, subject: `${this.helpers.appName} — আপনার যাচাইকরণ কোড`, fromName: this.helpers.appName };
+    return { destination, code, minutes, text, html, subject: `${this.helpers.appName}, আপনার যাচাইকরণ কোড`, fromName: this.helpers.appName };
   }
   async verifyCode() { throw new VerificationProviderError('LOCAL_VERIFICATION_ONLY', VERIFICATION_FAILURE_CLASS.USER); }
   async getProviderStatus() {
