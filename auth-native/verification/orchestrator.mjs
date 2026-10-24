@@ -271,13 +271,16 @@ export class VerificationOrchestrator {
     });
   }
 
-  async #candidateRows(identity, destinations, now) {
+  async #candidateRows(identity, destinations, now, deadline = 0) {
     // otp-m (magic link) is never part of the code failover, and a magic-link
     // request never falls back to a code provider the student is not expecting.
     const magicLink = identity.deliveryMethod === 'magic-link';
     const eligible = this.config.enabled
       ? this.config.providers.filter(entry => entry.enabled && destinations[entry.channel] && ((entry.id === MAGIC_LINK_PROVIDER_ID) === magicLink))
       : [];
+    // Probes read live health from every enabled slot, so they are part of the
+    // student's wait and must come out of the same budget as the sends.
+    const probeCeiling = Math.min(PROBE_TIMEOUT_MS, Math.max(250, deadline - Date.now()));
     const rows = await Promise.all(eligible.map(async entry => {
       const provider = this.providers.get(entry.id);
       const started = Date.now();
@@ -286,8 +289,8 @@ export class VerificationOrchestrator {
           // Readiness probes run for every slot before a single send, so a slow
           // probe delayed the whole OTP past the browser's patience. Probes get
           // a short ceiling; the send itself keeps the slot's full timeoutMs.
-          bounded(() => provider.checkAvailability({ purpose: identity.purpose }), Math.min(entry.timeoutMs, PROBE_TIMEOUT_MS)),
-          bounded(() => provider.getRemainingQuota({ now }), Math.min(entry.timeoutMs, PROBE_TIMEOUT_MS)),
+          bounded(() => provider.checkAvailability({ purpose: identity.purpose }), Math.min(entry.timeoutMs, probeCeiling)),
+          bounded(() => provider.getRemainingQuota({ now }), Math.min(entry.timeoutMs, probeCeiling)),
           this.repository.dailyQuotaSnapshot({ providerId: entry.id, dailyQuota: entry.dailyQuota, now }),
           this.repository.providerSnapshot({ providerId: entry.id, now })
         ]);
@@ -349,6 +352,10 @@ export class VerificationOrchestrator {
       const provider = this.providers.get(entry.id);
       return entry.enabled && provider?.id === 'telegram' && provider?.verificationMode === VERIFICATION_MODES.LOCAL_CODE;
     });
+    // F-02: the student's clock starts when the request arrives, not when the
+    // first send leaves, so health probes cannot spend the budget for free.
+    const requestStarted = Date.now();
+    const deliveryDeadline = requestStarted + this.config.policy.deliveryBudgetMs;
     const [codeMac, linkTokenMac, codeCipher, linkCipher] = await Promise.all([
       this.hmac.hex('backup-verification-code-v1', `${attemptId}:${code}`),
       this.hmac.hex('backup-verification-link-v1', linkToken),
@@ -387,8 +394,7 @@ export class VerificationOrchestrator {
     } catch {}
     const destinations = identity.destinations;
     const deliveryMethod = input?.deliveryMethod === 'magic-link' && identity.purpose === 'email-ownership' ? 'magic-link' : '';
-    const candidates = await this.#candidateRows({ ...identity, attemptId, previousProviderId, deliveryMethod }, destinations, now);
-    const requestStarted = Date.now();
+    const candidates = await this.#candidateRows({ ...identity, attemptId, previousProviderId, deliveryMethod }, destinations, now, deliveryDeadline);
     const attemptRef = String(attemptId).slice(0, 8);
     const tried = [];
     const logBase = { attempt: attemptRef, purpose: identity.purpose, method: deliveryMethod || 'code', candidates: candidates.length };
@@ -396,11 +402,17 @@ export class VerificationOrchestrator {
     const logDelivery = fields => emit('otp_delivery', fields);
     const logRequest = fields => emit('otp_request', fields);
     let rank = 0;
+    let budgetExhausted = false;
     for (const candidate of candidates) {
       const { entry, provider } = candidate;
       rank += 1;
       const maxTries = 1 + policy.maxProviderRetries;
       for (let currentTry = 0; currentTry < maxTries; currentTry += 1) {
+        // F-02: once the shared budget is gone, stop. Spending another slot's
+        // timeoutMs after the student has already given up only burns quota and
+        // turns a fast failure into a minute-long spinner.
+        const remainingBudget = deliveryDeadline - Date.now();
+        if (remainingBudget <= 0) { budgetExhausted = true; break; }
         const quota = await this.repository.reserveDailyQuota({ providerId: entry.id, dailyQuota: entry.dailyQuota, now });
         if (quota.exhausted) {
           tried.push(`${entry.id}:quota`);
@@ -419,7 +431,7 @@ export class VerificationOrchestrator {
             recipientName: identity.recipientName,
             expiresAt: now + (policy.codeTtlSeconds * 1000),
             signalContext: { origin: identity.context.origin }
-          }), entry.timeoutMs);
+          }), Math.min(entry.timeoutMs, deliveryDeadline - Date.now()));
           if (result?.accepted !== true) throw new VerificationProviderError('INVALID_PROVIDER_RESPONSE', VERIFICATION_FAILURE_CLASS.HARD);
           providerAccepted = true;
           const latencyMs = Date.now() - started;
@@ -481,8 +493,15 @@ export class VerificationOrchestrator {
           if (failure.code === 'PROVIDER_TIMEOUT') break;
         }
       }
+      if (budgetExhausted) break;
     }
-    logRequest({ ...logBase, outcome: 'all_failed', totalMs: Date.now() - requestStarted, tried: tried.join(',') });
+    logRequest({
+      ...logBase,
+      outcome: budgetExhausted ? 'budget_exhausted' : 'all_failed',
+      budgetMs: policy.deliveryBudgetMs,
+      totalMs: Date.now() - requestStarted,
+      tried: tried.join(',')
+    });
     await this.repository.failChallenge({ attemptId, reason: 'all_providers_unavailable', now });
     throw new NativeAuthError(AUTH_ERROR_CODES.BACKUP_UNAVAILABLE);
   }

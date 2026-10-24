@@ -54,7 +54,16 @@ const DEFAULT_POLICY = Object.freeze({
   maxProviderRetries: 1,
   circuitFailureThreshold: 3,
   circuitCooldownSeconds: 300,
-  lowQuotaRatio: 0.15
+  lowQuotaRatio: 0.15,
+  /* F-02 (blueprint 06): one code, one wall-clock budget. The send chain used to
+     be unbounded — every enabled slot waited its own timeoutMs in turn, so a bad
+     day across a dozen providers could hold the student for ~160s. The budget
+     caps the whole request (health probes included), not each attempt. */
+  deliveryBudgetMs: 25_000,
+  /* How long the first slot may stay silent before the next one starts sending
+     in parallel (hedged send). Must stay well under a slot's timeoutMs so a
+     healthy-but-slow provider is raced, not waited out. */
+  hedgeDelayMs: 2_500
 });
 
 function safeJson(raw) {
@@ -85,7 +94,13 @@ export function verificationConfig(raw) {
     maxProviderRetries: int(policyInput.maxProviderRetries, DEFAULT_POLICY.maxProviderRetries, 0, 2),
     circuitFailureThreshold: int(policyInput.circuitFailureThreshold, DEFAULT_POLICY.circuitFailureThreshold, 1, 10),
     circuitCooldownSeconds: int(policyInput.circuitCooldownSeconds, DEFAULT_POLICY.circuitCooldownSeconds, 30, 3_600),
-    lowQuotaRatio: ratio(policyInput.lowQuotaRatio, DEFAULT_POLICY.lowQuotaRatio)
+    lowQuotaRatio: ratio(policyInput.lowQuotaRatio, DEFAULT_POLICY.lowQuotaRatio),
+    deliveryBudgetMs: int(policyInput.deliveryBudgetMs, DEFAULT_POLICY.deliveryBudgetMs, 3_000, 60_000),
+    // A hedge delay longer than the budget would make the hedge dead code.
+    hedgeDelayMs: Math.min(
+      int(policyInput.hedgeDelayMs, DEFAULT_POLICY.hedgeDelayMs, 200, 15_000),
+      int(policyInput.deliveryBudgetMs, DEFAULT_POLICY.deliveryBudgetMs, 3_000, 60_000) - 1_000
+    )
   });
   const supplied = Array.isArray(input.providers) ? input.providers : [];
   const byId = new Map(supplied.map(row => [String(row?.id || ''), row]));
