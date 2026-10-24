@@ -15,14 +15,33 @@ export const AUTH_ROUTE_MODES = Object.freeze({ local: 'local', service: 'servic
  * Paths the auth Worker is not yet equipped to answer, so they stay in process
  * even in service mode.
  *
- * The inbound Telegram webhook is verified with a secret derived from
- * AUTH_HMAC_SECRET, and Cloudflare secrets are write-only: the value cannot be
- * copied to the new script, only re-issued. Re-issuing it would invalidate the
- * registered webhook for a live feature, so the honest staging is to leave this
- * one route with the script that already holds the secret. Everything a student
- * touches — signup, login, reset, OTP, session — is fully forwarded.
+ * All of them need a secret that lives only in admission-gk. A Cloudflare secret
+ * is write-only: it cannot be copied to another script, only re-issued — and
+ * re-issuing AUTH_HMAC_SECRET would change every derived Telegram address and
+ * orphan those accounts, while re-issuing the bot token would break the
+ * registered webhook. So these routes keep the script that already holds them:
+ *
+ *   /config              reports what is configured *here*; served by the script
+ *                        with the full environment, so the login page can never
+ *                        claim a method is missing while another script answers it.
+ *   /telegram/login      verifies Telegram's signature with the bot token and
+ *                        derives the account from the HMAC key.
+ *   /telegram/webhook    verifies a secret derived from the HMAC key.
+ *   /telegram/canary/*   operator-only probes that need the same keys.
+ *
+ * Everything else a student touches — signup, login, session, refresh, logout,
+ * Google, Facebook, passkey, OTP, reset, account and the public profile — is
+ * forwarded. The one thing they must not lose is their session: a Telegram-login
+ * account is recognised across the split by asking the authority (see
+ * `telegramLoginAccountFor`), which is where the secret stayed.
  */
-export const AUTH_ROUTE_LOCAL_PATHS = Object.freeze(['/api/auth/v1/telegram/webhook']);
+export const AUTH_ROUTE_LOCAL_PATHS = Object.freeze([
+  '/api/auth/v1/config',
+  '/api/auth/v1/telegram/login',
+  '/api/auth/v1/telegram/webhook',
+  '/api/auth/v1/telegram/canary/activate',
+  '/api/auth/v1/telegram/canary/deactivate'
+]);
 
 export function authRouteMode(env) {
   const requested = String(env?.AUTH_ROUTE || '').trim().toLowerCase();
