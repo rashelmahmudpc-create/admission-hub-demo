@@ -19,3 +19,16 @@ head_sampling_rate = 1
 [[kv_namespaces]]
 binding = "PUB_KV"
 id = "b9353515b098427687afcfb8654ed359"
+
+# F0.1 step 4d — Recall reads per-student memory that lives in the AI_STATE
+# Durable Object. `script_name` is what keeps it the SAME object: a DO id is
+# scoped to the script that declares the class, so declaring AiStateObject here
+# would have created a second, empty store and every student's reminder would
+# have silently disappeared.
+#
+# No [[migrations]] block on purpose: the class is already declared by
+# admission-gk, and redeclaring it here would be a second store.
+[[durable_objects.bindings]]
+name = "AI_STATE"
+class_name = "AiStateObject"
+script_name = "admission-gk"

@@ -28,11 +28,24 @@ Source of truth: Notion "Sky AI v1.0" → main page section **"🚦 এজেন
   night showed the public URL answering 404 before this change. All defaults OFF.
   **Left:** deploy `admission-gk`, create the `SKY_FLAGS` KV namespace + binding on sky-ai
   (override needs it; without it the defaults apply), then use a flag for real routing.
+- **F0.1 step 4d ✅ (2026-10-25): `POST /api/ai/recall` moved into sky-ai.**
+  Bound the shared `AI_STATE` Durable Object cross-script (`script_name =
+  "admission-gk"`) so recall reads the SAME memory store. `/health` now reports
+  that binding (`deps.aiState`), and the app deploy fails if it is not `ok` —
+  because a missing binding degrades recall to "nothing yet" instead of erroring.
+  `sky-ai-route.mjs` gained `SKY_AI_POST_IDENTITY_ROUTES`; rollback is removing
+  the one entry. Deploy order: `deploy-pages-worker.yml` now deploys sky-ai
+  before admission-gk.
 - **F0.3–F0.8 — Todo.**
 - **Next:** deploy this branch's worker, add the `SKY_FLAGS` KV binding, then continue
   F0.1 step 4 — move the remaining `/api/ai/*` routes into sky-ai one at a time, `/api/ai/chat` last.
 
 ## Work log (append at the bottom)
+- 2026-10-25 · F0.1 step 4d · `POST /api/ai/recall` moved to sky-ai with the
+  AI_STATE cross-script binding + `/health` dependency report + deploy assertion;
+  42 sky-ai/routing tests and 78 AI/recall tests green · PR (this branch) ·
+  next: step 4e — `/api/ai/instructions`, then `status`, `memory/clear`,
+  `actions/propose|confirm`, `/api/ai/chat` last.
 - 2026-10-19 · — · Blueprint v1.0 created (Notion).
 - 2026-10-20 (approx.) · F0.1 steps 1–3 + F0.2 flags.mjs · merged to main, sky-ai deployed · (Notion not updated at the time).
 - 2026-10-21 23:20 · handoff system · Notion board + pages 07/09 updated, this file added · next: F0.1 step 4a.

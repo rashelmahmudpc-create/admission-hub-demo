@@ -14,8 +14,35 @@
 import { loadFlags, evaluateAll } from './flags.mjs';
 import { handlePrefsGet } from './prefs.mjs';
 import { handleAuditGet } from './audit.mjs';
+import { handleRecallPost } from './recall.mjs';
+import { aiStateStore } from '../ai-state-do.mjs';
 
-export const SKY_AI_VERSION = 'sky-ai-f0.1-4c-audit';
+export const SKY_AI_VERSION = 'sky-ai-f0.1-4d-recall';
+
+/* F0.1 step 4d: what /health reports about this Worker's dependencies.
+ *
+ * The split-out script is only as good as its bindings, and a missing or broken
+ * one fails quietly — recall would fall back to KV and return an empty reminder
+ * that looks like "this student has no memory yet". So the binding is reported
+ * here, and the deploy asserts it.
+ *
+ * `aiState: 'missing'`  — no AI_STATE binding at all (wrangler.toml not deployed)
+ * `aiState: 'error'`    — bound, but the call failed (wrong script_name, or the
+ *                         declaring script does not export the class)
+ * `aiState: 'ok'`       — a read reached the Durable Object and came back
+ *
+ * The probe is a READ of a key that does not exist: it costs one object request
+ * and writes nothing, so calling /health never changes state. */
+async function dependencies(env = {}) {
+  const store = aiStateStore(env);
+  if (!store) return { kv: Boolean(env && env.PUB_KV), aiState: 'missing' };
+  try {
+    await store.get('__health__', 'probe');
+    return { kv: Boolean(env && env.PUB_KV), aiState: 'ok' };
+  } catch (_) {
+    return { kv: Boolean(env && env.PUB_KV), aiState: 'error' };
+  }
+}
 
 function json(body, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -39,7 +66,8 @@ export async function handle(request, env = {}) {
       version: SKY_AI_VERSION,
       /* Shows whether the call came through admission-gk's service binding
        * (internal header set by the caller) or straight from the internet. */
-      via: request.headers.get('x-sky-ai-caller') === 'admission-gk' ? 'service-binding' : 'direct'
+      via: request.headers.get('x-sky-ai-caller') === 'admission-gk' ? 'service-binding' : 'direct',
+      deps: await dependencies(env)
     });
   }
 
@@ -62,6 +90,15 @@ export async function handle(request, env = {}) {
   /* F0.1 step 4c: GET /api/ai/actions/audit (internal-key protected, see audit.mjs). */
   if (request.method === 'GET' && path === '/api/ai/actions/audit') {
     const res = await handleAuditGet(request, env);
+    if (res) return res;
+  }
+
+  /* F0.1 step 4d: POST /api/ai/recall (internal-key protected, see recall.mjs).
+   * The first route that takes a body, so it is also the first that can lose one:
+   * admission-gk clones the request before forwarding, and its fallback re-reads
+   * the original. Both sides are covered by tests. */
+  if (request.method === 'POST' && path === '/api/ai/recall') {
+    const res = await handleRecallPost(request, env);
     if (res) return res;
   }
 

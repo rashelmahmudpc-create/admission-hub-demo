@@ -58,6 +58,40 @@ export const SKY_AI_IDENTITY_ROUTES = Object.freeze([
 ]);
 export const SKY_INTERNAL_KEY_NAME = 'secret:sky-internal';
 
+/* F0.1 step 4d: identity routes that carry a body. Kept separate from the GET
+ * list above because the body is the risk: a service binding consumes it, so the
+ * original request has to be cloned or the local fallback answers with an empty
+ * one. `POST /api/ai/recall` is the only entry, and rollback is removing it. */
+export const SKY_AI_POST_IDENTITY_ROUTES = Object.freeze([
+  'POST /api/ai/recall'
+]);
+
+export async function forwardPostWithIdentity(request, env, uid, routes = SKY_AI_POST_IDENTITY_ROUTES) {
+  if (!uid || request.method !== 'POST') return null;
+  if (!shouldRouteToSkyAi(request, env, routes) || !env.PUB_KV) return null;
+  try {
+    const key = await env.PUB_KV.get(SKY_INTERNAL_KEY_NAME);
+    if (!key) return null;
+    // Clone BEFORE reading: the caller's local handler still has to be able to
+    // read this same body if anything below fails. Same trap F-04 hit.
+    const body = await request.clone().arrayBuffer();
+    const res = await env.SKY_AI.fetch(new Request(request.url, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-sky-ai-caller': 'admission-gk',
+        'x-sky-uid': String(uid),
+        'x-sky-internal': key
+      },
+      body
+    }));
+    if (!res || res.status === 404 || res.status >= 500) return null;
+    return res;
+  } catch (_) {
+    return null;
+  }
+}
+
 export async function forwardWithIdentity(request, env, uid, routes = SKY_AI_IDENTITY_ROUTES) {
   if (!uid || request.method !== 'GET') return null;
   if (!shouldRouteToSkyAi(request, env, routes) || !env.PUB_KV) return null;
