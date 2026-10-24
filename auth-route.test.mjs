@@ -21,8 +21,13 @@ const harness = ({ env, path = '/api/auth/v1/session', init = {}, response = new
   };
 };
 
-test('it ships dark: the default is the in-process handler', () => {
-  assert.match(WRANGLER, /^AUTH_ROUTE = "local"$/m, 'the committed default must stay local');
+test('the mode is an explicit switch, and the in-process answer is always the way back', () => {
+  const committed = WRANGLER.match(/^AUTH_ROUTE = "([a-z]+)"$/m);
+  assert.ok(committed, 'AUTH_ROUTE is committed explicitly, never left implicit');
+  assert.ok(['local', 'service'].includes(committed[1]), `unexpected mode: ${committed[1]}`);
+  // Whatever the deployed mode, a missing or broken binding must degrade to the
+  // handler that has always served these routes — that is the whole rollback.
+  assert.match(WRANGLER, /binding = "AUTH_WORKER"\nservice = "admission-auth"/);
   assert.equal(authRouteMode({}), AUTH_ROUTE_MODES.local);
   assert.equal(authRouteMode({ AUTH_ROUTE: 'service' }), AUTH_ROUTE_MODES.local, 'a mode with no binding is a mistake, not an instruction');
   assert.equal(authRouteMode({ AUTH_ROUTE: 'SERVICE ', AUTH_WORKER: { fetch() {} } }), AUTH_ROUTE_MODES.service);

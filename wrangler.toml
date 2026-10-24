@@ -8,7 +8,7 @@ FIREBASE_CONTINUE_URL = "https://admissionsky.pages.dev/?firebaseVerified=1"
 GOOGLE_AUTH_ACTIVATION = "enabled"
 # F-04 phase 2 switch: "local" = admission-gk answers /api/auth/v1/* itself (today).
 # "service" = forward to admission-auth, falling back in process on transport error.
-AUTH_ROUTE = "local"
+AUTH_ROUTE = "service"
 PASSKEY_AUTH_ACTIVATION = "enabled"
 VERIFICATION_AUTH_ACTIVATION = "enabled"
 # Internal admission caps, not provider-reported quotas. otp-a is Brevo (free 300/day)
