@@ -92,23 +92,35 @@ smoke test would still have passed on `ok:true`. So:
 The auth smoke test now asserts `"available":true`, not just `"ok":true`: that is
 the field that proves the cross-script authority answered.
 
-**Phase 3b — what is left behind, on purpose.** `CANARY_EMAILS`,
-`SHADOW_GUARD_ACTIVATION`, `AUTH_HMAC_SECRET` and the Telegram bot/webhook
-secrets exist only inside `admission-gk` and have no repository copy. Cloudflare
-secrets are write-only, so they cannot be copied — only re-issued, and re-issuing
-`AUTH_HMAC_SECRET` or the bot token would invalidate live state. Consequences
-until then, stated plainly:
+**Phase 3b — measured, not guessed.** The Email Gateway deploy inventories the
+secret names bound to `admission-gk` (run 40115355932), which turns this from a
+guess into a list. What is actually there:
 
-  * `/config` and the Telegram routes stay in process, so they keep the full
-    environment (`AUTH_ROUTE_LOCAL_PATHS`);
-  * a Telegram-login account is still recognised, by asking the authority;
-  * the decoy-account path is inactive on the forwarded login, and the shadow
-    guard runs in its default OBSERVE mode;
-  * failed-login alerts keep working when the repository Telegram secrets are
-    present, which the auth deploy binds as `TG_BOT_TOKEN`/`TG_CHAT_ID`.
+| name | on `admission-gk` | on `admission-auth` | effect of the gap |
+|---|---|---|---|
+| `AUTH_HMAC_SECRET` | present | absent | only the Telegram derivation routes; handled below |
+| `TG_BOT_TOKEN`, `TG_CHAT_ID` | present | bound by the auth deploy | none |
+| `TELEGRAM_AUTH_BOT_TOKEN` | **absent** | absent | none — `telegramLoginBotToken` already falls back to `TG_BOT_TOKEN` |
+| `TELEGRAM_AUTH_WEBHOOK_SECRET` | **absent** | absent | none — the webhook secret is derived from `AUTH_HMAC_SECRET` anyway |
+| `CANARY_EMAILS` | **absent** | absent | none — the decoy path is inactive on both scripts |
+| `SHADOW_GUARD_ACTIVATION` | unset | unset | none — both resolve to the default OBSERVE mode |
 
-Closing 3b means re-issuing those values for `admission-auth` in the dashboard,
-which is a deliberate owner action, not a code change.
+So the honest position is much smaller than this document first claimed: **nothing
+was degraded.** The earlier note that the decoy path and the shadow guard would be
+"inactive on the new script" was wrong — they are inactive on the old one too, and
+identically.
+
+What genuinely cannot move is `AUTH_HMAC_SECRET`: a Cloudflare secret is
+write-only, and re-issuing it changes every derived Telegram address and orphans
+the accounts that sign in that way. It gates exactly two routes (`telegram/login`
+and `telegram/webhook`), plus `/config`, which reports the whole environment and
+so must be answered where that environment is complete. Those three stay in
+process (`AUTH_ROUTE_LOCAL_PATHS`).
+
+Closing 3b for real means routing the last two derivations through the authority
+the way the login-email check already is. That is a code change, not a dashboard
+step — the earlier claim that the owner had to re-issue values was wrong, because
+the only value needed is one that must not change.
 
 **Phase 2 and 3 are live** (2026-10-24): `AUTH_ROUTE = "service"`, and the app
 deploy smoke-tests forwarded routes and fails unless the answers carry
