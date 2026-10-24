@@ -1,0 +1,67 @@
+name: AI provider cleanup 2026-10-20 (apply patch + rebuild bundle, branch only)
+
+# Owner-approved 2026-10-20. Applies .github/ai-provider-cleanup-20261020.patch
+# (dead providers removed, Cerebras gpt-oss-120b + qwen-3.8-27b fallback,
+# keyless OVH/Pollinations behind an `anon` switch, AI_EXTRA_PROVIDERS from KV),
+# runs the AI regression tests, regenerates worker-bundle.mjs and commits the
+# result to this branch only. It never deploys.
+
+on:
+  push:
+    branches: [ai-provider-cleanup-20261020]
+    paths:
+      - '.github/ai-provider-cleanup-20261020.patch'
+      - '.github/workflows/ai-provider-cleanup-20261020.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ai-provider-cleanup-20261020
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Apply patch (skip if already applied)
+        run: |
+          set -eu
+          if git apply --check .github/ai-provider-cleanup-20261020.patch 2>/dev/null; then
+            git apply .github/ai-provider-cleanup-20261020.patch
+          else
+            git apply --reverse --check .github/ai-provider-cleanup-20261020.patch
+            echo 'patch already applied'
+          fi
+          node --check ai-agent.js
+      - name: Regression tests
+        run: |
+          set -eu
+          node ai-provider-adapters.test.mjs
+          node ai-agent-f1.test.mjs
+          node p28-provider-health.test.mjs
+          node p31-model-priority.test.mjs
+          node p30-ai-latency-cache.test.mjs
+          node p26-tier-router.test.mjs
+          node p29-ai-status-privacy.test.mjs
+          node --test free-tier-failover.test.mjs
+      - name: Rebuild worker bundle
+        run: |
+          set -eu
+          npm run build:worker
+          npm run check:worker-bundle
+      - name: Commit sources + bundle
+        run: |
+          set -eu
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add ai-agent.js ai-provider-adapters.test.mjs worker-bundle.mjs
+          if git diff --cached --quiet; then echo 'nothing to commit'; exit 0; fi
+          git commit -m 'AI providers: drop 11 dead providers, Cerebras qwen fallback, keyless OVH/Pollinations, AI_EXTRA_PROVIDERS; rebuild bundle'
+          git push origin HEAD:ai-provider-cleanup-20261020

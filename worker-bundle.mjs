@@ -3825,25 +3825,39 @@ var COMPAT_PROVIDERS = [
    * free tier serves openai/gpt-4o-mini. Its 400 floor on max_output_tokens is
    * satisfied by the agent core's normal token budget. */
   { key: "VERCEL_AI_GATEWAY_KEY", url: "https://ai-gateway.vercel.sh/v1/chat/completions", models: ["openai/gpt-4o-mini"] },
-  { key: "GITHUB_MODELS_TOKEN", url: "https://models.github.ai/inference/chat/completions", models: ["openai/gpt-4o-mini"] },
   /* mistral-small-latest is a paid-plan model and answers 429 on the free tier;
    * ministral-14b-latest is served to free accounts. */
   { key: "MISTRAL_API_KEYS", url: "https://api.mistral.ai/v1/chat/completions", models: ["ministral-14b-latest"] },
-  { key: "CEREBRAS_API_KEYS", url: "https://api.cerebras.ai/v1/chat/completions", models: ["llama-3.3-70b"] },
-  { key: "SAMBANOVA_API_KEYS", url: "https://api.sambanova.ai/v1/chat/completions", models: ["Meta-Llama-3.3-70B-Instruct"] },
+  /* Provider audit 2026-10-20: llama-3.3-70b was retired from Cerebras (404).
+   * gpt-oss-120b (2,400 req/day) first, then qwen-3.8-27b as the large
+   * fallback reservoir (648,000 req/day, 216M tokens/day measured from the
+   * rate-limit headers). Owner: keep it as a fallback, not first. */
+  { key: "CEREBRAS_API_KEYS", url: "https://api.cerebras.ai/v1/chat/completions", models: ["gpt-oss-120b", "qwen-3.8-27b"] },
   { key: "COHERE_API_KEYS", url: "https://api.cohere.ai/compatibility/v1/chat/completions", models: ["command-r7b-12-2024"] },
-  { key: "HUGGINGFACE_API_KEYS", url: "https://router.huggingface.co/v1/chat/completions", models: ["meta-llama/Llama-3.3-70B-Instruct"] },
-  { key: "DEEPINFRA_API_KEYS", url: "https://api.deepinfra.com/v1/openai/chat/completions", models: ["meta-llama/Meta-Llama-3.1-70B-Instruct"] },
-  { key: "TOGETHER_API_KEYS", url: "https://api.together.xyz/v1/chat/completions", models: ["meta-llama/Llama-3.3-70B-Instruct-Turbo"] },
-  { key: "KIMI_API_KEYS", url: "https://api.moonshot.ai/v1/chat/completions", models: ["moonshot-v1-8k"] },
-  { key: "AIML_API_KEYS", url: "https://api.aimlapi.com/v1/chat/completions", models: ["gpt-4o-mini"] },
-  { key: "LLM7_API_KEYS", url: "https://api.llm7.io/v1/chat/completions", models: ["gpt-4o-mini"] },
-  { key: "SILICONFLOW_API_KEYS", url: "https://api.siliconflow.cn/v1/chat/completions", models: ["Qwen/Qwen2.5-7B-Instruct"] },
-  { key: "STEPFUN_API_KEYS", url: "https://api.stepfun.ai/v1/chat/completions", models: ["step-1-8k"] },
-  /* MiniMax does not expose /chat/completions; its OpenAI-shaped path is
-     /text/chatcompletion_v2, which this adapter can drive unchanged. */
-  { key: "MINIMAX_API_KEYS", url: "https://api.minimax.chat/v1/text/chatcompletion_v2", models: ["abab6.5s-chat"] }
+  /* Keyless public endpoints. They join the chain only when their slot holds
+   * the literal value `anon` (env or secret:AI_KEYS), so an operator switches
+   * them on/off from KV; `anon` is sent as no Authorization header at all.
+   * OVHcloud AI Endpoints: anonymous tier, 2 req/min per model (2026-10-20).
+   * Pollinations: anonymous tier, gpt-oss-20b behind the `openai` alias. */
+  { key: "OVH_AI_KEY", url: "https://oai.endpoints.kepler.ai.cloud.ovh.net/v1/chat/completions", models: ["gpt-oss-120b"] },
+  { key: "POLLINATIONS_KEY", url: "https://text.pollinations.ai/openai", models: ["openai"] }
+  /* Removed 2026-10-20 after live probes: GitHub Models (no token), SambaNova,
+   * HuggingFace, DeepInfra, Kimi, AIML, StepFun, MiniMax, SiliconFlow, LLM7
+   * (402/403 no balance), Together (401 invalid key). */
 ];
+var ANON_KEY = "anon";
+function extraProviders(env, kv2 = {}) {
+  const raw = env && env.AI_EXTRA_PROVIDERS || kv2.AI_EXTRA_PROVIDERS || "";
+  if (!raw) return [];
+  let list2;
+  try {
+    list2 = typeof raw === "string" ? JSON.parse(raw) : raw;
+  } catch (_) {
+    return [];
+  }
+  if (!Array.isArray(list2)) return [];
+  return list2.filter((p) => p && typeof p === "object" && /^[A-Z0-9_]{2,64}$/.test(String(p.key || "")) && /^https:\/\/[^\s]+$/.test(String(p.url || "")) && Array.isArray(p.models) && p.models.some((m) => typeof m === "string" && m.trim())).slice(0, 40).map((p) => ({ key: String(p.key), url: String(p.url), models: p.models.filter((m) => typeof m === "string" && m.trim()).map((m) => m.trim()) }));
+}
 var AI_KV_JSON_KEY = "secret:AI_KEYS";
 var AI_KV_NAME_DEFAULTS = ["GROQ_API_KEY"];
 async function aiKeyOverlay(env) {
@@ -3901,7 +3915,7 @@ function routerChain(env, tier, badSet = /* @__PURE__ */ new Set(), kv2 = {}) {
     const list2 = cfModels.length ? cfModels : ["@cf/meta/llama-3.3-70b-instruct-fp8-fast"];
     for (const m of list2) chain.push({ provider: "cloudflare", key: cfKey, model: m });
   }
-  for (const p of COMPAT_PROVIDERS) {
+  for (const p of COMPAT_PROVIDERS.concat(extraProviders(env, kv2))) {
     const keys2 = String(pickKey(env, kv2, p.key) || "").split(",").map((s) => s.trim()).filter(Boolean);
     if (!keys2.length) continue;
     const models = String(env && env[p.key + "_MODELS"] || kv2[p.key + "_MODELS"] || "").split(",").map((s) => s.trim()).filter(Boolean);
@@ -3909,7 +3923,7 @@ function routerChain(env, tier, badSet = /* @__PURE__ */ new Set(), kv2 = {}) {
       for (const m of models.length ? models : p.models) {
         const sig = String(key).slice(0, 12) + ":" + m;
         if (badSet.has(sig)) continue;
-        chain.push({ provider: "openai-compat", key, model: m, url: p.url });
+        chain.push({ provider: "openai-compat", key: key === ANON_KEY ? "" : key, model: m, url: p.url });
       }
     }
   }
