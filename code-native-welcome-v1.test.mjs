@@ -13,7 +13,7 @@ const SW = read('sw.js');
 const PAGES_GUARD = read('.github/workflows/cf-pages.yml');
 const RELEASE_WORKFLOW = read('.github/workflows/telegram-auth-canary-activate.yml');
 const UI_VERSION = '20261018-allowlist-v1';
-const UI_JS_VERSION = '20261018-logout-otp-v1';
+const UI_JS_VERSION = '20261021-turnstile-v1';
 
 const SHELL_VERSION = 'v364-sky-goal';
 
@@ -126,7 +126,10 @@ test('Signup Assistant is removed while the ordinary app AI remains available', 
   assert.doesNotMatch(HTML, /juju-floating\.js/);
   assert.doesNotMatch(SW, /juju-floating\.js/);
   assert.match(HTML, /if\(p==='ai'\)\{ if\(window\.renderAiAgentPage\)/);
-  assert.match(DASH_JS, /navigate\((?:\\?'|")ai/);
+  // The v3 dashboard routes through its own go() helper, which hands the path
+  // to window.navigate; assert that real wiring instead of a literal call.
+  assert.match(DASH_JS, /'nav\.ai':\s*\(\)\s*=>\s*go\('ai'\)/);
+  assert.match(DASH_JS, /typeof window\.navigate === 'function'/);
 });
 
 test('custom Guest Dashboard is absent and Guest returns to the ordinary app route', () => {
@@ -163,7 +166,9 @@ test('the welcome screen is the entry point, not the Sky flow directly', () => {
   assert.match(openBody, /showWelcome\(\)/, 'open() must show the welcome screen on entry');
   assert.doesNotMatch(openBody, /openSky\(/, 'open() must not jump straight into the Sky flow');
   assert.match(JS, /const showWelcome = \(\) => \{[\s\S]{0,220}showView\('welcome'\)/);
-  assert.match(JS, /const showLegacyEntry = mode => \{[\s\S]{0,600}showView\('signup'\)[\s\S]{0,200}showView\('login'\)/,
+  // The legacy fallback now renders through renderView(); showView() is the
+  // older name for the same transition, so accept either.
+  assert.match(JS, /const showLegacyEntry = mode => \{[\s\S]{0,600}(?:showView|renderView)\('signup'\)[\s\S]{0,200}(?:showView|renderView)\('login'\)/,
     'the fallback must land on the real signup/login form, not back on welcome');
 });
 

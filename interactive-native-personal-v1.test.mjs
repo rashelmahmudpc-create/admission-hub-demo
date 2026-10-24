@@ -10,7 +10,7 @@ const SW = read('sw.js');
 const RELEASE = read('.github/workflows/telegram-auth-canary-activate.yml');
 const BUNDLE_GUARD = read('.github/workflows/cf-pages.yml');
 const UI_VERSION = '20261018-allowlist-v1';
-const UI_JS_VERSION = '20261018-logout-otp-v1';
+const UI_JS_VERSION = '20261021-turnstile-v1';
 
 const SHELL_VERSION = 'v364-sky-goal';
 
@@ -108,6 +108,8 @@ test('code-native release markers and fail-closed publication checks are synchro
 test('Signup stays AI-free while the ordinary application AI remains shipped', () => {
   assert.doesNotMatch(JS, /\/api\/ai\/chat|data-role="guide|class="ah-guide/);
   assert.doesNotMatch(CSS, /\.ah-guide/);
-  assert.match(HTML, /<script defer src="\.\/ai-agent-chat\.js\?v=agent-f1-ui-skyv13"><\/script>/);
+  // The chat bundle is idle-loaded through index.html's data-ah-src hook, not
+  // a plain defer <script>, so the guard asserts the tag that really ships.
+  assert.match(HTML, /<script type="application\/x-ah-idle" data-ah-src="\.\/ai-agent-chat\.js\?v=agent-f1-ui-skyv13"><\/script>/);
   assert.match(SW, /\.\/ai-agent-chat\.js\?v=agent-f1-ui-skyv13/);
 });

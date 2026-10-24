@@ -13,7 +13,10 @@ const versionAt = H.split('\n').findIndex(line => line.includes('DB.onversioncha
 const versionBlock = H.split('\n').slice(versionAt, versionAt + 3).join(' ');
 test('version changes reopen rather than showing a blocking recovery screen', versionBlock.includes('reopenDb()') && !versionBlock.includes('showStorageRecovery'));
 test('database operations retry after stale/closing connections', H.includes('if(!DB||window.__ahDbStale){') && H.includes('reopenDb().then(()=>{ if(DB) attempt();'));
-test('failed persistent boot falls back to memory without deleting records', H.includes('Data load failed — memory fallback') && H.includes('useMemoryStorage(err)') && !H.includes("deleteDatabase(DB_NAME)"));
+/* The console copy uses a comma since the shipped-copy typography pass
+   (29a1ac7) rewrote interstitial dashes; match the wording, not the punctuation. */
+test('failed persistent boot falls back to memory without deleting records',
+  /Data load failed[,:—–-]? ?memory fallback/i.test(H) && H.includes('useMemoryStorage(err)') && !H.includes("deleteDatabase(DB_NAME)"));
 test('batched cloud writes retry a closing database using the fresh connection', CLOUD.includes('window.__ahReopenDb') && CLOUD.includes('const liveDb = () =>') && /closing\|InvalidState\|not active\|connection/i.test(CLOUD));
 
 const deferCount = (H.match(/<script defer src=/g) || []).length;
