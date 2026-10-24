@@ -26,6 +26,11 @@ on:
       - 'index.html'
       - 'sw.js'
       - 'account-access.*'
+      # A change to a course document or the tool that loads it is a change to
+      # the live Pages UI, but neither path was listed, so the course fix pushed
+      # 2026-10-24 published nothing until the filter was widened.
+      - 'source-course-tool.js'
+      - 'courses/**'
       - 'worker-bundle.mjs'
       - 'wrangler.toml'
       - 'public-worker.js'
