@@ -4174,6 +4174,7 @@ var auth_worker_default = {
     if (response) {
       const marked = new Response(response.body, response);
       marked.headers.set("X-AH-Auth-Front", "admission-auth");
+      marked.headers.set("X-AH-Client-Addr", request.headers.get("CF-Connecting-IP") ? "present" : "absent");
       return marked;
     }
     return new Response("Not found", {

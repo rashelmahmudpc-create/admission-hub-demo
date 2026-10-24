@@ -139,8 +139,17 @@ jobs:
             headers="$(curl -sS -o /dev/null -D - --max-time 25 -X "$method" -H 'Origin: https://admissionsky.pages.dev' "https://admission-gk.admissionhub.workers.dev$path" || true)"
             code="$(printf '%s' "$headers" | awk 'tolower($1) ~ /^http\// {print $2}' | tail -1)"
             front="$(printf '%s' "$headers" | tr -d '\r' | awk -F': ' 'tolower($1) == "x-ah-auth-front" {print $2}' | tail -1)"
-            echo "$method $path -> ${code:-no-response} front=${front:-none} (expected $expect)"
-            echo "::notice title=Probe $method $path::code=${code:-none} front=${front:-none} expected=$expect"
+            addr="$(printf '%s' "$headers" | tr -d '\r' | awk -F': ' 'tolower($1) == "x-ah-client-addr" {print $2}' | tail -1)"
+            echo "$method $path -> ${code:-no-response} front=${front:-none} addr=${addr:-none} (expected $expect)"
+            echo "::notice title=Probe $method $path::code=${code:-none} front=${front:-none} client-addr=${addr:-none} expected=$expect"
+            # The caller's address has to survive the hop: rate limits, the shadow
+            # guard and risk scoring are all keyed on it. If every forwarded request
+            # arrived looking alike, students would share one bucket and could lock
+            # each other out, which is worse than an outage because it looks normal.
+            if [ "${addr:-}" != "present" ]; then
+              failed=1
+              echo "::error title=Caller address lost in the hop::$method $path reached admission-auth without a client address (x-ah-client-addr=${addr:-none}). Do not leave AUTH_ROUTE on service until this is fixed."
+            fi
             if [ "${front:-}" != "admission-auth" ] || [ "${code:-}" != "$expect" ]; then
               failed=1
               echo "::error title=Forwarded route failed::$method $path answered ${code:-nothing} from ${front:-the app}, expected $expect from admission-auth."

@@ -70,6 +70,9 @@ test('the built entry really serves only the auth surface', async () => {
   // it, a deploy cannot tell forwarding apart from the in-process fallback, and
   // the split could be dead while every check stayed green.
   assert.equal(auth.headers.get('X-AH-Auth-Front'), 'admission-auth');
+  // Provenance of the caller's address, measured rather than assumed: the rate
+  // limiter and the guard are useless if every forwarded request looks alike.
+  assert.equal(auth.headers.get('X-AH-Client-Addr'), 'absent', 'this call had no edge address to carry');
   const other = await call('/index.html');
   assert.equal(other.headers.get('X-AH-Auth-Front'), null, 'only answers from this script are marked');
   assert.equal((await auth.json().catch(() => null)), null, 'the body was not consumed by marking it');

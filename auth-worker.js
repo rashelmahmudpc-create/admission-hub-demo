@@ -26,6 +26,13 @@ export default {
     if (response) {
       const marked = new Response(response.body, response);
       marked.headers.set('X-AH-Auth-Front', 'admission-auth');
+      // F-04: rate limits, the shadow guard and security scoring all key off the
+      // caller's address, and this script now receives most requests through a
+      // service binding rather than from the edge directly. Whether the client
+      // address survives that hop cannot be read from the code, so it is
+      // measured on every deploy. The header carries no address — only whether
+      // one arrived — so it tells a deploy what it needs and a stranger nothing.
+      marked.headers.set('X-AH-Client-Addr', request.headers.get('CF-Connecting-IP') ? 'present' : 'absent');
       return marked;
     }
     return new Response('Not found', {
