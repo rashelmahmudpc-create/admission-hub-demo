@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { SKY_AI_IDENTITY_ROUTES, SKY_AI_POST_IDENTITY_ROUTES, forwardWithIdentity, forwardPostWithIdentity } from './sky-ai-route.mjs';
+import { SKY_AI_IDENTITY_ROUTES, SKY_AI_BODY_IDENTITY_ROUTES, forwardWithIdentity, forwardWithIdentityBody } from './sky-ai-route.mjs';
 
 const U = 'https://admission-gk.example/api/ai/prefs';
 const R = ['GET /api/ai/prefs'];
@@ -12,8 +12,13 @@ const postRecall = (body, extra = {}) => new Request('https://admission-gk.examp
   body: JSON.stringify(body)
 });
 
-test('identity allowlist contains only prefs + actions audit + sky-flags', () => {
-  assert.deepEqual([...SKY_AI_IDENTITY_ROUTES], ['GET /api/ai/prefs', 'GET /api/ai/actions/audit', 'GET /api/ai/sky-flags']);
+test('the GET allowlist is exactly what has been moved, nothing more', () => {
+  assert.deepEqual([...SKY_AI_IDENTITY_ROUTES], [
+    'GET /api/ai/prefs',
+    'GET /api/ai/actions/audit',
+    'GET /api/ai/sky-flags',
+    'GET /api/ai/instructions'
+  ]);
 });
 
 /* F0.2 / DV-02: the route only works when admission-gk answers it. sky-ai has
@@ -60,7 +65,7 @@ test('POST recall forwards the uid, the key and the body', async () => {
     PUB_KV: kv({ 'secret:sky-internal': 'K' }),
     SKY_AI: { fetch: async (r) => { seen = r; return new Response('{"ok":true}', { headers: { 'x-sky-ai-route': 'recall' } }); } }
   };
-  const res = await forwardPostWithIdentity(postRecall({ stats: { a: 1 } }), env, 'account-1');
+  const res = await forwardWithIdentityBody(postRecall({ stats: { a: 1 } }), env, 'account-1');
   assert.equal(res.status, 200);
   assert.equal(res.headers.get('x-sky-ai-route'), 'recall');
   assert.equal(seen.method, 'POST');
@@ -79,7 +84,7 @@ test('the fallback can still read the body after a failed forward', async () => 
     SKY_AI: { fetch: async () => new Response('', { status: 500 }) }
   };
   const request = postRecall({ stats: { b: 2 } });
-  assert.equal(await forwardPostWithIdentity(request, env, 'account-1'), null);
+  assert.equal(await forwardWithIdentityBody(request, env, 'account-1'), null);
   assert.deepEqual(await request.json(), { stats: { b: 2 } }, 'the local handler still gets its body');
 });
 
@@ -89,7 +94,7 @@ test('a client cannot smuggle its own identity or key through the hop', async ()
     PUB_KV: kv({ 'secret:sky-internal': 'K' }),
     SKY_AI: { fetch: async (r) => { seen = r; return new Response('{}'); } }
   };
-  await forwardPostWithIdentity(postRecall({}, { 'x-sky-uid': 'account-evil', 'x-sky-internal': 'made-up' }), env, 'account-1');
+  await forwardWithIdentityBody(postRecall({}, { 'x-sky-uid': 'account-evil', 'x-sky-internal': 'made-up' }), env, 'account-1');
   assert.equal(seen.headers.get('x-sky-uid'), 'account-1', 'the verified uid wins');
   assert.equal(seen.headers.get('x-sky-internal'), 'K', 'and so does the real key');
 });
@@ -97,19 +102,19 @@ test('a client cannot smuggle its own identity or key through the hop', async ()
 test('POST forwarding refuses what it should: no uid, no key, unlisted, GET, or transport failure', async () => {
   const ok = { fetch: async () => new Response('{}') };
   const withKey = { PUB_KV: kv({ 'secret:sky-internal': 'K' }), SKY_AI: ok };
-  assert.equal(await forwardPostWithIdentity(postRecall({}), withKey, ''), null);
-  assert.equal(await forwardPostWithIdentity(postRecall({}), { PUB_KV: kv({}), SKY_AI: ok }, 'account-1'), null);
-  assert.equal(await forwardPostWithIdentity(postRecall({}), withKey, 'account-1', []), null);
-  assert.equal(await forwardPostWithIdentity(new Request('https://x/api/ai/recall', { headers: { 'x-sky-ai-caller': 'admission-gk' } }), withKey, 'account-1'), null);
+  assert.equal(await forwardWithIdentityBody(postRecall({}), withKey, ''), null);
+  assert.equal(await forwardWithIdentityBody(postRecall({}), { PUB_KV: kv({}), SKY_AI: ok }, 'account-1'), null);
+  assert.equal(await forwardWithIdentityBody(postRecall({}), withKey, 'account-1', []), null);
+  assert.equal(await forwardWithIdentityBody(new Request('https://x/api/ai/recall', { headers: { 'x-sky-ai-caller': 'admission-gk' } }), withKey, 'account-1'), null);
   for (const f of [async () => new Response('', { status: 404 }), async () => { throw new Error('down'); }]) {
-    assert.equal(await forwardPostWithIdentity(postRecall({}), { PUB_KV: kv({ 'secret:sky-internal': 'K' }), SKY_AI: { fetch: f } }, 'account-1'), null);
+    assert.equal(await forwardWithIdentityBody(postRecall({}), { PUB_KV: kv({ 'secret:sky-internal': 'K' }), SKY_AI: { fetch: f } }, 'account-1'), null);
   }
 });
 
 test('admission-gk answers recall itself when the forward returns null', async () => {
   const src = await readFile(new URL('./public-worker.js', import.meta.url), 'utf8');
   assert.match(src, /path === '\/api\/ai\/recall' && request\.method === 'POST'/);
-  assert.match(src, /const viaSky = await forwardPostWithIdentity\(request, env, identity\.uid\);/);
+  assert.match(src, /const viaSky = await forwardWithIdentityBody\(request, env, identity\.uid\);/);
   // The identity decisions stay on this side of the hop.
   assert.match(src, /if \(!identity\.authenticated\) return json\(\{ error: 'sign_in_required', recall: null \}, 401\);/);
   // And the local handler is still reachable after the forward: the fallback
@@ -118,6 +123,10 @@ test('admission-gk answers recall itself when the forward returns null', async (
   assert.match(src, /if \(viaSky\) return viaSky;\n\s+const body = await request\.json\(\)\.catch\(\(\) => null\);\n\s+return await agentRecall\(env, identity\.uid, body\);/);
 });
 
-test('the POST allowlist is exactly one route, so rollback is one line', () => {
-  assert.deepEqual([...SKY_AI_POST_IDENTITY_ROUTES], ['POST /api/ai/recall']);
+test('the non-GET allowlist names every method it allows, so rollback is one line', () => {
+  assert.deepEqual([...SKY_AI_BODY_IDENTITY_ROUTES], [
+    'POST /api/ai/recall',
+    'POST /api/ai/instructions',
+    'DELETE /api/ai/instructions'
+  ]);
 });

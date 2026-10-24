@@ -9,7 +9,7 @@ import {
 import { checkAbuse, isGuarded } from './p14-abuse-guard.mjs';
 import { recordError, summarizeErrors } from './p19-error-monitor.mjs';
 import { listReports } from './sky-daily-report.mjs';
-import { forwardWithIdentity, forwardPostWithIdentity } from './sky-ai-route.mjs';
+import { forwardWithIdentity, forwardWithIdentityBody } from './sky-ai-route.mjs';
 import { createSnapshot, listSnapshots, restoreSnapshot } from './p19-backup.mjs';
 
 const JSONH = {
@@ -531,6 +531,16 @@ export default {
       if (path === '/api/ai/instructions' && (request.method === 'GET' || request.method === 'POST' || request.method === 'DELETE')) {
         const identity = await aiRequestIdentity(request, env, false);
         if (!identity.authenticated) return json({ error: 'sign_in_required', message: 'নির্দেশনা সেভ করতে লগইন করো।' }, 401);
+        /* F0.1 step 4e: sky-ai answers this when the route is listed in
+           sky-ai-route.mjs. The 401 above stays here because identity is resolved
+           here. NOTE the body is read AFTER the forward, never before: reading it
+           first would consume it and leave the fallback with nothing, so a failed
+           forward would silently clear the student's note instead of saving it.
+           The forwarder clones, so this request is still readable below. */
+        const viaSky = request.method === 'GET'
+          ? await forwardWithIdentity(request, env, identity.uid)
+          : await forwardWithIdentityBody(request, env, identity.uid);
+        if (viaSky) return viaSky;
         const body = request.method === 'POST' ? await request.json().catch(() => null) : null;
         return await agentInstructions(env, identity.uid, request.method, body);
       }
@@ -630,7 +640,7 @@ export default {
            Anything sky-ai cannot serve (no binding, no internal key, a 404 or a
            5xx) returns null and the two lines below answer exactly as they do
            today. forwardPostWithIdentity clones the body for that reason. */
-        const viaSky = await forwardPostWithIdentity(request, env, identity.uid);
+        const viaSky = await forwardWithIdentityBody(request, env, identity.uid);
         if (viaSky) return viaSky;
         const body = await request.json().catch(() => null);
         return await agentRecall(env, identity.uid, body);

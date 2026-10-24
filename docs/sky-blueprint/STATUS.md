@@ -36,6 +36,14 @@ Source of truth: Notion "Sky AI v1.0" → main page section **"🚦 এজেন
   `sky-ai-route.mjs` gained `SKY_AI_POST_IDENTITY_ROUTES`; rollback is removing
   the one entry. Deploy order: `deploy-pages-worker.yml` now deploys sky-ai
   before admission-gk.
+- **F0.1 step 4e ✅ (2026-10-25): `/api/ai/instructions` moved (GET/POST/DELETE).**
+  First moved route that WRITES. The write is safe to repeat (same note, only the
+  saved-at stamp moves), the verification rules stay in `sky-instructions.mjs`
+  and are imported, not copied, so a refusal is identical on both sides. The
+  forwarder is now method-aware (`SKY_AI_BODY_IDENTITY_ROUTES`), and
+  `public-worker.js` reads the body AFTER forwarding — reading it first would
+  have left the fallback with nothing and a failed save would have cleared the
+  note.
 - **F0.3–F0.8 — Todo.**
 - **Next:** deploy this branch's worker, add the `SKY_FLAGS` KV binding, then continue
   F0.1 step 4 — move the remaining `/api/ai/*` routes into sky-ai one at a time, `/api/ai/chat` last.
@@ -44,8 +52,11 @@ Source of truth: Notion "Sky AI v1.0" → main page section **"🚦 এজেন
 - 2026-10-25 · F0.1 step 4d · `POST /api/ai/recall` moved to sky-ai with the
   AI_STATE cross-script binding + `/health` dependency report + deploy assertion;
   42 sky-ai/routing tests and 78 AI/recall tests green · PR (this branch) ·
-  next: step 4e — `/api/ai/instructions`, then `status`, `memory/clear`,
+  next: step 4f — `/api/ai/status`, then `memory/clear`,
   `actions/propose|confirm`, `/api/ai/chat` last.
+- 2026-10-25 · F0.1 step 4e · `/api/ai/instructions` (GET/POST/DELETE) moved;
+  method-aware forwarder + body-read-order test; 52 sky-ai tests, 76 AI tests
+  green · next: `/api/ai/status`.
 - 2026-10-19 · — · Blueprint v1.0 created (Notion).
 - 2026-10-20 (approx.) · F0.1 steps 1–3 + F0.2 flags.mjs · merged to main, sky-ai deployed · (Notion not updated at the time).
 - 2026-10-21 23:20 · handoff system · Notion board + pages 07/09 updated, this file added · next: F0.1 step 4a.
