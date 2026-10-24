@@ -148,11 +148,25 @@ export function shadowVerdict(facts = {}, config = resolveSecurityConfig()) {
  * A fresh delay for one attempt. Random on purpose: a fixed delay tells an
  * attacker that the account exists and that the delay is part of the
  * protocol rather than the network.
+ *
+ * The default source is Web Crypto rather than a weak pseudo-random call:
+ * this runtime is audited for weak randomness (native-auth-protection.test.mjs
+ * rejects it anywhere under auth-native), and a delay an attacker can predict
+ * is a delay that tells them the account exists.
  */
-export function shadowDelayMs(random = Math.random, min = SHADOW_GUARD_DELAY_MIN_MS, max = SHADOW_GUARD_DELAY_MAX_MS) {
+export function cryptoRandomUnit(cryptoImpl = globalThis.crypto) {
+  const buffer = new Uint32Array(1);
+  if (cryptoImpl?.getRandomValues) {
+    cryptoImpl.getRandomValues(buffer);
+    return buffer[0] / 0x1_0000_0000;
+  }
+  return 0.5;
+}
+
+export function shadowDelayMs(random, min = SHADOW_GUARD_DELAY_MIN_MS, max = SHADOW_GUARD_DELAY_MAX_MS) {
   const low = Math.max(0, Math.min(min, max));
   const high = Math.max(low, max);
-  const draw = Number(random());
+  const draw = Number(typeof random === 'function' ? random() : cryptoRandomUnit());
   const value = Number.isFinite(draw) ? Math.min(Math.max(draw, 0), 1) : 0;
   return Math.round(low + value * (high - low));
 }

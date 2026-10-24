@@ -56,7 +56,8 @@ export function passwordLengthVerdict(password) {
 
 /**
  * SHA-1 as hex, which is what the HIBP range API expects. Uses the runtime's
- * WebCrypto, so there is no dependency and no bundled hash implementation.
+ * built-in Web Crypto digest, so there is no dependency and no bundled hash
+ * implementation.
  */
 export async function sha1Hex(value, cryptoImpl = globalThis.crypto) {
   if (!cryptoImpl?.subtle) throw new Error('crypto-unavailable');

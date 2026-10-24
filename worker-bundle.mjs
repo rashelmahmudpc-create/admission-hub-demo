@@ -11911,6 +11911,130 @@ async function verifyPendingSignupCodeAndCreate({ request, env, provider, contex
   return response3;
 }
 
+// auth-native/core/shadow-guard.mjs
+var SHADOW_GUARD_POLICY_VERSION = "shadow-guard-v1";
+var SHADOW_GUARD_DELAY_MIN_MS = 300;
+var SHADOW_GUARD_DELAY_MAX_MS = 900;
+var SHADOW_GUARD_BOT_SCORE_THRESHOLD = 30;
+var SHADOW_GUARD_EMAILS_PER_IP_THRESHOLD = 10;
+function computeRiskSignals(facts = {}) {
+  const signals = {};
+  if (facts.accountState) signals.accountState = facts.accountState;
+  if (facts.recoveryActive === true) signals.recoveryActive = true;
+  const failed = Math.max(0, Number(facts.failedLogins) || 0);
+  if (failed > 0) signals.failedLogins = failed;
+  const rapid = Math.max(0, Number(facts.rapidRequests) || 0);
+  if (rapid > 0) signals.rapidRequests = rapid;
+  if (facts.unverifiedAccount === true) signals.unverifiedAccount = true;
+  if (facts.deviceKnown === false) signals.newDevice = true;
+  const botScore = Number(facts.botScore);
+  const botSuspicious = Number.isFinite(botScore) && botScore > 0 && botScore < SHADOW_GUARD_BOT_SCORE_THRESHOLD;
+  const stuffing = (Number(facts.emailsFromIp) || 0) >= SHADOW_GUARD_EMAILS_PER_IP_THRESHOLD;
+  const extras = [];
+  if (facts.countryChanged === true) extras.push("country-changed");
+  if (facts.asnChanged === true) extras.push("asn-changed");
+  if (botSuspicious) extras.push("bot-suspicious");
+  if (stuffing) extras.push("many-emails-from-ip");
+  return Object.freeze({ signals: Object.freeze(signals), extras: Object.freeze(extras) });
+}
+var BAND_BY_LEVEL = Object.freeze({
+  LOW: "low",
+  NORMAL: "low",
+  ELEVATED: "medium",
+  HIGH: "high",
+  CRITICAL: "high"
+});
+var ENGINE_BEHAVIOURS = /* @__PURE__ */ new Set(["failed-logins-high", "failed-logins-elevated", "rapid-requests", "new-device", "unverified-account"]);
+var RANK2 = Object.freeze({ LOW: 0, NORMAL: 1, ELEVATED: 2, HIGH: 3, CRITICAL: 4 });
+var LEVELS = Object.freeze(["LOW", "NORMAL", "ELEVATED", "HIGH", "CRITICAL"]);
+function shadowVerdict(facts = {}, config = resolveSecurityConfig()) {
+  const { signals, extras } = computeRiskSignals(facts);
+  const evaluation = evaluateRisk(signals, config);
+  const engineBehaviours = evaluation.reasons.filter((reason2) => ENGINE_BEHAVIOURS.has(reason2)).length;
+  let rank2 = RANK2[evaluation.level] ?? 0;
+  if (extras.length === 1) rank2 = Math.max(rank2, RANK2.ELEVATED);
+  if (extras.length >= 2) rank2 = Math.max(rank2, RANK2.HIGH);
+  if (engineBehaviours > 0 && extras.length > 0) rank2 = Math.max(rank2, RANK2.HIGH);
+  if (evaluation.level === "CRITICAL") rank2 = RANK2.CRITICAL;
+  const level = LEVELS[Math.min(rank2, LEVELS.length - 1)];
+  const band = BAND_BY_LEVEL[level] || "low";
+  return Object.freeze({
+    policyVersion: SHADOW_GUARD_POLICY_VERSION,
+    band,
+    level,
+    reasons: Object.freeze([...evaluation.reasons, ...extras]),
+    extras,
+    // A medium attempt may continue once the challenge is satisfied; a high
+    // one is answered as though the credentials were wrong.
+    challenge: band === "medium" ? evaluation.actions.challenge || "step-up" : null,
+    shadowBan: band === "high",
+    genericError: band === "high" ? AUTH_ERROR_CODES.INVALID_CREDENTIALS : null
+  });
+}
+function cryptoRandomUnit(cryptoImpl = globalThis.crypto) {
+  const buffer = new Uint32Array(1);
+  if (cryptoImpl?.getRandomValues) {
+    cryptoImpl.getRandomValues(buffer);
+    return buffer[0] / 4294967296;
+  }
+  return 0.5;
+}
+function shadowDelayMs(random, min = SHADOW_GUARD_DELAY_MIN_MS, max = SHADOW_GUARD_DELAY_MAX_MS) {
+  const low = Math.max(0, Math.min(min, max));
+  const high = Math.max(low, max);
+  const draw = Number(typeof random === "function" ? random() : cryptoRandomUnit());
+  const value = Number.isFinite(draw) ? Math.min(Math.max(draw, 0), 1) : 0;
+  return Math.round(low + value * (high - low));
+}
+function sleep(ms, timer = setTimeout) {
+  const wait = Math.max(0, Number(ms) || 0);
+  if (wait === 0) return Promise.resolve();
+  return new Promise((resolve) => timer(resolve, wait));
+}
+
+// auth-native/core/canary-accounts.mjs
+var CANARY_POLICY_VERSION = "canary-v1";
+function parseCanaryEmails(raw = "") {
+  return Object.freeze(
+    String(raw || "").split(/[\s,;]+/).map((value) => value.trim().toLowerCase()).filter((value) => value.includes("@")).filter((value, index, list2) => list2.indexOf(value) === index)
+  );
+}
+function isCanaryEmail(email, canaryEmails = []) {
+  const value = String(email || "").trim().toLowerCase();
+  if (!value) return false;
+  return canaryEmails.includes(value);
+}
+var CANARY_FLAG_TTL_SECONDS = 30 * 24 * 60 * 60;
+function createKvCanaryFlags(store, options = {}) {
+  const prefix = String(options.prefix || "canaryflag");
+  const clock = typeof options.now === "function" ? options.now : () => Date.now();
+  const keyFor = (kind) => `${prefix}:${kind}`;
+  return Object.freeze({
+    policyVersion: CANARY_POLICY_VERSION,
+    async flag(ip, deviceId) {
+      const at = clock();
+      const entries = [
+        ["ip", String(ip || "").trim()],
+        ["device", String(deviceId || "").trim()]
+      ].filter(([, value]) => value);
+      for (const [kind, value] of entries) {
+        const key = `${keyFor(kind)}:${value}`;
+        const previous = Number(await store.get(key)) || 0;
+        await store.put(key, String(previous + 1), { expirationTtl: CANARY_FLAG_TTL_SECONDS });
+      }
+      return entries.length;
+    },
+    async isFlagged(ip, deviceId) {
+      for (const [kind, value] of [["ip", ip], ["device", deviceId]]) {
+        if (!value) continue;
+        const count = Number(await store.get(`${keyFor(kind)}:${String(value).trim()}`)) || 0;
+        if (count > 0) return true;
+      }
+      return false;
+    }
+  });
+}
+
 // auth-native/worker/public-auth-handler.mjs
 var AUTH_API_PREFIX = "/api/auth/v1";
 var PUBLIC_PROFILE_PREFIX = "/api/public/profile/";
@@ -11998,6 +12122,19 @@ var clientContext = (request, existingDeviceId = "") => {
     userAgent: String(request.headers.get("User-Agent") || "").slice(0, 300),
     origin: String(request.headers.get("Origin") || new URL(request.url).origin).slice(0, 256)
   });
+};
+var shadowGuardEnabled = (env) => ["canary", "enabled"].includes(String(env?.SHADOW_GUARD_ACTIVATION || ""));
+var shadowGuardStore = (env) => env?.GK_KV || env?.PUB_KV || null;
+var flagCanaryHit = (env, email, context) => {
+  const list2 = parseCanaryEmails(env?.CANARY_EMAILS);
+  if (!isCanaryEmail(email, list2)) return false;
+  const store = shadowGuardStore(env);
+  if (store) {
+    const flags = createKvCanaryFlags(store);
+    Promise.resolve().then(() => flags.flag(context.ip, context.deviceId)).catch(() => {
+    });
+  }
+  return true;
 };
 var credentials = (body) => {
   const email = String(body?.email || "").trim();
@@ -12720,6 +12857,19 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         const prepared = await callAuthority(env, "/internal/firebase/rate", { input: { operation: "login", email: input.email }, context });
         if (Number(prepared?.retryAfter) > 0) {
           return json4(request, 429, { ok: false, error: { code: "RATE_LIMITED", message: "অনেকবার চেষ্টা হয়েছে, একটু পরে আবার চেষ্টা করুন।" } }, { "Retry-After": String(prepared.retryAfter) });
+        }
+        const canaryHit = flagCanaryHit(env, prepared.email, context);
+        const guardActive = shadowGuardEnabled(env) || canaryHit;
+        let shadow = null;
+        if (guardActive) {
+          shadow = shadowVerdict({
+            deviceKnown: context.isNewDevice !== true,
+            accountState: canaryHit ? "suspended" : void 0
+          });
+          if (shadow.shadowBan) {
+            await sleep(shadowDelayMs());
+            throw new NativeAuthError(AUTH_ERROR_CODES.INVALID_CREDENTIALS);
+          }
         }
         let signed;
         let user;
@@ -31994,7 +32144,7 @@ var cors = (request) => {
 };
 var json7 = (request, obj, status = 200) => new Response(JSON.stringify(obj), { status, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", ...cors(request) } });
 var dhakaToday = () => new Date(Date.now() + 6 * 36e5).toISOString().slice(0, 10);
-var sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+var sleep2 = (ms) => new Promise((r) => setTimeout(r, ms));
 var keys = (env) => String(env.BROWSER_USE_API_KEYS || "").split(",").map((k) => k.trim()).filter(Boolean);
 var badKeysToday = async (env, date, ns = "gk") => {
   try {
@@ -32093,7 +32243,7 @@ var runBackground = async (env, date, jobs) => {
   const deadline = Date.now() + POLL_MAX_MS;
   const results = { gk: null, news: null };
   while (Date.now() < deadline) {
-    await sleep(POLL_EVERY_MS);
+    await sleep2(POLL_EVERY_MS);
     for (const job of jobs) {
       if (results[job.kind]) continue;
       const task = await getTask(all[job.keyIndex] || all[0], job.id);

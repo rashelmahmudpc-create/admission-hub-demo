@@ -9,6 +9,8 @@ import { resolveTelegramWebhookSecret, validTelegramWebhookSecret } from '../ver
 import { isTelegramLoginEmail, reservedTelegramLoginEmail, telegramLoginBotId, telegramLoginCredentials, telegramLoginReady, verifyTelegramLogin } from '../verification/telegram-login.mjs';
 import { isPendingSignupTicket } from './pending-signup.mjs';
 import * as pendingSignup from './pending-signup-public.mjs';
+import { shadowVerdict, shadowDelayMs, sleep } from '../core/shadow-guard.mjs';
+import { parseCanaryEmails, isCanaryEmail, createKvCanaryFlags } from '../core/canary-accounts.mjs';
 /* D-5 / A1.5 ②: one shared CORS policy for every auth surface. This handler
  * used to keep its own copy that still accepted http://localhost and any
  * *.admissionhub.pages.dev preview host, so production served credentialed
@@ -102,6 +104,33 @@ const clientContext = (request, existingDeviceId = '') => {
     userAgent: String(request.headers.get('User-Agent') || '').slice(0, 300),
     origin: String(request.headers.get('Origin') || new URL(request.url).origin).slice(0, 256)
   });
+};
+
+// Shadow Guard (P30) is off unless the deployment turns it on, so the
+// default behaviour of this handler is unchanged by its presence. `canary`
+// and `enabled` both mean on: `canary` is the staging value used elsewhere
+// for a surface that is live but not announced.
+const shadowGuardEnabled = env => ['canary', 'enabled'].includes(String(env?.SHADOW_GUARD_ACTIVATION || ''));
+
+// The KV namespace the guard records into. Absent binding means the guard
+// cannot record, and a guard that cannot record must not silently pretend
+// it did: the caller treats it as unavailable and proceeds on the old path.
+const shadowGuardStore = env => env?.GK_KV || env?.PUB_KV || null;
+
+// A canary hit is a deliberate act, so it is worth a record even though the
+// response says nothing. The flag is raised in the background: an attacker
+// must not be able to measure the extra write.
+const flagCanaryHit = (env, email, context) => {
+  const list = parseCanaryEmails(env?.CANARY_EMAILS);
+  if (!isCanaryEmail(email, list)) return false;
+  const store = shadowGuardStore(env);
+  if (store) {
+    const flags = createKvCanaryFlags(store);
+    Promise.resolve()
+      .then(() => flags.flag(context.ip, context.deviceId))
+      .catch(() => {});
+  }
+  return true;
 };
 
 const credentials = body => {
@@ -851,6 +880,26 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         // A delay, never a lockout: the cooldown always expires.
         if (Number(prepared?.retryAfter) > 0) {
           return json(request, 429, { ok: false, error: { code: 'RATE_LIMITED', message: 'অনেকবার চেষ্টা হয়েছে, একটু পরে আবার চেষ্টা করুন।' } }, { 'Retry-After': String(prepared.retryAfter) });
+        }
+        // Shadow Guard (P30). Off unless SHADOW_GUARD_ACTIVATION is set, so
+        // this block is inert by default. A canary address is flagged and
+        // then treated as a high-risk attempt: it must look exactly like a
+        // wrong password, otherwise the decoy teaches the attacker it was a
+        // decoy.
+        const canaryHit = flagCanaryHit(env, prepared.email, context);
+        const guardActive = shadowGuardEnabled(env) || canaryHit;
+        let shadow = null;
+        if (guardActive) {
+          shadow = shadowVerdict({
+            deviceKnown: context.isNewDevice !== true,
+            accountState: canaryHit ? 'suspended' : undefined
+          });
+          if (shadow.shadowBan) {
+            // The delay is spent before the answer, so the response time
+            // carries no signal either.
+            await sleep(shadowDelayMs());
+            throw new NativeAuthError(AUTH_ERROR_CODES.INVALID_CREDENTIALS);
+          }
         }
         let signed;
         let user;
