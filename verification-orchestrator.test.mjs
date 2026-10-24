@@ -793,3 +793,36 @@ test('owner 2026-10-17: an admin save without timeoutMs keeps each slot timeout'
   assert.equal(status.policy.codeTtlSeconds, 600);
   assert.deepEqual([...app.orchestrator.config.allowedDomains], ['gmail.com', 'example.com']);
 });
+
+/* F-02 (blueprint 06): one code, one deadline. Before this the chain waited a
+   full timeoutMs per slot — 26 enabled slots in production meant a bad day could
+   hold the student for minutes. The budget is wall-clock for the whole request,
+   health probes included. */
+test('F-02: the delivery budget caps the whole chain, not one timeout per slot', async () => {
+  const hung = id => {
+    const provider = new MockProvider({ id });
+    provider.sendVerification = async input => {
+      provider.sends.push(input);
+      return new Promise(() => {});
+    };
+    return provider;
+  };
+  const providers = [hung('otp-a'), hung('otp-b'), hung('otp-c'), hung('otp-d')];
+  const app = setup({ providers, config: rawConfig(providers, { deliveryBudgetMs: 3_000 }) });
+  const started = Date.now();
+  await expectCode(() => app.orchestrator.requestVerification(identity, context), AUTH_ERROR_CODES.BACKUP_UNAVAILABLE);
+  const elapsed = Date.now() - started;
+  assert.ok(elapsed < 4_500, `the budget must bound the request; it took ${elapsed}ms`);
+  const sends = providers.reduce((sum, provider) => sum + provider.sends.length, 0);
+  assert.ok(sends < providers.length, 'the budget stops the chain instead of trying every slot');
+});
+
+test('F-02: a budget that is still fresh never shortens a healthy first send', async () => {
+  const primary = new MockProvider({ id: 'otp-a' });
+  const secondary = new MockProvider({ id: 'otp-b' });
+  const app = setup({ providers: [primary, secondary], config: rawConfig([primary, secondary], { deliveryBudgetMs: 25_000 }) });
+  const result = await app.orchestrator.requestVerification(identity, context);
+  assert.equal(result.accepted, true);
+  assert.match(result.attemptId, /.+/);
+  assert.equal(secondary.sends.length, 0, 'a healthy primary still takes the send alone');
+});

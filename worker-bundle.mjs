@@ -11227,7 +11227,16 @@ var DEFAULT_POLICY = Object.freeze({
   maxProviderRetries: 1,
   circuitFailureThreshold: 3,
   circuitCooldownSeconds: 300,
-  lowQuotaRatio: 0.15
+  lowQuotaRatio: 0.15,
+  /* F-02 (blueprint 06): one code, one wall-clock budget. The send chain used to
+     be unbounded — every enabled slot waited its own timeoutMs in turn, so a bad
+     day across a dozen providers could hold the student for ~160s. The budget
+     caps the whole request (health probes included), not each attempt. */
+  deliveryBudgetMs: 25e3,
+  /* How long the first slot may stay silent before the next one starts sending
+     in parallel (hedged send). Must stay well under a slot's timeoutMs so a
+     healthy-but-slow provider is raced, not waited out. */
+  hedgeDelayMs: 2500
 });
 function safeJson(raw) {
   if (!raw) return {};
@@ -11252,7 +11261,13 @@ function verificationConfig(raw) {
     maxProviderRetries: int(policyInput.maxProviderRetries, DEFAULT_POLICY.maxProviderRetries, 0, 2),
     circuitFailureThreshold: int(policyInput.circuitFailureThreshold, DEFAULT_POLICY.circuitFailureThreshold, 1, 10),
     circuitCooldownSeconds: int(policyInput.circuitCooldownSeconds, DEFAULT_POLICY.circuitCooldownSeconds, 30, 3600),
-    lowQuotaRatio: ratio(policyInput.lowQuotaRatio, DEFAULT_POLICY.lowQuotaRatio)
+    lowQuotaRatio: ratio(policyInput.lowQuotaRatio, DEFAULT_POLICY.lowQuotaRatio),
+    deliveryBudgetMs: int(policyInput.deliveryBudgetMs, DEFAULT_POLICY.deliveryBudgetMs, 3e3, 6e4),
+    // A hedge delay longer than the budget would make the hedge dead code.
+    hedgeDelayMs: Math.min(
+      int(policyInput.hedgeDelayMs, DEFAULT_POLICY.hedgeDelayMs, 200, 15e3),
+      int(policyInput.deliveryBudgetMs, DEFAULT_POLICY.deliveryBudgetMs, 3e3, 6e4) - 1e3
+    )
   });
   const supplied = Array.isArray(input.providers) ? input.providers : [];
   const byId = new Map(supplied.map((row) => [String(row?.id || ""), row]));
@@ -25085,9 +25100,10 @@ var VerificationOrchestrator = class {
       now: input.now
     });
   }
-  async #candidateRows(identity, destinations, now) {
+  async #candidateRows(identity, destinations, now, deadline = 0) {
     const magicLink = identity.deliveryMethod === "magic-link";
     const eligible = this.config.enabled ? this.config.providers.filter((entry) => entry.enabled && destinations[entry.channel] && entry.id === MAGIC_LINK_PROVIDER_ID2 === magicLink) : [];
+    const probeCeiling = Math.min(PROBE_TIMEOUT_MS2, Math.max(250, deadline - Date.now()));
     const rows4 = await Promise.all(eligible.map(async (entry) => {
       const provider = this.providers.get(entry.id);
       const started = Date.now();
@@ -25096,8 +25112,8 @@ var VerificationOrchestrator = class {
           // Readiness probes run for every slot before a single send, so a slow
           // probe delayed the whole OTP past the browser's patience. Probes get
           // a short ceiling; the send itself keeps the slot's full timeoutMs.
-          bounded2(() => provider.checkAvailability({ purpose: identity.purpose }), Math.min(entry.timeoutMs, PROBE_TIMEOUT_MS2)),
-          bounded2(() => provider.getRemainingQuota({ now }), Math.min(entry.timeoutMs, PROBE_TIMEOUT_MS2)),
+          bounded2(() => provider.checkAvailability({ purpose: identity.purpose }), Math.min(entry.timeoutMs, probeCeiling)),
+          bounded2(() => provider.getRemainingQuota({ now }), Math.min(entry.timeoutMs, probeCeiling)),
           this.repository.dailyQuotaSnapshot({ providerId: entry.id, dailyQuota: entry.dailyQuota, now }),
           this.repository.providerSnapshot({ providerId: entry.id, now })
         ]);
@@ -25146,6 +25162,8 @@ var VerificationOrchestrator = class {
       const provider = this.providers.get(entry.id);
       return entry.enabled && provider?.id === "telegram" && provider?.verificationMode === VERIFICATION_MODES.LOCAL_CODE;
     });
+    const requestStarted = Date.now();
+    const deliveryDeadline = requestStarted + this.config.policy.deliveryBudgetMs;
     const [codeMac, linkTokenMac, codeCipher, linkCipher] = await Promise.all([
       this.hmac.hex("backup-verification-code-v1", `${attemptId}:${code}`),
       this.hmac.hex("backup-verification-link-v1", linkToken),
@@ -25190,8 +25208,7 @@ var VerificationOrchestrator = class {
     }
     const destinations = identity.destinations;
     const deliveryMethod = input?.deliveryMethod === "magic-link" && identity.purpose === "email-ownership" ? "magic-link" : "";
-    const candidates = await this.#candidateRows({ ...identity, attemptId, previousProviderId, deliveryMethod }, destinations, now);
-    const requestStarted = Date.now();
+    const candidates = await this.#candidateRows({ ...identity, attemptId, previousProviderId, deliveryMethod }, destinations, now, deliveryDeadline);
     const attemptRef = String(attemptId).slice(0, 8);
     const tried = [];
     const logBase = { attempt: attemptRef, purpose: identity.purpose, method: deliveryMethod || "code", candidates: candidates.length };
@@ -25204,11 +25221,17 @@ var VerificationOrchestrator = class {
     const logDelivery = (fields) => emit("otp_delivery", fields);
     const logRequest = (fields) => emit("otp_request", fields);
     let rank2 = 0;
+    let budgetExhausted = false;
     for (const candidate of candidates) {
       const { entry, provider } = candidate;
       rank2 += 1;
       const maxTries = 1 + policy.maxProviderRetries;
       for (let currentTry = 0; currentTry < maxTries; currentTry += 1) {
+        const remainingBudget = deliveryDeadline - Date.now();
+        if (remainingBudget <= 0) {
+          budgetExhausted = true;
+          break;
+        }
         const quota = await this.repository.reserveDailyQuota({ providerId: entry.id, dailyQuota: entry.dailyQuota, now });
         if (quota.exhausted) {
           tried.push(`${entry.id}:quota`);
@@ -25227,7 +25250,7 @@ var VerificationOrchestrator = class {
             recipientName: identity.recipientName,
             expiresAt: now + policy.codeTtlSeconds * 1e3,
             signalContext: { origin: identity.context.origin }
-          }), entry.timeoutMs);
+          }), Math.min(entry.timeoutMs, deliveryDeadline - Date.now()));
           if (result?.accepted !== true) throw new VerificationProviderError("INVALID_PROVIDER_RESPONSE", VERIFICATION_FAILURE_CLASS.HARD);
           providerAccepted = true;
           const latencyMs = Date.now() - started;
@@ -25299,8 +25322,15 @@ var VerificationOrchestrator = class {
           if (failure.code === "PROVIDER_TIMEOUT") break;
         }
       }
+      if (budgetExhausted) break;
     }
-    logRequest({ ...logBase, outcome: "all_failed", totalMs: Date.now() - requestStarted, tried: tried.join(",") });
+    logRequest({
+      ...logBase,
+      outcome: budgetExhausted ? "budget_exhausted" : "all_failed",
+      budgetMs: policy.deliveryBudgetMs,
+      totalMs: Date.now() - requestStarted,
+      tried: tried.join(",")
+    });
     await this.repository.failChallenge({ attemptId, reason: "all_providers_unavailable", now });
     throw new NativeAuthError(AUTH_ERROR_CODES.BACKUP_UNAVAILABLE);
   }
