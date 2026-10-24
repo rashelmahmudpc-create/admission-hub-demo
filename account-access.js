@@ -686,6 +686,7 @@
       ACCOUNT_LINK_REQUIRED: 'এই ইমেইলে আগে ইমেইল-পাসওয়ার্ড দিয়ে অ্যাকাউন্ট খোলা হয়েছে, ইমেইল ও পাসওয়ার্ড দিয়ে সাইন ইন করো।',
       CLIENT_UPDATE_REQUIRED: 'Admission Hub-এর নতুন সংস্করণ এসেছে, পেজটি একবার refresh করে আবার চেষ্টা করো।',
       INVALID_CREDENTIALS: 'Email বা Password সঠিক নয়। আবার দেখে লিখো।',
+      HUMAN_CHECK_FAILED: 'মানব যাচাই সম্পন্ন হয়নি। পেজটি একবার রিফ্রেশ করে আবার চেষ্টা করো; তারপরেও না হলে ব্রাউজারের বিজ্ঞাপন ব্লকার বন্ধ করো।',
       EMAIL_ALREADY_IN_USE: 'এই Email-এ account আছে-Log In করো।',
       DISPOSABLE_EMAIL: 'এই ইমেইলে কোড পাঠানো সম্ভব না। শুধু Gmail, Yahoo, iCloud, Hotmail বা Outlook ইমেইল ব্যবহার করো।',
       EMAIL_NOT_VERIFIED: 'Account verification এখনো শেষ হয়নি।',
@@ -1408,7 +1409,23 @@
     return tsApiPromise.then(api => new Promise((resolve, reject) => {
       const host = document.createElement('div');
       host.setAttribute('aria-hidden', 'true');
-      host.style.cssText = 'position:fixed;right:0;bottom:0;width:1px;height:1px;overflow:hidden;opacity:.01';
+      // Owner report 2026-10-24: signup stopped at "তথ্যটি ভুল" right after the
+      // confirm-password field. A 1px, near-transparent host is fine while the
+      // check passes silently, but when Cloudflare decides a human must tap, the
+      // challenge has nowhere to render — the widget times out, the token comes
+      // back empty, and the server refuses the send. So the host starts collapsed
+      // and expands into a real, clickable box for the duration of a challenge.
+      const collapsed = 'position:fixed;right:0;bottom:0;width:1px;height:1px;overflow:hidden;opacity:.01;z-index:2147483647;';
+      const expanded = 'position:fixed;right:12px;bottom:12px;min-width:300px;min-height:70px;padding:10px;overflow:visible;opacity:1;z-index:2147483647;background:#ffffff;border:1px solid #d7dce3;border-radius:12px;box-shadow:0 10px 30px rgba(15,23,42,.18);';
+      host.style.cssText = collapsed;
+      const label = document.createElement('p');
+      label.textContent = 'মানব যাচাই সম্পন্ন করো।';
+      label.style.cssText = 'margin:0 0 8px;font:600 13px/1.4 system-ui,sans-serif;color:#0f172a;';
+      label.hidden = true;
+      host.appendChild(label);
+      const mount = document.createElement('div');
+      mount.style.cssText = 'width:300px;height:65px;';
+      host.appendChild(mount);
       document.body.appendChild(host);
       let done = false, widgetId = null;
       const finish = (fn, value) => {
@@ -1419,10 +1436,25 @@
         try { host.remove(); } catch (_) {}
         fn(value);
       };
-      const timer = setTimeout(() => finish(resolve, ''), 15000);
+      // A challenge needs a human: it gets 60s, not the 15s a silent pass needs.
+      let timer = setTimeout(() => finish(resolve, ''), 15000);
+      const expand = () => {
+        host.setAttribute('aria-hidden', 'false');
+        host.style.cssText = expanded;
+        label.hidden = false;
+        clearTimeout(timer);
+        timer = setTimeout(() => finish(resolve, ''), 60000);
+      };
+      const collapse = () => {
+        host.setAttribute('aria-hidden', 'true');
+        host.style.cssText = collapsed;
+        label.hidden = true;
+      };
       try {
-        widgetId = api.render(host, {
-          sitekey: siteKey, action: 'email_ownership', size: 'invisible', appearance: 'interaction-only',
+        widgetId = api.render(mount, {
+          sitekey: siteKey, action: 'email_ownership', size: 'normal', appearance: 'interaction-only',
+          'before-interactive-callback': expand,
+          'after-interactive-callback': collapse,
           callback: token => finish(resolve, String(token || '')),
           'error-callback': () => finish(resolve, ''),
           'expired-callback': () => finish(resolve, '')

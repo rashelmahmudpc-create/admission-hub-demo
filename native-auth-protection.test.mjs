@@ -114,7 +114,10 @@ test('Google, Passkey, and the explicit Email-or-Telegram selector are public wi
   assert.match(wrangler, /VERIFICATION_AUTH_ACTIVATION = "enabled"/);
   // The email OTP slots are enabled with declared daily caps and rotate ahead of
   // Telegram, but their provider identities stay server-side.
-  assert.match(wrangler, /VERIFICATION_ORCHESTRATOR_CONFIG = '\{"enabled":true,"providers":\[\{"id":"otp-a","enabled":true,"priority":10,"dailyQuota":300/);
+  // F-02 added a "policy" object between "enabled" and "providers"; the order of
+  // those two keys is not the contract, the slots below are.
+  assert.match(wrangler, /VERIFICATION_ORCHESTRATOR_CONFIG = '\{"enabled":true,("policy":\{[^}]*\},)?"providers":\[\{"id":"otp-a","enabled":true,"priority":10,"dailyQuota":300/);
+  assert.match(wrangler, /"deliveryBudgetMs":25000/);
   assert.match(wrangler, /\{"id":"otp-b","enabled":true,"priority":20,"dailyQuota":100/);
   assert.match(wrangler, /\{"id":"otp-c","enabled":true,"priority":45,"dailyQuota":200/);
   assert.match(wrangler, /\{"id":"otp-d","enabled":true,"priority":35,"dailyQuota":100/);
