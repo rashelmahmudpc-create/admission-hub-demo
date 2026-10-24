@@ -145,7 +145,12 @@ export default {
     /* Firebase Auth helper (/__/auth/handler, /__/auth/iframe, init.json) served
      * same-origin, so the authDomain can become this site once
      * https://admissionsky.pages.dev/__/auth/handler is an authorised redirect
-     * URI for the Google and Facebook OAuth clients. */
+     * URI for the Google and Facebook OAuth clients.
+     *
+     * sw.js must leave these three paths alone (owner 2026-10-22): it used to
+     * answer them from the app shell, the hidden iframe never completed its
+     * handshake, and "Continue with Google" sat for a minute or two. Anything
+     * that touches the service worker has to keep that bypass. */
     if (url.pathname.startsWith('/__/auth/') || url.pathname === '/__/firebase/init.json') {
       const upstream = new URL(url.pathname + url.search, 'https://admissionsky-997d2.firebaseapp.com');
       const init = { method: request.method, headers: request.headers, redirect: 'manual' };
