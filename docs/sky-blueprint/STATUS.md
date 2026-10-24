@@ -44,6 +44,18 @@ Source of truth: Notion "Sky AI v1.0" → main page section **"🚦 এজেন
   `public-worker.js` reads the body AFTER forwarding — reading it first would
   have left the fallback with nothing and a failed save would have cleared the
   note.
+- **F0.1 step 4f ✅ (2026-10-25): `/api/ai/memory/clear` moved (POST).**
+  First moved route that DESTROYS data. Safe to hedge only because deleting is
+  idempotent; a lost answer costs one harmless retry, never a half-cleared
+  account. `clearAiEverything()` in `ai-agent.js` is now the single definition of
+  what "forget" covers — the four KV keys that used to be deleted inline in
+  `public-worker.js` moved into it, so the two callers cannot drift.
+- **Blocked on purpose — `/api/ai/status`: it must NOT move yet.** Status is a
+  report about which AI engine and keys are available, and those keys are
+  secrets on `admission-gk`. sky-ai has no `GEMINI_KEYS`/`GROQ_API_KEY`, so it
+  would answer `providers: all false`, an empty chain and a default daily cap —
+  a confidently wrong dashboard reading. Moving it is only honest after the keys
+  (or the chat path that uses them) live in sky-ai.
 - **F0.3–F0.8 — Todo.**
 - **Next:** deploy this branch's worker, add the `SKY_FLAGS` KV binding, then continue
   F0.1 step 4 — move the remaining `/api/ai/*` routes into sky-ai one at a time, `/api/ai/chat` last.
@@ -52,11 +64,14 @@ Source of truth: Notion "Sky AI v1.0" → main page section **"🚦 এজেন
 - 2026-10-25 · F0.1 step 4d · `POST /api/ai/recall` moved to sky-ai with the
   AI_STATE cross-script binding + `/health` dependency report + deploy assertion;
   42 sky-ai/routing tests and 78 AI/recall tests green · PR (this branch) ·
-  next: step 4f — `/api/ai/status`, then `memory/clear`,
-  `actions/propose|confirm`, `/api/ai/chat` last.
+  next: `memory/clear` ✅ (4f) → `actions/propose|confirm` → `/api/ai/chat`
+  last. `/api/ai/status` waits for the provider keys.
 - 2026-10-25 · F0.1 step 4e · `/api/ai/instructions` (GET/POST/DELETE) moved;
-  method-aware forwarder + body-read-order test; 52 sky-ai tests, 76 AI tests
-  green · next: `/api/ai/status`.
+  method-aware forwarder + body-read-order test · 52 sky-ai tests green.
+- 2026-10-25 · F0.1 step 4f · `/api/ai/memory/clear` moved; "forget" now defined
+  once in `clearAiEverything()` · 62 sky-ai tests, 76 AI tests green ·
+  `/api/ai/status` held back (no provider keys in sky-ai), next:
+  `actions/propose|confirm`.
 - 2026-10-19 · — · Blueprint v1.0 created (Notion).
 - 2026-10-20 (approx.) · F0.1 steps 1–3 + F0.2 flags.mjs · merged to main, sky-ai deployed · (Notion not updated at the time).
 - 2026-10-21 23:20 · handoff system · Notion board + pages 07/09 updated, this file added · next: F0.1 step 4a.

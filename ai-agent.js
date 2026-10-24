@@ -1741,6 +1741,28 @@ export async function agentInstructions(env, uid, method, body) {
 /* AI audit 2026-10-16: the student's "forget me" for the AI. Removes the
    conversation memory, its summary and the long-term memory from the AI state
    object and from the KV fallback. The quota is deliberately untouched. */
+/* The COMPLETE meaning of "forget my AI memory", in one place.
+
+   It used to be split: clearAiMemory() removed the conversation and the
+   long-term note, and public-worker.js then deleted four more KV keys inline.
+   That is fine while there is one caller, but /api/ai/memory/clear now has two
+   (admission-gk and sky-ai) and a copy of the four key names on the far side
+   would drift. A student who pressed "forget" and still had their saved
+   instructions or their action history behind would be told something untrue.
+
+   Error semantics are deliberately unchanged from the inline version: the four
+   deletes are NOT caught here, so a failure surfaces as 500 on both sides rather
+   than as a cheerful "cleared" over a half-cleared account. clearAiMemory keeps
+   its own internal tolerance, as before. */
+export async function clearAiEverything(env, uid) {
+  const id = String(uid || '');
+  if (!id.startsWith('account-')) return { ok: false, reason: 'no-account' };
+  const r = await clearAiMemory(env, id);
+  const keys = ['aiprefs:' + id, 'aiinstr:' + id, 'actaudit:' + id, 'actprop:' + id];
+  for (const k of keys) await env.PUB_KV.delete(k);
+  return { ok: r.ok !== false, cleared: (r.cleared || 0) + keys.length };
+}
+
 export async function clearAiMemory(env, uid) {
   const id = String(uid || '');
   if (!id.startsWith('account-')) return { ok: false, reason: 'no-account' };

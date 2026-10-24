@@ -16,9 +16,10 @@ import { handlePrefsGet } from './prefs.mjs';
 import { handleAuditGet } from './audit.mjs';
 import { handleRecallPost } from './recall.mjs';
 import { handleInstructions } from './instructions.mjs';
+import { handleMemoryClear } from './memory-clear.mjs';
 import { aiStateStore } from '../ai-state-do.mjs';
 
-export const SKY_AI_VERSION = 'sky-ai-f0.1-4e-instructions';
+export const SKY_AI_VERSION = 'sky-ai-f0.1-4f-memory-clear';
 
 /* F0.1 step 4d: what /health reports about this Worker's dependencies.
  *
@@ -100,6 +101,14 @@ export async function handle(request, env = {}) {
    * touching it. */
   if (['GET', 'POST', 'DELETE'].includes(request.method) && path === '/api/ai/instructions') {
     const res = await handleInstructions(request, env);
+    if (res) return res;
+  }
+
+  /* F0.1 step 4f: POST /api/ai/memory/clear — the student's own "forget"
+   * (internal-key protected, see memory-clear.mjs). Idempotent, which is what
+   * makes the admission-gk fallback safe for a destructive route. */
+  if (request.method === 'POST' && path === '/api/ai/memory/clear') {
+    const res = await handleMemoryClear(request, env);
     if (res) return res;
   }
 

@@ -4753,6 +4753,14 @@ async function agentInstructions(env, uid, method, body) {
   }
   return jsonResp({ ok: true, text: c.text, message: c.message, ...base });
 }
+async function clearAiEverything(env, uid) {
+  const id = String(uid || "");
+  if (!id.startsWith("account-")) return { ok: false, reason: "no-account" };
+  const r = await clearAiMemory(env, id);
+  const keys2 = ["aiprefs:" + id, "aiinstr:" + id, "actaudit:" + id, "actprop:" + id];
+  for (const k of keys2) await env.PUB_KV.delete(k);
+  return { ok: r.ok !== false, cleared: (r.cleared || 0) + keys2.length };
+}
 async function clearAiMemory(env, uid) {
   const id = String(uid || "");
   if (!id.startsWith("account-")) return { ok: false, reason: "no-account" };
@@ -5057,7 +5065,8 @@ var SKY_INTERNAL_KEY_NAME = "secret:sky-internal";
 var SKY_AI_BODY_IDENTITY_ROUTES = Object.freeze([
   "POST /api/ai/recall",
   "POST /api/ai/instructions",
-  "DELETE /api/ai/instructions"
+  "DELETE /api/ai/instructions",
+  "POST /api/ai/memory/clear"
 ]);
 async function forwardWithIdentityBody(request, env, uid, routes = SKY_AI_BODY_IDENTITY_ROUTES) {
   if (!uid || ["GET", "HEAD", "OPTIONS"].includes(request.method)) return null;
@@ -5732,12 +5741,10 @@ var public_worker_default = {
       if (path === "/api/ai/memory/clear" && request.method === "POST") {
         const identity = await aiRequestIdentity(request, env, false);
         if (!identity.authenticated) return json2({ error: "sign_in_required", message: "AI মেমরি মুছতে লগইন করো।" }, 401);
+        const viaSky = await forwardWithIdentityBody(request, env, identity.uid);
+        if (viaSky) return viaSky;
         try {
-          await clearAiMemory(env, identity.uid);
-          await env.PUB_KV.delete("aiprefs:" + identity.uid);
-          await env.PUB_KV.delete("aiinstr:" + identity.uid);
-          await env.PUB_KV.delete("actaudit:" + identity.uid);
-          await env.PUB_KV.delete("actprop:" + identity.uid);
+          await clearAiEverything(env, identity.uid);
         } catch (_) {
           return json2({ error: "clear_failed", message: "এখন মুছে ফেলা গেল না, আবার চেষ্টা করো।" }, 500);
         }

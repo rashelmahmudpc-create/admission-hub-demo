@@ -30,7 +30,7 @@ jobs:
         with:
           node-version: '22'
       - name: Unit tests
-        run: node --test sky-ai/worker.test.mjs sky-ai/flags.test.mjs
+        run: node --test sky-ai/*.test.mjs sky-ai-route-identity.test.mjs
       - name: Deploy sky-ai
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
