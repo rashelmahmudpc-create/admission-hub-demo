@@ -44,6 +44,9 @@ on:
       - 'sky-ai/**'
       - '_worker.js'
       - 'scripts/pages-dist.mjs'
+      # Self-reference, so editing this workflow publishes immediately instead
+      # of needing a second unrelated commit to shake it loose.
+      - '.github/workflows/deploy-pages-worker.yml'
       - 'package.json'
       - 'package-lock.json'
 
