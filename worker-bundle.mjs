@@ -5047,28 +5047,36 @@ var SKY_AI_IDENTITY_ROUTES = Object.freeze([
   /* F0.2 / DV-02: evaluated flags for ONE student, so sky-ai needs the uid
    * admission-gk verified. A guest stays anonymous and keeps the defaults
    * (the local fallback in public-worker.js answers all-off). */
-  "GET /api/ai/sky-flags"
+  "GET /api/ai/sky-flags",
+  /* F0.1 step 4e: reading the student's saved note. The write methods for the
+   * same path are in SKY_AI_BODY_IDENTITY_ROUTES below — the list is keyed on
+   * "METHOD /path", so a GET here can never let a POST through. */
+  "GET /api/ai/instructions"
 ]);
 var SKY_INTERNAL_KEY_NAME = "secret:sky-internal";
-var SKY_AI_POST_IDENTITY_ROUTES = Object.freeze([
-  "POST /api/ai/recall"
+var SKY_AI_BODY_IDENTITY_ROUTES = Object.freeze([
+  "POST /api/ai/recall",
+  "POST /api/ai/instructions",
+  "DELETE /api/ai/instructions"
 ]);
-async function forwardPostWithIdentity(request, env, uid, routes = SKY_AI_POST_IDENTITY_ROUTES) {
-  if (!uid || request.method !== "POST") return null;
+async function forwardWithIdentityBody(request, env, uid, routes = SKY_AI_BODY_IDENTITY_ROUTES) {
+  if (!uid || ["GET", "HEAD", "OPTIONS"].includes(request.method)) return null;
   if (!shouldRouteToSkyAi(request, env, routes) || !env.PUB_KV) return null;
   try {
     const key = await env.PUB_KV.get(SKY_INTERNAL_KEY_NAME);
     if (!key) return null;
     const body = await request.clone().arrayBuffer();
     const res = await env.SKY_AI.fetch(new Request(request.url, {
-      method: "POST",
+      method: request.method,
       headers: {
-        "content-type": "application/json",
+        // Only meaningful when there is a body; a DELETE with a content-type but
+        // no body is odd enough to avoid.
+        ...body.byteLength ? { "content-type": "application/json" } : {},
         "x-sky-ai-caller": "admission-gk",
         "x-sky-uid": String(uid),
         "x-sky-internal": key
       },
-      body
+      body: body.byteLength ? body : void 0
     }));
     if (!res || res.status === 404 || res.status >= 500) return null;
     return res;
@@ -5716,6 +5724,8 @@ var public_worker_default = {
       if (path === "/api/ai/instructions" && (request.method === "GET" || request.method === "POST" || request.method === "DELETE")) {
         const identity = await aiRequestIdentity(request, env, false);
         if (!identity.authenticated) return json2({ error: "sign_in_required", message: "নির্দেশনা সেভ করতে লগইন করো।" }, 401);
+        const viaSky = request.method === "GET" ? await forwardWithIdentity(request, env, identity.uid) : await forwardWithIdentityBody(request, env, identity.uid);
+        if (viaSky) return viaSky;
         const body = request.method === "POST" ? await request.json().catch(() => null) : null;
         return await agentInstructions(env, identity.uid, request.method, body);
       }
@@ -5798,7 +5808,7 @@ var public_worker_default = {
         const identity = await aiRequestIdentity(request, env, false);
         if (!identity.authenticated) return json2({ error: "sign_in_required", recall: null }, 401);
         if (identity.persistMemory === false) return json2({ ok: true, recall: null });
-        const viaSky = await forwardPostWithIdentity(request, env, identity.uid);
+        const viaSky = await forwardWithIdentityBody(request, env, identity.uid);
         if (viaSky) return viaSky;
         const body = await request.json().catch(() => null);
         return await agentRecall(env, identity.uid, body);

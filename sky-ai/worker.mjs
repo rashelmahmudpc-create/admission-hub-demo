@@ -15,9 +15,10 @@ import { loadFlags, evaluateAll } from './flags.mjs';
 import { handlePrefsGet } from './prefs.mjs';
 import { handleAuditGet } from './audit.mjs';
 import { handleRecallPost } from './recall.mjs';
+import { handleInstructions } from './instructions.mjs';
 import { aiStateStore } from '../ai-state-do.mjs';
 
-export const SKY_AI_VERSION = 'sky-ai-f0.1-4d-recall';
+export const SKY_AI_VERSION = 'sky-ai-f0.1-4e-instructions';
 
 /* F0.1 step 4d: what /health reports about this Worker's dependencies.
  *
@@ -90,6 +91,15 @@ export async function handle(request, env = {}) {
   /* F0.1 step 4c: GET /api/ai/actions/audit (internal-key protected, see audit.mjs). */
   if (request.method === 'GET' && path === '/api/ai/actions/audit') {
     const res = await handleAuditGet(request, env);
+    if (res) return res;
+  }
+
+  /* F0.1 step 4e: /api/ai/instructions — GET reads, POST saves, DELETE clears
+   * (internal-key protected, see instructions.mjs). The first moved route that
+   * writes, so the note about idempotence in that file is worth reading before
+   * touching it. */
+  if (['GET', 'POST', 'DELETE'].includes(request.method) && path === '/api/ai/instructions') {
+    const res = await handleInstructions(request, env);
     if (res) return res;
   }
 
