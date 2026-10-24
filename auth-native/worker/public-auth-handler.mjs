@@ -9,10 +9,11 @@ import { resolveTelegramWebhookSecret, validTelegramWebhookSecret } from '../ver
 import { isTelegramLoginEmail, reservedTelegramLoginEmail, telegramLoginBotId, telegramLoginCredentials, telegramLoginReady, verifyTelegramLogin } from '../verification/telegram-login.mjs';
 import { isPendingSignupTicket } from './pending-signup.mjs';
 import * as pendingSignup from './pending-signup-public.mjs';
-import { shadowVerdict, shadowDelayMs, sleep } from '../core/shadow-guard.mjs';
+import { shadowVerdict, shadowDelayMs, sleep, resolveGuardMode, SHADOW_GUARD_MODES } from '../core/shadow-guard.mjs';
 import { parseCanaryEmails, isCanaryEmail, createKvCanaryFlags } from '../core/canary-accounts.mjs';
-import { createKvPasswordGuard, passwordGuardKey } from '../core/password-guard.mjs';
-import { sendSecurityAlertInBackground, SECURITY_ALERT_EVENTS } from '../core/security-alerts.mjs';
+import { createKvPasswordGuard, passwordGuardKey, passwordFailuresSoFar } from '../core/password-guard.mjs';
+import { createKvLoginFacts, createKvIpBreadth } from '../core/login-facts.mjs';
+import { sendThrottledSecurityAlert, SECURITY_ALERT_EVENTS } from '../core/security-alerts.mjs';
 /* D-5 / A1.5 ②: one shared CORS policy for every auth surface. This handler
  * used to keep its own copy that still accepted http://localhost and any
  * *.admissionhub.pages.dev preview host, so production served credentialed
@@ -99,20 +100,30 @@ async function readJson(request, maxBytes = MAX_BODY_BYTES) {
 
 const clientContext = (request, existingDeviceId = '') => {
   const deviceId = /^[A-Za-z0-9_-]{20,96}$/.test(existingDeviceId) ? existingDeviceId : randomToken(24);
+  // Edge facts. Cloudflare already knows the country, the network and its own
+  // bot score; asking for them costs nothing and inventing them would be a
+  // guess. Every one is optional, so a runtime that does not report them
+  // simply scores less risk rather than accusing anybody.
+  const cf = request.cf || {};
+  const botScore = Number(cf.botManagement?.score);
   return Object.freeze({
     deviceId,
     isNewDevice: deviceId !== existingDeviceId,
     ip: String(request.headers.get('CF-Connecting-IP') || 'unknown').slice(0, 96),
     userAgent: String(request.headers.get('User-Agent') || '').slice(0, 300),
-    origin: String(request.headers.get('Origin') || new URL(request.url).origin).slice(0, 256)
+    origin: String(request.headers.get('Origin') || new URL(request.url).origin).slice(0, 256),
+    country: String(cf.country || '').slice(0, 8),
+    asn: Number.isFinite(Number(cf.asn)) ? Number(cf.asn) : undefined,
+    botScore: Number.isFinite(botScore) ? botScore : undefined
   });
 };
 
-// Shadow Guard (P30) is off unless the deployment turns it on, so the
-// default behaviour of this handler is unchanged by its presence. `canary`
-// and `enabled` both mean on: `canary` is the staging value used elsewhere
-// for a surface that is live but not announced.
-const shadowGuardEnabled = env => ['canary', 'enabled'].includes(String(env?.SHADOW_GUARD_ACTIVATION || ''));
+// Shadow Guard (P30) mode. The default - an unset variable, or one nobody
+// recognises - is `observe`: every login is scored and reported, and nobody
+// is refused. A refusal needs the explicit word `enforce`. The deployment
+// carries no variable for this: the Worker sits on Cloudflare's 64-variable
+// free-tier ceiling, so a 65th is rejected at deploy time.
+const shadowGuardMode = env => resolveGuardMode(env?.SHADOW_GUARD_ACTIVATION);
 
 // The KV namespace the guard records into. Absent binding means the guard
 // cannot record, and a guard that cannot record must not silently pretend
@@ -134,7 +145,7 @@ const flagCanaryHit = (env, email, context) => {
   }
   // The owner is told at once: a canary hit is the clearest signal the app
   // has that someone is probing it on purpose.
-  sendSecurityAlertInBackground(env, {
+  sendThrottledSecurityAlert(env, store, {
     event: SECURITY_ALERT_EVENTS.CANARY_HIT,
     email,
     at: Date.now()
@@ -896,7 +907,12 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         // wrong password, otherwise the decoy teaches the attacker it was a
         // decoy.
         const canaryHit = flagCanaryHit(env, prepared.email, context);
-        const guardActive = shadowGuardEnabled(env) || canaryHit;
+        const mode = shadowGuardMode(env);
+        const guardActive = mode !== SHADOW_GUARD_MODES.OFF || canaryHit;
+        // A canary is a decoy, so it is enforced even while the guard is only
+        // observing: nobody legitimate ever signs in with it, and letting it
+        // through in observe mode would defeat its whole purpose.
+        const enforcing = mode === SHADOW_GUARD_MODES.ENFORCE || canaryHit;
         const guardStore = shadowGuardStore(env);
         // The password guard counts the ip+email pair, so an attacker guessing
         // on a student's address from elsewhere can never spend that student's
@@ -905,33 +921,73 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           ? createKvPasswordGuard(guardStore)
           : null;
         const guardKey = passwordGuard ? passwordGuardKey(prepared.email, context.ip) : '';
+        // The strike count is read even while the guard is only observing:
+        // without it the guard has almost no facts, the high band is
+        // unreachable, and the shadow-ban it exists to perform never runs.
+        let priorStrikes = 0;
         if (passwordGuard) {
-          const state = await passwordGuard.check(guardKey, 'user');
-          if (state?.blocked) {
+          // A guard must never be able to break a login. The KV read is the
+          // one call here that can reject, and if it does the attempt simply
+          // proceeds unguarded - which is exactly the behaviour of the
+          // deployment before the guard existed.
+          let state = null;
+          try {
+            state = await passwordGuard.check(guardKey, 'user');
+          } catch {
+            state = null;
+          }
+          priorStrikes = passwordFailuresSoFar(state, 'user');
+          if (enforcing && state?.blocked) {
             return json(request, 429, {
               ok: false,
-              error: { code: 'RATE_LIMITED', message: 'অনেকবার ভুল পাসওয়ার্ড দেওয়া হয়েছে। ইমেইলের কোড দিয়ে এখনই আনলক করতে পারেন।' }
+              error: { code: 'RATE_LIMITED', message: 'অনেকবার ভুল পাসওয়ার্ড দেওয়া হয়েছে। কিছুক্ষণ পর আবার চেষ্টা করুন।' }
             }, { 'Retry-After': String(state.retryAfterSeconds) });
           }
         }
         let shadow = null;
         if (guardActive) {
+          // Where this account was last seen from, and how many accounts this
+          // address is trying. Both are stored hashed and both fail open. The
+          // whole block is wrapped as well: the guard is a passenger on the
+          // login path, and a passenger must never be able to stop the train.
+          let accountFacts = null;
+          let breadth = null;
+          try {
+            accountFacts = guardStore
+              ? await createKvLoginFacts(guardStore).observe(prepared.email, { country: context.country, asn: context.asn })
+              : null;
+            breadth = guardStore
+              ? await createKvIpBreadth(guardStore).observe(context.ip, prepared.email)
+              : null;
+          } catch {
+            accountFacts = null;
+            breadth = null;
+          }
           shadow = shadowVerdict({
             deviceKnown: context.isNewDevice !== true,
+            failedLogins: priorStrikes,
+            countryChanged: accountFacts?.countryChanged === true,
+            asnChanged: accountFacts?.asnChanged === true,
+            emailsFromIp: breadth?.emailsFromIp || 0,
+            botScore: context.botScore,
             accountState: canaryHit ? 'suspended' : undefined
           });
+          // In observe mode the verdict is reported and then ignored: the
+          // attempt continues exactly as it would with the guard absent.
           if (shadow.shadowBan) {
-            // The delay is spent before the answer, so the response time
-            // carries no signal either.
-            await sleep(shadowDelayMs());
-            sendSecurityAlertInBackground(env, {
+            sendThrottledSecurityAlert(env, guardStore, {
               event: SECURITY_ALERT_EVENTS.SHADOW_BAN,
               email: prepared.email,
               band: shadow.band,
-              reasons: shadow.reasons,
+              reasons: enforcing ? shadow.reasons : [...shadow.reasons, 'observe-only'],
               at: Date.now()
             });
-            throw new NativeAuthError(AUTH_ERROR_CODES.INVALID_CREDENTIALS);
+            if (enforcing) {
+              // The delay is spent before the answer, so the response time
+              // carries no signal either.
+              await sleep(shadowDelayMs());
+              throw new NativeAuthError(AUTH_ERROR_CODES.INVALID_CREDENTIALS);
+            }
           }
         }
         let signed;
@@ -966,9 +1022,12 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         }
         // A new device that got past the password is exactly the event the
         // owner asked to hear about: if it was not them, this is the first
-        // they will know.
-        if (guardActive && context.isNewDevice) {
-          sendSecurityAlertInBackground(env, {
+        // they will know. In observe mode it is not worth telling: a new
+        // device is the ordinary shape of a first login, and at launch that
+        // is hundreds of students, not an attack. Only the high band - a
+        // would-be ban - is reported while the guard is watching.
+        if (guardActive && context.isNewDevice && (enforcing || shadow?.band === 'high')) {
+          sendThrottledSecurityAlert(env, guardStore, {
             event: SECURITY_ALERT_EVENTS.NEW_DEVICE,
             email: prepared.email,
             band: shadow ? shadow.band : 'low',

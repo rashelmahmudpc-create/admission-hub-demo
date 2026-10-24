@@ -107,3 +107,55 @@ export function sendSecurityAlertInBackground(env, input, options = {}) {
     .then(() => sendSecurityAlert(env, input, options))
     .catch(() => 'failed');
 }
+
+// Without this, one determined attacker turns the owner's Telegram into a
+// firehose: every attempt is an event, and a stuffing run is thousands. The
+// first event for a given shape is delivered; repeats inside the window are
+// dropped. A key that cannot be read is treated as "not seen", because
+// swallowing a real first alert is worse than one duplicate.
+export function createKvAlertThrottle(store, options = {}) {
+  const prefix = String(options.prefix || 'alert-seen');
+  const windowMs = Number(options.windowMs) > 0 ? Number(options.windowMs) : 60 * 60 * 1000;
+  const now = typeof options.now === 'function' ? options.now : () => Date.now();
+
+  // A short hash keeps an address out of the key space, so the store never
+  // holds a readable account identifier.
+  const digest = async value => {
+    const subtle = globalThis.crypto?.subtle;
+    if (!subtle) return String(value).length.toString(36);
+    const bytes = new TextEncoder().encode(String(value));
+    const hash = await subtle.digest('SHA-256', bytes);
+    return [...new Uint8Array(hash).slice(0, 8)].map(b => b.toString(16).padStart(2, '0')).join('');
+  };
+
+  return Object.freeze({
+    /** @returns {boolean} true when this event should be delivered. */
+    async shouldSend(event, identity) {
+      if (!store) return true;
+      const key = `${prefix}:${event}:${await digest(`${identity || ''}`)}`;
+      try {
+        const seen = await store.get(key);
+        if (seen) return false;
+        await store.put(key, '1', { expirationTtl: Math.max(60, Math.ceil(windowMs / 1000)) });
+        return true;
+      } catch {
+        return true;
+      }
+    },
+    /** Exposed for tests. */
+    keyFor: async (event, identity) => `${prefix}:${event}:${await digest(`${identity || ''}`)}`,
+    windowMs,
+    now
+  });
+}
+
+// Throttled send: the caller never waits, and a burst collapses to one alert.
+export function sendThrottledSecurityAlert(env, store, input = {}, options = {}) {
+  return Promise.resolve()
+    .then(async () => {
+      const throttle = createKvAlertThrottle(store, options);
+      if (!(await throttle.shouldSend(input.event, input.email || input.identity || ''))) return 'throttled';
+      return sendSecurityAlert(env, input, options);
+    })
+    .catch(() => 'failed');
+}

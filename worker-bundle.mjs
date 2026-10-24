@@ -9808,11 +9808,11 @@ var CloudflareNativeAuthEngine = class {
   // High-dynamic blueprint §01/§04/§05/§13/§14, deterministic rule table.
   // No AI, no behavioral inference; only real account/profile state.
   profileContext({ profile = null, completion = 0, lastLoginAt = null, now = Date.now() }) {
-    const DAY_MS12 = 864e5;
+    const DAY_MS13 = 864e5;
     const createdAt = profile?.createdAt ? Number(profile.createdAt) : null;
     const hasTarget = Array.isArray(profile?.targets) && profile.targets.length > 0 && Boolean(profile.targets[0]?.name);
-    const ageDays = createdAt ? (now - createdAt) / DAY_MS12 : Number.POSITIVE_INFINITY;
-    const gapDays = lastLoginAt ? (now - Number(lastLoginAt)) / DAY_MS12 : Number.POSITIVE_INFINITY;
+    const ageDays = createdAt ? (now - createdAt) / DAY_MS13 : Number.POSITIVE_INFINITY;
+    const gapDays = lastLoginAt ? (now - Number(lastLoginAt)) / DAY_MS13 : Number.POSITIVE_INFINITY;
     let context = "DEFAULT";
     let greeting = "আগে থেকেই চলো";
     if (!profile || Number(completion) < 60) {
@@ -11918,6 +11918,17 @@ async function verifyPendingSignupCodeAndCreate({ request, env, provider, contex
 
 // auth-native/core/shadow-guard.mjs
 var SHADOW_GUARD_POLICY_VERSION = "shadow-guard-v1";
+var SHADOW_GUARD_MODES = Object.freeze({
+  OFF: "off",
+  OBSERVE: "observe",
+  ENFORCE: "enforce"
+});
+function resolveGuardMode(value) {
+  const raw = String(value ?? "").trim().toLowerCase();
+  if (raw === "off" || raw === "none" || raw === "disabled") return SHADOW_GUARD_MODES.OFF;
+  if (raw === "enforce" || raw === "canary" || raw === "enabled" || raw === "on") return SHADOW_GUARD_MODES.ENFORCE;
+  return SHADOW_GUARD_MODES.OBSERVE;
+}
 var SHADOW_GUARD_DELAY_MIN_MS = 300;
 var SHADOW_GUARD_DELAY_MAX_MS = 900;
 var SHADOW_GUARD_BOT_SCORE_THRESHOLD = 30;
@@ -12150,6 +12161,14 @@ function passwordGuardKey(email, ip) {
   const address = String(ip || "").trim();
   return `${address}|${mail}`;
 }
+function passwordFailuresSoFar(decision, scale = PASSWORD_GUARD_SCALES.user) {
+  if (!decision) return 0;
+  const resolved = resolvePasswordGuardScale(scale);
+  const perStrike = Number(resolved.triggers?.[0]) > 0 ? Number(resolved.triggers[0]) : 1;
+  const strikes = Math.max(0, Number(decision.strikes) || 0);
+  const fails = Math.max(0, Number(decision.fails) || 0);
+  return strikes * perStrike + fails;
+}
 function createKvPasswordGuard(store, options = {}) {
   const prefix = String(options.prefix || "pwfail");
   const clock = typeof options.now === "function" ? options.now : () => Date.now();
@@ -12191,6 +12210,110 @@ function createKvPasswordGuard(store, options = {}) {
         await write(key, cleared, scale);
         return true;
       });
+    }
+  });
+}
+
+// auth-native/core/login-facts.mjs
+var DAY_MS2 = 24 * 60 * 60 * 1e3;
+async function shortHash(value) {
+  const text = String(value ?? "");
+  const subtle = globalThis.crypto?.subtle;
+  if (!subtle) {
+    return "";
+  }
+  const digest3 = await subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return [...new Uint8Array(digest3).slice(0, 10)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+function createKvLoginFacts(store, options = {}) {
+  const prefix = String(options.prefix || "acct-facts");
+  const ttlSeconds = Number(options.ttlSeconds) > 0 ? Number(options.ttlSeconds) : 180 * 24 * 60 * 60;
+  const now = typeof options.now === "function" ? options.now : () => Date.now();
+  const keyFor = async (identity) => `${prefix}:${await shortHash(identity)}`;
+  return Object.freeze({
+    keyFor,
+    /**
+     * @returns {Promise<{first:boolean, known:boolean, countryChanged:boolean,
+     *   asnChanged:boolean}>} `known` is false when the store could not be
+     *   read, so the caller can tell "nothing recorded" from "no change".
+     */
+    async observe(identity, observed = {}) {
+      const empty = { first: false, known: false, countryChanged: false, asnChanged: false };
+      if (!store || !identity) return empty;
+      const country = String(observed.country || "").trim().toUpperCase();
+      const asn = Number(observed.asn);
+      const hasCountry = country.length === 2;
+      const hasAsn = Number.isFinite(asn) && asn > 0;
+      if (!hasCountry && !hasAsn) return empty;
+      const key = await keyFor(identity);
+      if (!key) return empty;
+      let previous = null;
+      try {
+        const raw = await store.get(key);
+        previous = raw ? JSON.parse(raw) : null;
+      } catch {
+        return empty;
+      }
+      if (!previous || typeof previous !== "object") previous = null;
+      const next = {
+        country: hasCountry ? country : previous?.country || null,
+        asn: hasAsn ? asn : previous?.asn || null,
+        at: now()
+      };
+      const result = {
+        first: !previous,
+        known: Boolean(previous),
+        // A first sighting records without reporting a move: the first login
+        // on a new phone is not travel.
+        countryChanged: Boolean(previous?.country && hasCountry && previous.country !== country),
+        asnChanged: Boolean(previous?.asn && hasAsn && previous.asn !== asn)
+      };
+      const changed = !previous || result.countryChanged || result.asnChanged || !previous.country || !previous.asn;
+      if (changed) {
+        try {
+          await store.put(key, JSON.stringify(next), { expirationTtl: ttlSeconds });
+        } catch {
+        }
+      }
+      return result;
+    }
+  });
+}
+function createKvIpBreadth(store, options = {}) {
+  const prefix = String(options.prefix || "ip-breadth");
+  const windowSeconds = Number(options.windowSeconds) > 0 ? Number(options.windowSeconds) : 60 * 60;
+  const cap = Number(options.cap) > 0 ? Number(options.cap) : 50;
+  const keyFor = async (ip) => `${prefix}:${await shortHash(ip)}`;
+  return Object.freeze({
+    keyFor,
+    /**
+     * @returns {Promise<{emailsFromIp:number, known:boolean}>} `known` is
+     *   false when the store could not be read, so the caller never reads a
+     *   failed lookup as "zero accounts, safe".
+     */
+    async observe(ip, identity) {
+      if (!store || !ip || !identity) return { emailsFromIp: 0, known: false };
+      const key = await keyFor(ip);
+      if (!key) return { emailsFromIp: 0, known: false };
+      let list2 = [];
+      try {
+        const raw = await store.get(key);
+        if (raw) list2 = JSON.parse(raw);
+      } catch {
+        return { emailsFromIp: 0, known: false };
+      }
+      if (!Array.isArray(list2)) list2 = [];
+      list2 = list2.filter((entry) => typeof entry === "string");
+      const fingerprint = await shortHash(identity);
+      if (!fingerprint) return { emailsFromIp: list2.length, known: true };
+      if (!list2.includes(fingerprint)) {
+        list2 = [...list2, fingerprint].slice(-cap);
+        try {
+          await store.put(key, JSON.stringify(list2), { expirationTtl: Math.max(60, windowSeconds) });
+        } catch {
+        }
+      }
+      return { emailsFromIp: list2.length, known: true };
     }
   });
 }
@@ -12253,8 +12376,43 @@ async function sendSecurityAlert(env, input = {}, options = {}) {
     return "failed";
   }
 }
-function sendSecurityAlertInBackground(env, input, options = {}) {
-  return Promise.resolve().then(() => sendSecurityAlert(env, input, options)).catch(() => "failed");
+function createKvAlertThrottle(store, options = {}) {
+  const prefix = String(options.prefix || "alert-seen");
+  const windowMs = Number(options.windowMs) > 0 ? Number(options.windowMs) : 60 * 60 * 1e3;
+  const now = typeof options.now === "function" ? options.now : () => Date.now();
+  const digest3 = async (value) => {
+    const subtle = globalThis.crypto?.subtle;
+    if (!subtle) return String(value).length.toString(36);
+    const bytes = new TextEncoder().encode(String(value));
+    const hash = await subtle.digest("SHA-256", bytes);
+    return [...new Uint8Array(hash).slice(0, 8)].map((b) => b.toString(16).padStart(2, "0")).join("");
+  };
+  return Object.freeze({
+    /** @returns {boolean} true when this event should be delivered. */
+    async shouldSend(event, identity) {
+      if (!store) return true;
+      const key = `${prefix}:${event}:${await digest3(`${identity || ""}`)}`;
+      try {
+        const seen = await store.get(key);
+        if (seen) return false;
+        await store.put(key, "1", { expirationTtl: Math.max(60, Math.ceil(windowMs / 1e3)) });
+        return true;
+      } catch {
+        return true;
+      }
+    },
+    /** Exposed for tests. */
+    keyFor: async (event, identity) => `${prefix}:${event}:${await digest3(`${identity || ""}`)}`,
+    windowMs,
+    now
+  });
+}
+function sendThrottledSecurityAlert(env, store, input = {}, options = {}) {
+  return Promise.resolve().then(async () => {
+    const throttle = createKvAlertThrottle(store, options);
+    if (!await throttle.shouldSend(input.event, input.email || input.identity || "")) return "throttled";
+    return sendSecurityAlert(env, input, options);
+  }).catch(() => "failed");
 }
 
 // auth-native/worker/public-auth-handler.mjs
@@ -12337,15 +12495,20 @@ async function readJson(request, maxBytes = MAX_BODY_BYTES) {
 }
 var clientContext = (request, existingDeviceId = "") => {
   const deviceId = /^[A-Za-z0-9_-]{20,96}$/.test(existingDeviceId) ? existingDeviceId : randomToken(24);
+  const cf = request.cf || {};
+  const botScore = Number(cf.botManagement?.score);
   return Object.freeze({
     deviceId,
     isNewDevice: deviceId !== existingDeviceId,
     ip: String(request.headers.get("CF-Connecting-IP") || "unknown").slice(0, 96),
     userAgent: String(request.headers.get("User-Agent") || "").slice(0, 300),
-    origin: String(request.headers.get("Origin") || new URL(request.url).origin).slice(0, 256)
+    origin: String(request.headers.get("Origin") || new URL(request.url).origin).slice(0, 256),
+    country: String(cf.country || "").slice(0, 8),
+    asn: Number.isFinite(Number(cf.asn)) ? Number(cf.asn) : void 0,
+    botScore: Number.isFinite(botScore) ? botScore : void 0
   });
 };
-var shadowGuardEnabled = (env) => ["canary", "enabled"].includes(String(env?.SHADOW_GUARD_ACTIVATION || ""));
+var shadowGuardMode = (env) => resolveGuardMode(env?.SHADOW_GUARD_ACTIVATION);
 var shadowGuardStore = (env) => env?.GK_KV || env?.PUB_KV || null;
 var flagCanaryHit = (env, email, context) => {
   const list2 = parseCanaryEmails(env?.CANARY_EMAILS);
@@ -12356,7 +12519,7 @@ var flagCanaryHit = (env, email, context) => {
     Promise.resolve().then(() => flags.flag(context.ip, context.deviceId)).catch(() => {
     });
   }
-  sendSecurityAlertInBackground(env, {
+  sendThrottledSecurityAlert(env, store, {
     event: SECURITY_ALERT_EVENTS.CANARY_HIT,
     email,
     at: Date.now()
@@ -13086,35 +13249,60 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           return json4(request, 429, { ok: false, error: { code: "RATE_LIMITED", message: "অনেকবার চেষ্টা হয়েছে, একটু পরে আবার চেষ্টা করুন।" } }, { "Retry-After": String(prepared.retryAfter) });
         }
         const canaryHit = flagCanaryHit(env, prepared.email, context);
-        const guardActive = shadowGuardEnabled(env) || canaryHit;
+        const mode = shadowGuardMode(env);
+        const guardActive = mode !== SHADOW_GUARD_MODES.OFF || canaryHit;
+        const enforcing = mode === SHADOW_GUARD_MODES.ENFORCE || canaryHit;
         const guardStore = shadowGuardStore(env);
         const passwordGuard = guardActive && guardStore ? createKvPasswordGuard(guardStore) : null;
         const guardKey = passwordGuard ? passwordGuardKey(prepared.email, context.ip) : "";
+        let priorStrikes = 0;
         if (passwordGuard) {
-          const state = await passwordGuard.check(guardKey, "user");
-          if (state?.blocked) {
+          let state = null;
+          try {
+            state = await passwordGuard.check(guardKey, "user");
+          } catch {
+            state = null;
+          }
+          priorStrikes = passwordFailuresSoFar(state, "user");
+          if (enforcing && state?.blocked) {
             return json4(request, 429, {
               ok: false,
-              error: { code: "RATE_LIMITED", message: "অনেকবার ভুল পাসওয়ার্ড দেওয়া হয়েছে। ইমেইলের কোড দিয়ে এখনই আনলক করতে পারেন।" }
+              error: { code: "RATE_LIMITED", message: "অনেকবার ভুল পাসওয়ার্ড দেওয়া হয়েছে। কিছুক্ষণ পর আবার চেষ্টা করুন।" }
             }, { "Retry-After": String(state.retryAfterSeconds) });
           }
         }
         let shadow = null;
         if (guardActive) {
+          let accountFacts = null;
+          let breadth = null;
+          try {
+            accountFacts = guardStore ? await createKvLoginFacts(guardStore).observe(prepared.email, { country: context.country, asn: context.asn }) : null;
+            breadth = guardStore ? await createKvIpBreadth(guardStore).observe(context.ip, prepared.email) : null;
+          } catch {
+            accountFacts = null;
+            breadth = null;
+          }
           shadow = shadowVerdict({
             deviceKnown: context.isNewDevice !== true,
+            failedLogins: priorStrikes,
+            countryChanged: accountFacts?.countryChanged === true,
+            asnChanged: accountFacts?.asnChanged === true,
+            emailsFromIp: breadth?.emailsFromIp || 0,
+            botScore: context.botScore,
             accountState: canaryHit ? "suspended" : void 0
           });
           if (shadow.shadowBan) {
-            await sleep(shadowDelayMs());
-            sendSecurityAlertInBackground(env, {
+            sendThrottledSecurityAlert(env, guardStore, {
               event: SECURITY_ALERT_EVENTS.SHADOW_BAN,
               email: prepared.email,
               band: shadow.band,
-              reasons: shadow.reasons,
+              reasons: enforcing ? shadow.reasons : [...shadow.reasons, "observe-only"],
               at: Date.now()
             });
-            throw new NativeAuthError(AUTH_ERROR_CODES.INVALID_CREDENTIALS);
+            if (enforcing) {
+              await sleep(shadowDelayMs());
+              throw new NativeAuthError(AUTH_ERROR_CODES.INVALID_CREDENTIALS);
+            }
           }
         }
         let signed;
@@ -13153,8 +13341,8 @@ function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           } catch {
           }
         }
-        if (guardActive && context.isNewDevice) {
-          sendSecurityAlertInBackground(env, {
+        if (guardActive && context.isNewDevice && (enforcing || shadow?.band === "high")) {
+          sendThrottledSecurityAlert(env, guardStore, {
             event: SECURITY_ALERT_EVENTS.NEW_DEVICE,
             email: prepared.email,
             band: shadow ? shadow.band : "low",
@@ -16764,7 +16952,7 @@ async function handleUserDataRequest(request, env, ctx) {
 
 // personalized-notification.mjs
 var DHAKA_OFFSET_MS = 6 * 3600 * 1e3;
-var DAY_MS2 = 24 * 3600 * 1e3;
+var DAY_MS3 = 24 * 3600 * 1e3;
 var NUDGE_KINDS = Object.freeze(["revision-due", "streak-risk", "exam-weak", "inactive-3d", "daily-glow"]);
 var DEFAULTS3 = Object.freeze({
   daily_enabled: 1,
@@ -16803,7 +16991,7 @@ function inSendWindow(hour, prefs) {
   const before = Number.isFinite(Number(prefs?.send_before_hour)) ? Number(prefs.send_before_hour) : DEFAULTS3.send_before_hour;
   return hour >= after && hour < before;
 }
-var dayDiff = (a, b) => Math.round((Date.parse(a + "T00:00:00Z") - Date.parse(b + "T00:00:00Z")) / DAY_MS2);
+var dayDiff = (a, b) => Math.round((Date.parse(a + "T00:00:00Z") - Date.parse(b + "T00:00:00Z")) / DAY_MS3);
 var MSG = {
   "revision-due": {
     bn: (n) => ({ title: "📚 রিভিশনের সময় হয়েছে", body: `${n}টি ভুল প্রশ্ন রিভিশনের অপেক্ষায় আছে, আজই ঝালাই করে ফেলো` }),
@@ -17137,7 +17325,7 @@ var __personalizedTest = Object.freeze({
 });
 
 // notification-intelligence.mjs
-var DAY_MS3 = 24 * 3600 * 1e3;
+var DAY_MS4 = 24 * 3600 * 1e3;
 var MIN_MS = 60 * 1e3;
 var DEFAULT_TZ_OFFSET_MIN = 360;
 var KIND_META = Object.freeze({
@@ -17256,7 +17444,7 @@ function inSendWindow2(hour, prefs = {}) {
   const before = Number.isFinite(Number(prefs.send_before_hour)) ? Number(prefs.send_before_hour) : DEFAULTS4.send_before_hour;
   return hour >= after && hour < before;
 }
-var dayDiff2 = (a, b) => Math.round((Date.parse(a + "T00:00:00Z") - Date.parse(b + "T00:00:00Z")) / DAY_MS3);
+var dayDiff2 = (a, b) => Math.round((Date.parse(a + "T00:00:00Z") - Date.parse(b + "T00:00:00Z")) / DAY_MS4);
 var asInt4 = (v, fallback = 0) => Number.isFinite(Number(v)) ? Number(v) : fallback;
 var rate = (part, whole) => whole > 0 ? part / whole : 0;
 function computeSignals(state = {}, nowMs = Date.now(), tzOffsetMin = DEFAULT_TZ_OFFSET_MIN) {
@@ -17265,7 +17453,7 @@ function computeSignals(state = {}, nowMs = Date.now(), tzOffsetMin = DEFAULT_TZ
   const byDay = new Map(stats.map((s) => [s.day, s]));
   const questionsToday = asInt4(byDay.get(today)?.questions);
   const lessonsToday = asInt4(byDay.get(today)?.lessons);
-  const dayAt = (offset) => new Date(Date.parse(today + "T00:00:00Z") - offset * DAY_MS3).toISOString().slice(0, 10);
+  const dayAt = (offset) => new Date(Date.parse(today + "T00:00:00Z") - offset * DAY_MS4).toISOString().slice(0, 10);
   const active = (d) => asInt4(byDay.get(d)?.questions) > 0 || asInt4(byDay.get(d)?.lessons) > 0;
   let streak = 0;
   let cursor = active(today) ? 0 : 1;
@@ -17301,7 +17489,7 @@ function computeSignals(state = {}, nowMs = Date.now(), tzOffsetMin = DEFAULT_TZ
     openedAt: asInt4(h?.openedAt),
     clickedAt: asInt4(h?.clickedAt)
   })).filter((h) => h.sentAt);
-  const recentNotifs = history.filter((h) => nowMs - h.sentAt <= DEFAULTS4.fatigue_window_days * DAY_MS3);
+  const recentNotifs = history.filter((h) => nowMs - h.sentAt <= DEFAULTS4.fatigue_window_days * DAY_MS4);
   const openedNotifs = recentNotifs.filter((h) => h.openedAt).length;
   const clickedNotifs = recentNotifs.filter((h) => h.clickedAt).length;
   const accuracy = questions7 > 0 ? Math.round(rate(correct7, questions7) * 100) : null;
@@ -17445,7 +17633,7 @@ function detectFatigue(history = [], nowMs = Date.now(), opts = {}) {
   const windowDays = asInt4(opts.windowDays, DEFAULTS4.fatigue_window_days);
   const minSent = asInt4(opts.minSent, DEFAULTS4.fatigue_min_sent);
   const threshold = Number.isFinite(Number(opts.openRate)) ? Number(opts.openRate) : DEFAULTS4.fatigue_open_rate;
-  const recent = (Array.isArray(history) ? history : []).map((h) => ({ sentAt: asInt4(h?.sentAt), openedAt: asInt4(h?.openedAt), clickedAt: asInt4(h?.clickedAt) })).filter((h) => h.sentAt && nowMs - h.sentAt <= windowDays * DAY_MS3);
+  const recent = (Array.isArray(history) ? history : []).map((h) => ({ sentAt: asInt4(h?.sentAt), openedAt: asInt4(h?.openedAt), clickedAt: asInt4(h?.clickedAt) })).filter((h) => h.sentAt && nowMs - h.sentAt <= windowDays * DAY_MS4);
   const sent = recent.length;
   const opened = recent.filter((h) => h.openedAt).length;
   const clicked = recent.filter((h) => h.clickedAt).length;
@@ -18436,7 +18624,7 @@ var __intelligenceTest = Object.freeze({
 });
 
 // event-notifications.mjs
-var DAY_MS4 = 24 * 3600 * 1e3;
+var DAY_MS5 = 24 * 3600 * 1e3;
 var EVENT_KINDS = Object.freeze([
   "streak-milestone",
   "personal-best",
@@ -18635,7 +18823,7 @@ var EventStore = class {
       return { day: String(r.day), questions: Number(doc?.questions || 0) };
     }).filter((s) => s.questions > 0);
     const activeDays = new Set(stats.map((s) => s.day));
-    const dayAt = (offset) => new Date(Date.parse(today + "T00:00:00Z") - offset * DAY_MS4).toISOString().slice(0, 10);
+    const dayAt = (offset) => new Date(Date.parse(today + "T00:00:00Z") - offset * DAY_MS5).toISOString().slice(0, 10);
     let streak = 0;
     let cursor = activeDays.has(today) ? 0 : 1;
     if (activeDays.has(dayAt(cursor))) {
@@ -18753,7 +18941,7 @@ var __eventTest = Object.freeze({
 });
 
 // digest-notifications.mjs
-var DAY_MS5 = 24 * 3600 * 1e3;
+var DAY_MS6 = 24 * 3600 * 1e3;
 var DHAKA_OFFSET_MS2 = 6 * 3600 * 1e3;
 var DIGEST_KINDS = Object.freeze(["monthly", "weekly", "daily"]);
 var DEFAULTS6 = Object.freeze({
@@ -18769,7 +18957,7 @@ var DEFAULTS6 = Object.freeze({
 });
 var pad2 = (n) => String(n).padStart(2, "0");
 var utcDay2 = (ms) => new Date(ms).toISOString().slice(0, 10);
-var shiftDays = (dateStr, days) => utcDay2(Date.parse(dateStr + "T00:00:00Z") + days * DAY_MS5);
+var shiftDays = (dateStr, days) => utcDay2(Date.parse(dateStr + "T00:00:00Z") + days * DAY_MS6);
 function isoWeek(dateStr) {
   const d = /* @__PURE__ */ new Date(dateStr + "T00:00:00Z");
   const day = (d.getUTCDay() + 6) % 7;
@@ -18778,7 +18966,7 @@ function isoWeek(dateStr) {
   const jan4 = new Date(Date.UTC(isoYear, 0, 4));
   const jan4Day = (jan4.getUTCDay() + 6) % 7;
   const week1Monday = Date.UTC(isoYear, 0, 4 - jan4Day);
-  const week = Math.round((d.getTime() - week1Monday) / (7 * DAY_MS5)) + 1;
+  const week = Math.round((d.getTime() - week1Monday) / (7 * DAY_MS6)) + 1;
   return { isoYear, week };
 }
 function dhakaCalendar(nowMs) {
@@ -18794,7 +18982,7 @@ function dhakaCalendar(nowMs) {
     dayOfMonth: d.getUTCDate(),
     monthKey: date.slice(0, 7),
     weekKey: `${isoYear}-W${pad2(week)}`,
-    prevMonthKey: new Date(Date.parse(date.slice(0, 8) + "01T00:00:00Z") - DAY_MS5).toISOString().slice(0, 7)
+    prevMonthKey: new Date(Date.parse(date.slice(0, 8) + "01T00:00:00Z") - DAY_MS6).toISOString().slice(0, 7)
   };
 }
 function dueDigests(cal, prefs = {}) {
@@ -19038,7 +19226,7 @@ var __digestTest = Object.freeze({
 });
 
 // analytics-engine.mjs
-var DAY_MS6 = 864e5;
+var DAY_MS7 = 864e5;
 var asInt5 = (v, fallback = 0) => {
   const n = Number(v);
   return Number.isFinite(n) ? Math.trunc(n) : fallback;
@@ -19063,19 +19251,19 @@ function dayKey4(ts, tzOffsetMin = DEFAULT_TZ_OFFSET_MIN) {
 function shiftDay(day, delta) {
   const base = parseDay(day);
   if (!Number.isFinite(base)) return "";
-  return formatDay(base + asInt5(delta) * DAY_MS6);
+  return formatDay(base + asInt5(delta) * DAY_MS7);
 }
 function daysBetween(from, to) {
   const a = parseDay(from);
   const b = parseDay(to);
   if (!Number.isFinite(a) || !Number.isFinite(b)) return 0;
-  return Math.round((b - a) / DAY_MS6);
+  return Math.round((b - a) / DAY_MS7);
 }
 function dayRange(endDay, count) {
   const end = parseDay(endDay);
   if (!Number.isFinite(end) || count <= 0) return [];
   const out = [];
-  for (let i = count - 1; i >= 0; i -= 1) out.push(formatDay(end - i * DAY_MS6));
+  for (let i = count - 1; i >= 0; i -= 1) out.push(formatDay(end - i * DAY_MS7));
   return out;
 }
 function computeStreak(days = []) {
@@ -20262,7 +20450,7 @@ var AnalyticsStore2 = class {
    * once so the notification engine and the dashboard cannot disagree about who
    * is "at risk". */
   async segments(options = {}) {
-    const since = options.sinceMs ?? Date.now() - 60 * DAY_MS6;
+    const since = options.sinceMs ?? Date.now() - 60 * DAY_MS7;
     const students = await this.studentSnapshots(since);
     return students.map((s) => {
       const metrics = computeLearningMetrics({
@@ -20307,7 +20495,7 @@ function parseFilters(url, now = Date.now()) {
   const days = Math.min(365, Math.max(1, asInt5(url.searchParams.get("days"), 30)));
   const from = asInt5(url.searchParams.get("from"), 0);
   const to = asInt5(url.searchParams.get("to"), 0);
-  const sinceMs = from > 0 ? from : now - days * DAY_MS6;
+  const sinceMs = from > 0 ? from : now - days * DAY_MS7;
   const untilMs = to > 0 ? to : now;
   const pick2 = (key) => {
     const v = String(url.searchParams.get(key) || "").trim().slice(0, 80);
@@ -20355,7 +20543,7 @@ function applyFilters({ events = [], courses = [], lessons = [], quizzes = [], c
   return { events: ev, courses: co, lessons: le, quizzes: qu, campaigns: ca, outcomes: ou, segments: sg };
 }
 async function buildStudentDashboard(store, userId, options = {}) {
-  const f = options.filters || { sinceMs: Date.now() - 30 * DAY_MS6, untilMs: Date.now(), tzOffsetMin: DEFAULT_TZ_OFFSET_MIN };
+  const f = options.filters || { sinceMs: Date.now() - 30 * DAY_MS7, untilMs: Date.now(), tzOffsetMin: DEFAULT_TZ_OFFSET_MIN };
   const today = options.today || dayKey4(Date.now(), f.tzOffsetMin);
   const [dailyStats, examResults, mistakes, courses, events, outcomes] = await Promise.all([
     store.dailyStats(userId, options.limitDays ?? 90),
@@ -22380,7 +22568,7 @@ var __copilotTest = Object.freeze({ nd, sp, bn: bn3, compactParams, isBangla, no
 
 // ai-analytics-routes.mjs
 var AI_ANALYTICS_PREFIX = "/api/analytics/ai/";
-var DAY_MS7 = 24 * 3600 * 1e3;
+var DAY_MS8 = 24 * 3600 * 1e3;
 function constantTimeEqual2(a, b) {
   const x = String(a == null ? "" : a);
   const y = String(b == null ? "" : b);
@@ -22739,7 +22927,7 @@ function examples() {
 async function aiCounters(store, trigger) {
   const since = Date.now() - 3600 * 1e3;
   const rows4 = await store.listDecisions({ sinceMs: since, limit: 1e3 }).catch(() => []);
-  const day = await store.listDecisions({ sinceMs: Date.now() - DAY_MS7, limit: 1e3 }).catch(() => []);
+  const day = await store.listDecisions({ sinceMs: Date.now() - DAY_MS8, limit: 1e3 }).catch(() => []);
   const prefix = trigger === "copilot-question" ? "copilot:" : trigger === "notification-wording" ? "notify:" : trigger;
   return {
     hour: rows4.filter((r) => String(r.signal).startsWith(prefix)).length,
@@ -23599,8 +23787,8 @@ function summarizeIdentityHealth(result) {
 }
 
 // auth-native/storage/sqlite-auth-repository.mjs
-var DAY_MS8 = 24 * 60 * 60 * 1e3;
-var EVENT_RETENTION_MS = 90 * DAY_MS8;
+var DAY_MS9 = 24 * 60 * 60 * 1e3;
+var EVENT_RETENTION_MS = 90 * DAY_MS9;
 function joinedYearOf(ts) {
   const t = Number(ts);
   if (!Number.isFinite(t) || t <= 0) return null;
@@ -25249,13 +25437,13 @@ var SqliteAuthRepository = class _SqliteAuthRepository {
   async cleanup(now) {
     return this.#transaction(() => {
       this.sql.exec("UPDATE auth_account_verification_tickets SET state='expired',refresh_cipher='' WHERE state='active' AND expires_at<=?", now);
-      this.sql.exec("DELETE FROM auth_account_verification_tickets WHERE expires_at<?", now - DAY_MS8);
+      this.sql.exec("DELETE FROM auth_account_verification_tickets WHERE expires_at<?", now - DAY_MS9);
       this.sql.exec("DELETE FROM auth_passkey_challenges WHERE expires_at<=?", now);
       this.sql.exec("DELETE FROM auth_passkey_tickets WHERE expires_at<=?", now);
       this.sql.exec("DELETE FROM auth_passkey_credentials WHERE status='revoked' AND revoked_at<?", now - EVENT_RETENTION_MS);
       this.sql.exec("DELETE FROM auth_rate_limits WHERE expires_at<=?", now);
-      this.sql.exec("DELETE FROM auth_trusted_devices WHERE expires_at<?", now - DAY_MS8);
-      this.sql.exec("DELETE FROM auth_security_challenges WHERE expires_at<?", now - DAY_MS8);
+      this.sql.exec("DELETE FROM auth_trusted_devices WHERE expires_at<?", now - DAY_MS9);
+      this.sql.exec("DELETE FROM auth_security_challenges WHERE expires_at<?", now - DAY_MS9);
       this.sql.exec("DELETE FROM auth_sessions WHERE expires_at<=? OR revoked_at IS NOT NULL", now);
       this.sql.exec("DELETE FROM auth_security_events WHERE occurred_at<?", now - EVENT_RETENTION_MS);
       this.sql.exec("INSERT INTO auth_meta(key,value) VALUES('last_cleanup',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", String(now));
@@ -25291,7 +25479,7 @@ var SEND_LIMITS = Object.freeze([
   Object.freeze({ scope: "backup-device-hour", source: "device", limit: 10, windowMs: HOUR_MS2 }),
   Object.freeze({ scope: "backup-global-minute", source: "global", limit: 120, windowMs: 6e4 })
 ]);
-var DAY_MS9 = 24 * HOUR_MS2;
+var DAY_MS10 = 24 * HOUR_MS2;
 var EMAIL_DAILY_LIMIT = 3;
 var validText = (value, min, max) => typeof value === "string" && value.length >= min && value.length <= max && !/[\r\n\u0000]/.test(value);
 var cleanRecipientName = (value) => String(value ?? "").replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 60);
@@ -25493,7 +25681,7 @@ var VerificationOrchestrator = class {
       windowMs: limit.windowMs
     }));
     if (identity.purpose === "email-ownership" && identity.emailRef) {
-      limits.push(Object.freeze({ scope: "ownership-email-day", key: identity.emailRef, limit: EMAIL_DAILY_LIMIT, windowMs: DAY_MS9 }));
+      limits.push(Object.freeze({ scope: "ownership-email-day", key: identity.emailRef, limit: EMAIL_DAILY_LIMIT, windowMs: DAY_MS10 }));
     }
     return limits;
   }
@@ -29436,8 +29624,8 @@ async function dispatchSecurityNotifications({
 }
 
 // auth-native/verification/sqlite-verification-repository.mjs
-var DAY_MS10 = 864e5;
-var EVENT_RETENTION_MS2 = 90 * DAY_MS10;
+var DAY_MS11 = 864e5;
+var EVENT_RETENTION_MS2 = 90 * DAY_MS11;
 var safeReason = (value) => String(value || "UNKNOWN").toUpperCase().replace(/[^A-Z0-9_-]/g, "_").slice(0, 64) || "UNKNOWN";
 var SqliteVerificationRepository = class {
   constructor(storage) {
@@ -30122,8 +30310,8 @@ var SqliteVerificationRepository = class {
     });
   }
   async dailyQuotaSnapshot({ providerId, dailyQuota, now }) {
-    const dayStart = Math.floor(now / DAY_MS10) * DAY_MS10;
-    const resetAt = dayStart + DAY_MS10;
+    const dayStart = Math.floor(now / DAY_MS11) * DAY_MS11;
+    const resetAt = dayStart + DAY_MS11;
     const row = this.#one(
       "SELECT used FROM auth_verification_daily_quota WHERE provider_id=? AND day_start=?",
       providerId,
@@ -30134,8 +30322,8 @@ var SqliteVerificationRepository = class {
   }
   async reserveDailyQuota({ providerId, dailyQuota, now }) {
     return this.#transaction(() => {
-      const dayStart = Math.floor(now / DAY_MS10) * DAY_MS10;
-      const resetAt = dayStart + DAY_MS10;
+      const dayStart = Math.floor(now / DAY_MS11) * DAY_MS11;
+      const resetAt = dayStart + DAY_MS11;
       this.sql.exec(
         `INSERT INTO auth_verification_daily_quota(provider_id,day_start,used,quota_limit,reset_at,updated_at)
          VALUES(?,?,0,?,?,?) ON CONFLICT(provider_id,day_start)
@@ -30513,7 +30701,7 @@ function migrateStudentDirectory(storage, { now = Date.now(), migrations = STUDE
 
 // auth-native/storage/student-admin-view.mjs
 var STUDENT_LIST_MAX = 100;
-var DAY_MS11 = 24 * 60 * 60 * 1e3;
+var DAY_MS12 = 24 * 60 * 60 * 1e3;
 var rows2 = (sql, statement, ...bindings) => {
   const result = sql.exec(statement, ...bindings);
   if (Array.isArray(result)) return result;
@@ -30547,7 +30735,7 @@ function studentCounts(sql, { now = Date.now() } = {}) {
       SUM(CASE WHEN u.status='suspended' THEN 1 ELSE 0 END) AS suspended,
       SUM(CASE WHEN u.created_at>=? THEN 1 ELSE 0 END) AS last24h,
       SUM(CASE WHEN u.created_at>=? THEN 1 ELSE 0 END) AS last7d
-    FROM auth_users u ${stateJoin}`, Number(now) - DAY_MS11, Number(now) - 7 * DAY_MS11) || {};
+    FROM auth_users u ${stateJoin}`, Number(now) - DAY_MS12, Number(now) - 7 * DAY_MS12) || {};
   return {
     total: Number(row.total || 0),
     active: Number(row.active || 0),

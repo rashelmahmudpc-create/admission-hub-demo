@@ -161,6 +161,24 @@ export function passwordGuardKey(email, ip) {
   return `${address}|${mail}`;
 }
 
+/**
+ * The total number of wrong guesses a decision represents.
+ *
+ * A decision reports `strikes` (blocks already served) and `fails` (wrong
+ * guesses inside the current window), and the second resets at every strike,
+ * so neither number on its own is the count of attempts. The risk engine
+ * wants attempts, so the two are recombined here, where the scale that
+ * defines a strike is known.
+ */
+export function passwordFailuresSoFar(decision, scale = PASSWORD_GUARD_SCALES.user) {
+  if (!decision) return 0;
+  const resolved = resolvePasswordGuardScale(scale);
+  const perStrike = Number(resolved.triggers?.[0]) > 0 ? Number(resolved.triggers[0]) : 1;
+  const strikes = Math.max(0, Number(decision.strikes) || 0);
+  const fails = Math.max(0, Number(decision.fails) || 0);
+  return strikes * perStrike + fails;
+}
+
 // KV-backed store. Cloudflare KV requires expirationTtl >= 60, so a short
 // cooldown still gets a minute of life - harmless, the clock governs the
 // decision and the record is read again on the next attempt anyway.

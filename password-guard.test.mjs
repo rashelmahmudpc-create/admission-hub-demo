@@ -7,6 +7,7 @@ import {
   recordPasswordSuccess,
   normalizeGuardState,
   passwordGuardKey,
+  passwordFailuresSoFar,
   createKvPasswordGuard
 } from './auth-native/core/password-guard.mjs';
 
@@ -151,3 +152,27 @@ test('an attacker cannot lock a student out from another address', async () => {
   await guard.recordSuccess(attacker, user);
   assert.equal((await guard.check(attacker, user)).blocked, false, 'the recovery path lifts the block');
 });
+
+// --- the count the risk engine needs ------------------------------------------
+
+test('the failures-so-far count survives a strike, which resets only the window', () => {
+  // The guard reports strikes (blocks served) and fails (guesses inside the
+  // current window) separately, and `fails` resets at each strike. The risk
+  // engine wants total attempts, so the two are recombined.
+  assert.equal(passwordFailuresSoFar({ strikes: 0, fails: 3 }), 3);
+  assert.equal(passwordFailuresSoFar({ strikes: 1, fails: 0 }), 5);
+  assert.equal(passwordFailuresSoFar({ strikes: 2, fails: 4 }), 14);
+});
+
+test('a missing decision counts as no failures', () => {
+  assert.equal(passwordFailuresSoFar(null), 0);
+  assert.equal(passwordFailuresSoFar(undefined), 0);
+  assert.equal(passwordFailuresSoFar({}), 0);
+});
+
+test('the count reaches the level the shadow guard treats as high', () => {
+  // 8+ wrong guesses is the engine's high threshold; two served strikes plus
+  // three guesses is 13, so the guard can act on what the counter knows.
+  assert.ok(passwordFailuresSoFar({ strikes: 2, fails: 3 }) >= 8);
+});
+

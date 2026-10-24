@@ -5,6 +5,8 @@ import {
   renderSecurityAlert,
   sendSecurityAlert,
   sendSecurityAlertInBackground,
+  sendThrottledSecurityAlert,
+  createKvAlertThrottle,
   SECURITY_ALERT_EVENTS
 } from './auth-native/core/security-alerts.mjs';
 
@@ -93,4 +95,82 @@ test('the background wrapper never rejects', async () => {
     throw new Error('boom');
   };
   assert.equal(await sendSecurityAlertInBackground(env, { event: SECURITY_ALERT_EVENTS.NEW_DEVICE }, { fetchImpl: throwing }), 'failed');
+});
+
+// --- the throttle -------------------------------------------------------------
+
+// A minimal in-memory KV, enough to exercise the throttle's contract.
+const fakeStore = () => {
+  const rows = new Map();
+  return {
+    rows,
+    async get(key) {
+      return rows.get(key) ?? null;
+    },
+    async put(key, value, options) {
+      rows.set(key, value);
+      return options;
+    }
+  };
+};
+
+test('a burst of identical events collapses to one alert', async () => {
+  const store = fakeStore();
+  let sends = 0;
+  const fetchImpl = async () => {
+    sends += 1;
+    return { ok: true };
+  };
+  const input = { event: SECURITY_ALERT_EVENTS.SHADOW_BAN, email: 'student@example.com' };
+  const results = [];
+  for (let i = 0; i < 5; i += 1) {
+    results.push(await sendThrottledSecurityAlert(env, store, input, { fetchImpl }));
+  }
+  assert.equal(results[0], 'sent');
+  assert.deepEqual(results.slice(1), ['throttled', 'throttled', 'throttled', 'throttled']);
+  assert.equal(sends, 1, 'only the first alert reaches Telegram');
+});
+
+test('a different account is not throttled by another account burst', async () => {
+  const store = fakeStore();
+  const fetchImpl = async () => ({ ok: true });
+  const first = await sendThrottledSecurityAlert(env, store, { event: SECURITY_ALERT_EVENTS.SHADOW_BAN, email: 'a@example.com' }, { fetchImpl });
+  const second = await sendThrottledSecurityAlert(env, store, { event: SECURITY_ALERT_EVENTS.SHADOW_BAN, email: 'b@example.com' }, { fetchImpl });
+  assert.equal(first, 'sent');
+  assert.equal(second, 'sent');
+});
+
+test('a different event type is throttled separately', async () => {
+  const store = fakeStore();
+  const fetchImpl = async () => ({ ok: true });
+  const ban = await sendThrottledSecurityAlert(env, store, { event: SECURITY_ALERT_EVENTS.SHADOW_BAN, email: 'a@example.com' }, { fetchImpl });
+  const device = await sendThrottledSecurityAlert(env, store, { event: SECURITY_ALERT_EVENTS.NEW_DEVICE, email: 'a@example.com' }, { fetchImpl });
+  assert.equal(ban, 'sent');
+  assert.equal(device, 'sent');
+});
+
+test('the stored key never contains the address', async () => {
+  const throttle = createKvAlertThrottle(fakeStore());
+  const key = await throttle.keyFor(SECURITY_ALERT_EVENTS.CANARY_HIT, 'student@example.com');
+  assert.ok(!key.includes('student'));
+  assert.ok(!key.includes('@'));
+  assert.ok(key.startsWith('alert-seen:canary-hit:'));
+});
+
+test('a store that cannot read never swallows an alert', async () => {
+  const broken = {
+    async get() {
+      throw new Error('kv down');
+    },
+    async put() {
+      throw new Error('kv down');
+    }
+  };
+  const fetchImpl = async () => ({ ok: true });
+  assert.equal(await sendThrottledSecurityAlert(env, broken, { event: SECURITY_ALERT_EVENTS.CANARY_HIT, email: 'a@example.com' }, { fetchImpl }), 'sent');
+});
+
+test('without a store the alert is still sent', async () => {
+  const fetchImpl = async () => ({ ok: true });
+  assert.equal(await sendThrottledSecurityAlert(env, null, { event: SECURITY_ALERT_EVENTS.CANARY_HIT, email: 'a@example.com' }, { fetchImpl }), 'sent');
 });

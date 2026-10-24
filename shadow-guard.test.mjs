@@ -6,7 +6,9 @@ import {
   computeRiskSignals,
   shadowDelayMs,
   SHADOW_GUARD_DELAY_MIN_MS,
-  SHADOW_GUARD_DELAY_MAX_MS
+  SHADOW_GUARD_DELAY_MAX_MS,
+  resolveGuardMode,
+  SHADOW_GUARD_MODES
 } from './auth-native/core/shadow-guard.mjs';
 import {
   parseCanaryEmails,
@@ -224,3 +226,33 @@ test('a breached password is rejected', async () => {
   assert.equal(verdict.ok, false);
   assert.equal(verdict.reason, 'breached');
 });
+
+// --- the deployment mode ------------------------------------------------------
+
+test('an unset or unrecognised activation value observes, and never enforces', () => {
+  // Observe is the fail-safe on both sides: a typo cannot lock a student out,
+  // and it cannot silently switch the guard off either.
+  assert.equal(resolveGuardMode(undefined), SHADOW_GUARD_MODES.OBSERVE);
+  assert.equal(resolveGuardMode(''), SHADOW_GUARD_MODES.OBSERVE);
+  assert.equal(resolveGuardMode('yes please'), SHADOW_GUARD_MODES.OBSERVE);
+  assert.equal(resolveGuardMode('ENABLE'), SHADOW_GUARD_MODES.OBSERVE);
+  assert.notEqual(resolveGuardMode('ENABLE'), SHADOW_GUARD_MODES.ENFORCE);
+});
+
+test('observe, enforce and off are each reachable by name', () => {
+  assert.equal(resolveGuardMode('observe'), SHADOW_GUARD_MODES.OBSERVE);
+  assert.equal(resolveGuardMode('shadow'), SHADOW_GUARD_MODES.OBSERVE);
+  assert.equal(resolveGuardMode('enforce'), SHADOW_GUARD_MODES.ENFORCE);
+  assert.equal(resolveGuardMode('canary'), SHADOW_GUARD_MODES.ENFORCE);
+  assert.equal(resolveGuardMode('enabled'), SHADOW_GUARD_MODES.ENFORCE);
+  assert.equal(resolveGuardMode('off'), SHADOW_GUARD_MODES.OFF);
+  assert.equal(resolveGuardMode('disabled'), SHADOW_GUARD_MODES.OFF);
+});
+
+test('a high band still reports every reason, so observe mode can explain it', () => {
+  const verdict = shadowVerdict({ deviceKnown: false, countryChanged: true, asnChanged: true });
+  assert.equal(verdict.shadowBan, true);
+  assert.ok(verdict.reasons.includes('country-changed'));
+  assert.ok(verdict.reasons.includes('asn-changed'));
+});
+

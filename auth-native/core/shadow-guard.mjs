@@ -24,6 +24,43 @@ import { AUTH_ERROR_CODES } from './errors.mjs';
 
 export const SHADOW_GUARD_POLICY_VERSION = 'shadow-guard-v1';
 
+// What the deployment asks the guard to do.
+//
+//  - off     : nothing runs.
+//  - observe : the guard scores every login and reports, but refuses nobody.
+//              This is the safe way to start: a ban can hit a correct
+//              password (a first login on a new phone from a VPN is a new
+//              device plus a network change), and a student who is refused
+//              with "wrong password" has no way to tell what happened.
+//              Watching first turns that from a guess into a measurement.
+//  - enforce : a high band is refused.
+export const SHADOW_GUARD_MODES = Object.freeze({
+  OFF: 'off',
+  OBSERVE: 'observe',
+  ENFORCE: 'enforce'
+});
+
+/**
+ * Map the activation value to a mode.
+ *
+ * An unset value - or one nobody recognises - is `observe`: the guard scores
+ * and reports and refuses nobody. That is the fail-safe direction on both
+ * sides, because a typo must never be able to lock a student out and must
+ * never silently stop the guard either. Refusing a login takes the explicit
+ * word `enforce` (or the older `canary`/`enabled`).
+ *
+ * The deployment carries no variable for this by default: the Worker sits on
+ * Cloudflare's 64-variable free-tier ceiling, so a 65th is rejected at deploy
+ * time. Code default, not a variable, for the same reason the other
+ * activation switches in this repo default in code.
+ */
+export function resolveGuardMode(value) {
+  const raw = String(value ?? '').trim().toLowerCase();
+  if (raw === 'off' || raw === 'none' || raw === 'disabled') return SHADOW_GUARD_MODES.OFF;
+  if (raw === 'enforce' || raw === 'canary' || raw === 'enabled' || raw === 'on') return SHADOW_GUARD_MODES.ENFORCE;
+  return SHADOW_GUARD_MODES.OBSERVE;
+}
+
 // The delay window. Long enough to make a thousand attempts a thousand
 // seconds, short enough that a person reading the message does not notice.
 export const SHADOW_GUARD_DELAY_MIN_MS = 300;
