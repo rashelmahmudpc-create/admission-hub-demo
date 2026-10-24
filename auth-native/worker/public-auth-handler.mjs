@@ -25,6 +25,17 @@ export const AUTH_API_PREFIX = '/api/auth/v1';
 // therefore outside the auth prefix. Shared as the constant the route gate,
 // the CORS check and the route itself all read, so they cannot drift apart.
 export const PUBLIC_PROFILE_PREFIX = '/api/public/profile/';
+
+/**
+ * F-04: the paths this handler claims, in one place. admission-gk asks this
+ * before forwarding a request to the auth Worker, because a second, drifting
+ * copy of the rule is exactly how the public profile route once 404'd for
+ * everybody (see the note below).
+ */
+export function claimsAuthPath(pathname) {
+  const path = String(pathname || '');
+  return path === AUTH_API_PREFIX || path.startsWith(`${AUTH_API_PREFIX}/`) || path.startsWith(PUBLIC_PROFILE_PREFIX);
+}
 export const AUTH_SESSION_COOKIE = '__Host-ah_session';
 export const AUTH_FIREBASE_COOKIE = '__Host-ah_firebase';
 export const AUTH_DEVICE_COOKIE = '__Host-ah_device';
@@ -513,7 +524,7 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
     // it unreachable: the request fell through to the product API, which
     // answered {"error":"not-found"}, every shared public profile 404'd.
     const isPublicProfileRoute = url.pathname.startsWith(PUBLIC_PROFILE_PREFIX);
-    if (!url.pathname.startsWith(`${AUTH_API_PREFIX}/`) && url.pathname !== AUTH_API_PREFIX && !isPublicProfileRoute) return null;
+    if (!claimsAuthPath(url.pathname)) return null;
     const origin = request.headers.get('Origin') || '';
     const telegramOperation = request.method === 'POST' && [
       `${AUTH_API_PREFIX}/telegram/webhook`,
