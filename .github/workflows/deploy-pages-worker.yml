@@ -80,6 +80,17 @@ jobs:
           wranglerVersion: '4.35.0'
           command: deploy --config wrangler.toml
 
+      # F-04: the public auth route must answer on the app Worker, whether it is
+      # served in process (AUTH_ROUTE=local) or forwarded to admission-auth
+      # (AUTH_ROUTE=service). One curl proves the path a student actually uses.
+      - name: Smoke-test the public auth route
+        run: |
+          set -eu
+          url="https://admission-gk.admissionhub.workers.dev/api/auth/v1/config?cb=$RANDOM"
+          body="$(curl -sS --max-time 25 -H 'X-AH-Auth-UI: auth-premium-v6' "$url" || true)"
+          printf '%s\n' "$body" | head -c 600
+          printf '%s' "$body" | grep -q '"ok":true'
+
       # The Worker must answer for the project the app now belongs to. The key is
       # the public Firebase Web API key of admissionsky-997d2 (project 916950643726),
       # not a secret in the confidential sense; it is inlined so this deploy does not
