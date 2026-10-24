@@ -270,7 +270,7 @@ test('Brevo OTP provider sends through the Brevo API and derives quota from acco
   assert.deepEqual(body.to, [{ email: 'user@example.com' }]);
   assert.match(body.textContent, /123456/);
   assert.match(body.htmlContent, /123456/);
-  assert.match(body.subject, /AdmissionSky — আপনার যাচাইকরণ কোড/);
+  assert.match(body.subject, /AdmissionSky, আপনার যাচাইকরণ কোড/);
   assert.match(body.htmlContent, /AdmissionSky/);
   assert.equal(calls.every(call => call.init.redirect === 'manual'), true);
 });
@@ -343,7 +343,7 @@ test('every email provider brands the sender name and the body without an env ov
     const body = JSON.parse(send.init.body);
     assert.equal(testCase.nameOf(body), 'AdmissionSky', `${testCase.name}: sender name must be the brand`);
     const subject = body.subject || body.Messages[0].Subject;
-    assert.match(subject, /AdmissionSky — আপনার যাচাইকরণ কোড/, `${testCase.name}: subject must carry the brand`);
+    assert.match(subject, /AdmissionSky, আপনার যাচাইকরণ কোড/, `${testCase.name}: subject must carry the brand`);
   }
 });
 

@@ -1,4 +1,4 @@
-/* Admission Hub — per-user AI state in a Durable Object.
+/* Admission Hub, per-user AI state in a Durable Object.
  *
  * Why this exists: the AI chat path wrote to Workers KV three times per message
  * (a rate counter, a memory blob, and the abuse guard's per-network counter).
@@ -54,7 +54,7 @@ export class AiStateObject {
     return raw;
   }
 
-  /* Rolling 24-hour window, first message starts it — the same rule the KV
+  /* Rolling 24-hour window, first message starts it, the same rule the KV
      version used, so a Dhaka morning does not hand out a second allowance. */
   async consume({ uid, cap, now }) {
     const limit = Math.max(1, Math.min(500, num(cap, 10)));
@@ -80,7 +80,7 @@ export class AiStateObject {
     return { ok: true, used: n };
   }
 
-  /* Delete named keys (memory reset). Only keys the caller names — the quota
+  /* Delete named keys (memory reset). Only keys the caller names, the quota
      and rate keys are refused, so clearing memory can never reset a cap. */
   async deleteState({ keys }) {
     const list = (Array.isArray(keys) ? keys : []).map(String)
@@ -164,7 +164,7 @@ export class AiStateObject {
 }
 
 /* Client used from the Worker. Returns null when the binding is absent, which is
-   what keeps every caller's KV fallback — and the existing tests — working. */
+   what keeps every caller's KV fallback, and the existing tests, working. */
 export function aiStateStore(env) {
   const binding = env && env.AI_STATE;
   if (!binding || typeof binding.idFromName !== 'function' || typeof binding.get !== 'function') return null;

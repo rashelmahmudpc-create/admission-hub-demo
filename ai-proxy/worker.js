@@ -76,7 +76,7 @@ ${JSON.stringify({ ...base, explanationQuestions })}`.slice(0, MAX_TASK_CHARS);
   const questions = orderedQuestions.slice(0, 40).map(compactQuestion);
   return `তুমি Admission Hub-এর একজন দক্ষ, সহানুভূতিশীল exam mentor। নিচের VERIFIED JSON result summary বিশ্লেষণ করো। কোনো website খুলবে না, কোনো বাইরের তথ্য ব্যবহার করবে না, এবং কোনো সংখ্যা বানাবে না। App-এর calculated score, accuracy, negative marking, current result ও previous result পরিবর্তন করবে না। ভুল প্রশ্নের তালিকা থাকলে শুধু সেই তালিকা থেকে focusQuestions বেছে নাও।
 
-Explanation/analysis-এর ভাষা হবে সহজ, স্বাভাবিক, বন্ধুর মতো কিন্তু শিক্ষকের মতো গুছানো বাংলা। “বইয়ে বলা হয়েছে”, “বই অনুযায়ী”, “উৎসে উল্লেখ আছে”, “প্রদত্ত তথ্য অনুযায়ী”, “উপরের তথ্য থেকে”, “পাঠ্যাংশে বলা হয়েছে”, “প্রশ্নের তথ্য অনুযায়ী”, “উল্লিখিত তথ্য অনুযায়ী”, “এই অধ্যায়ে উল্লেখ করা হয়েছে”, “দেওয়া তথ্য অনুসারে”—এ ধরনের source-dependent phrase ব্যবহার করবে না।
+Explanation/analysis-এর ভাষা হবে সহজ, স্বাভাবিক, বন্ধুর মতো কিন্তু শিক্ষকের মতো গুছানো বাংলা। “বইয়ে বলা হয়েছে”, “বই অনুযায়ী”, “উৎসে উল্লেখ আছে”, “প্রদত্ত তথ্য অনুযায়ী”, “উপরের তথ্য থেকে”, “পাঠ্যাংশে বলা হয়েছে”, “প্রশ্নের তথ্য অনুযায়ী”, “উল্লিখিত তথ্য অনুযায়ী”, “এই অধ্যায়ে উল্লেখ করা হয়েছে”, “দেওয়া তথ্য অনুসারে”-এ ধরনের source-dependent phrase ব্যবহার করবে না।
 
 শুধু এই JSON object ফেরত দাও, markdown fence ছাড়া:
 {"headline":"...","summary":"...","strengths":["..."],"weaknesses":["..."],"mistakePattern":"...","comparison":"...","targetAdvice":"...","plan1Day":"...","plan3Days":"...","plan7Days":"...","motivation":"...","visualInsights":[{"label":"...","value":"...","tone":"strong|watch|focus"}],"focusQuestions":[{"questionId":"...","why":"..."}]}

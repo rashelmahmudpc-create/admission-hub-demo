@@ -4,7 +4,7 @@
    stored here. */
 const ORIGIN = 'https://admission-gk.admissionhub.workers.dev';
 const VOICE_ORIGIN = 'https://admission-voice.admissionhub.workers.dev';
-/* P23 — the live voice AGENT is served by the main Worker, not the vocabulary
+/* P23, the live voice AGENT is served by the main Worker, not the vocabulary
    voice worker, so its ticket/login/session calls must be proxied there. Every
    other /api/voice path still belongs to the vocabulary voice worker. */
 const AGENT_API = /^\/api\/voice\/(agent|login|session)(\/|$)/;
@@ -56,7 +56,7 @@ const isRetiredAsset = pathname => RETIRED_ASSETS.has(pathname) ||
 const isServerOnlyAsset = pathname => SERVER_ONLY_ASSETS.has(pathname) ||
   SERVER_ONLY_PREFIXES.some(prefix => pathname.startsWith(prefix));
 
-/* SEO — the SPA is hash-routed, so only these pathnames are real public URLs.
+/* SEO, the SPA is hash-routed, so only these pathnames are real public URLs.
    Anything else must answer 404 instead of a 200 copy of index.html, otherwise
    crawlers index unlimited duplicate pages. */
 const PUBLIC_ROUTES = new Set([
@@ -70,7 +70,7 @@ const PUBLIC_ROUTES = new Set([
   '/students-control-center', '/students-control-center.html',
   '/ai-performance-analysis-live', '/ai-performance-analysis-live.html',
   '/notification-command-center', '/notification-command-center.html',
-  /* Profile V2 — the design is fetched as a document and injected into an
+  /* Profile V2, the design is fetched as a document and injected into an
      iframe's srcdoc, so the page itself is never navigated to. It still has to
      be reachable, or the fetch gets the 404 page and the mount shows nothing. */
   '/profile-v2', '/profile-v2.html',
@@ -107,7 +107,7 @@ const NOT_FOUND_HTML = `<!DOCTYPE html>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, follow">
-<title>পেজটি পাওয়া যায়নি — Admission Hub</title>
+<title>পেজটি পাওয়া যায়নি, Admission Hub</title>
 <style>
 body{margin:0;min-height:100dvh;display:grid;place-content:center;justify-items:center;gap:10px;
 padding:32px 24px;background:#faf9f6;color:#1a1d1b;text-align:center;

@@ -1,4 +1,4 @@
-/* Sky AI Worker — F0.1 / DV-01 (blueprint v1.0, 2026-10-19).
+/* Sky AI Worker, F0.1 / DV-01 (blueprint v1.0, 2026-10-19).
  *
  * The new home for every /api/ai/* route. Step 1 (this file) is a skeleton
  * only: it answers a health check and nothing else, so deploying it changes

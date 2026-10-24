@@ -16,7 +16,7 @@ import * as pendingSignup from './pending-signup-public.mjs';
 import { allowedOrigin, corsHeaders } from '../../cors-policy.mjs';
 
 export const AUTH_API_PREFIX = '/api/auth/v1';
-// Phase 7 public-safe profile projection — deliberately unauthenticated and
+// Phase 7 public-safe profile projection, deliberately unauthenticated and
 // therefore outside the auth prefix. Shared as the constant the route gate,
 // the CORS check and the route itself all read, so they cannot drift apart.
 export const PUBLIC_PROFILE_PREFIX = '/api/public/profile/';
@@ -149,7 +149,7 @@ const facebookCredential = body => {
 
 // Google Login → Automatic Profile Sync (owner blueprint):
 // Google data populates ONLY the empty fields of a NEW profile.
-// User-modified data always wins — no silent overwrite, ever.
+// User-modified data always wins, no silent overwrite, ever.
 const GOOGLE_AVATAR_HOSTS = Object.freeze(['.googleusercontent.com']);
 const isGoogleAvatarUrl = raw => {
   try {
@@ -186,13 +186,13 @@ async function seedGoogleProfile(env, context, established, googleUser) {
     current = await callAuthority(env, '/internal/profile/get-v2', { input, context });
   } catch { return; }
   if (!current) return;
-  // 1) Name — only when the profile has none yet.
+  // 1) Name, only when the profile has none yet.
   if (!current.profile?.fullName && looksLikeName(googleUser.displayName)) {
     try {
       await callAuthority(env, '/internal/profile/patch', { input: { ...input, fields: { fullName: String(googleUser.displayName).trim() } }, context });
     } catch { /* seeding is best-effort; login must never fail on it */ }
   }
-  // 2) Avatar — only when the user has none yet, and only from Google's own CDN.
+  // 2) Avatar, only when the user has none yet, and only from Google's own CDN.
   if (!current.avatar?.present && isGoogleAvatarUrl(googleUser.photoUrl)) {
     try {
       const res = await fetch(String(googleUser.photoUrl), {
@@ -386,7 +386,7 @@ const authSuccess = (request, established, refreshToken, context, verification =
     emailOwnershipProven,
     created: Boolean(established.created),
     user: established.user,
-    // Phase 6 — security decision travels with the session: trustOffer drives
+    // Phase 6, security decision travels with the session: trustOffer drives
     // the "trust this device 30 days" prompt (Chunk 3 client); HIGH risk
     // shortens expiresAt server-side.
     session: { expiresAt: established.sessionExpiresAt, security: established.security || null }
@@ -462,7 +462,7 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
     // The public-safe profile projection lives further down in this handler but
     // sits OUTSIDE the /api/auth/v1 prefix. Gating on the auth prefix alone made
     // it unreachable: the request fell through to the product API, which
-    // answered {"error":"not-found"} — every shared public profile 404'd.
+    // answered {"error":"not-found"}, every shared public profile 404'd.
     const isPublicProfileRoute = url.pathname.startsWith(PUBLIC_PROFILE_PREFIX);
     if (!url.pathname.startsWith(`${AUTH_API_PREFIX}/`) && url.pathname !== AUTH_API_PREFIX && !isPublicProfileRoute) return null;
     const origin = request.headers.get('Origin') || '';
@@ -764,7 +764,7 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
             // Email. Keep the canonical Firebase subject recoverable by password
             // login, but fail closed with an explicit no-delivery message.
             throw new NativeAuthError(AUTH_ERROR_CODES.VERIFICATION_UNAVAILABLE, {
-              message: 'অ্যাকাউন্ট তৈরি হয়েছে, কিন্তু যাচাইয়ের পদ্ধতি এখন প্রস্তুত করা যাচ্ছে না—কিছু পাঠানো হয়নি। একটু পরে এই ইমেইল দিয়ে লগইন করুন।'
+              message: 'অ্যাকাউন্ট তৈরি হয়েছে, কিন্তু যাচাইয়ের পদ্ধতি এখন প্রস্তুত করা যাচ্ছে না, কিছু পাঠানো হয়নি। একটু পরে এই ইমেইল দিয়ে লগইন করুন।'
             });
           }
         }
@@ -846,11 +846,11 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         await verifyTurnstile({ env, token: turnstileBody?.turnstileToken, ip: context.ip, fetchImpl });
         const input = credentials(turnstileBody);
         const prepared = await callAuthority(env, '/internal/firebase/rate', { input: { operation: 'login', email: input.email }, context });
-        // Phase 6 — escalating cooldown after repeated failed logins (§14):
+        // Phase 6, escalating cooldown after repeated failed logins (§14):
         // the DO counts recorded failures and asks us to delay this attempt.
         // A delay, never a lockout: the cooldown always expires.
         if (Number(prepared?.retryAfter) > 0) {
-          return json(request, 429, { ok: false, error: { code: 'RATE_LIMITED', message: 'অনেকবার চেষ্টা হয়েছে—একটু পরে আবার চেষ্টা করুন।' } }, { 'Retry-After': String(prepared.retryAfter) });
+          return json(request, 429, { ok: false, error: { code: 'RATE_LIMITED', message: 'অনেকবার চেষ্টা হয়েছে, একটু পরে আবার চেষ্টা করুন।' } }, { 'Retry-After': String(prepared.retryAfter) });
         }
         let signed;
         let user;
@@ -938,7 +938,7 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           },
           context
         });
-        // Phase 6 — new device (or elevated risk) on a verified account:
+        // Phase 6, new device (or elevated risk) on a verified account:
         // challenge-first-then-proceed, reusing the existing verification
         // selection UI. Completing it issues the session AND earns 30-day
         // device trust (single consent moment, no TOTP in v1).
@@ -958,7 +958,7 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           } catch {
             // Fail closed: a risk decision can never be silently bypassed.
             throw new NativeAuthError(AUTH_ERROR_CODES.VERIFICATION_UNAVAILABLE, {
-              message: 'নিরাপত্তার জন্য এই ডিভাইসটি এখন যাচাই করা যাচ্ছে না—একটু পরে আবার চেষ্টা করুন।'
+              message: 'নিরাপত্তার জন্য এই ডিভাইসটি এখন যাচাই করা যাচ্ছে না, একটু পরে আবার চেষ্টা করুন।'
             });
           }
           return json(request, 202, {
@@ -1527,7 +1527,7 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         });
       }
 
-      // Phase 7 — profile response is additive: `profile` keeps the legacy
+      // Phase 7, profile response is additive: `profile` keeps the legacy
       // shape; publicId/completion/avatar/context are new read-only fields.
       if (request.method === 'GET' && url.pathname === `${AUTH_API_PREFIX}/profile`) {
         if (!provider.configured) throw new NativeAuthError(AUTH_ERROR_CODES.NOT_CONFIGURED);
@@ -1581,7 +1581,7 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         });
       }
 
-      // Phase 7 — avatar upload (base64 JSON; server validates MIME +
+      // Phase 7, avatar upload (base64 JSON; server validates MIME +
       // magic bytes + size; client filename is never trusted).
       if (request.method === 'POST' && url.pathname === `${AUTH_API_PREFIX}/profile/avatar`) {
         if (!provider.configured) throw new NativeAuthError(AUTH_ERROR_CODES.NOT_CONFIGURED);
@@ -1645,7 +1645,7 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         const bytes = Uint8Array.from(atob(result.data), char => char.charCodeAt(0));
         // Stable, version-scoped URL: let the browser cache and revalidate it.
         // The old `no-store` (plus a `?ts=Date.now()` in the client) forced a
-        // full re-download on every render — the repeated loading the owner saw.
+        // full re-download on every render, the repeated loading the owner saw.
         const etag = `"av-${result.updatedAt || result.bytes || 0}"`;
         if (request.headers.get('If-None-Match') === etag) {
           return new Response(null, { status: 304, headers: new Headers({ 'ETag': etag, 'Cache-Control': 'private, max-age=300, must-revalidate', ...corsHeaders(request) }) });
@@ -1662,7 +1662,7 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         });
       }
 
-      // Phase 7 — public-safe profile projection (unauthenticated,
+      // Phase 7, public-safe profile projection (unauthenticated,
       // rate-limited). Private profiles never surface.
       if (request.method === 'GET' && url.pathname.startsWith(PUBLIC_PROFILE_PREFIX)) {
         const suffix = decodeURIComponent(url.pathname.slice(PUBLIC_PROFILE_PREFIX.length));
@@ -1934,7 +1934,7 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
       }
       if (request.method === 'POST' && url.pathname === `${AUTH_API_PREFIX}/session/logout-all`) {
         // Phase 5 §12: revoke every session for the current user on every
-        // device. Phase 6 §12: step-up gated — a verified step-up challenge
+        // device. Phase 6 §12: step-up gated, a verified step-up challenge
         // (stepUpToken) is required once the session is no longer recent or
         // current risk reaches ELEVATED. A STEP_UP_REQUIRED error keeps the
         // session alive so the client can run the challenge and retry.
@@ -1948,7 +1948,7 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         return json(request, 200, { ok: true, authenticated: false, revoked: Number(result?.revoked || 0) }, { 'Set-Cookie': clearAuthCookies() });
       }
 
-      // Phase 6 — purpose-bound security challenges (§11-§12). Session
+      // Phase 6, purpose-bound security challenges (§11-§12). Session
       // required; codes are delivered by the existing verification pipeline
       // (email/Telegram). A verified challenge returns a one-time
       // stepUpToken bound to this user+device.
@@ -2004,7 +2004,7 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           'Set-Cookie': sessionCookies(current.session, current.refreshed.refreshToken, context)
         });
       }
-      // Phase 6 — explicit "trust this device" (the 30-day consent).
+      // Phase 6, explicit "trust this device" (the 30-day consent).
       if (request.method === 'POST' && url.pathname === `${AUTH_API_PREFIX}/security/device/trust`) {
         await readJson(request);
         const current = await firebaseReadySession({ provider, jar, env, context, allowTelegram: telegramVerificationRequested(env, url) });
@@ -2016,7 +2016,7 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           'Set-Cookie': sessionCookies(current.session, current.refreshed.refreshToken, context)
         });
       }
-      // Phase 6 Chunk 4 — signed-in security state (device list, trust, status).
+      // Phase 6 Chunk 4, signed-in security state (device list, trust, status).
       if (request.method === 'GET' && url.pathname === `${AUTH_API_PREFIX}/security/state`) {
         const current = await firebaseReadySession({ provider, jar, env, context, allowTelegram: telegramVerificationRequested(env, url) });
         const result = await callAuthority(env, '/internal/security/state', {
@@ -2027,7 +2027,7 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           'Set-Cookie': sessionCookies(current.session, current.refreshed.refreshToken, context)
         });
       }
-      // Phase 6 Chunk 4 — recent login history (privacy boundary: method,
+      // Phase 6 Chunk 4, recent login history (privacy boundary: method,
       // coarse browser class and time only; no IP, no location, ever).
       if (request.method === 'GET' && url.pathname === `${AUTH_API_PREFIX}/security/history`) {
         const current = await firebaseReadySession({ provider, jar, env, context, allowTelegram: telegramVerificationRequested(env, url) });
@@ -2039,7 +2039,7 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           'Set-Cookie': sessionCookies(current.session, current.refreshed.refreshToken, context)
         });
       }
-      // Phase 6 Chunk 4 — step-up-gated trusted-device revocation.
+      // Phase 6 Chunk 4, step-up-gated trusted-device revocation.
       if (request.method === 'POST' && url.pathname === `${AUTH_API_PREFIX}/security/devices/revoke`) {
         const body = await readJson(request);
         const current = await firebaseReadySession({ provider, jar, env, context, allowTelegram: telegramVerificationRequested(env, url) });
@@ -2058,13 +2058,13 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
           'Set-Cookie': sessionCookies(current.session, current.refreshed.refreshToken, context)
         });
       }
-      // Phase 6 Chunk 4 — admin security surface (token-gated, refs only).
+      // Phase 6 Chunk 4, admin security surface (token-gated, refs only).
       if (request.method === 'GET' && url.pathname === `${AUTH_API_PREFIX}/admin/security/health`) {
         if (!adminAuthorized(request, env)) return json(request, 403, { ok: false, error: { code: 'FORBIDDEN', message: 'অনুমতি নেই।' } });
         const result = await callAuthority(env, '/internal/admin/security/health', {});
         return json(request, 200, { ok: true, result });
       }
-      // Fresh Start phase 3 — Control Center Students (read-only, admin token).
+      // Fresh Start phase 3, Control Center Students (read-only, admin token).
       if (request.method === 'GET' && url.pathname === `${AUTH_API_PREFIX}/admin/students`) {
         if (!adminAuthorized(request, env)) return json(request, 403, { ok: false, error: { code: 'FORBIDDEN', message: 'অনুমতি নেই।' } });
         const limit = Math.min(Math.max(Number(url.searchParams.get('limit')) || 50, 1), 100);
@@ -2079,7 +2079,7 @@ export function createNativeAuthHandler({ fetchImpl = globalThis.fetch } = {}) {
         const result = await callAuthority(env, '/internal/admin/students/get', { input: { userId } });
         return json(request, result?.found ? 200 : 404, { ok: Boolean(result?.found), ...result }, { 'X-Robots-Tag': 'noindex, nofollow' });
       }
-      // Fresh Start phase 4 — wipe all users (admin token + allowed Origin).
+      // Fresh Start phase 4, wipe all users (admin token + allowed Origin).
       // { dryRun: true } (default) returns counts; { dryRun: false, confirm:
       // 'WIPE-ALL-<users>' } deletes. OTP config/quota tables are kept.
       if (request.method === 'POST' && url.pathname === `${AUTH_API_PREFIX}/admin/students/wipe`) {

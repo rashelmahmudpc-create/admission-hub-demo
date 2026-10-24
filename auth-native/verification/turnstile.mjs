@@ -1,7 +1,7 @@
 import { AUTH_ERROR_CODES, NativeAuthError } from '../core/errors.mjs';
 
 // Cloudflare Turnstile, server side (owner 2026-10-16: human verification before
-// an OTP goes out). A front-end widget alone proves nothing — a bot skips it — so
+// an OTP goes out). A front-end widget alone proves nothing, a bot skips it, so
 // the token is checked here against Cloudflare's siteverify endpoint.
 const SITEVERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
 

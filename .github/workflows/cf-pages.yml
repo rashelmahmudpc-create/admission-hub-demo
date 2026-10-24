@@ -3,8 +3,44 @@ name: Cloudflare Pages Bundle Guard (No Deploy)
 on:
   pull_request:
     branches: [main]
+    paths:
+      - 'index.html'
+      - 'slug/**'
+      - 'account-access.*'
+      - 'sw.js'
+      - 'public-worker.js'
+      - 'worker-bundle.mjs'
+      - 'gk-agent-worker.js'
+      - 'voice-worker.js'
+      - 'notification-worker.js'
+      - 'ai-agent.js'
+      - 'fcm-notification.mjs'
+      - 'scripts/pii-scan.mjs'
+      - 'seo-routing.test.mjs'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'wrangler.toml'
+      - '.github/workflows/cf-pages.yml'
   push:
     branches: [main]
+    paths:
+      - 'index.html'
+      - 'slug/**'
+      - 'account-access.*'
+      - 'sw.js'
+      - 'public-worker.js'
+      - 'worker-bundle.mjs'
+      - 'gk-agent-worker.js'
+      - 'voice-worker.js'
+      - 'notification-worker.js'
+      - 'ai-agent.js'
+      - 'fcm-notification.mjs'
+      - 'scripts/pii-scan.mjs'
+      - 'seo-routing.test.mjs'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'wrangler.toml'
+      - '.github/workflows/cf-pages.yml'
   workflow_dispatch:
 
 permissions:

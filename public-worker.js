@@ -1,4 +1,4 @@
-// Admission Hub — Public Product Worker (account system retired, v221)
+// Admission Hub, Public Product Worker (account system retired, v221)
 // Active routes: public content · Firebase-account/ephemeral-guest AI · content admin.
 // The former login/profile/onboarding/session/state APIs are intentionally absent.
 import { agentChat, agentStatus, agentRecall, agentInstructions, sanitizeAiPrefs, AI_PREFS_DEFAULT, clearAiMemory } from './ai-agent.js';
@@ -27,7 +27,7 @@ const onlyRows = rows => (Array.isArray(rows) ? rows : []).filter(row => row && 
   return clean;
 });
 /* A cheap, deterministic string hash (FNV-1a). The signature must change when a
-   word's meaning, synonym/antonym gloss or tips change — a length-only
+   word's meaning, synonym/antonym gloss or tips change, a length-only
    fingerprint does not, so a corrected gloss would never leave the KV blob: the
    D1 read path would keep serving the stale copy forever. */
 const hashText = text => {
@@ -158,7 +158,7 @@ async function anonymousAiIdentity(request, env, countUsage = true) {
     let count = 0;
     try { count = Number((await env.PUB_KV.get(key)) || 0); } catch (_) {}
     const cap = Math.max(40, Math.min(800, Number(env.AGENT_PUBLIC_DAILY_CAP || 240)));
-    if (count >= cap) throw Object.assign(new Error('আজকের public AI সীমা শেষ — কাল আবার চেষ্টা করো।'), { status: 429 });
+    if (count >= cap) throw Object.assign(new Error('আজকের public AI সীমা শেষ, কাল আবার চেষ্টা করো।'), { status: 429 });
     try { await env.PUB_KV.put(key, String(count + 1), { expirationTtl: 172800 }); } catch (_) {}
   }
   return `guest-${deviceHash.slice(0, 40)}`;
@@ -191,7 +191,7 @@ export const publishGlobal = async (env, full) => {
   try { previousMeta = JSON.parse((await env.PUB_KV.get('pubContentMeta')) || '{"v":0}'); } catch (_) {}
   if (previousMeta.sig === sig && previousMeta.v) {
     /* The body is unchanged, but a meta written before `categories` existed has
-       no per-category totals — backfill them once so the A–Z grid can show real
+       no per-category totals, backfill them once so the A–Z grid can show real
        numbers on a first-ever open without a content re-publish. */
     const counts = previousMeta.counts || countsOf({ subjects, topics, questions, vocabulary, vocabularyMaster });
     if (!previousMeta.categories) {
@@ -232,12 +232,12 @@ export const publishGlobal = async (env, full) => {
     return { error: 'integrity' };
   }
   if (fingerprintGlobal(roundTrip) !== sig) return { error: 'integrity' };
-  /* P13 — mirror the small lists into D1 before the meta that signs them. The
+  /* P13, mirror the small lists into D1 before the meta that signs them. The
      D1 read path serves the bank from `content_lists`, so a publish that
      removes rows must land in D1 too, or /api/content keeps serving the stale
      rows whose hash still matches. `content_lists` is the authoritative mirror:
      kinds that vanished from the document are deleted, present kinds replaced.
-     Failure here is non-fatal — KV stays correct on its own, and the stale D1
+     Failure here is non-fatal, KV stays correct on its own, and the stale D1
      copy stops matching once the sig below changes. */
   if (env.PROFILE_DB) {
     try {
@@ -265,7 +265,7 @@ export const publishGlobal = async (env, full) => {
   return { published: true, v: doc.v, counts: meta.counts };
 };
 
-/* P14 — content integrity. The published doc carries `sig`, a fingerprint of
+/* P14, content integrity. The published doc carries `sig`, a fingerprint of
    the live shapes, and `counts`. This recomputes both from the stored doc and
    reports any drift, so a publication that was silently mangled (or a tampered
    KV value) is visible from an admin check instead of surfacing as a user bug. */
@@ -321,19 +321,19 @@ const admin = async (request, env, path) => {
     if (full && Array.isArray(full.questions) && full.questions.some(row => row && row.id)) {
       const result = await publishGlobal(env, full);
       if (result.error === 'empty') return json({ error: 'প্রশ্ন খালি' }, 400);
-      if (result.error === 'too-large') return json({ error: 'কনটেন্ট আকারসীমার বেশি — কমানো ছবি বাদ দিয়ে আবার চেষ্টা করো', code: 'too-large' }, 413);
-      if (result.error === 'integrity') return json({ error: 'কনটেন্ট যাচাইয়ে ব্যর্থ — আগের সংস্করণই থাকল', code: 'integrity' }, 409);
+      if (result.error === 'too-large') return json({ error: 'কনটেন্ট আকারসীমার বেশি, কমানো ছবি বাদ দিয়ে আবার চেষ্টা করো', code: 'too-large' }, 413);
+      if (result.error === 'integrity') return json({ error: 'কনটেন্ট যাচাইয়ে ব্যর্থ, আগের সংস্করণই থাকল', code: 'integrity' }, 409);
       return json(result);
     }
     return json({ error: 'প্রশ্ন খালি' }, 400);
   }
   if (path === '/api/admin/ai-daily-report' && request.method === 'GET') {
-    /* Anonymous daily AI report — counts only, newest first. */
+    /* Anonymous daily AI report, counts only, newest first. */
     const days = new URL(request.url).searchParams.get('days');
     return json(await listReports(env.PUB_KV, days || 7));
   }
   if (path === '/api/admin/errors' && request.method === 'GET') {
-    /* P19 — what the Worker actually caught. Reads the same KV the catch block
+    /* P19, what the Worker actually caught. Reads the same KV the catch block
        writes; an empty list is reported as empty, never padded. */
     let log = [];
     try {
@@ -343,11 +343,11 @@ const admin = async (request, env, path) => {
     return json(summarizeErrors(log));
   }
   if (path === '/api/admin/backup' && request.method === 'GET') {
-    /* P19 — what snapshots exist, newest first. Real index, never padded. */
+    /* P19, what snapshots exist, newest first. Real index, never padded. */
     return json(await listSnapshots(env));
   }
   if (path === '/api/admin/backup' && request.method === 'POST') {
-    /* P19 — take a snapshot now. The daily cron does this too; this is the
+    /* P19, take a snapshot now. The daily cron does this too; this is the
        on-demand door for the owner before a risky change. */
     try {
       const entry = await createSnapshot(env);
@@ -357,7 +357,7 @@ const admin = async (request, env, path) => {
     }
   }
   if (path === '/api/admin/restore' && request.method === 'POST') {
-    /* P19 — write a snapshot's KV keys back. Explicit key, explicit action:
+    /* P19, write a snapshot's KV keys back. Explicit key, explicit action:
        the body must name the snapshot, so a bare POST cannot guess a target. */
     const body = await request.json().catch(() => ({}));
     const key = String(body.key || '').trim();
@@ -374,13 +374,13 @@ export default {
     const url = new URL(request.url);
     const path = url.pathname;
     try {
-      /* P14 — public-API abuse ceiling. Counted per network, before any route
+      /* P14, public-API abuse ceiling. Counted per network, before any route
          work, so a scripted flood of AI/write calls is stopped at the edge
          rather than reaching the model or KV. Content GETs are excluded. */
       if (isGuarded(request, path)) {
         const guard = await checkAbuse(request, env, { salt: env.PUBLIC_RATE_SALT || '' });
         if (!guard.allowed) {
-          return json({ error: 'rate_limited', message: 'একটু বেশি অনুরোধ এসেছে — কিছুক্ষণ পরে আবার চেষ্টা করো।', retryAfter: guard.retryAfter }, 429);
+          return json({ error: 'rate_limited', message: 'একটু বেশি অনুরোধ এসেছে, কিছুক্ষণ পরে আবার চেষ্টা করো।', retryAfter: guard.retryAfter }, 429);
         }
       }
       if (path === '/api/health') return json({ ok: true, accountSystem: 'retired', legacyAccountSystem: 'retired', nativeAuth: 'cloudflare-native-v1', identity: 'firebase-account-or-ephemeral-guest', at: Date.now() });
@@ -419,7 +419,7 @@ export default {
         return json({ v: doc.v || 0, at: doc.at || 0, sig: doc.sig || '', counts: countsOf(doc), categories: categoryCountsOf(doc) });
       }
       if (path === '/api/content' && request.method === 'GET') {
-        /* P13 — optional D1 fast path. Enabled by a flag row in content_meta
+        /* P13, optional D1 fast path. Enabled by a flag row in content_meta
            (set by the p13-d1-backfill workflow), not by a Worker variable, so
            the Free-plan 64-variable cap is not touched. The D1 copy is served
            only when its stored sig matches /api/content/meta's live sig; the
@@ -435,7 +435,7 @@ export default {
               if (meta && meta.sig && (await reader.sig()) === String(meta.sig)) {
                 const limit = Number(url.searchParams.get('limit'));
                 if (Number.isFinite(limit) && limit > 0) {
-                  /* P13 — paged read. Pull one bounded page from D1 (keyset on
+                  /* P13, paged read. Pull one bounded page from D1 (keyset on
                      the indexed key), never the whole table: a full scan of a
                      large `questions` table is what blew the Worker CPU budget
                      and returned `1102`. The small mirrored lists ride along. */
@@ -511,7 +511,7 @@ export default {
         try {
           await env.PUB_KV.put('aiprefs:' + identity.uid, JSON.stringify(prefs));
         } catch (_) {
-          return json({ error: 'save_failed', message: 'এখন save করা গেল না — আবার চেষ্টা করো।' }, 500);
+          return json({ error: 'save_failed', message: 'এখন save করা গেল না, আবার চেষ্টা করো।' }, 500);
         }
         return json({ ok: true, prefs });
       }
@@ -537,7 +537,7 @@ export default {
           await env.PUB_KV.delete('actaudit:' + identity.uid);
           await env.PUB_KV.delete('actprop:' + identity.uid);
         } catch (_) {
-          return json({ error: 'clear_failed', message: 'এখন মুছে ফেলা গেল না — আবার চেষ্টা করো।' }, 500);
+          return json({ error: 'clear_failed', message: 'এখন মুছে ফেলা গেল না, আবার চেষ্টা করো।' }, 500);
         }
         return json({ ok: true, message: 'তোমার AI মেমরি মুছে ফেলা হয়েছে।' });
       }
@@ -558,7 +558,7 @@ export default {
           const audit = await readAudit(env, identity.uid);
           await writeAudit(env, identity.uid, appendAudit(audit, makeAuditRecord({ proposal, status: STATUS.PROPOSED, uid: identity.uid }), identity.uid));
         } catch (_) {
-          return json({ error: 'propose_failed', message: 'এখন proposal তৈরি করা গেল না — আবার চেষ্টা করো।' }, 500);
+          return json({ error: 'propose_failed', message: 'এখন proposal তৈরি করা গেল না, আবার চেষ্টা করো।' }, 500);
         }
         return json({ ok: true, proposal: { id: proposal.id, action: proposal.action, permission: proposal.permission, riskLevel: proposal.riskLevel, summary: proposal.summary, expiresAt: proposal.expiresAt } });
       }
@@ -588,7 +588,7 @@ export default {
         } catch (_) {
           const audit = await readAudit(env, identity.uid);
           await writeAudit(env, identity.uid, appendAudit(audit, makeAuditRecord({ proposal: stored, status: STATUS.FAILED, uid: identity.uid, detail: 'write-failed' }), identity.uid));
-          return json({ error: 'action_failed', message: 'কাজটা সম্পন্ন করা গেল না — আবার চেষ্টা করো।' }, 500);
+          return json({ error: 'action_failed', message: 'কাজটা সম্পন্ন করা গেল না, আবার চেষ্টা করো।' }, 500);
         }
         const audit = await readAudit(env, identity.uid);
         const record = makeAuditRecord({ proposal: stored, status: STATUS.CONFIRMED, uid: identity.uid });
@@ -631,7 +631,7 @@ export default {
       return json({ error: 'not-found' }, 404);
     } catch (error) {
       const status = Number(error?.status) || 500;
-      /* P19 — an uncaught route failure must leave a trace. A 4xx is a caller
+      /* P19, an uncaught route failure must leave a trace. A 4xx is a caller
          mistake the caller already sees; only a real failure (5xx) is recorded,
          so the log stays a list of things that actually broke. Best-effort:
          recordError never throws and never delays the reply. */

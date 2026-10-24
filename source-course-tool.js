@@ -2,10 +2,10 @@
   'use strict';
 
   const COURSE_DEFS = {
-    sandhi: { id: 'sandhi-exact-native-v1', category: 'বাংলা', path: './courses/sandhi/index.html', hash: '8188d2dbb2f1fe950c69919cb1bf6034ce3b54b3362d262f3742137e135f12b1', label: 'সন্ধি', title: 'সন্ধি — University Admission Master Guide', subtitle: 'Visual University Admission Master Guide · Bangla 2nd Paper' },
-    somas: { id: 'somas-exact-native-v1', category: 'বাংলা', path: './courses/somas/index.html', hash: 'cf603da7399fd1a7af671847211a7fc02a76091877faa52b522cede4e04c89a4', label: 'সমাস', title: 'সমাস — University Admission Master Guide', subtitle: 'Visual University Admission Master Guide · Bangla 2nd Paper' },
-    prottoy: { id: 'prottoy-exact-native-v1', category: 'বাংলা', path: './courses/prottoy/index.html', hash: '1013b164b3b4413ccfdd9c6eca5efdf354d86dc728181fdae3c2afa4163fc918', label: 'প্রত্যয়', title: 'প্রত্যয় — Visual Admission Master Guide', subtitle: 'Visual University Admission Master Guide · Bangla 2nd Paper' },
-    'prottoy-master': { id: 'prottoy-master-exact-native-v1', category: 'বাংলা', path: './courses/prottoy-master/index.html', hash: '35eccea4c20fcf4820845eb876d74c1d84de4b2876cb099f85cfb507d10d47fd', label: 'প্রত্যয় Master', title: 'প্রত্যয় • Visual Admission Master Guide — Interactive', subtitle: 'Bangla 2nd Paper · 200 MCQ · Interactive guide' },
+    sandhi: { id: 'sandhi-exact-native-v1', category: 'বাংলা', path: './courses/sandhi/index.html', hash: '8188d2dbb2f1fe950c69919cb1bf6034ce3b54b3362d262f3742137e135f12b1', label: 'সন্ধি', title: 'সন্ধি, University Admission Master Guide', subtitle: 'Visual University Admission Master Guide · Bangla 2nd Paper' },
+    somas: { id: 'somas-exact-native-v1', category: 'বাংলা', path: './courses/somas/index.html', hash: 'cf603da7399fd1a7af671847211a7fc02a76091877faa52b522cede4e04c89a4', label: 'সমাস', title: 'সমাস, University Admission Master Guide', subtitle: 'Visual University Admission Master Guide · Bangla 2nd Paper' },
+    prottoy: { id: 'prottoy-exact-native-v1', category: 'বাংলা', path: './courses/prottoy/index.html', hash: '1013b164b3b4413ccfdd9c6eca5efdf354d86dc728181fdae3c2afa4163fc918', label: 'প্রত্যয়', title: 'প্রত্যয়, Visual Admission Master Guide', subtitle: 'Visual University Admission Master Guide · Bangla 2nd Paper' },
+    'prottoy-master': { id: 'prottoy-master-exact-native-v1', category: 'বাংলা', path: './courses/prottoy-master/index.html', hash: '35eccea4c20fcf4820845eb876d74c1d84de4b2876cb099f85cfb507d10d47fd', label: 'প্রত্যয় Master', title: 'প্রত্যয় • Visual Admission Master Guide, Interactive', subtitle: 'Bangla 2nd Paper · 200 MCQ · Interactive guide' },
   };
   const REMOVED_ENGLISH_PREFIXES = [
     'admissionHubNativeCourseV1:english-voice-exact-native-v1',
@@ -86,7 +86,7 @@
   const coursePath = () => String(location.hash.replace(/^#\/?/, '').split('?')[0] || 'dashboard');
   /* SHA-256 of a fetched course document, lowercase hex. Returns '' when the
    * browser cannot compute it (no crypto.subtle), which fails the comparison
-   * above and withholds script execution — fail closed, never fail open. */
+   * above and withholds script execution, fail closed, never fail open. */
   const sha256Hex = async text => {
     try {
       const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
@@ -191,7 +191,7 @@
        * Update the hash in COURSE_DEFS whenever a course file legitimately
        * changes, or that course's interactivity stops. */
       const integrityOk = await sha256Hex(text) === String(def.hash || '').toLowerCase();
-      if (!integrityOk) console.error(`source-course integrity mismatch for "${key}" — its scripts will not run`);
+      if (!integrityOk) console.error(`source-course integrity mismatch for "${key}", its scripts will not run`);
       const doc = new DOMParser().parseFromString(text, 'text/html');
       const styles = Array.from(doc.querySelectorAll('style')).map(s => s.textContent || '').join('\n');
       /* Only executable scripts may be concatenated. Course pages carry a
@@ -334,7 +334,7 @@
 
   /* Phase 2 M2: the supplied course HTML ships real lesson sections
    * (`section.lesson-sec#lessonN`) and its own "পড়া শেষ" buttons
-   * (`button.done-btn[data-lesson]`). We never re-implement completion — we
+   * (`button.done-btn[data-lesson]`). We never re-implement completion, we
    * observe the source's own UI and mirror it onto the analytics bus. */
   const installLessonTracking = host => {
     const sections = Array.from(host.querySelectorAll('section.lesson-sec[id]'));
@@ -362,7 +362,7 @@
       }, { rootMargin: '0px 0px -25% 0px', threshold: 0 });
       sections.forEach(section => state.lessonObserver.observe(section));
     } else {
-      sections.forEach(markViewed); // no observer (old browser / test DOM) — count as viewed
+      sections.forEach(markViewed); // no observer (old browser / test DOM), count as viewed
     }
     /* Delegated: the source's own handler toggles `.on` first, so reading the
      * class in the bubble phase reflects the post-click state. */
@@ -464,7 +464,7 @@
       const store = quizStore(); if (store.answers[qid] !== undefined) return;
       /* M3: the course's own MCQ engine answers questions too, not just the exam
        * engine. Mirror the attempt onto the bus so question_attempt is complete
-       * for every quiz surface. The answer text is never sent — only which
+       * for every quiz surface. The answer text is never sent, only which
        * question and whether it was right. */
       const q = questions().find(item => item.id === qid);
       const seenAt = state.questionSeenAt.get(qid);

@@ -86,7 +86,7 @@ const base64UrlBytes = bytes => {
   return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 };
 
-// Standard base64 with padding intact — Basic auth needs the '=' characters that
+// Standard base64 with padding intact, Basic auth needs the '=' characters that
 // base64UrlBytes deliberately strips, so the two transforms stay separate.
 const base64Bytes = value => btoa(String(value));
 
@@ -171,7 +171,7 @@ const otpEmailBody = (code, minutes, recipientName = '') => {
 <meta name="format-detection" content="telephone=no,address=no,email=no,date=no">
 <meta name="color-scheme" content="light dark">
 <meta name="supported-color-schemes" content="light dark">
-<title>${OTP_EMAIL_APP} — ইমেইল যাচাইকরণ</title>
+<title>${OTP_EMAIL_APP}, ইমেইল যাচাইকরণ</title>
 <style>
   /* Progressive enhancement only: every rule below duplicates an inline value, so
      clients that strip <style> (or the whole head) still render the light design. */
@@ -204,7 +204,7 @@ const otpEmailBody = (code, minutes, recipientName = '') => {
 </style>
 </head>
 <body class="ah-body" style="margin:0;padding:0;width:100%;background-color:#ffffff;">
-<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:#ffffff;font-size:1px;line-height:1px;">আপনার ${OTP_EMAIL_APP} যাচাইকরণ কোড: ${safeCode} — ${safeMinutes} মিনিটের জন্য কার্যকর।&#8203;&#8203;&#8203;&#8203;&#8203;&#8203;&#8203;&#8203;&#8203;&#8203;&#8203;&#8203;</div>
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:#ffffff;font-size:1px;line-height:1px;">আপনার ${OTP_EMAIL_APP} যাচাইকরণ কোড: ${safeCode}, ${safeMinutes} মিনিটের জন্য কার্যকর।&#8203;&#8203;&#8203;&#8203;&#8203;&#8203;&#8203;&#8203;&#8203;&#8203;&#8203;&#8203;</div>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="ah-shell" bgcolor="#ffffff" style="width:100%;background-color:#ffffff;font-family:${OTP_EMAIL_FONT};">
 <tr><td align="center" class="ah-pad" style="padding:28px 12px;">
 
@@ -345,7 +345,7 @@ export class BrevoOtpVerificationProvider {
       body: JSON.stringify({
         sender: { email: this.fromAddress, name: this.fromName },
         to: [{ email: destination }],
-        subject: `${OTP_EMAIL_APP} — আপনার যাচাইকরণ কোড`,
+        subject: `${OTP_EMAIL_APP}, আপনার যাচাইকরণ কোড`,
         htmlContent: html,
         textContent: text,
         tags: ['admission-hub-transactional']
@@ -420,7 +420,7 @@ export class ResendOtpVerificationProvider {
       body: JSON.stringify({
         from: `${this.fromName} <${this.fromAddress}>`,
         to: [destination],
-        subject: `${OTP_EMAIL_APP} — আপনার যাচাইকরণ কোড`,
+        subject: `${OTP_EMAIL_APP}, আপনার যাচাইকরণ কোড`,
         html,
         text
       })
@@ -521,7 +521,7 @@ export class AgentMailOtpVerificationProvider {
       },
       body: JSON.stringify({
         to: destination,
-        subject: `${OTP_EMAIL_APP} — আপনার যাচাইকরণ কোড`,
+        subject: `${OTP_EMAIL_APP}, আপনার যাচাইকরণ কোড`,
         html,
         text
       })
@@ -601,7 +601,7 @@ export class MailerSendOtpVerificationProvider {
       body: JSON.stringify({
         from: { email: this.fromAddress, name: this.fromName },
         to: [{ email: destination }],
-        subject: `${OTP_EMAIL_APP} — আপনার যাচাইকরণ কোড`,
+        subject: `${OTP_EMAIL_APP}, আপনার যাচাইকরণ কোড`,
         html,
         text
       })
@@ -701,7 +701,7 @@ export class DeadSimpleEmailOtpVerificationProvider {
       headers: this.#headers(true),
       body: JSON.stringify({
         to: destination,
-        subject: `${OTP_EMAIL_APP} — আপনার যাচাইকরণ কোড`,
+        subject: `${OTP_EMAIL_APP}, আপনার যাচাইকরণ কোড`,
         html_body: html,
         text_body: text
       })
@@ -800,7 +800,7 @@ export class MailjetOtpVerificationProvider {
         Messages: [{
           From: { Email: this.fromAddress, Name: this.fromName },
           To: [{ Email: destination }],
-          Subject: `${OTP_EMAIL_APP} — আপনার যাচাইকরণ কোড`,
+          Subject: `${OTP_EMAIL_APP}, আপনার যাচাইকরণ কোড`,
           HTMLPart: html,
           TextPart: text,
           CustomID: 'admission-hub-transactional'
@@ -2062,7 +2062,7 @@ export class DescopeOtpVerificationProvider {
 // Descope Magic Link (otp-m). Same trust model as otp-l: the Durable Object owns
 // the challenge; Descope only proves that the owner of the bound address clicked
 // the link. The link token is single-use at Descope; sessionJwt/refreshJwt are
-// checked for presence and dropped — never logged, returned or stored.
+// checked for presence and dropped, never logged, returned or stored.
 export const DESCOPE_MAGIC_LINK_URI = 'https://admissionsky.pages.dev/?magic=1';
 export class DescopeMagicLinkVerificationProvider {
   constructor({ id = 'otp-m', projectId, declaredDailyQuota, redirectUri = DESCOPE_MAGIC_LINK_URI, fetchImpl = globalThis.fetch, now = Date.now } = {}) {
@@ -2201,8 +2201,8 @@ export function createConfiguredVerificationProviders(env = {}, { fetchImpl = gl
     fetchImpl
   });
   const bridgeOtpD = new BridgeOtpVerificationProvider({ id: 'otp-d', origin: env.OTP_D_PROVIDER_ORIGIN, apiKey: env.OTP_D_PROVIDER_KEY, declaredDailyQuota: env.OTP_D_DAILY_QUOTA, fetchImpl });
-  // Slot `otp-e` is AgentMail. It needs no verified domain and no from-address —
-  // the inbox it sends from is the sender — so it is the only slot that can carry
+  // Slot `otp-e` is AgentMail. It needs no verified domain and no from-address -
+  // the inbox it sends from is the sender, so it is the only slot that can carry
   // real recipients without the owner buying a domain.
   const agentMailOtpE = new AgentMailOtpVerificationProvider({
     id: 'otp-e',

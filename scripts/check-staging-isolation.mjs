@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/* P19 — staging isolation guard.
+/* P19, staging isolation guard.
  *
  * A staging config that quietly points at a production resource is worse than no
  * staging config: a test write lands on the owner's live data and nobody sees it
@@ -48,7 +48,7 @@ export function hasCronTrigger(text) {
 }
 
 /**
- * The whole verdict for a config's text. Returns `{ ok, problems }` — `ok` is
+ * The whole verdict for a config's text. Returns `{ ok, problems }`, `ok` is
  * true only when the config is safe to deploy.
  */
 export function checkStagingConfig(text) {
@@ -58,7 +58,7 @@ export function checkStagingConfig(text) {
   const names = findProductionNames(text);
   if (names.length) problems.push(`production resource name(s) present: ${names.join(', ')}`);
   const placeholders = findPlaceholders(text);
-  if (placeholders.length) problems.push(`unfilled placeholder(s): ${placeholders.join(', ')} — run tools/setup-staging.sh`);
+  if (placeholders.length) problems.push(`unfilled placeholder(s): ${placeholders.join(', ')}, run tools/setup-staging.sh`);
   if (hasCronTrigger(text)) problems.push('a cron trigger is present: staging must not run the notification scheduler');
   return { ok: problems.length === 0, problems };
 }
@@ -71,7 +71,7 @@ if (isMain) {
   catch (e) { console.error(`staging-isolation: cannot read ${file}: ${e.message}`); process.exit(2); }
   const { ok, problems } = checkStagingConfig(text);
   if (!ok) {
-    console.error(`staging-isolation: REFUSED — ${file} is not safe to deploy:`);
+    console.error(`staging-isolation: REFUSED, ${file} is not safe to deploy:`);
     for (const p of problems) console.error(`  - ${p}`);
     process.exit(1);
   }

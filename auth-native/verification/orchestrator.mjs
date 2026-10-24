@@ -20,7 +20,7 @@ const SEND_LIMITS = Object.freeze([
   Object.freeze({ scope: 'backup-global-minute', source: 'global', limit: 120, windowMs: 60_000 })
 ]);
 
-// Owner 2026-10-16: "এক E-mail এ দিনে ৩–৫ বার সর্বোচ্চ, যতটা কম রাখা যায় ভালো" —
+// Owner 2026-10-16: "এক E-mail এ দিনে ৩–৫ বার সর্বোচ্চ, যতটা কম রাখা যায় ভালো" -
 // 3 per address per day, counted per email, on top of the hourly windows above.
 const DAY_MS = 24 * HOUR_MS;
 const EMAIL_DAILY_LIMIT = 3;
@@ -299,8 +299,8 @@ export class VerificationOrchestrator {
         // Left unbounded, one hard failure (500) or a slow reading (latency/50)
         // demotes a slot permanently: it is never retried, so its counters never
         // recover and a repaired credential is never used again. Demotion is the
-        // circuit breaker's job — it opens after `circuitFailureThreshold`
-        // consecutive failures and probes again after the cooldown — so these two
+        // circuit breaker's job, it opens after `circuitFailureThreshold`
+        // consecutive failures and probes again after the cooldown, so these two
         // only break ties between equally ranked slots. `lowPenalty` stays large
         // on purpose: exhausted capacity is a hard constraint, not a preference.
         const failureTotal = Number(state.successCount || 0) + Number(state.failureCount || 0);
