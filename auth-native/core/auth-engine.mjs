@@ -1,3 +1,4 @@
+import { allowedOrigin } from '../../cors-policy.mjs';
 import { AUTH_ERROR_CODES, errorFromRepository, failAuth, NativeAuthError } from './errors.mjs';
 import {
   AuthHmac,
@@ -180,14 +181,14 @@ const assertRepository = repository => {
   return repository;
 };
 
+/* D-5 / A1.5 ②: the trusted-origin list lives in cors-policy.mjs. This copy
+ * still trusted http://localhost and every *.admissionhub.pages.dev preview
+ * host, which meant a preview build could write session/device context with a
+ * production-equivalent origin. */
 const trustedContextOrigin = value => {
-  try {
-    const url = new URL(String(value || ''));
-    if (url.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(url.hostname)) return url.origin;
-    if (url.protocol !== 'https:') return '';
-    if (url.hostname === PASSKEY_RP_ID || url.hostname === 'admissionsky.pages.dev' || /^[a-z0-9-]+\.admissionhub\.pages\.dev$/i.test(url.hostname) || url.hostname === 'admission-gk.admissionhub.workers.dev') return url.origin;
-  } catch {}
-  return '';
+  const candidate = String(value || '');
+  if (!allowedOrigin(candidate)) return '';
+  try { return new URL(candidate).origin; } catch { return ''; }
 };
 
 const normalizeContext = context => Object.freeze({

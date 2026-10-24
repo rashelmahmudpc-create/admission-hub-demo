@@ -8192,6 +8192,33 @@ async function handleInternalEmailRequest(request, env = {}, ctx = {}, runtime =
 }
 var __emailWorkerTest = Object.freeze({ readBoundedBody });
 
+// cors-policy.mjs
+var PRODUCTION_HOSTS = /* @__PURE__ */ new Set([
+  "admissionhub.pages.dev",
+  "admissionsky.pages.dev",
+  "admission-gk.admissionhub.workers.dev"
+]);
+var allowedOrigin = (origin) => {
+  if (!origin) return false;
+  try {
+    const url = new URL(origin);
+    if (url.protocol !== "https:") return false;
+    if (url.port) return false;
+    return PRODUCTION_HOSTS.has(url.hostname.toLowerCase());
+  } catch {
+    return false;
+  }
+};
+var corsHeaders = (request) => {
+  const origin = request && request.headers && request.headers.get("Origin") || "";
+  if (!origin || !allowedOrigin(origin)) return { Vary: "Origin" };
+  return {
+    "Access-Control-Allow-Origin": origin,
+    "Access-Control-Allow-Credentials": "true",
+    Vary: "Origin"
+  };
+};
+
 // auth-native/core/errors.mjs
 var AUTH_ERROR_CODES = Object.freeze({
   INVALID_INPUT: "INVALID_INPUT",
@@ -9116,14 +9143,13 @@ var assertRepository = (repository) => {
   return repository;
 };
 var trustedContextOrigin = (value) => {
+  const candidate = String(value || "");
+  if (!allowedOrigin(candidate)) return "";
   try {
-    const url = new URL(String(value || ""));
-    if (url.protocol === "http:" && ["localhost", "127.0.0.1"].includes(url.hostname)) return url.origin;
-    if (url.protocol !== "https:") return "";
-    if (url.hostname === PASSKEY_RP_ID || url.hostname === "admissionsky.pages.dev" || /^[a-z0-9-]+\.admissionhub\.pages\.dev$/i.test(url.hostname) || url.hostname === "admission-gk.admissionhub.workers.dev") return url.origin;
+    return new URL(candidate).origin;
   } catch {
+    return "";
   }
-  return "";
 };
 var normalizeContext = (context) => Object.freeze({
   ip: String(context?.ip || "unknown").slice(0, 96),
@@ -11894,24 +11920,6 @@ var JSON_HEADERS = Object.freeze({
   "Cross-Origin-Resource-Policy": "same-site",
   Vary: "Origin"
 });
-var allowedOrigin = (origin) => {
-  if (!origin) return false;
-  try {
-    const url = new URL(origin);
-    if (url.protocol === "http:" && ["localhost", "127.0.0.1"].includes(url.hostname)) return true;
-    if (url.protocol !== "https:") return false;
-    return url.hostname === "admissionhub.pages.dev" || url.hostname === "admissionsky.pages.dev" || /^[a-z0-9-]+\.admissionhub\.pages\.dev$/i.test(url.hostname) || url.hostname === "admission-gk.admissionhub.workers.dev";
-  } catch {
-    return false;
-  }
-};
-var corsHeaders = (request) => {
-  const origin = request.headers.get("Origin") || "";
-  return origin && allowedOrigin(origin) ? {
-    "Access-Control-Allow-Origin": origin,
-    "Access-Control-Allow-Credentials": "true"
-  } : {};
-};
 var json4 = (request, status, body, extraHeaders = {}) => {
   const headers = new Headers({ ...JSON_HEADERS, ...corsHeaders(request) });
   for (const [name, value] of Object.entries(extraHeaders || {})) {
@@ -14042,33 +14050,6 @@ var __publicAuthTest = Object.freeze({
   passkeyPublished
 });
 
-// cors-policy.mjs
-var PRODUCTION_HOSTS = /* @__PURE__ */ new Set([
-  "admissionhub.pages.dev",
-  "admissionsky.pages.dev",
-  "admission-gk.admissionhub.workers.dev"
-]);
-var allowedOrigin2 = (origin) => {
-  if (!origin) return false;
-  try {
-    const url = new URL(origin);
-    if (url.protocol !== "https:") return false;
-    if (url.port) return false;
-    return PRODUCTION_HOSTS.has(url.hostname.toLowerCase());
-  } catch {
-    return false;
-  }
-};
-var corsHeaders2 = (request) => {
-  const origin = request && request.headers && request.headers.get("Origin") || "";
-  if (!origin || !allowedOrigin2(origin)) return { Vary: "Origin" };
-  return {
-    "Access-Control-Allow-Origin": origin,
-    "Access-Control-Allow-Credentials": "true",
-    Vary: "Origin"
-  };
-};
-
 // analytics-notifications.mjs
 var asInt2 = (v, fallback = 0) => {
   const n = Number(v);
@@ -15150,7 +15131,7 @@ var jsonResponse = (request, obj, status = 200) => new Response(JSON.stringify(o
   headers: {
     "Content-Type": "application/json; charset=utf-8",
     "Cache-Control": "no-store",
-    ...corsHeaders2(request)
+    ...corsHeaders(request)
   }
 });
 var parseBody = async (request) => {
@@ -15494,7 +15475,7 @@ async function handleFcmNotificationRequest(request, env) {
   if (!isApi && !isInternal) return null;
   if (request.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: {
-      ...corsHeaders2(request),
+      ...corsHeaders(request),
       "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
       "Access-Control-Allow-Headers": "Content-Type, Authorization",
       "Access-Control-Max-Age": "86400"
@@ -15956,7 +15937,7 @@ var jsonResponse2 = (request, obj, status = 200) => new Response(JSON.stringify(
   headers: {
     "Content-Type": "application/json; charset=utf-8",
     "Cache-Control": "no-store",
-    ...corsHeaders2(request)
+    ...corsHeaders(request)
   }
 });
 var readSessionToken2 = (request) => {
@@ -16628,7 +16609,7 @@ var jsonResponse3 = (request, obj, status = 200) => new Response(JSON.stringify(
   status,
   headers: {
     "Content-Type": "application/json; charset=utf-8",
-    ...corsHeaders2(request),
+    ...corsHeaders(request),
     "Cache-Control": "no-store"
   }
 });
@@ -17822,7 +17803,7 @@ var jsonResponse4 = (request, obj, status = 200) => new Response(JSON.stringify(
   status,
   headers: {
     "Content-Type": "application/json; charset=utf-8",
-    ...corsHeaders2(request),
+    ...corsHeaders(request),
     "Cache-Control": "no-store"
   }
 });
@@ -17835,7 +17816,7 @@ async function handleIntelligenceRequest(request, env, deps = {}) {
   if (!OWNED_PATHS.has(path) && !path.startsWith(ADMIN_PREFIX)) return null;
   if (request.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: {
-      ...corsHeaders2(request),
+      ...corsHeaders(request),
       "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
       "Access-Control-Allow-Headers": "Content-Type, Authorization",
       "Access-Control-Max-Age": "86400"
@@ -19880,7 +19861,7 @@ var jsonResponse5 = (request, obj, status = 200) => new Response(JSON.stringify(
   headers: {
     "Content-Type": "application/json; charset=utf-8",
     "Cache-Control": "no-store",
-    ...corsHeaders2(request)
+    ...corsHeaders(request)
   }
 });
 var readBody2 = async (request) => {
@@ -20096,7 +20077,7 @@ async function handleAnalyticsRequest(request, env, ctx, deps = {}) {
   if (!path.startsWith(ANALYTICS_PREFIX) && path !== "/api/analytics") return null;
   if (request.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: {
-      ...corsHeaders2(request),
+      ...corsHeaders(request),
       "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
       "Access-Control-Allow-Headers": "Content-Type, Authorization",
       "Access-Control-Max-Age": "86400"
@@ -22352,7 +22333,7 @@ function json6(request, payload, status = 200) {
     headers: {
       "Content-Type": "application/json; charset=utf-8",
       "Cache-Control": "no-store",
-      ...corsHeaders2(request)
+      ...corsHeaders(request)
     }
   });
 }
@@ -22360,7 +22341,7 @@ function preflight(request) {
   return new Response(null, {
     status: 204,
     headers: {
-      ...corsHeaders2(request),
+      ...corsHeaders(request),
       "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
       "Access-Control-Allow-Headers": "Content-Type, Authorization",
       "Access-Control-Max-Age": "86400"
@@ -22642,7 +22623,7 @@ var jsonResponse6 = (request, obj, status = 200) => new Response(JSON.stringify(
   headers: {
     "Content-Type": "application/json; charset=utf-8",
     "Cache-Control": "no-store",
-    ...corsHeaders2(request)
+    ...corsHeaders(request)
   }
 });
 var randKey2 = (len) => {
@@ -22662,7 +22643,7 @@ async function handleFilesStorageRequest(request, env) {
   if (!path.startsWith("/api/files")) return null;
   if (request.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: {
-      ...corsHeaders2(request),
+      ...corsHeaders(request),
       "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
       "Access-Control-Allow-Headers": "Content-Type, Authorization, X-File-Ext, X-File-Folder",
       "Access-Control-Max-Age": "86400"

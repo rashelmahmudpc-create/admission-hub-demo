@@ -9,6 +9,11 @@ import { resolveTelegramWebhookSecret, validTelegramWebhookSecret } from '../ver
 import { isTelegramLoginEmail, reservedTelegramLoginEmail, telegramLoginBotId, telegramLoginCredentials, telegramLoginReady, verifyTelegramLogin } from '../verification/telegram-login.mjs';
 import { isPendingSignupTicket } from './pending-signup.mjs';
 import * as pendingSignup from './pending-signup-public.mjs';
+/* D-5 / A1.5 ②: one shared CORS policy for every auth surface. This handler
+ * used to keep its own copy that still accepted http://localhost and any
+ * *.admissionhub.pages.dev preview host, so production served credentialed
+ * CORS to preview builds even after the other handlers were tightened. */
+import { allowedOrigin, corsHeaders } from '../../cors-policy.mjs';
 
 export const AUTH_API_PREFIX = '/api/auth/v1';
 // Phase 7 public-safe profile projection, deliberately unauthenticated and
@@ -37,27 +42,6 @@ const JSON_HEADERS = Object.freeze({
   'Cross-Origin-Resource-Policy': 'same-site',
   Vary: 'Origin'
 });
-
-const allowedOrigin = origin => {
-  if (!origin) return false;
-  try {
-    const url = new URL(origin);
-    if (url.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(url.hostname)) return true;
-    if (url.protocol !== 'https:') return false;
-    return url.hostname === 'admissionhub.pages.dev'
-      || url.hostname === 'admissionsky.pages.dev'
-      || /^[a-z0-9-]+\.admissionhub\.pages\.dev$/i.test(url.hostname)
-      || url.hostname === 'admission-gk.admissionhub.workers.dev';
-  } catch { return false; }
-};
-
-const corsHeaders = request => {
-  const origin = request.headers.get('Origin') || '';
-  return origin && allowedOrigin(origin) ? {
-    'Access-Control-Allow-Origin': origin,
-    'Access-Control-Allow-Credentials': 'true'
-  } : {};
-};
 
 const json = (request, status, body, extraHeaders = {}) => {
   const headers = new Headers({ ...JSON_HEADERS, ...corsHeaders(request) });

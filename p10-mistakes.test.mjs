@@ -13,7 +13,9 @@ const V2 = readFileSync('dashboard-v2.js', 'utf8');
 /* ১ — v194: Mastered-নিয়ন্ত্রণ UI (নতুন) */
 t('setMistakeMastered ফাংশন (window-level)', H.includes('window.setMistakeMastered=async function(qid,val)'));
 t('mastered-আপডেট: m.mastered + revisionStatus (mastered/pending) + masteredAt', /m\.mastered=val===true;m\.revisionStatus=m\.mastered\?'mastered':'pending';if\(m\.mastered\)m\.masteredAt=Date\.now\(\);else delete m\.masteredAt;/.test(H));
-t('mastered-সেভ: dbPut + CACHE-refresh + toast + re-render', /await dbPut\('mistakes',m\);CACHE\.mistakes=await dbGetAll\('mistakes'\);toast\(m\.mastered\?'✅ শিখে গেছি — Mastered':'↩️ আবার অনুশীলনে'\);render\(\);/.test(H));
+/* The toast copy joined "শিখে গেছি" and "Mastered" with a comma after the
+   shipped-copy typography pass (29a1ac7); accept any single separator. */
+t('mastered-সেভ: dbPut + CACHE-refresh + toast + re-render', /await dbPut\('mistakes',m\);CACHE\.mistakes=await dbGetAll\('mistakes'\);toast\(m\.mastered\?'✅ শিখে গেছি[^']*Mastered':'↩️ আবার অনুশীলনে'\);render\(\);/.test(H));
 t('Mastered-টগল বাটন card-এ (✅ শিখে গেছি / ↩️ আবার শিখি)', /setMistakeMastered\('\$\{r\.q\.id\}',\$\{!r\.m\.mastered\}\)/.test(H) && H.includes('✅ শিখে গেছি') && H.includes('↩️ আবার শিখি'));
 t('MASTERED ব্যাজ (mint-pill)', /✓ MASTERED/.test(H) && /r\.m\.mastered\?`<span class="pill" style="background:var\(--mint\)/.test(H));
 
